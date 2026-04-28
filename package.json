@@ -1,0 +1,14 @@
+{
+  "name": "clubalmanac-v2",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Clubalmanac — Convex backend (migratie van AWS).",
+  "type": "module",
+  "scripts": {
+    "convex:dev": "convex dev",
+    "convex:codegen": "convex codegen",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  }
+}
