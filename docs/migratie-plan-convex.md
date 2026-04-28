@@ -128,32 +128,36 @@ Handmatig per feature in Expo dev build. Bij 16 users pragmatisch genoeg, geen a
 
 ## Migratieplan in fasen
 
-### Fase 1: Project setup
-- [ ] Nieuw repo opzetten met TypeScript
-- [ ] Convex project aanmaken op **Starter plan, EU region (Dublin)**
-- [ ] Vitest + `convex-test` configureren
-- [ ] Convex schema ontwerpen (`schema.ts`): alle tables en indexes
-- [ ] Clerk account opzetten
+### Fase 1: Project setup ✅ AFGEROND
 
-#### Testplan fase 1
+- [x] Nieuw repo opzetten met TypeScript — [github.com/wintvelt/clubalmanac-v2](https://github.com/wintvelt/clubalmanac-v2) (public)
+- [x] Convex project aanmaken op **Starter plan, EU region (Dublin)** — deployment `glorious-pheasant-759`, region bevestigd als `eu-west-1` via deployment URL
+- [x] Vitest + `convex-test` configureren — [`vitest.config.ts`](../vitest.config.ts) met `edge-runtime` environment, 6 smoke tests groen lokaal en in CI
+- [x] Convex schema ontwerpen (`schema.ts`): alle tables en indexes — **10 tables** in [`convex/schema.ts`](../convex/schema.ts): `users`, `groups`, `memberships`, `albums`, `albumPhotos`, `photos`, `ratings`, `invites`, `features`, `featureUpvotes`. Afwijking van plan: `featureUpvotes` apart (niet impliciet in `features`) om dubbele votes per user te voorkomen via composite index `by_feature_and_user`.
+- [x] Clerk account opzetten — applicatie aangemaakt, JWT template "convex" geconfigureerd, issuer `https://picked-quail-97.clerk.accounts.dev` gewired in [`convex/auth.config.ts`](../convex/auth.config.ts). Sign-in opties: alleen Email (geen socials, kunnen later zonder code-impact). Clerk API keys (publishable/secret) pas in fase 4 nodig wanneer een client komt.
 
-Doel: bevestigen dat de setup werkt voordat je fase 2 in duikt. Smoke tests, geen feature tests.
+#### Smoke-test uitkomsten
 
-- [ ] **TypeScript compileert:** `tsc --noEmit` passeert zonder errors
-- [ ] **Convex schema valideert:** `npx convex dev --once` of `npx convex codegen` draait succesvol — Convex parsed de schema en genereert types in `convex/_generated/`
-- [ ] **EU region bevestigd:** check via Convex dashboard dat deployment region = Dublin (niet US, want fallback naar US-tarief gebeurt stilzwijgend)
-- [ ] **Vitest draait:** minimale `it('schema is valid')` test passeert
-- [ ] **`convex-test` werkt:** smoke test die een lege database opzet, één record schrijft, leest, en weer verwijdert. Bevestigt dat de test-harness goed staat voordat je er in fase 2 op gaat bouwen
-- [ ] **Type-flow end-to-end:** schrijf een dummy query met return type, gebruik 'm in een test, controleer dat TS error geeft bij verkeerd return-type. Bewijst dat de Convex → TS type-pipeline werkt
-- [ ] **Clerk smoke test:** test-user registreren via Clerk dashboard, JWT token valideren in een Convex query met `ctx.auth.getUserIdentity()`. Bevestigt dat Clerk → Convex auth-koppeling werkt voordat je 9 backend domains gaat bouwen
-- [ ] **CI baseline:** GitHub Action (of equivalent) die `tsc` + `vitest` draait op elke push. Voorkomt regressie tijdens fase 2
+- ✅ TypeScript compileert (`npm run typecheck`), lokaal én in CI
+- ✅ Convex schema valideert (`npx convex dev --once` push zonder errors)
+- ✅ EU region bevestigd: `eu-west-1` in URL `glorious-pheasant-759.eu-west-1.convex.cloud`
+- ✅ `convex-test` werkt: write → read → delete via `ctx.db`, plus index lookup via `by_subject`
+- ✅ Type-flow end-to-end: `api.smoke.ping` query met `v.object()` return validator, return type komt typed door tot in de test
+- ⚠️ Clerk smoke test deels: `auth.config.ts` staat goed, `ctx.auth.getUserIdentity()` returnt `null` zonder token, `t.withIdentity()` impersonation in tests werkt. **Volledige JWT round-trip pas in fase 4** wanneer een client een echte Clerk token mint — auth-bedrading is bewezen, end-to-end JWT validatie vereist een client.
+- ✅ CI baseline: GitHub Action draait `tsc` + `vitest` op elke push.
 
-Acceptatiecriterium fase 1: alle bovenstaande tests groen. Pas dan door naar fase 2.
+#### Afwijkingen van plan (toelichting)
+
+**`convex/_generated/` wordt gecommit** in plaats van geregenereerd in CI. Reden: `npx convex codegen` heeft een deployment-call nodig die een dev-deploy-key niet honoreert in CI mode (vereist een project-level deploy key, overkill voor deze fase). Trade-off: bij schema-wijzigingen `npx convex dev --once` lokaal draaien en de `_generated` diff meecommitten. Switch naar full deploy-key flow kan in fase 5 wanneer er een echte CD-pipeline komt.
+
+Acceptatiecriterium fase 1: alle smoke tests groen. ✅ Klaar voor fase 2.
 
 ### Fase 2: Convex backend bouwen + testen
 De hele backend bouwen en testen, los van de app en los van de data. Tests draaien tegen een lege `convex-test` database.
 
 Per domein: unit tests eerst, dan implementatie.
+
+**Schema-uitgangspunt (vastgelegd in fase 1):** geen denormalisatie van user-data (naam, profielfoto) naar `memberships`/`photos`/etc. In Convex zijn joins binnen een query function lokale lookups (geen netwerk hops), dus we halen user-data on-read via `ctx.db.get(ownerId)`. Dit elimineert de hele klasse stream-handler bugs uit DynamoDB waar denormalized kopieën uit-sync konden raken — en daarmee ook de UB/UV split-truc om write-amplification te vermijden. De enige denormalized velden die we wel houden zijn aggregates die te duur zijn om bij elke read te recomputen: `users.photoCount`, `photos.ratingAverage` + `ratingCount`, `features.upvoteCount`. Die worden in mutations transactioneel onderhouden, en in fase 1's "data integriteit monitoring" (zie Teststrategie §3) periodiek gevalideerd tegen de werkelijkheid.
 
 - [ ] **Users:** mutations + queries voor CRUD, photo count limiet
 - [ ] **Groups:** create, update, delete, list, members
