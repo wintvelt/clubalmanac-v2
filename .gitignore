@@ -6,8 +6,9 @@ dist/
 build/
 *.tsbuildinfo
 
-# Convex generated files (regenerated on build)
-convex/_generated/
+# Convex generated files: gecommit. Worden geregenereerd door
+# `npx convex dev`, en CI heeft geen deploy key nodig om typecheck/tests
+# te draaien. Bij schema-wijzigingen: commit de _generated diff mee.
 
 # Env / secrets — NEVER commit
 .env

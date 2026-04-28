@@ -15,11 +15,5 @@ jobs:
           node-version: "22"
           cache: "npm"
       - run: npm ci
-      # Genereert convex/_generated/* (gitignored). Nodig voor tsc + tests.
-      # Convex CLI heeft een dev-deploy-key nodig om de deployment te
-      # adresseren; alleen lezen, geen push naar prod.
-      - run: npx convex codegen --typecheck=disable
-        env:
-          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
       - run: npm run typecheck
       - run: npm test
