@@ -45,7 +45,7 @@ Uitzondering: queries zonder trigger (puur read-tests) leven bij de query-owner.
 | Albums | 1 | ✅ A1 |
 | Photos | 7 | ✅ P1-P7 |
 | Album-photos (publications) | 4 | ⏳ |
-| Ratings | 1 | ⏳ |
+| Ratings | 1 | ✅ R1 |
 | Memberships | 2 | ⏳ |
 
 ## Cascade rules
@@ -103,7 +103,7 @@ Uitzondering: queries zonder trigger (puur read-tests) leven bij de query-owner.
 
 | # | Oude handler | Trigger event | Effect | Cat | Convex aanpak | Test locatie | Status |
 |---|---|---|---|---|---|---|---|
-| R1 | `ratingChangeToPhoto` | UF modify/insert | Recompute `photo.ratingAverage` + `ratingCount` | 2 | In `ratings.upsert` mutation | `tests/ratings/aggregate.test.ts` | ⏳ |
+| R1 | `ratingChangeToPhoto` | UF modify/insert | Recompute `photo.ratingAverage` + `ratingCount` | 2 | `recomputeRatingAggregate` helper aangeroepen vanuit `ratings.upsert` én `ratings.remove` | `tests/ratings/aggregate.test.ts` | ✅ |
 
 ### Trigger: Memberships
 

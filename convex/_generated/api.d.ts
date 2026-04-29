@@ -11,6 +11,7 @@
 import type * as albums from "../albums.js";
 import type * as groups from "../groups.js";
 import type * as photos from "../photos.js";
+import type * as ratings from "../ratings.js";
 import type * as smoke from "../smoke.js";
 import type * as users from "../users.js";
 
@@ -24,6 +25,7 @@ declare const fullApi: ApiFromModules<{
   albums: typeof albums;
   groups: typeof groups;
   photos: typeof photos;
+  ratings: typeof ratings;
   smoke: typeof smoke;
   users: typeof users;
 }>;
