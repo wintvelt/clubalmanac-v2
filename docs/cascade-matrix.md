@@ -42,7 +42,7 @@ Uitzondering: queries zonder trigger (puur read-tests) leven bij de query-owner.
 |---|---|---|
 | Users | 8 | ✅ U3-U8 (U1, U2, U5 ❌ eliminated) |
 | Groups | 4 | ✅ G1-G4 |
-| Albums | 1 | ⏳ |
+| Albums | 1 | ✅ A1 |
 | Photos | 7 | ⏳ |
 | Album-photos (publications) | 4 | ⏳ |
 | Ratings | 1 | ⏳ |
@@ -76,7 +76,7 @@ Uitzondering: queries zonder trigger (puur read-tests) leven bij de query-owner.
 
 | # | Oude handler | Trigger event | Effect | Cat | Convex aanpak | Test locatie | Status |
 |---|---|---|---|---|---|---|---|
-| A1 | `albumDelToAlbumPhoto` | GA delete | Delete albumPhotos (publicaties) | 3 | Cascade in `albums.delete` | `tests/albums/delete.test.ts` | ⏳ |
+| A1 | `albumDelToAlbumPhoto` | GA delete | Delete albumPhotos (publicaties) | 3 | Cascade in `albums.remove` | `tests/albums/crud.test.ts` (describe `albums.remove > cascade albumPhotos`) | ✅ |
 
 ### Trigger: Photos
 
