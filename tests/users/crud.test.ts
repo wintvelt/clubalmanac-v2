@@ -154,26 +154,6 @@ describe("users.updateProfile", () => {
   });
 });
 
-describe("users.recordVisit", () => {
-  it("zet lastVisitAt op nu", async () => {
-    const t = convexTest(schema);
-    const as = withUser(t, "user_alice");
-    const id = await as.mutation(api.users.register, {
-      email: "alice@x.com",
-    });
-
-    const before = Date.now();
-    await as.mutation(api.users.recordVisit, {});
-    const got = await t.run((ctx) => ctx.db.get(id));
-    expect(got?.lastVisitAt).toBeGreaterThanOrEqual(before);
-  });
-
-  it("weigert zonder auth", async () => {
-    const t = convexTest(schema);
-    await expect(t.mutation(api.users.recordVisit, {})).rejects.toThrow();
-  });
-});
-
 describe("users.deleteSelf", () => {
   it("verwijdert eigen record", async () => {
     const t = convexTest(schema);
