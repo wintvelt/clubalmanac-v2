@@ -13,7 +13,7 @@ import type { Doc } from "./_generated/dataModel";
 // fase 2 — admin flows komen later).
 export const DEFAULT_PHOTO_LIMIT = 1000;
 
-async function getBySubject(
+export async function getBySubject(
   ctx: QueryCtx,
   subject: string,
 ): Promise<Doc<"users"> | null> {
@@ -23,7 +23,7 @@ async function getBySubject(
     .unique();
 }
 
-async function requireCurrentUser(
+export async function requireCurrentUser(
   ctx: QueryCtx | MutationCtx,
 ): Promise<Doc<"users">> {
   const identity = await ctx.auth.getUserIdentity();
