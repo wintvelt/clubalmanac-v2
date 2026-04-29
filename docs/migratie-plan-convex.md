@@ -167,6 +167,22 @@ File bandwidth is de dominante kostenpost. Vergelijkbaar met of goedkoper dan hu
 
 Voorbeelden: `createPhoto` maakt record aan met juiste EXIF data. `deleteGroup` cascade-delete albums en memberships. Rating update herberekent aggregate op photo.
 
+#### Cascade dekking — matrix-aanpak
+
+Het oude AWS systeem had 28 cascade handlers in `mainStream.js`. Een deel daarvan vervalt in Convex (denormalisatie naar joins), de rest moet expliciet getest worden. Om geen rule te missen: alle cascades zijn geïnventariseerd in [`docs/cascade-matrix.md`](./cascade-matrix.md) als levend audit-document.
+
+Vier categorieën:
+1. **Eliminated (join on read):** geen cascade meer, query joint live. Test verifieert dat join fresh data returnt na update
+2. **Transactional aggregate:** aggregate veld (`photoCount`, `ratingAverage`) atomisch herrekend in zelfde mutation. Test verifieert correctheid + integrity-check zou drift flaggen
+3. **Cascade delete:** parent delete-mutation deletet children inline. Test verifieert zero orphans
+4. **Reactive query coverage:** verifieert dat subscribed views correct updaten — proxy voor UI rerender. Werkt alleen als cat-1 join correct is
+
+**Test-locatie regel:** tests leven bij de trigger-mutation, niet bij de affected query. Bij refactor van trigger zie je in `tests/{entity}/` wat kapot gaat. Cross-entity assertions worden binnen die test gedaan (test setup creëert beide entities).
+
+**Acceptance per domain:** alle matrix-rows met dat entity als trigger zijn naar een groene test gemapt. Niet "alle CRUD bedacht". Status per row in matrix doc, Claude Code werkt 'm bij na elke commit.
+
+**Integrity check als test-helper:** de scheduled monitoring function uit §3 is herbruikbaar als `afterEach` in tests die complexe mutaties draaien. Vangt cascade-failures op die specifieke asserts missen.
+
 ### 2. Data migratie validatie
 Na import: script dat Convex data vergelijkt met DynamoDB export. Counts per table, steekproeven, referentiële integriteit (alle foreign keys wijzen naar bestaande records, alle storage IDs zijn geldig).
 
@@ -214,7 +230,7 @@ Per domein: unit tests eerst, dan implementatie.
 
 **Schema-uitgangspunt (vastgelegd in fase 1):** geen denormalisatie van user-data (naam, profielfoto) naar `memberships`/`photos`/etc. In Convex zijn joins binnen een query function lokale lookups (geen netwerk hops), dus we halen user-data on-read via `ctx.db.get(ownerId)`. Dit elimineert de hele klasse stream-handler bugs uit DynamoDB waar denormalized kopieën uit-sync konden raken — en daarmee ook de UB/UV split-truc om write-amplification te vermijden. De enige denormalized velden die we wel houden zijn aggregates die te duur zijn om bij elke read te recomputen: `users.photoCount`, `photos.ratingAverage` + `ratingCount`, `features.upvoteCount`. Die worden in mutations transactioneel onderhouden, en in fase 1's "data integriteit monitoring" (zie Teststrategie §3) periodiek gevalideerd tegen de werkelijkheid.
 
-- [ ] **Users:** mutations + queries voor CRUD, photo count limiet
+- [x] **Users:** mutations + queries voor CRUD, photo count limiet
 - [ ] **Groups:** create, update, delete, list, members
 - [ ] **Albums:** CRUD, album-photo relaties
 - [ ] **Photos:** CRUD met cascade logic (stream handler logica → transactionele mutations)

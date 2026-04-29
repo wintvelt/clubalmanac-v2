@@ -1,7 +1,7 @@
 import { convexTest } from "convex-test";
 import { describe, expect, it } from "vitest";
-import { api } from "../convex/_generated/api";
-import schema from "../convex/schema";
+import { api } from "../../convex/_generated/api";
+import schema from "../../convex/schema";
 
 // Fase 2 — Groups domein: create, update, remove, list, members.
 

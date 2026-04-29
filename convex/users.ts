@@ -7,6 +7,7 @@ import {
   type QueryCtx,
 } from "./_generated/server";
 import type { Doc } from "./_generated/dataModel";
+import { internal } from "./_generated/api";
 
 // Default upload-limiet voor nieuwe users. Mocht een admin een hogere limiet
 // willen geven, dan kan dat via directe DB patch (geen public mutation in
@@ -109,6 +110,37 @@ export const deleteSelf = mutation({
   args: {},
   handler: async (ctx) => {
     const user = await requireCurrentUser(ctx);
+
+    // U6: cascade ratings die deze user gegeven heeft.
+    const ratings = await ctx.db
+      .query("ratings")
+      .withIndex("by_user", (q) => q.eq("userId", user._id))
+      .collect();
+    for (const r of ratings) await ctx.db.delete(r._id);
+
+    // U7: cascade photos die deze user uploadde + queue storage cleanup.
+    // Records weg in dezelfde transactie; storage delete loopt async via action.
+    const photos = await ctx.db
+      .query("photos")
+      .withIndex("by_owner", (q) => q.eq("ownerId", user._id))
+      .collect();
+    const storageIds = photos.map((p) => p.storageId);
+    for (const p of photos) await ctx.db.delete(p._id);
+    if (storageIds.length > 0) {
+      await ctx.scheduler.runAfter(0, internal.photos.cleanupStorage, {
+        storageIds,
+      });
+    }
+
+    // U8: cascade memberships. Admin-successie (M2) wordt nog niet
+    // toegepast — wordt geadresseerd wanneer memberships-domein landt
+    // en deze cascade dan via memberships.deleteOne loopt.
+    const memberships = await ctx.db
+      .query("memberships")
+      .withIndex("by_user", (q) => q.eq("userId", user._id))
+      .collect();
+    for (const m of memberships) await ctx.db.delete(m._id);
+
     await ctx.db.delete(user._id);
   },
 });

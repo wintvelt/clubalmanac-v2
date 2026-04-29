@@ -1,8 +1,8 @@
 import { convexTest } from "convex-test";
 import { describe, expect, it } from "vitest";
-import { api, internal } from "../convex/_generated/api";
-import schema from "../convex/schema";
-import { DEFAULT_PHOTO_LIMIT } from "../convex/users";
+import { api, internal } from "../../convex/_generated/api";
+import schema from "../../convex/schema";
+import { DEFAULT_PHOTO_LIMIT } from "../../convex/users";
 
 // Fase 2 — Users domein. Tests-first volgens migratieplan.
 // Authenticatie via Clerk wordt geïmpersoneerd met t.withIdentity.
