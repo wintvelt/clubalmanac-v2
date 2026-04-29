@@ -40,6 +40,18 @@ export const getById = query({
   },
 });
 
+// Cat-1 join-on-read: album + group data, vervangt denormalized
+// group-velden op albums uit DynamoDB. Cascade matrix row G2.
+export const getWithGroup = query({
+  args: { albumId: v.id("albums") },
+  handler: async (ctx, { albumId }) => {
+    const album = await requireAlbum(ctx, albumId);
+    await requireMember(ctx, album.groupId);
+    const group = await ctx.db.get(album.groupId);
+    return { ...album, group };
+  },
+});
+
 export const listByGroup = query({
   args: { groupId: v.id("groups") },
   handler: async (ctx, { groupId }) => {

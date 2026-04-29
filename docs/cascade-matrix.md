@@ -41,7 +41,7 @@ Uitzondering: queries zonder trigger (puur read-tests) leven bij de query-owner.
 | Domain | Rules | Status |
 |---|---|---|
 | Users | 8 | ✅ U3-U8 (U1, U2, U5 ❌ eliminated) |
-| Groups | 4 | 🚧 — CRUD gebouwd, cascade-rows nog te dekken |
+| Groups | 4 | ✅ G1-G4 |
 | Albums | 1 | ⏳ |
 | Photos | 7 | ⏳ |
 | Album-photos (publications) | 4 | ⏳ |
@@ -67,10 +67,10 @@ Uitzondering: queries zonder trigger (puur read-tests) leven bij de query-owner.
 
 | # | Oude handler | Trigger event | Effect | Cat | Convex aanpak | Test locatie | Status |
 |---|---|---|---|---|---|---|---|
-| G1 | `groupChangeToMembership` | GB modify | Update denormalized group-data op memberships | 1+4 | Eliminated. Membership query joint group | `tests/groups/update.test.ts` | 🚧 |
-| G2 | `groupChangeToAlbum` | GB modify | Update denormalized group-data op albums | 1+4 | Eliminated. Album query joint group | `tests/groups/update.test.ts` | 🚧 |
-| G3 | `groupDelToMembers` | GB delete | Delete memberships | 3 | Cascade in `groups.delete` | `tests/groups/delete.test.ts` | 🚧 |
-| G4 | `groupDelToAlbums` | GB delete | Delete albums | 3 | Cascade in `groups.delete` (en daarmee transitief `albumPhotos`, zie A1) | `tests/groups/delete.test.ts` | 🚧 |
+| G1 | `groupChangeToMembership` | GB modify | Update denormalized group-data op memberships | 1+4 | Eliminated. `groups.listMine` joint group | `tests/groups/update.test.ts` met `assertReactive` rond `groups.update` | ✅ |
+| G2 | `groupChangeToAlbum` | GB modify | Update denormalized group-data op albums | 1+4 | Eliminated. Nieuwe `albums.getWithGroup` joint group | `tests/groups/update.test.ts` met `assertReactive` rond `groups.update` | ✅ |
+| G3 | `groupDelToMembers` | GB delete | Delete memberships | 3 | Cascade in `groups.remove` | `tests/groups/crud.test.ts` (describe `groups.remove`) | ✅ |
+| G4 | `groupDelToAlbums` | GB delete | Delete albums | 3 | Cascade in `groups.remove` (en transitief `albumPhotos`, zie A1) | `tests/groups/crud.test.ts` (describe `groups.remove`) | ✅ |
 
 ### Trigger: Albums
 
