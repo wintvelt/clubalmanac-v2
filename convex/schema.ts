@@ -146,10 +146,21 @@ export default defineSchema({
     expiresAt: v.number(),
     createdAt: v.number(),
     respondedAt: v.optional(v.number()),
+    // Onderscheidt bounce-driven expiry van natuurlijke expiry (status='expired'
+    // alleen volstaat niet om beide gevallen te kunnen scheiden).
+    bouncedAt: v.optional(v.number()),
   })
     .index("by_email", ["email"])
     .index("by_token", ["token"])
     .index("by_status", ["status"]),
+
+  // Dedup-store voor bounce-webhook events. Email-providers retry'en
+  // webhooks bij non-2xx response; door providerEventId te tracken
+  // voorkomen we dubbele state-transitions en notify-mails.
+  inviteBounceEvents: defineTable({
+    providerEventId: v.string(),
+    processedAt: v.number(),
+  }).index("by_eventId", ["providerEventId"]),
 
   // ──────────────────────────────────────────────────────────────────
   // Features (feature requests + upvoting + problem reports)

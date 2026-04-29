@@ -48,6 +48,7 @@ Uitzondering: queries zonder trigger (puur read-tests) leven bij de query-owner.
 | Ratings | 1 | ✅ R1 |
 | Memberships | 3 | ✅ M1, M2, M3 |
 | Flagging | 2 | ⏳ FL1, FL2 |
+| Invites | 2 | ✅ IB1; ⏳ IB2 (gebundeld met scheduled-functions werkpakket) |
 
 ## Cascade rules
 
@@ -123,6 +124,13 @@ Uitzondering: queries zonder trigger (puur read-tests) leven bij de query-owner.
 |---|---|---|---|---|---|---|---|
 | FL1 | (nieuw, niet uit AWS — was niet expliciet in oude code, mogelijk handmatig) | Daily cron | Auto-delete photos waar `flaggedDeleteDate < now` (en niet onder appeal) | 3 | Convex scheduled cron `cleanupFlaggedPhotos`: scan `photos.by_flagged_delete`, filter `flaggedDeleteDate < now && !flaggedAppealDate || flaggedAppealDenyDate`, roep `internalRemovePhoto` per match aan (transitief P3-P5+P7) | `tests/photos/flagCleanup.test.ts` (cron logica, fake clock voor 14d/7d countdowns) | ⏳ |
 | FL2 | `flagPhotoDecide.js` (deny-pad) | webmaster denies appeal | Email naar owner met decision + uitleg | n.v.t. (action, geen cascade) | `decideFlag` mutation queue't email-action via `ctx.scheduler.runAfter(0, ...)`, action verstuurt via Resend/SendGrid | `tests/photos/decideFlag.test.ts` (assert: email-action gequeue'd bij deny, niet bij approve) | ⏳ |
+
+### Trigger: Invites (system events)
+
+| # | Oude handler | Trigger event | Effect | Cat | Convex aanpak | Test locatie | Status |
+|---|---|---|---|---|---|---|---|
+| IB1 | (nieuw, niet uit AWS — oude code had geen bounce-feedback loop) | Email provider bounce webhook | Markeer alle pending invites voor email als `expired` + zet `bouncedAt`, queue notify-mail naar inviter, dedup via `inviteBounceEvents` | 2 + 3 | `internal.invites.handleBounce` aangeroepen via `convex/http.ts` webhook endpoint. Patcht invite-records, queue't `sendInviteEmail({kind:"bounced"})`, schrijft providerEventId-record voor dedup | `tests/invites/bouncedHandler.test.ts` | ✅ |
+| IB2 | (nieuw, niet uit AWS) | Daily cron | Patch invites met `status="pending"` en `expiresAt < now` naar `status="expired"` (natural expiry, los van bounce) | 3 | Convex scheduled cron `expirePendingInvites` (gebundeld met flagging-cron werkpakket — nog niet geleverd) | `tests/invites/naturalExpiry.test.ts` (volgt bij scheduled-functions werkpakket) | ⏳ |
 
 ### Trigger: Stats / signup completion
 
