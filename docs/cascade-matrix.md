@@ -44,7 +44,7 @@ Uitzondering: queries zonder trigger (puur read-tests) leven bij de query-owner.
 | Groups | 4 | ✅ G1-G4 |
 | Albums | 1 | ✅ A1 |
 | Photos | 7 | ✅ P1-P7 |
-| Album-photos (publications) | 4 | ⏳ |
+| Album-photos (publications) | 4 | 🚧 AP3, AP4 ✅; AP1+AP2 blocked op design decision |
 | Ratings | 1 | ✅ R1 |
 | Memberships | 2 | ✅ M1, M2 |
 
@@ -94,10 +94,10 @@ Uitzondering: queries zonder trigger (puur read-tests) leven bij de query-owner.
 
 | # | Oude handler | Trigger event | Effect | Cat | Convex aanpak | Test locatie | Status |
 |---|---|---|---|---|---|---|---|
-| AP1 | `groupPhotoAddToMember` | GP insert | Bump `seenPics` array op alle group memberships (behalve uploader) | 2 | **Design decision nodig.** Huidige aanpak: array op membership, zware write-amplification (1 photo upload → N membership writes). Convex alternatieven: (a) zelfde aanpak (array per membership), (b) separate `unseenPhotos` tabel, (c) `lastSeenAt` timestamp + photo `createdAt` voor "nieuw sinds laatste bezoek" logica | `tests/albumPhotos/create.test.ts` | ⏳ |
-| AP2 | `groupPhotoDelToMember` | GP delete | Remove entry from `seenPics` arrays | 2 | Volgt uit AP1-keuze | `tests/albumPhotos/delete.test.ts` | ⏳ |
-| AP3 | `groupPhotoDelToRating` | GP delete | Clear ratings van group members op deze photo | 3 (selectief) | Cascade in `albumPhotos.delete` (alleen ratings van members van die group) | `tests/albumPhotos/delete.test.ts` | ⏳ |
-| AP4 | `groupPhotoDelToCover` | GP delete | Clear album cover indien deze publicatie cover was | 3 (selectief) | In `albumPhotos.delete` mutation | `tests/albumPhotos/delete.test.ts` | ⏳ |
+| AP1 | `groupPhotoAddToMember` | GP insert | Bump `seenPics` array op alle group memberships (behalve uploader) | 2 | **Blocked: design pending.** Huidige aanpak: array op membership, zware write-amplification (1 photo upload → N membership writes). Convex alternatieven: (a) zelfde aanpak (array per membership), (b) separate `unseenPhotos` tabel, (c) `lastSeenAt` timestamp + photo `createdAt` voor "nieuw sinds laatste bezoek" logica. Beslissen vóór client-integratie | n.v.t. tot decision | 🚧 |
+| AP2 | `groupPhotoDelToMember` | GP delete | Remove entry from `seenPics` arrays | 2 | **Blocked: design pending.** Volgt uit AP1-keuze | n.v.t. tot decision | 🚧 |
+| AP3 | `groupPhotoDelToRating` | GP delete | Clear ratings van group members op deze photo | 3 (selectief) | In `albums.removePhoto`: filter ratings.by_photo op userId IN groupMembers, delete + recompute aggregate. Note: bij multi-group publicatie kan dit over-delete geven (matcht originele AWS-handler) | `tests/albumPhotos/delete.test.ts` | ✅ |
+| AP4 | `groupPhotoDelToCover` | GP delete | Clear album cover indien deze publicatie cover was | 3 (selectief) | In `albums.removePhoto` mutation, simple equality patch | `tests/albumPhotos/delete.test.ts` | ✅ |
 
 ### Trigger: Ratings
 
@@ -120,7 +120,7 @@ Uitzondering: queries zonder trigger (puur read-tests) leven bij de query-owner.
 
 ## Open design decisions
 
-1. **AP1: seenPics opslag.** Array per membership versus aparte tabel versus timestamp-based. **Status: deferred** — beslissen tegen de tijd dat het `albumPhotos` domain wordt opgepakt. Tot dan blijven AP1 en AP2 op ⏳ met expliciete "decision pending" markering
+1. **AP1 / AP2: seenPics opslag.** Array per membership versus aparte tabel versus timestamp-based. **Status: still deferred** — moet beslist worden vóór client-integratie (fase 4) want UI-flow voor "nieuwe foto" badge hangt af van de keuze. Tot dan zitten AP1 en AP2 op 🚧 (blocked op design)
 
 ## Vastgelegde decisions
 

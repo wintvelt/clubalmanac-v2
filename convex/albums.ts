@@ -2,6 +2,7 @@ import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import { requireMember } from "./groups";
+import { recomputeRatingAggregate } from "./ratings";
 
 async function requireAlbum(
   ctx: { db: { get: (id: Id<"albums">) => Promise<Doc<"albums"> | null> } },
@@ -195,6 +196,34 @@ export const removePhoto = mutation({
     }
 
     await ctx.db.delete(ap._id);
+
+    // AP3: cascade ratings van members van déze group op deze photo.
+    // Note: bij multi-group publicatie kan dit over-delete geven —
+    // acceptabel bij huidige schaal, matcht originele AWS-handler.
+    const groupMemberships = await ctx.db
+      .query("memberships")
+      .withIndex("by_group", (q) => q.eq("groupId", album.groupId))
+      .collect();
+    const memberUserIds = new Set(groupMemberships.map((m) => m.userId));
+    const ratingsOnPhoto = await ctx.db
+      .query("ratings")
+      .withIndex("by_photo", (q) => q.eq("photoId", photoId))
+      .collect();
+    let deletedAny = false;
+    for (const r of ratingsOnPhoto) {
+      if (memberUserIds.has(r.userId)) {
+        await ctx.db.delete(r._id);
+        deletedAny = true;
+      }
+    }
+    if (deletedAny) {
+      await recomputeRatingAggregate(ctx, photoId);
+    }
+
+    // AP4: clear album cover als deze publicatie cover was.
+    if (album.coverPhotoId === photoId) {
+      await ctx.db.patch(albumId, { coverPhotoId: undefined });
+    }
   },
 });
 
