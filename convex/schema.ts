@@ -104,11 +104,15 @@ export default defineSchema({
     flaggedAt: v.optional(v.number()),
     flaggedBy: v.optional(v.id("users")),
     flagReason: v.optional(v.string()),
+    flaggedDeleteDate: v.optional(v.number()),
+    flaggedAppealDate: v.optional(v.number()),
+    flaggedAppealDenyDate: v.optional(v.number()),
     createdAt: v.number(),
   })
     .index("by_owner", ["ownerId"])
     .index("by_takenAt", ["takenAt"])
-    .index("by_flagged", ["flaggedAt"]),
+    .index("by_flagged", ["flaggedAt"])
+    .index("by_flagged_delete", ["flaggedDeleteDate"]),
 
   // ──────────────────────────────────────────────────────────────────
   // Ratings

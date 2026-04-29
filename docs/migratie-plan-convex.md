@@ -109,6 +109,8 @@ Bootstrap: jouw email handmatig in Clerk dashboard aanmaken pre-cutover, env-var
 
 **YAGNI keuze:** Clerk publicMetadata-rol of Convex DB-flag zou flexibeler zijn (multi-webmaster zonder redeploy), maar bij 16 users + 1 webmaster levert het niks op. Bij behoefte aan tweede webmaster ooit: ~30 min werk om over te zetten. Probleem-report email-bestemming gebruikt dezelfde env-var.
 
+**TODO voor Fase 4A2 (client-integratie):** verifieer dat `convex/auth.config.ts` daadwerkelijk de `email`-claim uit het Clerk JWT doorgeeft, zodat `ctx.auth.getUserIdentity().email` in productie gevuld is. Implementatie + tests gebruiken `withIdentity({ email })` wat altijd werkt; productie hangt af van Clerk JWT template configuratie. Als email-claim niet doorkomt: Clerk JWT template aanpassen óf `requireWebmaster` switchen naar DB-lookup via `users.email`.
+
 ### TypeScript: overstappen
 Convex is volledig TypeScript-native: schema genereert types die end-to-end doorlopen van DB tot React Native components. Zonder TS verlies je het halve voordeel (type-safe queries, autocompletion, compile-time checks).
 
@@ -191,6 +193,8 @@ photos: {
 **Queries:**
 - `listMyFlagged()` — current user's eigen photos die geflagd zijn (voor `Inappropriate.jsx`)
 - `listAllFlagged()` — webmaster only, scan `by_flagged` index (voor `InappropriateAdmin.jsx`)
+
+**TODO voor Fase 4A2 (client-integratie + dev-deployment validatie):** in `convex-test` blijkt index `by_flagged` óók records te returnen met `flaggedAt = undefined` — niet sparse-strict. B's implementatie heeft daarom een JS-filter na `.collect()` toegevoegd voor zowel `listMyFlagged` als `listAllFlagged`. Verifieer tegen de echte Convex dev deployment of de index daar wél sparse is. Zo ja: filter weghalen (cleanup-PR). Zo nee: filter laten staan en accepteren.
 
 **Scheduled cron (daily):**
 Vind photos waar `flaggedDeleteDate < now` (en niet onder appeal), auto-delete via `internalRemovePhoto`. Was niet expliciet in oude AWS code (mogelijk handmatig opgeruimd of bug). Convex cron lost dit definitief op.
@@ -493,7 +497,7 @@ Per domein: unit tests eerst, dan implementatie.
 - [x] **AlbumLastSeen:** upsert bij album-open, "markeer alles gelezen"-mutation op groep-niveau, query voor unread-count per album met fallback naar `max(album.createdAt, membership.joinedAt)`
 - [x] **Invites:** create, accept, decline, invite-only signup validatie. Plus `remove` (sender of group-admin), bounce-handler `internal.invites.handleBounce` met webhook endpoint en dedup via `inviteBounceEvents` table (zie cascade matrix IB1). **Open:** scheduled cron (daily) die `invites` met `status="pending"` en `expiresAt < now` patcht naar `status="expired"` (cascade matrix IB2). Accept-mutation kan dat zelf niet doen want de status-patch wordt door de bijbehorende throw teruggedraaid (Convex transactionele rollback). Cron landt naast de flagging-cron uit de Flagging-bullet
 - [x] **Features:** create + upvoting (open voor users), update + remove (webmaster only via `requireWebmaster`). Probleem-report action verstuurt email naar webmaster (zelfde env-var). **Verifieer:** webmaster-checks aanwezig op update/remove paths
-- [ ] **Flagging:** flag/appeal/decide mutations met owner+webmaster checks (via `requireWebmaster` helper), listMyFlagged + listAllFlagged queries, daily cron voor auto-delete na countdown. Schema-velden `flaggedDeleteDate`, `flaggedAppealDate`, `flaggedAppealDenyDate` toevoegen + index `by_flagged_delete`
+- [x] **Flagging:** flag/appeal/decide mutations met owner+webmaster checks (via `requireWebmaster` helper in `convex/lib/auth.ts`), listMyFlagged + listAllFlagged queries, daily cron `cleanupFlaggedPhotos` (in `convex/crons.ts`) voor auto-delete na countdown, `internal.photos.sendFlagDecisionEmail` als stub (Mailjet komt in email-werkpakket). Schema uitgebreid met `flaggedDeleteDate`, `flaggedAppealDate`, `flaggedAppealDenyDate` + index `by_flagged_delete`. Cascade matrix FL1, FL2, U10 alle ✅. Afwijking van oude AWS: email alleen bij deny (niet bij approve), `listAllFlagged` throwt voor non-webmaster, appeal niet meer mogelijk na deny
 - [ ] **File upload:** `generateUploadUrl` + EXIF extractie action (incl. `Orientation` tag in `photos.exifOrientation`)
 - [ ] **Photo rotation:** `photos.rotate` mutation (owner OR group-admin) + scheduled action met `sharp` voor server-side rewrite + cleanup oude storage
 - [ ] **Visit tracking:** `users.recordVisit` mutation, client throttled max 1x/min op AppState=active

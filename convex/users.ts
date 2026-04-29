@@ -141,6 +141,21 @@ export const deleteSelf = mutation({
     // U9: cascade albumLastSeen records van deze user.
     await deleteAlbumLastSeenByUser(ctx, user._id);
 
+    // U10: clear flaggedBy refs op photos die deze user heeft geflagd.
+    // Default keuze: flag-state blijft (content-inappropriateness staat
+    // los van flagger-bestaan), alleen flaggedBy wordt undefined zodat
+    // we geen orphan ref hebben. by_flagged is sparse op flaggedAt:
+    // alleen geflagde photos zitten erin.
+    const flagged = await ctx.db
+      .query("photos")
+      .withIndex("by_flagged")
+      .collect();
+    for (const p of flagged) {
+      if (p.flaggedBy === user._id) {
+        await ctx.db.patch(p._id, { flaggedBy: undefined });
+      }
+    }
+
     await ctx.db.delete(user._id);
   },
 });

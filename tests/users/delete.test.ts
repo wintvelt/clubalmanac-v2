@@ -238,6 +238,74 @@ describe("U9: deleteSelf cascade albumLastSeen", () => {
   });
 });
 
+describe("U10: deleteSelf clear flaggedBy refs", () => {
+  // Cascade-matrix row U10 (nieuw, niet uit AWS). Default keuze: flag-state
+  // blijft op photo, alleen flaggedBy wordt undefined zodat we geen orphan
+  // ref hebben. Owner van photo en deletion countdown ongewijzigd.
+  it("clear flaggedBy op photos die deze user heeft geflagd, laat flag-state intact", async () => {
+    const t = convexTest(schema);
+    const aliceId = await registerUser(t, "user_alice", "a@x.com");
+    const bobId = await registerUser(t, "user_bob", "b@x.com");
+
+    // Bob's photo, geflagged door alice (direct ingevoegd, omdat dit
+    // testbestand niet afhangt van photos.flag mutation).
+    const flaggedPhoto = await t.run(async (ctx) => {
+      const storageId = await ctx.storage.store(new Blob(["x"]));
+      const flaggedAt = Date.now();
+      return await ctx.db.insert("photos", {
+        ownerId: bobId,
+        storageId,
+        ratingCount: 0,
+        createdAt: flaggedAt,
+        flaggedAt,
+        flaggedBy: aliceId,
+        flaggedDeleteDate: flaggedAt + 14 * 24 * 60 * 60 * 1000,
+      });
+    });
+
+    const before = await t.run((ctx) => ctx.db.get(flaggedPhoto));
+    const originalFlaggedAt = before?.flaggedAt;
+    const originalDeleteDate = before?.flaggedDeleteDate;
+
+    await withUser(t, "user_alice").mutation(api.users.deleteSelf, {});
+
+    const after = await t.run((ctx) => ctx.db.get(flaggedPhoto));
+    expect(after).not.toBeNull();
+    expect(after?.ownerId).toBe(bobId);
+    expect(after?.flaggedAt).toBe(originalFlaggedAt);
+    expect(after?.flaggedDeleteDate).toBe(originalDeleteDate);
+    expect(after?.flaggedBy).toBeUndefined();
+  });
+
+  it("photos die alice niet heeft geflagged blijven onaangeroerd", async () => {
+    const t = convexTest(schema);
+    const aliceId = await registerUser(t, "user_alice", "a@x.com");
+    const bobId = await registerUser(t, "user_bob", "b@x.com");
+    const carolId = await registerUser(t, "user_carol", "c@x.com");
+
+    // photo van bob geflagged door carol (niet alice)
+    const carolFlagged = await t.run(async (ctx) => {
+      const storageId = await ctx.storage.store(new Blob(["x"]));
+      const t0 = Date.now();
+      return await ctx.db.insert("photos", {
+        ownerId: bobId,
+        storageId,
+        ratingCount: 0,
+        createdAt: t0,
+        flaggedAt: t0,
+        flaggedBy: carolId,
+        flaggedDeleteDate: t0 + 14 * 24 * 60 * 60 * 1000,
+      });
+    });
+
+    await withUser(t, "user_alice").mutation(api.users.deleteSelf, {});
+
+    const after = await t.run((ctx) => ctx.db.get(carolFlagged));
+    expect(after?.flaggedBy).toBe(carolId);
+    void aliceId;
+  });
+});
+
 describe("U8: deleteSelf cascade memberships", () => {
   it("verwijdert alle memberships van de user", async () => {
     const t = convexTest(schema);

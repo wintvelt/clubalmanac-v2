@@ -1,6 +1,7 @@
 import { v } from "convex/values";
 import {
   internalAction,
+  internalMutation,
   mutation,
   query,
   type MutationCtx,
@@ -8,6 +9,11 @@ import {
 import type { Doc, Id } from "./_generated/dataModel";
 import { internal } from "./_generated/api";
 import { requireCurrentUser } from "./users";
+import { requireWebmaster } from "./lib/auth";
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+const FLAG_DELETE_DAYS = 14;
+const DENY_DELETE_DAYS = 7;
 
 // Cat-1 join-on-read: photo + owner data, vervangt denormalized
 // user-velden op photos uit DynamoDB. Cascade matrix row U3.
@@ -201,5 +207,166 @@ export const cleanupStorage = internalAction({
         // Best-effort. Volgende integrity-check ruimt deze op.
       }
     }
+  },
+});
+
+// FL2: non-owner kan andermans photo flaggen. Idempotent — tweede flag
+// op al-geflagde photo is no-op (eerste flagger en timestamps blijven).
+// Sets countdown van 14 dagen. Bron: oude AWS handler flagPhoto.js.
+export const flag = mutation({
+  args: {
+    photoId: v.id("photos"),
+    reason: v.optional(v.string()),
+  },
+  handler: async (ctx, { photoId, reason }) => {
+    const user = await requireCurrentUser(ctx);
+    const photo = await ctx.db.get(photoId);
+    if (!photo) throw new Error("Foto bestaat niet");
+    if (photo.ownerId === user._id) {
+      throw new Error("Eigen foto kan niet geflagd worden");
+    }
+    if (photo.flaggedAt !== undefined) return;
+
+    const now = Date.now();
+    await ctx.db.patch(photoId, {
+      flaggedAt: now,
+      flaggedBy: user._id,
+      flagReason: reason,
+      flaggedDeleteDate: now + FLAG_DELETE_DAYS * DAY_MS,
+    });
+  },
+});
+
+// FL2: owner gaat in beroep tegen een flag. Pauzeert countdown door
+// flaggedDeleteDate te clearen. Niet meer mogelijk na een denied
+// appeal (anders kan owner countdown oneindig pauzeren).
+// Bron: oude AWS handler flagPhotoAppeal.js.
+export const appeal = mutation({
+  args: { photoId: v.id("photos") },
+  handler: async (ctx, { photoId }) => {
+    const user = await requireCurrentUser(ctx);
+    const photo = await ctx.db.get(photoId);
+    if (!photo) throw new Error("Foto bestaat niet");
+    if (photo.ownerId !== user._id) {
+      throw new Error("Alleen eigenaar kan in beroep gaan");
+    }
+    if (photo.flaggedAt === undefined) {
+      throw new Error("Foto is niet geflagd");
+    }
+    if (photo.flaggedAppealDenyDate !== undefined) {
+      throw new Error("Beroep is al afgewezen");
+    }
+    if (photo.flaggedAppealDate !== undefined) return;
+
+    await ctx.db.patch(photoId, {
+      flaggedAppealDate: Date.now(),
+      flaggedDeleteDate: undefined,
+    });
+  },
+});
+
+// FL2: webmaster beslist over een appeal.
+//   approve = clear alle flag-velden (volledige clean state)
+//   deny    = set flaggedAppealDenyDate, restart 7d countdown,
+//             queue email-action naar owner
+// Bron: oude AWS handler flagPhotoDecide.js. Afwijking van oude code:
+// alleen email bij deny (cascade-matrix FL2).
+export const decideFlag = mutation({
+  args: {
+    photoId: v.id("photos"),
+    approve: v.boolean(),
+  },
+  handler: async (ctx, { photoId, approve }) => {
+    await requireWebmaster(ctx);
+
+    const photo = await ctx.db.get(photoId);
+    if (!photo) throw new Error("Foto bestaat niet");
+    if (photo.flaggedAt === undefined) {
+      throw new Error("Foto is niet geflagd");
+    }
+    if (photo.flaggedAppealDate === undefined) {
+      throw new Error("Geen appeal om over te beslissen");
+    }
+
+    if (approve) {
+      await ctx.db.patch(photoId, {
+        flaggedAt: undefined,
+        flaggedBy: undefined,
+        flagReason: undefined,
+        flaggedDeleteDate: undefined,
+        flaggedAppealDate: undefined,
+        flaggedAppealDenyDate: undefined,
+      });
+      return;
+    }
+
+    const now = Date.now();
+    await ctx.db.patch(photoId, {
+      flaggedAppealDenyDate: now,
+      flaggedDeleteDate: now + DENY_DELETE_DAYS * DAY_MS,
+    });
+    await ctx.scheduler.runAfter(0, internal.photos.sendFlagDecisionEmail, {
+      photoId,
+      approve: false,
+    });
+  },
+});
+
+// Eigen photos die door anderen geflagd zijn (Inappropriate.jsx).
+export const listMyFlagged = query({
+  args: {},
+  handler: async (ctx) => {
+    const user = await requireCurrentUser(ctx);
+    const owned = await ctx.db
+      .query("photos")
+      .withIndex("by_owner", (q) => q.eq("ownerId", user._id))
+      .collect();
+    return owned.filter((p) => p.flaggedAt !== undefined);
+  },
+});
+
+// Webmaster queue: alle photos waar flaggedAt gezet is
+// (InappropriateAdmin.jsx).
+export const listAllFlagged = query({
+  args: {},
+  handler: async (ctx) => {
+    await requireWebmaster(ctx);
+    const all = await ctx.db.query("photos").withIndex("by_flagged").collect();
+    return all.filter((p) => p.flaggedAt !== undefined);
+  },
+});
+
+// FL1: dagelijkse cron. Verwijdert photos waar flaggedDeleteDate < now.
+// Photos onder appeal hebben flaggedDeleteDate undefined (door appeal
+// gewist) en zijn dus niet zichtbaar in de sparse `by_flagged_delete`
+// index — geen aparte filter nodig. internalRemovePhoto verzorgt de
+// transitieve cascade (P3-P5+P7) + storage cleanup.
+export const cleanupFlaggedPhotos = internalMutation({
+  args: {},
+  handler: async (ctx) => {
+    const now = Date.now();
+    const ripe = await ctx.db
+      .query("photos")
+      .withIndex("by_flagged_delete", (q) => q.lt("flaggedDeleteDate", now))
+      .collect();
+    for (const photo of ripe) {
+      if (photo.flaggedDeleteDate === undefined) continue;
+      await internalRemovePhoto(ctx, photo._id);
+    }
+  },
+});
+
+// FL2: stub. Echte Mailjet-implementatie volgt in email-werkpakket
+// (zie migratie-plan §Email infrastructure). Hier alleen action-shape
+// + signature, zodat decideFlag 'm kan schedulen en de tests een
+// zichtbare scheduled function zien.
+export const sendFlagDecisionEmail = internalAction({
+  args: {
+    photoId: v.id("photos"),
+    approve: v.boolean(),
+  },
+  handler: async () => {
+    // TODO email-werkpakket: Mailjet template + send. Per cascade-matrix
+    // FL2 sturen we alleen bij deny — caller (decideFlag) regelt dat.
   },
 });
