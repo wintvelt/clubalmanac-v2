@@ -84,6 +84,31 @@ Aanbeveling: start met A, switch naar B als performance of kosten een issue word
 ### Auth
 Aanbeveling: **Clerk + Convex** (bewezen Expo combo, werkt ook voor web). 16 users: gewoon opnieuw laten registreren. Cognito wordt volledig vervangen. Clerk heeft aparte dev en prod instances (zie Environments).
 
+### Webmaster-rol (RBAC)
+
+In oude AWS app was webmaster één hardcoded email (`wintvelt@me.com`) via env-var, geen Cognito group. Convex equivalent: env-var `WEBMASTER_EMAILS` (comma-separated) per deployment, helper `requireWebmaster(ctx)` die `ctx.auth.getUserIdentity().email` matcht tegen de lijst.
+
+```ts
+// convex/lib/auth.ts
+const WEBMASTER_EMAILS = (process.env.WEBMASTER_EMAILS ?? "").split(",").map(e => e.trim());
+export async function requireWebmaster(ctx) {
+  const identity = await ctx.auth.getUserIdentity();
+  if (!identity || !WEBMASTER_EMAILS.includes(identity.email)) {
+    throw new Error("Webmaster only");
+  }
+}
+```
+
+Webmaster-gated operations (uit oude AWS code):
+- `decideFlag(photoId, approve)` — flag appeal beslissing
+- `listAllFlagged()` — admin queue van geflagde photos
+- `features.remove(featureId)` — feature requests verwijderen
+- `features.update(featureId, ...)` — feature status updaten (bv. "accepted")
+
+Bootstrap: jouw email handmatig in Clerk dashboard aanmaken pre-cutover, env-var `WEBMASTER_EMAILS=wintvelt@me.com` zetten in Convex prod deployment. Dev deployment kan dezelfde of een test-email gebruiken.
+
+**YAGNI keuze:** Clerk publicMetadata-rol of Convex DB-flag zou flexibeler zijn (multi-webmaster zonder redeploy), maar bij 16 users + 1 webmaster levert het niks op. Bij behoefte aan tweede webmaster ooit: ~30 min werk om over te zetten. Probleem-report email-bestemming gebruikt dezelfde env-var.
+
 ### TypeScript: overstappen
 Convex is volledig TypeScript-native: schema genereert types die end-to-end doorlopen van DB tot React Native components. Zonder TS verlies je het halve voordeel (type-safe queries, autocompletion, compile-time checks).
 
@@ -137,6 +162,185 @@ Algoritme (per membership):
 4. Geen seen photos in album → geen record (fallback regelt het: `max(album.createdAt, membership.joinedAt)`)
 
 Lossy edge case: als user album-photo A (oudste addedAt) en C (nieuwste) zag maar B (midden) oversloeg, wordt B nu "seen" omdat C's addedAt de cutoff is. In de praktijk niet relevant: oude app-logica bumped seenPics chronologisch (zien van later impliceert zien van eerder), dus deze case komt niet voor.
+
+### Photo flagging (inappropriate content)
+
+Bestaande feature in oude AWS app: non-owner kan photo als ongepast flaggen. Photo wordt gemarkeerd voor delete in 14 dagen. Owner kan in beroep gaan, webmaster beslist. Approve = flag clear. Deny = delete in 7 dagen + email naar owner. Endpoints en frontend-screens (`Inappropriate.jsx`, `InappropriateAdmin.jsx`, `HelperFlaggedPhotoModal.jsx`, flag-optie in `PhotoMenu.jsx`) bestaan al.
+
+**Schema (uitbreiding op `photos`):**
+```ts
+photos: {
+  // ... bestaande velden
+  flaggedAt?: number,            // wanneer geflagd (huidig schema heeft dit al)
+  flaggedBy?: Id<"users">,       // wie flagde (huidig schema heeft dit al)
+  flagReason?: string,           // optionele reden (huidig schema heeft dit al)
+  flaggedDeleteDate?: number,    // ONTBREEKT NU: huidige countdown deadline
+  flaggedAppealDate?: number,    // ONTBREEKT NU: wanneer owner appeleerde
+  flaggedAppealDenyDate?: number,// ONTBREEKT NU: wanneer webmaster appeal afwees
+}
+// indexes:
+// by_flagged (op flaggedAt) — voor admin queue, bestaat al
+// by_flagged_delete (op flaggedDeleteDate) — nodig voor auto-delete cron
+```
+
+**Mutations:**
+- `flag(photoId, reason?)` — non-owner, idempotent. Sets `flaggedAt`, `flaggedBy`, `flaggedDeleteDate = now + 14d`
+- `appeal(photoId)` — owner only, idempotent. Sets `flaggedAppealDate`, clears `flaggedDeleteDate` (pause countdown)
+- `decideFlag(photoId, approve: boolean)` — webmaster only. Approve = clear alle flag fields. Deny = sets `flaggedAppealDenyDate`, `flaggedDeleteDate = now + 7d`, queue email action naar owner
+
+**Queries:**
+- `listMyFlagged()` — current user's eigen photos die geflagd zijn (voor `Inappropriate.jsx`)
+- `listAllFlagged()` — webmaster only, scan `by_flagged` index (voor `InappropriateAdmin.jsx`)
+
+**Scheduled cron (daily):**
+Vind photos waar `flaggedDeleteDate < now` (en niet onder appeal), auto-delete via `internalRemovePhoto`. Was niet expliciet in oude AWS code (mogelijk handmatig opgeruimd of bug). Convex cron lost dit definitief op.
+
+**Authorization:**
+- `flag`: elke authenticated user behalve owner
+- `appeal`: alleen owner van de photo
+- `decideFlag` / `listAllFlagged`: webmaster only — via `requireWebmaster(ctx)` helper (env-var based, zie sectie Webmaster-rol)
+
+**Migratie:**
+Bestaande flag-state op DynamoDB photo records 1:1 overzetten — velden hebben identieke semantiek. Geen aparte stap nodig naast de standaard photo-import.
+
+**Cascade-vraag bij user delete:**
+Als flagger (non-owner) verwijderd wordt, wijst `flaggedBy` naar niet-bestaande user. Drie opties: (a) clear alleen `flaggedBy`, flag blijft actief — content-inappropriateness staat los van flagger-bestaan, (b) clear hele flag — als melder weg is, vervalt de melding, (c) accepteer orphan ref. Default in cascade matrix: optie (a). Heroverwegen indien nodig.
+
+### Photo rotation (server-side fix)
+
+Bestaande feature in oude AWS app (`fixPhotoRotation.js` met Jimp): users kunnen een geüploade foto roteren of flippen na de fact. Resulteert in een nieuwe S3-object met geüpdatete metadata. Endpoint zit in `clubalmanac-app/screens/PhotoEdit.jsx` via `useRotatePhoto` hook.
+
+Reden om server-side te roteren ipv alleen client-side CSS-transform: foto wordt door anderen bekeken, op verschillende clients (iOS, web). Server-side fix garandeert consistente weergave.
+
+**Mutation: `photos.rotate(photoId, { rotation, flipY })`**
+
+Authorization: **owner van photo OF group-admin** waar de foto in een album zit. Reden: bij 16 users en hechte community lossen group-admins het sneller op dan dat ze de uploader achterna moeten. Webmaster heeft geen aparte rechten hierop nodig (dekking via group-admin ruim genoeg).
+
+```ts
+// pseudo
+export const rotate = mutation({
+  args: { photoId: v.id("photos"), rotation: v.number(), flipY: v.boolean() },
+  handler: async (ctx, args) => {
+    const photo = await ctx.db.get(args.photoId);
+    const userId = await getCurrentUserId(ctx);
+    const isOwner = photo.ownerId === userId;
+    const isGroupAdmin = await checkGroupAdminForPhoto(ctx, args.photoId, userId);
+    if (!isOwner && !isGroupAdmin) throw new Error("Not authorized");
+
+    // Schedule action: read file from storage, rotate via sharp/jimp, write new storageId
+    await ctx.scheduler.runAfter(0, internal.photos.processRotation, {
+      photoId: args.photoId, rotation: args.rotation, flipY: args.flipY
+    });
+  }
+});
+```
+
+De action zelf gebruikt `sharp` (Node-runtime in Convex actions) om het bestand te bewerken, schrijft naar nieuw storage-object, patcht photo record met nieuwe `storageId`, verwijdert oude file via `cleanupStorage` action.
+
+**EXIF Orientation als upstream fix:**
+Veel rotation-issues zijn eigenlijk al opgelost in de EXIF metadata maar worden door de client genegeerd. Update `extractPhotoMetadata` action (S3 trigger equivalent in Convex): parse ook EXIF `Orientation` tag (1-8) en sla op in `photos.exifOrientation`. Client gebruikt die voor initiële display via CSS-transform — voorkomt veel "scheve foto's" zonder server-side rotate-call.
+
+`photos.rotate` mutation blijft beschikbaar als handmatige fix wanneer EXIF Orientation niet klopt of user de foto sowieso anders wil oriënteren.
+
+### User visit tracking (`users.lastVisitAt`)
+
+Oude AWS app had `UV` records in DynamoDB voor visit-tracking. Doel onbekend (geen rapportage of analytics actief). Behouden in nieuwe schema voor toekomstige use cases (active users count, "wie heeft 'm al gezien"-feature).
+
+**Capture-mechanisme:** expliciete mutation `users.recordVisit()` aangeroepen door client bij `AppState` transitie naar `active` (foreground). Niet als side-effect van `users.getMe` query (queries moeten puur blijven, en lastVisitAt-update zou query-cache invalideren).
+
+```ts
+// client (App.tsx of vergelijkbaar)
+useEffect(() => {
+  const sub = AppState.addEventListener("change", state => {
+    if (state === "active") recordVisit();
+  });
+  return () => sub.remove();
+}, []);
+
+// convex/users.ts
+export const recordVisit = mutation({
+  handler: async (ctx) => {
+    const userId = await getCurrentUserId(ctx);
+    await ctx.db.patch(userId, { lastVisitAt: Date.now() });
+  }
+});
+```
+
+Throttle aan client-zijde: niet vaker dan 1x per minuut, ook al transitioneert AppState meerdere keren snel achter elkaar.
+
+### Email infrastructure (Mailjet + Clerk)
+
+**Provider keuze:** Mailjet (Frankrijk, EU-datacenters, GDPR-compliant). Free tier: 6.000/maand, 200/dag — ruim voor jouw volume. Vervangt SES voor alle applicatie-emails.
+
+**Splitsing oude → nieuwe verantwoordelijkheid:**
+
+| Email type | Oude flow (SES) | Nieuwe flow |
+|---|---|---|
+| Signup verify, forgot-pw, temp-pw, email-change | Cognito CustomMessage triggers (NL templates in `blob-images-api/handlersCognito/sync.js`) | **Clerk handles** (eigen email infrastructuur, NL templates in Clerk dashboard configureren) |
+| Group invite | `blob-images-api-groups/emails/invite.js` | Convex action via Mailjet |
+| Invite accepted | `blob-images-api-invites/emails/acceptedInvite.js` | Convex action via Mailjet |
+| Invite declined | `blob-images-api-invites/emails/declinedInvite.js` | Convex action via Mailjet |
+| Member leave | `blob-images-api-groups/emails/leave.js` | Convex action via Mailjet |
+| Member ban | `blob-images-api-groups/emails/ban.js` | Convex action via Mailjet |
+| Member update notification | `blob-images-api-groups/emails/memberUpdate.js` | Convex action via Mailjet (optional) |
+| Invite uninvited | `blob-images-api-groups/emails/uninvite.js` | Convex action via Mailjet (optional) |
+| Flag-decide deny notification | `blob-images-api-photos` (binnen `flagPhotoDecide.js`) | Convex action via Mailjet, queue't in `decideFlag` mutation |
+| Problem report | `blob-images-features/handlersProblem/create.js` | Convex action via Mailjet, target = webmaster email |
+| Bounce handling | SES → S3 → `blob-images-api-email/handlersMail/incoming.js` | Mailjet webhook → Convex HTTP endpoint → `invites.markBounced` action |
+
+**Domein-setup op clubalmanac.com:**
+
+| From-address | Doel | Forwarding naar |
+|---|---|---|
+| `info@` | Generieke app-notificaties (member changes, flag decisions) | wintvelt@me.com |
+| `invites@` | Specifiek invite-mails (verbetert deliverability + herkenning) | wintvelt@me.com |
+| `dpo@` | Genoemd in privacy policy voor AVG-verzoeken | wintvelt@me.com |
+
+Geen actieve mailboxen. Alle inkomende mail (replies, bounces niet via webhook, AVG-verzoeken) forwarden naar wintvelt@me.com.
+
+**DNS-migratie (geen downtime):**
+
+1. Mailjet aanmaken met clubalmanac.com als sending domain. Verifieer DKIM (Mailjet geeft selector-record) — co-existeert met bestaande SES DKIM.
+2. SPF: huidige record uitbreiden met `include:spf.mailjet.com` naast bestaande `include:amazonses.com`.
+3. DMARC: tijdens overgang `p=quarantine` of `p=none` aanhouden. Na cutover en validatie weer naar `p=reject`.
+4. MX (forwarding) niet aanraken — sending en receiving zijn onafhankelijk.
+5. Na succesvolle cutover (paar weken): SES DKIM-record + SES SPF-include prunen.
+
+**Mailjet webhook setup:**
+
+Convex HTTP endpoint op `convex/http.ts`:
+
+```ts
+http.route({
+  path: "/email-event",
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    const events = await request.json();
+    for (const event of events) {
+      if (event.event === "bounce" || event.event === "blocked") {
+        await ctx.runAction(internal.invites.markBounced, {
+          email: event.email, reason: event.error_related_to,
+        });
+      }
+    }
+    return new Response(null, { status: 200 });
+  }),
+});
+```
+
+URL `https://<deployment>.convex.site/email-event` configureren in Mailjet event-dashboard. Authenticatie via shared secret in header (Mailjet ondersteunt signed payloads).
+
+**NL template-content migratie:**
+Alle NL teksten 1:1 overnemen uit oude SES templates. Tone-of-voice consistent houden. Templates inline in Convex actions (geen aparte template-engine nodig bij dit volume).
+
+**Cognito-mails (Clerk-zijde):**
+Clerk free tier verstuurt vanaf `accounts.clerk.dev`. Custom email domain is paid feature, niet de moeite voor 16 initiële signups + sporadische password resets. Acceptabel dat users tijdens cutover een mail van `accounts.clerk.dev` krijgen — communicatie hierover via cutover-mailing op clubalmanac.com kanaal.
+
+**Beslispunten/risico's:**
+- Mailjet domein-validatie kan paar uur duren — initiate vroeg in fase 2
+- Reputation warmup: domein heeft historie via SES, Mailjet bouwt parallel op. Bij ~paar honderd mails/maand naar 16 known users: verwaarloosbaar risico op spamfilters
+- AVG: in privacy policy noemen "Mailjet (Sinch, FR/SE) als email-verwerker". Mailjet biedt DPA standaard
+- Lock-in laag: switchen naar Scaleway TEM of andere provider = paar uur werk + DNS-update
 
 ## Environments
 
@@ -287,11 +491,17 @@ Per domein: unit tests eerst, dan implementatie.
 - [x] **Photos:** CRUD met cascade logic (stream handler logica → transactionele mutations)
 - [x] **Ratings:** create/update met aggregate berekening
 - [x] **AlbumLastSeen:** upsert bij album-open, "markeer alles gelezen"-mutation op groep-niveau, query voor unread-count per album met fallback naar `max(album.createdAt, membership.joinedAt)`
-- [ ] **Invites:** create, accept, decline, invite-only signup validatie
-- [ ] **Features:** CRUD + upvoting
-- [ ] **File upload:** `generateUploadUrl` + EXIF extractie action
-- [ ] **Email:** actions voor invite mails, notificaties (Resend/SendGrid)
-- [ ] **Auth:** Clerk + Convex integratie
+- [x] **Invites:** create, accept, decline, invite-only signup validatie. **Open:** scheduled cron (daily) die `invites` met `status="pending"` en `expiresAt < now` patcht naar `status="expired"`. Accept-mutation kan dat zelf niet doen want de status-patch wordt door de bijbehorende throw teruggedraaid (Convex transactionele rollback). Cron landt naast de flagging-cron uit de Flagging-bullet
+- [x] **Features:** create + upvoting (open voor users), update + remove (webmaster only via `requireWebmaster`). Probleem-report action verstuurt email naar webmaster (zelfde env-var). **Verifieer:** webmaster-checks aanwezig op update/remove paths
+- [ ] **Flagging:** flag/appeal/decide mutations met owner+webmaster checks (via `requireWebmaster` helper), listMyFlagged + listAllFlagged queries, daily cron voor auto-delete na countdown. Schema-velden `flaggedDeleteDate`, `flaggedAppealDate`, `flaggedAppealDenyDate` toevoegen + index `by_flagged_delete`
+- [ ] **File upload:** `generateUploadUrl` + EXIF extractie action (incl. `Orientation` tag in `photos.exifOrientation`)
+- [ ] **Photo rotation:** `photos.rotate` mutation (owner OR group-admin) + scheduled action met `sharp` voor server-side rewrite + cleanup oude storage
+- [ ] **Visit tracking:** `users.recordVisit` mutation, client throttled max 1x/min op AppState=active
+- [ ] **Email:** Mailjet account + DNS setup (DKIM, SPF), Convex actions voor alle applicatie-emails (invite/leave/ban/etc), HTTP endpoint voor bounce-webhook, NL templates 1:1 porten van oude SES templates
+- [ ] **Auth:** Clerk + Convex integratie + `requireWebmaster(ctx)` helper op basis van `WEBMASTER_EMAILS` env-var (zie sectie Webmaster-rol). **Verifieer en herstel mismatches in al gecommitte code:**
+   - `features.update` en `features.remove` zijn nu **submitter-only**, plan zegt **webmaster-only**. Aanpassen wanneer `requireWebmaster` helper landt + tests bijwerken (caller met webmaster-email impersoneren via `t.withIdentity({ email: ... })`)
+   - `features.create` (open voor users) en `features.upvote/removeUpvote` blijven zoals ze zijn
+   - Clerk pre-signup webhook gebruikt `invites.hasPendingForEmail` (al aanwezig) om invite-only signup te enforcen
 
 Backend is client-agnostisch. Zelfde queries/mutations werken straks voor zowel iPhone app als webapp.
 
@@ -354,6 +564,7 @@ Werk door de app per feature. Elke stap lokaal testbaar in Expo dev build tegen 
 6. Ratings
 7. Invites
 8. Features/problem reporting
+9. Flagging (`Inappropriate.jsx` voor user, `InappropriateAdmin.jsx` voor webmaster, flag-knop + `HelperFlaggedPhotoModal` in `PhotoMenu.jsx`)
 
 Per scherm: oude `aws-amplify` API call vervangen door `useQuery` / `useMutation`. De oude productie-app blijft draaien op AWS totdat de nieuwe versie helemaal klaar is.
 
