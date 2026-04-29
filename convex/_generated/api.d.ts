@@ -8,6 +8,7 @@
  * @module
  */
 
+import type * as albums from "../albums.js";
 import type * as groups from "../groups.js";
 import type * as smoke from "../smoke.js";
 import type * as users from "../users.js";
@@ -19,6 +20,7 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
+  albums: typeof albums;
   groups: typeof groups;
   smoke: typeof smoke;
   users: typeof users;

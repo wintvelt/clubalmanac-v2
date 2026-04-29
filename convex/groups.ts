@@ -10,7 +10,7 @@ import { getBySubject, requireCurrentUser } from "./users";
 
 const ROLE = v.union(v.literal("admin"), v.literal("member"));
 
-async function getMembership(
+export async function getMembership(
   ctx: QueryCtx,
   userId: Id<"users">,
   groupId: Id<"groups">,
@@ -32,7 +32,7 @@ async function requireGroup(
   return group;
 }
 
-async function requireMember(
+export async function requireMember(
   ctx: QueryCtx | MutationCtx,
   groupId: Id<"groups">,
 ) {
@@ -42,7 +42,7 @@ async function requireMember(
   return { user, membership };
 }
 
-async function requireAdmin(
+export async function requireAdmin(
   ctx: QueryCtx | MutationCtx,
   groupId: Id<"groups">,
 ) {
