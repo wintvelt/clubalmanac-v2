@@ -1,5 +1,9 @@
 import { v } from "convex/values";
-import { mutation, query } from "./_generated/server";
+import {
+  mutation,
+  query,
+  type MutationCtx,
+} from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import { requireMember } from "./groups";
 import { recomputeRatingAggregate } from "./ratings";
@@ -77,6 +81,123 @@ export const listByGroup = query({
   },
 });
 
+// Live unread-count per album in een groep (vervangt seenPics array,
+// cascade matrix AP1 + AP2). Voor elke album:
+//   effectiveLastSeen = albumLastSeen?.lastSeenAt
+//                     ?? max(album.createdAt, membership.joinedAt)
+//   unreadCount = aantal albumPhotos.by_album_added(albumId, addedAt > eff)
+//                  waarvan photo.ownerId != currentUserId
+export const listByGroupWithUnread = query({
+  args: { groupId: v.id("groups") },
+  handler: async (ctx, { groupId }) => {
+    const { user, membership } = await requireMember(ctx, groupId);
+    const albums = await ctx.db
+      .query("albums")
+      .withIndex("by_group", (q) => q.eq("groupId", groupId))
+      .collect();
+
+    return await Promise.all(
+      albums.map(async (album) => {
+        const lastSeen = await ctx.db
+          .query("albumLastSeen")
+          .withIndex("by_user_album", (q) =>
+            q.eq("userId", user._id).eq("albumId", album._id),
+          )
+          .unique();
+        const effective =
+          lastSeen?.lastSeenAt ??
+          Math.max(album.createdAt, membership.joinedAt);
+
+        const candidates = await ctx.db
+          .query("albumPhotos")
+          .withIndex("by_album_added", (q) =>
+            q.eq("albumId", album._id).gt("addedAt", effective),
+          )
+          .collect();
+
+        let unreadCount = 0;
+        for (const ap of candidates) {
+          const photo = await ctx.db.get(ap.photoId);
+          if (photo && photo.ownerId !== user._id) unreadCount++;
+        }
+
+        return { ...album, unreadCount };
+      }),
+    );
+  },
+});
+
+// Markeer één album als gezien voor de huidige user.
+export const markSeen = mutation({
+  args: { albumId: v.id("albums") },
+  handler: async (ctx, { albumId }) => {
+    const album = await requireAlbum(ctx, albumId);
+    const { user } = await requireMember(ctx, album.groupId);
+    await upsertAlbumLastSeen(ctx, user._id, albumId, Date.now());
+  },
+});
+
+async function upsertAlbumLastSeen(
+  ctx: MutationCtx,
+  userId: Id<"users">,
+  albumId: Id<"albums">,
+  lastSeenAt: number,
+): Promise<void> {
+  const existing = await ctx.db
+    .query("albumLastSeen")
+    .withIndex("by_user_album", (q) =>
+      q.eq("userId", userId).eq("albumId", albumId),
+    )
+    .unique();
+  if (existing) {
+    await ctx.db.patch(existing._id, { lastSeenAt });
+  } else {
+    await ctx.db.insert("albumLastSeen", { userId, albumId, lastSeenAt });
+  }
+}
+
+// Re-export helper voor groups.markAllAlbumsSeen.
+export { upsertAlbumLastSeen };
+
+// Helper aangeroepen door cascades (A2, U9, M3).
+export async function deleteAlbumLastSeenByAlbum(
+  ctx: MutationCtx,
+  albumId: Id<"albums">,
+): Promise<void> {
+  const records = await ctx.db
+    .query("albumLastSeen")
+    .withIndex("by_album", (q) => q.eq("albumId", albumId))
+    .collect();
+  for (const r of records) await ctx.db.delete(r._id);
+}
+
+export async function deleteAlbumLastSeenByUser(
+  ctx: MutationCtx,
+  userId: Id<"users">,
+): Promise<void> {
+  const records = await ctx.db
+    .query("albumLastSeen")
+    .withIndex("by_user", (q) => q.eq("userId", userId))
+    .collect();
+  for (const r of records) await ctx.db.delete(r._id);
+}
+
+// M3: delete albumLastSeen records voor (user × albums in déze group).
+export async function deleteAlbumLastSeenForUserInGroup(
+  ctx: MutationCtx,
+  userId: Id<"users">,
+  groupId: Id<"groups">,
+): Promise<void> {
+  const userRecords = await ctx.db
+    .query("albumLastSeen")
+    .withIndex("by_user", (q) => q.eq("userId", userId))
+    .collect();
+  for (const r of userRecords) {
+    const album = await ctx.db.get(r.albumId);
+    if (album?.groupId === groupId) await ctx.db.delete(r._id);
+  }
+}
+
 export const listPhotos = query({
   args: { albumId: v.id("albums") },
   handler: async (ctx, { albumId }) => {
@@ -137,6 +258,9 @@ export const remove = mutation({
       .withIndex("by_album", (q) => q.eq("albumId", albumId))
       .collect();
     for (const ap of albumPhotos) await ctx.db.delete(ap._id);
+
+    // A2: cascade albumLastSeen voor dit album.
+    await deleteAlbumLastSeenByAlbum(ctx, albumId);
 
     await ctx.db.delete(albumId);
   },

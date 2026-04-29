@@ -328,6 +328,71 @@ describe("M2 (d): founder vertrekt met andere admin aanwezig", () => {
   });
 });
 
+describe("M3: removeMember cascade albumLastSeen voor déze group", () => {
+  it("verwijdert albumLastSeen voor (user × albums in déze group), laat andere groups intact", async () => {
+    const t = convexTest(schema);
+    await registerUser(t, "user_alice", "a@x.com");
+    const bobId = await registerUser(t, "user_bob", "b@x.com");
+
+    const g1 = await withUser(t, "user_alice").mutation(api.groups.create, {
+      name: "G1",
+    });
+    const g2 = await withUser(t, "user_alice").mutation(api.groups.create, {
+      name: "G2",
+    });
+    await withUser(t, "user_alice").mutation(api.groups.addMember, {
+      groupId: g1,
+      userId: bobId,
+    });
+    await withUser(t, "user_alice").mutation(api.groups.addMember, {
+      groupId: g2,
+      userId: bobId,
+    });
+
+    const a1 = await withUser(t, "user_alice").mutation(api.albums.create, {
+      groupId: g1,
+      name: "A1",
+    });
+    const a2 = await withUser(t, "user_alice").mutation(api.albums.create, {
+      groupId: g2,
+      name: "A2",
+    });
+
+    await withUser(t, "user_bob").mutation(api.albums.markSeen, {
+      albumId: a1,
+    });
+    await withUser(t, "user_bob").mutation(api.albums.markSeen, {
+      albumId: a2,
+    });
+
+    // Bob verlaat g1
+    await withUser(t, "user_alice").mutation(api.groups.removeMember, {
+      groupId: g1,
+      userId: bobId,
+    });
+
+    const bobLastSeenForA1 = await t.run((ctx) =>
+      ctx.db
+        .query("albumLastSeen")
+        .withIndex("by_user_album", (q) =>
+          q.eq("userId", bobId).eq("albumId", a1),
+        )
+        .unique(),
+    );
+    expect(bobLastSeenForA1).toBeNull();
+
+    const bobLastSeenForA2 = await t.run((ctx) =>
+      ctx.db
+        .query("albumLastSeen")
+        .withIndex("by_user_album", (q) =>
+          q.eq("userId", bobId).eq("albumId", a2),
+        )
+        .unique(),
+    );
+    expect(bobLastSeenForA2).not.toBeNull();
+  });
+});
+
 describe("M2 (e): laatste lid vertrekt → group + albums + albumPhotos cascade", () => {
   it("solo founder vertrekt → group volledig opgeruimd", async () => {
     const t = convexTest(schema);

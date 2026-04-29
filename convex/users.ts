@@ -8,6 +8,7 @@ import {
 } from "./_generated/server";
 import type { Doc } from "./_generated/dataModel";
 import { internalRemovePhoto } from "./photos";
+import { deleteAlbumLastSeenByUser } from "./albums";
 
 // Default upload-limiet voor nieuwe users. Mocht een admin een hogere limiet
 // willen geven, dan kan dat via directe DB patch (geen public mutation in
@@ -136,6 +137,9 @@ export const deleteSelf = mutation({
       .withIndex("by_user", (q) => q.eq("userId", user._id))
       .collect();
     for (const m of memberships) await ctx.db.delete(m._id);
+
+    // U9: cascade albumLastSeen records van deze user.
+    await deleteAlbumLastSeenByUser(ctx, user._id);
 
     await ctx.db.delete(user._id);
   },

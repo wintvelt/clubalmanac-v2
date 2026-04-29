@@ -40,13 +40,13 @@ Uitzondering: queries zonder trigger (puur read-tests) leven bij de query-owner.
 
 | Domain | Rules | Status |
 |---|---|---|
-| Users | 8 | ✅ U3-U8 (U1, U2, U5 ❌ eliminated) |
+| Users | 9 | ✅ U3-U9 (U1, U2, U5 ❌ eliminated) |
 | Groups | 4 | ✅ G1-G4 |
-| Albums | 1 | ✅ A1 |
+| Albums | 2 | ✅ A1, A2 |
 | Photos | 7 | ✅ P1-P7 |
-| Album-photos (publications) | 4 | 🚧 AP3, AP4 ✅; AP1+AP2 blocked op design decision |
+| Album-photos (publications) | 4 | ✅ AP1-AP4 |
 | Ratings | 1 | ✅ R1 |
-| Memberships | 2 | ✅ M1, M2 |
+| Memberships | 3 | ✅ M1, M2, M3 |
 
 ## Cascade rules
 
@@ -62,6 +62,7 @@ Uitzondering: queries zonder trigger (puur read-tests) leven bij de query-owner.
 | U6 | `userDelToRating` | US delete | Delete user's ratings | 3 | Cascade in `users.deleteSelf` mutation | `tests/users/delete.test.ts` | ✅ |
 | U7 | `userDelToPhotos` | US delete | Delete user's photos (en bijbehorende file storage) | 3 | Cascade in `users.deleteSelf` roept per photo `internalRemovePhoto` aan, dat transitief P3-P5+P7 afhandelt en per photo een `cleanupStorage` action queueet (best-effort, orphans → integrity check) | `tests/users/delete.test.ts` (mutation + per-photo scheduled functions assert) + `tests/photos/cleanupStorage.test.ts` (action standalone) | ✅ |
 | U8 | `userDelToMemberships` | US delete | Delete user's memberships | 3 | Cascade in `users.deleteSelf`. Note: M2 admin-successie wordt nog niet toegepast — refactor wanneer memberships-domein landt en cascade via `memberships.deleteOne` loopt | `tests/users/delete.test.ts` | ✅ |
+| U9 | (nieuw, niet uit AWS) | US delete | Delete user's `albumLastSeen` records | 3 | Cascade in `users.deleteSelf` via `deleteAlbumLastSeenByUser` helper (by_user index) | `tests/users/delete.test.ts` (describe `U9`) | ✅ |
 
 ### Trigger: Groups
 
@@ -77,6 +78,7 @@ Uitzondering: queries zonder trigger (puur read-tests) leven bij de query-owner.
 | # | Oude handler | Trigger event | Effect | Cat | Convex aanpak | Test locatie | Status |
 |---|---|---|---|---|---|---|---|
 | A1 | `albumDelToAlbumPhoto` | GA delete | Delete albumPhotos (publicaties) | 3 | Cascade in `albums.remove` | `tests/albums/crud.test.ts` (describe `albums.remove > cascade albumPhotos`) | ✅ |
+| A2 | (nieuw, niet uit AWS) | GA delete | Delete `albumLastSeen` records voor deze album | 3 | Cascade in `albums.remove` via `deleteAlbumLastSeenByAlbum` helper (by_album index) | `tests/albums/lastSeenCascade.test.ts` | ✅ |
 
 ### Trigger: Photos
 
@@ -94,8 +96,8 @@ Uitzondering: queries zonder trigger (puur read-tests) leven bij de query-owner.
 
 | # | Oude handler | Trigger event | Effect | Cat | Convex aanpak | Test locatie | Status |
 |---|---|---|---|---|---|---|---|
-| AP1 | `groupPhotoAddToMember` | GP insert | Bump `seenPics` array op alle group memberships (behalve uploader) | 2 | **Blocked: design pending.** Huidige aanpak: array op membership, zware write-amplification (1 photo upload → N membership writes). Convex alternatieven: (a) zelfde aanpak (array per membership), (b) separate `unseenPhotos` tabel, (c) `lastSeenAt` timestamp + photo `createdAt` voor "nieuw sinds laatste bezoek" logica. Beslissen vóór client-integratie | n.v.t. tot decision | 🚧 |
-| AP2 | `groupPhotoDelToMember` | GP delete | Remove entry from `seenPics` arrays | 2 | **Blocked: design pending.** Volgt uit AP1-keuze | n.v.t. tot decision | 🚧 |
+| AP1 | `groupPhotoAddToMember` | GP insert | Bump `seenPics` array op alle group memberships (behalve uploader) | 1 | Eliminated. Vervangen door `albumLastSeen` timestamp + live count query in `albums.listByGroupWithUnread`: range scan `albumPhotos.by_album_added(albumId, addedAt > effective)`, filter `photo.ownerId != currentUser`, met `effectiveLastSeen = albumLastSeen?.lastSeenAt ?? max(album.createdAt, membership.joinedAt)`. Geen cascade op upload, geen write-amplification | `tests/albums/unreadCount.test.ts` | ✅ |
+| AP2 | `groupPhotoDelToMember` | GP delete | Remove entry from `seenPics` arrays | 1 | Eliminated. Live count query corrigeert vanzelf bij delete. Geen cascade nodig | `tests/albums/unreadCount.test.ts` (describe `AP2`) | ✅ |
 | AP3 | `groupPhotoDelToRating` | GP delete | Clear ratings van group members op deze photo | 3 (selectief) | In `albums.removePhoto`: filter ratings.by_photo op userId IN groupMembers, delete + recompute aggregate. Note: bij multi-group publicatie kan dit over-delete geven (matcht originele AWS-handler) | `tests/albumPhotos/delete.test.ts` | ✅ |
 | AP4 | `groupPhotoDelToCover` | GP delete | Clear album cover indien deze publicatie cover was | 3 (selectief) | In `albums.removePhoto` mutation, simple equality patch | `tests/albumPhotos/delete.test.ts` | ✅ |
 
@@ -111,6 +113,7 @@ Uitzondering: queries zonder trigger (puur read-tests) leven bij de query-owner.
 |---|---|---|---|---|---|---|---|
 | M1 | `memberDelToAlbumPhoto` | UM delete | Remove their albumPhoto entries in this group (uploads die deze user in deze group deed worden uit publicaties gehaald) | 3 (selectief) | In `groups.removeMember`: filter `albumPhotos.by_group` op `addedBy === userId` en delete. Photos zelf blijven (eigendom users), andere groups intact | `tests/memberships/delete.test.ts` | ✅ |
 | M2 | `memberDelToGroup` | UM delete | Admin/founder succession + group cleanup. (a) member vertrekt → niets, (b) admin met andere admin → niets, (c) laatste admin → allen admin, (d) founder → eerste admin wordt founder, (e) laatste lid → group + albums + albumPhotos cascade | 2 + 3 | Inline business logic in `groups.removeMember` na membership-delete. Nested transactional cascade voor case (e). Vervangt vorige "laatste admin kan niet weg" foutmelding | `tests/memberships/delete.test.ts` — alle 5 scenarios + 2 M1 tests | ✅ |
+| M3 | (nieuw, niet uit AWS) | UM delete | Delete `albumLastSeen` records voor die user × albums in die groep | 3 | In `groups.removeMember` via `deleteAlbumLastSeenForUserInGroup` helper: by_user op userId, filter op album.groupId == this group. Andere groepen blijven intact | `tests/memberships/delete.test.ts` (describe `M3`) | ✅ |
 
 ### Trigger: Stats / signup completion
 
@@ -120,7 +123,7 @@ Uitzondering: queries zonder trigger (puur read-tests) leven bij de query-owner.
 
 ## Open design decisions
 
-1. **AP1 / AP2: seenPics opslag.** Array per membership versus aparte tabel versus timestamp-based. **Status: still deferred** — moet beslist worden vóór client-integratie (fase 4) want UI-flow voor "nieuwe foto" badge hangt af van de keuze. Tot dan zitten AP1 en AP2 op 🚧 (blocked op design)
+(geen openstaand op dit moment)
 
 ## Vastgelegde decisions
 
@@ -128,6 +131,7 @@ Uitzondering: queries zonder trigger (puur read-tests) leven bij de query-owner.
 - **Transitieve cascade door photos:** `users.deleteSelf` cascadet niet langer photo-records direct, maar via `internalRemovePhoto` (helper in `convex/photos.ts`). Daarmee krijg je P3-P5+P7 cascades automatisch mee, voorkomt orphan ratings/albumPhotos/cover-refs
 - **M2 group delete bij laatste lid weg:** nested cascade binnen één Convex mutation. Test-suite dekt 5 scenarios. Zie row M2
 - **Cat-4 reactive test pattern:** helper `assertReactive(query, mutation)` die query 2x aanroept rond een mutation en asserteert dat het tweede resultaat afwijkt. Eenmalig bouwen in `tests/_helpers/reactive.ts`, hergebruiken in elke cat-1 test (U3, U4, G1, G2, P1, P2)
+- **AP1/AP2 seenPics opslag:** timestamp-based via aparte `albumLastSeen` table met (userId, albumId, lastSeenAt). Schrijven alleen bij album-open. Count live berekend via range scan op photos.by_album_created. Fallback bij ontbrekend record: `max(album.createdAt, membership.joinedAt)`. Geen pre-create cascade bij member-join of album-create. Eigen uploads tellen niet mee. Group-level "markeer alles gelezen" mutation als escape hatch voor nieuwe members. Cascade-cleanup: A2 (album delete), U9 (user delete), M3 (membership delete). Zie design-sectie in [migratie-plan-convex.md](./migratie-plan-convex.md)
 
 ## Onderhoud van dit doc
 

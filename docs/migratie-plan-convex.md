@@ -57,7 +57,7 @@ Cognito met invite-only signup (pre-signup Lambda checkt invite in DB), custom e
 ## Convex: kan het?
 
 ### Database goed haalbaar
-Single-table design wordt aparte Convex tables: `users`, `photos`, `groups`, `albums`, `albumPhotos`, `memberships`, `invites`, `ratings`, `features`. Verbetering: leesbaarder, typed schemas, geen PK/SK encoding.
+Single-table design wordt aparte Convex tables: `users`, `photos`, `groups`, `albums`, `albumPhotos`, `memberships`, `invites`, `ratings`, `features`, `featureUpvotes`, `albumLastSeen`. Verbetering: leesbaarder, typed schemas, geen PK/SK encoding.
 
 ### DynamoDB Streams → Convex mutations: grootste winst
 Convex mutations zijn transactioneel: je kunt in één mutation meerdere tables updaten. Geen eventual consistency. De complexe stream handler (27 cascade handlers) wordt grotendeels overbodig. Sommige denormalization kun je zelfs elimineren door te joinen i.p.v. dupliceren.
@@ -86,6 +86,55 @@ Aanbeveling: **Clerk + Convex** (bewezen Expo combo, werkt ook voor web). 16 use
 
 ### TypeScript: overstappen
 Convex is volledig TypeScript-native: schema genereert types die end-to-end doorlopen van DB tot React Native components. Zonder TS verlies je het halve voordeel (type-safe queries, autocompletion, compile-time checks).
+
+### Unread-count per album per user (`albumLastSeen`)
+
+Mechanisme: in groep-overzicht toont elk album het aantal nieuwe foto's van anderen sinds de actieve user het album voor het laatst opende. Vervangt de oude `seenPics` array op memberships (was AP1/AP2 in cascade matrix, blocked op design).
+
+**Schema:**
+```ts
+albumLastSeen: {
+  userId: Id<"users">,
+  albumId: Id<"albums">,
+  lastSeenAt: number,
+}
+// index: by_user_album (userId, albumId)
+```
+
+Photos krijgt index `by_album_created (albumId, createdAt)` voor de range scan.
+
+**Schrijven:** alleen wanneer user album-detailscherm opent, upsert `lastSeenAt = now`. Plus optionele "markeer alles gelezen"-actie op groep-niveau.
+
+**Lezen (count per album in group-overzicht):**
+```
+effectiveLastSeen = albumLastSeen?.lastSeenAt
+  ?? max(album.createdAt, membership.joinedAt)
+
+count = aantal photos waar
+  albumId == X
+  && createdAt > effectiveLastSeen
+  && uploadedBy != currentUserId
+```
+
+**Ontwerpprincipes:**
+- Geen denormalization, geen precomputed counter. Voorkomt write-amplification cascade bij elke upload (was probleem in oude AWS aanpak: 1 upload → N membership writes).
+- Geen pre-create van `albumLastSeen` records bij member-join of album-create. Fallback in query regelt het.
+- `max(album.createdAt, membership.joinedAt)` als fallback: foto's van vóór jouw lidmaatschap of vóór album-bestaan tellen niet als unread. Je kan niet bijhouden wat er was voor je toegang had.
+- Counts worden live berekend via Convex range scan. Bij ~50-100 foto's per album triviaal.
+- Group-overzicht is één live `useQuery` die albums + counts retourneert. Realtime badge-updates komen er gratis bij.
+- "Markeer alles gelezen" op groep-niveau: één mutation die voor elk album in de groep `albumLastSeen` upsert met `now`. Escape hatch voor nieuwe members die niet handmatig elk album willen openen.
+
+**Migratie van bestaande seenPics state:**
+
+Oude AWS state heeft `seenPics` array per membership (per user × group), bevat photoIds van foto's die user heeft gezien. Deze state moeten we omzetten naar `albumLastSeen` records.
+
+Algoritme (per membership):
+1. Walk `seenPics` array, look up elk photoId in albumPhotos om (albumId, createdAt) te vinden
+2. Group by albumId, take `max(createdAt)` per album
+3. Voor elke (user, album) met seen photos: insert `albumLastSeen` record met die max createdAt
+4. Geen seen photos in album → geen record (fallback regelt het: `max(album.createdAt, membership.joinedAt)`)
+
+Lossy edge case: als user photo A (oudste) en C (nieuwste) zag maar B (midden) oversloeg, wordt B nu "seen" omdat C's createdAt de cutoff is. In de praktijk niet relevant: oude app-logica bumped seenPics chronologisch (zien van later impliceert zien van eerder), dus deze case komt niet voor.
 
 ## Environments
 
@@ -235,6 +284,7 @@ Per domein: unit tests eerst, dan implementatie.
 - [ ] **Albums:** CRUD, album-photo relaties
 - [ ] **Photos:** CRUD met cascade logic (stream handler logica → transactionele mutations)
 - [ ] **Ratings:** create/update met aggregate berekening
+- [ ] **AlbumLastSeen:** upsert bij album-open, "markeer alles gelezen"-mutation op groep-niveau, query voor unread-count per album met fallback naar `max(album.createdAt, membership.joinedAt)`
 - [ ] **Invites:** create, accept, decline, invite-only signup validatie
 - [ ] **Features:** CRUD + upvoting
 - [ ] **File upload:** `generateUploadUrl` + EXIF extractie action
@@ -256,6 +306,7 @@ Bouw migratie-tooling die zowel dev (subset) als prod (volledig) kan vullen. Eé
    - Dev: alleen photos van de 3 chosen (~paar honderd MB, snel)
    - Prod: alle ~1650 foto's + 6 video's (~8.3 GB, paar uur) — pas in fase 5
 - [ ] Photo records updaten met storage IDs
+- [ ] **AlbumLastSeen herleiden uit seenPics:** per membership in DynamoDB export, walk `seenPics` array, group by albumId, neem `max(photo.createdAt)`. Insert `albumLastSeen` records. Geen records voor (user, album) zonder seen photos (fallback regelt het). Zie design-sectie hierboven
 - [ ] **Dev seed draaien:** filter + anonimiseer aan, push naar Convex dev
 - [ ] **Validatie dev:** counts kloppen met filter, referentiële integriteit, alle storage IDs geldig
 - [ ] **Idempotentie dev:** drop + reseed in 5 min werkt, voor schema-iteraties
@@ -281,6 +332,15 @@ Huidige stack is Expo SDK 47 / RN 0.70 (eind 2022). Upgrade naar huidige SDK is 
 - [ ] **Dit is een apart stuk werk; doe dit eerst**
 
 **Stap A2: Convex integratie, scherm voor scherm**
+
+**Subscription discipline (vooraf vastleggen):**
+
+Convex `useQuery` is een live WebSocket-subscription, niet een one-shot fetch. Default is altijd actief zolang de component mounted is. Om battery drain te voorkomen:
+
+- Live `useQuery` alleen op actief scherm. Bij navigatie weg moet de component unmounten zodat de subscription stopt. Check bij stack navigators dat schermen niet in memory blijven hangen (`unmountOnBlur` of equivalent waar nodig).
+- Voor data die zelden muteert (clubinfo, ledenlijst): overweeg one-shot fetch via action of `usePaginatedQuery` met handmatige refresh, ipv live subscription.
+- Pauzeer subscriptions bij `AppState !== 'active'` (app naar background).
+- Bewuste keuze per scherm: heeft dit écht realtime nodig, of is refresh-on-mount genoeg? Group-overzicht met unread badges = ja, realtime. Profielscherm = nee.
 
 Werk door de app per feature. Elke stap lokaal testbaar in Expo dev build tegen de Convex dev deployment (met de gemigreerde data uit fase 3).
 
@@ -380,6 +440,7 @@ Dus: communicatie en blokkade gaan **buiten de oude app om**.
 | **Webapp scope** | Camera/maps werken niet 1:1 in browser (`react-native-maps` heeft geen web support) | Scope vroeg in fase 4B bepalen: view-only vs full feature. Maps: Leaflet of Google Maps JS als web-alternatief |
 | **Stream handler vertaling** | Complex cascade logic, 27 handlers | Test-driven bouwen. Grootste kans: Convex transacties elimineren veel complexiteit |
 | **File bandwidth kosten** | Dominante kostenpost bij Convex native storage | $2.71-$9.15/maand native, of ~$0/maand met R2 component |
+| **Battery drain via subscriptions** | Convex WebSocket houdt radio warm; te veel/te brede live `useQuery` calls = drain. iOS suspendt in background, maar reconnect-storms bij flaky netwerk kosten ook | Per scherm bewuste keuze: live subscription alleen waar realtime nodig is. Unsubscribe bij navigatie weg. Pauzeer bij `AppState !== 'active'`. Voor zelden-muterende data: one-shot fetch ipv live query |
 | **Vendor lock-in** | Convex is relatief nieuw | Open-source + self-hostable mitigeert dit. R2 als file storage maakt je nog minder afhankelijk |
 | **Invite-only signup** | Custom Cognito trigger | Herbouwen als Clerk custom flow |
 | **Env-cross-contamination** | Dev build die per ongeluk naar prod Convex/Clerk wijst, of `pk_test_` in prod release | EAS profiles expliciet, géén defaults. Build-time check in CI die `pk_test_` weigert in prod profile. `CLERK_FRONTEND_API_URL` per Convex deployment matchend gezet |

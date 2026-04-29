@@ -184,6 +184,60 @@ describe("U7: deleteSelf cascade photos + queued storage cleanup", () => {
   });
 });
 
+describe("U9: deleteSelf cascade albumLastSeen", () => {
+  it("verwijdert albumLastSeen records van de user", async () => {
+    const t = convexTest(schema);
+    await registerUser(t, "user_alice", "a@x.com");
+    await registerUser(t, "user_bob", "b@x.com");
+
+    const groupId = await withUser(t, "user_alice").mutation(
+      api.groups.create,
+      { name: "G" },
+    );
+    await withUser(t, "user_alice").mutation(api.groups.addMember, {
+      groupId,
+      userId: (await withUser(t, "user_bob").query(api.users.current, {}))!._id,
+    });
+    const albumId = await withUser(t, "user_alice").mutation(
+      api.albums.create,
+      { groupId, name: "A" },
+    );
+
+    await withUser(t, "user_alice").mutation(api.albums.markSeen, { albumId });
+    await withUser(t, "user_bob").mutation(api.albums.markSeen, { albumId });
+
+    const aliceUserId = (await withUser(t, "user_alice").query(
+      api.users.current,
+      {},
+    ))!._id;
+
+    await withUser(t, "user_alice").mutation(api.users.deleteSelf, {});
+
+    const aliceRecords = await t.run((ctx) =>
+      ctx.db
+        .query("albumLastSeen")
+        .withIndex("by_user", (q) => q.eq("userId", aliceUserId))
+        .collect(),
+    );
+    expect(aliceRecords).toHaveLength(0);
+
+    // Bob's record blijft (album is nog niet weg — alice was niet de
+    // enige admin? In dit setup wel, dus M2 case (c) maakt bob admin).
+    // We controleren puur dat bob's albumLastSeen record bestaat.
+    const bobUserId = (await withUser(t, "user_bob").query(
+      api.users.current,
+      {},
+    ))!._id;
+    const bobRecords = await t.run((ctx) =>
+      ctx.db
+        .query("albumLastSeen")
+        .withIndex("by_user", (q) => q.eq("userId", bobUserId))
+        .collect(),
+    );
+    expect(bobRecords).toHaveLength(1);
+  });
+});
+
 describe("U8: deleteSelf cascade memberships", () => {
   it("verwijdert alle memberships van de user", async () => {
     const t = convexTest(schema);

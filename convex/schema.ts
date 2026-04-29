@@ -76,7 +76,9 @@ export default defineSchema({
   })
     .index("by_album", ["albumId"])
     .index("by_photo", ["photoId"])
-    .index("by_group", ["groupId"]),
+    .index("by_group", ["groupId"])
+    // Range scan voor unread count per album (AP1).
+    .index("by_album_added", ["albumId", "addedAt"]),
 
   // ──────────────────────────────────────────────────────────────────
   // Photos
@@ -178,4 +180,19 @@ export default defineSchema({
   })
     .index("by_feature", ["featureId"])
     .index("by_feature_and_user", ["featureId", "userId"]),
+
+  // ──────────────────────────────────────────────────────────────────
+  // Album last-seen (per user × album)
+  // ──────────────────────────────────────────────────────────────────
+  // Vervangt de oude `seenPics` array op memberships (cascade matrix
+  // AP1 + AP2). Eén record per (user, album) met laatste open-tijdstip;
+  // unread count wordt live berekend via range scan op albumPhotos.
+  albumLastSeen: defineTable({
+    userId: v.id("users"),
+    albumId: v.id("albums"),
+    lastSeenAt: v.number(),
+  })
+    .index("by_user_album", ["userId", "albumId"])
+    .index("by_user", ["userId"]) // U9 cascade
+    .index("by_album", ["albumId"]), // A2 cascade
 });

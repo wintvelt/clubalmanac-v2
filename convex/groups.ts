@@ -7,6 +7,10 @@ import {
 } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import { getBySubject, requireCurrentUser } from "./users";
+import {
+  deleteAlbumLastSeenForUserInGroup,
+  upsertAlbumLastSeen,
+} from "./albums";
 
 const ROLE = v.union(v.literal("admin"), v.literal("member"));
 
@@ -252,6 +256,10 @@ export const removeMember = mutation({
       .collect();
     for (const ap of userAps) await ctx.db.delete(ap._id);
 
+    // M3: cascade albumLastSeen voor deze user × albums in déze group.
+    // Andere groepen blijven intact.
+    await deleteAlbumLastSeenForUserInGroup(ctx, userId, groupId);
+
     await ctx.db.delete(target._id);
 
     // M2: admin/founder succession of group-cleanup.
@@ -322,5 +330,23 @@ export const updateMemberRole = mutation({
     }
 
     await ctx.db.patch(target._id, { role });
+  },
+});
+
+
+// Escape hatch: markeer alle albums in een group als gezien voor caller.
+// Bedoeld voor nieuwe members die niet handmatig elk album hoeven te openen.
+export const markAllAlbumsSeen = mutation({
+  args: { groupId: v.id("groups") },
+  handler: async (ctx, { groupId }) => {
+    const { user } = await requireMember(ctx, groupId);
+    const albums = await ctx.db
+      .query("albums")
+      .withIndex("by_group", (q) => q.eq("groupId", groupId))
+      .collect();
+    const now = Date.now();
+    for (const a of albums) {
+      await upsertAlbumLastSeen(ctx, user._id, a._id, now);
+    }
   },
 });
