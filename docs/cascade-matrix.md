@@ -40,13 +40,14 @@ Uitzondering: queries zonder trigger (puur read-tests) leven bij de query-owner.
 
 | Domain | Rules | Status |
 |---|---|---|
-| Users | 9 | ✅ U3-U9 (U1, U2, U5 ❌ eliminated) |
+| Users | 10 | ✅ U3-U9; ⏳ U10 (U1, U2, U5 ❌ eliminated) |
 | Groups | 4 | ✅ G1-G4 |
 | Albums | 2 | ✅ A1, A2 |
 | Photos | 7 | ✅ P1-P7 |
 | Album-photos (publications) | 4 | ✅ AP1-AP4 |
 | Ratings | 1 | ✅ R1 |
 | Memberships | 3 | ✅ M1, M2, M3 |
+| Flagging | 2 | ⏳ FL1, FL2 |
 
 ## Cascade rules
 
@@ -63,6 +64,7 @@ Uitzondering: queries zonder trigger (puur read-tests) leven bij de query-owner.
 | U7 | `userDelToPhotos` | US delete | Delete user's photos (en bijbehorende file storage) | 3 | Cascade in `users.deleteSelf` roept per photo `internalRemovePhoto` aan, dat transitief P3-P5+P7 afhandelt en per photo een `cleanupStorage` action queueet (best-effort, orphans → integrity check) | `tests/users/delete.test.ts` (mutation + per-photo scheduled functions assert) + `tests/photos/cleanupStorage.test.ts` (action standalone) | ✅ |
 | U8 | `userDelToMemberships` | US delete | Delete user's memberships | 3 | Cascade in `users.deleteSelf`. Note: M2 admin-successie wordt nog niet toegepast — refactor wanneer memberships-domein landt en cascade via `memberships.deleteOne` loopt | `tests/users/delete.test.ts` | ✅ |
 | U9 | (nieuw, niet uit AWS) | US delete | Delete user's `albumLastSeen` records | 3 | Cascade in `users.deleteSelf` via `deleteAlbumLastSeenByUser` helper (by_user index) | `tests/users/delete.test.ts` (describe `U9`) | ✅ |
+| U10 | (nieuw, niet uit AWS) | US delete | Clear `flaggedBy` ref op photos die deze user heeft geflagd (default: photo en flag-state blijven, alleen `flaggedBy` op `undefined` om orphan ref te voorkomen). Alternatief: hele flag clearen — open beslissing | 3 (selectief) | In `users.deleteSelf`: scan `photos.by_flagged` (op flaggedAt aanwezig), filter op `flaggedBy === userId`, patch `flaggedBy = undefined`. Owner van photo en deletion countdown ongewijzigd | `tests/users/delete.test.ts` (describe `U10`: photo door deleted user geflagd → flaggedBy weg, flaggedAt + flaggedDeleteDate intact) | ⏳ |
 
 ### Trigger: Groups
 
@@ -98,7 +100,7 @@ Uitzondering: queries zonder trigger (puur read-tests) leven bij de query-owner.
 |---|---|---|---|---|---|---|---|
 | AP1 | `groupPhotoAddToMember` | GP insert | Bump `seenPics` array op alle group memberships (behalve uploader) | 1 | Eliminated. Vervangen door `albumLastSeen` timestamp + live count query in `albums.listByGroupWithUnread`: range scan `albumPhotos.by_album_added(albumId, addedAt > effective)`, filter `photo.ownerId != currentUser`, met `effectiveLastSeen = albumLastSeen?.lastSeenAt ?? max(album.createdAt, membership.joinedAt)`. Geen cascade op upload, geen write-amplification | `tests/albums/unreadCount.test.ts` | ✅ |
 | AP2 | `groupPhotoDelToMember` | GP delete | Remove entry from `seenPics` arrays | 1 | Eliminated. Live count query corrigeert vanzelf bij delete. Geen cascade nodig | `tests/albums/unreadCount.test.ts` (describe `AP2`) | ✅ |
-| AP3 | `groupPhotoDelToRating` | GP delete | Clear ratings van group members op deze photo | 3 (selectief) | In `albums.removePhoto`: filter ratings.by_photo op userId IN groupMembers, delete + recompute aggregate. Note: bij multi-group publicatie kan dit over-delete geven (matcht originele AWS-handler) | `tests/albumPhotos/delete.test.ts` | ✅ |
+| AP3 | `groupPhotoDelToRating` | GP delete | Clear ratings van users die door de unpublication geen access meer hebben tot de photo | 3 (selectief) | In `albums.removePhoto`: per rating op deze photo, skip als rater de owner is OF nog membership heeft in een group waar de photo nog elders gepubliceerd staat. Recompute aggregate na delete. Matcht originele AWS-handler `groupPhotoDelToRating` (`getPhotoById` access-check) | `tests/albumPhotos/delete.test.ts` (incl. multi-group preservation + owner-skip) | ✅ |
 | AP4 | `groupPhotoDelToCover` | GP delete | Clear album cover indien deze publicatie cover was | 3 (selectief) | In `albums.removePhoto` mutation, simple equality patch | `tests/albumPhotos/delete.test.ts` | ✅ |
 
 ### Trigger: Ratings
@@ -115,6 +117,13 @@ Uitzondering: queries zonder trigger (puur read-tests) leven bij de query-owner.
 | M2 | `memberDelToGroup` | UM delete | Admin/founder succession + group cleanup. (a) member vertrekt → niets, (b) admin met andere admin → niets, (c) laatste admin → allen admin, (d) founder → eerste admin wordt founder, (e) laatste lid → group + albums + albumPhotos cascade | 2 + 3 | Inline business logic in `groups.removeMember` na membership-delete. Nested transactional cascade voor case (e). Vervangt vorige "laatste admin kan niet weg" foutmelding | `tests/memberships/delete.test.ts` — alle 5 scenarios + 2 M1 tests | ✅ |
 | M3 | (nieuw, niet uit AWS) | UM delete | Delete `albumLastSeen` records voor die user × albums in die groep | 3 | In `groups.removeMember` via `deleteAlbumLastSeenForUserInGroup` helper: by_user op userId, filter op album.groupId == this group. Andere groepen blijven intact | `tests/memberships/delete.test.ts` (describe `M3`) | ✅ |
 
+### Trigger: Flagging (scheduled / appeal flow)
+
+| # | Oude handler | Trigger event | Effect | Cat | Convex aanpak | Test locatie | Status |
+|---|---|---|---|---|---|---|---|
+| FL1 | (nieuw, niet uit AWS — was niet expliciet in oude code, mogelijk handmatig) | Daily cron | Auto-delete photos waar `flaggedDeleteDate < now` (en niet onder appeal) | 3 | Convex scheduled cron `cleanupFlaggedPhotos`: scan `photos.by_flagged_delete`, filter `flaggedDeleteDate < now && !flaggedAppealDate || flaggedAppealDenyDate`, roep `internalRemovePhoto` per match aan (transitief P3-P5+P7) | `tests/photos/flagCleanup.test.ts` (cron logica, fake clock voor 14d/7d countdowns) | ⏳ |
+| FL2 | `flagPhotoDecide.js` (deny-pad) | webmaster denies appeal | Email naar owner met decision + uitleg | n.v.t. (action, geen cascade) | `decideFlag` mutation queue't email-action via `ctx.scheduler.runAfter(0, ...)`, action verstuurt via Resend/SendGrid | `tests/photos/decideFlag.test.ts` (assert: email-action gequeue'd bij deny, niet bij approve) | ⏳ |
+
 ### Trigger: Stats / signup completion
 
 | # | Oude handler | Trigger event | Effect | Cat | Convex aanpak | Test locatie | Status |
@@ -123,7 +132,7 @@ Uitzondering: queries zonder trigger (puur read-tests) leven bij de query-owner.
 
 ## Open design decisions
 
-(geen openstaand op dit moment)
+1. **U10 cleanup-keuze bij user delete.** Default in matrix: clear alleen `flaggedBy`, flag-state blijft. Alternatief: hele flag clearen (als melder weg = melding vervalt). Default lijkt verdedigbaar — content-inappropriateness staat los van flagger-bestaan, en de webmaster ziet 'm nog in queue. Heroverwegen indien er use cases opduiken
 
 ## Vastgelegde decisions
 
@@ -132,6 +141,7 @@ Uitzondering: queries zonder trigger (puur read-tests) leven bij de query-owner.
 - **M2 group delete bij laatste lid weg:** nested cascade binnen één Convex mutation. Test-suite dekt 5 scenarios. Zie row M2
 - **Cat-4 reactive test pattern:** helper `assertReactive(query, mutation)` die query 2x aanroept rond een mutation en asserteert dat het tweede resultaat afwijkt. Eenmalig bouwen in `tests/_helpers/reactive.ts`, hergebruiken in elke cat-1 test (U3, U4, G1, G2, P1, P2)
 - **AP1/AP2 seenPics opslag:** timestamp-based via aparte `albumLastSeen` table met (userId, albumId, lastSeenAt). Schrijven alleen bij album-open. Count live berekend via range scan op photos.by_album_created. Fallback bij ontbrekend record: `max(album.createdAt, membership.joinedAt)`. Geen pre-create cascade bij member-join of album-create. Eigen uploads tellen niet mee. Group-level "markeer alles gelezen" mutation als escape hatch voor nieuwe members. Cascade-cleanup: A2 (album delete), U9 (user delete), M3 (membership delete). Zie design-sectie in [migratie-plan-convex.md](./migratie-plan-convex.md)
+- **Webmaster-rol implementatie:** env-var based via `WEBMASTER_EMAILS` (comma-separated) per Convex deployment, helper `requireWebmaster(ctx)` matcht `ctx.auth.getUserIdentity().email`. 1:1 met oude AWS aanpak (hardcoded email). YAGNI keuze: Clerk publicMetadata of DB-flag is flexibeler maar onnodig bij 16 users + 1 webmaster. Webmaster-gated operations: `decideFlag`, `listAllFlagged`, `features.update`, `features.remove`, plus problem-report email-bestemming. Bootstrap: jouw email vooraf in Clerk dashboard, env-var zetten in prod deployment. Zie webmaster-rol sectie in [migratie-plan-convex.md](./migratie-plan-convex.md)
 
 ## Onderhoud van dit doc
 

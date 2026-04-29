@@ -123,30 +123,90 @@ describe("AP3: removePhoto cascade ratings van group members", () => {
     void aliceId;
   });
 
-  it("ratings van non-members op deze photo blijven", async () => {
+  it("rating blijft wanneer rater nog access heeft via andere group", async () => {
+    // Alice owner. Photo gepubliceerd in album_g1 (group G1, members alice+bob)
+    // en album_g2 (group G2, members alice+bob). Bob rate. Verwijder publicatie
+    // uit G1 → Bob heeft nog access via G2, dus rating moet blijven.
     const t = convexTest(schema);
-    // Alice maakt G, voegt Bob toe. Carol is geen lid van G maar heeft
-    // wel een rating op de photo (bv. via een andere group dat ook aan
-    // dit photo refereert — voor de test forceren we 'm direct in DB).
     await registerUser(t, "user_alice", "a@x.com");
-    await registerUser(t, "user_bob", "b@x.com");
-    const carolId = await registerUser(t, "user_carol", "c@x.com");
+    const bobId = await registerUser(t, "user_bob", "b@x.com");
+
+    const g1 = await withUser(t, "user_alice").mutation(api.groups.create, {
+      name: "G1",
+    });
+    const g2 = await withUser(t, "user_alice").mutation(api.groups.create, {
+      name: "G2",
+    });
+    await withUser(t, "user_alice").mutation(api.groups.addMember, {
+      groupId: g1,
+      userId: bobId,
+    });
+    await withUser(t, "user_alice").mutation(api.groups.addMember, {
+      groupId: g2,
+      userId: bobId,
+    });
+
+    const album1 = await withUser(t, "user_alice").mutation(
+      api.albums.create,
+      { groupId: g1, name: "A1" },
+    );
+    const album2 = await withUser(t, "user_alice").mutation(
+      api.albums.create,
+      { groupId: g2, name: "A2" },
+    );
+
+    const storageId = await t.run(
+      async (ctx) => await ctx.storage.store(new Blob(["x"])),
+    );
+    const photoId = await withUser(t, "user_alice").mutation(
+      api.photos.create,
+      { storageId },
+    );
+    await withUser(t, "user_alice").mutation(api.albums.addPhoto, {
+      albumId: album1,
+      photoId,
+    });
+    await withUser(t, "user_alice").mutation(api.albums.addPhoto, {
+      albumId: album2,
+      photoId,
+    });
+
+    await withUser(t, "user_bob").mutation(api.ratings.upsert, {
+      photoId,
+      value: 4,
+    });
+
+    await withUser(t, "user_alice").mutation(api.albums.removePhoto, {
+      albumId: album1,
+      photoId,
+    });
+
+    const remaining = await t.run((ctx) =>
+      ctx.db
+        .query("ratings")
+        .withIndex("by_photo", (q) => q.eq("photoId", photoId))
+        .collect(),
+    );
+    expect(remaining).toHaveLength(1);
+    expect(remaining[0]?.userId).toBe(bobId);
+
+    // Aggregate ongewijzigd
+    const photo = await t.run((ctx) => ctx.db.get(photoId));
+    expect(photo?.ratingCount).toBe(1);
+    expect(photo?.ratingAverage).toBe(4);
+  });
+
+  it("owner's rating wordt nooit gedropt door cascade", async () => {
+    // Edge case: theoretisch kan een owner zijn eigen photo raten. Even
+    // als de laatste publicatie weggaat, owner houdt eigen rating —
+    // hij heeft direct access als owner.
+    const t = convexTest(schema);
+    const aliceId = await registerUser(t, "user_alice", "a@x.com");
 
     const groupId = await withUser(t, "user_alice").mutation(
       api.groups.create,
       { name: "G" },
     );
-    await withUser(t, "user_alice").mutation(api.groups.addMember, {
-      groupId,
-      userId: (
-        await t.run((ctx) =>
-          ctx.db
-            .query("users")
-            .withIndex("by_subject", (q) => q.eq("subject", "user_bob"))
-            .unique(),
-        )
-      )!._id,
-    });
     const albumId = await withUser(t, "user_alice").mutation(
       api.albums.create,
       { groupId, name: "A" },
@@ -164,19 +224,10 @@ describe("AP3: removePhoto cascade ratings van group members", () => {
       photoId,
     });
 
-    await withUser(t, "user_bob").mutation(api.ratings.upsert, {
+    // Alice rated haar eigen photo (rating-mutation laat dit toe).
+    await withUser(t, "user_alice").mutation(api.ratings.upsert, {
       photoId,
-      value: 4,
-    });
-    // Carol zit niet in G — direct in DB rating zetten
-    await t.run(async (ctx) => {
-      await ctx.db.insert("ratings", {
-        photoId,
-        userId: carolId,
-        value: 5,
-        createdAt: Date.now(),
-        updatedAt: Date.now(),
-      });
+      value: 5,
     });
 
     await withUser(t, "user_alice").mutation(api.albums.removePhoto, {
@@ -191,7 +242,7 @@ describe("AP3: removePhoto cascade ratings van group members", () => {
         .collect(),
     );
     expect(remaining).toHaveLength(1);
-    expect(remaining[0]?.userId).toBe(carolId);
+    expect(remaining[0]?.userId).toBe(aliceId);
   });
 });
 

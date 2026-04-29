@@ -324,21 +324,35 @@ export const removePhoto = mutation({
 
     await ctx.db.delete(ap._id);
 
-    // AP3: cascade ratings van members van déze group op deze photo.
-    // Note: bij multi-group publicatie kan dit over-delete geven —
-    // acceptabel bij huidige schaal, matcht originele AWS-handler.
-    const groupMemberships = await ctx.db
-      .query("memberships")
-      .withIndex("by_group", (q) => q.eq("groupId", album.groupId))
-      .collect();
-    const memberUserIds = new Set(groupMemberships.map((m) => m.userId));
+    // AP3: cascade ratings van users die door deze unpublication
+    // geen toegang meer hebben tot de photo. Matcht originele AWS-
+    // handler `groupPhotoDelToRating`: rating wordt alleen gedropt
+    // als rater (a) niet de owner is en (b) geen membership heeft in
+    // een group waar deze photo nog elders gepubliceerd staat.
     const ratingsOnPhoto = await ctx.db
       .query("ratings")
       .withIndex("by_photo", (q) => q.eq("photoId", photoId))
       .collect();
+
     let deletedAny = false;
-    for (const r of ratingsOnPhoto) {
-      if (memberUserIds.has(r.userId)) {
+    if (ratingsOnPhoto.length > 0) {
+      const photo = await ctx.db.get(photoId);
+      const remainingPubs = await ctx.db
+        .query("albumPhotos")
+        .withIndex("by_photo", (q) => q.eq("photoId", photoId))
+        .collect();
+
+      for (const r of ratingsOnPhoto) {
+        if (photo && r.userId === photo.ownerId) continue; // owner houdt access
+        const userMemberships = await ctx.db
+          .query("memberships")
+          .withIndex("by_user", (q) => q.eq("userId", r.userId))
+          .collect();
+        const userGroupIds = new Set(userMemberships.map((m) => m.groupId));
+        const stillHasAccess = remainingPubs.some((p) =>
+          userGroupIds.has(p.groupId),
+        );
+        if (stillHasAccess) continue;
         await ctx.db.delete(r._id);
         deletedAny = true;
       }

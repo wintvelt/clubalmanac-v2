@@ -100,7 +100,7 @@ export default defineSchema({
     // Aggregate rating (gemiddelde van ratings table).
     ratingAverage: v.optional(v.number()),
     ratingCount: v.number(),
-    // Flagging.
+    // Flagging (FL1: auto-delete na 14 dagen, FL2: appeal + admin decision).
     flaggedAt: v.optional(v.number()),
     flaggedBy: v.optional(v.id("users")),
     flagReason: v.optional(v.string()),
