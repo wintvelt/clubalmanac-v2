@@ -9,6 +9,7 @@
  */
 
 import type * as smoke from "../smoke.js";
+import type * as users from "../users.js";
 
 import type {
   ApiFromModules,
@@ -18,6 +19,7 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   smoke: typeof smoke;
+  users: typeof users;
 }>;
 
 /**
