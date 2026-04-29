@@ -82,10 +82,65 @@ Aanbeveling: start met A, switch naar B als performance of kosten een issue word
 **Video streaming:** video upload is handmatig (geen probleem). Streaming van 30-min video's kan met beide opties. R2 is hier beter vanwege edge caching en nul egress.
 
 ### Auth
-Aanbeveling: **Clerk + Convex** (bewezen Expo combo, werkt ook voor web). 16 users: gewoon opnieuw laten registreren. Cognito wordt volledig vervangen.
+Aanbeveling: **Clerk + Convex** (bewezen Expo combo, werkt ook voor web). 16 users: gewoon opnieuw laten registreren. Cognito wordt volledig vervangen. Clerk heeft aparte dev en prod instances (zie Environments).
 
 ### TypeScript: overstappen
 Convex is volledig TypeScript-native: schema genereert types die end-to-end doorlopen van DB tot React Native components. Zonder TS verlies je het halve voordeel (type-safe queries, autocompletion, compile-time checks).
+
+## Environments
+
+Twee environments, geen aparte staging bij 16 users.
+
+| | Convex deployment | Clerk instance | Doel |
+|--|---|---|--|
+| **Dev** | `glorious-pheasant-759` (eu-west-1) | `picked-quail-97.clerk.accounts.dev` | development, testing, geseede subset van prod data (3 chosen users) |
+| **Prod** | apart aanmaken in fase 5 | apart activeren in fase 5 | de 16 users na cutover, volledige data |
+
+**Koppeling per env:** elke Convex deployment heeft een `CLERK_FRONTEND_API_URL` env var die naar de matching Clerk instance wijst. Verwisselen = kapot. Dev Convex praat alleen met dev Clerk, prod met prod.
+
+**Client-side env-switch** via EAS build profiles:
+- Dev build → `EXPO_PUBLIC_CONVEX_URL=<dev>`, `EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_test_...`
+- Prod build → `EXPO_PUBLIC_CONVEX_URL=<prod>`, `EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_live_...`
+
+**Risico's en mitigaties:**
+- *Dev build per ongeluk naar prod Convex:* EAS profile expliciet, géén default URL
+- *`pk_test_` in prod release:* build-time check in CI die `pk_test_` weigert in prod profile
+- *Schema drift dev↔prod:* `npx convex deploy --prod` standaard in release-script
+
+Prod activatie pas in fase 5 (cutover prep), niet eerder. Tot dan is prod deployment leeg en niet aangesloten op een client.
+
+## Dev seed strategie
+
+Dev gebruikt een subset van prod data: 3 chosen users met hun content. Overige 13 users en hun data worden uitgesloten. Reden: kleinere footprint (lagere storage kosten, snellere refresh), genoeg voor feature-testing.
+
+**3 users selectiecriteria:**
+1. Admin/oprichter van een groep met meerdere members (test admin flows)
+2. Regular member in 2+ groepen (test multi-group navigatie)
+3. Member met veel content: foto's, ratings, locaties (test scaling van photo grid en map)
+
+Vaak overlapt dit; 3 unieke users is genoeg.
+
+**Filter-regels in seed-script:**
+
+| Entiteit | Inclusie-regel |
+|---|---|
+| Users | alleen de 3 chosen |
+| Groups | alleen waar minstens 1 chosen user member is |
+| Memberships | alleen tussen de 3 chosen in die groepen |
+| Photos | alleen geüpload door de 3 chosen |
+| Albums | in groepen waar de 3 in zitten |
+| AlbumPhotos | alleen voor photos van de 3 |
+| Ratings | rater én photo-owner beide in de 3 chosen |
+| Invites | alleen tussen de 3 chosen |
+| Features / upvotes | alleen door de 3 chosen |
+
+**ID mapping:** Cognito sub van de 3 chosen → Clerk dev user IDs (1:1, configureerbaar in script config). Clerk dev users vooraf aanmaken via Clerk API.
+
+**Anonimiseren:** namen → "Dev Wouter / Anna / Bram" (herkenbaar tijdens testing). Emails → `dev-{n}@clubalmanac.test`. Foto's blijven echt voor visuele realiteit; dev DB nooit publiek delen.
+
+**Idempotentie:** script moet droppen + reseeden in 5 min, voor snelle schema-iteraties tijdens fase 4A2.
+
+**Member-list edge cases:** 3 members per groep is realistisch genoeg voor de meeste UI-testen. Als bij testen blijkt dat large-group rendering issues geven, synthetic dummy users toevoegen in dev.
 
 ## Kosten: Convex Starter EU
 
@@ -172,15 +227,24 @@ Per domein: unit tests eerst, dan implementatie.
 
 Backend is client-agnostisch. Zelfde queries/mutations werken straks voor zowel iPhone app als webapp.
 
-### Fase 3: Data migratie
-- [ ] DynamoDB full table scan → JSON export
-- [ ] Transformatie script: DynamoDB records → Convex documents per table
-- [ ] Import naar Convex via mutations of bulk import
-- [ ] S3 → Convex file storage (of R2): migratiescript dat alle ~1650 foto's + 6 video's overzet (~8.3 GB, paar uur)
+### Fase 3: Data migratie tooling + dev seed
+
+Bouw migratie-tooling die zowel dev (subset) als prod (volledig) kan vullen. Eén script, twee config-modes. Dev wordt nu gevuld; prod gebeurt pas op cutover-dag (zie fase 5).
+
+- [ ] DynamoDB full table scan → JSON export (snapshot)
+- [ ] Transformatie script: DynamoDB records → Convex documents per table, met filter-config voor dev (zie Dev seed strategie) vs prod (alles)
+- [ ] Cognito sub → Clerk ID mapping mechanisme:
+   - Dev: 3 chosen Cognito subs handmatig naar Clerk dev IDs in script config
+   - Prod: post-cutover via email-match (Clerk prod users worden vooraf via Clerk Invitations API aangemaakt met de 16 bestaande emails, zodat IDs vóór data-import bekend zijn)
+- [ ] S3 → Convex file storage migratie:
+   - Dev: alleen photos van de 3 chosen (~paar honderd MB, snel)
+   - Prod: alle ~1650 foto's + 6 video's (~8.3 GB, paar uur) — pas in fase 5
 - [ ] Photo records updaten met storage IDs
-- [ ] **Validatie:** counts vergelijken, steekproeven, referenties checken
-- [ ] S3 data voorlopig laten staan als backup
-- [ ] Performance check op foto laden. Als te traag: switch naar R2 component (kan ook later)
+- [ ] **Dev seed draaien:** filter + anonimiseer aan, push naar Convex dev
+- [ ] **Validatie dev:** counts kloppen met filter, referentiële integriteit, alle storage IDs geldig
+- [ ] **Idempotentie dev:** drop + reseed in 5 min werkt, voor schema-iteraties
+- [ ] Performance check op foto laden in dev. Als te traag: switch naar R2 component (kan ook later)
+- [ ] S3 prod data laten staan als backup tot ~T+90
 
 ### Fase 4: Clients updaten
 
@@ -267,12 +331,15 @@ Dus: communicatie en blokkade gaan **buiten de oude app om**.
 
 #### Cutover stappenplan
 
+- [ ] T-4 weken: prod environments activeren — Convex prod deployment aanmaken (EU Dublin), Clerk prod instance activeren, env-paren wirën (Convex `CLERK_FRONTEND_API_URL` → prod Clerk, EAS prod build profile met juiste keys)
+- [ ] T-4 weken: smoke test prod env (lege DB, dummy registratie, JWT round-trip via prod build van app)
 - [ ] T-3 weken: cutover-datum vastleggen, communicatie naar 16 users
+- [ ] T-2 weken: 16 Clerk prod users vooraf aanmaken via Clerk Invitations API met bestaande emails — Clerk IDs zijn dan bekend voor data-import mapping
 - [ ] T-1 week: group-injection aanzetten in DynamoDB (in-app reminder verschijnt)
-- [ ] T-1 week: nieuwe iPhone app live in App Store (beschikbaar voor download), nieuwe webapp live
-- [ ] T-1 dag: laatste reminder via WhatsApp/email
-- [ ] T-0: frisse data migratie herhalen (fase 3) met actuele data, vlak voor launch
-- [ ] T-0: backend write-block aan
+- [ ] T-1 week: nieuwe iPhone app live in App Store (beschikbaar voor download), nieuwe webapp live, beide tegen prod env
+- [ ] T-1 dag: laatste reminder via WhatsApp/email + Clerk invitation links versturen
+- [ ] T-0: frisse data migratie herhalen (fase 3 tooling) met actuele DynamoDB-snapshot, prod-mode, push naar Convex prod
+- [ ] T-0: backend write-block aan op AWS
 - [ ] T-0: webapp redirect aan
 - [ ] T-0: 16 users informeren dat ze nu kunnen overstappen, korte instructie voor Clerk login
 - [ ] T+1: bevestigen dat alles werkt voor alle 16 users
@@ -299,3 +366,5 @@ Dus: communicatie en blokkade gaan **buiten de oude app om**.
 | **File bandwidth kosten** | Dominante kostenpost bij Convex native storage | $2.71-$9.15/maand native, of ~$0/maand met R2 component |
 | **Vendor lock-in** | Convex is relatief nieuw | Open-source + self-hostable mitigeert dit. R2 als file storage maakt je nog minder afhankelijk |
 | **Invite-only signup** | Custom Cognito trigger | Herbouwen als Clerk custom flow |
+| **Env-cross-contamination** | Dev build die per ongeluk naar prod Convex/Clerk wijst, of `pk_test_` in prod release | EAS profiles expliciet, géén defaults. Build-time check in CI die `pk_test_` weigert in prod profile. `CLERK_FRONTEND_API_URL` per Convex deployment matchend gezet |
+| **Prod user pre-registration** | 16 Clerk-IDs moeten bekend zijn vóór data-import om mapping op email te kunnen doen | Clerk Invitations API: 16 users vooraf aanmaken met bestaande emails, IDs ophalen, mapping vastzetten vóór T-0 |
