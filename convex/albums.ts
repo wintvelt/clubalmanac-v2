@@ -104,9 +104,12 @@ export const listByGroupWithUnread = query({
             q.eq("userId", user._id).eq("albumId", album._id),
           )
           .unique();
+        // Fallback -1 ms zodat photos die binnen dezelfde ms als
+        // album.createdAt of membership.joinedAt landden óók als "nieuw"
+        // tellen (anders zou het strict > filter ze uitsluiten).
         const effective =
           lastSeen?.lastSeenAt ??
-          Math.max(album.createdAt, membership.joinedAt);
+          Math.max(album.createdAt, membership.joinedAt) - 1;
 
         const candidates = await ctx.db
           .query("albumPhotos")
