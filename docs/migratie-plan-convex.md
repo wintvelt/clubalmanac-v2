@@ -101,7 +101,7 @@ albumLastSeen: {
 // index: by_user_album (userId, albumId)
 ```
 
-Photos krijgt index `by_album_created (albumId, createdAt)` voor de range scan.
+`albumPhotos` krijgt index `by_album_added (albumId, addedAt)` voor de range scan. Photos zelf hebben geen `albumId` (m:n via `albumPhotos`), dus de scan loopt over de koppeltabel.
 
 **Schrijven:** alleen wanneer user album-detailscherm opent, upsert `lastSeenAt = now`. Plus optionele "markeer alles gelezen"-actie op groep-niveau.
 
@@ -110,11 +110,13 @@ Photos krijgt index `by_album_created (albumId, createdAt)` voor de range scan.
 effectiveLastSeen = albumLastSeen?.lastSeenAt
   ?? max(album.createdAt, membership.joinedAt)
 
-count = aantal photos waar
+count = aantal albumPhotos waar
   albumId == X
-  && createdAt > effectiveLastSeen
-  && uploadedBy != currentUserId
+  && addedAt > effectiveLastSeen
+  && photo.ownerId != currentUserId  // join met photos voor ownerId
 ```
+
+Filter op `photo.ownerId` (niet `albumPhoto.addedBy`): als Bob een foto van Alice in een album zet, hoort Alice 'm niet als nieuw te zien — zij heeft die foto immers zelf gemaakt.
 
 **Ontwerpprincipes:**
 - Geen denormalization, geen precomputed counter. Voorkomt write-amplification cascade bij elke upload (was probleem in oude AWS aanpak: 1 upload → N membership writes).
@@ -129,12 +131,12 @@ count = aantal photos waar
 Oude AWS state heeft `seenPics` array per membership (per user × group), bevat photoIds van foto's die user heeft gezien. Deze state moeten we omzetten naar `albumLastSeen` records.
 
 Algoritme (per membership):
-1. Walk `seenPics` array, look up elk photoId in albumPhotos om (albumId, createdAt) te vinden
-2. Group by albumId, take `max(createdAt)` per album
-3. Voor elke (user, album) met seen photos: insert `albumLastSeen` record met die max createdAt
+1. Walk `seenPics` array, look up elk photoId in `albumPhotos` om (albumId, addedAt) te vinden — beperk tot albums in deze membership's groep
+2. Group by albumId, take `max(addedAt)` per album
+3. Voor elke (user, album) met seen photos: insert `albumLastSeen` record met die max addedAt
 4. Geen seen photos in album → geen record (fallback regelt het: `max(album.createdAt, membership.joinedAt)`)
 
-Lossy edge case: als user photo A (oudste) en C (nieuwste) zag maar B (midden) oversloeg, wordt B nu "seen" omdat C's createdAt de cutoff is. In de praktijk niet relevant: oude app-logica bumped seenPics chronologisch (zien van later impliceert zien van eerder), dus deze case komt niet voor.
+Lossy edge case: als user album-photo A (oudste addedAt) en C (nieuwste) zag maar B (midden) oversloeg, wordt B nu "seen" omdat C's addedAt de cutoff is. In de praktijk niet relevant: oude app-logica bumped seenPics chronologisch (zien van later impliceert zien van eerder), dus deze case komt niet voor.
 
 ## Environments
 
@@ -280,11 +282,11 @@ Per domein: unit tests eerst, dan implementatie.
 **Schema-uitgangspunt (vastgelegd in fase 1):** geen denormalisatie van user-data (naam, profielfoto) naar `memberships`/`photos`/etc. In Convex zijn joins binnen een query function lokale lookups (geen netwerk hops), dus we halen user-data on-read via `ctx.db.get(ownerId)`. Dit elimineert de hele klasse stream-handler bugs uit DynamoDB waar denormalized kopieën uit-sync konden raken — en daarmee ook de UB/UV split-truc om write-amplification te vermijden. De enige denormalized velden die we wel houden zijn aggregates die te duur zijn om bij elke read te recomputen: `users.photoCount`, `photos.ratingAverage` + `ratingCount`, `features.upvoteCount`. Die worden in mutations transactioneel onderhouden, en in fase 1's "data integriteit monitoring" (zie Teststrategie §3) periodiek gevalideerd tegen de werkelijkheid.
 
 - [x] **Users:** mutations + queries voor CRUD, photo count limiet
-- [ ] **Groups:** create, update, delete, list, members
-- [ ] **Albums:** CRUD, album-photo relaties
-- [ ] **Photos:** CRUD met cascade logic (stream handler logica → transactionele mutations)
-- [ ] **Ratings:** create/update met aggregate berekening
-- [ ] **AlbumLastSeen:** upsert bij album-open, "markeer alles gelezen"-mutation op groep-niveau, query voor unread-count per album met fallback naar `max(album.createdAt, membership.joinedAt)`
+- [x] **Groups:** create, update, delete, list, members
+- [x] **Albums:** CRUD, album-photo relaties
+- [x] **Photos:** CRUD met cascade logic (stream handler logica → transactionele mutations)
+- [x] **Ratings:** create/update met aggregate berekening
+- [x] **AlbumLastSeen:** upsert bij album-open, "markeer alles gelezen"-mutation op groep-niveau, query voor unread-count per album met fallback naar `max(album.createdAt, membership.joinedAt)`
 - [ ] **Invites:** create, accept, decline, invite-only signup validatie
 - [ ] **Features:** CRUD + upvoting
 - [ ] **File upload:** `generateUploadUrl` + EXIF extractie action
