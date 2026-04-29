@@ -243,14 +243,61 @@ export const removeMember = mutation({
     const target = await getMembership(ctx, userId, groupId);
     if (!target) throw new Error("User is geen lid van deze groep");
 
-    if (target.role === "admin") {
-      const adminCount = await countAdmins(ctx, groupId);
-      if (adminCount <= 1) {
-        throw new Error("Laatste admin kan niet verwijderd worden");
+    // M1: cascade albumPhotos die deze user in déze group toevoegde
+    // (publicaties weg, photos zelf blijven — eigendom van users).
+    const userAps = await ctx.db
+      .query("albumPhotos")
+      .withIndex("by_group", (q) => q.eq("groupId", groupId))
+      .filter((q) => q.eq(q.field("addedBy"), userId))
+      .collect();
+    for (const ap of userAps) await ctx.db.delete(ap._id);
+
+    await ctx.db.delete(target._id);
+
+    // M2: admin/founder succession of group-cleanup.
+    const remaining = await ctx.db
+      .query("memberships")
+      .withIndex("by_group", (q) => q.eq("groupId", groupId))
+      .collect();
+
+    if (remaining.length === 0) {
+      // (e) laatste lid weg → group + albums + albumPhotos cascade.
+      const remainingAps = await ctx.db
+        .query("albumPhotos")
+        .withIndex("by_group", (q) => q.eq("groupId", groupId))
+        .collect();
+      for (const ap of remainingAps) await ctx.db.delete(ap._id);
+      const albums = await ctx.db
+        .query("albums")
+        .withIndex("by_group", (q) => q.eq("groupId", groupId))
+        .collect();
+      for (const a of albums) await ctx.db.delete(a._id);
+      await ctx.db.delete(groupId);
+      return;
+    }
+
+    // (c) geen admin meer → alle resterende members admin maken.
+    const adminsLeft = remaining.filter((m) => m.role === "admin");
+    if (adminsLeft.length === 0) {
+      for (const m of remaining) {
+        await ctx.db.patch(m._id, { role: "admin" });
       }
     }
 
-    await ctx.db.delete(target._id);
+    // (d) founder vertrekt → eerste admin (na (c)) wordt nieuwe founder.
+    const group = await ctx.db.get(groupId);
+    if (group && group.createdBy === userId) {
+      const refreshed = await ctx.db
+        .query("memberships")
+        .withIndex("by_group", (q) => q.eq("groupId", groupId))
+        .collect();
+      const newFounder = refreshed
+        .filter((m) => m.role === "admin")
+        .sort((a, b) => a.joinedAt - b.joinedAt)[0];
+      if (newFounder) {
+        await ctx.db.patch(groupId, { createdBy: newFounder.userId });
+      }
+    }
   },
 });
 

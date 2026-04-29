@@ -46,7 +46,7 @@ Uitzondering: queries zonder trigger (puur read-tests) leven bij de query-owner.
 | Photos | 7 | ✅ P1-P7 |
 | Album-photos (publications) | 4 | ⏳ |
 | Ratings | 1 | ✅ R1 |
-| Memberships | 2 | ⏳ |
+| Memberships | 2 | ✅ M1, M2 |
 
 ## Cascade rules
 
@@ -109,8 +109,8 @@ Uitzondering: queries zonder trigger (puur read-tests) leven bij de query-owner.
 
 | # | Oude handler | Trigger event | Effect | Cat | Convex aanpak | Test locatie | Status |
 |---|---|---|---|---|---|---|---|
-| M1 | `memberDelToAlbumPhoto` | UM delete | Remove their albumPhoto entries in this group (uploads die deze user in deze group deed worden uit publicaties gehaald) | 3 (selectief) | Cascade in `memberships.delete` mutation. Let op: photos zelf blijven, alleen publicatie in deze group wordt weggehaald | `tests/memberships/delete.test.ts` | ⏳ |
-| M2 | `memberDelToGroup` | UM delete | Admin/founder succession: als geen admin meer over → alle anderen admin maken; als geen founder meer → eerste vinden promoveren. Als geen members meer → group deleten | 2 + 3 | Inline business logic in `memberships.delete` mutation. Bij "no members left" wordt `groups.delete` binnen dezelfde mutation aangeroepen — nested transactional cascade, werkt in Convex (één transactie) | `tests/memberships/delete.test.ts` — minimaal deze scenarios: (a) normaal lid vertrekt, geen succession, (b) admin vertrekt, andere admin aanwezig, geen promotie, (c) laatste admin vertrekt, anderen → admin, (d) founder vertrekt, andere admin → founder, (e) laatste lid vertrekt → group + albums + albumPhotos cascade-deleted | ⏳ |
+| M1 | `memberDelToAlbumPhoto` | UM delete | Remove their albumPhoto entries in this group (uploads die deze user in deze group deed worden uit publicaties gehaald) | 3 (selectief) | In `groups.removeMember`: filter `albumPhotos.by_group` op `addedBy === userId` en delete. Photos zelf blijven (eigendom users), andere groups intact | `tests/memberships/delete.test.ts` | ✅ |
+| M2 | `memberDelToGroup` | UM delete | Admin/founder succession + group cleanup. (a) member vertrekt → niets, (b) admin met andere admin → niets, (c) laatste admin → allen admin, (d) founder → eerste admin wordt founder, (e) laatste lid → group + albums + albumPhotos cascade | 2 + 3 | Inline business logic in `groups.removeMember` na membership-delete. Nested transactional cascade voor case (e). Vervangt vorige "laatste admin kan niet weg" foutmelding | `tests/memberships/delete.test.ts` — alle 5 scenarios + 2 M1 tests | ✅ |
 
 ### Trigger: Stats / signup completion
 

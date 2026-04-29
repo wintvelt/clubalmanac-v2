@@ -313,16 +313,8 @@ describe("groups.removeMember", () => {
     ).rejects.toThrow();
   });
 
-  it("laatste admin kan niet weg", async () => {
-    const t = convexTest(schema);
-    const { adminId, groupId } = await setupGroup(t);
-    await expect(
-      withUser(t, "user_admin").mutation(api.groups.removeMember, {
-        groupId,
-        userId: adminId,
-      }),
-    ).rejects.toThrow(/admin/i);
-  });
+  // Note: "laatste admin kan niet weg" is verwijderd — M2 succession
+  // wordt nu toegepast (zie tests/memberships/delete.test.ts).
 });
 
 describe("groups.updateMemberRole", () => {
