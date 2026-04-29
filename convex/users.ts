@@ -7,7 +7,7 @@ import {
   type QueryCtx,
 } from "./_generated/server";
 import type { Doc } from "./_generated/dataModel";
-import { internal } from "./_generated/api";
+import { internalRemovePhoto } from "./photos";
 
 // Default upload-limiet voor nieuwe users. Mocht een admin een hogere limiet
 // willen geven, dan kan dat via directe DB patch (geen public mutation in
@@ -118,19 +118,15 @@ export const deleteSelf = mutation({
       .collect();
     for (const r of ratings) await ctx.db.delete(r._id);
 
-    // U7: cascade photos die deze user uploadde + queue storage cleanup.
-    // Records weg in dezelfde transactie; storage delete loopt async via action.
+    // U7: cascade photos via internalRemovePhoto, dat per photo ook
+    // P3 (albumPhotos), P4 (ratings van anderen op deze photo), P5
+    // (cover-refs) afhandelt + storage cleanup queueet. Voorkomt dat
+    // user-delete orphans achterlaat in downstream tabellen.
     const photos = await ctx.db
       .query("photos")
       .withIndex("by_owner", (q) => q.eq("ownerId", user._id))
       .collect();
-    const storageIds = photos.map((p) => p.storageId);
-    for (const p of photos) await ctx.db.delete(p._id);
-    if (storageIds.length > 0) {
-      await ctx.scheduler.runAfter(0, internal.photos.cleanupStorage, {
-        storageIds,
-      });
-    }
+    for (const p of photos) await internalRemovePhoto(ctx, p._id);
 
     // U8: cascade memberships. Admin-successie (M2) wordt nog niet
     // toegepast — wordt geadresseerd wanneer memberships-domein landt

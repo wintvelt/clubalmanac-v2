@@ -129,7 +129,7 @@ describe("U7: deleteSelf cascade photos + queued storage cleanup", () => {
     }
   });
 
-  it("queue scheduled action met juiste storage IDs", async () => {
+  it("queue scheduled action per photo met juiste storage IDs", async () => {
     vi.useFakeTimers();
     try {
       const t = convexTest(schema);
@@ -139,15 +139,20 @@ describe("U7: deleteSelf cascade photos + queued storage cleanup", () => {
 
       await withUser(t, "user_alice").mutation(api.users.deleteSelf, {});
 
+      // internalRemovePhoto schedulet één action per photo (i.p.v. batch).
       const scheduled = await t.run((ctx) =>
         ctx.db.system.query("_scheduled_functions").collect(),
       );
-      expect(scheduled).toHaveLength(1);
-      expect(scheduled[0]?.name).toContain("photos");
-      expect(scheduled[0]?.name).toContain("cleanupStorage");
-      const argSet = new Set((scheduled[0]?.args as { storageIds: string[] }[])[0]?.storageIds);
-      expect(argSet.has(s1)).toBe(true);
-      expect(argSet.has(s2)).toBe(true);
+      expect(scheduled).toHaveLength(2);
+      for (const entry of scheduled) {
+        expect(entry.name).toContain("photos");
+        expect(entry.name).toContain("cleanupStorage");
+      }
+      const allStorageIds = scheduled.flatMap(
+        (entry) =>
+          (entry.args as { storageIds: string[] }[])[0]?.storageIds ?? [],
+      );
+      expect(new Set(allStorageIds)).toEqual(new Set([s1, s2]));
     } finally {
       vi.useRealTimers();
     }

@@ -43,7 +43,7 @@ Uitzondering: queries zonder trigger (puur read-tests) leven bij de query-owner.
 | Users | 8 | ✅ U3-U8 (U1, U2, U5 ❌ eliminated) |
 | Groups | 4 | ✅ G1-G4 |
 | Albums | 1 | ✅ A1 |
-| Photos | 7 | ⏳ |
+| Photos | 7 | ✅ P1-P7 |
 | Album-photos (publications) | 4 | ⏳ |
 | Ratings | 1 | ⏳ |
 | Memberships | 2 | ⏳ |
@@ -60,7 +60,7 @@ Uitzondering: queries zonder trigger (puur read-tests) leven bij de query-owner.
 | U4 | `userChangeToMembership` | US modify | Update denormalized user-data op memberships | 1+4 | Eliminated. `groups.listMembers` joint user | `tests/users/profile.test.ts` met `assertReactive` rond `updateProfile` | ✅ |
 | U5 | `userDelToBase` | US delete | Delete UB record | 1 | Eliminated. Eén users-row, één delete | n.v.t. | ❌ |
 | U6 | `userDelToRating` | US delete | Delete user's ratings | 3 | Cascade in `users.deleteSelf` mutation | `tests/users/delete.test.ts` | ✅ |
-| U7 | `userDelToPhotos` | US delete | Delete user's photos (en bijbehorende file storage) | 3 | Cascade in `users.deleteSelf` deletet photo records + scheduler queueet `internal.photos.cleanupStorage` action (best-effort, orphans worden opgeruimd door integrity check) | `tests/users/delete.test.ts` (mutation + scheduled functions assert) + `tests/photos/cleanupStorage.test.ts` (action standalone) | ✅ |
+| U7 | `userDelToPhotos` | US delete | Delete user's photos (en bijbehorende file storage) | 3 | Cascade in `users.deleteSelf` roept per photo `internalRemovePhoto` aan, dat transitief P3-P5+P7 afhandelt en per photo een `cleanupStorage` action queueet (best-effort, orphans → integrity check) | `tests/users/delete.test.ts` (mutation + per-photo scheduled functions assert) + `tests/photos/cleanupStorage.test.ts` (action standalone) | ✅ |
 | U8 | `userDelToMemberships` | US delete | Delete user's memberships | 3 | Cascade in `users.deleteSelf`. Note: M2 admin-successie wordt nog niet toegepast — refactor wanneer memberships-domein landt en cascade via `memberships.deleteOne` loopt | `tests/users/delete.test.ts` | ✅ |
 
 ### Trigger: Groups
@@ -82,13 +82,13 @@ Uitzondering: queries zonder trigger (puur read-tests) leven bij de query-owner.
 
 | # | Oude handler | Trigger event | Effect | Cat | Convex aanpak | Test locatie | Status |
 |---|---|---|---|---|---|---|---|
-| P1 | `photoChangeToPub` | PO modify | Update denormalized photo-data op albumPhotos | 1+4 | Eliminated. AlbumPhoto query joint photo | `tests/photos/update.test.ts` | ⏳ |
-| P2 | `photoChangeToCover` | PO modify | Update denormalized photo-data op group/album covers | 1+4 | Eliminated. Cover query joint photo | `tests/photos/update.test.ts` | ⏳ |
-| P3 | `photoDelToPublications` | PO delete | Remove from albumPhotos | 3 | Cascade in `photos.delete` | `tests/photos/delete.test.ts` | ⏳ |
-| P4 | `photoDelToRating` | PO delete | Delete ratings on this photo | 3 | Cascade in `photos.delete` | `tests/photos/delete.test.ts` | ⏳ |
-| P5 | `photoDelToCover` | PO delete | Clear cover-ref op group/album indien deze foto cover was | 3 (selectief) | In `photos.delete` mutation | `tests/photos/delete.test.ts` | ⏳ |
-| P6 | `photoAddToStats` | PO insert | Increment `users.photoCount` | 2 | In `photos.create` mutation | `tests/photos/create.test.ts` | ⏳ |
-| P7 | `photoDelToStats` | PO delete | Decrement `users.photoCount` | 2 | In `photos.delete` mutation | `tests/photos/delete.test.ts` | ⏳ |
+| P1 | `photoChangeToPub` | PO modify | Update denormalized photo-data op albumPhotos | 1+4 | Eliminated. `albums.listPhotos` joint photo | `tests/photos/update.test.ts` met `assertReactive` rond `photos.update` | ✅ |
+| P2 | `photoChangeToCover` | PO modify | Update denormalized photo-data op group/album covers | 1+4 | Eliminated. Nieuwe `groups.getWithCover` + `albums.getWithCover` joint photo | `tests/photos/update.test.ts` met `assertReactive` rond `photos.update` | ✅ |
+| P3 | `photoDelToPublications` | PO delete | Remove from albumPhotos | 3 | Cascade in `photos.remove` (via `internalRemovePhoto`) | `tests/photos/delete.test.ts` | ✅ |
+| P4 | `photoDelToRating` | PO delete | Delete ratings on this photo | 3 | Cascade in `photos.remove` | `tests/photos/delete.test.ts` | ✅ |
+| P5 | `photoDelToCover` | PO delete | Clear cover-ref op group/album indien deze foto cover was | 3 (selectief) | In `photos.remove` mutation, full-table scan over groups/albums (acceptabel bij huidige schaal — TODO `by_cover` index als nodig) | `tests/photos/delete.test.ts` | ✅ |
+| P6 | `photoAddToStats` | PO insert | Increment `users.photoCount` | 2 | In `photos.create` mutation | `tests/photos/create.test.ts` | ✅ |
+| P7 | `photoDelToStats` | PO delete | Decrement `users.photoCount` | 2 | In `photos.remove` mutation | `tests/photos/delete.test.ts` | ✅ |
 
 ### Trigger: Album-photos (Publications)
 
@@ -125,6 +125,7 @@ Uitzondering: queries zonder trigger (puur read-tests) leven bij de query-owner.
 ## Vastgelegde decisions
 
 - **U7 file storage cleanup:** mutation deletet photo records inline + queued Convex action voor storage cleanup. Action is best-effort, integrity check vangt orphans af. Zie row U7
+- **Transitieve cascade door photos:** `users.deleteSelf` cascadet niet langer photo-records direct, maar via `internalRemovePhoto` (helper in `convex/photos.ts`). Daarmee krijg je P3-P5+P7 cascades automatisch mee, voorkomt orphan ratings/albumPhotos/cover-refs
 - **M2 group delete bij laatste lid weg:** nested cascade binnen één Convex mutation. Test-suite dekt 5 scenarios. Zie row M2
 - **Cat-4 reactive test pattern:** helper `assertReactive(query, mutation)` die query 2x aanroept rond een mutation en asserteert dat het tweede resultaat afwijkt. Eenmalig bouwen in `tests/_helpers/reactive.ts`, hergebruiken in elke cat-1 test (U3, U4, G1, G2, P1, P2)
 

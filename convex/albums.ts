@@ -52,6 +52,19 @@ export const getWithGroup = query({
   },
 });
 
+// Cat-1 join-on-read: album + cover photo. Cascade matrix row P2.
+export const getWithCover = query({
+  args: { albumId: v.id("albums") },
+  handler: async (ctx, { albumId }) => {
+    const album = await requireAlbum(ctx, albumId);
+    await requireMember(ctx, album.groupId);
+    const cover = album.coverPhotoId
+      ? await ctx.db.get(album.coverPhotoId)
+      : null;
+    return { ...album, cover };
+  },
+});
+
 export const listByGroup = query({
   args: { groupId: v.id("groups") },
   handler: async (ctx, { groupId }) => {

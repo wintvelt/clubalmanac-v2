@@ -96,6 +96,21 @@ export const getById = query({
   },
 });
 
+// Cat-1 join-on-read: group + cover photo. Cascade matrix row P2.
+// Member-only (groep-data is sowieso member-only).
+export const getWithCover = query({
+  args: { groupId: v.id("groups") },
+  handler: async (ctx, { groupId }) => {
+    await requireMember(ctx, groupId);
+    const group = await ctx.db.get(groupId);
+    if (!group) return null;
+    const cover = group.coverPhotoId
+      ? await ctx.db.get(group.coverPhotoId)
+      : null;
+    return { ...group, cover };
+  },
+});
+
 export const listMine = query({
   args: {},
   handler: async (ctx) => {
