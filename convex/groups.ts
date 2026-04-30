@@ -8,6 +8,7 @@ import {
 import type { Doc, Id } from "./_generated/dataModel";
 import { getBySubject, requireCurrentUser } from "./users";
 import {
+  deleteAlbumLastSeenByAlbum,
   deleteAlbumLastSeenForUserInGroup,
   upsertAlbumLastSeen,
 } from "./albums";
@@ -181,7 +182,7 @@ export const remove = mutation({
     await requireAdmin(ctx, groupId);
     await requireGroup(ctx, groupId);
 
-    // Cascade: albumPhotos → albums → memberships → group.
+    // Cascade: albumPhotos → albumLastSeen → albums → memberships → group.
     // Photos blijven (eigendom van users, niet groups).
     const albumPhotos = await ctx.db
       .query("albumPhotos")
@@ -193,7 +194,10 @@ export const remove = mutation({
       .query("albums")
       .withIndex("by_group", (q) => q.eq("groupId", groupId))
       .collect();
-    for (const a of albums) await ctx.db.delete(a._id);
+    for (const a of albums) {
+      await deleteAlbumLastSeenByAlbum(ctx, a._id);
+      await ctx.db.delete(a._id);
+    }
 
     const memberships = await ctx.db
       .query("memberships")
@@ -243,18 +247,22 @@ export const removeMember = mutation({
     if (!isSelf && callerMembership.role !== "admin") {
       throw new Error("Admin-rechten vereist");
     }
+    // self-removal: caller wordt ex-member, callerMembership niet meer
+    // geraadpleegd na delete.
 
     const target = await getMembership(ctx, userId, groupId);
     if (!target) throw new Error("User is geen lid van deze groep");
 
-    // M1: cascade albumPhotos die deze user in déze group toevoegde
-    // (publicaties weg, photos zelf blijven — eigendom van users).
-    const userAps = await ctx.db
+    // cascade-matrix.md M1: filter op photo-owner. Bob vertrekt → al zijn
+    // foto's uit alle albums in deze group, ongeacht wie ze had toegevoegd.
+    const groupAps = await ctx.db
       .query("albumPhotos")
       .withIndex("by_group", (q) => q.eq("groupId", groupId))
-      .filter((q) => q.eq(q.field("addedBy"), userId))
       .collect();
-    for (const ap of userAps) await ctx.db.delete(ap._id);
+    for (const ap of groupAps) {
+      const photo = await ctx.db.get(ap.photoId);
+      if (photo?.ownerId === userId) await ctx.db.delete(ap._id);
+    }
 
     // M3: cascade albumLastSeen voor deze user × albums in déze group.
     // Andere groepen blijven intact.
@@ -262,14 +270,16 @@ export const removeMember = mutation({
 
     await ctx.db.delete(target._id);
 
-    // M2: admin/founder succession of group-cleanup.
+    // [GAP] zero-member check telt invites niet mee. Heroverwegen wanneer
+    // invite-systeem in Convex landt (cascade-matrix.md row S1).
     const remaining = await ctx.db
       .query("memberships")
       .withIndex("by_group", (q) => q.eq("groupId", groupId))
       .collect();
 
     if (remaining.length === 0) {
-      // (e) laatste lid weg → group + albums + albumPhotos cascade.
+      // cascade-matrix.md M2-e: laatste lid weg, group cascade-delete
+      // (albums + albumPhotos + albumLastSeen).
       const remainingAps = await ctx.db
         .query("albumPhotos")
         .withIndex("by_group", (q) => q.eq("groupId", groupId))
@@ -279,12 +289,15 @@ export const removeMember = mutation({
         .query("albums")
         .withIndex("by_group", (q) => q.eq("groupId", groupId))
         .collect();
-      for (const a of albums) await ctx.db.delete(a._id);
+      for (const a of albums) {
+        await deleteAlbumLastSeenByAlbum(ctx, a._id);
+        await ctx.db.delete(a._id);
+      }
       await ctx.db.delete(groupId);
       return;
     }
 
-    // (c) geen admin meer → alle resterende members admin maken.
+    // cascade-matrix.md M2-c: laatste admin weg, anderen promoveren.
     const adminsLeft = remaining.filter((m) => m.role === "admin");
     if (adminsLeft.length === 0) {
       for (const m of remaining) {
@@ -292,13 +305,17 @@ export const removeMember = mutation({
       }
     }
 
-    // (d) founder vertrekt → eerste admin (na (c)) wordt nieuwe founder.
+    // cascade-matrix.md M2-d: founder weg, eerste admin promoveren tot
+    // founder.
     const group = await ctx.db.get(groupId);
     if (group && group.createdBy === userId) {
       const refreshed = await ctx.db
         .query("memberships")
         .withIndex("by_group", (q) => q.eq("groupId", groupId))
         .collect();
+      // [GAP] sort op joinedAt asc voor admin/founder promotie. Bewust
+      // deterministisch gekozen, equivalent aan willekeurige insert-volgorde
+      // want createdAt monotoon stijgt.
       const newFounder = refreshed
         .filter((m) => m.role === "admin")
         .sort((a, b) => a.joinedAt - b.joinedAt)[0];
