@@ -419,7 +419,7 @@ De cyclus 1 implementatie van `extractMetadata` had vier productie-issues die in
 
 1. **`takenAt` fallback (audit-10 §1, fixed in cyclus 2):** voorheen alleen `DateTimeOriginal`. iOS schrijft die wel, maar diverse Android-toestellen + sommige bewerkers laten 'm leeg en hebben alleen `CreateDate`. Resultaat: ~30% van de geüploade foto's had geen `takenAt`. Fix: `takenAt = (DateTimeOriginal ?? CreateDate) * 1000`. Geen verdere fallback naar `createdAt` (upload-tijd ≠ photo-tijd).
 
-2. **`locationLabel` multi-deel format (audit-10 §2, fixed in cyclus 2):** voorheen single-field (`street` óf `adminArea5`). Map-tooltips werden daardoor "Damrak" zonder stad/land context. Fix: format = `${street}, ${city}, ${country}`, waarbij lege/missende velden uit de Photon-response uitgefilterd worden vóór de join met `, `. Voorbeelden: "Damrak, Amsterdam, Nederland" (alle drie aanwezig), "Amsterdam, Nederland" (geen street), "Nederland" (alleen country).
+2. **`locationLabel` multi-deel format (audit-10 §2, fixed in cyclus 2):** voorheen single-field (`street` óf `adminArea5`). Map-tooltips werden daardoor "Damrak" zonder stad/land context. Fix: format = `${street ?? name}, ${city}, ${country}`, waarbij lege/missende velden uit de Photon-response uitgefilterd worden vóór de join met `, `. `street ?? name` als fallback omdat OSM-data soms `name` (POI: museum, kerk, gebouw) levert waar `street` ontbreekt — voor Clubalmanac context (foto's bij bezienswaardigheden) is `name` waardevolle context. Voorbeelden (met `lang=en`): "Damrak, Amsterdam, Netherlands" (street + city + country), "Rijksmuseum, Amsterdam, Netherlands" (POI fallback), "Amsterdam, Netherlands" (geen street/name), "Netherlands" (alleen country).
 
 3. **Granulaire try/catch + logging (audit-10 §3, fixed in cyclus 2):** cyclus 1 had één lege `catch {}` rond exif-parser + geocoding samen — alle fouten werden stilletjes weggeslikt zonder spoor in logs. Fix: aparte catch-blocks rond (a) `import("exif-parser")`, (b) `parser.parse()`, (c) `reverseGeocode` fetch. Elke catch logt via `console.error` met context (photoId, error type) zodat productie-issues opspoorbaar zijn. Action-shape blijft graceful: nog steeds geen rethrow, photo blijft op defaults.
 
@@ -429,8 +429,9 @@ De cyclus 1 implementatie van `extractMetadata` had vier productie-issues die in
 
 Cyclus 1 gebruikte MapQuest met `MAPQUEST_KEY` env-var. Cyclus 2 vervangt dat door **Photon (Komoot)**:
 
-- Endpoint: `https://photon.komoot.io/reverse?lat=<lat>&lon=<lon>`
+- Endpoint: `https://photon.komoot.io/reverse?lat=<lat>&lon=<lon>&lang=en`
 - Header: `User-Agent: Clubalmanac/2.0` (fair-use vereiste van Photon)
+- `lang=en`: voor internationale leesbaarheid. Reizen naar landen met eigen schrift (Georgië → Georgisch, Nepal → Devanagari) krijgen Latijnse labels ipv onleesbare native script. NL-photos: minor cosmetisch verschil (`country: "Netherlands"` ipv `"Nederland"`, street/city-namen blijven gelijk). Photon ondersteunt `default, de, en, fr` — geen `nl`.
 - Geen API key — publieke instance, OSM-data, EU-gebaseerd (Berlijn)
 - Response: GeoJSON FeatureCollection. Properties bevatten `street`, `city`, `country`, `state`, `postcode` (alle optioneel). Lege uitkomst: `features: []`.
 - Volume: ruim binnen Photon fair-use voor 16 users (~hooguit honderden geocodes/maand). Bij groei: zelf-hosten van Photon-instance is een paar uur werk.

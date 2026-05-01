@@ -320,17 +320,48 @@ export const patchMetadata = internalMutation({
   },
 });
 
+// HEIC detection via ISO-BMFF magic bytes. iPhone uploads landen vaak als
+// HEIC; exif-parser kan ze niet decoderen. Audit-10 §5: graceful no-op met
+// expliciete log ipv stille parse-fail. Brand-codes: heic/heix/heim/heis +
+// mif1/msf1 (HEIF-variants die exif-parser ook niet aankan).
+function isHeicLike(bytes: Uint8Array): boolean {
+  if (bytes.length < 12) return false;
+  // bytes 4..8 = "ftyp"
+  if (
+    bytes[4] !== 0x66 ||
+    bytes[5] !== 0x74 ||
+    bytes[6] !== 0x79 ||
+    bytes[7] !== 0x70
+  ) {
+    return false;
+  }
+  const brand = String.fromCharCode(bytes[8]!, bytes[9]!, bytes[10]!, bytes[11]!);
+  return (
+    brand === "heic" ||
+    brand === "heix" ||
+    brand === "heim" ||
+    brand === "heis" ||
+    brand === "hevc" ||
+    brand === "hevx" ||
+    brand === "mif1" ||
+    brand === "msf1"
+  );
+}
+
 // Server-side EXIF + geocoding voor een net geüploade photo. Async gequeued
 // door createFromUploadInternal. Bron-mapping (oude AWS lib-geodata.js):
-//   exifDate (YYYY-MM-DD)         → takenAt (ms timestamp)
-//   exifLat / exifLon             → latitude / longitude
-//   exifAddress                   → locationLabel
-//   tags.Orientation              → exifOrientation (NIEUW, audit-9)
-//   imageSize.width/height        → width / height (NIEUW: AWS sloeg dit
-//                                   niet op, v2 wel)
+//   DateTimeOriginal ?? CreateDate → takenAt (audit-10 §1: iOS prominent op
+//                                   DateTimeOriginal, Android op CreateDate)
+//   GPSLatitude / GPSLongitude    → latitude / longitude
+//   tags.Orientation              → exifOrientation (audit-9)
+//   imageSize.width/height        → width / height
 //
-// Graceful degradation: photo deleted, storage gone, of EXIF-parse fail
-// → no-op zonder throw (cleanup-race + non-image bytes).
+// Graceful degradation (audit-10 §3 — granulaire try/catch met logging):
+//   - photo verwijderd / storage weg → silent no-op (cleanup-race)
+//   - HEIC bytes                     → log "unsupported" + skip EXIF
+//   - exif-parser import-fail        → log + skip EXIF (lib niet beschikbaar)
+//   - exif-parser create/parse fail  → log + skip EXIF (corrupt bytes)
+//   - reverseGeocode fail            → label undefined, lat/lon behouden
 export const extractMetadata = internalAction({
   args: { photoId: v.id("photos") },
   handler: async (ctx, { photoId }) => {
@@ -343,6 +374,16 @@ export const extractMetadata = internalAction({
     const blob = await ctx.storage.get(photo.storageId);
     if (!blob) return;
 
+    // Sniff eerste 12 bytes voor HEIC-magic. Goedkoper dan hele blob laden,
+    // en bij HEIC slaan we exif-parser geheel over.
+    const headerBytes = new Uint8Array(await blob.slice(0, 12).arrayBuffer());
+    if (isHeicLike(headerBytes)) {
+      console.log(
+        `[extractMetadata] unsupported format (HEIC) photoId=${photoId}, skipping EXIF`,
+      );
+      return;
+    }
+
     let width: number | undefined;
     let height: number | undefined;
     let takenAt: number | undefined;
@@ -351,55 +392,73 @@ export const extractMetadata = internalAction({
     let exifOrientation: number | undefined;
 
     try {
-      const buf = Buffer.from(await blob.arrayBuffer());
-      // exif-parser draait op Node-Buffer. Lazy import: niet alle code-paden
-      // hebben de lib nodig (tests met non-image bytes catchen toch).
+      // Lazy import: graceful failure als pakket niet laadt (rare maar
+      // expliciet gelogd ipv stille fail).
       const { default: ExifParser } = await import("exif-parser");
-      const parser = ExifParser.create(buf);
-      const result = parser.parse();
+      try {
+        const buf = Buffer.from(await blob.arrayBuffer());
+        const result = ExifParser.create(buf).parse();
 
-      const tags = result.tags ?? {};
-      // exif-parser geeft DateTimeOriginal als Unix-seconds; *1000 voor ms.
-      const dto = (tags as Record<string, unknown>).DateTimeOriginal;
-      if (typeof dto === "number") takenAt = dto * 1000;
+        const tags = (result.tags ?? {}) as Record<string, unknown>;
 
-      const lat = (tags as Record<string, unknown>).GPSLatitude;
-      const lon = (tags as Record<string, unknown>).GPSLongitude;
-      if (typeof lat === "number" && typeof lon === "number") {
-        latitude = lat;
-        longitude = lon;
+        // takenAt: DateTimeOriginal wint, fallback op CreateDate. Beide in
+        // Unix-seconds → *1000 voor ms.
+        const dto = tags.DateTimeOriginal;
+        const cd = tags.CreateDate;
+        if (typeof dto === "number") {
+          takenAt = dto * 1000;
+        } else if (typeof cd === "number") {
+          takenAt = cd * 1000;
+        }
+
+        const lat = tags.GPSLatitude;
+        const lon = tags.GPSLongitude;
+        if (typeof lat === "number") latitude = lat;
+        if (typeof lon === "number") longitude = lon;
+
+        const orient = tags.Orientation;
+        if (typeof orient === "number" && orient >= 1 && orient <= 8) {
+          exifOrientation = orient;
+        }
+
+        const size = result.imageSize as
+          | { width?: number; height?: number }
+          | undefined;
+        if (size) {
+          if (typeof size.width === "number") width = size.width;
+          if (typeof size.height === "number") height = size.height;
+        }
+      } catch (e) {
+        console.error(
+          `[extractMetadata] EXIF parse failed photoId=${photoId}`,
+          e,
+        );
       }
-
-      const orient = (tags as Record<string, unknown>).Orientation;
-      if (typeof orient === "number" && orient >= 1 && orient <= 8) {
-        exifOrientation = orient;
-      }
-
-      const size = result.imageSize as
-        | { width?: number; height?: number }
-        | undefined;
-      if (size) {
-        if (typeof size.width === "number") width = size.width;
-        if (typeof size.height === "number") height = size.height;
-      }
-    } catch {
-      // Non-image bytes / corrupt EXIF: graceful no-op pad — record blijft
-      // op defaults. Match met oude AWS getExif-error pad (return {error:true}).
+    } catch (e) {
+      console.error(`[extractMetadata] exif-parser import failed`, e);
     }
 
     // Als EXIF geen GPS opleverde maar het record had handmatig gepatchte
-    // coords (bv. uit test-setup of eerder backfill-pad), dan nemen we die
-    // mee voor geocoding. Dat is ook het pad voor de geocoding-tests die
-    // EXIF-parsing willen omzeilen.
+    // coords (bv. uit test-setup of eerder backfill-pad), gebruik die voor
+    // geocoding.
     const finalLat = latitude ?? photo.latitude;
     const finalLon = longitude ?? photo.longitude;
 
     let locationLabel: string | null = null;
     if (typeof finalLat === "number" && typeof finalLon === "number") {
-      locationLabel = await ctx.runAction(internal.photos.reverseGeocode, {
-        latitude: finalLat,
-        longitude: finalLon,
-      });
+      try {
+        locationLabel = await ctx.runAction(internal.photos.reverseGeocode, {
+          latitude: finalLat,
+          longitude: finalLon,
+        });
+      } catch (e) {
+        // reverseGeocode swallowt zelf alle errors → null. Deze catch is
+        // defensief voor onverwachte transport-fouten via runAction.
+        console.error(
+          `[extractMetadata] geocoding runAction failed photoId=${photoId}`,
+          e,
+        );
+      }
     }
 
     await ctx.runMutation(internal.photos.patchMetadata, {
@@ -409,8 +468,7 @@ export const extractMetadata = internalAction({
       takenAt,
       latitude,
       longitude,
-      // Lege string is niet als label opslaan (consistent met test-spec:
-      // empty results → undefined laten, niet "" patchen).
+      // Lege string niet als label opslaan: empty results → undefined.
       locationLabel:
         typeof locationLabel === "string" && locationLabel.length > 0
           ? locationLabel
@@ -428,62 +486,68 @@ export const getByIdInternal = internalQuery({
   },
 });
 
-// MapQuest reverse-geocoding helper. Hergebruikt door extractMetadata en
-// (potentieel) backfill-jobs. Graceful degradation: missing key, timeout,
-// 4xx/5xx, of empty results → null. Nooit throw — locationLabel is
-// secundair en mag niet de hele extract-pipeline laten falen.
+// Photon (Komoot) reverse-geocoding helper. Hergebruikt door extractMetadata
+// en (potentieel) backfill-jobs. Cyclus 2 audit-10: vervangt MapQuest om
+// secret-coupling weg te halen (geen API key nodig, EU data-residency,
+// OSM-source). Fair-use vereist een UA-header (Clubalmanac/2.0).
 //
-// HTTPS endpoint (audit-update t.o.v. AWS HTTP). 2s timeout matcht oude
-// libs/lib-geodata.js (regel 37-55).
+// Graceful degradation: timeout / 4xx / 5xx / network-fail / empty results
+// → null. Nooit throw — locationLabel is secundair en mag de extract-pipeline
+// niet laten falen. lang=en levert Latijns schrift voor non-ASCII regio's
+// (Georgië, Nepal, etc.) waar native script onleesbaar zou zijn voor de UI.
+//
+// Label-format: `${street ?? name}, ${city}, ${country}`, lege fields
+// gefilterd. `name` als fallback voor POIs (museum/kerk) waar OSM geen
+// `street` heeft. 2s timeout houdt extract-pipeline snappy.
 export const reverseGeocode = internalAction({
   args: { latitude: v.number(), longitude: v.number() },
   returns: v.union(v.string(), v.null()),
   handler: async (_ctx, { latitude, longitude }) => {
-    const key = process.env.MAPQUEST_KEY;
-    if (!key) return null;
-
-    const url = `https://www.mapquestapi.com/geocoding/v1/reverse?key=${encodeURIComponent(
-      key,
-    )}&location=${latitude},${longitude}`;
+    const url = `https://photon.komoot.io/reverse?lat=${latitude}&lon=${longitude}&lang=en`;
 
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 2000);
 
-    let response: Response;
     try {
-      response = await fetch(url, { signal: controller.signal });
-    } catch {
+      const response = await fetch(url, {
+        headers: { "User-Agent": "Clubalmanac/2.0" },
+        signal: controller.signal,
+      });
+
+      if (!response.ok) return null;
+
+      const body = (await response.json()) as {
+        features?: Array<{
+          properties?: {
+            street?: string;
+            name?: string;
+            city?: string;
+            country?: string;
+          };
+        }>;
+      };
+
+      const props = body?.features?.[0]?.properties;
+      if (!props) return null;
+
+      // street ?? name: POIs zonder street (Rijksmuseum etc.) krijgen alsnog
+      // een herkenbaar label.
+      const streetLabel = props.street ?? props.name;
+      const parts = [streetLabel, props.city, props.country].filter(
+        (p): p is string => typeof p === "string" && p.length > 0,
+      );
+      if (parts.length === 0) return null;
+      return parts.join(", ");
+    } catch (e) {
+      // network error, AbortError (timeout), of JSON-parse fail.
+      console.error(
+        `[reverseGeocode] Photon request failed lat=${latitude} lon=${longitude}`,
+        e,
+      );
       return null;
     } finally {
       clearTimeout(timer);
     }
-
-    if (!response.ok) return null;
-
-    let body: unknown;
-    try {
-      body = await response.json();
-    } catch {
-      return null;
-    }
-
-    // Match libs/lib-geodata.js regel 57-67: results[0].locations[0] ophalen
-    // en label samenstellen uit street + city/state/country fallbacks.
-    const results = (body as { results?: Array<{ locations?: unknown[] }> })
-      ?.results;
-    const first = results?.[0]?.locations?.[0] as
-      | Record<string, string>
-      | undefined;
-    if (!first) return null;
-
-    const label =
-      first.street ||
-      first.adminArea5 ||
-      first.adminArea4 ||
-      first.adminArea3 ||
-      first.adminArea1 ||
-      "";
-    return label.length > 0 ? label : null;
   },
 });
 

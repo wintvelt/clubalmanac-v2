@@ -614,7 +614,43 @@ describe("photos.extractMetadata — Photon geocoding (graceful)", () => {
     expect(photo?.locationLabel).toBe("Damrak, Amsterdam, Nederland");
   });
 
-  it("Photon partial (geen street) → label valt terug op `${city}, ${country}`", async () => {
+  it("Photon partial (geen street, wel name) → label valt terug op `${name}, ${city}, ${country}`", async () => {
+    // OSM-data heeft soms `name` (POI: museum, kerk, gebouw) waar `street`
+    // ontbreekt. Voor Clubalmanac context (foto's bij bezienswaardigheden)
+    // is name een waardevolle fallback.
+    const t = convexTest(schema);
+    const aliceId = await registerUserWithInvite(t, "user_alice", "a@x.com");
+    const storageId = await t.run(async (ctx) =>
+      ctx.storage.store(new Blob(["x"])),
+    );
+    const photoId = await insertPhotoFixture(t, aliceId, storageId);
+    await t.run(async (ctx) =>
+      ctx.db.patch(photoId, { latitude: 52.37, longitude: 4.89 }),
+    );
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify(
+            fakePhotonResponse({
+              name: "Rijksmuseum",
+              city: "Amsterdam",
+              country: "Nederland",
+            }),
+          ),
+          { status: 200 },
+        ),
+      ),
+    );
+
+    await t.action(internal.photos.extractMetadata, { photoId });
+
+    const photo = await t.run((ctx) => ctx.db.get(photoId));
+    expect(photo?.locationLabel).toBe("Rijksmuseum, Amsterdam, Nederland");
+  });
+
+  it("Photon partial (geen street, geen name) → label valt terug op `${city}, ${country}`", async () => {
     const t = convexTest(schema);
     const aliceId = await registerUserWithInvite(t, "user_alice", "a@x.com");
     const storageId = await t.run(async (ctx) =>
@@ -792,7 +828,11 @@ describe("photos.reverseGeocode (action helper)", () => {
     expect(result).toBe("Centrum, Amsterdam, Nederland");
   });
 
-  it("URL host = photon.komoot.io + User-Agent gezet", async () => {
+  it("URL host = photon.komoot.io + lang=en + User-Agent gezet", async () => {
+    // lang=en voor internationale leesbaarheid: voor reizen naar Georgië
+    // (Georgisch schrift), Nepal (Devanagari), etc. krijgen we Latijns schrift
+    // ipv onleesbare native script. NL-photos: minor cosmetisch verschil
+    // ("Netherlands" ipv "Nederland", street/city-namen blijven gelijk).
     const t = convexTest(schema);
     const fetchSpy = vi.fn().mockResolvedValue(
       new Response(
@@ -814,6 +854,7 @@ describe("photos.reverseGeocode (action helper)", () => {
     expect(String(url)).toContain(PHOTON_HOST);
     expect(String(url)).toContain("lat=52.37");
     expect(String(url)).toContain("lon=4.89");
+    expect(String(url)).toContain("lang=en");
     const headers = new Headers((init as RequestInit | undefined)?.headers);
     expect(headers.get("User-Agent") ?? headers.get("user-agent")).toMatch(
       /Clubalmanac/i,
