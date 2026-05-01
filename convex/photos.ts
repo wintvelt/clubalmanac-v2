@@ -503,9 +503,9 @@ export const getByIdInternal = internalQuery({
 // niet laten falen. lang=en levert Latijns schrift voor non-ASCII regio's
 // (Georgië, Nepal, etc.) waar native script onleesbaar zou zijn voor de UI.
 //
-// Label-format: `${street ?? name}, ${city}, ${country}`, lege fields
+// Label-format: `${street || name}, ${city}, ${country}`, lege fields
 // gefilterd. `name` als fallback voor POIs (museum/kerk) waar OSM geen
-// `street` heeft. 2s timeout houdt extract-pipeline snappy.
+// `street` heeft (of lege string levert). 2s timeout houdt pipeline snappy.
 export const reverseGeocode = internalAction({
   args: { latitude: v.number(), longitude: v.number() },
   returns: v.union(v.string(), v.null()),
@@ -537,9 +537,13 @@ export const reverseGeocode = internalAction({
       const props = body?.features?.[0]?.properties;
       if (!props) return null;
 
-      // street ?? name: POIs zonder street (Rijksmuseum etc.) krijgen alsnog
-      // een herkenbaar label.
-      const streetLabel = props.street ?? props.name;
+      // street → name fallback: POIs zonder street (Rijksmuseum etc.) krijgen
+      // alsnog een herkenbaar label. Nullish-coalescing valt niet door op lege
+      // string, dus expliciete length-check (audit-13 §1).
+      const streetLabel =
+        typeof props.street === "string" && props.street.length > 0
+          ? props.street
+          : props.name;
       const parts = [streetLabel, props.city, props.country].filter(
         (p): p is string => typeof p === "string" && p.length > 0,
       );
