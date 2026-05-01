@@ -413,6 +413,31 @@ Veel rotation-issues zijn eigenlijk al opgelost in de EXIF metadata maar worden 
 
 `photos.rotate` mutation blijft beschikbaar als handmatige fix wanneer EXIF Orientation niet klopt of user de foto sowieso anders wil oriënteren.
 
+**EXIF/geocoding hardening (cyclus 2, audit-10):**
+
+De cyclus 1 implementatie van `extractMetadata` had vier productie-issues die in cyclus 2 expliciet worden gefixt:
+
+1. **`takenAt` fallback (audit-10 §1, fixed in cyclus 2):** voorheen alleen `DateTimeOriginal`. iOS schrijft die wel, maar diverse Android-toestellen + sommige bewerkers laten 'm leeg en hebben alleen `CreateDate`. Resultaat: ~30% van de geüploade foto's had geen `takenAt`. Fix: `takenAt = (DateTimeOriginal ?? CreateDate) * 1000`. Geen verdere fallback naar `createdAt` (upload-tijd ≠ photo-tijd).
+
+2. **`locationLabel` multi-deel format (audit-10 §2, fixed in cyclus 2):** voorheen single-field (`street` óf `adminArea5`). Map-tooltips werden daardoor "Damrak" zonder stad/land context. Fix: format = `${street}, ${city}, ${country}`, waarbij lege/missende velden uit de Photon-response uitgefilterd worden vóór de join met `, `. Voorbeelden: "Damrak, Amsterdam, Nederland" (alle drie aanwezig), "Amsterdam, Nederland" (geen street), "Nederland" (alleen country).
+
+3. **Granulaire try/catch + logging (audit-10 §3, fixed in cyclus 2):** cyclus 1 had één lege `catch {}` rond exif-parser + geocoding samen — alle fouten werden stilletjes weggeslikt zonder spoor in logs. Fix: aparte catch-blocks rond (a) `import("exif-parser")`, (b) `parser.parse()`, (c) `reverseGeocode` fetch. Elke catch logt via `console.error` met context (photoId, error type) zodat productie-issues opspoorbaar zijn. Action-shape blijft graceful: nog steeds geen rethrow, photo blijft op defaults.
+
+4. **HEIC graceful no-op (audit-10 §5, known issue tot fase 4):** iPhone uploads arriveren als `image/heic` — exif-parser is JPEG-only en faalt op de container. Cyclus 1 trapte dat als generieke parse-error af zonder onderscheid. Fix: detect `mimeType === "image/heic"` (of magic-bytes `ftypheic/ftypheix`) vóór de exif-parser, log "unsupported format" en skip. Photo blijft in DB zonder EXIF metadata. Limitatie: client-side HEIC → JPEG conversion (via `expo-image-manipulator` of vergelijkbaar) komt in fase 4 client-werkpakket. Tot dan: HEIC-uploads zonder takenAt/GPS/orientation, maar wel zonder errors.
+
+**Geocoding-provider: MapQuest → Photon (cyclus 2):**
+
+Cyclus 1 gebruikte MapQuest met `MAPQUEST_KEY` env-var. Cyclus 2 vervangt dat door **Photon (Komoot)**:
+
+- Endpoint: `https://photon.komoot.io/reverse?lat=<lat>&lon=<lon>`
+- Header: `User-Agent: Clubalmanac/2.0` (fair-use vereiste van Photon)
+- Geen API key — publieke instance, OSM-data, EU-gebaseerd (Berlijn)
+- Response: GeoJSON FeatureCollection. Properties bevatten `street`, `city`, `country`, `state`, `postcode` (alle optioneel). Lege uitkomst: `features: []`.
+- Volume: ruim binnen Photon fair-use voor 16 users (~hooguit honderden geocodes/maand). Bij groei: zelf-hosten van Photon-instance is een paar uur werk.
+- Graceful degradation: 5xx, network error, of lege features → `locationLabel` undefined, geen throw
+
+Voordeel boven MapQuest: één env-var minder (geen secret-management coupling tussen dev/prod), EU data-residency expliciet, en de `${street}, ${city}, ${country}` velden zijn 1:1 in de response zonder de MapQuest `adminArea*`-puzzel.
+
 ### User visit tracking (`users.lastVisitAt`)
 
 Oude AWS app had `UV` records in DynamoDB voor visit-tracking. Doel onbekend (geen rapportage of analytics actief). Behouden in nieuwe schema voor toekomstige use cases (active users count, "wie heeft 'm al gezien"-feature).
@@ -530,7 +555,7 @@ Twee environments, geen aparte staging bij 16 users.
 |---|---|---|---|
 | `CLERK_FRONTEND_API_URL` | `convex/auth.config.ts` — JWT issuer match | Ja | Auth gebroken, alle gated mutations falen |
 | `WEBMASTER_EMAILS` | `convex/lib/auth.ts` — RBAC | Ja (prod) | Webmaster-only mutations weigeren iedereen |
-| `MAPQUEST_KEY` | `convex/photos.ts` reverseGeocode | Nee (graceful) | `locationLabel` blijft undefined op geüploade photos — extractMetadata throwt niet, geocoding-pad returnt null. **Audit-10 fix #1**: zet deze in dev én prod om de geocoding-pipeline te kunnen valideren |
+| _(geen geocoding env-var)_ | `convex/photos.ts` reverseGeocode (cyclus 2: Photon) | n.v.t. | Photon (Komoot, EU/Berlijn, OSM-data) heeft geen API key — fair-use publieke instance op `photon.komoot.io`. Bij downtime: `locationLabel` blijft undefined, extractMetadata throwt niet (zie EXIF-sectie). Cyclus 2 vervangt MapQuest om de **MAPQUEST_KEY**-secret-coupling weg te halen (audit-10 fix #1: geen geheime key meer nodig om geocoding te valideren tussen dev/prod) |
 | `MAILJET_API_KEY` + `MAILJET_API_SECRET` | (toekomst) email-werkpakket | Nee (in cyclus 1) | Bounce-webhook + outgoing emails geen-op tot landing van email-werkpakket |
 | `MAILJET_WEBHOOK_SECRET` | (toekomst) `convex/http.ts` `/email-event` HMAC-validatie | Nee (in cyclus 1) | TODO in `convex/http.ts` — endpoint accepteert nu elk POST request, **niet uitrollen naar prod zonder secret-check** |
 
@@ -675,7 +700,7 @@ Per domein: unit tests eerst, dan implementatie.
 - [x] **Invites:** create, accept, decline, invite-only signup validatie. Plus `remove` (sender of group-admin), bounce-handler `internal.invites.handleBounce` met dedup via `inviteBounceEvents` table (zie cascade matrix IB1). **Open:** (a) `convex/http.ts` webhook endpoint dat de Mailjet bounce-payload binnentrekt en `internal.invites.handleBounce` aanroept — `handleBounce` zelf staat al, het HTTP-route-deel volgt in het email-werkpakket; (b) scheduled cron (daily) die `invites` met `status="pending"` en `expiresAt < now` patcht naar `status="expired"` (cascade matrix IB2). Accept-mutation kan dat zelf niet doen want de status-patch wordt door de bijbehorende throw teruggedraaid (Convex transactionele rollback). Cron landt naast de flagging-cron uit de Flagging-bullet
 - [x] **Features:** create + upvoting (open voor users), update + remove (webmaster only via `requireWebmaster`). Probleem-report action verstuurt email naar webmaster (zelfde env-var). Audit-7 §4 fixte hier de drift: code stond submitter-only, plan zei webmaster-only — tests in `tests/features/crud.test.ts` pinnen nu het webmaster-only gedrag.
 - [x] **Flagging:** flag/appeal/decide mutations met owner+webmaster checks (via `requireWebmaster` helper in `convex/lib/auth.ts`), listMyFlagged + listAllFlagged queries, daily cron `cleanupFlaggedPhotos` (in `convex/crons.ts`) voor auto-delete na countdown, `internal.photos.sendFlagDecisionEmail` als stub (Mailjet komt in email-werkpakket). Schema uitgebreid met `flaggedDeleteDate`, `flaggedAppealDate`, `flaggedAppealDenyDate` + index `by_flagged_delete`. Cascade matrix FL1, FL2, U10 alle ✅. Afwijking van oude AWS: email alleen bij deny (niet bij approve), `listAllFlagged` throwt voor non-webmaster, appeal niet meer mogelijk na deny
-- [ ] **File upload:** 1-step backend-mediated `POST /upload` httpAction (cyclus 1 architectuur rewrite — zie File Storage sectie), idempotency via `X-Upload-Id`/`uploadIdempotency` table, daily cron `cleanupOldUploadIdempotency` voor 7d-cleanup. EXIF/geocoding hardening (DateTimeOriginal fallback, locationLabel multi-deel, granulaire try/catch, JPEG fixtures, HEIC) volgt in cyclus 2.
+- [ ] **File upload:** 1-step backend-mediated `POST /upload` httpAction (cyclus 1 architectuur rewrite — zie File Storage sectie), idempotency via `X-Upload-Id`/`uploadIdempotency` table, daily cron `cleanupOldUploadIdempotency` voor 7d-cleanup. **Cyclus 2 (audit-10 hardening)**: DateTimeOriginal ?? CreateDate fallback voor `takenAt`, locationLabel multi-deel format `${street}, ${city}, ${country}` (lege fields gefilterd), granulaire try/catch + console.error logging in extractMetadata (geen lege catch meer), HEIC graceful no-op met "unsupported format" log (client-side conversion komt in fase 4), MapQuest → **Photon** geocoding-switch (no API key). Tests in `tests/photos/extractMetadata.test.ts` (cyclus 2, mock-based exif-parser approach).
 - [ ] **Photo rotation:** `photos.rotate` mutation (owner OR group-admin) + scheduled action met `sharp` voor server-side rewrite + cleanup oude storage
 - [x] **Visit tracking:** `users.recordVisit` mutation, client throttled max 1x/min op AppState=active
 - [ ] **Email:** Mailjet account + DNS setup (DKIM, SPF), Convex actions voor alle applicatie-emails (invite/leave/ban/etc), HTTP endpoint voor bounce-webhook, NL templates 1:1 porten van oude SES templates

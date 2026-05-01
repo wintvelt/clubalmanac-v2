@@ -12,14 +12,109 @@ import type { Id } from "../../convex/_generated/dataModel";
 import schema from "../../convex/schema";
 import { registerUserWithInvite, withUser } from "../_helpers/auth";
 
+// ---------------------------------------------------------------------------
+// File upload werkpakket — Sessie A test-spec, KERN.
+// Cyclus 2: EXIF/geocoding hardening (audit-10) + MapQuest → Photon switch.
+//
+// Wat verandert t.o.v. cyclus 1:
+//   1. Geocoding-provider: MapQuest → Photon (Komoot, EU, OSM-data, no API key,
+//      fair-use). Plan-doc env-vars sectie + cascade matrix gewijzigd.
+//   2. takenAt-mapping: DateTimeOriginal ?? CreateDate fallback (audit-10:
+//      iOS gebruikt "DateTimeOriginal" prominent, Android meer "CreateDate";
+//      voorheen alleen DateTimeOriginal → veel iPhone-foto's zonder takenAt).
+//   3. locationLabel format: multi-deel `${street}, ${city}, ${country}`,
+//      lege fields gefilterd (audit-10: oude single-field label gaf "Damrak"
+//      ipv "Damrak, Amsterdam, Nederland" voor map-tooltips).
+//   4. Granulaire try/catch + console.error logging in extractMetadata
+//      (audit-10: één lege catch slikte alle fouten zonder spoor; nu
+//      onderscheidbaar exif-import-fail, exif-parse-fail, geocode-fail).
+//   5. HEIC: graceful no-op + log "unsupported format" (iPhone uploads
+//      arriveren als HEIC, exif-parser kan ze niet parsen — voorheen werd
+//      dit gewoon stil als "non-image bytes" weggetrapt).
+//
+// Photon API contract (geverifieerd tegen live endpoint, mei 2026):
+//   GET https://photon.komoot.io/reverse?lat=<lat>&lon=<lon>
+//   Headers: User-Agent: Clubalmanac/2.0 (Photon vraagt fair-use UA)
+//   Response: GeoJSON FeatureCollection
+//     {
+//       "type": "FeatureCollection",
+//       "features": [
+//         {
+//           "type": "Feature",
+//           "properties": {
+//             "name": "Damrak",        // streetname / POI-name
+//             "street": "Damrak",      // soms aanwezig (afhankelijk van OSM-tag)
+//             "city": "Amsterdam",
+//             "country": "Nederland",
+//             "state": "Noord-Holland",
+//             "postcode": "1012",
+//             "type": "street"
+//           },
+//           "geometry": { "type": "Point", "coordinates": [4.9041, 52.3676] }
+//         }
+//       ]
+//     }
+//   Lege uitkomst: { "type": "FeatureCollection", "features": [] }
+//   Downtime: 5xx of network error — graceful null-pad zoals MapQuest.
+//
+// API-signaturen (ongewijzigd t.o.v. cyclus 1, alleen interne implementatie):
+//   internal.photos.reverseGeocode({lat, lon}): Promise<string | null>
+//   internal.photos.extractMetadata({photoId}): Promise<void>
+//   internal.photos.patchMetadata({photoId, ...metadataFields}): mutation
+//
+// Test-storage-aanpak — keuze gedocumenteerd:
+//   Convex-test draait actions in edge-runtime VM. Echt JPEG-bytes met
+//   geldige EXIF cross-runtime werkend krijgen is fragiel. Cyclus 2 kiest
+//   bewust voor **mock van exif-parser via vi.mock**:
+//     - Deterministisch, geen platform-afhankelijkheid
+//     - Test alleen action-logica (mapping van tags naar patch-args), niet
+//       exif-parser zelf — die lib heeft eigen testsuite
+//     - Voor Orientation/DateTimeOriginal/GPS/dimensions roundtrip is dit
+//       voldoende: ieder veld krijgt expliciete assertion
+//   Reële JPEG-fixtures kunnen later in een aparte integration-test layer
+//   (cyclus 2+ scope, tegen echte Convex deployment).
+// ---------------------------------------------------------------------------
+
+// Mutable holder die elk test kan zetten vóór `t.action()` aanroep. De
+// vi.mock-factory leest via een getter zodat update tussen tests doorwerkt
+// (vi.mock zelf wordt gehoist en draait één keer per file).
+type ExifMock =
+  | { kind: "ok"; tags: Record<string, unknown>; imageSize?: { width?: number; height?: number } }
+  | { kind: "throwOnParse"; message?: string }
+  | { kind: "throwOnCreate"; message?: string };
+
+let exifMock: ExifMock = { kind: "ok", tags: {} };
+
+vi.mock("exif-parser", () => ({
+  default: {
+    create: (_buf: unknown) => {
+      const m = exifMock;
+      if (m.kind === "throwOnCreate") {
+        throw new Error(m.message ?? "exif-parser create failed");
+      }
+      return {
+        parse: () => {
+          const cur = exifMock;
+          if (cur.kind === "throwOnParse") {
+            throw new Error(cur.message ?? "exif-parser parse failed");
+          }
+          if (cur.kind === "throwOnCreate") {
+            // Mode flipped tussen create() en parse() — defensive.
+            throw new Error(cur.message ?? "exif-parser create failed");
+          }
+          return {
+            tags: cur.tags,
+            imageSize: cur.imageSize ?? {},
+          };
+        },
+      };
+    },
+  },
+}));
+
 // Fixture-helper: directe DB-insert van een photo record. Bypass auth en
 // photoCount-logic — extractMetadata-tests testen alleen het extractMetadata-
-// pad; record-creatie is fixture, niet de unit under test. De vorige spec
-// gebruikte hiervoor `api.photos.createFromUpload`, maar die mutation is
-// vervallen in de cyclus 1 upload-rewrite (1-step backend-mediated POST
-// /upload via convex/http.ts; zie docs/migratie-plan-convex.md File Storage
-// sectie). Direct insert is sneller en omzeilt de hele HTTP-flow die niet
-// relevant is voor metadata-extractie tests.
+// pad; record-creatie is fixture, niet de unit under test.
 async function insertPhotoFixture(
   t: ReturnType<typeof convexTest>,
   ownerId: Id<"users">,
@@ -37,104 +132,59 @@ async function insertPhotoFixture(
   );
 }
 
-// File upload werkpakket — Sessie A test-spec, KERN.
-//
-// Bron: oude AWS handlers
-//   /Users/wintvelt/Documents/DEV/DEV/blob-images-api-photos/handlersPhoto/createPhoto.js
-//     regel 86-104 (EXIF-extractie pad) + 86-95 (S3-metadata pad voor migrations,
-//     niet relevant voor v2).
-//   /Users/wintvelt/Documents/DEV/DEV/blob-images-api-photos/libs/lib-geodata.js
-//     regel 29-70 (fetchGeoCode = MapQuest reverse geocoding, AbortController
-//     + 2s timeout, Intl.DisplayNames voor country, transliteration).
-//     regel 72-82 (getExif = exif-parser create + parse, error → return {error:true}).
-//     regel 85-113 (getExifData = parse CreateDate → exifDate, GPSLat/Lon → geocode).
-//
-// Convex equivalent:
-//   internal.photos.extractMetadata({ photoId }): Promise<void>
-//     - Action (kan ctx.storage.get + extern fetch).
-//     - Leest photo record → krijgt storageId.
-//     - Leest blob uit storage.
-//     - Parst EXIF via exif-parser (Node lib, alleen in actions beschikbaar).
-//     - Patcht photo record met width, height, takenAt, latitude, longitude,
-//       exifOrientation (NEW veld — audit-9 §photo rotation).
-//     - Bij GPS aanwezig: belt internal.photos.reverseGeocode → patcht
-//       locationLabel.
-//     - Patches gaan via ctx.runMutation (action kan niet direct ctx.db.patch).
-//
-//   internal.photos.reverseGeocode({ latitude, longitude }): Promise<string | null>
-//     - Action helper. MapQuest API call met 2s timeout (matcht AWS).
-//     - Returnt location-label string of null (timeout/4xx/5xx/missing-key →
-//       graceful null, geen throw).
-//
-// Veld-mapping AWS → v2:
-//   exifDate (YYYY-MM-DD string)  → takenAt (number = ms timestamp)
-//   exifLat                       → latitude
-//   exifLon                       → longitude
-//   exifAddress (string)          → locationLabel
-//   (nieuw)                       → exifOrientation (number 1..8, audit-9 §photo rotation)
-//   (nieuw)                       → width, height (uit EXIF ImageWidth/ImageHeight)
-//
-// Test-storage-aanpak — keuze gedocumenteerd:
-//   Convex-test draait actions in edge-runtime VM. Echt JPEG-bytes met
-//   geldige EXIF in fixtures hebben we niet, en exif-parser laden in
-//   edge-runtime is mogelijk fragiel. Gekozen aanpak:
-//     1. Tests die NIET op echte EXIF-parsing leunen (no-photo, no-storage,
-//        non-image bytes → graceful no-EXIF) draaien als gewone unit tests.
-//     2. Tests die EXIF-parsing zelf valideren (Orientation 1..8 mapping,
-//        DateTimeOriginal → takenAt) zijn `it.todo(...)` met expliciete
-//        boundary documentatie. B vult deze in tijdens implementatie via
-//        eigen voorkeur (real fixture, mocked exif-parser, of integration
-//        test tegen echte deployment). Reden: spec-author kan niet zinvol
-//        beweren of edge-runtime exif-parser laadt.
-//     3. Geocoding-tests gebruiken vi.stubGlobal('fetch', ...) om MapQuest
-//        respons te mocken — pinnen graceful-degradation contract zonder
-//        echte HTTP-calls.
-
-const MAPQUEST_KEY_ENV = "MAPQUEST_KEY";
-
-// MapQuest-reverse response shape, zie lib-geodata.js regel 57-67.
-const fakeMapQuestResponse = (label: string) => ({
-  results: [
-    {
-      locations: [
-        {
-          street: label,
-          adminArea1: "NL",
-          adminArea1Type: "Country",
-          adminArea3: "Noord-Holland",
-          adminArea3Type: "State",
-          adminArea5: "Amsterdam",
-          adminArea5Type: "City",
+// Photon GeoJSON FeatureCollection helper. Lege fields filtert de action
+// uit het multi-deel label.
+function fakePhotonResponse(props: {
+  street?: string;
+  city?: string;
+  country?: string;
+  state?: string;
+  name?: string;
+  postcode?: string;
+}) {
+  return {
+    type: "FeatureCollection",
+    features: [
+      {
+        type: "Feature",
+        properties: {
+          osm_type: "W",
+          osm_id: 1,
+          osm_key: "highway",
+          osm_value: "primary",
+          type: "street",
+          ...props,
         },
-      ],
-    },
-  ],
-});
+        geometry: { type: "Point", coordinates: [4.9041, 52.3676] },
+      },
+    ],
+  };
+}
+
+const PHOTON_HOST = "photon.komoot.io";
 
 beforeEach(() => {
-  // Default: geen MapQuest key → reverseGeocode skipt (matched 'env-var
-  // missing'-test).
-  delete process.env[MAPQUEST_KEY_ENV];
+  // Default: parse returnt lege tags — match het non-image graceful pad.
+  exifMock = { kind: "ok", tags: {} };
 });
 
 afterEach(() => {
   vi.unstubAllGlobals();
-  delete process.env[MAPQUEST_KEY_ENV];
+  vi.restoreAllMocks();
 });
+
+// ---------------------------------------------------------------------------
+// Guard paths — record/storage missing
+// ---------------------------------------------------------------------------
 
 describe("photos.extractMetadata — guard paths", () => {
   it("photoId verwijst naar verwijderde photo → no-op, geen error", async () => {
-    // Bron: oude AWS S3-trigger had geen "photo bestaat niet"-pad omdat
-    // de trigger het record zelf maakte. v2 splitst create van metadata,
-    // dus de race "photo verwijderd vóór action draait" is reëel
-    // (storage cleanup queue, etc.).
     const t = convexTest(schema);
     const aliceId = await registerUserWithInvite(t, "user_alice", "a@x.com");
     const storageId = await t.run(async (ctx) =>
       ctx.storage.store(new Blob(["x"])),
     );
     const photoId = await insertPhotoFixture(t, aliceId, storageId);
-    // Verwijder photo direct.
     await withUser(t, "user_alice").mutation(api.photos.remove, { photoId });
 
     await expect(
@@ -143,15 +193,12 @@ describe("photos.extractMetadata — guard paths", () => {
   });
 
   it("storage object weg (cleanup-race) → no-op, geen error", async () => {
-    // Bron: storage cleanup en metadata-extract draaien beide async; als
-    // cleanup-action eerder klaar is verdwijnt de blob. Action moet graceful.
     const t = convexTest(schema);
     const aliceId = await registerUserWithInvite(t, "user_alice", "a@x.com");
     const storageId = await t.run(async (ctx) =>
       ctx.storage.store(new Blob(["x"])),
     );
     const photoId = await insertPhotoFixture(t, aliceId, storageId);
-    // Verwijder storage maar laat photo record staan.
     await t.run(async (ctx) => ctx.storage.delete(storageId));
 
     await expect(
@@ -160,17 +207,20 @@ describe("photos.extractMetadata — guard paths", () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// No-EXIF graceful pad
+// ---------------------------------------------------------------------------
+
 describe("photos.extractMetadata — no-EXIF graceful", () => {
-  it("non-image blob (geen EXIF) → record blijft op defaults, geen error", async () => {
-    // Bron: lib-geodata.js regel 78-81 — getExif catched parse-error,
-    // returnt { error: true }. getExifData regel 89: if (exifItem.error)
-    // return {} → updateObj blijft leeg, geen patches.
+  it("non-image blob (geen EXIF tags) → record blijft op defaults, geen error", async () => {
     const t = convexTest(schema);
     const aliceId = await registerUserWithInvite(t, "user_alice", "a@x.com");
     const storageId = await t.run(async (ctx) =>
       ctx.storage.store(new Blob(["niet een echte JPEG"])),
     );
     const photoId = await insertPhotoFixture(t, aliceId, storageId);
+
+    exifMock = { kind: "ok", tags: {} };
 
     await t.action(internal.photos.extractMetadata, { photoId });
 
@@ -181,137 +231,486 @@ describe("photos.extractMetadata — no-EXIF graceful", () => {
     expect(photo?.locationLabel).toBeUndefined();
     expect(photo?.width).toBeUndefined();
     expect(photo?.height).toBeUndefined();
+    expect(photo?.exifOrientation).toBeUndefined();
   });
 });
 
-describe("photos.extractMetadata — EXIF parsing", () => {
-  // Tests die echte JPEG-fixtures vereisen. Markered als it.todo zodat ze
-  // expliciet in de test-output verschijnen als "B moet implementeren of
-  // beargumenteren waarom integration-only".
-  //
-  // Bron-mapping per todo:
+// ---------------------------------------------------------------------------
+// EXIF parsing — mocked exif-parser tags
+// ---------------------------------------------------------------------------
 
-  it.todo(
-    // lib-geodata.js regel 92-97: createDate (Unix sec) → Date(*1000) →
-    // makeDateStr → exifDate string. v2: takenAt = createDate * 1000 (ms).
-    "EXIF DateTimeOriginal → takenAt (ms timestamp, niet datestring)",
-  );
-
-  it.todo(
-    // lib-geodata.js regel 98-110: GPSLatitudeRef triggert lat/lon extractie.
-    // GPS aanwezig zonder DateTimeOriginal → lat/lon gevuld, takenAt undefined.
-    "EXIF GPS aanwezig zonder DateTimeOriginal → latitude+longitude gezet, takenAt undefined",
-  );
-
-  it.todo(
-    // [GAP] NIEUW gedrag — geen AWS-equivalent. Audit-9 §EXIF Orientation:
-    // exif-parser geeft tags.Orientation (1..8). v2 schema: exifOrientation
-    // (B voegt veld toe). Test moet alle 8 waarden ronde-trippen.
-    "EXIF Orientation tag 1..8 → exifOrientation veld (alle 8 waarden)",
-  );
-
-  it.todo(
-    // [GAP] NIEUW veld. exif-parser geeft imageSize.width/height. v2
-    // schema heeft photos.width / photos.height al gedefinieerd, maar
-    // oude AWS createPhoto.js sloeg deze NIET op (alleen exifDate/Lat/Lon/
-    // Address). Hier expliciet pinnen dat width+height geëxtraheerd worden.
-    "JPEG dimensions → width + height velden",
-  );
-
-  it.todo(
-    // lib-geodata.js regel 92-95: alleen als CreateDate aanwezig is.
-    // exifDate niet zetten als ontbreekt. v2: takenAt blijft undefined,
-    // GEEN fallback naar createdAt (audit-decision: createdAt ≠ takenAt;
-    // upload-tijd is geen photo-tijd).
-    "geen DateTimeOriginal → takenAt blijft undefined (geen createdAt fallback)",
-  );
-});
-
-describe("photos.extractMetadata — geocoding (graceful degradation)", () => {
-  // Boundary: tests met handmatig gepatchte lat/lon in photo record om
-  // EXIF-parsing buiten beschouwing te laten en alleen het MapQuest-pad
-  // te isoleren. B mag besluiten een aparte signature te kiezen waarbij
-  // extractMetadata een sub-action belt; alternatief is dat we
-  // internal.photos.reverseGeocode ({lat, long}) direct aanroepen — zie
-  // sectie hieronder.
-
-  it("MapQuest key ontbreekt → action skipt geocoding, lat/lon blijven, locationLabel undefined", async () => {
-    // Bron: lib-geodata.js regel 31 — process.env.MAPQUEST_KEY in URL.
-    // Geen key → URL ongeldig → fetch faalt. Wij forceren expliciete skip
-    // (geen onnodige fetch met "undefined" key in URL).
+describe("photos.extractMetadata — EXIF parsing (mocked)", () => {
+  // Audit-10 §1: DateTimeOriginal heeft prioriteit, val terug op CreateDate.
+  // exif-parser geeft beide in Unix-seconds; v2 slaat ms op.
+  it("DateTimeOriginal aanwezig → takenAt = DateTimeOriginal * 1000", async () => {
     const t = convexTest(schema);
     const aliceId = await registerUserWithInvite(t, "user_alice", "a@x.com");
     const storageId = await t.run(async (ctx) =>
-      ctx.storage.store(new Blob(["niet-jpeg"])),
+      ctx.storage.store(new Blob(["x"])),
     );
     const photoId = await insertPhotoFixture(t, aliceId, storageId);
-    // Patch record met fake GPS — alsof EXIF al geparsed is. Action moet
-    // 'lat/lon staat al, geen key, skip geocoding'-pad nemen.
-    await t.run(async (ctx) =>
-      ctx.db.patch(photoId, { latitude: 52.37, longitude: 4.89 }),
-    );
 
-    delete process.env[MAPQUEST_KEY_ENV];
-    const fetchSpy = vi.fn();
-    vi.stubGlobal("fetch", fetchSpy);
+    exifMock = {
+      kind: "ok",
+      tags: { DateTimeOriginal: 1700000000 }, // 2023-11-14
+    };
 
     await t.action(internal.photos.extractMetadata, { photoId });
 
-    // Geen MapQuest call gedaan.
-    expect(
-      fetchSpy.mock.calls.some((call) =>
-        String(call[0]).includes("mapquest"),
+    const photo = await t.run((ctx) => ctx.db.get(photoId));
+    expect(photo?.takenAt).toBe(1700000000 * 1000);
+  });
+
+  it("alleen CreateDate (geen DateTimeOriginal) → takenAt = CreateDate * 1000", async () => {
+    const t = convexTest(schema);
+    const aliceId = await registerUserWithInvite(t, "user_alice", "a@x.com");
+    const storageId = await t.run(async (ctx) =>
+      ctx.storage.store(new Blob(["x"])),
+    );
+    const photoId = await insertPhotoFixture(t, aliceId, storageId);
+
+    exifMock = {
+      kind: "ok",
+      tags: { CreateDate: 1600000000 },
+    };
+
+    await t.action(internal.photos.extractMetadata, { photoId });
+
+    const photo = await t.run((ctx) => ctx.db.get(photoId));
+    expect(photo?.takenAt).toBe(1600000000 * 1000);
+  });
+
+  it("beide DateTimeOriginal én CreateDate → DateTimeOriginal wint", async () => {
+    const t = convexTest(schema);
+    const aliceId = await registerUserWithInvite(t, "user_alice", "a@x.com");
+    const storageId = await t.run(async (ctx) =>
+      ctx.storage.store(new Blob(["x"])),
+    );
+    const photoId = await insertPhotoFixture(t, aliceId, storageId);
+
+    exifMock = {
+      kind: "ok",
+      tags: {
+        DateTimeOriginal: 1700000000,
+        CreateDate: 1600000000,
+      },
+    };
+
+    await t.action(internal.photos.extractMetadata, { photoId });
+
+    const photo = await t.run((ctx) => ctx.db.get(photoId));
+    expect(photo?.takenAt).toBe(1700000000 * 1000);
+  });
+
+  it("noch DateTimeOriginal noch CreateDate → takenAt blijft undefined (geen createdAt fallback)", async () => {
+    const t = convexTest(schema);
+    const aliceId = await registerUserWithInvite(t, "user_alice", "a@x.com");
+    const storageId = await t.run(async (ctx) =>
+      ctx.storage.store(new Blob(["x"])),
+    );
+    const photoId = await insertPhotoFixture(t, aliceId, storageId);
+
+    exifMock = { kind: "ok", tags: {} };
+
+    await t.action(internal.photos.extractMetadata, { photoId });
+
+    const photo = await t.run((ctx) => ctx.db.get(photoId));
+    expect(photo?.takenAt).toBeUndefined();
+  });
+
+  it("GPSLatitude + GPSLongitude → latitude+longitude gezet", async () => {
+    const t = convexTest(schema);
+    const aliceId = await registerUserWithInvite(t, "user_alice", "a@x.com");
+    const storageId = await t.run(async (ctx) =>
+      ctx.storage.store(new Blob(["x"])),
+    );
+    const photoId = await insertPhotoFixture(t, aliceId, storageId);
+
+    exifMock = {
+      kind: "ok",
+      tags: { GPSLatitude: 52.37, GPSLongitude: 4.89 },
+    };
+
+    // Mock geocoding: geen GPS-resolve nodig om GPS-extractie te testen.
+    // Photon mock returnt empty zodat locationLabel undefined blijft.
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({ type: "FeatureCollection", features: [] }),
+          { status: 200 },
+        ),
       ),
-    ).toBe(false);
+    );
+
+    await t.action(internal.photos.extractMetadata, { photoId });
+
+    const photo = await t.run((ctx) => ctx.db.get(photoId));
+    expect(photo?.latitude).toBe(52.37);
+    expect(photo?.longitude).toBe(4.89);
+  });
+
+  // [GAP] NIEUW gedrag — audit-9 §EXIF Orientation. exif-parser geeft
+  // tags.Orientation (1..8). v2 schema: exifOrientation. Test rondetript
+  // alle 8 valide waarden + invalid (0, 9) → undefined.
+  it("Orientation tag 1..8 → exifOrientation gezet", async () => {
+    const t = convexTest(schema);
+    const aliceId = await registerUserWithInvite(t, "user_alice", "a@x.com");
+
+    for (const o of [1, 2, 3, 4, 5, 6, 7, 8]) {
+      const storageId = await t.run(async (ctx) =>
+        ctx.storage.store(new Blob(["x"])),
+      );
+      const photoId = await insertPhotoFixture(t, aliceId, storageId);
+      exifMock = { kind: "ok", tags: { Orientation: o } };
+      await t.action(internal.photos.extractMetadata, { photoId });
+      const photo = await t.run((ctx) => ctx.db.get(photoId));
+      expect(photo?.exifOrientation).toBe(o);
+    }
+  });
+
+  it("Orientation = 0 of >8 (invalid) → exifOrientation blijft undefined", async () => {
+    const t = convexTest(schema);
+    const aliceId = await registerUserWithInvite(t, "user_alice", "a@x.com");
+
+    for (const o of [0, 9, 42, -1]) {
+      const storageId = await t.run(async (ctx) =>
+        ctx.storage.store(new Blob(["x"])),
+      );
+      const photoId = await insertPhotoFixture(t, aliceId, storageId);
+      exifMock = { kind: "ok", tags: { Orientation: o } };
+      await t.action(internal.photos.extractMetadata, { photoId });
+      const photo = await t.run((ctx) => ctx.db.get(photoId));
+      expect(photo?.exifOrientation).toBeUndefined();
+    }
+  });
+
+  it("imageSize.width/height → width + height velden gepatched", async () => {
+    const t = convexTest(schema);
+    const aliceId = await registerUserWithInvite(t, "user_alice", "a@x.com");
+    const storageId = await t.run(async (ctx) =>
+      ctx.storage.store(new Blob(["x"])),
+    );
+    const photoId = await insertPhotoFixture(t, aliceId, storageId);
+
+    exifMock = {
+      kind: "ok",
+      tags: {},
+      imageSize: { width: 4032, height: 3024 },
+    };
+
+    await t.action(internal.photos.extractMetadata, { photoId });
+
+    const photo = await t.run((ctx) => ctx.db.get(photoId));
+    expect(photo?.width).toBe(4032);
+    expect(photo?.height).toBe(3024);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Granulaire try/catch — audit-10 §3
+// ---------------------------------------------------------------------------
+
+describe("photos.extractMetadata — granulaire foutpaden + logging", () => {
+  it("exif-parser create() throwt → log + photo blijft op defaults, geen rethrow", async () => {
+    const t = convexTest(schema);
+    const aliceId = await registerUserWithInvite(t, "user_alice", "a@x.com");
+    const storageId = await t.run(async (ctx) =>
+      ctx.storage.store(new Blob(["corrupt"])),
+    );
+    const photoId = await insertPhotoFixture(t, aliceId, storageId);
+
+    exifMock = { kind: "throwOnCreate", message: "Invalid JPEG marker" };
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    await expect(
+      t.action(internal.photos.extractMetadata, { photoId }),
+    ).resolves.not.toThrow();
+
+    // Log-sample assertion: enige aanroep met EXIF-context. Niet pinnen op
+    // exact format — alleen dat de fout niet stilletjes verdwijnt zoals in
+    // de cyclus 1 lege catch.
+    expect(errSpy).toHaveBeenCalled();
+
+    const photo = await t.run((ctx) => ctx.db.get(photoId));
+    expect(photo?.takenAt).toBeUndefined();
+    expect(photo?.width).toBeUndefined();
+    expect(photo?.exifOrientation).toBeUndefined();
+  });
+
+  it("exif-parser parse() throwt → log + photo blijft op defaults, geen rethrow", async () => {
+    const t = convexTest(schema);
+    const aliceId = await registerUserWithInvite(t, "user_alice", "a@x.com");
+    const storageId = await t.run(async (ctx) =>
+      ctx.storage.store(new Blob(["corrupt"])),
+    );
+    const photoId = await insertPhotoFixture(t, aliceId, storageId);
+
+    exifMock = { kind: "throwOnParse", message: "Bad EXIF segment" };
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    await expect(
+      t.action(internal.photos.extractMetadata, { photoId }),
+    ).resolves.not.toThrow();
+
+    expect(errSpy).toHaveBeenCalled();
+
+    const photo = await t.run((ctx) => ctx.db.get(photoId));
+    expect(photo?.takenAt).toBeUndefined();
+    expect(photo?.exifOrientation).toBeUndefined();
+  });
+
+  it("Photon down (fetch throws) → log + photo behoudt lat/lon, locationLabel undefined", async () => {
+    const t = convexTest(schema);
+    const aliceId = await registerUserWithInvite(t, "user_alice", "a@x.com");
+    const storageId = await t.run(async (ctx) =>
+      ctx.storage.store(new Blob(["x"])),
+    );
+    const photoId = await insertPhotoFixture(t, aliceId, storageId);
+
+    exifMock = {
+      kind: "ok",
+      tags: { GPSLatitude: 52.37, GPSLongitude: 4.89 },
+    };
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockRejectedValue(new Error("ECONNRESET")),
+    );
+    // Geocoding-faal moet zichtbaar in logs zijn (audit-10 §3: niet meer
+    // stilletjes wegslikken).
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    await expect(
+      t.action(internal.photos.extractMetadata, { photoId }),
+    ).resolves.not.toThrow();
+
+    expect(errSpy).toHaveBeenCalled();
 
     const photo = await t.run((ctx) => ctx.db.get(photoId));
     expect(photo?.latitude).toBe(52.37);
     expect(photo?.longitude).toBe(4.89);
     expect(photo?.locationLabel).toBeUndefined();
   });
+});
 
-  it("MapQuest 200 OK → locationLabel gepatched", async () => {
+// ---------------------------------------------------------------------------
+// HEIC graceful no-op — audit-10 §5
+// ---------------------------------------------------------------------------
+
+describe("photos.extractMetadata — HEIC unsupported format", () => {
+  it("mimeType=image/heic → log unsupported + geen EXIF-parse, photo zonder metadata", async () => {
     const t = convexTest(schema);
     const aliceId = await registerUserWithInvite(t, "user_alice", "a@x.com");
     const storageId = await t.run(async (ctx) =>
-      ctx.storage.store(new Blob(["niet-jpeg"])),
+      ctx.storage.store(
+        new Blob([new Uint8Array([0x00, 0x00, 0x00, 0x18, 0x66, 0x74, 0x79, 0x70, 0x68, 0x65, 0x69, 0x63])]),
+      ),
+    );
+    const photoId = await insertPhotoFixture(t, aliceId, storageId, {
+      mimeType: "image/heic",
+    });
+
+    // Sentinel: als implementatie toch exif-parser zou aanroepen, throwt
+    // de mock — test detecteert dat als regression.
+    exifMock = { kind: "throwOnCreate", message: "should not be called for HEIC" };
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+
+    await expect(
+      t.action(internal.photos.extractMetadata, { photoId }),
+    ).resolves.not.toThrow();
+
+    // Verwacht een log-regel met "unsupported" of "heic" als hint dat de
+    // skip bewust gebeurde, niet stilletjes als generieke parse-fail.
+    const loggedHeicHint = logSpy.mock.calls.some((call) => {
+      const joined = call.map((c) => String(c)).join(" ").toLowerCase();
+      return joined.includes("unsupported") || joined.includes("heic");
+    });
+    expect(loggedHeicHint).toBe(true);
+
+    const photo = await t.run((ctx) => ctx.db.get(photoId));
+    expect(photo?.takenAt).toBeUndefined();
+    expect(photo?.latitude).toBeUndefined();
+    expect(photo?.longitude).toBeUndefined();
+    expect(photo?.locationLabel).toBeUndefined();
+    expect(photo?.width).toBeUndefined();
+    expect(photo?.height).toBeUndefined();
+    expect(photo?.exifOrientation).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Geocoding via Photon — graceful degradation
+// ---------------------------------------------------------------------------
+
+describe("photos.extractMetadata — Photon geocoding (graceful)", () => {
+  it("geen GPS coords → action skipt geocoding (geen Photon-call)", async () => {
+    const t = convexTest(schema);
+    const aliceId = await registerUserWithInvite(t, "user_alice", "a@x.com");
+    const storageId = await t.run(async (ctx) =>
+      ctx.storage.store(new Blob(["x"])),
+    );
+    const photoId = await insertPhotoFixture(t, aliceId, storageId);
+
+    exifMock = { kind: "ok", tags: {} };
+    const fetchSpy = vi.fn();
+    vi.stubGlobal("fetch", fetchSpy);
+
+    await t.action(internal.photos.extractMetadata, { photoId });
+
+    const calledPhoton = fetchSpy.mock.calls.some((c) =>
+      String(c[0]).includes(PHOTON_HOST),
+    );
+    expect(calledPhoton).toBe(false);
+
+    const photo = await t.run((ctx) => ctx.db.get(photoId));
+    expect(photo?.locationLabel).toBeUndefined();
+  });
+
+  it("Photon 200 OK → locationLabel multi-deel `${street}, ${city}, ${country}`", async () => {
+    const t = convexTest(schema);
+    const aliceId = await registerUserWithInvite(t, "user_alice", "a@x.com");
+    const storageId = await t.run(async (ctx) =>
+      ctx.storage.store(new Blob(["x"])),
     );
     const photoId = await insertPhotoFixture(t, aliceId, storageId);
     await t.run(async (ctx) =>
       ctx.db.patch(photoId, { latitude: 52.37, longitude: 4.89 }),
     );
 
-    process.env[MAPQUEST_KEY_ENV] = "test-key";
+    const fetchSpy = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify(
+          fakePhotonResponse({
+            street: "Damrak",
+            city: "Amsterdam",
+            country: "Nederland",
+          }),
+        ),
+        { status: 200 },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchSpy);
+
+    await t.action(internal.photos.extractMetadata, { photoId });
+
+    // URL gaat naar photon.komoot.io (niet mapquest).
+    const calledPhoton = fetchSpy.mock.calls.some((c) =>
+      String(c[0]).includes(PHOTON_HOST),
+    );
+    expect(calledPhoton).toBe(true);
+
+    // User-Agent header gezet (Photon fair-use).
+    const photonCall = fetchSpy.mock.calls.find((c) =>
+      String(c[0]).includes(PHOTON_HOST),
+    );
+    const init = photonCall?.[1] as RequestInit | undefined;
+    const headers = new Headers(init?.headers);
+    expect(headers.get("User-Agent") ?? headers.get("user-agent")).toMatch(
+      /Clubalmanac/i,
+    );
+
+    const photo = await t.run((ctx) => ctx.db.get(photoId));
+    expect(photo?.locationLabel).toBe("Damrak, Amsterdam, Nederland");
+  });
+
+  it("Photon partial (geen street) → label valt terug op `${city}, ${country}`", async () => {
+    const t = convexTest(schema);
+    const aliceId = await registerUserWithInvite(t, "user_alice", "a@x.com");
+    const storageId = await t.run(async (ctx) =>
+      ctx.storage.store(new Blob(["x"])),
+    );
+    const photoId = await insertPhotoFixture(t, aliceId, storageId);
+    await t.run(async (ctx) =>
+      ctx.db.patch(photoId, { latitude: 52.37, longitude: 4.89 }),
+    );
+
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue(
-        new Response(JSON.stringify(fakeMapQuestResponse("Damrak 1")), {
-          status: 200,
-        }),
+        new Response(
+          JSON.stringify(
+            fakePhotonResponse({
+              city: "Amsterdam",
+              country: "Nederland",
+            }),
+          ),
+          { status: 200 },
+        ),
       ),
     );
 
     await t.action(internal.photos.extractMetadata, { photoId });
 
     const photo = await t.run((ctx) => ctx.db.get(photoId));
-    expect(typeof photo?.locationLabel).toBe("string");
-    expect(photo?.locationLabel?.length ?? 0).toBeGreaterThan(0);
+    expect(photo?.locationLabel).toBe("Amsterdam, Nederland");
   });
 
-  it("MapQuest timeout (AbortController 2s) → graceful, geen throw, locationLabel undefined", async () => {
-    // Bron: lib-geodata.js regel 37-55: AbortController + 2s timeout +
-    // catch AbortError → return {} (graceful). Hier simuleren we abort.
+  it("Photon partial (alleen country) → label = country", async () => {
     const t = convexTest(schema);
     const aliceId = await registerUserWithInvite(t, "user_alice", "a@x.com");
     const storageId = await t.run(async (ctx) =>
-      ctx.storage.store(new Blob(["niet-jpeg"])),
+      ctx.storage.store(new Blob(["x"])),
     );
     const photoId = await insertPhotoFixture(t, aliceId, storageId);
     await t.run(async (ctx) =>
       ctx.db.patch(photoId, { latitude: 52.37, longitude: 4.89 }),
     );
 
-    process.env[MAPQUEST_KEY_ENV] = "test-key";
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify(fakePhotonResponse({ country: "Nederland" })),
+          { status: 200 },
+        ),
+      ),
+    );
+
+    await t.action(internal.photos.extractMetadata, { photoId });
+
+    const photo = await t.run((ctx) => ctx.db.get(photoId));
+    expect(photo?.locationLabel).toBe("Nederland");
+  });
+
+  it("Photon empty features array → locationLabel undefined", async () => {
+    const t = convexTest(schema);
+    const aliceId = await registerUserWithInvite(t, "user_alice", "a@x.com");
+    const storageId = await t.run(async (ctx) =>
+      ctx.storage.store(new Blob(["x"])),
+    );
+    const photoId = await insertPhotoFixture(t, aliceId, storageId);
+    await t.run(async (ctx) =>
+      ctx.db.patch(photoId, { latitude: 52.37, longitude: 4.89 }),
+    );
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({ type: "FeatureCollection", features: [] }),
+          { status: 200 },
+        ),
+      ),
+    );
+
+    await t.action(internal.photos.extractMetadata, { photoId });
+
+    const photo = await t.run((ctx) => ctx.db.get(photoId));
+    expect(photo?.locationLabel).toBeUndefined();
+  });
+
+  it("Photon timeout (AbortController) → graceful, lat/lon blijven, locationLabel undefined", async () => {
+    const t = convexTest(schema);
+    const aliceId = await registerUserWithInvite(t, "user_alice", "a@x.com");
+    const storageId = await t.run(async (ctx) =>
+      ctx.storage.store(new Blob(["x"])),
+    );
+    const photoId = await insertPhotoFixture(t, aliceId, storageId);
+    await t.run(async (ctx) =>
+      ctx.db.patch(photoId, { latitude: 52.37, longitude: 4.89 }),
+    );
+
     vi.stubGlobal(
       "fetch",
       vi.fn().mockImplementation(() =>
@@ -327,27 +726,21 @@ describe("photos.extractMetadata — geocoding (graceful degradation)", () => {
 
     const photo = await t.run((ctx) => ctx.db.get(photoId));
     expect(photo?.locationLabel).toBeUndefined();
-    // GPS blijft staan — alleen label faalde.
     expect(photo?.latitude).toBe(52.37);
     expect(photo?.longitude).toBe(4.89);
   });
 
-  it("MapQuest 5xx error → graceful, geen throw, locationLabel undefined", async () => {
-    // Bron: lib-geodata.js regel 57-59: response zonder results[0] →
-    // location undefined → return ''. Wij interpreteren empty string als
-    // 'geen label gevonden' → locationLabel blijft undefined (in plaats
-    // van empty string opslaan).
+  it("Photon 5xx → graceful, locationLabel undefined", async () => {
     const t = convexTest(schema);
     const aliceId = await registerUserWithInvite(t, "user_alice", "a@x.com");
     const storageId = await t.run(async (ctx) =>
-      ctx.storage.store(new Blob(["niet-jpeg"])),
+      ctx.storage.store(new Blob(["x"])),
     );
     const photoId = await insertPhotoFixture(t, aliceId, storageId);
     await t.run(async (ctx) =>
       ctx.db.patch(photoId, { latitude: 52.37, longitude: 4.89 }),
     );
 
-    process.env[MAPQUEST_KEY_ENV] = "test-key";
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue(
@@ -364,50 +757,81 @@ describe("photos.extractMetadata — geocoding (graceful degradation)", () => {
     expect(photo?.latitude).toBe(52.37);
     expect(photo?.longitude).toBe(4.89);
   });
+});
 
-  it("MapQuest 200 maar empty results → locationLabel undefined", async () => {
-    // Bron: lib-geodata.js regel 57-59 — found && location guard.
+// ---------------------------------------------------------------------------
+// reverseGeocode helper — geïsoleerd
+// ---------------------------------------------------------------------------
+
+describe("photos.reverseGeocode (action helper)", () => {
+  // Signature: ({lat, lon}) => Promise<string | null>. Ongewijzigd t.o.v.
+  // cyclus 1 — alleen interne URL/parsing wijzigt.
+
+  it("happy path → multi-deel string label", async () => {
     const t = convexTest(schema);
-    const aliceId = await registerUserWithInvite(t, "user_alice", "a@x.com");
-    const storageId = await t.run(async (ctx) =>
-      ctx.storage.store(new Blob(["niet-jpeg"])),
-    );
-    const photoId = await insertPhotoFixture(t, aliceId, storageId);
-    await t.run(async (ctx) =>
-      ctx.db.patch(photoId, { latitude: 52.37, longitude: 4.89 }),
-    );
-
-    process.env[MAPQUEST_KEY_ENV] = "test-key";
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue(
-        new Response(JSON.stringify({ results: [{ locations: [] }] }), {
-          status: 200,
-        }),
+        new Response(
+          JSON.stringify(
+            fakePhotonResponse({
+              street: "Centrum",
+              city: "Amsterdam",
+              country: "Nederland",
+            }),
+          ),
+          { status: 200 },
+        ),
       ),
     );
 
-    await t.action(internal.photos.extractMetadata, { photoId });
-
-    const photo = await t.run((ctx) => ctx.db.get(photoId));
-    expect(photo?.locationLabel).toBeUndefined();
+    const result = await t.action(internal.photos.reverseGeocode, {
+      latitude: 52.37,
+      longitude: 4.89,
+    });
+    expect(result).toBe("Centrum, Amsterdam, Nederland");
   });
-});
 
-describe("photos.reverseGeocode (action helper)", () => {
-  // Aparte action zodat de geocoding-stap geïsoleerd test-baar is en
-  // hergebruikt kan worden door eventuele backfill-jobs (oude AWS had
-  // geen equivalent helper, B mag besluiten dit als private utility te
-  // houden — dan kan deze test verhuizen naar interne dekking).
-  //
-  // [GAP] open: returnt action `string | null` (nullable) of `string`
-  // (lege string voor missing)? Defaultkeuze: null voor "niets gevonden",
-  // string voor success. Lege string nooit als label gebruiken (consistent
-  // met MapQuest-tests hierboven die undefined / niet-gepatched verwachten).
-
-  it("missing key → null", async () => {
+  it("URL host = photon.komoot.io + User-Agent gezet", async () => {
     const t = convexTest(schema);
-    delete process.env[MAPQUEST_KEY_ENV];
+    const fetchSpy = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify(fakePhotonResponse({ city: "Amsterdam" })),
+        { status: 200 },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchSpy);
+
+    await t.action(internal.photos.reverseGeocode, {
+      latitude: 52.37,
+      longitude: 4.89,
+    });
+
+    expect(fetchSpy).toHaveBeenCalled();
+    const firstCall = fetchSpy.mock.calls[0] ?? [];
+    const url = firstCall[0];
+    const init = firstCall[1];
+    expect(String(url)).toContain(PHOTON_HOST);
+    expect(String(url)).toContain("lat=52.37");
+    expect(String(url)).toContain("lon=4.89");
+    const headers = new Headers((init as RequestInit | undefined)?.headers);
+    expect(headers.get("User-Agent") ?? headers.get("user-agent")).toMatch(
+      /Clubalmanac/i,
+    );
+  });
+
+  it("empty features → null", async () => {
+    const t = convexTest(schema);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({ type: "FeatureCollection", features: [] }),
+          { status: 200 },
+        ),
+      ),
+    );
+
     const result = await t.action(internal.photos.reverseGeocode, {
       latitude: 52.37,
       longitude: 4.89,
@@ -415,29 +839,8 @@ describe("photos.reverseGeocode (action helper)", () => {
     expect(result).toBeNull();
   });
 
-  it("happy path → string label", async () => {
-    const t = convexTest(schema);
-    process.env[MAPQUEST_KEY_ENV] = "test-key";
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue(
-        new Response(JSON.stringify(fakeMapQuestResponse("Centrum")), {
-          status: 200,
-        }),
-      ),
-    );
-
-    const result = await t.action(internal.photos.reverseGeocode, {
-      latitude: 52.37,
-      longitude: 4.89,
-    });
-    expect(typeof result).toBe("string");
-    expect((result as string).length).toBeGreaterThan(0);
-  });
-
   it("timeout → null (geen throw)", async () => {
     const t = convexTest(schema);
-    process.env[MAPQUEST_KEY_ENV] = "test-key";
     vi.stubGlobal(
       "fetch",
       vi.fn().mockImplementation(() =>
@@ -456,10 +859,23 @@ describe("photos.reverseGeocode (action helper)", () => {
 
   it("4xx → null (geen throw)", async () => {
     const t = convexTest(schema);
-    process.env[MAPQUEST_KEY_ENV] = "test-key";
     vi.stubGlobal(
       "fetch",
-      vi.fn().mockResolvedValue(new Response("nope", { status: 401 })),
+      vi.fn().mockResolvedValue(new Response("nope", { status: 400 })),
+    );
+
+    const result = await t.action(internal.photos.reverseGeocode, {
+      latitude: 52.37,
+      longitude: 4.89,
+    });
+    expect(result).toBeNull();
+  });
+
+  it("5xx → null (geen throw)", async () => {
+    const t = convexTest(schema);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(new Response("down", { status: 503 })),
     );
 
     const result = await t.action(internal.photos.reverseGeocode, {
