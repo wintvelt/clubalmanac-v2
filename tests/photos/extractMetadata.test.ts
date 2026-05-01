@@ -495,48 +495,80 @@ describe("photos.extractMetadata — granulaire foutpaden + logging", () => {
 });
 
 // ---------------------------------------------------------------------------
-// HEIC graceful no-op — audit-10 §5
+// HEIC/HEIF graceful no-op — audit-10 §5 + audit-13 §2 brand-parametrization
 // ---------------------------------------------------------------------------
 
-describe("photos.extractMetadata — HEIC unsupported format", () => {
-  it("mimeType=image/heic → log unsupported + geen EXIF-parse, photo zonder metadata", async () => {
-    const t = convexTest(schema);
-    const aliceId = await registerUserWithInvite(t, "user_alice", "a@x.com");
-    const storageId = await t.run(async (ctx) =>
-      ctx.storage.store(
-        new Blob([new Uint8Array([0x00, 0x00, 0x00, 0x18, 0x66, 0x74, 0x79, 0x70, 0x68, 0x65, 0x69, 0x63])]),
-      ),
-    );
-    const photoId = await insertPhotoFixture(t, aliceId, storageId, {
-      mimeType: "image/heic",
-    });
+describe("photos.extractMetadata — HEIC/HEIF unsupported brands", () => {
+  // isHeicLike claimt support voor 8 ISO-BMFF brand-codes. Audit-13 §2:
+  // cyclus 1 testte alleen "heic" → 1/8 coverage, sterke bias tussen claim
+  // en verifieerbaar gedrag. Parametrized test pint alle 8 brands.
+  const HEIF_BRANDS = [
+    "heic",
+    "heix",
+    "heim",
+    "heis",
+    "hevc",
+    "hevx",
+    "mif1",
+    "msf1",
+  ];
 
-    // Sentinel: als implementatie toch exif-parser zou aanroepen, throwt
-    // de mock — test detecteert dat als regression.
-    exifMock = { kind: "throwOnCreate", message: "should not be called for HEIC" };
-    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+  it.each(HEIF_BRANDS)(
+    "brand=%s → graceful no-op + log unsupported, geen EXIF-parse",
+    async (brand) => {
+      const t = convexTest(schema);
+      const aliceId = await registerUserWithInvite(t, "user_alice", "a@x.com");
+      const header = new Uint8Array([
+        0x00,
+        0x00,
+        0x00,
+        0x18,
+        0x66, // 'f'
+        0x74, // 't'
+        0x79, // 'y'
+        0x70, // 'p'
+        brand.charCodeAt(0),
+        brand.charCodeAt(1),
+        brand.charCodeAt(2),
+        brand.charCodeAt(3),
+      ]);
+      const storageId = await t.run(async (ctx) =>
+        ctx.storage.store(new Blob([header])),
+      );
+      const photoId = await insertPhotoFixture(t, aliceId, storageId, {
+        mimeType: "image/heic",
+      });
 
-    await expect(
-      t.action(internal.photos.extractMetadata, { photoId }),
-    ).resolves.not.toThrow();
+      // Sentinel: als implementatie toch exif-parser zou aanroepen, throwt
+      // de mock — test detecteert dat als regression.
+      exifMock = {
+        kind: "throwOnCreate",
+        message: `should not be called for brand=${brand}`,
+      };
+      const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
 
-    // Verwacht een log-regel met "unsupported" of "heic" als hint dat de
-    // skip bewust gebeurde, niet stilletjes als generieke parse-fail.
-    const loggedHeicHint = logSpy.mock.calls.some((call) => {
-      const joined = call.map((c) => String(c)).join(" ").toLowerCase();
-      return joined.includes("unsupported") || joined.includes("heic");
-    });
-    expect(loggedHeicHint).toBe(true);
+      await expect(
+        t.action(internal.photos.extractMetadata, { photoId }),
+      ).resolves.not.toThrow();
 
-    const photo = await t.run((ctx) => ctx.db.get(photoId));
-    expect(photo?.takenAt).toBeUndefined();
-    expect(photo?.latitude).toBeUndefined();
-    expect(photo?.longitude).toBeUndefined();
-    expect(photo?.locationLabel).toBeUndefined();
-    expect(photo?.width).toBeUndefined();
-    expect(photo?.height).toBeUndefined();
-    expect(photo?.exifOrientation).toBeUndefined();
-  });
+      // Log-hint dat skip bewust gebeurde (niet stilletjes als generieke
+      // parse-fail).
+      const loggedHint = logSpy.mock.calls.some((call) => {
+        const joined = call.map((c) => String(c)).join(" ").toLowerCase();
+        return joined.includes("unsupported") || joined.includes("heic");
+      });
+      expect(loggedHint).toBe(true);
+
+      const photo = await t.run((ctx) => ctx.db.get(photoId));
+      expect(photo?.takenAt).toBeUndefined();
+      expect(photo?.latitude).toBeUndefined();
+      expect(photo?.longitude).toBeUndefined();
+      expect(photo?.locationLabel).toBeUndefined();
+      expect(photo?.width).toBeUndefined();
+      expect(photo?.height).toBeUndefined();
+      expect(photo?.exifOrientation).toBeUndefined();
+    },
+  );
 });
 
 // ---------------------------------------------------------------------------
@@ -648,6 +680,46 @@ describe("photos.extractMetadata — Photon geocoding (graceful)", () => {
 
     const photo = await t.run((ctx) => ctx.db.get(photoId));
     expect(photo?.locationLabel).toBe("Rijksmuseum, Amsterdam, Nederland");
+  });
+
+  // Audit-13 §1: nullish-coalescing `street ?? name` faalt op street: ""
+  // (lege string is geen null/undefined → ?? geeft "" terug ipv name).
+  // Comment in reverseGeocode claimt POI-fallback maar dekt 't niet voor
+  // lege strings. Photon levert in praktijk soms `street: ""` (OSM-tag
+  // zonder waarde) — Rijksmuseum-pad faalt dan stilletjes naar "Amsterdam,
+  // Nederland". RED tot B fixt het bias-gat.
+  it("Photon partial (street: '' lege string, wel name) → label valt terug op name (POI-fallback ook bij empty)", async () => {
+    const t = convexTest(schema);
+    const aliceId = await registerUserWithInvite(t, "user_alice", "a@x.com");
+    const storageId = await t.run(async (ctx) =>
+      ctx.storage.store(new Blob(["x"])),
+    );
+    const photoId = await insertPhotoFixture(t, aliceId, storageId);
+    await t.run(async (ctx) =>
+      ctx.db.patch(photoId, { latitude: 52.37, longitude: 4.89 }),
+    );
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify(
+            fakePhotonResponse({
+              street: "",
+              name: "Rijksmuseum",
+              city: "Amsterdam",
+              country: "Netherlands",
+            }),
+          ),
+          { status: 200 },
+        ),
+      ),
+    );
+
+    await t.action(internal.photos.extractMetadata, { photoId });
+
+    const photo = await t.run((ctx) => ctx.db.get(photoId));
+    expect(photo?.locationLabel).toBe("Rijksmuseum, Amsterdam, Netherlands");
   });
 
   it("Photon partial (geen street, geen name) → label valt terug op `${city}, ${country}`", async () => {

@@ -435,6 +435,13 @@ export const extractMetadata = internalAction({
         );
       }
     } catch (e) {
+      // Audit-13 §3: bewust niet automated getest. vi.mock("exif-parser")
+      // simuleert geen import-failure → dit pad is in unit-tests onbereikbaar
+      // (dead branch onder mock). Real-world failure zou een Convex deploy-
+      // issue zijn (ontbrekende dependency in bundle). Smoke-test pad in
+      // fase 4A2 / integration tests tegen echte deployment dekt dit af.
+      // Catch blijft staan als pure defensieve laag: liever een log-regel
+      // dan een silent crash van de hele extract-pipeline.
       console.error(`[extractMetadata] exif-parser import failed`, e);
     }
 
