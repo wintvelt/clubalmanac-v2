@@ -91,8 +91,11 @@ import { registerUserWithInvite, withUser } from "../_helpers/auth";
 //     internal.uploads.markCompleted({reservationId, photoId}) — patch status="completed", photoId, completedAt
 //     return { photoId }
 //
-// Bij failure tussen reserve en markCompleted: reservation blijft in_progress,
-// stale cleanup-cron ruimt 'm na 5 min op samen met de orphan storage-blob.
+// Bij failure tussen reserve en de atomic completion-patch in
+// createFromUploadInternal: reservation blijft in_progress.
+// Stale cleanup-cron ruimt orphan reservation-records na 30min op (alleen
+// de tabel-rij, niet de storage-blob). Storage orphans worden door integrity-
+// check werkpakket later opgepakt — zie cyclus-2 backlog in plan-doc.
 // Recordable failure-test (test 6) is geflagd als optioneel.
 //
 // ──────────────────────────────────────────────────────────────────

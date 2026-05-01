@@ -16,18 +16,16 @@ import schema from "../../convex/schema";
 // `uploadIdempotency` records op met TWEE verschillende thresholds, samenhangend
 // met de reservation-pattern state machine (zie tests/http/upload.test.ts):
 //
-//   1. status="in_progress"  → cleanup na 5 minuten (stale-reservation horizon)
-//   2. status="completed"    → cleanup na 7 dagen   (retry-safety horizon)
+//   1. status="in_progress"  → cleanup na 30 minuten (stale-reservation horizon)
+//   2. status="completed"    → cleanup na 7 dagen    (retry-safety horizon)
 //
 // Waarom twee thresholds:
-//   - in_progress = race-loser, gecrashte handler tussen reserve en markCompleted,
-//     of orphan-reservation door een uitzondering. Houden we niet langer dan
-//     nodig vast: 5 min is genoeg voor een legitieme upload (typische JPEG/HEIC
-//     in seconden, edge-case slow-network laatste paar 10-tallen seconden).
-//     Sluit aan bij een toekomstige storage-orphan-cleanup: stale reservation
-//     impliceert dat de bijbehorende storage-blob (indien geschreven vóór de
-//     crash) ook orphan is; B kan dat in cyclus 2+ koppelen via reservation.storageId
-//     (out-of-scope hier).
+//   - in_progress = race-loser, gecrashte handler tussen reserve en de atomic
+//     completion-patch in createFromUploadInternal, of orphan-reservation door
+//     een uitzondering. 30 min cutoff geeft veilige marge voor slow mobile
+//     uploads + HEIC parsing (audit-12 §2: 5min was te krap voor real-world
+//     mobile flow). Storage-orphans worden door de integrity-check in cyclus 2
+//     opgepakt (zie cyclus-2 backlog in plan-doc).
 //   - completed = idempotency-key voor client-retries. Te kort (<1d) breekt
 //     legitieme background-upload retry's; te lang (>14d) groeit de tabel
 //     onnodig. 7d is "een week" — herkenbare retry-horizon, consistent met
@@ -41,9 +39,9 @@ import schema from "../../convex/schema";
 // Functie-shape (B implementeert):
 //   internal.uploads.cleanupOld({}): void
 //     - Scant uploadIdempotency.by_status_and_createdAt waar status="in_progress"
-//       en createdAt <= now - 5min → ctx.db.delete(record._id)
+//       en createdAt <= now - 30min → ctx.db.delete(record._id)
 //     - Scant uploadIdempotency.by_status_and_createdAt waar status="completed"
-//       en createdAt <= now - 7d   → ctx.db.delete(record._id)
+//       en createdAt <= now - 7d    → ctx.db.delete(record._id)
 //
 // Cron registratie in convex/crons.ts (ongewijzigd t.o.v. cyclus 1):
 //   crons.daily(
@@ -55,7 +53,7 @@ import schema from "../../convex/schema";
 
 const MINUTE_MS = 60 * 1000;
 const DAY_MS = 24 * 60 * 60 * 1000;
-const STALE_IN_PROGRESS_MS = 5 * MINUTE_MS;
+const STALE_IN_PROGRESS_MS = 30 * MINUTE_MS;
 const RETENTION_COMPLETED_MS = 7 * DAY_MS;
 
 // Pinned clock voor boundary-tests: alle Date.now() calls (zowel test-seed als
@@ -193,12 +191,13 @@ describe("internal.uploads.cleanupOld — completed-status retention (7d)", () =
   });
 });
 
-describe("internal.uploads.cleanupOld — in_progress retention (5min, audit-cyclus-1)", () => {
-  it("verwijdert in_progress records ouder dan 5 minuten (stale reservation = gecrashte handler)", async () => {
+describe("internal.uploads.cleanupOld — in_progress retention (30min, audit-12)", () => {
+  it("verwijdert in_progress records ouder dan 30 minuten (stale reservation = gecrashte handler)", async () => {
     // Audit-cyclus-1: reservation pattern kan stale records achterlaten als
-    // de handler crasht tussen `reserve` en `markCompleted`. Stale-cleanup
-    // ruimt die op zodat een retry met dezelfde clientUploadId niet
-    // geblokkeerd blijft door een phantom in_progress die nooit completed.
+    // de handler crasht tussen `reserve` en de atomic completion-patch in
+    // createFromUploadInternal. Stale-cleanup ruimt die op zodat een retry
+    // met dezelfde clientUploadId niet geblokkeerd blijft door een phantom
+    // in_progress die nooit completed.
     const t = convexTest(schema);
 
     const staleId = await t.run(async (ctx) => {
@@ -214,7 +213,7 @@ describe("internal.uploads.cleanupOld — in_progress retention (5min, audit-cyc
         clientUploadId: "stale-uuid",
         status: "in_progress",
         // photoId blijft undefined — de crash-marker
-        createdAt: FIXED_NOW - 6 * MINUTE_MS,
+        createdAt: FIXED_NOW - 31 * MINUTE_MS,
       });
     });
 
@@ -223,7 +222,7 @@ describe("internal.uploads.cleanupOld — in_progress retention (5min, audit-cyc
     expect(await t.run((ctx) => ctx.db.get(staleId))).toBeNull();
   });
 
-  it("laat in_progress records jonger dan 5 minuten ongemoeid (lopende upload)", async () => {
+  it("laat in_progress records jonger dan 30 minuten ongemoeid (lopende upload)", async () => {
     // 30s oud is plausibel een lopende HEIC-upload op flaky netwerk; mag
     // niet door de cron worden weggetrokken onder een actieve handler.
     const t = convexTest(schema);
@@ -249,7 +248,7 @@ describe("internal.uploads.cleanupOld — in_progress retention (5min, audit-cyc
     expect(await t.run((ctx) => ctx.db.get(liveId))).not.toBeNull();
   });
 
-  it("boundary in_progress: createdAt === now - 5min wordt opgeruimd (<=), now - 5min + 1 blijft", async () => {
+  it("boundary in_progress: createdAt === now - 30min wordt opgeruimd (<=), now - 30min + 1 blijft", async () => {
     const t = convexTest(schema);
 
     const { onBoundaryId, justInsideId } = await t.run(async (ctx) => {
@@ -328,7 +327,7 @@ describe("internal.uploads.cleanupOld — mixed status + edge cases", () => {
         ownerId: userId,
         clientUploadId: "stale-inprog",
         status: "in_progress",
-        createdAt: FIXED_NOW - 10 * MINUTE_MS,
+        createdAt: FIXED_NOW - 35 * MINUTE_MS,
       });
       const liveInProgress = await ctx.db.insert("uploadIdempotency", {
         ownerId: userId,
@@ -356,9 +355,9 @@ describe("internal.uploads.cleanupOld — mixed status + edge cases", () => {
     ).not.toBeNull();
   });
 
-  it("threshold-isolatie: jonge completed (<7d, >5min) wordt NIET door de in_progress-pad opgeruimd", async () => {
-    // Defensieve regression: een naïeve implementatie die `createdAt <= now - 5min`
-    // zonder status-filter doet, zou completed records van >5min ten onrechte
+  it("threshold-isolatie: jonge completed (<7d, >30min) wordt NIET door de in_progress-pad opgeruimd", async () => {
+    // Defensieve regression: een naïeve implementatie die `createdAt <= now - 30min`
+    // zonder status-filter doet, zou completed records van >30min ten onrechte
     // verwijderen. Status-filtering is essentieel.
     const t = convexTest(schema);
 
@@ -382,7 +381,7 @@ describe("internal.uploads.cleanupOld — mixed status + edge cases", () => {
         clientUploadId: "six-hour-completed",
         status: "completed",
         photoId,
-        createdAt: FIXED_NOW - 6 * 60 * MINUTE_MS, // 6h oud — voorbij 5min, ruim binnen 7d
+        createdAt: FIXED_NOW - 6 * 60 * MINUTE_MS, // 6h oud — voorbij 30min, ruim binnen 7d
         completedAt: FIXED_NOW - 6 * 60 * MINUTE_MS,
       });
     });

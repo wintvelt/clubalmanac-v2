@@ -13,11 +13,13 @@ import { internalMutation } from "./_generated/server";
 //   - completed → return bestaande photoId (idempotent hit)
 //   - in_progress → 409 Conflict (race-loser of stale handler)
 //   - miss → nieuwe reservation, handler gaat door
-// Cascade matrix UI1: cleanupOld ruimt completed > 7d en in_progress > 5min op.
+// Cascade matrix UI1: cleanupOld ruimt completed > 7d en in_progress > 30min op.
 
 const MINUTE_MS = 60 * 1000;
 const DAY_MS = 24 * 60 * 60 * 1000;
-const STALE_IN_PROGRESS_MS = 5 * MINUTE_MS;
+// 30min cutoff geeft veilige marge voor slow mobile uploads + HEIC parsing.
+// Audit-12 §2 documenteerde 5min als te krap voor real-world mobile flow.
+const STALE_IN_PROGRESS_MS = 30 * MINUTE_MS;
 const RETENTION_COMPLETED_MS = 7 * DAY_MS;
 
 // Reservation lookup + insert in één mutation, zodat parallelle handlers
@@ -70,8 +72,8 @@ export const deleteReservation = internalMutation({
 });
 
 // UI1: dagelijkse cron (zie convex/crons.ts). Twee thresholds in één run:
-//   completed   ouder dan 7d  → retry-safety horizon
-//   in_progress ouder dan 5min → stale-reservation cleanup
+//   completed   ouder dan 7d   → retry-safety horizon
+//   in_progress ouder dan 30min → stale-reservation cleanup (audit-12 §2)
 // Boundary <= cutoff (consistent met FL1 + invites).
 export const cleanupOld = internalMutation({
   args: {},

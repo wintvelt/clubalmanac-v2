@@ -92,7 +92,9 @@ POST /upload    (Convex httpAction in convex/http.ts)
   → 409 { error: "Upload in progress" }            (race-loser tegen lopende reservation, audit-cyclus-1)
 ```
 
-**Reservation pattern (state machine).** De `uploadIdempotency`-row wordt nu **vóór** de photo-creatie ingeschreven met `status="in_progress"`, en pas na succesvolle photo-creatie ge-patched naar `status="completed"`. De composite index `by_owner_and_clientUploadId` maakt de lookup atomair per (ownerId, clientUploadId): twee parallelle handlers met dezelfde key triggeren een Convex transaction-conflict; de loser wordt geretry'd en ziet bij retry de in_progress reservation van de winnaar — waaruit een 409 volgt.
+**Reservation pattern (state machine).** De `uploadIdempotency`-row wordt nu **vóór** de photo-creatie ingeschreven met `status="in_progress"`, en in dezelfde Convex transactie als de photo-insert ge-patched naar `status="completed"` (zie stap 7). De composite index `by_owner_and_clientUploadId` maakt de lookup atomair per (ownerId, clientUploadId): twee parallelle handlers met dezelfde key triggeren een Convex transaction-conflict; de loser wordt geretry'd en ziet bij retry de in_progress reservation van de winnaar — waaruit een 409 volgt.
+
+**Architectuur-keuze tijdens cyclus 1 implementatie:** completion-patch verschoven van een aparte `markCompleted`-mutation naar `createFromUploadInternal` voor atomicity (geen tussenstaat tussen photo-insert en reservation-completion). Audit-12 §1 documenteert deze keuze expliciet.
 
 Server-side flow:
 
@@ -105,11 +107,10 @@ Server-side flow:
    - miss → insert `{status: "in_progress", createdAt, photoId: undefined, completedAt: undefined}` → return `{ kind: "reserved", reservationId }`
 5. Photo-limit check + storage write + photo-create gaan via `internal.photos.createFromUploadInternal`. Bij quota-fail throwt die de **typed sentinel string** `"PHOTO_LIMIT_REACHED"` — de http handler matcht dat exact en mapt naar **403 Forbidden** met NL-body `"Photo limiet bereikt"`. Geen substring-match meer op een Nederlandse error-message. Limit-check loopt vóór `storage.store`, vóór `reserve` — geen orphan blob, geen phantom in_progress
 6. `ctx.storage.store(await request.blob())` → storageId
-7. `internal.photos.createFromUploadInternal({storageId, ownerId, filename, mimeType})` — internal mutation die photo record insert + `photoCount++` + `scheduler.runAfter(0, extractMetadata)`. Alle drie atomair in één Convex transactie
-8. `internal.uploads.markCompleted({reservationId, photoId})` — patch reservation: `status="completed"`, `photoId`, `completedAt`
-9. Return `{photoId}`
+7. `internal.photos.createFromUploadInternal({storageId, ownerId, reservationId, filename, mimeType})` — internal mutation die in **één Convex transactie**: photo record insert + `photoCount++` + reservation patch (`status="completed"`, `photoId`, `completedAt`) + `scheduler.runAfter(0, extractMetadata)`. Atomair: een commit-failure laat geen window open waarin photo bestaat maar reservation nog in_progress is. Geen aparte `markCompleted`-mutation meer (zie architectuur-keuze hierboven, audit-12 §1)
+8. Return `{photoId}`
 
-Bij failure tussen stap 4 en 8 (server crash, exception in 6/7) blijft de reservation in `in_progress` achter. Stale-cleanup-cron ruimt die op na 5 minuten (zie cron-sectie); een retry met dezelfde clientUploadId binnen die 5 min krijgt dus nog 409 — daarna een schone insert.
+Bij failure tussen stap 4 en 7 (server crash, exception in 6/7) blijft de reservation in `in_progress` achter. Stale-cleanup-cron ruimt die op na 30 minuten (zie cron-sectie); een retry met dezelfde clientUploadId binnen die 30 min krijgt dus nog 409 — daarna een schone insert.
 
 **Idempotency-tabel (audit-cyclus-1 schema):**
 
@@ -120,7 +121,7 @@ uploadIdempotency: defineTable({
   status: v.union(v.literal("in_progress"), v.literal("completed")),  // NIEUW: state machine
   photoId: v.optional(v.id("photos")),                        // CHANGED: optional, alleen na completion
   createdAt: v.number(),
-  completedAt: v.optional(v.number()),                        // NIEUW: gevuld bij markCompleted
+  completedAt: v.optional(v.number()),                        // NIEUW: gevuld bij completion-patch in createFromUploadInternal
 })
   .index("by_owner_and_clientUploadId", ["ownerId", "clientUploadId"])  // NIEUW: composite
   .index("by_status_and_createdAt", ["status", "createdAt"]);           // NIEUW: voor stale cleanup
@@ -193,7 +194,7 @@ crons.daily(
 `internal.uploads.cleanupOld` ruimt records uit `uploadIdempotency` op met **twee verschillende thresholds**, samenhangend met de reservation-pattern state machine (audit-cyclus-1):
 
 - `status="completed"` records met `createdAt <= now - 7d` — retry-safety horizon. 7d is de "geldigheidsduur" van een idempotency-key, voldoende voor legitieme background-upload retry's
-- `status="in_progress"` records met `createdAt <= now - 5min` — stale-reservation horizon. Een reservation die langer dan 5 min in_progress staat impliceert een gecrashte/afgebroken handler tussen `reserve` en `markCompleted`. Cleanup ontblokkeert toekomstige retries met dezelfde clientUploadId
+- `status="in_progress"` records met `createdAt <= now - 30min` — stale-reservation horizon. Een reservation die langer dan 30 min in_progress staat impliceert een gecrashte/afgebroken handler tussen `reserve` en de atomic completion-patch in `createFromUploadInternal`. 30min cutoff geeft veilige marge voor slow mobile uploads + HEIC parsing (audit-12 §2: 5min was te krap voor real-world mobile flow). Cleanup ontblokkeert toekomstige retries met dezelfde clientUploadId. Alleen de tabel-rij wordt opgeruimd; storage-orphans worden door integrity-check opgepakt (zie cyclus-2 backlog)
 
 Boundary in beide gevallen `<=` (consistent met FL1 `flaggedDeleteDate <= now` en invites accept `expiresAt <= now`). De `by_status_and_createdAt` index laat beide range queries efficiënt draaien. Zie cascade matrix row UI1.
 
@@ -822,6 +823,18 @@ Dus: communicatie en blokkade gaan **buiten de oude app om**.
 - [ ] **Integriteits-checks:** scheduled function voor data validatie (zie teststrategie punt 3)
 - [ ] **Monitoring:** Convex Health & Insights dashboard (gratis), function errors in dashboard
 - [ ] **Alerting:** integriteits-checks sturen email bij inconsistentie
+
+## Cyclus-2 backlog (audit-12 follow-up)
+
+- **Integration smoke-test voor upload-flow**: race-409 verifie via parallel POST
+  met zelfde X-Upload-Id (Convex OCC race-detectie pinnen) + JWT round-trip
+  met echte Clerk-token. Gepland voor fase 4A2.
+- **Integrity-check storage orphans**: scheduled function die storage objects
+  zonder photo-record detecteert en alert/cleanupt. Audit-10 + audit-12 §5
+  identificeerden deze gap. Werkpakket: monitoring/integrity-checks.
+- **`.take(N)` guard in cleanupOld**: preventieve cap tegen toekomstige
+  transactie-limit overschrijding (16k records). Niet kritiek bij huidige
+  schaal maar grow-guard waardig.
 
 ## Risico's
 
