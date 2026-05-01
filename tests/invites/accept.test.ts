@@ -14,7 +14,7 @@
 // Tests gemarkeerd [GAP] dekken edge cases die in oude code ontbraken.
 
 import { convexTest } from "convex-test";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { api } from "../../convex/_generated/api";
 import schema from "../../convex/schema";
 
@@ -33,7 +33,33 @@ async function registerUser(
   subject: string,
   email: string,
 ) {
-  return await withUser(t, subject).mutation(api.users.register, { email });
+  // Audit-7 §5: seed pending invite om users.register-gate te passeren.
+  const { inviteId, seederId } = await t.run(async (ctx) => {
+    const seederId = await ctx.db.insert("users", {
+      subject: `__invite_seeder_${crypto.randomUUID()}`,
+      email: `seeder_${crypto.randomUUID()}@seed.test`,
+      photoCount: 0,
+      photoLimit: 1000,
+      createdAt: Date.now(),
+    });
+    const inviteId = await ctx.db.insert("invites", {
+      email: email.toLowerCase().trim(),
+      invitedBy: seederId,
+      token: crypto.randomUUID(),
+      status: "pending",
+      expiresAt: Date.now() + 14 * 24 * 60 * 60 * 1000,
+      createdAt: Date.now(),
+    });
+    return { inviteId, seederId };
+  });
+  const userId = await withUser(t, subject).mutation(api.users.register, { email });
+  // Cleanup seed-artifacts zodat test-DB schoon blijft (geen extra
+  // pending invites of seeder-users die latere queries vervuilen).
+  await t.run(async (ctx) => {
+    await ctx.db.delete(inviteId);
+    await ctx.db.delete(seederId);
+  });
+  return userId;
 }
 
 describe("invites.accept — auth & token validatie", () => {
@@ -109,6 +135,34 @@ describe("invites.accept — status transitions", () => {
     ).rejects.toThrow();
   });
 
+  it("[audit-8] weigert invite met status='expired' (door bounce gemarkeerd, expiresAt nog in toekomst)", async () => {
+    // Bounce-pad zet status="expired" + bouncedAt zonder aan expiresAt te
+    // raken. De expiry-guard (`expiresAt < now`) zou dan níet vuren — daarom
+    // is de aparte status-guard (`status !== "pending"`) ook nodig.
+    // Bestaande tests dekken expiresAt < now; deze pint het status-pad apart.
+    const t = convexTest(schema);
+    const aliceId = await registerUser(t, "user_alice", "a@x.com");
+    const inviteId = await t.run((ctx) =>
+      ctx.db.insert("invites", {
+        email: "bob@x.com",
+        invitedBy: aliceId,
+        token: "tk-status-expired-accept",
+        status: "expired",
+        bouncedAt: Date.now() - 1000,
+        expiresAt: Date.now() + 14 * 24 * 60 * 60 * 1000,
+        createdAt: Date.now(),
+      }),
+    );
+    await registerUser(t, "user_bob", "bob@x.com");
+    await expect(
+      withUser(t, "user_bob").mutation(api.invites.accept, {
+        token: "tk-status-expired-accept",
+      }),
+    ).rejects.toThrow();
+    const invite = await t.run((ctx) => ctx.db.get(inviteId));
+    expect(invite?.status).toBe("expired");
+  });
+
   it("weigert verlopen invite (rollback: status blijft pending)", async () => {
     // Verwijst naar inviteHelpers.js regel 31-32. Convex-mutations zijn
     // atomisch, dus een throw rolt eventueel patch terug. Cleanup naar
@@ -128,6 +182,43 @@ describe("invites.accept — status transitions", () => {
     ).rejects.toThrow(/verlopen|expired/i);
     const invite = await t.run((ctx) => ctx.db.get(inviteId));
     expect(invite?.status).toBe("pending");
+  });
+});
+
+describe("invites.accept — expiresAt boundary (audit-8 bevinding 9)", () => {
+  // Audit-8 vond inconsistentie tussen accept (`expiresAt < now` = strict
+  // less = nog geldig op gelijk) en hasPendingForEmail (`expiresAt > now` =
+  // strict greater = al verlopen op gelijk). Spec-keuze (Wouter): expiresAt
+  // === now telt als verlopen (≤ now is verlopen). Harmonisatie: accept
+  // moet throwen bij gelijk-aan-now, hasPendingForEmail moet false geven
+  // bij gelijk-aan-now (laatste klopt al, eerste niet). RED tot B's fix.
+  it("weigert invite waar expiresAt === now exact (≤ now is verlopen)", async () => {
+    vi.useFakeTimers();
+    try {
+      const fixedNow = new Date("2026-04-30T12:00:00Z").getTime();
+      vi.setSystemTime(fixedNow);
+
+      const t = convexTest(schema);
+      const aliceId = await registerUser(t, "user_alice", "a@x.com");
+      await t.run((ctx) =>
+        ctx.db.insert("invites", {
+          email: "bob@x.com",
+          invitedBy: aliceId,
+          token: "tk-boundary",
+          status: "pending",
+          expiresAt: fixedNow,
+          createdAt: fixedNow - 1000,
+        }),
+      );
+      await registerUser(t, "user_bob", "bob@x.com");
+      await expect(
+        withUser(t, "user_bob").mutation(api.invites.accept, {
+          token: "tk-boundary",
+        }),
+      ).rejects.toThrow(/verlopen|expired/i);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 
@@ -278,6 +369,80 @@ describe("invites.accept — group-scoped invite (membership create)", () => {
         .unique(),
     );
     expect(m?.role).toBe("admin");
+  });
+});
+
+describe("invites.accept — multi-group scenarios (audit-8)", () => {
+  // Een user kan in parallel pending invites hebben voor meerdere groepen.
+  // Accept van invite-A mag invite-B niet beïnvloeden — beide leven
+  // onafhankelijk in invites table met verschillende tokens. Pinnen huidige
+  // (correcte) gedrag voordat code-paden refactoren.
+  it("user met pending invites in 2 groepen kan beide accepteren", async () => {
+    const t = convexTest(schema);
+    await registerUser(t, "user_alice", "a@x.com");
+    const groupG = await withUser(t, "user_alice").mutation(
+      api.groups.create,
+      { name: "G" },
+    );
+    const groupH = await withUser(t, "user_alice").mutation(
+      api.groups.create,
+      { name: "H" },
+    );
+    const { token: tokenG } = await withUser(t, "user_alice").mutation(
+      api.invites.create,
+      { email: "bob@x.com", groupId: groupG, role: "member" },
+    );
+    const { token: tokenH } = await withUser(t, "user_alice").mutation(
+      api.invites.create,
+      { email: "bob@x.com", groupId: groupH, role: "member" },
+    );
+    const bobId = await registerUser(t, "user_bob", "bob@x.com");
+
+    await withUser(t, "user_bob").mutation(api.invites.accept, {
+      token: tokenG,
+    });
+    await withUser(t, "user_bob").mutation(api.invites.accept, {
+      token: tokenH,
+    });
+
+    const memberships = await t.run((ctx) =>
+      ctx.db
+        .query("memberships")
+        .withIndex("by_user", (q) => q.eq("userId", bobId))
+        .collect(),
+    );
+    const groupIds = memberships.map((m) => m.groupId).sort();
+    expect(groupIds).toEqual([groupG, groupH].sort());
+  });
+
+  it("accept van invite voor groep G laat invite voor groep H ongemoeid", async () => {
+    const t = convexTest(schema);
+    await registerUser(t, "user_alice", "a@x.com");
+    const groupG = await withUser(t, "user_alice").mutation(
+      api.groups.create,
+      { name: "G" },
+    );
+    const groupH = await withUser(t, "user_alice").mutation(
+      api.groups.create,
+      { name: "H" },
+    );
+    const { token: tokenG } = await withUser(t, "user_alice").mutation(
+      api.invites.create,
+      { email: "bob@x.com", groupId: groupG, role: "member" },
+    );
+    const { inviteId: inviteH } = await withUser(t, "user_alice").mutation(
+      api.invites.create,
+      { email: "bob@x.com", groupId: groupH, role: "member" },
+    );
+    await registerUser(t, "user_bob", "bob@x.com");
+
+    await withUser(t, "user_bob").mutation(api.invites.accept, {
+      token: tokenG,
+    });
+
+    const inviteHafter = await t.run((ctx) => ctx.db.get(inviteH));
+    expect(inviteHafter?.status).toBe("pending");
+    expect(inviteHafter?.respondedAt).toBeUndefined();
   });
 });
 

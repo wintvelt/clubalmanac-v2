@@ -18,10 +18,32 @@ function withUser(t: ReturnType<typeof convexTest>, subject: string) {
   });
 }
 
+// Audit-7 §5: seed pending invite zodat users.register-gate passeert.
+async function seedInvite(t: ReturnType<typeof convexTest>, email: string) {
+  await t.run(async (ctx) => {
+    const inviterId = await ctx.db.insert("users", {
+      subject: `__invite_seeder_${crypto.randomUUID()}`,
+      email: `seeder_${crypto.randomUUID()}@seed.test`,
+      photoCount: 0,
+      photoLimit: 1000,
+      createdAt: Date.now(),
+    });
+    await ctx.db.insert("invites", {
+      email: email.toLowerCase().trim(),
+      invitedBy: inviterId,
+      token: crypto.randomUUID(),
+      status: "pending",
+      expiresAt: Date.now() + 14 * 24 * 60 * 60 * 1000,
+      createdAt: Date.now(),
+    });
+  });
+}
+
 describe("users.recordVisit", () => {
   it("patcht lastVisitAt naar Date.now() voor authenticated user", async () => {
     const t = convexTest(schema);
     const as = withUser(t, "user_alice");
+    await seedInvite(t, "alice@x.com");
     const id = await as.mutation(api.users.register, {
       email: "alice@x.com",
     });
@@ -45,6 +67,7 @@ describe("users.recordVisit", () => {
     // accepteren en lastVisitAt overschrijven, ook als ze snel na elkaar komen.
     const t = convexTest(schema);
     const as = withUser(t, "user_alice");
+    await seedInvite(t, "alice@x.com");
     const id = await as.mutation(api.users.register, {
       email: "alice@x.com",
     });

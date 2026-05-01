@@ -17,6 +17,28 @@ function withUser(t: ReturnType<typeof convexTest>, subject: string) {
   });
 }
 
+// Audit-7 §5: register heeft een server-side invite-gate. Tests die
+// een succesvolle register willen, seeden eerst een pending invite.
+async function seedInvite(t: ReturnType<typeof convexTest>, email: string) {
+  await t.run(async (ctx) => {
+    const inviterId = await ctx.db.insert("users", {
+      subject: `__invite_seeder_${crypto.randomUUID()}`,
+      email: `seeder_${crypto.randomUUID()}@seed.test`,
+      photoCount: 0,
+      photoLimit: 1000,
+      createdAt: Date.now(),
+    });
+    await ctx.db.insert("invites", {
+      email: email.toLowerCase().trim(),
+      invitedBy: inviterId,
+      token: crypto.randomUUID(),
+      status: "pending",
+      expiresAt: Date.now() + 14 * 24 * 60 * 60 * 1000,
+      createdAt: Date.now(),
+    });
+  });
+}
+
 describe("users.register", () => {
   it("weigert wanneer niet ingelogd", async () => {
     const t = convexTest(schema);
@@ -27,6 +49,7 @@ describe("users.register", () => {
 
   it("maakt user met defaults", async () => {
     const t = convexTest(schema);
+    await seedInvite(t, "alice@x.com");
     const id = await withUser(t, "user_alice").mutation(api.users.register, {
       email: "alice@x.com",
       name: "Alice",
@@ -44,6 +67,7 @@ describe("users.register", () => {
 
   it("is idempotent: zelfde subject = zelfde id", async () => {
     const t = convexTest(schema);
+    await seedInvite(t, "alice@x.com");
     const as = withUser(t, "user_alice");
     const id1 = await as.mutation(api.users.register, {
       email: "alice@x.com",
@@ -56,6 +80,7 @@ describe("users.register", () => {
 
   it("weigert dubbel email vanuit andere subject", async () => {
     const t = convexTest(schema);
+    await seedInvite(t, "shared@x.com");
     await withUser(t, "user_a").mutation(api.users.register, {
       email: "shared@x.com",
     });
@@ -82,6 +107,7 @@ describe("users.current", () => {
 
   it("geeft user wanneer auth + record bestaat", async () => {
     const t = convexTest(schema);
+    await seedInvite(t, "alice@x.com");
     const as = withUser(t, "user_alice");
     await as.mutation(api.users.register, {
       email: "alice@x.com",
@@ -96,6 +122,7 @@ describe("users.current", () => {
 describe("users.getById", () => {
   it("geeft user op id", async () => {
     const t = convexTest(schema);
+    await seedInvite(t, "alice@x.com");
     const id = await withUser(t, "user_alice").mutation(api.users.register, {
       email: "alice@x.com",
     });
@@ -105,6 +132,7 @@ describe("users.getById", () => {
 
   it("geeft null voor niet-bestaande id", async () => {
     const t = convexTest(schema);
+    await seedInvite(t, "alice@x.com");
     // Maak en delete om een geldige-but-stale id te krijgen.
     const id = await withUser(t, "user_alice").mutation(api.users.register, {
       email: "alice@x.com",
@@ -118,6 +146,7 @@ describe("users.getById", () => {
 describe("users.updateProfile", () => {
   it("update naam en profielfoto", async () => {
     const t = convexTest(schema);
+    await seedInvite(t, "alice@x.com");
     const as = withUser(t, "user_alice");
     const id = await as.mutation(api.users.register, {
       email: "alice@x.com",
@@ -157,6 +186,7 @@ describe("users.updateProfile", () => {
 describe("users.deleteSelf", () => {
   it("verwijdert eigen record", async () => {
     const t = convexTest(schema);
+    await seedInvite(t, "alice@x.com");
     const as = withUser(t, "user_alice");
     const id = await as.mutation(api.users.register, {
       email: "alice@x.com",
@@ -175,6 +205,7 @@ describe("users.deleteSelf", () => {
 describe("users photo count limiet", () => {
   it("incrementPhotoCount verhoogt teller", async () => {
     const t = convexTest(schema);
+    await seedInvite(t, "alice@x.com");
     const id = await withUser(t, "user_alice").mutation(api.users.register, {
       email: "alice@x.com",
     });
@@ -188,6 +219,7 @@ describe("users photo count limiet", () => {
 
   it("incrementPhotoCount gooit error op limiet", async () => {
     const t = convexTest(schema);
+    await seedInvite(t, "alice@x.com");
     const id = await withUser(t, "user_alice").mutation(api.users.register, {
       email: "alice@x.com",
     });
@@ -200,11 +232,12 @@ describe("users photo count limiet", () => {
 
     await expect(
       t.mutation(internal.users.incrementPhotoCount, { userId: id }),
-    ).rejects.toThrow(/limiet/i);
+    ).rejects.toThrow(/PHOTO_LIMIT_REACHED/);
   });
 
   it("decrementPhotoCount verlaagt teller", async () => {
     const t = convexTest(schema);
+    await seedInvite(t, "alice@x.com");
     const id = await withUser(t, "user_alice").mutation(api.users.register, {
       email: "alice@x.com",
     });
@@ -218,6 +251,7 @@ describe("users photo count limiet", () => {
 
   it("decrementPhotoCount blijft op 0", async () => {
     const t = convexTest(schema);
+    await seedInvite(t, "alice@x.com");
     const id = await withUser(t, "user_alice").mutation(api.users.register, {
       email: "alice@x.com",
     });
@@ -230,6 +264,7 @@ describe("users photo count limiet", () => {
 
   it("incrementPhotoCount op niet-bestaande user gooit error", async () => {
     const t = convexTest(schema);
+    await seedInvite(t, "alice@x.com");
     const id = await withUser(t, "user_alice").mutation(api.users.register, {
       email: "alice@x.com",
     });

@@ -30,7 +30,33 @@ async function registerUser(
   subject: string,
   email: string,
 ) {
-  return await withUser(t, subject).mutation(api.users.register, { email });
+  // Audit-7 §5: seed pending invite om users.register-gate te passeren.
+  const { inviteId, seederId } = await t.run(async (ctx) => {
+    const seederId = await ctx.db.insert("users", {
+      subject: `__invite_seeder_${crypto.randomUUID()}`,
+      email: `seeder_${crypto.randomUUID()}@seed.test`,
+      photoCount: 0,
+      photoLimit: 1000,
+      createdAt: Date.now(),
+    });
+    const inviteId = await ctx.db.insert("invites", {
+      email: email.toLowerCase().trim(),
+      invitedBy: seederId,
+      token: crypto.randomUUID(),
+      status: "pending",
+      expiresAt: Date.now() + 14 * 24 * 60 * 60 * 1000,
+      createdAt: Date.now(),
+    });
+    return { inviteId, seederId };
+  });
+  const userId = await withUser(t, subject).mutation(api.users.register, { email });
+  // Cleanup seed-artifacts zodat test-DB schoon blijft (geen extra
+  // pending invites of seeder-users die latere queries vervuilen).
+  await t.run(async (ctx) => {
+    await ctx.db.delete(inviteId);
+    await ctx.db.delete(seederId);
+  });
+  return userId;
 }
 
 describe("invites.decline — happy path", () => {
@@ -123,6 +149,68 @@ describe("invites.decline — auth & access checks", () => {
 });
 
 describe("invites.decline — idempotency & state guards", () => {
+  it("[audit-8 order-bug] idempotent ook bij verkeerde caller — declined invite is final state", async () => {
+    // Volgorde-bug in decline: email-mismatch werd gechecked vóór de
+    // status==="declined" idempotency-return. Daardoor throwde een tweede
+    // call (refresh, history-replay) met een andere caller "Invite is niet
+    // voor jouw email" — terwijl de invite al een terminal-state had.
+    //
+    // Fix: status-checks vóór email-check. declined → return (no-op),
+    // accepted/expired → throw, en pas dan email-vergelijking. Voor terminal
+    // states leakt dat geen status-info meer omdat decline geen state-overgang
+    // meer doet en de respondedAt/state al door de eerste, gerechtvaardigde
+    // caller is gezet.
+    //
+    // RED tot B's reorder-fix in convex/invites.ts decline-handler.
+    const t = convexTest(schema);
+    await registerUser(t, "user_alice", "a@x.com");
+    const { inviteId, token } = await withUser(t, "user_alice").mutation(
+      api.invites.create,
+      { email: "bob@x.com" },
+    );
+    await registerUser(t, "user_bob", "bob@x.com");
+    await withUser(t, "user_bob").mutation(api.invites.decline, { token });
+    const firstResponded = (await t.run((ctx) => ctx.db.get(inviteId)))
+      ?.respondedAt;
+
+    // Carol probeert dezelfde invite te declinen (verkeerde email maar
+    // invite is al final-state declined).
+    await registerUser(t, "user_carol", "carol@x.com");
+    await expect(
+      withUser(t, "user_carol").mutation(api.invites.decline, { token }),
+    ).resolves.not.toThrow();
+    const after = await t.run((ctx) => ctx.db.get(inviteId));
+    expect(after?.status).toBe("declined");
+    expect(after?.respondedAt).toBe(firstResponded);
+  });
+
+  it("[audit-8] decline op invite met status='expired' (via bounce) throwt — bewust verschil met declined", async () => {
+    // UX-keuze gepind: declined = user-initiated terminal state, dus
+    // idempotent (refresh-safe). expired = system-initiated state, mogelijk
+    // recoverable wanneer een nieuwe invite wordt verstuurd; behandelen als
+    // throw zodat frontend een nette error-pagina kan tonen i.p.v. de UI
+    // op "succes" te zetten.
+    const t = convexTest(schema);
+    const aliceId = await registerUser(t, "user_alice", "a@x.com");
+    await t.run((ctx) =>
+      ctx.db.insert("invites", {
+        email: "bob@x.com",
+        invitedBy: aliceId,
+        token: "tk-decline-expired-by-bounce",
+        status: "expired",
+        bouncedAt: Date.now() - 1000,
+        expiresAt: Date.now() + 14 * 24 * 60 * 60 * 1000,
+        createdAt: Date.now(),
+      }),
+    );
+    await registerUser(t, "user_bob", "bob@x.com");
+    await expect(
+      withUser(t, "user_bob").mutation(api.invites.decline, {
+        token: "tk-decline-expired-by-bounce",
+      }),
+    ).rejects.toThrow();
+  });
+
   it("idempotent: tweede decline doet niets (geen throw)", async () => {
     // [GAP] oude code zou throwen op tweede call (invite was al gedeleted →
     // "invite not found"). v2: idempotent voor betere UX (refresh-safe).
@@ -159,6 +247,30 @@ describe("invites.decline — idempotency & state guards", () => {
     await withUser(t, "user_bob").mutation(api.invites.accept, { token });
     await expect(
       withUser(t, "user_bob").mutation(api.invites.decline, { token }),
+    ).rejects.toThrow();
+  });
+
+  it("[audit-8] weigert invite met status='expired' (door bounce gemarkeerd, expiresAt nog in toekomst)", async () => {
+    // Bounce-pad zet status="expired" + bouncedAt zonder aan expiresAt te
+    // raken. Aparte status-guard nodig naast expiresAt-guard.
+    const t = convexTest(schema);
+    const aliceId = await registerUser(t, "user_alice", "a@x.com");
+    await t.run((ctx) =>
+      ctx.db.insert("invites", {
+        email: "bob@x.com",
+        invitedBy: aliceId,
+        token: "tk-status-expired-decline",
+        status: "expired",
+        bouncedAt: Date.now() - 1000,
+        expiresAt: Date.now() + 14 * 24 * 60 * 60 * 1000,
+        createdAt: Date.now(),
+      }),
+    );
+    await registerUser(t, "user_bob", "bob@x.com");
+    await expect(
+      withUser(t, "user_bob").mutation(api.invites.decline, {
+        token: "tk-status-expired-decline",
+      }),
     ).rejects.toThrow();
   });
 

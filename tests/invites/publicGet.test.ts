@@ -19,7 +19,7 @@
 // edge cases die in oude code ontbraken.
 
 import { convexTest } from "convex-test";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { api } from "../../convex/_generated/api";
 import schema from "../../convex/schema";
 
@@ -37,8 +37,38 @@ async function registerUser(
   t: ReturnType<typeof convexTest>,
   subject: string,
   email: string,
+  name?: string,
 ) {
-  return await withUser(t, subject).mutation(api.users.register, { email });
+  // Audit-7 §5: seed pending invite om users.register-gate te passeren.
+  const { inviteId, seederId } = await t.run(async (ctx) => {
+    const seederId = await ctx.db.insert("users", {
+      subject: `__invite_seeder_${crypto.randomUUID()}`,
+      email: `seeder_${crypto.randomUUID()}@seed.test`,
+      photoCount: 0,
+      photoLimit: 1000,
+      createdAt: Date.now(),
+    });
+    const inviteId = await ctx.db.insert("invites", {
+      email: email.toLowerCase().trim(),
+      invitedBy: seederId,
+      token: crypto.randomUUID(),
+      status: "pending",
+      expiresAt: Date.now() + 14 * 24 * 60 * 60 * 1000,
+      createdAt: Date.now(),
+    });
+    return { inviteId, seederId };
+  });
+  const userId = await withUser(t, subject).mutation(api.users.register, {
+    email,
+    ...(name !== undefined ? { name } : {}),
+  });
+  // Cleanup seed-artifacts zodat test-DB schoon blijft (geen extra
+  // pending invites of seeder-users die latere queries vervuilen).
+  await t.run(async (ctx) => {
+    await ctx.db.delete(inviteId);
+    await ctx.db.delete(seederId);
+  });
+  return userId;
 }
 
 describe("invites.getByToken — landingspagina lookup", () => {
@@ -58,7 +88,10 @@ describe("invites.getByToken — landingspagina lookup", () => {
     // Geen withUser → anonymous query
     const got = await t.query(api.invites.getByToken, { token });
     expect(got?.email).toBe("new@x.com");
-    expect(got?.inviter?.email).toBe("a@x.com");
+    // Audit-8: inviter is gesluisd tot {name, profilePhotoStorageId}; check
+    // alleen op aanwezigheid hier. Field-shape wordt gepind in de [audit-8]
+    // sluis-test verderop.
+    expect(got?.inviter).not.toBeNull();
     expect(got?.group?.name).toBe("Mijn Groep");
     expect(got?.role).toBe("member");
   });
@@ -73,6 +106,40 @@ describe("invites.getByToken — landingspagina lookup", () => {
     const got = await t.query(api.invites.getByToken, { token });
     expect(got?.email).toBe("new@x.com");
     expect(got?.group).toBeNull();
+  });
+
+  it("[audit-8] returnt alleen geslucht inviter-object — geen email/subject/photoCount/lastVisitAt op publieke endpoint", async () => {
+    // getByToken is anonymous-toegankelijk (invite-landing). De huidige
+    // implementatie returnde het volledige inviter-document via ctx.db.get,
+    // wat een info-leak is: email + Clerk subject + activity-data zijn niet
+    // nodig voor de invite-pagina. Sluis tot {name, profilePhotoStorageId}.
+    // RED tot B's fix in convex/invites.ts getByToken.
+    const t = convexTest(schema);
+    await registerUser(t, "user_alice", "alice@x.com", "Alice");
+    const { token } = await withUser(t, "user_alice").mutation(
+      api.invites.create,
+      { email: "new@x.com" },
+    );
+    const got = await t.query(api.invites.getByToken, { token });
+    expect(got?.inviter).not.toBeNull();
+    const inviter = got!.inviter as Record<string, unknown>;
+    expect(inviter.name).toBe("Alice");
+    // Sluis: alleen non-sensitive velden mogen lekken naar de publieke
+    // landingspagina. Sensitive (email, Clerk subject, activity-data,
+    // aggregates) en interne Convex-velden moeten weg zijn.
+    expect(inviter.email).toBeUndefined();
+    expect(inviter.subject).toBeUndefined();
+    expect(inviter.photoCount).toBeUndefined();
+    expect(inviter.photoLimit).toBeUndefined();
+    expect(inviter.lastVisitAt).toBeUndefined();
+    expect(inviter.createdAt).toBeUndefined();
+    expect(inviter._id).toBeUndefined();
+    expect(inviter._creationTime).toBeUndefined();
+    // Allow-list: enkel name + profilePhotoStorageId.
+    const allowed = new Set(["name", "profilePhotoStorageId"]);
+    for (const k of Object.keys(inviter)) {
+      expect(allowed.has(k)).toBe(true);
+    }
   });
 
   it("returnt null voor onbekende token (i.p.v. throw)", async () => {
@@ -186,6 +253,37 @@ describe("invites.listPendingForEmail / hasPendingForEmail — pre-signup check"
     expect(
       await t.query(api.invites.hasPendingForEmail, { email: "carol@x.com" }),
     ).toBe(false);
+  });
+
+  it("[audit-8 bevinding 9] hasPendingForEmail: expiresAt === now telt als verlopen", async () => {
+    // Spec: ≤ now is verlopen. hasPendingForEmail moet false geven bij
+    // exacte gelijkheid van expiresAt en now. Pinnen samen met de accept-
+    // boundary-test (zie tests/invites/accept.test.ts).
+    vi.useFakeTimers();
+    try {
+      const fixedNow = new Date("2026-04-30T12:00:00Z").getTime();
+      vi.setSystemTime(fixedNow);
+
+      const t = convexTest(schema);
+      const aliceId = await registerUser(t, "user_alice", "a@x.com");
+      await t.run((ctx) =>
+        ctx.db.insert("invites", {
+          email: "boundary@x.com",
+          invitedBy: aliceId,
+          token: "tk-boundary-pending",
+          status: "pending",
+          expiresAt: fixedNow,
+          createdAt: fixedNow - 1000,
+        }),
+      );
+      expect(
+        await t.query(api.invites.hasPendingForEmail, {
+          email: "boundary@x.com",
+        }),
+      ).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("[GAP] case-insensitive email match", async () => {

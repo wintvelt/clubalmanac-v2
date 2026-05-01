@@ -7,9 +7,9 @@ import schema from "../../convex/schema";
 // vanuit groups.removeMember (UM delete trigger).
 //
 // M1 — albumPhotos van vertrekkende user in déze group worden verwijderd.
-//      Oude AWS-handler (memberDelToAlbumPhoto.js) filtert op photo-OWNER
-//      via userPhotoKeys.includes(albumPhoto.SK). Convex filtert op
-//      addedBy — divergentie wordt afgedekt door de cross-owner test.
+//      Filter op photo.ownerId, matcht memberDelToAlbumPhoto.js:51 waar
+//      userPhotoKeys.includes(albumPhoto.SK) op photo-owner-keys filtert.
+//      Geen divergentie: Convex en AWS gebruiken beide photo-owner.
 // M2 — admin/founder successie, mapt 1-op-1 op memberDelToGroup.js:
 //   memberDelToGroup.js:17  hasOtherAdmin = members.find(role === 'admin')
 //   memberDelToGroup.js:18  noFounderleft = !members.find(isFounder)
@@ -33,7 +33,33 @@ async function registerUser(
   subject: string,
   email: string,
 ) {
-  return await withUser(t, subject).mutation(api.users.register, { email });
+  // Audit-7 §5: seed pending invite om users.register-gate te passeren.
+  const { inviteId, seederId } = await t.run(async (ctx) => {
+    const seederId = await ctx.db.insert("users", {
+      subject: `__invite_seeder_${crypto.randomUUID()}`,
+      email: `seeder_${crypto.randomUUID()}@seed.test`,
+      photoCount: 0,
+      photoLimit: 1000,
+      createdAt: Date.now(),
+    });
+    const inviteId = await ctx.db.insert("invites", {
+      email: email.toLowerCase().trim(),
+      invitedBy: seederId,
+      token: crypto.randomUUID(),
+      status: "pending",
+      expiresAt: Date.now() + 14 * 24 * 60 * 60 * 1000,
+      createdAt: Date.now(),
+    });
+    return { inviteId, seederId };
+  });
+  const userId = await withUser(t, subject).mutation(api.users.register, { email });
+  // Cleanup seed-artifacts zodat test-DB schoon blijft (geen extra
+  // pending invites of seeder-users die latere queries vervuilen).
+  await t.run(async (ctx) => {
+    await ctx.db.delete(inviteId);
+    await ctx.db.delete(seederId);
+  });
+  return userId;
 }
 
 describe("M1: removeMember cascade albumPhotos in déze group", () => {
@@ -156,8 +182,9 @@ describe("M1: removeMember cascade albumPhotos in déze group", () => {
   });
 
   it("cross-owner: Carol voegt Bob's foto toe, Bob vertrekt → publicatie weg", async () => {
-    // memberDelToAlbumPhoto.js:51 filtert op photo-OWNER, niet op addedBy.
-    // Convex (groups.ts:255) filtert nu op addedBy → divergentie.
+    // memberDelToAlbumPhoto.js:51 filtert op photo-OWNER (userPhotoKeys.includes).
+    // Convex (groups.ts internalRemoveMember) filtert óók op photo.ownerId →
+    // geen divergentie. Test pinnt dat de filter op owner is, niet op addedBy.
     const t = convexTest(schema);
     await registerUser(t, "user_alice", "a@x.com");
     const bobId = await registerUser(t, "user_bob", "b@x.com");
@@ -203,10 +230,71 @@ describe("M1: removeMember cascade albumPhotos in déze group", () => {
     const aps = await t.run((ctx) =>
       ctx.db
         .query("albumPhotos")
-        .withIndex("by_album", (q) => q.eq("albumId", albumId))
-        .collect(),
+        .collect()
+        .then((all) => all.filter((ap) => ap.albumId === albumId)),
     );
     expect(aps).toHaveLength(0);
+  });
+
+  it("inverse cross-owner: Bob voegt Carol's foto toe, Bob vertrekt → publicatie blijft", async () => {
+    // memberDelToAlbumPhoto.js:51 filtert op photo-owner. Bob is addedBy maar
+    // niet de owner; Carol blijft in de groep en bezit de photo. Publicatie
+    // moet dus blijven staan. Pinnt dat de filter NIET op addedBy is —
+    // anders zou deze AP onterecht verwijderd worden.
+    const t = convexTest(schema);
+    await registerUser(t, "user_alice", "a@x.com");
+    const bobId = await registerUser(t, "user_bob", "b@x.com");
+    const carolId = await registerUser(t, "user_carol", "c@x.com");
+
+    const groupId = await withUser(t, "user_alice").mutation(
+      api.groups.create,
+      { name: "G" },
+    );
+    await withUser(t, "user_alice").mutation(api.groups.addMember, {
+      groupId,
+      userId: bobId,
+    });
+    await withUser(t, "user_alice").mutation(api.groups.addMember, {
+      groupId,
+      userId: carolId,
+    });
+
+    const albumId = await withUser(t, "user_alice").mutation(
+      api.albums.create,
+      { groupId, name: "A" },
+    );
+
+    const storageId = await t.run(
+      async (ctx) => await ctx.storage.store(new Blob(["x"])),
+    );
+    const carolPhoto = await withUser(t, "user_carol").mutation(
+      api.photos.create,
+      { storageId },
+    );
+
+    // Bob publiceert Carol's foto (addedBy=Bob, ownerId=Carol)
+    await withUser(t, "user_bob").mutation(api.albums.addPhoto, {
+      albumId,
+      photoId: carolPhoto,
+    });
+
+    await withUser(t, "user_alice").mutation(api.groups.removeMember, {
+      groupId,
+      userId: bobId,
+    });
+
+    const aps = await t.run((ctx) =>
+      ctx.db
+        .query("albumPhotos")
+        .collect()
+        .then((all) => all.filter((ap) => ap.albumId === albumId)),
+    );
+    expect(aps).toHaveLength(1);
+    expect(aps[0]?.photoId).toBe(carolPhoto);
+
+    // Carol's photo record blijft intact
+    const photo = await t.run((ctx) => ctx.db.get(carolPhoto));
+    expect(photo).not.toBeNull();
   });
 });
 

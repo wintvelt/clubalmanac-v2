@@ -63,7 +63,102 @@ Single-table design wordt aparte Convex tables: `users`, `photos`, `groups`, `al
 Convex mutations zijn transactioneel: je kunt in één mutation meerdere tables updaten. Geen eventual consistency. De complexe stream handler (27 cascade handlers) wordt grotendeels overbodig. Sommige denormalization kun je zelfs elimineren door te joinen i.p.v. dupliceren.
 
 ### File Storage
-Upload via `generateUploadUrl()` + POST past 1:1 op het huidige signed URL patroon.
+
+**Upload-flow: 1-step backend-mediated POST met reservation pattern (cyclus 1, gehard in audit-cyclus-1).**
+
+Eerdere ontwerp (3-step: `generateUploadUrl` mutation → client PUT → `createFromUpload` mutation) had drie problemen:
+
+1. **Orphan storage objects** bij client-crash tussen PUT en `createFromUpload`. Convex storage object bestond, maar geen photo record → integrity-check moest 'm later opruimen
+2. **Cross-user race** bij gelijktijdige uploads. Pieterpad-scenario: groep wandelt samen, mobiele uploads via flaky netwerk → hogere crash-rate tussen PUT en finalize-mutation
+3. **Niet retry-safe**: dubbele POST kon dubbele photo records produceren als client de eerste response miste en retry'de met een nieuwe `generateUploadUrl`. `by_storageId` idempotency-anchor ving dit nét op zolang storageId hergebruikt werd; bij retry met nieuwe upload-URL viel de garantie weg
+
+Cyclus 1 vervangt dat door een 1-step `POST /upload`. Audit-cyclus-1 vond drie productie-issues op die eerste rewrite — alle drie cascaden uit één architectuur-keuze: idempotency was een **post-fact log** (record geschreven NÁ photo-creatie). Dat liet een race-window open tussen photo-insert en idempotency-insert, kon onder concurrent retry's een dubbele photo produceren, en liet een Nederlandstalige `message.includes("limiet")`-substring matchen voor de quota-foutpaden. Fix: **reservation pattern** als state machine, typed sentinel voor quota-fouten, defensieve trim op de idempotency-header.
+
+**Nieuwe flow:**
+
+```
+POST /upload    (Convex httpAction in convex/http.ts)
+  Headers:
+    Authorization: Bearer <Clerk JWT>
+    X-Upload-Id: <client-generated UUID>          (server-side getrimd)
+    Content-Type: image/jpeg | image/heic | image/png | ...
+    X-Filename: <optional, client-meegegeven bestandsnaam>
+  Body: file binary (single-file, geen multipart)
+
+  → 200 { photoId: Id<"photos"> }
+  → 400 { error: "Missing X-Upload-Id" }          (ook bij whitespace-only header)
+  → 401 { error: "Unauthorized" }
+  → 403 { error: "Photo limiet bereikt" }          (was 413; quota = Forbidden, niet Payload Too Large)
+  → 409 { error: "Upload in progress" }            (race-loser tegen lopende reservation, audit-cyclus-1)
+```
+
+**Reservation pattern (state machine).** De `uploadIdempotency`-row wordt nu **vóór** de photo-creatie ingeschreven met `status="in_progress"`, en pas na succesvolle photo-creatie ge-patched naar `status="completed"`. De composite index `by_owner_and_clientUploadId` maakt de lookup atomair per (ownerId, clientUploadId): twee parallelle handlers met dezelfde key triggeren een Convex transaction-conflict; de loser wordt geretry'd en ziet bij retry de in_progress reservation van de winnaar — waaruit een 409 volgt.
+
+Server-side flow:
+
+1. `ctx.auth.getUserIdentity()` → null → 401. Convex valideert de Clerk JWT zelf vóór de httpAction draait
+2. Resolve user-record via `subject` lookup (equivalent van `requireCurrentUser`)
+3. Trim `X-Upload-Id`; lege string na trim → 400 (audit-cyclus-1 §3: `"   "` mag niet als geldige idempotency-key door)
+4. `internal.uploads.reserve({ownerId, clientUploadId})` — atomair:
+   - hit `status="completed"` → return `{ kind: "hit", photoId }` (idempotente retry)
+   - hit `status="in_progress"` → return `{ kind: "conflict" }` → 409
+   - miss → insert `{status: "in_progress", createdAt, photoId: undefined, completedAt: undefined}` → return `{ kind: "reserved", reservationId }`
+5. Photo-limit check + storage write + photo-create gaan via `internal.photos.createFromUploadInternal`. Bij quota-fail throwt die de **typed sentinel string** `"PHOTO_LIMIT_REACHED"` — de http handler matcht dat exact en mapt naar **403 Forbidden** met NL-body `"Photo limiet bereikt"`. Geen substring-match meer op een Nederlandse error-message. Limit-check loopt vóór `storage.store`, vóór `reserve` — geen orphan blob, geen phantom in_progress
+6. `ctx.storage.store(await request.blob())` → storageId
+7. `internal.photos.createFromUploadInternal({storageId, ownerId, filename, mimeType})` — internal mutation die photo record insert + `photoCount++` + `scheduler.runAfter(0, extractMetadata)`. Alle drie atomair in één Convex transactie
+8. `internal.uploads.markCompleted({reservationId, photoId})` — patch reservation: `status="completed"`, `photoId`, `completedAt`
+9. Return `{photoId}`
+
+Bij failure tussen stap 4 en 8 (server crash, exception in 6/7) blijft de reservation in `in_progress` achter. Stale-cleanup-cron ruimt die op na 5 minuten (zie cron-sectie); een retry met dezelfde clientUploadId binnen die 5 min krijgt dus nog 409 — daarna een schone insert.
+
+**Idempotency-tabel (audit-cyclus-1 schema):**
+
+```ts
+uploadIdempotency: defineTable({
+  ownerId: v.id("users"),                                    // NIEUW: per-user scope structureel
+  clientUploadId: v.string(),
+  status: v.union(v.literal("in_progress"), v.literal("completed")),  // NIEUW: state machine
+  photoId: v.optional(v.id("photos")),                        // CHANGED: optional, alleen na completion
+  createdAt: v.number(),
+  completedAt: v.optional(v.number()),                        // NIEUW: gevuld bij markCompleted
+})
+  .index("by_owner_and_clientUploadId", ["ownerId", "clientUploadId"])  // NIEUW: composite
+  .index("by_status_and_createdAt", ["status", "createdAt"]);           // NIEUW: voor stale cleanup
+```
+
+Verwijderd t.o.v. cyclus 1: `by_clientUploadId` (vervangen door composite), `by_createdAt` (vervangen door status-aware variant). De composite key levert per-user scope **structureel**: user X kan de upload-id van user Y niet meer "kapen" omdat de DB-key zelf de ownerId bevat. De fallthrough/owner-mismatch defensive-coding uit cyclus 1 vervalt.
+
+Voordeel boven `photos.by_storageId`: de mapping leeft van `clientUploadId` (gegenereerd vóór de upload start, blijft over retries gelijk) i.p.v. `storageId` (server-toegewezen, verandert bij elke nieuwe upload). Daardoor is de idempotency robuust tegen client-retry op netwerkfailure tussen request en response.
+
+**Schema-wijzigingen:**
+- Vervangen: `uploadIdempotency` tabel + indexes (zie hierboven — vervangt cyclus-1 versie)
+- Toevoegen: cron `cleanupOldUploadIdempotency` met **twee thresholds** (zie cron-sectie + cascade matrix UI1)
+- Verwijderen: `photos.by_storageId` index — niet meer nodig na rewrite
+- Verwijderen: `api.photos.generateUploadUrl` mutation
+- Verwijderen: `api.photos.createFromUpload` mutation (vervangen door internal helper `internal.photos.createFromUploadInternal`)
+- `api.photos.create` blijft als test-fixture helper (NIET deprecated voor verwijdering): wordt door 22+ tests gebruikt om photo records te creëren zonder de hele upload-pipeline te doorlopen. Photo-limit error harmonized naar `PHOTO_LIMIT_REACHED` typed sentinel voor consistency met createFromUploadInternal
+
+**Status-code semantiek:**
+- **400** Bad Request voor missing/whitespace-only `X-Upload-Id` (client-side fout)
+- **401** Unauthorized voor ontbrekende identity / niet-bestaande user
+- **403** Forbidden voor quota-overschrijding (audit-cyclus-1 §1: was 413 Payload Too Large; quota is een policy-refuse, niet body-grootte). Body-message blijft NL voor UX
+- **409** Conflict voor concurrent same-user same-UUID race (audit-cyclus-1 §2: race-loser krijgt geen valse 200)
+- 5xx alleen voor onverwachte fouten — `PHOTO_LIMIT_REACHED` sentinel mag niet als 500 doorlekken
+
+**Trade-offs van backend-mediated upload:**
+
+| | Oude flow (signed URL → PUT) | Nieuwe flow (POST /upload) |
+|---|---|---|
+| Bandwidth | Client → S3 direct, geen Convex tussenroute | Client → Convex → storage; Convex action draait extra ~ms |
+| Bandwidth-kosten | 1× egress (storage→client bij viewing) | 1× ingress + 1× egress, ingress is gratis op Convex |
+| Robustness | 2 mutation calls + 1 PUT, tussenstaten kunnen orphans creëren | 1 atomic call, geen tussenstaten |
+| Retry-safety | Dubbele records bij retry-na-mislukte-finalize | Idempotent op `X-Upload-Id` |
+| Auth | Limit-check 2× nodig (gen + finalize) | 1× check binnen één transactie |
+
+Nettowinst: robustness over een minimale extra hop. Bij JPEG-uploads (~2-5 MB typisch) is de extra latency verwaarloosbaar bij Convex EU.
+
+**Upload-size limit (known limitation, audit-cyclus-1 §5):**
+Convex httpAction request body limit is ~20 MiB (default, niet configureerbaar tot R2-pad). Voldoende voor JPEG/HEIC photos in de huidige content-mix (typisch 2–10 MB). Bij body > 20 MiB faalt Convex de hele request al vóór de httpAction draait — geen 4xx/5xx vanuit onze handler, maar een platform-niveau reject. Cyclus 1 kiest bewust om dat **niet** te fixen: het pad voor groot-bestanden (HEIC live-photos, video) loopt sowieso via Cloudflare R2 met presigned-PUT in cyclus 3+, en een tussentijdse mitigatie zou de huidige flow nodeloos compliceren. Risico: een gebruiker met een 25 MB foto krijgt een onduidelijke fout in plaats van een herkenbare 413. Acceptabel bij 16 users; documenteren we als known limitation tot R2-switch.
 
 **Performance:** je huidige setup heeft last van Lambda cold starts bij foto laden. Convex heeft geen cold starts, maar native file storage heeft ook geen CDN edge caching. Twee opties:
 
@@ -81,6 +176,29 @@ Aanbeveling: start met A, switch naar B als performance of kosten een issue word
 
 **Video streaming:** video upload is handmatig (geen probleem). Streaming van 30-min video's kan met beide opties. R2 is hier beter vanwege edge caching en nul egress.
 
+### Cron-registratie
+
+Naast `cleanupFlaggedPhotos` (FL1, daily) komt in cyclus 1 de cleanup-cron voor upload-idempotency erbij:
+
+```ts
+// convex/crons.ts
+crons.daily(
+  "cleanup old upload idempotency",
+  { hourUTC: 3, minuteUTC: 30 },  // naast cleanupFlaggedPhotos (3:00 UTC)
+  internal.uploads.cleanupOld,
+  {},
+);
+```
+
+`internal.uploads.cleanupOld` ruimt records uit `uploadIdempotency` op met **twee verschillende thresholds**, samenhangend met de reservation-pattern state machine (audit-cyclus-1):
+
+- `status="completed"` records met `createdAt <= now - 7d` — retry-safety horizon. 7d is de "geldigheidsduur" van een idempotency-key, voldoende voor legitieme background-upload retry's
+- `status="in_progress"` records met `createdAt <= now - 5min` — stale-reservation horizon. Een reservation die langer dan 5 min in_progress staat impliceert een gecrashte/afgebroken handler tussen `reserve` en `markCompleted`. Cleanup ontblokkeert toekomstige retries met dezelfde clientUploadId
+
+Boundary in beide gevallen `<=` (consistent met FL1 `flaggedDeleteDate <= now` en invites accept `expiresAt <= now`). De `by_status_and_createdAt` index laat beide range queries efficiënt draaien. Zie cascade matrix row UI1.
+
+Toekomstige cron-toevoeging: `expirePendingInvites` voor IB2 (natural-expiry op invites — gebundeld met scheduled-functions werkpakket, nog niet geleverd).
+
 ### Auth
 Aanbeveling: **Clerk + Convex** (bewezen Expo combo, werkt ook voor web). 16 users: gewoon opnieuw laten registreren. Cognito wordt volledig vervangen. Clerk heeft aparte dev en prod instances (zie Environments).
 
@@ -90,14 +208,32 @@ In oude AWS app was webmaster één hardcoded email (`wintvelt@me.com`) via env-
 
 ```ts
 // convex/lib/auth.ts
-const WEBMASTER_EMAILS = (process.env.WEBMASTER_EMAILS ?? "").split(",").map(e => e.trim());
+function getWebmasterEmails(): string[] {
+  return (process.env.WEBMASTER_EMAILS ?? "")
+    .split(",")
+    .map((e) => e.trim().toLowerCase()) // case-insensitive (audit-7 §2)
+    .filter((e) => e.length > 0);
+}
+
 export async function requireWebmaster(ctx) {
+  // Audit-7 §3: webmaster MOET ook een users-record hebben. Beide gates
+  // samen: requireCurrentUser (identity + users-record) én email-match.
+  const user = await requireCurrentUser(ctx);
   const identity = await ctx.auth.getUserIdentity();
-  if (!identity || !WEBMASTER_EMAILS.includes(identity.email)) {
+  const email = identity?.email?.toLowerCase();
+  const allowed = getWebmasterEmails();
+  if (!email || !allowed.includes(email)) {
     throw new Error("Webmaster only");
   }
+  return user;
 }
 ```
+
+Eigenschappen die deze helper pinnen (zie `tests/lib/auth.test.ts`):
+- **Case-insensitive match** aan beide kanten (env-var én JWT-claim) — admin tikt mixed-case in dashboard, Clerk normaliseert lowercase. Audit-7 §2.
+- **Fail-closed** bij ontbrekende env-var, lege string, of identity zonder email-claim.
+- **Whitespace + comma-separated** robuust via `trim` + `filter`.
+- **Webmaster zónder users-record** wordt geweigerd door de interne `requireCurrentUser`-call. Audit-7 §3.
 
 Webmaster-gated operations (uit oude AWS code):
 - `decideFlag(photoId, approve)` — flag appeal beslissing
@@ -110,6 +246,21 @@ Bootstrap: jouw email handmatig in Clerk dashboard aanmaken pre-cutover, env-var
 **YAGNI keuze:** Clerk publicMetadata-rol of Convex DB-flag zou flexibeler zijn (multi-webmaster zonder redeploy), maar bij 16 users + 1 webmaster levert het niks op. Bij behoefte aan tweede webmaster ooit: ~30 min werk om over te zetten. Probleem-report email-bestemming gebruikt dezelfde env-var.
 
 **TODO voor Fase 4A2 (client-integratie):** verifieer dat `convex/auth.config.ts` daadwerkelijk de `email`-claim uit het Clerk JWT doorgeeft, zodat `ctx.auth.getUserIdentity().email` in productie gevuld is. Implementatie + tests gebruiken `withIdentity({ email })` wat altijd werkt; productie hangt af van Clerk JWT template configuratie. Als email-claim niet doorkomt: Clerk JWT template aanpassen óf `requireWebmaster` switchen naar DB-lookup via `users.email`.
+
+> **Productie-blind-spot (audit-7):** vitest-suite simuleert de email-claim via `t.withIdentity({ email })`, dat zegt NIETS over de Clerk JWT-template in productie. Pas in Phase 4A2 met een smoke-test (HTTP-endpoint dat `ctx.auth.getUserIdentity()` reflecteert óf log, eenmalig) is verifieerbaar of de claim daadwerkelijk doorkomt. Tot die smoke-test landt: groen-passende tests garanderen geen werkende webmaster-flow op prod.
+
+### Email-normalisatie invariant
+
+Alle email-vergelijkingen in deze app zijn case-insensitive (lowercase + trim). Dit geldt voor `invites.email`, `users.email`, en `WEBMASTER_EMAILS` matching. Concreet:
+
+- **Schrijven:** elke insert van een email-veld (in `users.register`, `invites.create`, seed-tools, migratie-scripts) past `email.trim().toLowerCase()` toe vóór persistentie. Geen "raw" email-strings in de DB.
+- **Lezen / vergelijken:** elke `by_email`-lookup en elke handmatige email-equality (bv. `invite.email !== normalizeEmail(user.email)` in accept/decline) gaat door dezelfde normalisatie. De `normalizeEmail`-helper in `convex/invites.ts` is de enige reference, `convex/users.ts` past dezelfde regel toe inline.
+- **Binnenkomende strings:** Clerk's JWT-claim `email` wordt door Clerk al lowercased aangeleverd, maar code mag daar niet op vertrouwen — altijd opnieuw normaliseren bij vergelijking.
+- **Bounce-webhook:** Mailjet kan mixed-case email teruggeven; `internal.invites.handleBounce` normaliseert via `findInvitesByEmail` (audit-8).
+
+**Waarom een expliciete invariant:** audit-8 vond dat `users.register` de invite-gate-lookup wel normaliseerde maar de duplicate-check + insert op `users.email` niet — daardoor kon een `Alice@x.com` user een second-register met `alice@x.com` niet blokkeren, en mistten downstream "is dit emailadres al lid"-checks de mixed-case user. Eén regel, overal toegepast, voorkomt dat soort drift.
+
+**Migratie van prod data (cutover):** het migratie-script (zie Fase 3) lowercaset alle bestaande `users.email` en `invites.email` waarden vóór ze in Convex landen. Records met case-collisions (theoretisch — Cognito normaliseerde óók al) worden tijdens de transformatie geflagd in de validatie-rapport-stap.
 
 ### TypeScript: overstappen
 Convex is volledig TypeScript-native: schema genereert types die end-to-end doorlopen van DB tot React Native components. Zonder TS verlies je het halve voordeel (type-safe queries, autocompletion, compile-time checks).
@@ -139,11 +290,16 @@ effectiveLastSeen = albumLastSeen?.lastSeenAt
 
 count = aantal albumPhotos waar
   albumId == X
-  && addedAt > effectiveLastSeen
+  && addedAt > effectiveLastSeen   // strict >, in beide paden
   && photo.ownerId != currentUserId  // join met photos voor ownerId
 ```
 
-Filter op `photo.ownerId` (niet `albumPhoto.addedBy`): als Bob een foto van Alice in een album zet, hoort Alice 'm niet als nieuw te zien — zij heeft die foto immers zelf gemaakt.
+Filter op `photo.ownerId` (niet `albumPhoto.addedBy`): als Bob een foto van Alice in een album zet, hoort Alice 'm niet als nieuw te zien — zij heeft die foto immers zelf gemaakt. (Concreet: `albumPhoto.addedBy` is wie publiceerde, `photo.ownerId` is wie uploadde; die twee kunnen verschillen.)
+
+**Strict > semantiek (in beide paden):**
+- Een foto met `addedAt === effectiveLastSeen` is **niet** unread. Geldt zowel voor het lastSeen-pad (foto landt op exact dezelfde ms als de laatste markSeen) als voor het fallback-pad (foto landt op exact dezelfde ms als `album.createdAt` of `membership.joinedAt`).
+- Geen `-1ms` truc of `>=` in de fallback om "binnen-ms" foto's alsnog mee te tellen. Een uniforme strict `>` houdt de query simpel en de semantiek tussen beide paden consistent.
+- Sub-ms collision edge case: bij batch-create waarbij foto + album + join binnen dezelfde ms landen, tellen die batch-foto's niet als unread voor de nieuwe member. Acceptabel: in praktijk landen real-world uploads niet op de microseconde tegelijk met een member-join, en de "verloren" badge bij echte collision is een betere trade-off dan een asymmetrisch filter dat soms `>` en soms `>=` is.
 
 **Ontwerpprincipes:**
 - Geen denormalization, geen precomputed counter. Voorkomt write-amplification cascade bij elke upload (was probleem in oude AWS aanpak: 1 upload → N membership writes).
@@ -203,6 +359,16 @@ Vind photos waar `flaggedDeleteDate < now` (en niet onder appeal), auto-delete v
 - `flag`: elke authenticated user behalve owner
 - `appeal`: alleen owner van de photo
 - `decideFlag` / `listAllFlagged`: webmaster only — via `requireWebmaster(ctx)` helper (env-var based, zie sectie Webmaster-rol)
+
+**Boundary-semantiek (audit-9 §3):**
+FL1-cleanup gebruikt `flaggedDeleteDate <= now` — een photo waar de countdown precies aan grenst wordt diezelfde cron-run nog opgeruimd, niet de volgende dag. Consistent met Email-normalisatie invariant + Invites `expiresAt <= now is verlopen`. Strict `<` was bias-gevoelig (cron vuurt op vaste klok, photo bleef 24h extra hangen).
+
+**Re-decision semantiek (audit-9 §2):**
+- `decideFlag(approve)` na deny: webmaster mág eigen deny overrulen — alle flag-velden worden alsnog gewist. Bewust permissief voor menselijke fout-correctie. Approve-pad checkt alleen op `flaggedAppealDate !== undefined`, dat blijft gezet ook na deny.
+- `decideFlag(deny)` na deny: idempotent — geen re-email, geen reset van de 7d countdown, `flaggedAppealDenyDate` ongewijzigd. Voorkomt dat accidental dubbel-click owner een tweede mail bezorgt of de countdown effectief verlengt naar 14d.
+
+**Owner-self-delete (audit-9 §8.4):**
+Owner kan eigen geflagde photo altijd verwijderen via `photos.remove`. Cascade ruimt flag-state automatisch mee op (flag-velden zitten op de photo, geen aparte tabel) + index-entries verdwijnen. FL1-cron na deletion is no-op. Acceptable bypass — flag-doel = content removal, owner doet 't dan zelf.
 
 **Migratie:**
 Bestaande flag-state op DynamoDB photo records 1:1 overzetten — velden hebben identieke semantiek. Geen aparte stap nodig naast de standaard photo-import.
@@ -357,6 +523,16 @@ Twee environments, geen aparte staging bij 16 users.
 
 **Koppeling per env:** elke Convex deployment heeft een `CLERK_FRONTEND_API_URL` env var die naar de matching Clerk instance wijst. Verwisselen = kapot. Dev Convex praat alleen met dev Clerk, prod met prod.
 
+**Convex deployment env-vars (server-side, per Convex environment):**
+
+| Env-var | Waar gebruikt | Verplicht? | Fail-mode bij missend |
+|---|---|---|---|
+| `CLERK_FRONTEND_API_URL` | `convex/auth.config.ts` — JWT issuer match | Ja | Auth gebroken, alle gated mutations falen |
+| `WEBMASTER_EMAILS` | `convex/lib/auth.ts` — RBAC | Ja (prod) | Webmaster-only mutations weigeren iedereen |
+| `MAPQUEST_KEY` | `convex/photos.ts` reverseGeocode | Nee (graceful) | `locationLabel` blijft undefined op geüploade photos — extractMetadata throwt niet, geocoding-pad returnt null. **Audit-10 fix #1**: zet deze in dev én prod om de geocoding-pipeline te kunnen valideren |
+| `MAILJET_API_KEY` + `MAILJET_API_SECRET` | (toekomst) email-werkpakket | Nee (in cyclus 1) | Bounce-webhook + outgoing emails geen-op tot landing van email-werkpakket |
+| `MAILJET_WEBHOOK_SECRET` | (toekomst) `convex/http.ts` `/email-event` HMAC-validatie | Nee (in cyclus 1) | TODO in `convex/http.ts` — endpoint accepteert nu elk POST request, **niet uitrollen naar prod zonder secret-check** |
+
 **Client-side env-switch** via EAS build profiles:
 - Dev build → `EXPO_PUBLIC_CONVEX_URL=<dev>`, `EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_test_...`
 - Prod build → `EXPO_PUBLIC_CONVEX_URL=<prod>`, `EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_live_...`
@@ -495,17 +671,18 @@ Per domein: unit tests eerst, dan implementatie.
 - [x] **Photos:** CRUD met cascade logic (stream handler logica → transactionele mutations)
 - [x] **Ratings:** create/update met aggregate berekening
 - [x] **AlbumLastSeen:** upsert bij album-open, "markeer alles gelezen"-mutation op groep-niveau, query voor unread-count per album met fallback naar `max(album.createdAt, membership.joinedAt)`
-- [x] **Invites:** create, accept, decline, invite-only signup validatie. Plus `remove` (sender of group-admin), bounce-handler `internal.invites.handleBounce` met webhook endpoint en dedup via `inviteBounceEvents` table (zie cascade matrix IB1). **Open:** scheduled cron (daily) die `invites` met `status="pending"` en `expiresAt < now` patcht naar `status="expired"` (cascade matrix IB2). Accept-mutation kan dat zelf niet doen want de status-patch wordt door de bijbehorende throw teruggedraaid (Convex transactionele rollback). Cron landt naast de flagging-cron uit de Flagging-bullet
-- [x] **Features:** create + upvoting (open voor users), update + remove (webmaster only via `requireWebmaster`). Probleem-report action verstuurt email naar webmaster (zelfde env-var). **Verifieer:** webmaster-checks aanwezig op update/remove paths
+- [x] **Invites:** create, accept, decline, invite-only signup validatie. Plus `remove` (sender of group-admin), bounce-handler `internal.invites.handleBounce` met dedup via `inviteBounceEvents` table (zie cascade matrix IB1). **Open:** (a) `convex/http.ts` webhook endpoint dat de Mailjet bounce-payload binnentrekt en `internal.invites.handleBounce` aanroept — `handleBounce` zelf staat al, het HTTP-route-deel volgt in het email-werkpakket; (b) scheduled cron (daily) die `invites` met `status="pending"` en `expiresAt < now` patcht naar `status="expired"` (cascade matrix IB2). Accept-mutation kan dat zelf niet doen want de status-patch wordt door de bijbehorende throw teruggedraaid (Convex transactionele rollback). Cron landt naast de flagging-cron uit de Flagging-bullet
+- [x] **Features:** create + upvoting (open voor users), update + remove (webmaster only via `requireWebmaster`). Probleem-report action verstuurt email naar webmaster (zelfde env-var). Audit-7 §4 fixte hier de drift: code stond submitter-only, plan zei webmaster-only — tests in `tests/features/crud.test.ts` pinnen nu het webmaster-only gedrag.
 - [x] **Flagging:** flag/appeal/decide mutations met owner+webmaster checks (via `requireWebmaster` helper in `convex/lib/auth.ts`), listMyFlagged + listAllFlagged queries, daily cron `cleanupFlaggedPhotos` (in `convex/crons.ts`) voor auto-delete na countdown, `internal.photos.sendFlagDecisionEmail` als stub (Mailjet komt in email-werkpakket). Schema uitgebreid met `flaggedDeleteDate`, `flaggedAppealDate`, `flaggedAppealDenyDate` + index `by_flagged_delete`. Cascade matrix FL1, FL2, U10 alle ✅. Afwijking van oude AWS: email alleen bij deny (niet bij approve), `listAllFlagged` throwt voor non-webmaster, appeal niet meer mogelijk na deny
-- [ ] **File upload:** `generateUploadUrl` + EXIF extractie action (incl. `Orientation` tag in `photos.exifOrientation`)
+- [ ] **File upload:** 1-step backend-mediated `POST /upload` httpAction (cyclus 1 architectuur rewrite — zie File Storage sectie), idempotency via `X-Upload-Id`/`uploadIdempotency` table, daily cron `cleanupOldUploadIdempotency` voor 7d-cleanup. EXIF/geocoding hardening (DateTimeOriginal fallback, locationLabel multi-deel, granulaire try/catch, JPEG fixtures, HEIC) volgt in cyclus 2.
 - [ ] **Photo rotation:** `photos.rotate` mutation (owner OR group-admin) + scheduled action met `sharp` voor server-side rewrite + cleanup oude storage
 - [x] **Visit tracking:** `users.recordVisit` mutation, client throttled max 1x/min op AppState=active
 - [ ] **Email:** Mailjet account + DNS setup (DKIM, SPF), Convex actions voor alle applicatie-emails (invite/leave/ban/etc), HTTP endpoint voor bounce-webhook, NL templates 1:1 porten van oude SES templates
-- [ ] **Auth:** Clerk + Convex integratie + `requireWebmaster(ctx)` helper op basis van `WEBMASTER_EMAILS` env-var (zie sectie Webmaster-rol). **Verifieer en herstel mismatches in al gecommitte code:**
-   - `features.update` en `features.remove` zijn nu **submitter-only**, plan zegt **webmaster-only**. Aanpassen wanneer `requireWebmaster` helper landt + tests bijwerken (caller met webmaster-email impersoneren via `t.withIdentity({ email: ... })`)
+- [ ] **Auth:** Clerk + Convex integratie + `requireWebmaster(ctx)` helper op basis van `WEBMASTER_EMAILS` env-var (zie sectie Webmaster-rol). Audit-7 fixes:
+   - `features.update` + `features.remove` zijn webmaster-only via `requireWebmaster` (audit-7 §4 — was submitter-only drift)
    - `features.create` (open voor users) en `features.upvote/removeUpvote` blijven zoals ze zijn
-   - Clerk pre-signup webhook gebruikt `invites.hasPendingForEmail` (al aanwezig) om invite-only signup te enforcen
+   - Clerk pre-signup webhook gebruikt `invites.hasPendingForEmail` (al aanwezig) om invite-only signup te enforcen — als defense-in-depth doet `users.register` zelf óók een `hasPendingForEmail`-check (audit-7 §5), zodat een directe API-call met een geforceerde Clerk-identity niet door de gate breekt
+   - `requireWebmaster` doet intern `requireCurrentUser` (audit-7 §3) en matcht email case-insensitive (audit-7 §2)
 
 Backend is client-agnostisch. Zelfde queries/mutations werken straks voor zowel iPhone app als webapp.
 

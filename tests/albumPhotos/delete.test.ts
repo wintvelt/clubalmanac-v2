@@ -22,7 +22,33 @@ async function registerUser(
   subject: string,
   email: string,
 ) {
-  return await withUser(t, subject).mutation(api.users.register, { email });
+  // Audit-7 §5: seed pending invite om users.register-gate te passeren.
+  const { inviteId, seederId } = await t.run(async (ctx) => {
+    const seederId = await ctx.db.insert("users", {
+      subject: `__invite_seeder_${crypto.randomUUID()}`,
+      email: `seeder_${crypto.randomUUID()}@seed.test`,
+      photoCount: 0,
+      photoLimit: 1000,
+      createdAt: Date.now(),
+    });
+    const inviteId = await ctx.db.insert("invites", {
+      email: email.toLowerCase().trim(),
+      invitedBy: seederId,
+      token: crypto.randomUUID(),
+      status: "pending",
+      expiresAt: Date.now() + 14 * 24 * 60 * 60 * 1000,
+      createdAt: Date.now(),
+    });
+    return { inviteId, seederId };
+  });
+  const userId = await withUser(t, subject).mutation(api.users.register, { email });
+  // Cleanup seed-artifacts zodat test-DB schoon blijft (geen extra
+  // pending invites of seeder-users die latere queries vervuilen).
+  await t.run(async (ctx) => {
+    await ctx.db.delete(inviteId);
+    await ctx.db.delete(seederId);
+  });
+  return userId;
 }
 
 describe("AP3: removePhoto cascade ratings van group members", () => {
@@ -330,5 +356,222 @@ describe("AP4: removePhoto clear album cover", () => {
 
     const album = await t.run((ctx) => ctx.db.get(albumId));
     expect(album?.coverPhotoId).toBe(cover);
+  });
+});
+
+describe("AP3 ruimt ook orphan rating op van ex-member (Convex strikter dan AWS)", () => {
+  // Verifieert het [GAP]-gedrag dat in convex/albums.ts boven de AP3-cascade
+  // is gedocumenteerd: AWS groupPhotoDelToRating itereerde over current
+  // group-members, dus een rating van een ex-member bleef hangen. Convex
+  // itereert via by_photo en pakt orphan-rating wel mee. Cascade-matrix
+  // row AP3 [GAP].
+  it("verwijdert orphan rating + recompute aggregate", async () => {
+    const t = convexTest(schema);
+    await registerUser(t, "user_alice", "a@x.com");
+    const bobId = await registerUser(t, "user_bob", "b@x.com");
+
+    const groupId = await withUser(t, "user_alice").mutation(
+      api.groups.create,
+      { name: "G" },
+    );
+    await withUser(t, "user_alice").mutation(api.groups.addMember, {
+      groupId,
+      userId: bobId,
+    });
+    const albumId = await withUser(t, "user_alice").mutation(
+      api.albums.create,
+      { groupId, name: "A" },
+    );
+
+    const storageId = await t.run(
+      async (ctx) => await ctx.storage.store(new Blob(["x"])),
+    );
+    const photoId = await withUser(t, "user_alice").mutation(
+      api.photos.create,
+      { storageId },
+    );
+    await withUser(t, "user_alice").mutation(api.albums.addPhoto, {
+      albumId,
+      photoId,
+    });
+
+    await withUser(t, "user_bob").mutation(api.ratings.upsert, {
+      photoId,
+      value: 4,
+    });
+
+    // Bob verlaat de groep — rating-row blijft staan (M1/M2/M3 cascade
+    // raakt ratings niet). Dit creëert de orphan situatie.
+    await withUser(t, "user_alice").mutation(api.groups.removeMember, {
+      groupId,
+      userId: bobId,
+    });
+
+    await withUser(t, "user_alice").mutation(api.albums.removePhoto, {
+      albumId,
+      photoId,
+    });
+
+    const allRatings = await t.run((ctx) =>
+      ctx.db.query("ratings").collect(),
+    );
+    const bobsRating = allRatings.filter((r) => r.userId === bobId);
+    expect(bobsRating).toHaveLength(0);
+
+    const photo = await t.run((ctx) => ctx.db.get(photoId));
+    expect(photo?.ratingCount).toBe(0);
+    expect(photo?.ratingAverage).toBeUndefined();
+  });
+});
+
+describe("AP4 group-cover cleanup", () => {
+  // Spec voor uitbreiding: AWS groupPhotoDelToCover.js regel 20-31 cleart
+  // óók de group cover als de photo na unpublication geen publicaties meer
+  // heeft in déze group. Cascade-matrix row AP4 moet uitgebreid worden om
+  // dit gedrag te coveren. Tests zijn rood tot implementatie volgt.
+  it("a: laatste publicatie weg → group.coverPhotoId cleared + album.coverPhotoId cleared", async () => {
+    const t = convexTest(schema);
+    await registerUser(t, "user_alice", "a@x.com");
+
+    const groupId = await withUser(t, "user_alice").mutation(
+      api.groups.create,
+      { name: "G" },
+    );
+    const albumId = await withUser(t, "user_alice").mutation(
+      api.albums.create,
+      { groupId, name: "A" },
+    );
+
+    const storageId = await t.run(
+      async (ctx) => await ctx.storage.store(new Blob(["x"])),
+    );
+    const photoId = await withUser(t, "user_alice").mutation(
+      api.photos.create,
+      { storageId },
+    );
+    await withUser(t, "user_alice").mutation(api.albums.addPhoto, {
+      albumId,
+      photoId,
+    });
+    await withUser(t, "user_alice").mutation(api.albums.update, {
+      albumId,
+      coverPhotoId: photoId,
+    });
+    await withUser(t, "user_alice").mutation(api.groups.update, {
+      groupId,
+      coverPhotoId: photoId,
+    });
+
+    await withUser(t, "user_alice").mutation(api.albums.removePhoto, {
+      albumId,
+      photoId,
+    });
+
+    const album = await t.run((ctx) => ctx.db.get(albumId));
+    expect(album?.coverPhotoId).toBeUndefined();
+
+    const group = await t.run((ctx) => ctx.db.get(groupId));
+    expect(group?.coverPhotoId).toBeUndefined();
+  });
+
+  it("b: photo nog in ander album in dezelfde groep → group.coverPhotoId ongewijzigd", async () => {
+    const t = convexTest(schema);
+    await registerUser(t, "user_alice", "a@x.com");
+
+    const groupId = await withUser(t, "user_alice").mutation(
+      api.groups.create,
+      { name: "G" },
+    );
+    const album1 = await withUser(t, "user_alice").mutation(
+      api.albums.create,
+      { groupId, name: "A1" },
+    );
+    const album2 = await withUser(t, "user_alice").mutation(
+      api.albums.create,
+      { groupId, name: "A2" },
+    );
+
+    const storageId = await t.run(
+      async (ctx) => await ctx.storage.store(new Blob(["x"])),
+    );
+    const photoId = await withUser(t, "user_alice").mutation(
+      api.photos.create,
+      { storageId },
+    );
+    await withUser(t, "user_alice").mutation(api.albums.addPhoto, {
+      albumId: album1,
+      photoId,
+    });
+    await withUser(t, "user_alice").mutation(api.albums.addPhoto, {
+      albumId: album2,
+      photoId,
+    });
+    await withUser(t, "user_alice").mutation(api.groups.update, {
+      groupId,
+      coverPhotoId: photoId,
+    });
+
+    await withUser(t, "user_alice").mutation(api.albums.removePhoto, {
+      albumId: album1,
+      photoId,
+    });
+
+    const group = await t.run((ctx) => ctx.db.get(groupId));
+    expect(group?.coverPhotoId).toBe(photoId);
+  });
+
+  it("c: multi-group — clear in de groep waar laatste publicatie weg is, andere groep ongemoeid", async () => {
+    const t = convexTest(schema);
+    await registerUser(t, "user_alice", "a@x.com");
+
+    const gG = await withUser(t, "user_alice").mutation(api.groups.create, {
+      name: "G",
+    });
+    const gH = await withUser(t, "user_alice").mutation(api.groups.create, {
+      name: "H",
+    });
+    const albumG = await withUser(t, "user_alice").mutation(
+      api.albums.create,
+      { groupId: gG, name: "AG" },
+    );
+    const albumH = await withUser(t, "user_alice").mutation(
+      api.albums.create,
+      { groupId: gH, name: "AH" },
+    );
+
+    const storageId = await t.run(
+      async (ctx) => await ctx.storage.store(new Blob(["x"])),
+    );
+    const photoId = await withUser(t, "user_alice").mutation(
+      api.photos.create,
+      { storageId },
+    );
+    await withUser(t, "user_alice").mutation(api.albums.addPhoto, {
+      albumId: albumG,
+      photoId,
+    });
+    await withUser(t, "user_alice").mutation(api.albums.addPhoto, {
+      albumId: albumH,
+      photoId,
+    });
+    await withUser(t, "user_alice").mutation(api.groups.update, {
+      groupId: gG,
+      coverPhotoId: photoId,
+    });
+    await withUser(t, "user_alice").mutation(api.groups.update, {
+      groupId: gH,
+      coverPhotoId: photoId,
+    });
+
+    await withUser(t, "user_alice").mutation(api.albums.removePhoto, {
+      albumId: albumG,
+      photoId,
+    });
+
+    const groupG = await t.run((ctx) => ctx.db.get(gG));
+    expect(groupG?.coverPhotoId).toBeUndefined();
+
+    const groupH = await t.run((ctx) => ctx.db.get(gH));
+    expect(groupH?.coverPhotoId).toBe(photoId);
   });
 });

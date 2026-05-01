@@ -2,6 +2,7 @@ import { v } from "convex/values";
 import {
   internalAction,
   internalMutation,
+  internalQuery,
   mutation,
   query,
   type MutationCtx,
@@ -44,6 +45,16 @@ export const listByOwner = query({
   },
 });
 
+/**
+ * Test fixture helper voor photo creation met client-parsed EXIF args.
+ * Productie-flow gaat via POST /upload (httpAction in convex/http.ts) met
+ * server-mediated EXIF extractie en geocoding. Deze mutation wordt momenteel
+ * door tests gebruikt als fixture om photo records te creëren zonder de hele
+ * upload-pipeline te doorlopen.
+ *
+ * NB: Photo-limit gate gebruikt typed sentinel "PHOTO_LIMIT_REACHED" voor
+ * consistency met createFromUploadInternal. Match exact ===, niet substring.
+ */
 // P6: photo create increments user.photoCount (cat-2 transactional aggregate).
 export const create = mutation({
   args: {
@@ -62,7 +73,7 @@ export const create = mutation({
     const user = await requireCurrentUser(ctx);
 
     if (user.photoCount >= user.photoLimit) {
-      throw new Error("Photo limiet bereikt");
+      throw new Error("PHOTO_LIMIT_REACHED");
     }
 
     const photoId = await ctx.db.insert("photos", {
@@ -81,6 +92,67 @@ export const create = mutation({
     });
 
     await ctx.db.patch(user._id, { photoCount: user.photoCount + 1 });
+
+    return photoId;
+  },
+});
+
+// Internal mutation aangeroepen door POST /upload (convex/http.ts) na
+// ctx.storage.store(blob). Maakt een minimal photo record en queue't
+// extractMetadata voor server-side EXIF-parsing + geocoding.
+//
+// Audit-cyclus-1: deze mutation patcht óók de reservation naar status=
+// "completed" in dezelfde transactie als de photo-insert. Atomair: een
+// commit-failure laat geen window open waarin photo bestaat maar
+// reservation nog in_progress is. De httpAction passeert de reservationId.
+//
+// Geen idempotency-check hier: die zit in de httpAction (reserve mutation
+// pre-flight). Auth + ownerId-resolutie ook in de httpAction.
+//
+// P6: increment user.photoCount + photoLimit-gate. Typed sentinel
+// "PHOTO_LIMIT_REACHED" laat de httpAction storage-blob + reservation
+// opruimen.
+export const createFromUploadInternal = internalMutation({
+  args: {
+    storageId: v.id("_storage"),
+    ownerId: v.id("users"),
+    reservationId: v.id("uploadIdempotency"),
+    filename: v.optional(v.string()),
+    mimeType: v.optional(v.string()),
+  },
+  returns: v.id("photos"),
+  handler: async (
+    ctx,
+    { storageId, ownerId, reservationId, filename, mimeType },
+  ) => {
+    const user = await ctx.db.get(ownerId);
+    if (!user) throw new Error("User bestaat niet");
+    if (user.photoCount >= user.photoLimit) {
+      // Audit-cyclus-1: typed sentinel string i.p.v. Nederlandstalige
+      // "limiet"-substring match in de http handler.
+      throw new Error("PHOTO_LIMIT_REACHED");
+    }
+
+    const photoId = await ctx.db.insert("photos", {
+      ownerId,
+      storageId,
+      filename,
+      mimeType,
+      ratingCount: 0,
+      createdAt: Date.now(),
+    });
+
+    await ctx.db.patch(ownerId, { photoCount: user.photoCount + 1 });
+
+    await ctx.db.patch(reservationId, {
+      status: "completed",
+      photoId,
+      completedAt: Date.now(),
+    });
+
+    await ctx.scheduler.runAfter(0, internal.photos.extractMetadata, {
+      photoId,
+    });
 
     return photoId;
   },
@@ -147,9 +219,12 @@ export async function internalRemovePhoto(
     .collect();
   for (const r of ratings) await ctx.db.delete(r._id);
 
-  // P5: clear cover-refs op groups/albums die deze photo als cover hadden.
-  // Geen index op coverPhotoId (low cardinality, volle scan acceptabel
-  // bij huidige schaal — zie cascade-matrix.md voor performance-note).
+  // P5: cover-ref cleanup. Oude AWS handler gebruikte coverIndex GSI (zie
+  // /blob-images-api/handlersDBstreams/photoDelToCover.js + dynamodb-lib-photo.js
+  // listPhotoCovers). Bewust gedowngrade naar full-scan bij huidige schaal
+  // (~16 users, tientallen groups/albums). TODO: by_cover index bij groei.
+  // [GAP] users-cover-clearing vervalt: nieuw schema heeft profilePhotoStorageId,
+  // geen coverPhotoId op users. Bewuste schema-versmalling t.o.v. AWS.
   const groups = await ctx.db.query("groups").collect();
   for (const g of groups) {
     if (g.coverPhotoId === photoId) {
@@ -207,6 +282,208 @@ export const cleanupStorage = internalAction({
         // Best-effort. Volgende integrity-check ruimt deze op.
       }
     }
+  },
+});
+
+// Internal patch-helper voor extractMetadata. Action kan niet direct
+// ctx.db.patch doen, dus delegate via een internal mutation. No-op als
+// photo intussen verwijderd is (cleanup-race).
+export const patchMetadata = internalMutation({
+  args: {
+    photoId: v.id("photos"),
+    width: v.optional(v.number()),
+    height: v.optional(v.number()),
+    takenAt: v.optional(v.number()),
+    latitude: v.optional(v.number()),
+    longitude: v.optional(v.number()),
+    locationLabel: v.optional(v.string()),
+    exifOrientation: v.optional(v.number()),
+  },
+  handler: async (ctx, { photoId, ...rest }) => {
+    const photo = await ctx.db.get(photoId);
+    if (!photo) return;
+    const patch: Partial<Doc<"photos">> = {};
+    for (const k of [
+      "width",
+      "height",
+      "takenAt",
+      "latitude",
+      "longitude",
+      "locationLabel",
+      "exifOrientation",
+    ] as const) {
+      if (rest[k] !== undefined) (patch[k] as unknown) = rest[k];
+    }
+    if (Object.keys(patch).length > 0) {
+      await ctx.db.patch(photoId, patch);
+    }
+  },
+});
+
+// Server-side EXIF + geocoding voor een net geüploade photo. Async gequeued
+// door createFromUploadInternal. Bron-mapping (oude AWS lib-geodata.js):
+//   exifDate (YYYY-MM-DD)         → takenAt (ms timestamp)
+//   exifLat / exifLon             → latitude / longitude
+//   exifAddress                   → locationLabel
+//   tags.Orientation              → exifOrientation (NIEUW, audit-9)
+//   imageSize.width/height        → width / height (NIEUW: AWS sloeg dit
+//                                   niet op, v2 wel)
+//
+// Graceful degradation: photo deleted, storage gone, of EXIF-parse fail
+// → no-op zonder throw (cleanup-race + non-image bytes).
+export const extractMetadata = internalAction({
+  args: { photoId: v.id("photos") },
+  handler: async (ctx, { photoId }) => {
+    const photo: Doc<"photos"> | null = await ctx.runQuery(
+      internal.photos.getByIdInternal,
+      { photoId },
+    );
+    if (!photo) return;
+
+    const blob = await ctx.storage.get(photo.storageId);
+    if (!blob) return;
+
+    let width: number | undefined;
+    let height: number | undefined;
+    let takenAt: number | undefined;
+    let latitude: number | undefined;
+    let longitude: number | undefined;
+    let exifOrientation: number | undefined;
+
+    try {
+      const buf = Buffer.from(await blob.arrayBuffer());
+      // exif-parser draait op Node-Buffer. Lazy import: niet alle code-paden
+      // hebben de lib nodig (tests met non-image bytes catchen toch).
+      const { default: ExifParser } = await import("exif-parser");
+      const parser = ExifParser.create(buf);
+      const result = parser.parse();
+
+      const tags = result.tags ?? {};
+      // exif-parser geeft DateTimeOriginal als Unix-seconds; *1000 voor ms.
+      const dto = (tags as Record<string, unknown>).DateTimeOriginal;
+      if (typeof dto === "number") takenAt = dto * 1000;
+
+      const lat = (tags as Record<string, unknown>).GPSLatitude;
+      const lon = (tags as Record<string, unknown>).GPSLongitude;
+      if (typeof lat === "number" && typeof lon === "number") {
+        latitude = lat;
+        longitude = lon;
+      }
+
+      const orient = (tags as Record<string, unknown>).Orientation;
+      if (typeof orient === "number" && orient >= 1 && orient <= 8) {
+        exifOrientation = orient;
+      }
+
+      const size = result.imageSize as
+        | { width?: number; height?: number }
+        | undefined;
+      if (size) {
+        if (typeof size.width === "number") width = size.width;
+        if (typeof size.height === "number") height = size.height;
+      }
+    } catch {
+      // Non-image bytes / corrupt EXIF: graceful no-op pad — record blijft
+      // op defaults. Match met oude AWS getExif-error pad (return {error:true}).
+    }
+
+    // Als EXIF geen GPS opleverde maar het record had handmatig gepatchte
+    // coords (bv. uit test-setup of eerder backfill-pad), dan nemen we die
+    // mee voor geocoding. Dat is ook het pad voor de geocoding-tests die
+    // EXIF-parsing willen omzeilen.
+    const finalLat = latitude ?? photo.latitude;
+    const finalLon = longitude ?? photo.longitude;
+
+    let locationLabel: string | null = null;
+    if (typeof finalLat === "number" && typeof finalLon === "number") {
+      locationLabel = await ctx.runAction(internal.photos.reverseGeocode, {
+        latitude: finalLat,
+        longitude: finalLon,
+      });
+    }
+
+    await ctx.runMutation(internal.photos.patchMetadata, {
+      photoId,
+      width,
+      height,
+      takenAt,
+      latitude,
+      longitude,
+      // Lege string is niet als label opslaan (consistent met test-spec:
+      // empty results → undefined laten, niet "" patchen).
+      locationLabel:
+        typeof locationLabel === "string" && locationLabel.length > 0
+          ? locationLabel
+          : undefined,
+      exifOrientation,
+    });
+  },
+});
+
+// Internal query helper — actions kunnen niet direct ctx.db.get gebruiken.
+export const getByIdInternal = internalQuery({
+  args: { photoId: v.id("photos") },
+  handler: async (ctx, { photoId }) => {
+    return await ctx.db.get(photoId);
+  },
+});
+
+// MapQuest reverse-geocoding helper. Hergebruikt door extractMetadata en
+// (potentieel) backfill-jobs. Graceful degradation: missing key, timeout,
+// 4xx/5xx, of empty results → null. Nooit throw — locationLabel is
+// secundair en mag niet de hele extract-pipeline laten falen.
+//
+// HTTPS endpoint (audit-update t.o.v. AWS HTTP). 2s timeout matcht oude
+// libs/lib-geodata.js (regel 37-55).
+export const reverseGeocode = internalAction({
+  args: { latitude: v.number(), longitude: v.number() },
+  returns: v.union(v.string(), v.null()),
+  handler: async (_ctx, { latitude, longitude }) => {
+    const key = process.env.MAPQUEST_KEY;
+    if (!key) return null;
+
+    const url = `https://www.mapquestapi.com/geocoding/v1/reverse?key=${encodeURIComponent(
+      key,
+    )}&location=${latitude},${longitude}`;
+
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 2000);
+
+    let response: Response;
+    try {
+      response = await fetch(url, { signal: controller.signal });
+    } catch {
+      return null;
+    } finally {
+      clearTimeout(timer);
+    }
+
+    if (!response.ok) return null;
+
+    let body: unknown;
+    try {
+      body = await response.json();
+    } catch {
+      return null;
+    }
+
+    // Match libs/lib-geodata.js regel 57-67: results[0].locations[0] ophalen
+    // en label samenstellen uit street + city/state/country fallbacks.
+    const results = (body as { results?: Array<{ locations?: unknown[] }> })
+      ?.results;
+    const first = results?.[0]?.locations?.[0] as
+      | Record<string, string>
+      | undefined;
+    if (!first) return null;
+
+    const label =
+      first.street ||
+      first.adminArea5 ||
+      first.adminArea4 ||
+      first.adminArea3 ||
+      first.adminArea1 ||
+      "";
+    return label.length > 0 ? label : null;
   },
 });
 
@@ -288,6 +565,8 @@ export const decideFlag = mutation({
       throw new Error("Geen appeal om over te beslissen");
     }
 
+    // Audit-9 §2: approve-pad komt vóór de deny-idempotent guard zodat
+    // webmaster eigen deny kan overrulen door alsnog approve te beslissen.
     if (approve) {
       await ctx.db.patch(photoId, {
         flaggedAt: undefined,
@@ -297,6 +576,12 @@ export const decideFlag = mutation({
         flaggedAppealDate: undefined,
         flaggedAppealDenyDate: undefined,
       });
+      return;
+    }
+
+    // Audit-9 §2: deny-na-deny is idempotent. Voorkomt dat een dubbel-click
+    // owner een tweede mail bezorgt en de 7d countdown effectief verlengt.
+    if (photo.flaggedAppealDenyDate !== undefined) {
       return;
     }
 
@@ -336,18 +621,21 @@ export const listAllFlagged = query({
   },
 });
 
-// FL1: dagelijkse cron. Verwijdert photos waar flaggedDeleteDate < now.
-// Photos onder appeal hebben flaggedDeleteDate undefined (door appeal
-// gewist) en zijn dus niet zichtbaar in de sparse `by_flagged_delete`
-// index — geen aparte filter nodig. internalRemovePhoto verzorgt de
-// transitieve cascade (P3-P5+P7) + storage cleanup.
+// FL1: dagelijkse cron. Verwijdert photos waar flaggedDeleteDate <= now:
+// photo wordt verwijderd op of na deletion-deadline. Boundary inclusief
+// deadline-tijdstip zelf, consistent met Invites expiresAt <= now is
+// verlopen. Photos onder appeal hebben flaggedDeleteDate undefined (door
+// appeal gewist) en zijn dus niet zichtbaar in de sparse
+// `by_flagged_delete` index — geen aparte filter nodig.
+// internalRemovePhoto verzorgt de transitieve cascade (P3-P5+P7) +
+// storage cleanup.
 export const cleanupFlaggedPhotos = internalMutation({
   args: {},
   handler: async (ctx) => {
     const now = Date.now();
     const ripe = await ctx.db
       .query("photos")
-      .withIndex("by_flagged_delete", (q) => q.lt("flaggedDeleteDate", now))
+      .withIndex("by_flagged_delete", (q) => q.lte("flaggedDeleteDate", now))
       .collect();
     for (const photo of ripe) {
       if (photo.flaggedDeleteDate === undefined) continue;
@@ -366,7 +654,10 @@ export const sendFlagDecisionEmail = internalAction({
     approve: v.boolean(),
   },
   handler: async () => {
-    // TODO email-werkpakket: Mailjet template + send. Per cascade-matrix
-    // FL2 sturen we alleen bij deny — caller (decideFlag) regelt dat.
+    // TODO: implementeer via Mailjet in email-werkpakket.
+    // NL-templates voor subject + body bij approve én deny:
+    // /Users/wintvelt/Documents/DEV/DEV/blob-images-api-photos/handlersPhoto/flagPhotoDecide.js regel 16-56.
+    // 1:1 overnemen om tone-of-voice consistency te behouden, niet opnieuw drafted.
+    // Action moet photo + owner uit DB ophalen via internal query.
   },
 });

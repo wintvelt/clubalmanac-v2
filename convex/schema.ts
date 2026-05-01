@@ -97,6 +97,9 @@ export default defineSchema({
     latitude: v.optional(v.number()),
     longitude: v.optional(v.number()),
     locationLabel: v.optional(v.string()),
+    // EXIF Orientation tag (1..8). Audit-9 §photo rotation: client past
+    // CSS-transform toe zodat liggend-gemaakte JPEGs correct rechtop staan.
+    exifOrientation: v.optional(v.number()),
     // Aggregate rating (gemiddelde van ratings table).
     ratingAverage: v.optional(v.number()),
     ratingCount: v.number(),
@@ -113,6 +116,23 @@ export default defineSchema({
     .index("by_takenAt", ["takenAt"])
     .index("by_flagged", ["flaggedAt"])
     .index("by_flagged_delete", ["flaggedDeleteDate"]),
+
+  // Reservation-pattern store voor de POST /upload httpAction
+  // (audit-cyclus-1). Eén record per (ownerId, clientUploadId) — composite
+  // key levert per-user scope structureel. State machine:
+  //   in_progress = reservation gemaakt, photo nog niet gecreëerd
+  //   completed   = photo gecreëerd, photoId gevuld, completedAt gezet
+  // Cascade matrix UI1: daily cron ruimt completed >7d en in_progress >5min op.
+  uploadIdempotency: defineTable({
+    ownerId: v.id("users"),
+    clientUploadId: v.string(),
+    status: v.union(v.literal("in_progress"), v.literal("completed")),
+    photoId: v.optional(v.id("photos")),
+    createdAt: v.number(),
+    completedAt: v.optional(v.number()),
+  })
+    .index("by_owner_and_clientUploadId", ["ownerId", "clientUploadId"])
+    .index("by_status_and_createdAt", ["status", "createdAt"]),
 
   // ──────────────────────────────────────────────────────────────────
   // Ratings
@@ -156,7 +176,8 @@ export default defineSchema({
   })
     .index("by_email", ["email"])
     .index("by_token", ["token"])
-    .index("by_status", ["status"]),
+    .index("by_status", ["status"])
+    .index("by_invitedBy", ["invitedBy"]),
 
   // Dedup-store voor bounce-webhook events. Email-providers retry'en
   // webhooks bij non-2xx response; door providerEventId te tracken

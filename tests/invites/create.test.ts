@@ -35,7 +35,33 @@ async function registerUser(
   subject: string,
   email: string,
 ) {
-  return await withUser(t, subject).mutation(api.users.register, { email });
+  // Audit-7 §5: seed pending invite om users.register-gate te passeren.
+  const { inviteId, seederId } = await t.run(async (ctx) => {
+    const seederId = await ctx.db.insert("users", {
+      subject: `__invite_seeder_${crypto.randomUUID()}`,
+      email: `seeder_${crypto.randomUUID()}@seed.test`,
+      photoCount: 0,
+      photoLimit: 1000,
+      createdAt: Date.now(),
+    });
+    const inviteId = await ctx.db.insert("invites", {
+      email: email.toLowerCase().trim(),
+      invitedBy: seederId,
+      token: crypto.randomUUID(),
+      status: "pending",
+      expiresAt: Date.now() + 14 * 24 * 60 * 60 * 1000,
+      createdAt: Date.now(),
+    });
+    return { inviteId, seederId };
+  });
+  const userId = await withUser(t, subject).mutation(api.users.register, { email });
+  // Cleanup seed-artifacts zodat test-DB schoon blijft (geen extra
+  // pending invites of seeder-users die latere queries vervuilen).
+  await t.run(async (ctx) => {
+    await ctx.db.delete(inviteId);
+    await ctx.db.delete(seederId);
+  });
+  return userId;
 }
 
 describe("invites.create — auth", () => {
@@ -172,6 +198,37 @@ describe("invites.create — group-scoped invite", () => {
     await expect(
       withUser(t, "user_alice").mutation(api.invites.create, {
         email: "new@x.com",
+        groupId,
+        role: "member",
+      }),
+    ).rejects.toThrow();
+  });
+
+  it("[audit-8 bevinding 2] weigert invite voor email die al member is — mixed-case", async () => {
+    // Hangt aan de email-normalisatie-fix in users.register: als Bob als
+    // "Bob@x.com" geregistreerd is en users.email niet lowercased opgeslagen
+    // wordt, dan vindt invites.create's existingUser-lookup (op
+    // normalizedEmail = "bob@x.com") niets → invite glipt door zonder "al
+    // lid"-check. Na users.register-fix is users.email altijd lowercase en
+    // werkt deze guard ook bij mixed-case input. RED tot B's fix.
+    const t = convexTest(schema);
+    await registerUser(t, "user_alice", "a@x.com");
+    const bobId = await registerUser(t, "user_bob", "Bob@x.com");
+    const groupId = await withUser(t, "user_alice").mutation(
+      api.groups.create,
+      { name: "G" },
+    );
+    await t.run((ctx) =>
+      ctx.db.insert("memberships", {
+        userId: bobId,
+        groupId,
+        role: "member",
+        joinedAt: Date.now(),
+      }),
+    );
+    await expect(
+      withUser(t, "user_alice").mutation(api.invites.create, {
+        email: "bob@x.com",
         groupId,
         role: "member",
       }),

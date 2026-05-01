@@ -11,6 +11,7 @@ import type { Doc } from "./_generated/dataModel";
 import { internal } from "./_generated/api";
 import { requireCurrentUser } from "./users";
 import { getMembership } from "./groups";
+import { normalizeEmail } from "./lib/email";
 
 const ROLE = v.union(v.literal("admin"), v.literal("member"));
 
@@ -18,10 +19,6 @@ const DEFAULT_EXPIRY_MS = 14 * 24 * 60 * 60 * 1000; // 14 dagen
 
 function generateToken(): string {
   return crypto.randomUUID();
-}
-
-function normalizeEmail(email: string): string {
-  return email.trim().toLowerCase();
 }
 
 async function findByToken(
@@ -83,6 +80,9 @@ export const create = mutation({
     // [GAP] Dedup: voorkom dubbele pending invite voor (email, groupId).
     const existingInvites = await findInvitesByEmail(ctx, normalizedEmail);
     const now = Date.now();
+    // Audit-8 §9: expiresAt > now ⇔ nog geldig (gespiegelde polariteit van
+    // de <= now "verlopen"-spec in accept/decline). Boundary-moment telt als
+    // verlopen; een invite met expiresAt === now is dus géén duplicate.
     const duplicate = existingInvites.find(
       (i) =>
         i.status === "pending" &&
@@ -119,14 +119,25 @@ export const create = mutation({
 
 // Public: gebruikt door invite-landingpagina vóór login. Geen auth-check.
 // Frontend bepaalt wat te tonen op basis van status + isExpired.
+//
+// Audit-8: defense-in-depth tegen info-leak op anonymous endpoint. Inviter
+// wordt gesluisd tot {name, profilePhotoStorageId} — geen email, Clerk
+// subject, photoCount/photoLimit, lastVisitAt, createdAt of interne
+// Convex-velden lekken naar de publieke landingspagina.
 export const getByToken = query({
   args: { token: v.string() },
   handler: async (ctx, { token }) => {
     const invite = await findByToken(ctx, token);
     if (!invite) return null;
-    const inviter = await ctx.db.get(invite.invitedBy);
+    const inviterDoc = await ctx.db.get(invite.invitedBy);
+    const inviter = inviterDoc
+      ? {
+          name: inviterDoc.name,
+          profilePhotoStorageId: inviterDoc.profilePhotoStorageId,
+        }
+      : null;
     const group = invite.groupId ? await ctx.db.get(invite.groupId) : null;
-    const isExpired = invite.expiresAt < Date.now();
+    const isExpired = invite.expiresAt <= Date.now();
     return { ...invite, inviter, group, isExpired };
   },
 });
@@ -143,10 +154,11 @@ export const accept = mutation({
     if (invite.status !== "pending") {
       throw new Error("Invite is niet meer pending");
     }
-    if (invite.expiresAt < Date.now()) {
-      // Status-patch zou worden teruggedraaid door de throw (Convex
-      // mutations zijn atomair). Markeren als expired gebeurt door cron
-      // of bounce-handler.
+    // Audit-8 §9: expiresAt <= now is verlopen (boundary-moment telt al als
+    // verlopen). Harmoniseert met hasPendingForEmail (`> now` als geldig).
+    // Status-patch zou worden teruggedraaid door de throw (Convex mutations
+    // zijn atomair). Markeren als expired gebeurt door cron of bounce-handler.
+    if (invite.expiresAt <= Date.now()) {
       throw new Error("Invite is verlopen");
     }
 
@@ -186,10 +198,13 @@ export const decline = mutation({
     const user = await requireCurrentUser(ctx);
     const invite = await findByToken(ctx, token);
     if (!invite) throw new Error("Invite niet gevonden");
-    if (invite.email !== normalizeEmail(user.email)) {
-      throw new Error("Invite is niet voor jouw email");
-    }
-    // Idempotent voor reeds gedeclined: geen throw, geen tweede notify.
+
+    // Audit-8 order-bug: status-checks vóór email-check. Een tweede call op
+    // een reeds-declined invite (refresh, history-replay) moet idempotent
+    // zijn ongeacht caller-email. Voor terminal states (declined/accepted/
+    // expired) is geen state-overgang meer nodig en is de email-mismatch-
+    // throw ongepast (lekt status niet, want eerste rechtmatige caller heeft
+    // 'm al gezet).
     if (invite.status === "declined") return;
     if (invite.status === "accepted") {
       throw new Error("Invite is al geaccepteerd");
@@ -197,8 +212,12 @@ export const decline = mutation({
     if (invite.status === "expired") {
       throw new Error("Invite is verlopen");
     }
-    if (invite.expiresAt < Date.now()) {
+    if (invite.expiresAt <= Date.now()) {
       throw new Error("Invite is verlopen");
+    }
+    // Pending: vereist matching email vóór state-overgang.
+    if (invite.email !== normalizeEmail(user.email)) {
+      throw new Error("Invite is niet voor jouw email");
     }
 
     await ctx.db.patch(invite._id, {
@@ -234,6 +253,8 @@ export const hasPendingForEmail = query({
 });
 
 // Sender-view: eigen verstuurde invites (alle statussen, audit/history).
+// Audit-8: gebruikt by_invitedBy index ipv full-table scan — schaalt bij
+// groei van invites-table (was O(n) over alle invites).
 export const listMine = query({
   args: {},
   handler: async (ctx) => {
@@ -244,8 +265,10 @@ export const listMine = query({
       .withIndex("by_subject", (q) => q.eq("subject", identity.subject))
       .unique();
     if (!user) return [];
-    const all = await ctx.db.query("invites").collect();
-    return all.filter((i) => i.invitedBy === user._id);
+    return await ctx.db
+      .query("invites")
+      .withIndex("by_invitedBy", (q) => q.eq("invitedBy", user._id))
+      .collect();
   },
 });
 
@@ -320,8 +343,10 @@ export const handleBounce = internalMutation({
       });
     }
 
-    // Pas dedup-marker plaatsen ná verwerking — als handler eerder zou
-    // throwen rolt Convex de hele transactie terug inclusief deze marker.
+    // Idempotency dedup-marker. Alle DB-mutations binnen één Convex mutation
+    // zijn atomair (alles-of-niets), dus volgorde van inserts is irrelevant
+    // voor consistency. Marker dient om duplicate webhook calls (zelfde
+    // providerEventId) als no-op te detecteren.
     await ctx.db.insert("inviteBounceEvents", {
       providerEventId,
       processedAt: now,

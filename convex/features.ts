@@ -2,6 +2,7 @@ import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
 import type { Doc } from "./_generated/dataModel";
 import { requireCurrentUser } from "./users";
+import { requireWebmaster } from "./lib/auth";
 
 const TYPE = v.union(v.literal("feature"), v.literal("problem"));
 const STATUS = v.union(
@@ -40,12 +41,9 @@ export const update = mutation({
     description: v.optional(v.string()),
   },
   handler: async (ctx, { featureId, title, description }) => {
-    const user = await requireCurrentUser(ctx);
+    await requireWebmaster(ctx);
     const feature = await ctx.db.get(featureId);
     if (!feature) throw new Error("Feature bestaat niet");
-    if (feature.submittedBy !== user._id) {
-      throw new Error("Alleen submitter kan deze feature wijzigen");
-    }
 
     const patch: Partial<Doc<"features">> = {};
     if (title !== undefined) patch.title = title;
@@ -57,12 +55,9 @@ export const update = mutation({
 export const remove = mutation({
   args: { featureId: v.id("features") },
   handler: async (ctx, { featureId }) => {
-    const user = await requireCurrentUser(ctx);
+    await requireWebmaster(ctx);
     const feature = await ctx.db.get(featureId);
     if (!feature) throw new Error("Feature bestaat niet");
-    if (feature.submittedBy !== user._id) {
-      throw new Error("Alleen submitter kan deze feature verwijderen");
-    }
 
     // Cascade upvotes.
     const upvotes = await ctx.db

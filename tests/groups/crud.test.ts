@@ -20,7 +20,33 @@ async function registerUser(
   subject: string,
   email: string,
 ) {
-  return await withUser(t, subject).mutation(api.users.register, { email });
+  // Audit-7 §5: seed pending invite om users.register-gate te passeren.
+  const { inviteId, seederId } = await t.run(async (ctx) => {
+    const seederId = await ctx.db.insert("users", {
+      subject: `__invite_seeder_${crypto.randomUUID()}`,
+      email: `seeder_${crypto.randomUUID()}@seed.test`,
+      photoCount: 0,
+      photoLimit: 1000,
+      createdAt: Date.now(),
+    });
+    const inviteId = await ctx.db.insert("invites", {
+      email: email.toLowerCase().trim(),
+      invitedBy: seederId,
+      token: crypto.randomUUID(),
+      status: "pending",
+      expiresAt: Date.now() + 14 * 24 * 60 * 60 * 1000,
+      createdAt: Date.now(),
+    });
+    return { inviteId, seederId };
+  });
+  const userId = await withUser(t, subject).mutation(api.users.register, { email });
+  // Cleanup seed-artifacts zodat test-DB schoon blijft (geen extra
+  // pending invites of seeder-users die latere queries vervuilen).
+  await t.run(async (ctx) => {
+    await ctx.db.delete(inviteId);
+    await ctx.db.delete(seederId);
+  });
+  return userId;
 }
 
 async function setupGroup(
@@ -509,6 +535,50 @@ describe("groups.remove", () => {
     // album record zelf is weg
     const album = await t.run((ctx) => ctx.db.get(albumId));
     expect(album).toBeNull();
+  });
+
+  it("G4 cascadet ook albumLastSeen records (transitief A2)", async () => {
+    // groupDelToAlbums.js + transitief albumDelToAlbumPhoto.js (A1) dekken AWS.
+    // A2 (albumLastSeen) is nieuw — geen AWS-equivalent. Cascade gaat via
+    // deleteAlbumLastSeenByAlbum helper in convex/albums.ts, aangeroepen per
+    // album in groups.remove. Pinnt dat G4 → A1 → A2 keten volledig doorloopt
+    // via direct groups.remove pad (niet via M2-e last-member route).
+    const t = convexTest(schema);
+    const { adminId, groupId } = await setupGroup(t);
+    const bobId = await registerUser(t, "user_bob", "b@x.com");
+    await withUser(t, "user_admin").mutation(api.groups.addMember, {
+      groupId,
+      userId: bobId,
+    });
+
+    const albumId = await withUser(t, "user_admin").mutation(
+      api.albums.create,
+      { groupId, name: "A" },
+    );
+
+    // Beide users markeren album als gezien → albumLastSeen records
+    await withUser(t, "user_admin").mutation(api.albums.markSeen, { albumId });
+    await withUser(t, "user_bob").mutation(api.albums.markSeen, { albumId });
+
+    const beforeRemove = await t.run((ctx) =>
+      ctx.db
+        .query("albumLastSeen")
+        .collect()
+        .then((all) => all.filter((r) => r.albumId === albumId)),
+    );
+    expect(beforeRemove).toHaveLength(2);
+
+    await withUser(t, "user_admin").mutation(api.groups.remove, { groupId });
+
+    const afterRemove = await t.run((ctx) =>
+      ctx.db
+        .query("albumLastSeen")
+        .collect()
+        .then((all) => all.filter((r) => r.albumId === albumId)),
+    );
+    expect(afterRemove).toHaveLength(0);
+
+    void adminId;
   });
 
   it("niet-admin kan niet deleten", async () => {

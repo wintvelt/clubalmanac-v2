@@ -104,12 +104,13 @@ export const listByGroupWithUnread = query({
             q.eq("userId", user._id).eq("albumId", album._id),
           )
           .unique();
-        // Fallback -1 ms zodat photos die binnen dezelfde ms als
-        // album.createdAt of membership.joinedAt landden óók als "nieuw"
-        // tellen (anders zou het strict > filter ze uitsluiten).
+        // Strict > overal: foto met addedAt === effectiveLastSeen is niet unread.
+        // Zowel lastSeen-pad ("ik heb gezien wat tot T zichtbaar was") als
+        // fallback-pad (max-cutoff) gebruiken zelfde semantiek. Zie design-doc
+        // sectie "Unread-count per album per user > Strict > semantiek".
         const effective =
           lastSeen?.lastSeenAt ??
-          Math.max(album.createdAt, membership.joinedAt) - 1;
+          Math.max(album.createdAt, membership.joinedAt);
 
         const candidates = await ctx.db
           .query("albumPhotos")
@@ -162,7 +163,8 @@ async function upsertAlbumLastSeen(
 // Re-export helper voor groups.markAllAlbumsSeen.
 export { upsertAlbumLastSeen };
 
-// Helper aangeroepen door cascades (A2, U9, M3).
+// Helper aangeroepen door cascades (A2, M3). U9 is eliminated — cleanup
+// gaat transitief via M3 vanuit internalRemoveMember (U8).
 export async function deleteAlbumLastSeenByAlbum(
   ctx: MutationCtx,
   albumId: Id<"albums">,
@@ -170,17 +172,6 @@ export async function deleteAlbumLastSeenByAlbum(
   const records = await ctx.db
     .query("albumLastSeen")
     .withIndex("by_album", (q) => q.eq("albumId", albumId))
-    .collect();
-  for (const r of records) await ctx.db.delete(r._id);
-}
-
-export async function deleteAlbumLastSeenByUser(
-  ctx: MutationCtx,
-  userId: Id<"users">,
-): Promise<void> {
-  const records = await ctx.db
-    .query("albumLastSeen")
-    .withIndex("by_user", (q) => q.eq("userId", userId))
     .collect();
   for (const r of records) await ctx.db.delete(r._id);
 }
@@ -324,11 +315,13 @@ export const removePhoto = mutation({
 
     await ctx.db.delete(ap._id);
 
-    // AP3: cascade ratings van users die door deze unpublication
-    // geen toegang meer hebben tot de photo. Matcht originele AWS-
-    // handler `groupPhotoDelToRating`: rating wordt alleen gedropt
-    // als rater (a) niet de owner is en (b) geen membership heeft in
-    // een group waar deze photo nog elders gepubliceerd staat.
+    // AP3: ruim ratings op van users die toegang verliezen tot deze photo na
+    // publicatie-removal. Iteratie via by_photo (alle ratings), per rater
+    // checken of er nog access bestaat via owner-status of overige memberships.
+    // [GAP] Iteratie-shape verschilt van AWS groupPhotoDelToRating.js (die
+    // itereerde over group-members). Convex-aanpak is strikter: ruimt ook
+    // orphan-ratings op van ex-members wier rating-rows bleven hangen na
+    // membership-delete. Bewuste verbetering, geen functionele regression.
     const ratingsOnPhoto = await ctx.db
       .query("ratings")
       .withIndex("by_photo", (q) => q.eq("photoId", photoId))
@@ -364,6 +357,24 @@ export const removePhoto = mutation({
     // AP4: clear album cover als deze publicatie cover was.
     if (album.coverPhotoId === photoId) {
       await ctx.db.patch(albumId, { coverPhotoId: undefined });
+    }
+
+    // AP4: clear group cover als de photo group-cover was én er geen
+    // andere publicatie van deze photo in déze group meer overblijft.
+    // Matcht AWS groupPhotoDelToCover.js regel 20-31 (clear cover wanneer
+    // laatste publication weg). by_photo geeft alle resterende publicaties
+    // van deze photo (de huidige ap is hierboven al gedelete); daarvan
+    // filteren we op groupId. Andere groups blijven onaangeroerd.
+    const group = await ctx.db.get(album.groupId);
+    if (group?.coverPhotoId === photoId) {
+      const remainingInGroup = await ctx.db
+        .query("albumPhotos")
+        .withIndex("by_photo", (q) => q.eq("photoId", photoId))
+        .filter((q) => q.eq(q.field("groupId"), album.groupId))
+        .first();
+      if (!remainingInGroup) {
+        await ctx.db.patch(group._id, { coverPhotoId: undefined });
+      }
     }
   },
 });

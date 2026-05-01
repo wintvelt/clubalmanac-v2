@@ -22,7 +22,33 @@ async function registerUser(
   subject: string,
   email: string,
 ) {
-  return await withUser(t, subject).mutation(api.users.register, { email });
+  // Audit-7 §5: seed pending invite om users.register-gate te passeren.
+  const { inviteId, seederId } = await t.run(async (ctx) => {
+    const seederId = await ctx.db.insert("users", {
+      subject: `__invite_seeder_${crypto.randomUUID()}`,
+      email: `seeder_${crypto.randomUUID()}@seed.test`,
+      photoCount: 0,
+      photoLimit: 1000,
+      createdAt: Date.now(),
+    });
+    const inviteId = await ctx.db.insert("invites", {
+      email: email.toLowerCase().trim(),
+      invitedBy: seederId,
+      token: crypto.randomUUID(),
+      status: "pending",
+      expiresAt: Date.now() + 14 * 24 * 60 * 60 * 1000,
+      createdAt: Date.now(),
+    });
+    return { inviteId, seederId };
+  });
+  const userId = await withUser(t, subject).mutation(api.users.register, { email });
+  // Cleanup seed-artifacts zodat test-DB schoon blijft (geen extra
+  // pending invites of seeder-users die latere queries vervuilen).
+  await t.run(async (ctx) => {
+    await ctx.db.delete(inviteId);
+    await ctx.db.delete(seederId);
+  });
+  return userId;
 }
 
 async function insertPhoto(
@@ -184,8 +210,18 @@ describe("U7: deleteSelf cascade photos + queued storage cleanup", () => {
   });
 });
 
-describe("U9: deleteSelf cascade albumLastSeen", () => {
-  it("verwijdert albumLastSeen records van de user", async () => {
+describe("U9 (eliminated) — albumLastSeen cleanup gedekt door M3 via U8", () => {
+  // U9 is geen aparte cascade meer (cat-1 eliminated, zoals U1/U2/U5). Na de
+  // U8-refactor cleant M3 albumLastSeen transitief: U8 deletet per membership
+  // van de gedeleted user via internalRemoveMember, en M3 binnen die helper
+  // ruimt (userId × albums in déze group) op. Daarmee dekt M3 alle
+  // albumLastSeen records van de gedeleted user — er is geen restpad meer
+  // dat een aparte deleteAlbumLastSeenByUser-helper nodig zou maken.
+  //
+  // Deze test is een belt-and-suspenders integration-check, geen
+  // U9-specifieke unit-test. M3-zelf wordt geünit-test in
+  // tests/memberships/delete.test.ts (describe "M3").
+  it("geen albumLastSeen records meer voor gedeleted user (transitief via M3)", async () => {
     const t = convexTest(schema);
     await registerUser(t, "user_alice", "a@x.com");
     await registerUser(t, "user_bob", "b@x.com");
@@ -221,9 +257,8 @@ describe("U9: deleteSelf cascade albumLastSeen", () => {
     );
     expect(aliceRecords).toHaveLength(0);
 
-    // Bob's record blijft (album is nog niet weg — alice was niet de
-    // enige admin? In dit setup wel, dus M2 case (c) maakt bob admin).
-    // We controleren puur dat bob's albumLastSeen record bestaat.
+    // Bob's albumLastSeen record blijft staan: M3 ruimt alleen records van
+    // de vertrekkende user op (alice), niet die van andere group-leden.
     const bobUserId = (await withUser(t, "user_bob").query(
       api.users.current,
       {},
@@ -346,5 +381,159 @@ describe("U8: deleteSelf cascade memberships", () => {
         .collect(),
     );
     expect(adminMemberships).toHaveLength(2);
+  });
+});
+
+describe("U8 — M2 cascade (transitief vanuit deleteSelf)", () => {
+  // cascade-matrix.md U8 row (audit-bevinding 2026-04-30): elk membership
+  // delete moet de M2-keten draaien, niet alleen de UM record verwijderen.
+  // Oude AWS dispatchte dit transitief: userDelToMemberships.js verwijderde
+  // memberships, en mainStream.js:155 (UM REMOVE) triggerde cleanGroupMembers
+  // (= memberDelToGroup) per delete. Convex moet dezelfde keten inline draaien.
+
+  it("M2-c: enige admin deletet zichzelf met members nog over → resterende members worden admin", async () => {
+    // cascade-matrix.md M2 (c) — !hasOtherAdmin pad.
+    // memberDelToGroup.js:19-32 → alle members krijgen role admin.
+    const t = convexTest(schema);
+    const aliceId = await registerUser(t, "user_alice", "a@x.com");
+    const bobId = await registerUser(t, "user_bob", "b@x.com");
+
+    const groupId = await withUser(t, "user_alice").mutation(
+      api.groups.create,
+      { name: "G" },
+    );
+    await withUser(t, "user_alice").mutation(api.groups.addMember, {
+      groupId,
+      userId: bobId,
+    });
+
+    await withUser(t, "user_alice").mutation(api.users.deleteSelf, {});
+
+    const aliceMem = await t.run((ctx) =>
+      ctx.db
+        .query("memberships")
+        .withIndex("by_user_and_group", (q) =>
+          q.eq("userId", aliceId).eq("groupId", groupId),
+        )
+        .unique(),
+    );
+    expect(aliceMem).toBeNull();
+
+    const bobMem = await t.run((ctx) =>
+      ctx.db
+        .query("memberships")
+        .withIndex("by_user_and_group", (q) =>
+          q.eq("userId", bobId).eq("groupId", groupId),
+        )
+        .unique(),
+    );
+    expect(bobMem).not.toBeNull();
+    expect(bobMem?.role).toBe("admin");
+  });
+
+  it("M2-d: founder deletet zichzelf met andere admins → oudste admin wordt nieuwe founder, geen orphan createdBy", async () => {
+    // cascade-matrix.md M2 (d) — hasOtherAdmin && noFounderleft pad.
+    // memberDelToGroup.js:33-37 → die admin krijgt isFounder. Convex sorteert
+    // op joinedAt asc voor determinisme.
+    const t = convexTest(schema);
+    const aliceId = await registerUser(t, "user_alice", "a@x.com");
+    const bobId = await registerUser(t, "user_bob", "b@x.com");
+    const charlieId = await registerUser(t, "user_charlie", "c@x.com");
+
+    const groupId = await withUser(t, "user_alice").mutation(
+      api.groups.create,
+      { name: "G" },
+    );
+    await withUser(t, "user_alice").mutation(api.groups.addMember, {
+      groupId,
+      userId: bobId,
+      role: "admin",
+    });
+    await withUser(t, "user_alice").mutation(api.groups.addMember, {
+      groupId,
+      userId: charlieId,
+      role: "admin",
+    });
+
+    // Patch joinedAt expliciet: bob ouder dan charlie, los van insertie-tijd.
+    await t.run(async (ctx) => {
+      const all = await ctx.db
+        .query("memberships")
+        .withIndex("by_group", (q) => q.eq("groupId", groupId))
+        .collect();
+      for (const m of all) {
+        if (m.userId === bobId) await ctx.db.patch(m._id, { joinedAt: 200 });
+        if (m.userId === charlieId)
+          await ctx.db.patch(m._id, { joinedAt: 300 });
+      }
+    });
+
+    await withUser(t, "user_alice").mutation(api.users.deleteSelf, {});
+
+    const aliceMem = await t.run((ctx) =>
+      ctx.db
+        .query("memberships")
+        .withIndex("by_user_and_group", (q) =>
+          q.eq("userId", aliceId).eq("groupId", groupId),
+        )
+        .unique(),
+    );
+    expect(aliceMem).toBeNull();
+
+    const group = await t.run((ctx) => ctx.db.get(groupId));
+    expect(group).not.toBeNull();
+    expect(group?.createdBy).not.toBe(aliceId);
+    expect(group?.createdBy).toBe(bobId);
+  });
+
+  it("M2-e: enige lid deletet zichzelf → group + albums + albumPhotos cascade volledig", async () => {
+    // cascade-matrix.md M2 (e) — laatste lid weg.
+    // memberDelToGroup.js:39-43 → groupKey delete. Convex breidt uit met
+    // albums + albumPhotos in dezelfde transactie (zie groups.removeMember).
+    const t = convexTest(schema);
+    const aliceId = await registerUser(t, "user_alice", "a@x.com");
+
+    const groupId = await withUser(t, "user_alice").mutation(
+      api.groups.create,
+      { name: "G" },
+    );
+    const albumId = await withUser(t, "user_alice").mutation(
+      api.albums.create,
+      { groupId, name: "A" },
+    );
+
+    const storageId = await t.run(
+      async (ctx) => await ctx.storage.store(new Blob(["x"])),
+    );
+    const photoId = await withUser(t, "user_alice").mutation(
+      api.photos.create,
+      { storageId },
+    );
+    await withUser(t, "user_alice").mutation(api.albums.addPhoto, {
+      albumId,
+      photoId,
+    });
+
+    await withUser(t, "user_alice").mutation(api.users.deleteSelf, {});
+
+    const aliceMem = await t.run((ctx) =>
+      ctx.db
+        .query("memberships")
+        .withIndex("by_user_and_group", (q) =>
+          q.eq("userId", aliceId).eq("groupId", groupId),
+        )
+        .unique(),
+    );
+    expect(aliceMem).toBeNull();
+    expect(await t.run((ctx) => ctx.db.get(groupId))).toBeNull();
+    expect(await t.run((ctx) => ctx.db.get(albumId))).toBeNull();
+
+    const aps = await t.run((ctx) =>
+      ctx.db
+        .query("albumPhotos")
+        .withIndex("by_group", (q) => q.eq("groupId", groupId))
+        .collect(),
+    );
+    expect(aps).toHaveLength(0);
   });
 });

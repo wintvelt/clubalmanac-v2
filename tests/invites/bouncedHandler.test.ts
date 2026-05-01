@@ -42,7 +42,33 @@ async function registerUser(
   subject: string,
   email: string,
 ) {
-  return await withUser(t, subject).mutation(api.users.register, { email });
+  // Audit-7 §5: seed pending invite om users.register-gate te passeren.
+  const { inviteId, seederId } = await t.run(async (ctx) => {
+    const seederId = await ctx.db.insert("users", {
+      subject: `__invite_seeder_${crypto.randomUUID()}`,
+      email: `seeder_${crypto.randomUUID()}@seed.test`,
+      photoCount: 0,
+      photoLimit: 1000,
+      createdAt: Date.now(),
+    });
+    const inviteId = await ctx.db.insert("invites", {
+      email: email.toLowerCase().trim(),
+      invitedBy: seederId,
+      token: crypto.randomUUID(),
+      status: "pending",
+      expiresAt: Date.now() + 14 * 24 * 60 * 60 * 1000,
+      createdAt: Date.now(),
+    });
+    return { inviteId, seederId };
+  });
+  const userId = await withUser(t, subject).mutation(api.users.register, { email });
+  // Cleanup seed-artifacts zodat test-DB schoon blijft (geen extra
+  // pending invites of seeder-users die latere queries vervuilen).
+  await t.run(async (ctx) => {
+    await ctx.db.delete(inviteId);
+    await ctx.db.delete(seederId);
+  });
+  return userId;
 }
 
 describe("invites.handleBounce — happy path", () => {
@@ -165,6 +191,35 @@ describe("invites.handleBounce — guards & filtering", () => {
     expect((await t.run((ctx) => ctx.db.get(inviteId)))?.status).toBe(
       "declined",
     );
+  });
+
+  it("[audit-8] bounce op pending invite met expiresAt < now (cron heeft nog niet gedraaid)", async () => {
+    // Edge case: een invite kan natuurlijk verlopen zijn (expiresAt < now)
+    // maar nog status="pending" hebben omdat de IB2 daily cron 'm nog niet
+    // langs is geweest. Komt er dan een (late) bounce binnen, dan vinden
+    // we 'm via findInvitesByEmail + status==="pending" filter, wordt
+    // status gepatcht naar "expired" en bouncedAt gezet. Pinnen huidige
+    // gedrag: handleBounce kijkt niet naar expiresAt, alleen naar status.
+    const t = convexTest(schema);
+    const aliceId = await registerUser(t, "user_alice", "a@x.com");
+    const inviteId = await t.run((ctx) =>
+      ctx.db.insert("invites", {
+        email: "bouncer@x.com",
+        invitedBy: aliceId,
+        token: "tk-natural-then-bounce",
+        status: "pending",
+        expiresAt: Date.now() - 1000,
+        createdAt: Date.now() - 60_000,
+      }),
+    );
+    const result = await t.mutation(internal.invites.handleBounce, {
+      email: "bouncer@x.com",
+      providerEventId: "evt_natural_then_bounce",
+    });
+    expect(result.matched).toBe(1);
+    const invite = await t.run((ctx) => ctx.db.get(inviteId));
+    expect(invite?.status).toBe("expired");
+    expect(typeof invite?.bouncedAt).toBe("number");
   });
 
   it("onbekende email: no-op (geen throw, matched=0)", async () => {

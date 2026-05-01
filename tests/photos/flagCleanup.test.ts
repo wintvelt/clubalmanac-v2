@@ -31,7 +31,33 @@ async function registerUser(
   subject: string,
   email: string,
 ) {
-  return await withUser(t, subject).mutation(api.users.register, { email });
+  // Audit-7 §5: seed pending invite om users.register-gate te passeren.
+  const { inviteId, seederId } = await t.run(async (ctx) => {
+    const seederId = await ctx.db.insert("users", {
+      subject: `__invite_seeder_${crypto.randomUUID()}`,
+      email: `seeder_${crypto.randomUUID()}@seed.test`,
+      photoCount: 0,
+      photoLimit: 1000,
+      createdAt: Date.now(),
+    });
+    const inviteId = await ctx.db.insert("invites", {
+      email: email.toLowerCase().trim(),
+      invitedBy: seederId,
+      token: crypto.randomUUID(),
+      status: "pending",
+      expiresAt: Date.now() + 14 * 24 * 60 * 60 * 1000,
+      createdAt: Date.now(),
+    });
+    return { inviteId, seederId };
+  });
+  const userId = await withUser(t, subject).mutation(api.users.register, { email });
+  // Cleanup seed-artifacts zodat test-DB schoon blijft (geen extra
+  // pending invites of seeder-users die latere queries vervuilen).
+  await t.run(async (ctx) => {
+    await ctx.db.delete(inviteId);
+    await ctx.db.delete(seederId);
+  });
+  return userId;
 }
 
 async function insertPhotoWithFlag(
@@ -204,6 +230,60 @@ describe("FL1: cleanupFlaggedPhotos cron", () => {
       // P7: photoCount gedecrement
       const after = await t.run((ctx) => ctx.db.get(aliceId));
       expect(after?.photoCount).toBe(beforeCount - 1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  // Audit-9 §3 boundary harmonisatie: cleanup-conditie is `flaggedDeleteDate
+  // <= now` (consistent met Invites expiresAt <= now is verlopen). Zonder
+  // deze keuze valt een photo waar de countdown precies aan grenst stilletjes
+  // tussen wal en schip (cron vuurt op vaste klok, photo blijft 24h extra).
+  // Vóór de harmonisatie gebruikten we strict `<` — deze twee tests pinnen
+  // het nieuwe gedrag.
+  it("verwijdert photo waar flaggedDeleteDate === now (boundary)", async () => {
+    vi.useFakeTimers();
+    try {
+      const baseNow = new Date("2026-01-01T00:00:00Z").getTime();
+      vi.setSystemTime(baseNow);
+
+      const t = convexTest(schema);
+      const aliceId = await registerUser(t, "user_alice", "a@x.com");
+      const bobId = await registerUser(t, "user_bob", "b@x.com");
+
+      const boundaryPhoto = await insertPhotoWithFlag(t, aliceId, {
+        flaggedAt: baseNow - 14 * DAY_MS,
+        flaggedBy: bobId,
+        flaggedDeleteDate: baseNow, // exact gelijk aan now
+      });
+
+      await t.mutation(internal.photos.cleanupFlaggedPhotos, {});
+
+      expect(await t.run((ctx) => ctx.db.get(boundaryPhoto))).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("laat photo staan waar flaggedDeleteDate === now + 1 (boundary)", async () => {
+    vi.useFakeTimers();
+    try {
+      const baseNow = new Date("2026-01-01T00:00:00Z").getTime();
+      vi.setSystemTime(baseNow);
+
+      const t = convexTest(schema);
+      const aliceId = await registerUser(t, "user_alice", "a@x.com");
+      const bobId = await registerUser(t, "user_bob", "b@x.com");
+
+      const justFutureP = await insertPhotoWithFlag(t, aliceId, {
+        flaggedAt: baseNow - 14 * DAY_MS,
+        flaggedBy: bobId,
+        flaggedDeleteDate: baseNow + 1, // 1ms in de toekomst — niet ripe
+      });
+
+      await t.mutation(internal.photos.cleanupFlaggedPhotos, {});
+
+      expect(await t.run((ctx) => ctx.db.get(justFutureP))).not.toBeNull();
     } finally {
       vi.useRealTimers();
     }

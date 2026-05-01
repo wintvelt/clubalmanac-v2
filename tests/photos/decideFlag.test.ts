@@ -41,9 +41,33 @@ async function registerUser(
   subject: string,
   email: string,
 ) {
-  return await withUser(t, subject, email).mutation(api.users.register, {
-    email,
+  // Audit-7 §5: seed pending invite om users.register-gate te passeren.
+  const { inviteId, seederId } = await t.run(async (ctx) => {
+    const seederId = await ctx.db.insert("users", {
+      subject: `__invite_seeder_${crypto.randomUUID()}`,
+      email: `seeder_${crypto.randomUUID()}@seed.test`,
+      photoCount: 0,
+      photoLimit: 1000,
+      createdAt: Date.now(),
+    });
+    const inviteId = await ctx.db.insert("invites", {
+      email: email.toLowerCase().trim(),
+      invitedBy: seederId,
+      token: crypto.randomUUID(),
+      status: "pending",
+      expiresAt: Date.now() + 14 * 24 * 60 * 60 * 1000,
+      createdAt: Date.now(),
+    });
+    return { inviteId, seederId };
   });
+  const userId = await withUser(t, subject, email).mutation(api.users.register, { email });
+  // Cleanup seed-artifacts zodat test-DB schoon blijft (geen extra
+  // pending invites of seeder-users die latere queries vervuilen).
+  await t.run(async (ctx) => {
+    await ctx.db.delete(inviteId);
+    await ctx.db.delete(seederId);
+  });
+  return userId;
 }
 
 async function uploadStorage(t: ReturnType<typeof convexTest>) {
@@ -207,6 +231,100 @@ describe("photos.decideFlag — deny", () => {
       s.name.includes("sendFlagDecisionEmail"),
     );
     expect(emailEntries.length).toBeGreaterThan(0);
+  });
+});
+
+describe("photos.decideFlag — re-decision na deny (audit-9 §2)", () => {
+  beforeEach(() => {
+    process.env.WEBMASTER_EMAILS = WEBMASTER_EMAIL;
+  });
+  afterEach(() => {
+    delete process.env.WEBMASTER_EMAILS;
+  });
+
+  // Audit-9 §2 design-keuze: webmaster mag eigen deny overrulen door
+  // alsnog approve te beslissen. Niet idempotent gemaakt — bewust permissief
+  // voor menselijke fout-correctie. Approve-pad cleart alle velden, ongeacht
+  // huidige staat (behalve dat er een appeal moet zijn — die blijft gezet
+  // ook na deny, dus de guard op flaggedAppealDate passeert).
+  it("decideFlag(approve) na deny: webmaster overrulet eigen deny, alle velden gewist", async () => {
+    const t = convexTest(schema);
+    const photoId = await appealedPhoto(t);
+    await registerUser(t, "user_wm", WEBMASTER_EMAIL);
+
+    // Eerste call: deny.
+    await withUser(t, "user_wm", WEBMASTER_EMAIL).mutation(
+      api.photos.decideFlag,
+      { photoId, approve: false },
+    );
+    const afterDeny = await t.run((ctx) => ctx.db.get(photoId));
+    expect(typeof afterDeny?.flaggedAppealDenyDate).toBe("number");
+
+    // Tweede call: approve — overrulet de deny.
+    await withUser(t, "user_wm", WEBMASTER_EMAIL).mutation(
+      api.photos.decideFlag,
+      { photoId, approve: true },
+    );
+
+    const after = await t.run((ctx) => ctx.db.get(photoId));
+    expect(after).not.toBeNull();
+    expect(after?.flaggedAt).toBeUndefined();
+    expect(after?.flaggedBy).toBeUndefined();
+    expect(after?.flagReason).toBeUndefined();
+    expect(after?.flaggedDeleteDate).toBeUndefined();
+    expect(after?.flaggedAppealDate).toBeUndefined();
+    expect(after?.flaggedAppealDenyDate).toBeUndefined();
+  });
+
+  // Audit-9 §2 design-keuze: deny-na-deny is idempotent. Anders kan een
+  // accidental dubbel-click owner een tweede mail bezorgen én de 7d
+  // countdown verlengen tot effectief 14d. Gewenst gedrag: tweede call
+  // is no-op — flaggedDeleteDate ongewijzigd, geen extra email-action.
+  // RED tot B's idempotency-fix in decideFlag landt.
+  it("decideFlag(deny) na deny: idempotent (geen extra email, geen countdown reset)", async () => {
+    const t = convexTest(schema);
+    const photoId = await appealedPhoto(t);
+    await registerUser(t, "user_wm", WEBMASTER_EMAIL);
+
+    // Eerste deny.
+    await withUser(t, "user_wm", WEBMASTER_EMAIL).mutation(
+      api.photos.decideFlag,
+      { photoId, approve: false },
+    );
+    const afterFirst = await t.run((ctx) => ctx.db.get(photoId));
+    const firstDenyDate = afterFirst?.flaggedAppealDenyDate;
+    const firstDeleteDate = afterFirst?.flaggedDeleteDate;
+
+    const scheduledAfterFirst = await t.run((ctx) =>
+      ctx.db.system.query("_scheduled_functions").collect(),
+    );
+    const emailsAfterFirst = scheduledAfterFirst.filter((s) =>
+      s.name.includes("sendFlagDecisionEmail"),
+    ).length;
+
+    // Tweede deny — moet no-op zijn.
+    await withUser(t, "user_wm", WEBMASTER_EMAIL).mutation(
+      api.photos.decideFlag,
+      { photoId, approve: false },
+    );
+
+    const afterSecond = await t.run((ctx) => ctx.db.get(photoId));
+    // countdown niet gereset
+    expect(afterSecond?.flaggedDeleteDate).toBe(firstDeleteDate);
+    // denyDate ongewijzigd (niet overschreven met nieuwe Date.now())
+    expect(afterSecond?.flaggedAppealDenyDate).toBe(firstDenyDate);
+    // photo blijft in denied state (alle relevante velden gezet)
+    expect(typeof afterSecond?.flaggedAt).toBe("number");
+    expect(typeof afterSecond?.flaggedAppealDate).toBe("number");
+
+    // Geen tweede email gequeued
+    const scheduledAfterSecond = await t.run((ctx) =>
+      ctx.db.system.query("_scheduled_functions").collect(),
+    );
+    const emailsAfterSecond = scheduledAfterSecond.filter((s) =>
+      s.name.includes("sendFlagDecisionEmail"),
+    ).length;
+    expect(emailsAfterSecond).toBe(emailsAfterFirst);
   });
 });
 

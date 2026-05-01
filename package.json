@@ -19,6 +19,7 @@
     "vitest": "^4.1.5"
   },
   "dependencies": {
-    "convex": "^1.36.1"
+    "convex": "^1.36.1",
+    "exif-parser": "^0.1.12"
   }
 }

@@ -12,11 +12,14 @@ import type * as albums from "../albums.js";
 import type * as crons from "../crons.js";
 import type * as features from "../features.js";
 import type * as groups from "../groups.js";
+import type * as http from "../http.js";
 import type * as invites from "../invites.js";
 import type * as lib_auth from "../lib/auth.js";
+import type * as lib_email from "../lib/email.js";
 import type * as photos from "../photos.js";
 import type * as ratings from "../ratings.js";
 import type * as smoke from "../smoke.js";
+import type * as uploads from "../uploads.js";
 import type * as users from "../users.js";
 
 import type {
@@ -30,11 +33,14 @@ declare const fullApi: ApiFromModules<{
   crons: typeof crons;
   features: typeof features;
   groups: typeof groups;
+  http: typeof http;
   invites: typeof invites;
   "lib/auth": typeof lib_auth;
+  "lib/email": typeof lib_email;
   photos: typeof photos;
   ratings: typeof ratings;
   smoke: typeof smoke;
+  uploads: typeof uploads;
   users: typeof users;
 }>;
 

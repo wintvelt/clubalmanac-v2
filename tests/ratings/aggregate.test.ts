@@ -21,7 +21,33 @@ async function registerUser(
   subject: string,
   email: string,
 ) {
-  return await withUser(t, subject).mutation(api.users.register, { email });
+  // Audit-7 §5: seed pending invite om users.register-gate te passeren.
+  const { inviteId, seederId } = await t.run(async (ctx) => {
+    const seederId = await ctx.db.insert("users", {
+      subject: `__invite_seeder_${crypto.randomUUID()}`,
+      email: `seeder_${crypto.randomUUID()}@seed.test`,
+      photoCount: 0,
+      photoLimit: 1000,
+      createdAt: Date.now(),
+    });
+    const inviteId = await ctx.db.insert("invites", {
+      email: email.toLowerCase().trim(),
+      invitedBy: seederId,
+      token: crypto.randomUUID(),
+      status: "pending",
+      expiresAt: Date.now() + 14 * 24 * 60 * 60 * 1000,
+      createdAt: Date.now(),
+    });
+    return { inviteId, seederId };
+  });
+  const userId = await withUser(t, subject).mutation(api.users.register, { email });
+  // Cleanup seed-artifacts zodat test-DB schoon blijft (geen extra
+  // pending invites of seeder-users die latere queries vervuilen).
+  await t.run(async (ctx) => {
+    await ctx.db.delete(inviteId);
+    await ctx.db.delete(seederId);
+  });
+  return userId;
 }
 
 async function setupPhotoOwnedBy(
@@ -78,6 +104,34 @@ describe("R1: ratings.upsert herrekent aggregate", () => {
     const photo = await t.run((ctx) => ctx.db.get(photoId));
     expect(photo?.ratingCount).toBe(3);
     expect(photo?.ratingAverage).toBe(4); // (4+5+3)/3
+  });
+
+  it("berekent fractioneel gemiddelde correct", async () => {
+    // AWS ratingChangeToPhoto.js gebruikte parseInt → integer-only sums.
+    // Convex schema staat v.number() toe, dus fractionele gemiddeldes zijn
+    // schema-legaal. Dekt non-integer pad: 3 + 4 + 4 = 11 / 3 ≈ 3.6666...
+    const t = convexTest(schema);
+    const photoId = await setupPhotoOwnedBy(t, "user_alice");
+    await registerUser(t, "user_bob", "b@x.com");
+    await registerUser(t, "user_carol", "c@x.com");
+    await registerUser(t, "user_dan", "d@x.com");
+
+    await withUser(t, "user_bob").mutation(api.ratings.upsert, {
+      photoId,
+      value: 3,
+    });
+    await withUser(t, "user_carol").mutation(api.ratings.upsert, {
+      photoId,
+      value: 4,
+    });
+    await withUser(t, "user_dan").mutation(api.ratings.upsert, {
+      photoId,
+      value: 4,
+    });
+
+    const photo = await t.run((ctx) => ctx.db.get(photoId));
+    expect(photo?.ratingCount).toBe(3);
+    expect(photo?.ratingAverage).toBeCloseTo(3.6667, 3);
   });
 
   it("update bestaande rating herrekent gemiddelde", async () => {
