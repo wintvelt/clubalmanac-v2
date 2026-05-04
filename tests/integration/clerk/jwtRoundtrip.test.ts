@@ -137,4 +137,19 @@ describe("Clerk JWT roundtrip — live integration", () => {
     });
     expect(res.status).toBe(401);
   });
+
+  it("/upload met invalid Bearer → 401 (zelfde JWT-throw-handling als /_test/whoami)", async () => {
+    // WP4 follow-up: /upload had hetzelfde 500-pad als /_test/whoami had
+    // vóór de housekeeping-fix. Audit WP4 vlagde dit als productie-relevante
+    // hardening (info-leak risk). Deze test pin't dat /upload nu 401 geeft
+    // op invalid Bearer, consistent met /_test/whoami.
+    //
+    // Geen body/headers nodig: handler weigert vóór de body wordt ingelezen.
+    const uploadUrl = `${getConvexSiteBase()}/upload`;
+    const res = await fetch(uploadUrl, {
+      method: "POST",
+      headers: { Authorization: "Bearer not-a-real-jwt" },
+    });
+    expect(res.status).toBe(401);
+  });
 });

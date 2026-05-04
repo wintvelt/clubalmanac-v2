@@ -86,7 +86,17 @@ http.route({
   path: "/upload",
   method: "POST",
   handler: httpAction(async (ctx, request) => {
-    const identity = await ctx.auth.getUserIdentity();
+    // Zelfde JWT-throw-handling als `/_test/whoami` (WP4 follow-up).
+    // Convex throwt op invalid signature/issuer i.p.v. null te retourneren —
+    // empirisch gepind in tests/integration/clerk/jwtRoundtrip.test.ts.
+    // Try/catch geeft consistente 401 voor zowel "geen header" als "invalid
+    // token", voorkomt 500-leak van auth-error-detail.
+    let identity;
+    try {
+      identity = await ctx.auth.getUserIdentity();
+    } catch {
+      return Response.json({ error: "Unauthorized" }, { status: 401 });
+    }
     if (!identity) {
       return Response.json({ error: "Unauthorized" }, { status: 401 });
     }
