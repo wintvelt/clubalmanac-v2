@@ -499,13 +499,14 @@ alleen in actions/httpActions beschikbaar is. `storageDownloadUrl` is een
 (write-side, zonder `store` of `get`).
 
 `contentType` is **optioneel** zodat de bestaande byte-identiteit-tests
-zonder content-type kunnen blijven uploaden (Blob met lege `type`). De
-content-type-pin werkt door bij explicit-meegegeven `contentType` de Blob
-te construeren met `{ type: contentType }`, mirrorend wat productie-`/upload`
-doet via `request.blob()` (zie `convex/http.ts:142-144`, waar de Blob z'n
-`type` van de `Content-Type` header overneemt). Verschil tussen test- en
-productie-Blob-shape is daarmee minimaal — voorkomt test-vs-prod divergentie
-op het content-type-pad.
+zonder content-type kunnen blijven uploaden. Wanneer `contentType` wel
+meegegeven wordt, moet het stored object zijn content-type op storage-side
+behouden zodat `storageDownloadUrl` + fetch een matchende `Content-Type`
+response-header levert. Productie-pad in `convex/http.ts:142-144` doet
+het equivalent door content-type uit de request-headers door te geven
+aan `ctx.storage.store`; de test-pin valideert dezelfde productie-aanname
+op het content-type-pad. Hoe B dat technisch realiseert is implementatie-
+keuze.
 
 Tests in `tests/integration/convex/storage.test.ts` gebruiken
 `makeFunctionReference<"action"|"query"|"mutation">("_test:<fn>")` voor de
