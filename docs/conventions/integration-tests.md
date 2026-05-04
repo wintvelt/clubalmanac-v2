@@ -39,6 +39,13 @@ mini-fix-cyclus wordt of een aparte issue.
 Niet klassiek RED→GREEN: groen vanaf eerste run is prima — dat valideert dat
 productie-aannames kloppen. Het *bestaan* van de test is de waarde.
 
+Voor integration-tests is **A + audit** de norm, niet de volle A→B→audit
+cyclus uit [`ab-audit-workflow.md`](./ab-audit-workflow.md). De B-fase wordt
+alleen toegevoegd wanneer de pin een productie-code-wijziging vereist
+(bijvoorbeeld een nieuwe httpAction die nodig is om iets testbaar te maken).
+Bij een groen-passende A-test ligt de waarde in het bestaan van de pin, niet
+in een RED→GREEN cyclus.
+
 ## Waarom apart van de unit suite
 
 - **Determinisme:** unit-tests moeten reproduceerbaar groen zijn op elke

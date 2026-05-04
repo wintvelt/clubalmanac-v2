@@ -439,7 +439,7 @@ Cyclus 1 gebruikte MapQuest met `MAPQUEST_KEY` env-var. Cyclus 2 vervangt dat do
 
 Voordeel boven MapQuest: één env-var minder (geen secret-management coupling tussen dev/prod), EU data-residency expliciet, en de `${street}, ${city}, ${country}` velden zijn 1:1 in de response zonder de MapQuest `adminArea*`-puzzel.
 
-**Integration test (WP1, landed):** `tests/integration/photon/reverseGeocode.test.ts` pint Photon-contract tegen de live API — Amsterdam-coord (response-shape + `lang=en` levert "Netherlands"), Kathmandu-coord (lang=en levert Latijns schrift, geen Devanagari), en wire-level User-Agent transmissie via httpbin echo. Niet in CI — `npm run test:integration` lokaal. Architectuur en planning voor WP2-4 (Convex deployment, Clerk JWT, Mailjet) staan in [`docs/conventions/integration-tests.md`](./conventions/integration-tests.md).
+**Integration test (WP1, landed):** `tests/integration/photon/reverseGeocode.test.ts` pint Photon-contract tegen de live API — Amsterdam-coord (response-shape + `lang=en` levert "Netherlands"), Kathmandu A/B (zonder/met `lang=en` om causaliteit van het Latijns-schrift-effect te bewijzen), en Rijksmuseum-POI (street undefined → fallback op `name` in productie-code). Niet in CI — `npm run test:integration` lokaal. Architectuur en planning voor WP2-4 (Convex deployment, Clerk JWT, Mailjet) staan in [`docs/conventions/integration-tests.md`](./conventions/integration-tests.md).
 
 ### User visit tracking (`users.lastVisitAt`)
 
