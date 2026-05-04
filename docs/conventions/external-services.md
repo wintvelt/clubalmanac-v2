@@ -19,7 +19,7 @@ Webmaster-rol via env-var `WEBMASTER_EMAILS` met case-insensitive match (audit-7
 
 ## Productie-blind-spots
 
-JWT validation roundtrip, Mailjet bounce webhook, Photon connection: deze zijn unit-test alleen via mocks gevalideerd. Echte service-integratie is primary integration-test concern — apart werkpakket.
+JWT validation roundtrip, Mailjet bounce webhook, Photon connection: deze zijn unit-test alleen via mocks gevalideerd. Echte service-integratie loopt via de [integration-test laag](./integration-tests.md) (`npm run test:integration`, niet in CI), per werkpakket apart. Photon (WP1) is gepind; Convex/Clerk/Mailjet (WP2-4) staan op de planning.
 
 ## Waarom deze keuzes
 

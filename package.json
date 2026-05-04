@@ -9,7 +9,8 @@
     "convex:codegen": "convex codegen",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "test:integration": "vitest run --config vitest.integration.config.ts"
   },
   "devDependencies": {
     "@edge-runtime/vm": "^5.0.0",

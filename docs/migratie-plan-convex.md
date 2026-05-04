@@ -439,6 +439,8 @@ Cyclus 1 gebruikte MapQuest met `MAPQUEST_KEY` env-var. Cyclus 2 vervangt dat do
 
 Voordeel boven MapQuest: één env-var minder (geen secret-management coupling tussen dev/prod), EU data-residency expliciet, en de `${street}, ${city}, ${country}` velden zijn 1:1 in de response zonder de MapQuest `adminArea*`-puzzel.
 
+**Integration test (WP1, landed):** `tests/integration/photon/reverseGeocode.test.ts` pint Photon-contract tegen de live API — Amsterdam-coord (response-shape + `lang=en` levert "Netherlands"), Kathmandu-coord (lang=en levert Latijns schrift, geen Devanagari), en wire-level User-Agent transmissie via httpbin echo. Niet in CI — `npm run test:integration` lokaal. Architectuur en planning voor WP2-4 (Convex deployment, Clerk JWT, Mailjet) staan in [`docs/conventions/integration-tests.md`](./conventions/integration-tests.md).
+
 ### User visit tracking (`users.lastVisitAt`)
 
 Oude AWS app had `UV` records in DynamoDB voor visit-tracking. Doel onbekend (geen rapportage of analytics actief). Behouden in nieuwe schema voor toekomstige use cases (active users count, "wie heeft 'm al gezien"-feature).
