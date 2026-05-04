@@ -13,6 +13,7 @@
     "test:integration": "vitest run --config vitest.integration.config.ts"
   },
   "devDependencies": {
+    "@clerk/backend": "^3.4.4",
     "@edge-runtime/vm": "^5.0.0",
     "@types/node": "^25.6.0",
     "convex-test": "^0.0.50",

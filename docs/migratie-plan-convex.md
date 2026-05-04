@@ -242,13 +242,13 @@ Webmaster-gated operations (uit oude AWS code):
 - `features.remove(featureId)` — feature requests verwijderen
 - `features.update(featureId, ...)` — feature status updaten (bv. "accepted")
 
-Bootstrap: jouw email handmatig in Clerk dashboard aanmaken pre-cutover, env-var `WEBMASTER_EMAILS=wintvelt@me.com` zetten in Convex prod deployment. Dev deployment kan dezelfde of een test-email gebruiken.
+Bootstrap: jouw email handmatig in Clerk dashboard aanmaken pre-cutover, env-var `WEBMASTER_EMAILS=wintvelt@me.com` zetten in Convex prod deployment. Dev-deployment krijgt z'n eigen test-email-set bij WP4-setup (zie WP4-sectie hieronder): `WEBMASTER_EMAILS` op dev bevat de webmaster-test-user (`clubalmanac-integration-webmaster@example.com`), zodat de JWT-roundtrip-pin op een echte webmaster-flow draait zonder met Wouter's prod-email te overlappen.
 
 **YAGNI keuze:** Clerk publicMetadata-rol of Convex DB-flag zou flexibeler zijn (multi-webmaster zonder redeploy), maar bij 16 users + 1 webmaster levert het niks op. Bij behoefte aan tweede webmaster ooit: ~30 min werk om over te zetten. Probleem-report email-bestemming gebruikt dezelfde env-var.
 
 **TODO voor Fase 4A2 (client-integratie):** verifieer dat `convex/auth.config.ts` daadwerkelijk de `email`-claim uit het Clerk JWT doorgeeft, zodat `ctx.auth.getUserIdentity().email` in productie gevuld is. Implementatie + tests gebruiken `withIdentity({ email })` wat altijd werkt; productie hangt af van Clerk JWT template configuratie. Als email-claim niet doorkomt: Clerk JWT template aanpassen óf `requireWebmaster` switchen naar DB-lookup via `users.email`.
 
-> **Productie-blind-spot (audit-7):** vitest-suite simuleert de email-claim via `t.withIdentity({ email })`, dat zegt NIETS over de Clerk JWT-template in productie. Pas in Phase 4A2 met een smoke-test (HTTP-endpoint dat `ctx.auth.getUserIdentity()` reflecteert óf log, eenmalig) is verifieerbaar of de claim daadwerkelijk doorkomt. Tot die smoke-test landt: groen-passende tests garanderen geen werkende webmaster-flow op prod.
+> **Productie-blind-spot (audit-7):** vitest-suite simuleert de email-claim via `t.withIdentity({ email })`, dat zegt NIETS over de Clerk JWT-template in productie. Pas in Phase 4A2 met een smoke-test (HTTP-endpoint dat `ctx.auth.getUserIdentity()` reflecteert óf log, eenmalig) is verifieerbaar of de claim daadwerkelijk doorkomt. Tot die smoke-test landt: groen-passende tests garanderen geen werkende webmaster-flow op prod. **Status (WP4):** gepind via een `whoami` httpAction + Clerk JWT roundtrip in `tests/integration/clerk/jwtRoundtrip.test.ts` — zie WP4-sectie verderop. Niet schrappen: blijft historisch belangrijk omdat het de motivatie voor WP4 is.
 
 ### Email-normalisatie invariant
 
@@ -513,6 +513,100 @@ Tests in `tests/integration/convex/storage.test.ts` gebruiken
 function-references — niet de gegenereerde `api`. Dat houdt de test-types
 onafhankelijk van eventuele drift in `convex/_test.ts` en sluit alleen aan
 op de spec hierboven.
+
+### WP4 — Cron registration + Clerk JWT roundtrip
+
+Twee deliverable-tracks in één commit:
+
+**Track 1 — Cron registration unit-test (default suite).** Audit-13 fix-cyclus
+toonde dat een productie-cron simpelweg ontbreken een silent-fail-modus is —
+`npm test` blijft groen, runtime weet niet beter, pas op deploy of in
+productie merk je dat een job nooit liep. `tests/crons/registration.test.ts`
+pin't statisch (geen Convex runtime, geen netwerk) dat FL1
+(`cleanup flagged photos`, daily 03:00 UTC → `internal.photos.cleanupFlaggedPhotos`)
+en UI1 (`cleanup old upload idempotency`, daily 03:30 UTC →
+`internal.uploads.cleanupOld`) geregistreerd zijn met juiste schedule en
+function-reference. Plus een full-set assertie tegen onbedoelde extra
+registraties.
+
+**Track 2 — Clerk JWT roundtrip (integration suite).** Pin't de
+productie-blind-spot uit r.251 / `convex/lib/auth.ts` header-comment: de
+unit-suite simuleert `email` via `t.withIdentity({ email })` en weet
+daardoor niets over of de Clerk JWT-template `convex` daadwerkelijk de
+`email`-claim doorlevert. WP4 mint via `@clerk/backend` een **echte**
+session-JWT voor een test-user en stuurt 'm naar een test-only
+`whoami` httpAction op Convex dev. `whoami` reflecteert `subject`,
+`email` en een `webmaster: boolean` (via try/catch op `requireWebmaster`)
+zodat zowel de Clerk-side claim-aanwezigheid als de Convex-side
+webmaster-detection gepind worden tegen het echte JWT-traject.
+
+**Architectuur — `whoami` httpAction (B's spec).** Hetzelfde patroon als
+WP2's `convex/_test.ts`: env-var-gated test-only code, prod krijgt 'm nooit.
+
+- **Locatie:** `convex/http.ts`. Geen apart bestand zoals `convex/_test.ts`,
+  omdat `httpRouter()` per Convex deployment één export heeft en
+  registratie inline aan de router gebeurt — apart bestand zou een tweede
+  router introduceren.
+- **Pad:** `/_test/whoami`. Underscore-prefix consistent met `convex/_test.ts`
+  als signaal "test-only", `_test`-segment in pad voorkomt collision met
+  productie-routes (`/upload`, `/email-event`).
+- **Method:** `GET`. Read-only reflectie van identity; geen body nodig.
+- **Auth:** Convex valideert het Bearer JWT vóór de handler draait
+  (standaard mechanisme, geen extra werk). Geen identity → handler ziet
+  `getUserIdentity()` als `null` en moet dan 401 returnen. Ongeldige JWT
+  laat Convex zelf afkeuren met 401 voordat de handler triggert (gepind
+  in test 4 — als die assumptie niet klopt, valt 't op tijdens RED→GREEN
+  van B).
+- **Env-var-gate:** zelfde `INTEGRATION_TEST_ENABLED === "true"` check als
+  `convex/_test.ts`. Bij ontbrekende of false env-var: handler returnt
+  een duidelijke melding met een 4xx-status (B kiest tussen 403 of 503 —
+  beide signaleren "endpoint bestaat maar is uitgeschakeld op deze
+  deployment"). Productie-protection rationale: endpoint exposeert alleen
+  identity van de aanvrager zelf (geen escalatie), maar gate consistent
+  met WP2 zodat "test-only" één regel blijft, niet twee.
+- **Response shape (200, JSON):** subset van `ctx.auth.getUserIdentity()`
+  uitgebreid met webmaster-flag.
+  ```ts
+  type WhoamiResponse = {
+    subject: string;
+    email: string | null;
+    issuer: string;
+    webmaster: boolean;
+  };
+  ```
+  `webmaster` wordt afgeleid via try/catch op `requireWebmaster(ctx)` —
+  success → `true`, throw → `false`. B kiest of die helper-call binnen
+  de httpAction zelf staat of via een `ctx.runQuery(internal.…)`-hop;
+  beide werken, geen voorkeur uit deze spec.
+- **Foutpaden:**
+  - 401 — geen Bearer header / geen geldige identity (`getUserIdentity()` is null).
+  - 4xx — env-var-gate gefaald (B kiest exact code, zie boven).
+
+A's tests (`tests/integration/clerk/jwtRoundtrip.test.ts`) doen directe
+`fetch()` naar `<deployment>.convex.site/_test/whoami` met een
+`Authorization: Bearer <jwt>` header — geen function-reference nodig.
+
+**Token-mint via `@clerk/backend`.** Helper in
+`tests/integration/_helpers/clerkAuth.ts` maakt eenmalig een
+`createClerkClient({ secretKey })` cliënt en mint per test:
+`users.getUserList({ emailAddress: [email] })` → `sessions.createSession({ userId })`
+→ `sessions.getToken(sessionId, "convex")`. Email-based lookup omdat dat
+leesbaarder is dan losse user-IDs in env-vars. Helper weigert elk secret
+zonder `sk_test_` prefix — eerste laag tegen prod-mint, naast de
+prod-URL-blocklist in `_helpers/safety.ts`.
+
+**Wat Wouter doet vóór B's sessie + voor de eerste lokale run:**
+1. Clerk dev dashboard: maak twee test-users met emails
+   `clubalmanac-integration-regular@example.com` en
+   `clubalmanac-integration-webmaster@example.com`.
+2. Convex dev-deployment env-vars: `WEBMASTER_EMAILS` bevat de
+   webmaster-test-user-email. `INTEGRATION_TEST_ENABLED=true` is al
+   gezet voor WP2.
+3. Voor beide test-users: zorg dat ze ook een `users`-record in Convex
+   hebben (audit-7 §3 dubbele gate). Eenvoudigste pad: log één keer in
+   via de app of voer de `users.register`-mutation handmatig uit op dev.
+4. `.env.integration` lokaal aanvullen met `CLERK_SECRET_KEY`,
+   `CLERK_TEST_USER_REGULAR_EMAIL`, `CLERK_TEST_USER_WEBMASTER_EMAIL`.
 
 ### User visit tracking (`users.lastVisitAt`)
 
