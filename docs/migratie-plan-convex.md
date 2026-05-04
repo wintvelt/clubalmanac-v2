@@ -479,20 +479,16 @@ env-var-gated:
 export const storageUpload = action({
   args: { bytes: v.bytes() },
   returns: v.object({ storageId: v.id("_storage") }),
-  // body: gate-check; converteer bytes → Blob; ctx.storage.store(blob);
-  // return { storageId }
 });
 
 export const storageDownloadUrl = query({
   args: { storageId: v.id("_storage") },
   returns: v.union(v.null(), v.string()),
-  // body: gate-check; return ctx.storage.getUrl(storageId)
 });
 
 export const storageDelete = mutation({
   args: { storageId: v.id("_storage") },
   returns: v.null(),
-  // body: gate-check; ctx.storage.delete(storageId); return null
 });
 ```
 
