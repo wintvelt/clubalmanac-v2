@@ -64,7 +64,13 @@ async function findUserIdByEmail(email: string): Promise<string> {
         `Dedup vereist — test-fixture moet unambigu zijn.`,
     );
   }
-  return list.data[0].id;
+  const user = list.data[0];
+  if (!user) {
+    throw new Error(
+      `Clerk getUserList retourneerde totalCount=1 maar lege data-array voor "${email}".`,
+    );
+  }
+  return user.id;
 }
 
 /**

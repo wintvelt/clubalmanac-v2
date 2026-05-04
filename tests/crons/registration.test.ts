@@ -19,7 +19,7 @@ import { internal } from "../../convex/_generated/api";
 describe("convex/crons.ts — cron registration", () => {
   it("FL1: 'cleanup flagged photos' is daily 03:00 UTC en verwijst naar internal.photos.cleanupFlaggedPhotos", () => {
     const job = crons.crons["cleanup flagged photos"];
-    expect(job).toBeDefined();
+    if (!job) throw new Error("cron 'cleanup flagged photos' niet geregistreerd");
     expect(job.schedule).toEqual({
       type: "daily",
       hourUTC: 3,
@@ -30,7 +30,7 @@ describe("convex/crons.ts — cron registration", () => {
 
   it("UI1: 'cleanup old upload idempotency' is daily 03:30 UTC en verwijst naar internal.uploads.cleanupOld", () => {
     const job = crons.crons["cleanup old upload idempotency"];
-    expect(job).toBeDefined();
+    if (!job) throw new Error("cron 'cleanup old upload idempotency' niet geregistreerd");
     expect(job.schedule).toEqual({
       type: "daily",
       hourUTC: 3,
