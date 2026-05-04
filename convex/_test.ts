@@ -1,5 +1,11 @@
 import { v } from "convex/values";
-import { action, mutation, query } from "./_generated/server";
+import {
+  action,
+  internalQuery,
+  mutation,
+  query,
+} from "./_generated/server";
+import { requireWebmaster } from "./lib/auth";
 
 // Test-only Convex functions voor de integration-suite (WP2 e.v.).
 //
@@ -53,5 +59,24 @@ export const storageDelete = mutation({
     assertIntegrationEnabled();
     await ctx.storage.delete(storageId);
     return null;
+  },
+});
+
+// WP4: webmaster-detectie voor de `whoami` httpAction. `requireWebmaster`
+// verwacht `QueryCtx | MutationCtx` (`ctx.db`-toegang voor users-record-
+// check), en httpAction krijgt een `ActionCtx`. Daarom moet de webmaster-
+// check via een `runQuery`-hop. De auth-identity propageert van de
+// httpAction naar deze query, dus `requireWebmaster` ziet dezelfde JWT.
+export const whoamiCheckWebmaster = internalQuery({
+  args: {},
+  returns: v.boolean(),
+  handler: async (ctx) => {
+    assertIntegrationEnabled();
+    try {
+      await requireWebmaster(ctx);
+      return true;
+    } catch {
+      return false;
+    }
   },
 });

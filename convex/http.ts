@@ -189,4 +189,51 @@ http.route({
   }),
 });
 
+// WP4: `whoami` httpAction. Productie-blind-spot uit plan-doc r.251:
+// vitest's `t.withIdentity({ email })` mockt de identity en zegt niets
+// over of de Clerk JWT-template "convex" daadwerkelijk de email-claim
+// doorlevert. Deze httpAction reflecteert subset van getUserIdentity()
+// + webmaster-flag, zodat de Clerk-roundtrip-tests pinnen op een echte
+// JWT. Zelfde env-var-gate-patroon als convex/_test.ts.
+//
+// Status-keuze 503 bij gate-fail (i.p.v. 403): semantisch "endpoint
+// bestaat maar is uitgeschakeld op deze deployment", niet "auth-rejection".
+// 403 zou suggereren dat de caller iets fout doet; 503 maakt duidelijk
+// dat de deployment-config bewust off is. Plan-doc liet de keuze open.
+http.route({
+  path: "/_test/whoami",
+  method: "GET",
+  handler: httpAction(async (ctx) => {
+    if (process.env.INTEGRATION_TEST_ENABLED !== "true") {
+      return Response.json(
+        {
+          error:
+            "Test endpoint disabled (INTEGRATION_TEST_ENABLED != \"true\"). " +
+            "Zet de env-var alleen op de dev-deployment.",
+        },
+        { status: 503 },
+      );
+    }
+
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) {
+      return Response.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    // requireWebmaster heeft ctx.db nodig (QueryCtx). httpAction = ActionCtx,
+    // dus hop via internal query. Auth-identity propageert mee.
+    const webmaster = await ctx.runQuery(internal._test.whoamiCheckWebmaster);
+
+    return Response.json(
+      {
+        subject: identity.subject,
+        email: identity.email ?? null,
+        issuer: identity.issuer,
+        webmaster,
+      },
+      { status: 200 },
+    );
+  }),
+});
+
 export default http;
