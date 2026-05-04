@@ -441,6 +441,71 @@ Voordeel boven MapQuest: één env-var minder (geen secret-management coupling t
 
 **Integration test (WP1, landed):** `tests/integration/photon/reverseGeocode.test.ts` pint Photon-contract tegen de live API — Amsterdam-coord (response-shape + `lang=en` levert "Netherlands"), Kathmandu A/B (zonder/met `lang=en` om causaliteit van het Latijns-schrift-effect te bewijzen), en Rijksmuseum-POI (street undefined → fallback op `name` in productie-code). Niet in CI — `npm run test:integration` lokaal. Architectuur en planning voor WP2-4 (Convex deployment, Clerk JWT, Mailjet) staan in [`docs/conventions/integration-tests.md`](./conventions/integration-tests.md).
 
+### WP2 — Convex storage roundtrip (in flight, A→B)
+
+Pin't dat bytes via `ctx.storage.store` identiek terugkomen via
+`ctx.storage.getUrl` + fetch. Productie-blind-spot: onze unit-suite gebruikt
+`convex-test` als in-memory mock, dat kan divergeren van échte Convex storage
+SDK-gedrag (encoding, content-type roundtrip, signed-URL TTL).
+
+**Architectuur-keuze.** Storage-roundtrip moet auth-vrij ontkoppeld worden
+van de bestaande `/upload` httpAction (die is Clerk-coupled — wacht op WP3).
+We voegen daarvoor **test-only Convex functions** toe in een nieuw bestand
+`convex/_test.ts`. Public mutation/query/action's, geen `internal.*` (zodat
+`ConvexHttpClient` ze direct kan aanroepen). Elke functie gate't op
+`process.env.INTEGRATION_TEST_ENABLED === "true"` en throwt anders. Wouter
+zet die env-var alleen op de dev-deployment via Convex dashboard; prod
+krijgt 'm nooit. Self-protection redundant naast de prod-URL-blocklist in
+`tests/integration/_helpers/safety.ts`. Conventie hierachter staat in
+[`docs/conventions/integration-tests.md`](./conventions/integration-tests.md).
+
+**Env-loading.** WP2 brengt het eerste env-var (`CONVEX_URL`) in de
+integration-suite. Keuze: `dotenv` als devDep + setup-file
+(`tests/integration/_helpers/setup.ts`) geregistreerd via `setupFiles` in
+`vitest.integration.config.ts`. Argument: standaard tooling (zero learning
+curve), file-aanwezigheid is optioneel (WP1 blijft werken zonder env-vars),
+en de file-naam (`.env.integration`) zit al in `.gitignore`. Alternatieven
+overwogen: Node `--env-file=` (vereist script-aanpassing + minder bekend) en
+Vite's `loadEnv` (vergt expliciete config voor non-default file-namen).
+
+**B-spec voor `convex/_test.ts`.** Drie public functions, alle drie
+env-var-gated:
+
+```ts
+// convex/_test.ts — test-only, gate't elk pad op
+//   process.env.INTEGRATION_TEST_ENABLED === "true"
+// (anders throw met duidelijke melding "INTEGRATION_TEST_ENABLED not set")
+
+export const storageUpload = action({
+  args: { bytes: v.bytes() },
+  returns: v.object({ storageId: v.id("_storage") }),
+  // body: gate-check; converteer bytes → Blob; ctx.storage.store(blob);
+  // return { storageId }
+});
+
+export const storageDownloadUrl = query({
+  args: { storageId: v.id("_storage") },
+  returns: v.union(v.null(), v.string()),
+  // body: gate-check; return ctx.storage.getUrl(storageId)
+});
+
+export const storageDelete = mutation({
+  args: { storageId: v.id("_storage") },
+  returns: v.null(),
+  // body: gate-check; ctx.storage.delete(storageId); return null
+});
+```
+
+`storageUpload` is een **action** (niet mutation) omdat `ctx.storage.store`
+alleen in actions/httpActions beschikbaar is. `storageDownloadUrl` is een
+**query** (`getUrl` is read-only). `storageDelete` is een **mutation**
+(write-side, zonder `store` of `get`).
+
+Tests in `tests/integration/convex/storage.test.ts` roepen deze functies aan
+via `ConvexHttpClient` met `anyApi._test.{upload|downloadUrl|delete}` om de
+test-file compileable te houden voordat `convex/_test.ts` bestaat. RED tot
+B 't implementeert + Wouter de env-var op dev zet.
+
 ### User visit tracking (`users.lastVisitAt`)
 
 Oude AWS app had `UV` records in DynamoDB voor visit-tracking. Doel onbekend (geen rapportage of analytics actief). Behouden in nieuwe schema voor toekomstige use cases (active users count, "wie heeft 'm al gezien"-feature).

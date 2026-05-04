@@ -25,7 +25,7 @@ Elk werkpakket pinnt het contract van één externe service:
 | WP | Service | Status |
 |----|---------|--------|
 | WP1 | Photon reverse-geocoding | landed |
-| WP2 | Convex deployment + `ConvexHttpClient` | planned |
+| WP2 | Convex storage roundtrip via `ConvexHttpClient` | in flight |
 | WP3 | Clerk JWT validation roundtrip | planned |
 | WP4 | Mailjet send + bounce webhook | planned |
 
@@ -45,6 +45,25 @@ alleen toegevoegd wanneer de pin een productie-code-wijziging vereist
 (bijvoorbeeld een nieuwe httpAction die nodig is om iets testbaar te maken).
 Bij een groen-passende A-test ligt de waarde in het bestaan van de pin, niet
 in een RED→GREEN cyclus.
+
+## Test-only Convex functions met env-var-gate
+
+Voor werkpakketten die productie-code raken zonder dat we klanten daaraan
+willen blootstellen (bv. WP2 — storage roundtrip moest auth-vrij ontkoppeld
+worden van de bestaande Clerk-gekoppelde upload-httpAction) gebruiken we
+**test-only Convex functions**: een apart bestand `convex/_test.ts` met
+public mutation/query/action's die `ConvexHttpClient` kan aanroepen.
+
+Elke test-only function gate't op `process.env.INTEGRATION_TEST_ENABLED ===
+"true"` en throwt anders met een duidelijke melding. De env-var wordt
+alleen op de dev-deployment gezet (Convex dashboard → Settings → Environment
+Variables); prod krijgt 'm nooit. De [safety-helper in tests](../../tests/integration/_helpers/safety.ts)
+blokkeert daarnaast prod-deployment-URLs als eerste laag — twee lagen,
+self-protection redundant by design.
+
+Deze aanpak triggert een volle A→B→audit cyclus (niet de A+audit norm
+hierboven): A schrijft tests + spec, B implementeert `convex/_test.ts`,
+auditor checkt onafhankelijkheid en roundtrip-correctheid.
 
 ## Waarom apart van de unit suite
 
