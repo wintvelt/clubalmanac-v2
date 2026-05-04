@@ -215,7 +215,19 @@ http.route({
       );
     }
 
-    const identity = await ctx.auth.getUserIdentity();
+    // Convex throwt op invalid JWT (signature/issuer mismatch) i.p.v. null
+    // te retourneren. Empirisch geverifieerd in WP4 niveau-2: ongeldige
+    // Bearer leverde 500 op zonder try/catch. Voor consistente auth-fail
+    // semantiek (geen header én invalid token → 401, geen 500-leak van
+    // server-side auth-error-detail) vangen we hier af.
+    // NB: zelfde pattern in `/upload` (regel ~89) is productie-relevante
+    // hardening — buiten WP4 scope, vlaggen voor latere fix.
+    let identity;
+    try {
+      identity = await ctx.auth.getUserIdentity();
+    } catch {
+      return Response.json({ error: "Unauthorized" }, { status: 401 });
+    }
     if (!identity) {
       return Response.json({ error: "Unauthorized" }, { status: 401 });
     }

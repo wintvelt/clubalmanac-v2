@@ -126,7 +126,12 @@ describe("Clerk JWT roundtrip — live integration", () => {
     expect(res.status).toBe(401);
   });
 
-  it("invalid Bearer token → 401 (Convex weigert ongeldige JWT vóór handler)", async () => {
+  it("invalid Bearer token → 401 (handler vangt JWT-validatie-throw af)", async () => {
+    // Empirisch (WP4 niveau-2): Convex `getUserIdentity()` throwt op
+    // ongeldige JWT (signature/issuer mismatch) ipv null te retourneren.
+    // De httpAction wraps die call in try/catch zodat zowel "geen header"
+    // als "invalid token" hetzelfde 401-pad volgen — consistente auth-fail
+    // semantiek + geen 500-leak van server-side auth-error-detail.
     const res = await fetch(whoamiUrl, {
       headers: { Authorization: "Bearer not-a-real-jwt" },
     });
