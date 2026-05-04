@@ -24,11 +24,14 @@ function assertIntegrationEnabled(): void {
 }
 
 export const storageUpload = action({
-  args: { bytes: v.bytes() },
+  args: { bytes: v.bytes(), contentType: v.optional(v.string()) },
   returns: v.object({ storageId: v.id("_storage") }),
-  handler: async (ctx, { bytes }) => {
+  handler: async (ctx, { bytes, contentType }) => {
     assertIntegrationEnabled();
-    const blob = new Blob([bytes]);
+    const blob =
+      contentType !== undefined
+        ? new Blob([bytes], { type: contentType })
+        : new Blob([bytes]);
     const storageId = await ctx.storage.store(blob);
     return { storageId };
   },
