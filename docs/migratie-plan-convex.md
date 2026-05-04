@@ -441,22 +441,27 @@ Voordeel boven MapQuest: één env-var minder (geen secret-management coupling t
 
 **Integration test (WP1, landed):** `tests/integration/photon/reverseGeocode.test.ts` pint Photon-contract tegen de live API — Amsterdam-coord (response-shape + `lang=en` levert "Netherlands"), Kathmandu A/B (zonder/met `lang=en` om causaliteit van het Latijns-schrift-effect te bewijzen), en Rijksmuseum-POI (street undefined → fallback op `name` in productie-code). Niet in CI — `npm run test:integration` lokaal. Architectuur en planning voor WP2-4 (Convex deployment, Clerk JWT, Mailjet) staan in [`docs/conventions/integration-tests.md`](./conventions/integration-tests.md).
 
-### WP2 — Convex storage roundtrip (in flight, A→B)
+### WP2 — Convex storage roundtrip (ingeland)
 
 Pin't dat bytes via `ctx.storage.store` identiek terugkomen via
-`ctx.storage.getUrl` + fetch. Productie-blind-spot: onze unit-suite gebruikt
-`convex-test` als in-memory mock, dat kan divergeren van échte Convex storage
-SDK-gedrag (encoding, content-type roundtrip, signed-URL TTL).
+`ctx.storage.getUrl` + fetch, **inclusief Blob.type → response
+`Content-Type`**. Productie-blind-spot: onze unit-suite gebruikt
+`convex-test` als in-memory mock, dat kan divergeren van échte Convex
+storage SDK-gedrag voor byte-identiteit en content-type-metadata.
 
-**Architectuur-keuze.** Storage-roundtrip moet auth-vrij ontkoppeld worden
-van de bestaande `/upload` httpAction (die is Clerk-coupled — wacht op WP3).
-We voegen daarvoor **test-only Convex functions** toe in een nieuw bestand
-`convex/_test.ts`. Public mutation/query/action's, geen `internal.*` (zodat
-`ConvexHttpClient` ze direct kan aanroepen). Elke functie gate't op
-`process.env.INTEGRATION_TEST_ENABLED === "true"` en throwt anders. Wouter
-zet die env-var alleen op de dev-deployment via Convex dashboard; prod
-krijgt 'm nooit. Self-protection redundant naast de prod-URL-blocklist in
-`tests/integration/_helpers/safety.ts`. Conventie hierachter staat in
+Signed-URL TTL is bewust **buiten scope**: niet automatiseerbaar binnen
+redelijk timeframe (vereist tijd-mocking of >TTL wachten). Acceptabel
+risico voor 16-user app — TTL-defect zou alleen latency van expirerende
+URL's tonen, niet data-corruptie.
+
+**Architectuur-keuze.** Storage-roundtrip is auth-vrij ontkoppeld van de
+bestaande `/upload` httpAction (die is Clerk-coupled — wacht op WP3). Daarvoor
+staat in `convex/_test.ts` een set test-only Convex functions: public
+action/query/mutation (geen `internal.*`), elk env-var-gated op
+`process.env.INTEGRATION_TEST_ENABLED === "true"`. Wouter zet die env-var
+alleen op de dev-deployment via Convex dashboard; prod krijgt 'm nooit.
+Self-protection redundant naast de prod-URL-blocklist in
+`tests/integration/_helpers/safety.ts`. Conventie staat in
 [`docs/conventions/integration-tests.md`](./conventions/integration-tests.md).
 
 **Env-loading.** WP2 brengt het eerste env-var (`CONVEX_URL`) in de
@@ -468,16 +473,12 @@ en de file-naam (`.env.integration`) zit al in `.gitignore`. Alternatieven
 overwogen: Node `--env-file=` (vereist script-aanpassing + minder bekend) en
 Vite's `loadEnv` (vergt expliciete config voor non-default file-namen).
 
-**B-spec voor `convex/_test.ts`.** Drie public functions, alle drie
-env-var-gated:
+**Functies in `convex/_test.ts`** (commit `22f1acc`, post-A-fix in
+`8264399` voor pseudo-code-strip + content-type-arg):
 
 ```ts
-// convex/_test.ts — test-only, gate't elk pad op
-//   process.env.INTEGRATION_TEST_ENABLED === "true"
-// (anders throw met duidelijke melding "INTEGRATION_TEST_ENABLED not set")
-
 export const storageUpload = action({
-  args: { bytes: v.bytes() },
+  args: { bytes: v.bytes(), contentType: v.optional(v.string()) },
   returns: v.object({ storageId: v.id("_storage") }),
 });
 
@@ -497,10 +498,20 @@ alleen in actions/httpActions beschikbaar is. `storageDownloadUrl` is een
 **query** (`getUrl` is read-only). `storageDelete` is een **mutation**
 (write-side, zonder `store` of `get`).
 
-Tests in `tests/integration/convex/storage.test.ts` roepen deze functies aan
-via `ConvexHttpClient` met `anyApi._test.{upload|downloadUrl|delete}` om de
-test-file compileable te houden voordat `convex/_test.ts` bestaat. RED tot
-B 't implementeert + Wouter de env-var op dev zet.
+`contentType` is **optioneel** zodat de bestaande byte-identiteit-tests
+zonder content-type kunnen blijven uploaden (Blob met lege `type`). De
+content-type-pin werkt door bij explicit-meegegeven `contentType` de Blob
+te construeren met `{ type: contentType }`, mirrorend wat productie-`/upload`
+doet via `request.blob()` (zie `convex/http.ts:142-144`, waar de Blob z'n
+`type` van de `Content-Type` header overneemt). Verschil tussen test- en
+productie-Blob-shape is daarmee minimaal — voorkomt test-vs-prod divergentie
+op het content-type-pad.
+
+Tests in `tests/integration/convex/storage.test.ts` gebruiken
+`makeFunctionReference<"action"|"query"|"mutation">("_test:<fn>")` voor de
+function-references — niet de gegenereerde `api`. Dat houdt de test-types
+onafhankelijk van eventuele drift in `convex/_test.ts` en sluit alleen aan
+op de spec hierboven.
 
 ### User visit tracking (`users.lastVisitAt`)
 
