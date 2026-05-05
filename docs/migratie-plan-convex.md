@@ -708,6 +708,36 @@ Clerk free tier verstuurt vanaf `accounts.clerk.dev`. Custom email domain is pai
 - AVG: in privacy policy noemen "Mailjet (Sinch, FR/SE) als email-verwerker". Mailjet biedt DPA standaard
 - Lock-in laag: switchen naar Scaleway TEM of andere provider = paar uur werk + DNS-update
 
+**Status fase 1 (ops-setup) — afgerond 2026-05-05:**
+
+Mailjet account: EU-datacenter (Frankrijk), Free tier (6.000/maand). Account-eigenaar mail wintvelt@me.com. 2FA via TOTP actief.
+
+Domein-validatie + DKIM authenticated voor clubalmanac.com (groen in Mailjet domain authentication setup). DNS-records toegevoegd in Route 53:
+
+| Record | Naam | Waarde |
+|---|---|---|
+| TXT (apex, naast bestaande google-site-verification) | `clubalmanac.com` | `v=spf1 include:spf.mailjet.com ~all` |
+| TXT (DKIM, 2048-bit) | `mailjet._domainkey.clubalmanac.com` | `k=rsa; p=...` (door Route 53 in 4 quoted segmenten gesplitst i.v.m. 255-char limit) |
+| TXT (DMARC) | `_dmarc.clubalmanac.com` | `v=DMARC1; p=none; rua=mailto:dpo@clubalmanac.com` |
+
+Sender addresses geverifieerd in Mailjet via domain-level DKIM (geen per-adres mail-verificatie nodig): `info@`, `invites@`, `dpo@clubalmanac.com`.
+
+SES Receiving rule (eu-west-1) recipient-list uitgebreid met `info@`, `invites@`, `dpo@` zodat verificatie/replies/DMARC-rapporten geaccepteerd worden.
+
+Webhook-URL voor Mailjet event-tracking gereserveerd: `https://glorious-pheasant-759.convex.site/email-event` (dev). Niet geconfigureerd in Mailjet — endpoint bestaat nog niet, activeren pas nadat Convex bounce-handler in fase 2 staat (anders 404's en Mailjet disablet de webhook).
+
+API keys niet gegenereerd (komt bij start fase 2, dev/prod paar elk).
+
+**Afwijkingen t.o.v. plan-doc:**
+
+- Plan-doc r.670-671 ging uit van bestaande SES SPF-include en DMARC. Realiteit: geen SPF, geen DMARC in DNS. SES werkte zonder omdat envelope-from amazonses.com is. Toegevoegde SPF + DMARC zijn dus nieuw, niet "uitgebreid".
+- Mailjet biedt Entri (third-party DNS auto-config tool met OAuth-toegang tot Route 53). Bewust geweigerd — manueel via AWS console voor controle en geen extra trust-perimeter.
+- SPF gekozen op `~all` (softfail) i.p.v. Mailjet default `?all` (neutral) voor betere DMARC-signal-strength. SES blijft werken want clubalmanac.com SPF is voor SES niet relevant.
+
+**Bekende issue voor fase 2:**
+
+Oude SES Receiving forward Lambda (`blob-images-api-email/handlersMail/incoming.js` r.62-87) faalt met `InvalidParameterType` op inkomende mails zonder HTML body, omdat `email.html === undefined` doorgegeven wordt aan SES SDK die een string verwacht. Plain-text mails (Apple Mail "Make Plain Text", DMARC-rapporten, mailserver-notificaties, AVG-replies) worden in S3 opgeslagen maar niet geforward. Niet kritisch bij 16-user volume. Niet apart fixen — de hele AWS inbound-stack (SES Receiving + S3 + Lambda) wordt in fase 2 vervangen door Cloudflare Email Routing (gratis, EU, catch-all `*@clubalmanac.com` → wintvelt@me.com). Decommissioning van SES inbound + bijbehorende Lambda's gebeurt na succesvolle Cloudflare-cutover.
+
 ## Environments
 
 Twee environments, geen aparte staging bij 16 users.
