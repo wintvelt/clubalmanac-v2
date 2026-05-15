@@ -738,6 +738,10 @@ API keys niet gegenereerd (komt bij start fase 2, dev/prod paar elk).
 
 Oude SES Receiving forward Lambda (`blob-images-api-email/handlersMail/incoming.js` r.62-87) faalt met `InvalidParameterType` op inkomende mails zonder HTML body, omdat `email.html === undefined` doorgegeven wordt aan SES SDK die een string verwacht. Plain-text mails (Apple Mail "Make Plain Text", DMARC-rapporten, mailserver-notificaties, AVG-replies) worden in S3 opgeslagen maar niet geforward. Niet kritisch bij 16-user volume. Niet apart fixen — de hele AWS inbound-stack (SES Receiving + S3 + Lambda) wordt in fase 2 vervangen door Cloudflare Email Routing (gratis, EU, catch-all `*@clubalmanac.com` → wintvelt@me.com). Decommissioning van SES inbound + bijbehorende Lambda's gebeurt na succesvolle Cloudflare-cutover.
 
+**Pre-flight voor fase 2 (email-werkpakket):**
+
+Verified-sender-check als hard gate. Mailjet retourneert `200 OK` op de send-call óók wanneer de from-address niet geverifieerd is — mail faalt dan silently zonder zichtbaar foutsignaal. Voor de WP5-impl: vóór elke send een verified-sender-check via Mailjet's REST API (`/REST/sender` endpoint), of een setup-time-gate die alle gebruikte from-addresses bij deployment-start verifieert. Niet vertrouwen op de send-response. Zie [`conventions/external-services.md`](./conventions/external-services.md) Mailjet known-issues voor de andere twee geaccepteerde trade-offs (mailing list header, sub-account-key model).
+
 ## Environments
 
 Twee environments, geen aparte staging bij 16 users.
