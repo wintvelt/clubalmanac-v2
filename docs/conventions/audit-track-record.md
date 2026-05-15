@@ -26,3 +26,13 @@ Tussen 2026-04 en 2026-05 hebben 13 audit-cycli op clubalmanac-v2 backend de vol
 Wanneer Wouter twijfelt of A→B + audit voor een werkpakket de moeite is: ja. Alle audits hebben minstens iets opgeleverd, vaak meer dan verwacht.
 
 Voor 16-user app met hard cutover (geen parallel draaien) is pre-cutover bug-vangst cruciaal. Discipline werkt aantoonbaar.
+
+## Recurring-pattern detection
+
+Elke ~5 audit-cycli (of na een grote vondst): scan deze log + de bug-lijst hierboven op herhalend patroon. Zaken die twee of meer audits independent flaggen zijn kandidaat voor promotie naar een standing rule in een van de conventions — meestal [`prompt-discipline.md`](./prompt-discipline.md), [`ab-audit-workflow.md`](./ab-audit-workflow.md), of een nieuwe convention waar het patroon zinvol thuishoort. Voorbeelden van wat een patroon kan zijn: een type vondst dat audits steeds te laat vinden, een gat dat tests systematisch missen, of een prompt-stijl die bias inbouwt.
+
+Het doel is dat de audit-pas zelf goedkoper wordt — niet door minder grondig te zijn, maar door het herhalend werk uit de audit-output naar de impl-prompt te trekken (waar 't preventief werkt).
+
+## Cross-cutting gaps
+
+Per-werkpakket A→B→audit vangt functional correctness en security-per-surface uitstekend. Maar accessibility, GDPR-lifecycle, deployment-headers en architectuur-niveau duplicatie passen niet in één werkpakket en blijven structureel buiten beeld. Vóór cutover (of een latere uitbreiding van user-set) draait daarom een [cross-cutting review](./cross-cutting-review.md): vier verse perspectief-reviews in parallel die deze laag dichten.

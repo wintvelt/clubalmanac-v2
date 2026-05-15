@@ -9,4 +9,6 @@ Files in deze folder:
 - [`prompt-discipline.md`](./prompt-discipline.md) — Geen pseudo-code in B-prompts (bias-vermijding)
 - [`external-services.md`](./external-services.md) — Photon (geocoding) / Mailjet (email) / Clerk (auth) keuzes
 - [`integration-tests.md`](./integration-tests.md) — Aparte test-laag tegen echte externe services (productie-blind-spots)
+- [`data-migration-preflight.md`](./data-migration-preflight.md) — 0e sub-fase vóór schema/data-werk: tag + snapshot + count-query + strategie
+- [`cross-cutting-review.md`](./cross-cutting-review.md) — Vier-perspectief-pas vóór cutover (a11y / security / GDPR / architectuur)
 - [`audit-track-record.md`](./audit-track-record.md) — Productie-bugs gevonden door audit-pas (bewijs voor discipline-waarde)

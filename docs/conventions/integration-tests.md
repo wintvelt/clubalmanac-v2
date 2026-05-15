@@ -39,6 +39,23 @@ mini-fix-cyclus wordt of een aparte issue.
 Niet klassiek RED→GREEN: groen vanaf eerste run is prima — dat valideert dat
 productie-aannames kloppen. Het *bestaan* van de test is de waarde.
 
+**Integration-tests zijn óók discovery.** Tijdens een run actief observeren wat
+onverwacht is, niet alleen of de geplande assertions slagen. Externe API's
+hebben gedrag dat in mocks nooit zichtbaar wordt — een retry-pattern dat
+plotseling werkt, een response-shape die net iets afwijkt, een edge-case die
+je niet had verwacht. Capture out-of-scope vondsten in een korte note
+(backlog-sectie in `migratie-plan-convex.md`, of een `audit-track-record.md`
+entry), **niet** door ze mee te slepen in de huidige WP-scope.
+
+**Count-return voor data-mutations.** Cleanup of migration-mutations (alles
+wat in één call meerdere rijen patcht of verwijdert) retourneert een
+gestructureerd object met aantallen per tabel + totaal. Zonder die return is
+"groene mutation-run" een geloof, niet een feit. Met de return kun je op
+dev-deployment de baseline-counts vergelijken, en op prod-deployment met de
+pre-flight-baseline uit [`data-migration-preflight.md`](./data-migration-preflight.md).
+Idempotentie beschermt niet tegen filter-bugs — gestructureerd count-return
+wel.
+
 Voor integration-tests is **A + audit** de norm, niet de volle A→B→audit
 cyclus uit [`ab-audit-workflow.md`](./ab-audit-workflow.md). De B-fase wordt
 alleen toegevoegd wanneer de pin een productie-code-wijziging vereist
