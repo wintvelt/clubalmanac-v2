@@ -28,7 +28,7 @@ Gebruik [`docs/work-packages/_template.md`](../work-packages/_template.md) als s
 
 In [`.claude/agents/`](../../.claude/agents/) staan drie rol-definities: `wp-a.md`, `wp-b.md`, `wp-audit.md`. Twee gebruiks-vormen:
 
-1. **Eigen Claude Code-sessie per rol** (default voor non-triviale WPs): open nieuwe sessie, eerste prompt = "Volg `.claude/agents/wp-a.md` mandaat voor WP<n>". Claude leest het mandaat, jij geeft pad naar oude AWS-code (alleen voor A), Claude doet werk + commit. Voor langer-lopend of iteratief werk waar je tussendoor wilt sturen.
+1. **Eigen Claude Code-sessie per rol** (default voor non-triviale WPs): open nieuwe sessie, eerste prompt is minimaal — bijvoorbeeld *"wp-a voor WP5"* of *"audit-rol voor WP7"*. De repo's [`CLAUDE.md`](../../CLAUDE.md) instrueert Claude bij sessie-start om eerst `.claude/agents/wp-<rol>.md` te lezen + de WP-spec in `docs/work-packages/`. Geen langere prompt nodig. Voor langer-lopend of iteratief werk waar je tussendoor wilt sturen.
 2. **Sub-agent via Agent-tool** (optie voor simpele WPs): regie spawnt met `Agent` tool, `subagent_type: "wp-a"`. Single-shot werk dat klaar is na één run. Geen continuation-feature in stable Claude Code; voor follow-up val terug op eigen-sessie.
 
 Default voor de eerste WPs met deze flow: **eigen-sessie per rol**. Spawn-route gebruiken zodra je vertrouwt dat een specifieke rol single-shot kan.
