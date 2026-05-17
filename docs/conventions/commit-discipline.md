@@ -12,17 +12,15 @@ Twee commits per A→B cyclus:
 
 Audit-fixes komen in volgende mini-A→B cyclus met eigen commits.
 
-## Push-discipline (mandaat-based, niet hook-enforced)
+## Push-blokkade (settings.json deny-rule)
 
-Er staat **geen** pre-push hook in deze repo. Eerdere versie van dit doc claimde van wel; dat was een ongedekte cheque, gevangen tijdens WP5(B) toen B's sessie wél kon pushen.
+Sinds WP5(B) — waar de B-sessie pushte ondanks "Wouter pusht handmatig"-mandaat — staat `Bash(git push:*)` in `.claude/settings.json` als deny-rule. Deze geldt voor **elke** Claude Code-sessie in deze repo (zowel Wouter's hoofd-sessie als rol-sessies à la wp-a/wp-b/wp-audit). Sub-agents die via `Agent(subagent_type: ...)` worden gespawned erven dezelfde deny.
 
-De werkelijke twee gates:
-1. **Agent-mandaat** (`.claude/agents/wp-a.md`, `wp-b.md`): laatste sectie zegt expliciet "commit lokaal, push wordt door Wouter gedaan". Agenten die het mandaat respecteren pushen niet.
-2. **Claude Code permission-systeem** (per sessie): `Bash(git push)` triggert standaard een permission-prompt. Wouter approve/weigert per call.
+Workflow: A of B doet `git add -A && git commit -m "..."`. `git push` faalt met permission-denied. Sessie eindigt met "commit X gedaan, push geweigerd door settings.json". **Wouter pusht vanuit zijn eigen terminal** (`cd <repo> && git push origin main`) — niet vanuit een Claude Code-sessie.
 
-Geen van beide is een harde technische barrière — discipline + permission-prompt-vigilance. Voor solo-dev-16-user-app acceptabel. Bij escalatie (meerdere committers of CI-deploy-key-leak): installeer dan pas een echte hook via `core.hooksPath = .githooks/` (versionable, surviving fresh clones).
+Als Wouter incidenteel tóch vanuit Claude Code wil pushen: voeg lokaal `Bash(git push:*)` toe aan `.claude/settings.local.json` allow-list (gitignored, alleen per-checkout). Deny gaat normaal voor allow, maar local-allow overruled global-deny binnen settings-precedence.
 
-Workflow: A of B doet `git add -A && git commit -m "..."`. Sessie eindigt met "commit X gedaan, niet gepusht — Wouter pusht handmatig". Wouter doet dan zelf `git push origin main` lokaal.
+Eerdere versie van dit doc claimde een pre-push hook; die bestond niet (`.git/hooks/pre-push` ontbrak, `core.hooksPath` unset). Permission-deny is de simpelere oplossing — geen extra files in versie-control, geen fresh-clone-setup nodig.
 
 ## Waarom
 

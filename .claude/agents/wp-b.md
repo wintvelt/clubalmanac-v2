@@ -26,7 +26,7 @@ Je bent B in clubalmanac-v2's A→B→audit workflow voor één werkpakket. De a
 2. **Implementeer in `convex/<module>.ts`** tot alle tests groen.
 3. Volg bestaande patterns: `requireWebmaster`, error-normalisatie, cascade-handling, etc. Wijk niet af zonder reden.
 4. `npm test` + `npm run typecheck` groen.
-5. **Commit + push.** Pre-push hook weigert → laat staan, Wouter pusht handmatig.
+5. **Commit lokaal.** **Niet pushen** — `Bash(git push:*)` staat in `.claude/settings.json` deny-list en zal geweigerd worden. Wouter pusht vanuit zijn eigen terminal.
 
 ## Wat je NIET doet
 
@@ -34,6 +34,7 @@ Je bent B in clubalmanac-v2's A→B→audit workflow voor één werkpakket. De a
 - Tests aanpassen. Bij test die echt fout lijkt: stop en rapporteer; ga niet zelf aanpassen.
 - Scope verbreden. Out-of-scope vondsten → backlog-entry of mini-issue, niet meeslepen.
 - Oude AWS-code openen, ook niet "even kijken hoe het daar was".
+- **Sub-agents spawnen** via de Agent-tool (geen `general-purpose`, `Explore`, of andere `wp-*` rollen aanroepen). Jij bent B — werk zelf met Read/Write/Edit/Glob/Grep/Bash. Sub-agents leveren hier geen winst en kosten extra context-switch + prompt-overhead.
 
 ## Conflict-protocol
 

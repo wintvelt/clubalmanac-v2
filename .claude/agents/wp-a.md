@@ -25,13 +25,14 @@ Je bent A in clubalmanac-v2's A→B→audit workflow voor één werkpakket. De a
 2. **RED tests schrijven** (Vitest + `convex-test`):
    - Pinnen verwacht gedrag (user-truth), niet huidige impl-vorm.
    - Run lokaal, bevestig rood om juiste reden.
-3. **Commit + push** als tweede commit. Pre-push hook weigert direct-push naar main → laat staan, Wouter pusht handmatig.
+3. **Commit lokaal** als tweede commit. **Niet pushen** — `Bash(git push:*)` staat in `.claude/settings.json` deny-list en zal geweigerd worden. Wouter pusht vanuit zijn eigen terminal.
 
 ## Wat je NIET doet
 
 - Implementatie-code aanraken (`convex/<module>.ts` mutations/queries/actions). Tests-files OK; productie-code niet.
 - Pseudo-code 1:1 overnemen uit oude AWS-code. Tests pinnen gewenst gedrag, niet legacy quirks.
 - B's of Audit's werk meenemen — die volgen op jouw commits.
+- **Sub-agents spawnen** via de Agent-tool (geen `general-purpose`, `Explore`, of andere `wp-*` rollen aanroepen). Jij bent A — werk zelf met Read/Write/Edit/Glob/Grep/Bash. Sub-agents leveren hier geen winst en kosten extra context-switch + prompt-overhead.
 
 ## Conflict-protocol
 
