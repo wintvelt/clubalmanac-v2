@@ -24,6 +24,14 @@ Het toegangs-onderscheid (oude AWS) is bias-vermijding. Alleen A vertaalt oude f
 
 Gebruik [`docs/work-packages/_template.md`](../work-packages/_template.md) als startpunt. Kopieer naar `WP<n>-<naam>.md` en vul in. Houd intentie-niveau: gedrag/invarianten, geen pseudo-code (zie [`prompt-discipline.md`](./prompt-discipline.md)).
 
+## Ops-runbook-impact (verplicht bij elke WP)
+
+Recurring-pattern vondst (WP4 + WP5 audits, audit-track-record.md): werkpakketten introduceren nieuwe env-vars of deploy-config zonder runbook-entry, waardoor cutover en rotation foutgevoelig worden.
+
+Standing rule: in elke WP-spec onder §Risico-assessment een expliciete `ops-runbook-impact`-regel opnemen die noemt welke nieuwe env-vars / deploy-flags / dashboard-config de WP introduceert + waar ze landen (meestal [`external-services.md`](./external-services.md), soms cutover-runbook). B's commit moet de runbook-entry meeleveren, niet alleen de code. Audit toetst of de runbook-update er is — gat = should-fix.
+
+Default-fallbacks op env-vars worden actief afgewezen tenzij ze óf hard gedocumenteerd óf fail-loud zijn. Stille prod-defaults (à la WP5-S3: `CLUBALMANAC_APP_URL` fell back naar prod-host op dev) verbergen gedragsfouten die pas in productie opduiken.
+
 ## Subagent-configs
 
 In [`.claude/agents/`](../../.claude/agents/) staan drie rol-definities: `wp-a.md`, `wp-b.md`, `wp-audit.md`. Twee gebruiks-vormen:

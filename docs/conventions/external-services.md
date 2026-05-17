@@ -9,7 +9,28 @@ Header: `User-Agent: Clubalmanac/2.0` (fair-use vereiste)
 
 ## Email: Mailjet (Frankrijk)
 
-Gekozen 2026-05. EU-based, GDPR-compliant. Free tier 6000/maand voldoende voor 16-user volume. Voor invites + member changes + flag-decide notifications + bounce webhook. Nog niet gebouwd (toekomstig werkpakket).
+Gekozen 2026-05. EU-based, GDPR-compliant. Free tier 6000/maand voldoende voor 16-user volume. Voor invites + member changes + flag-decide notifications + bounce webhook. Geïmplementeerd in WP5 (2026-05-17).
+
+### Vereiste env-vars per deployment
+
+WP5 introduceert 5 env-vars. Alle vijf moeten op zowel dev als prod gezet zijn — anders fail-loud throw bij eerste send. Geen "stille" fallback-defaults meer (WP5-audit S-3 fix: APP_URL had silent prod-fallback, STAGE had silent "dev"-fallback — beide leidden tot subtiele mis-routing).
+
+| Env-var | Waarde dev | Waarde prod | Wat gebeurt bij ontbreken |
+|---|---|---|---|
+| `MAILJET_API_KEY` | dev-key uit Mailjet dashboard | prod-key uit Mailjet dashboard | `MAILJET_CREDS_MISSING:` throw vóór fetch (WP5-audit N-1 fix) |
+| `MAILJET_API_SECRET` | dev-secret | prod-secret | idem |
+| `MAILJET_WEBHOOK_SECRET` | gegenereerde random string, zelfde in Mailjet dashboard webhook-config | aparte prod-string | `/email-event` → 503, geen state-mutatie |
+| `MAILJET_VERIFIED_SENDERS` | comma-sep van alle from-addresses die in code voorkomen (`invites@…`, `info@…`) | idem, met prod-domain | `UNVERIFIED_SENDER:` throw vóór elke send |
+| `CLUBALMANAC_APP_URL` | dev-app-host (bv. `http://localhost:5173`) | `https://clubalmanac.com` | throw bij `buildInviteUrl`-call (S-3 fix) |
+| `CLUBALMANAC_STAGE` | `"dev"` | `"prod"` | throw bij `getStageLabel`-call op problem-report-pad (S-3 fix) |
+
+### Rotation
+
+Mailjet keys roteren via dashboard + Convex env-var update. `MAILJET_VERIFIED_SENDERS` aanpassen wanneer een nieuwe from-address wordt toegevoegd of een bestaande sender-verification verloopt in Mailjet. Geen hot-reload nodig — Convex actions lezen env-vars vers per call.
+
+### Known issues en geaccepteerde trade-offs (2026-05-15)
+
+Tijdens setup en eerste integratie-werk drie fricties geconstateerd. Bewust geaccepteerd of als hard gate in WP5-impl opgenomen.
 
 ### Known issues en geaccepteerde trade-offs (2026-05-15)
 

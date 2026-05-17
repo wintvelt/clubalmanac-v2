@@ -29,6 +29,7 @@ Per dimensie laag / medium / hoog + reden. Zie `phase-kickoff` skill voor toelic
 - **external deps**: ... — ...
 - **multi-user/concurrency**: ... — ...
 - **data/schema-evolutie**: ... — ... (bij medium/hoog: pre-flight per [`data-migration-preflight.md`](../conventions/data-migration-preflight.md))
+- **ops-runbook-impact**: nieuwe env-vars / deploy-flags / dashboard-config die deze WP introduceert + waar ze landen (`external-services.md`, cutover-runbook, etc.). Default-fallbacks expliciet motiveren of fail-loud maken — geen stille prod-defaults. B levert de runbook-entry mee, audit toetst.
 
 ## Cross-refs
 

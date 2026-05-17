@@ -1,8 +1,8 @@
 # Audit track record
 
-Tussen 2026-04 en 2026-05 hebben 13 audit-cycli op clubalmanac-v2 backend de volgende productie-bugs ontdekt en gefixt vóór cutover.
+Tussen 2026-04 en 2026-05 hebben 14 audit-cycli op clubalmanac-v2 backend de volgende productie-bugs ontdekt en gefixt vóór cutover.
 
-## 7 productie-bugs gevonden
+## 9 productie-bugs gevonden
 
 1. **U8** (audit-2): user-delete miste M2-cascade (founder/admin succession + group cleanup) — pure record-delete zonder downstream effect
 2. **AP4** (audit-4): album-photo delete miste group-cover cleanup — dangling cover-refs mogelijk
@@ -11,6 +11,8 @@ Tussen 2026-04 en 2026-05 hebben 13 audit-cycli op clubalmanac-v2 backend de vol
 5. **convex/http.ts ontbrak** (audit-8): IB1 bounce-handler in productie dood — webhook endpoint niet aangemaakt
 6. **users.ts email normalization** (audit-8): mixed-case duplicates + invite-gate failures
 7. **decline order-bug** (audit-8): idempotency werkte niet bij verkeerde caller
+8. **CLUBALMANAC_APP_URL silent prod-fallback** (WP5-audit S-3): dev-deployment zonder env-var → invite-links naar prod-host → 404 bij klik. Fix: fail-loud throw bij unset.
+9. **CLUBALMANAC_STAGE silent "dev"-fallback** (WP5-audit S-3): prod-deployment zonder env-var → problem-reports met label "dev" → urgency-mis-routing. Fix: fail-loud throw bij unset.
 
 ## Plus
 
@@ -20,6 +22,17 @@ Tussen 2026-04 en 2026-05 hebben 13 audit-cycli op clubalmanac-v2 backend de vol
 - Comment-bias-patronen weggepoetst
 - Reservation pattern voor uploads (cyclus 1 architectuur-rewrite)
 - EXIF/geocoding hardening + Photon switch (cyclus 2)
+- WP5 (Mailjet): verified-sender hard gate fail-closed, Bearer-auth webhook, NL-templates 1:1 oude SES, PII-guard structureel via template-signatures
+- WP5-audit follow-up: `Mailjet-creds-missing` fail-fast (N-1), webhook-auth test-completeness (S-1), end-to-end replay-test (S-2)
+
+## Recurring-pattern: env-var-runbook-gap
+
+Twee audits op rij (WP4 `INTEGRATION_TEST_ENABLED`, WP5 vijf nieuwe env-vars) wezen op zelfde gat: nieuwe env-vars werden in code geïntroduceerd zonder runbook-entry, met silent fallbacks die foutgevoelig bleken. Gepromoveerd naar standing rule in [`work-package-specs.md` §Ops-runbook-impact](./work-package-specs.md) en als verplicht risico-veld in [`_template.md`](../work-packages/_template.md). Default-fallbacks worden afgewezen tenzij hard gemotiveerd of fail-loud.
+
+## Backlog (uit audits, niet meegelopen in eigen WP)
+
+- **WP5 N-2**: `invite.email` lowercase doorgegeven aan bounce-notify-template (origineel "Bob@X.com" wordt "bob@x.com"). UX-detail. Past in future "email-template polish" mini-WP indien ooit gewenst.
+- **WP5 N-3**: `console.log` free-form structurering in graceful-skip-paths. Niet grep-baar. Past in cross-cutting observability/logging-werkpakket (zie [`migratie-plan-convex.md` §Monitoring & backup](../migratie-plan-convex.md)).
 
 ## Wanneer twijfel: doe de audit
 
