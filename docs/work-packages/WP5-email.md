@@ -211,3 +211,62 @@ A schrijft tests onder:
 - `tests/features/sendProblemReport.test.ts` — scheduler-call vanuit `features.create` met `type="problem"`
 
 Geen wijzigingen aan bestaande `tests/invites/bouncedHandler.test.ts` (handleBounce is af, blijft af).
+
+---
+
+## Audit-follow-up (post-audit-2026-05-17)
+
+Audit-rapport vond geen blockers, drie should-fix (S-1/S-2/S-3) en één relevante nice-to-have (N-1). Twee aparte cycli: A-only voor regression-guards + RED tests; B daarna voor de twee impl-changes.
+
+### A-taken (één commit, eindigt RED voor de impl-changes)
+
+**S-1 — webhook-auth strict-equality varianten** in [`tests/email/webhookAuth.test.ts`](../../tests/email/webhookAuth.test.ts):
+
+Vier extra negatieve cases die pinnen dat `convex/http.ts:51` `auth !== "Bearer " + secret` strikt blijft (= geen toekomstige refactor naar `.startsWith()` zonder dat tests klagen):
+
+1. lowercase prefix `"bearer <SECRET>"` → 401, geen `handleBounce`-call
+2. dubbele spatie `"Bearer  <SECRET>"` → 401
+3. geen spatie `"Bearer<SECRET>"` → 401
+4. leading whitespace `" Bearer <SECRET>"` → 401
+
+Allemaal: assert geen state-mutatie (`inviteBounceEvents.collect().length === 0`). **Verwacht: GROEN** (code is al strict-equality).
+
+**S-2 — end-to-end replay door webhook-laag** in [`tests/email/webhookPayloadShape.test.ts`](../../tests/email/webhookPayloadShape.test.ts):
+
+Eén case die dezelfde geldig-geauthenticeerde POST tweemaal stuurt en assert:
+- `inviteBounceEvents.collect().length === 1` na de tweede call
+- Géén tweede notify-mail-schedule (scheduler-count delta = 0 op tweede call)
+
+Dedup zit al in `convex/invites.ts:333-339` en is gepin'd in `tests/invites/bouncedHandler.test.ts` — maar de end-to-end-replay via de Bearer-laag was niet gepin'd. **Verwacht: GROEN** (handleBounce is al idempotent).
+
+**S-3 — fail-loud env-var tests** in nieuwe file [`tests/email/envVarGates.test.ts`](../../tests/email/envVarGates.test.ts):
+
+Twee testen die rood eindigen voor B:
+1. `getStageLabel()` throwt met prefix `STAGE_MISSING:` (of vergelijkbare gepin'de string) als `CLUBALMANAC_STAGE` unset — pin't dat silent `"dev"`-fallback weg is
+2. `buildInviteUrl(token)` throwt met prefix `APP_URL_MISSING:` als `CLUBALMANAC_APP_URL` unset — pin't dat silent `"https://clubalmanac.com"`-fallback weg is
+
+Daarnaast happy-path-tests die pinnen dat met env-var gezet alles werkt zoals voorheen. **Verwacht: ROOD voor de fail-loud cases tot B impl-change doet.**
+
+**N-1 — Mailjet creds fail-fast** in [`tests/email/mailjetClient.test.ts`](../../tests/email/mailjetClient.test.ts):
+
+Eén test die assert: `sendMailjetMessage()` throwt met prefix `MAILJET_CREDS_MISSING:` wanneer `MAILJET_API_KEY` of `MAILJET_API_SECRET` leeg/unset is — **vóór** de fetch (assert geen network-call via `fetch`-mock spy). Spiegelt de bestaande verified-sender-gate-discipline (fail-closed vóór externe call ipv vertrouwen op 401-roundtrip). **Verwacht: ROOD tot B impl-change doet.**
+
+A doet géén impl-werk. Commit-titel-suggestie: `WP5(A-followup): regression-guards + RED tests voor S-3 + N-1`.
+
+### B-taken (volgende cyclus, na A-commit)
+
+Drie kleine impl-changes:
+
+1. [`convex/lib/emailTemplates.ts:235`](../../convex/lib/emailTemplates.ts) `buildInviteUrl`: vervang silent fallback `?? "https://clubalmanac.com"` door fail-loud throw `APP_URL_MISSING: CLUBALMANAC_APP_URL env-var unset`.
+2. [`convex/lib/emailTemplates.ts:243`](../../convex/lib/emailTemplates.ts) `getStageLabel`: vervang silent fallback `?? "dev"` door fail-loud throw `STAGE_MISSING: CLUBALMANAC_STAGE env-var unset`.
+3. [`convex/lib/mailjet.ts:71`](../../convex/lib/mailjet.ts) `sendMailjetMessage`: na `assertVerifiedSender(msg.from.email)`, voeg `assertMailjetCreds()`-helper toe die throwt `MAILJET_CREDS_MISSING:` als `MAILJET_API_KEY` of `MAILJET_API_SECRET` leeg/unset.
+
+Tests-runbook-impact: `tests/email/*.test.ts` setups die `MAILJET_VERIFIED_SENDERS` zetten moeten nu ook `CLUBALMANAC_APP_URL` + `CLUBALMANAC_STAGE` + `MAILJET_API_KEY` + `MAILJET_API_SECRET` zetten waar de gemockte fetch het verwacht. B mag bestaande tests aanpassen waar de fail-loud throw ze nu rood maakt — dat is impl-driven test-onderhoud, geen scope-uitbreiding.
+
+Bijwerking deploy-config: [`docs/conventions/external-services.md`](../conventions/external-services.md) Mailjet-sectie heeft de 5 env-vars al beschreven (regie-commit `deee104`). B hoeft daar niets aan te doen.
+
+Commit-titel-suggestie: `WP5(B-followup): STAGE/APP_URL/Mailjet-creds fail-loud`.
+
+### Audit (deze follow-up)
+
+Niet nodig — fixes zijn directe respons op specifieke audit-bevindingen met file:line, en de impl-changes zijn klein + gespiegeld op bestaande pattern (`assertVerifiedSender`). Bij twijfel: regie reviewt B's commit zelf.
