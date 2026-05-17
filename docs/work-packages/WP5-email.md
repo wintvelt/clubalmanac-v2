@@ -149,10 +149,10 @@ Findings: verbatim quotes voor de hoogste-severity items naar Wouter, niet voora
 
 ### Open product-vragen voor regie/Wouter
 
-1. **Problem-report ontvanger**: webmaster (via `WEBMASTER_EMAILS[0]`) of vast `info@clubalmanac.com`? Voorstel: webmaster, hergebruik bestaand env-var; geen tweede ops-touchpoint. Bij meerdere webmasters in env-var: stuur naar alle (CC of TO-list). - 
-2. **Bounce-template tone-of-voice**: oude AWS had géén bounce-template (zie inventarisatie). Voorstel-tekst hieronder; akkoord of revisie?
-3. **Reply-to-policy**: alle outgoing → reply-to `info@clubalmanac.com`, of geen expliciete reply-to (default = from)? Voorstel: geen expliciete reply-to; from = ontvanger-route. Lichter te configureren in Mailjet, geen extra mailbox-overhead.
-4. **Group-delete notify-mail (oude `memberMail-lib.js`)**: oude AWS stuurde bij M2(e) cascade (laatste lid weg → group delete) een notify-mail naar alle ex-leden. Niet in v2-WP5-scope per draft. Bevestigen: bewust geschrapt, of mini-cyclus na WP5? Voorstel: schrappen — bij 16-user app gaat group-delete via expliciete user-actie en is in-app-notify (via membership-delete uit `groups.remove` cascade) voldoende.
+1. **Problem-report ontvanger**: webmaster (via `WEBMASTER_EMAILS[0]`) of vast `info@clubalmanac.com`? Voorstel: webmaster, hergebruik bestaand env-var; geen tweede ops-touchpoint. Bij meerdere webmasters in env-var: stuur naar alle (CC of TO-list). - AKKOORD
+2. **Bounce-template tone-of-voice**: oude AWS had géén bounce-template (zie inventarisatie). Voorstel-tekst hieronder; akkoord of revisie? - AKKOORD
+3. **Reply-to-policy**: alle outgoing → reply-to `info@clubalmanac.com`, of geen expliciete reply-to (default = from)? Voorstel: geen expliciete reply-to; from = ontvanger-route. Lichter te configureren in Mailjet, geen extra mailbox-overhead. - AKKOORD
+4. **Group-delete notify-mail (oude `memberMail-lib.js`)**: oude AWS stuurde bij M2(e) cascade (laatste lid weg → group delete) een notify-mail naar alle ex-leden. Niet in v2-WP5-scope per draft. Bevestigen: bewust geschrapt, of mini-cyclus na WP5? Voorstel: schrappen — bij 16-user app gaat group-delete via expliciete user-actie en is in-app-notify (via membership-delete uit `groups.remove` cascade) voldoende. - AKKOORD
 
 ### Inventarisatie oude SES-templates
 
