@@ -719,20 +719,56 @@ export const cleanupFlaggedPhotos = internalMutation({
   },
 });
 
-// FL2: stub. Echte Mailjet-implementatie volgt in email-werkpakket
-// (zie migratie-plan §Email infrastructure). Hier alleen action-shape
-// + signature, zodat decideFlag 'm kan schedulen en de tests een
-// zichtbare scheduled function zien.
+// FL2: photo-owner krijgt mail bij deny-decision (cascade-matrix FL2).
+// Approve-pad stuurt geen mail (bewuste afwijking van oude AWS).
+//
+// FK-walk via internalQuery (action heeft geen ctx.db). Graceful skip
+// als photo of owner inmiddels weg is (cascade-race).
+
+export const getPhotoOwnerForEmail = internalQuery({
+  args: { photoId: v.id("photos") },
+  handler: async (ctx, { photoId }) => {
+    const photo = await ctx.db.get(photoId);
+    if (!photo) return null;
+    const owner = await ctx.db.get(photo.ownerId);
+    if (!owner) return null;
+    return {
+      ownerName: owner.name ?? owner.email,
+      ownerEmail: owner.email,
+    };
+  },
+});
+
 export const sendFlagDecisionEmail = internalAction({
   args: {
     photoId: v.id("photos"),
     approve: v.boolean(),
   },
-  handler: async () => {
-    // TODO: implementeer via Mailjet in email-werkpakket.
-    // NL-templates voor subject + body bij approve én deny:
-    // /Users/wintvelt/Documents/DEV/DEV/blob-images-api-photos/handlersPhoto/flagPhotoDecide.js regel 16-56.
-    // 1:1 overnemen om tone-of-voice consistency te behouden, niet opnieuw drafted.
-    // Action moet photo + owner uit DB ophalen via internal query.
+  handler: async (ctx, { photoId, approve }) => {
+    // Approve: cascade-matrix FL2 — geen mail. Bewuste afwijking van oude AWS.
+    if (approve) return;
+
+    const data = await ctx.runQuery(internal.photos.getPhotoOwnerForEmail, {
+      photoId,
+    });
+    if (!data) {
+      console.log(
+        `[sendFlagDecisionEmail] photo/owner niet meer gevonden photoId=${photoId}, skipping`,
+      );
+      return;
+    }
+
+    // Lazy-import om module-load-order te ontkoppelen.
+    const { INFO_SENDER, sendMailjetMessage } = await import("./lib/mailjet");
+    const { flagDecisionDenyTemplate } = await import("./lib/emailTemplates");
+
+    const tpl = flagDecisionDenyTemplate({ ownerName: data.ownerName });
+    await sendMailjetMessage({
+      from: { email: INFO_SENDER },
+      to: [{ email: data.ownerEmail }],
+      subject: tpl.subject,
+      htmlPart: tpl.htmlPart,
+      textPart: tpl.textPart,
+    });
   },
 });

@@ -8,19 +8,23 @@ import { internal } from "./_generated/api";
 //
 // Mailjet webhook setup: configureer in Mailjet dashboard een "Event API"
 // callback naar https://<convex-deployment>.convex.site/email-event voor
-// events `bounce` en `blocked`. Zie docs/migratie-plan-convex.md "Email-
-// normalisatie invariant" + "Bounce handling".
+// events `bounce` en `blocked`. Voeg in de webhook-config een custom
+// header `Authorization: Bearer <MAILJET_WEBHOOK_SECRET>` toe — het secret
+// leeft als env-var op de Convex deployment.
 //
-// TODO (email-werkpakket): authenticatie van het webhook-request via een
-// shared secret header (bv. `Authorization: Bearer <MAILJET_WEBHOOK_SECRET>`)
-// zodra Mailjet HMAC-signing is geconfigureerd. Tot dan accepteert dit
-// endpoint elk POST request — niet uitrollen naar prod-deployment zonder
-// secret-check.
-//
-// TODO (email-werkpakket): payload-shape verifieren tegen Mailjet docs.
-// Huidige aannames over event-velden (event/email/MessageID/error_related_to)
-// zijn op basis van Mailjet Event API v1; aanpassen als blijkt dat de
-// daadwerkelijke shape afwijkt.
+// WP5 auth + payload-shape:
+//   - MAILJET_WEBHOOK_SECRET ontbreekt op deployment → 503 fail-closed
+//     (geen accidenteel open endpoint in prod). Mailjet retry't op 5xx,
+//     wat hier ops-zichtbaar het probleem signaleert.
+//   - Missing/mismatch Authorization header → 401, geen state-mutatie.
+//   - Geldige Bearer → 200; payload-events worden gefilterd:
+//       event ∈ {bounce, blocked} → handleBounce
+//       andere event-types        → skip met 200 (anders disablet Mailjet
+//                                   de webhook bij blijvende non-2xx)
+//   - Array (productie-batch) én single-event object (dashboard "Test
+//     event"-knop) beide ondersteund.
+//   - providerEventId valt terug van MessageID → event_id; mist beide of
+//     mist email → skip dat event, ga door met de rest.
 
 type MailjetEvent = {
   event?: string;
@@ -37,7 +41,25 @@ http.route({
   path: "/email-event",
   method: "POST",
   handler: httpAction(async (ctx, request) => {
-    const body = (await request.json()) as MailjetEvent | MailjetEvent[];
+    const secret = process.env.MAILJET_WEBHOOK_SECRET;
+    if (!secret) {
+      // Fail-closed: geen secret = endpoint uit. Liever ops-zichtbare 503
+      // dan een accidenteel open webhook.
+      return new Response(null, { status: 503 });
+    }
+    const auth = request.headers.get("Authorization") ?? "";
+    if (auth !== `Bearer ${secret}`) {
+      return new Response(null, { status: 401 });
+    }
+
+    let body: MailjetEvent | MailjetEvent[];
+    try {
+      body = (await request.json()) as MailjetEvent | MailjetEvent[];
+    } catch {
+      // Onparsebare payload — 200 met no-op om Mailjet-retry-loop te
+      // voorkomen (kale dashboard-test-knop kan rare bodies sturen).
+      return new Response(null, { status: 200 });
+    }
     const events = Array.isArray(body) ? body : [body];
     for (const event of events) {
       if (event.event !== "bounce" && event.event !== "blocked") continue;

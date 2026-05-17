@@ -2,6 +2,7 @@ import { v } from "convex/values";
 import {
   internalAction,
   internalMutation,
+  internalQuery,
   mutation,
   query,
   type MutationCtx,
@@ -12,6 +13,15 @@ import { internal } from "./_generated/api";
 import { requireCurrentUser } from "./users";
 import { getMembership } from "./groups";
 import { normalizeEmail } from "./lib/email";
+import { INVITES_SENDER, sendMailjetMessage } from "./lib/mailjet";
+import {
+  acceptedTemplate,
+  bouncedTemplate,
+  buildInviteUrl,
+  declinedTemplate,
+  formatNlDate,
+  inviteTemplate,
+} from "./lib/emailTemplates";
 
 const ROLE = v.union(v.literal("admin"), v.literal("member"));
 
@@ -356,9 +366,56 @@ export const handleBounce = internalMutation({
   },
 });
 
-// Stub voor invite/notify-emails. Echte Mailjet-implementatie landt in
-// de email-bullet van fase 2 (zie migratie-plan-convex.md). Tot dan is
-// de scheduler-call genoeg om de "best-effort"-pattern te bewijzen.
+// Internal helper-query voor sendInviteEmail-action. Action draait in
+// runtime zonder ctx.db; FK-walk gebeurt hier en levert een platte DTO.
+// Retourneert null als invite niet meer bestaat (race met sender die de
+// invite intussen heeft ingetrokken).
+export const getInviteForEmail = internalQuery({
+  args: { inviteId: v.id("invites") },
+  handler: async (ctx, { inviteId }) => {
+    const invite = await ctx.db.get(inviteId);
+    if (!invite) return null;
+    const inviter = await ctx.db.get(invite.invitedBy);
+    const group = invite.groupId ? await ctx.db.get(invite.groupId) : null;
+    // accepter/decliner lookup: invite.email is altijd normalized, by_email
+    // index op users werkt direct. Kan null zijn als de ontvanger zich nog
+    // niet had geregistreerd (decline via public-token zonder account).
+    const recipientUser = await ctx.db
+      .query("users")
+      .withIndex("by_email", (q) => q.eq("email", invite.email))
+      .unique();
+    return {
+      invite: {
+        email: invite.email,
+        token: invite.token,
+        expiresAt: invite.expiresAt,
+        invitedBy: invite.invitedBy,
+        groupId: invite.groupId ?? null,
+      },
+      inviter: inviter
+        ? { name: inviter.name ?? inviter.email, email: inviter.email }
+        : null,
+      group: group ? { name: group.name } : null,
+      recipientUser: recipientUser
+        ? { name: recipientUser.name ?? recipientUser.email }
+        : null,
+    };
+  },
+});
+
+// Mailjet-action voor de vier invite-mail-kinds.
+//
+// Recipient-resolutie:
+//   kind=invite                       → invite.email (de geïnviteerde)
+//   kind=accepted|declined|bounced    → inviter (via invite.invitedBy → users.get)
+//
+// Graceful skip: als invite of (voor notify-kinds) inviter inmiddels weg
+// is, no-op zonder throw. Scheduler-retry zou anders eindeloos blijven
+// hangen aan een race-loser.
+//
+// Verified-sender hard gate: élke send via `sendMailjetMessage`, die
+// vóór de fetch checkt of `from` in `MAILJET_VERIFIED_SENDERS` zit.
+// Ontbrekend/leeg → throw `UNVERIFIED_SENDER:` (zie lib/mailjet.ts).
 export const sendInviteEmail = internalAction({
   args: {
     kind: v.union(
@@ -369,7 +426,76 @@ export const sendInviteEmail = internalAction({
     ),
     inviteId: v.id("invites"),
   },
-  handler: async (_ctx, _args) => {
-    // No-op stub. Mailjet-integratie volgt in email-bullet.
+  handler: async (ctx, { kind, inviteId }) => {
+    const data = await ctx.runQuery(internal.invites.getInviteForEmail, {
+      inviteId,
+    });
+    if (!data) {
+      console.log(
+        `[sendInviteEmail] invite niet meer gevonden inviteId=${inviteId}, skipping`,
+      );
+      return;
+    }
+
+    const groupName = data.group?.name;
+
+    if (kind === "invite") {
+      const inviterName = data.inviter?.name ?? "iemand";
+      const tpl = inviteTemplate({
+        inviterName,
+        groupName,
+        inviteUrl: buildInviteUrl(data.invite.token),
+        token: data.invite.token,
+        expirationDate: formatNlDate(data.invite.expiresAt),
+      });
+      await sendMailjetMessage({
+        from: { email: INVITES_SENDER },
+        to: [{ email: data.invite.email }],
+        subject: tpl.subject,
+        htmlPart: tpl.htmlPart,
+        textPart: tpl.textPart,
+      });
+      return;
+    }
+
+    // Notify-kinds: ontvanger = inviter. Skip gracefully als inviter weg is.
+    if (!data.inviter) {
+      console.log(
+        `[sendInviteEmail] inviter niet meer gevonden inviteId=${inviteId} kind=${kind}, skipping`,
+      );
+      return;
+    }
+    const inviterName = data.inviter.name;
+    const otherName = data.recipientUser?.name ?? data.invite.email;
+
+    let tpl;
+    if (kind === "accepted") {
+      tpl = acceptedTemplate({
+        inviterName,
+        accepterName: otherName,
+        groupName,
+      });
+    } else if (kind === "declined") {
+      tpl = declinedTemplate({
+        inviterName,
+        declinerName: otherName,
+        groupName,
+      });
+    } else {
+      // bounced
+      tpl = bouncedTemplate({
+        inviterName,
+        bouncedEmail: data.invite.email,
+        groupName,
+      });
+    }
+
+    await sendMailjetMessage({
+      from: { email: INVITES_SENDER },
+      to: [{ email: data.inviter.email }],
+      subject: tpl.subject,
+      htmlPart: tpl.htmlPart,
+      textPart: tpl.textPart,
+    });
   },
 });
