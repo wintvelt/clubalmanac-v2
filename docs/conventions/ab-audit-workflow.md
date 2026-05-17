@@ -28,6 +28,8 @@ Voor elk backend werkpakket in clubalmanac-v2 migratie volgen drie aparte Claude
 
 Voor elk nieuw werkpakket: schrijf eerst A-prompt, daarna B-prompt na A's commit, daarna audit-prompt na B's commit. Audit-bevindingen leiden vaak tot mini A→B fix-cyclus.
 
+Voor de operationele rolverdeling per WP (toegangs-tabel + spec-doc-template + subagent-configs in `.claude/agents/`) zie [`work-package-specs.md`](./work-package-specs.md).
+
 Voor backend = fundament: discipline aanhouden. Voor frontend werk later (fase 4) kan lichter want backend is dan al solid.
 
 ## Waarom

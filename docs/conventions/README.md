@@ -5,6 +5,7 @@ Werkdiscipline en architectuur-keuzes voor clubalmanac-v2 backend werk. Tijdens 
 Files in deze folder:
 
 - [`ab-audit-workflow.md`](./ab-audit-workflow.md) — A→B→audit discipline voor backend werkpakketten
+- [`work-package-specs.md`](./work-package-specs.md) — Per-WP spec-doc, rolverdeling + toegangs-tabel, subagent-configs
 - [`commit-discipline.md`](./commit-discipline.md) — Wie committed wanneer, push-hook gedrag
 - [`prompt-discipline.md`](./prompt-discipline.md) — Geen pseudo-code in B-prompts (bias-vermijding)
 - [`external-services.md`](./external-services.md) — Photon (geocoding) / Mailjet (email) / Clerk (auth) keuzes
