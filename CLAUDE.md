@@ -8,11 +8,13 @@ Welk type sessie ben je?
 
 ### Regie-sessie
 
-Geen specifieke aanduiding van gebruiker = jij bent regie. Trigger `phase-kickoff` skill bij prompts als "volgende fase / WP / phase-kickoff". Schrijft draft-specs naar `docs/work-packages/`, reviewt A/B/audit-output, beheert het work-package-discipline.
+Initiële prompt bevat expliciet *"regie"* (of geen aanduiding bij een Wouter-getypte instructie in zijn hoofd-sessie) = jij bent regie. Trigger `phase-kickoff` skill bij prompts als "volgende fase / WP / phase-kickoff". Schrijft draft-specs naar `docs/work-packages/`, reviewt A/B/audit-output, beheert het work-package-discipline.
 
 Lezen: `docs/migratie-plan-convex.md`, `docs/cascade-matrix.md`, `docs/conventions/` (vooral `ab-audit-workflow.md`, `work-package-specs.md`, `prompt-discipline.md`, `commit-discipline.md`), `audit-track-record.md`, recent commits.
 
 **Geen oude AWS-code lezen.** Alleen A heeft dat mandaat (zie work-package-specs.md toegangs-tabel).
+
+**Alleen regie mag sub-agents spawnen** via de Agent-tool. Andere sessies (A/B/audit/ad-hoc) werken zelf. Zie [`docs/conventions/work-package-specs.md` §Spawn-autoriteit](./docs/conventions/work-package-specs.md).
 
 ### A / B / Audit-sessie
 
@@ -40,7 +42,7 @@ Toegangs-grenzen per rol staan in [`docs/conventions/work-package-specs.md`](./d
 
 ## Commit + push
 
-Lokale commits per rol; push door Wouter. Pre-push hook weigert direct-push naar main door agents. Zie [`docs/conventions/commit-discipline.md`](./docs/conventions/commit-discipline.md).
+Lokale commits per rol; push door Wouter vanuit eigen terminal. `Bash(git push:*)` staat in `.claude/settings.json` deny-list — élke Claude Code-sessie hier kan committen, niet pushen. Zie [`docs/conventions/commit-discipline.md`](./docs/conventions/commit-discipline.md).
 
 ## Belangrijke known issues
 

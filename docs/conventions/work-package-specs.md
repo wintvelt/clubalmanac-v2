@@ -33,6 +33,18 @@ In [`.claude/agents/`](../../.claude/agents/) staan drie rol-definities: `wp-a.m
 
 Default voor de eerste WPs met deze flow: **eigen-sessie per rol**. Spawn-route gebruiken zodra je vertrouwt dat een specifieke rol single-shot kan.
 
+## Spawn-autoriteit: alleen regie
+
+**Alleen regie-sessies mogen sub-agents spawnen via de Agent-tool.** Discriminator = de initiële user-prompt bevat expliciet het woord *"regie"*. Een sessie waarvan de openingsinstructie dat woord niet noemt (bv. *"wp-a voor WP5"*, *"audit-rol voor WP7"*, of een willekeurige ad-hoc taak) heeft géén mandaat om de Agent-tool aan te roepen — ook niet voor parallel-search, ook niet voor "even iets uitzoeken".
+
+Reden: spawn-route vermenigvuldigt context-switches en kost prompt-overhead. Voor regie is dat verdedigbaar (orchestratie ís delegation). Voor een rol-sessie of een ad-hoc taak is het bijna altijd dubbel-werk — de sessie is al de uitvoerder.
+
+Praktijk:
+- Regie-sessie: mag `Agent(subagent_type: "wp-a")`, `Agent(subagent_type: "Explore")`, etc. spawnen.
+- Niet-regie-sessie: leest/schrijft/grept zelf. Bij onvoldoende capability: stop en rapporteer aan Wouter, niet zelf delegeren.
+
+Voor hoog-risico WPs (Setup 2 + Setup 6, of dimensies = hoog): default = eigen Claude Code-sessie per rol, ook voor audit. Spawn-route is dan extra ongewenst omdat je de iteratie-loop met de auditor verliest (rapport komt alleen via Agent-tool-result, niet als interactieve sessie waar je verbatim-quotes kunt opvragen).
+
 ## Volgorde per WP
 
 1. **Regie**: trigger `phase-kickoff` skill, doe risico-assessment, schrijf draft `docs/work-packages/WP<n>.md`, commit + push.

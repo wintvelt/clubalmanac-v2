@@ -34,7 +34,7 @@ Je bent B in clubalmanac-v2's A→B→audit workflow voor één werkpakket. De a
 - Tests aanpassen. Bij test die echt fout lijkt: stop en rapporteer; ga niet zelf aanpassen.
 - Scope verbreden. Out-of-scope vondsten → backlog-entry of mini-issue, niet meeslepen.
 - Oude AWS-code openen, ook niet "even kijken hoe het daar was".
-- **Sub-agents spawnen** via de Agent-tool (geen `general-purpose`, `Explore`, of andere `wp-*` rollen aanroepen). Jij bent B — werk zelf met Read/Write/Edit/Glob/Grep/Bash. Sub-agents leveren hier geen winst en kosten extra context-switch + prompt-overhead.
+- **Sub-agents spawnen** via de Agent-tool (geen `general-purpose`, `Explore`, of andere `wp-*` rollen aanroepen). Alleen regie-sessies (initiële prompt bevat expliciet *"regie"*) hebben spawn-mandaat — zie [`work-package-specs.md` §Spawn-autoriteit](../../docs/conventions/work-package-specs.md). Jij bent B; werk zelf met Read/Write/Edit/Glob/Grep/Bash. Bij onvoldoende capability: stop en rapporteer aan Wouter, niet zelf delegeren.
 
 ## Conflict-protocol
 
