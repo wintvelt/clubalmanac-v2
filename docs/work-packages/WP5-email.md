@@ -103,16 +103,111 @@ Findings: verbatim quotes voor de hoogste-severity items naar Wouter, niet voora
 
 ---
 
-## Spec-criticus aanvullingen (A vult in)
+## Spec-criticus aanvullingen (A)
 
-A leest oude AWS-code + cascade-matrix + bovenstaande spec, vult hier aan:
+### Aanvullende invarianten
 
-- Ontbrekende invarianten: ...
-- Gemiste edge cases: ...
-- Risico-dimensie die regie overschatte/onderschatte: ...
-- Open product-vragen voor regie/Wouter: ...
-- Inventarisatie oude SES-templates (exacte paden per send-kind): ...
-- Keuze verified-sender mechanisme (per-send REST-call vs setup-time cache) + motivatie: ...
-- Keuze webhook-auth mechanisme (Mailjet HMAC indien beschikbaar vs shared-secret header) + motivatie: ...
+- **Notify-mail recipient = inviter via FK-walk**: voor `sendInviteEmail({kind ∈ {accepted, declined, bounced}})` is de ontvanger `users.get(invite.invitedBy).email`. Subject + body gebruiken `inviter.name ?? inviter.email` (naam-fallback). Voor `kind = "invite"` is de ontvanger het invite-email-adres zelf (de geïnviteerde). De action mag **niet throwen** als de inviter inmiddels weg is (user.deleteSelf vóór de scheduled-action draait) — log + skip. Idem voor flag-decide-deny als de owner inmiddels weg is.
 
-(Leeg in draft. A commit edits hier.)
+- **Mailjet sender-policy per send-kind** (uit plan-doc r.723, bevestigd-verified senders):
+  - `invite | accepted | declined | bounced` → from-address `invites@clubalmanac.com`
+  - `flagDecisionDeny` → from-address `info@clubalmanac.com`
+  - `problemReport` → from-address `info@clubalmanac.com`
+  - From-addresses zijn beleid van WP5, niet open voor B-keuze. Eén centrale mapping (B's keuze waar — module-scope of helper).
+
+- **Webhook-auth invariant**: een POST op `/email-event` zonder `Authorization: Bearer <MAILJET_WEBHOOK_SECRET>` (header missing of mismatch) retourneert **401**, roept `internal.invites.handleBounce` **niet** aan, en muteert geen state. Geldige Bearer + bounce-payload → 200 + delegation. Env-var ontbreekt op deployment → **alle** requests 503 (fail-closed; geen accidenteel open endpoint).
+
+- **Verified-sender gate als hard-fail vóór elke Mailjet-call**: élke send-action checkt `isSenderVerified(fromAddress)` vóór de daadwerkelijke fetch. Niet-verified → typed `Error("UNVERIFIED_SENDER: <from>")` (gepin'd string-prefix zodat callers kunnen onderscheiden). Mailjet wordt **niet aangeroepen** in dit pad — anders trekt Mailjet de send aan zonder te versturen (zie known-issue 2) en is de gate loos. Gate-source-of-truth = env-var `MAILJET_VERIFIED_SENDERS` (comma-separated, case-insensitive match). Lege/ontbrekende env-var → álle sends throwen (fail-closed default).
+
+- **Mailjet API-fout = throw**: send-action throwt op non-2xx response van Mailjet. Op 2xx response throwt 'ie niet — Mailjet's silent-failure-pad (2xx + niet verstuurd) is afgevangen door de pre-flight verified-sender-gate. We bouwen géén response-body-parsing als tweede gate, want dat geeft schijnzekerheid: Mailjet's docs reserveren response-shape onder geen contract.
+
+- **Best-effort retry-risk**: Convex scheduler kan een action herhalen bij transient failure. Als Mailjet de eerste send succesvol verwerkt en de action vervolgens throwt op een latere stap (zeldzaam, want fetch is de laatste stap), kan een retry leiden tot dubbel-verzonden mail. Voor 6 mail-kinds + 16-user volume bewust geaccepteerd. Géén dedup-tabel à la `inviteBounceEvents`. Geadresseerd in audit-discussie indien escalerend.
+
+- **Webhook idempotent op non-bounce-event types**: een geldig-geauthenticeerde POST met `event ∈ {open, click, sent, spam, unsub}` → 200, geen state-mutatie, geen call naar handleBounce. Reden: Mailjet retry't op non-2xx; we willen niet dat Mailjet de webhook disablet door geretourneerde 4xx op verwachte non-bounce events.
+
+### Aanvullende edge cases
+
+- **Bounced inviter is verwijderd**: action haalt inviter op via `ctx.runQuery(... invite.invitedBy)`. `users.get` retourneert `null` als deleteSelf inmiddels gedraaid heeft. Action moet gracefully skip (geen mail, geen throw, log).
+- **Mailjet payload-shape variaties** die op het webhook-endpoint kunnen aankomen:
+  - Array van events (productie-default voor batched delivery)
+  - Single-event object (dashboard "Test event"-knop)
+  - Missing `MessageID` of `event_id` → skip dit event, ga door met de rest
+  - Missing `email` → skip dit event
+  - Event-types andere dan `bounce` | `blocked` → skip met 200 (geen retry-trigger)
+- **Mixed-case email in Mailjet payload**: `handleBounce` normaliseert al (via `findInvitesByEmail` → `normalizeEmail`). Pin in test dat `Bouncer@X.com` in payload de invite voor `bouncer@x.com` raakt.
+- **PII in mail-body**: invite-token mag alleen in de `invite`-mail naar de bedoelde ontvanger zelf. Accept/decline/bounced-notify naar inviter mogen géén invite-token bevatten. Pin in template-tests.
+- **Whitespace in env-var `MAILJET_VERIFIED_SENDERS`**: `" invites@clubalmanac.com , info@clubalmanac.com "` moet leiden tot een verified-set van twee adressen. Trim + lowercase per item.
+- **`features.create` met `type="problem"`**: schedule't `internal.features.sendProblemReport` action. `type="feature"` schedule't géén email. Pin met scheduler-count delta.
+- **Verified-sender gate met case-mismatch**: `Invites@ClubAlmanac.com` vs env-var `invites@clubalmanac.com` → match (case-insensitive). Spiegelt audit-7 webmaster-match-discipline.
+
+### Risico-dimensies herijking
+
+- **Overschat door regie — data/schema-evolutie**: géén nieuwe DB-tabel nodig. Geen `verifiedSenderCache`-tabel (zie keuze-motivatie). Geen migratie. WP5 raakt schema *niet*.
+- **Onderschat door regie — env-var-ops-belasting**: drie nieuwe env-vars verschijnen (`MAILJET_API_KEY`, `MAILJET_API_SECRET`, `MAILJET_WEBHOOK_SECRET`, `MAILJET_VERIFIED_SENDERS`). Bij rotation in Mailjet (key revoke, sender DNS-rotation) moet Wouter ze in Convex dashboard pasten. Documenteren in deploy-runbook (out-of-scope voor WP5, flagged voor cutover-prep).
+- **Onderschat door regie — empirische Gate 1 wording**: draft zegt "verander tijdelijk `WEBMASTER_EMAILS` naar niet-verified from-address". Dat is de verkeerde env-var — `WEBMASTER_EMAILS` is RBAC-recipiënt, niet sender. Correctie: verander `MAILJET_VERIFIED_SENDERS` zodat de sender die problemReport gebruikt (`info@clubalmanac.com`) **niet** meer in de set staat, herhaal de send, verwacht throw. Of: voeg een test-action toe die expliciet een unverified-from gebruikt.
+- **Underspec'd — replay-aanval op /email-event**: een aanvaller die zowel `MAILJET_WEBHOOK_SECRET` als een legacy `providerEventId` weet, kan het webhook hercallen — maar `inviteBounceEvents.by_eventId`-dedup vangt dat af (no-op). Acceptabel als second line of defense. Hoofdverdediging blijft secret-rotation bij compromise.
+
+### Open product-vragen voor regie/Wouter
+
+1. **Problem-report ontvanger**: webmaster (via `WEBMASTER_EMAILS[0]`) of vast `info@clubalmanac.com`? Voorstel: webmaster, hergebruik bestaand env-var; geen tweede ops-touchpoint. Bij meerdere webmasters in env-var: stuur naar alle (CC of TO-list).
+2. **Bounce-template tone-of-voice**: oude AWS had géén bounce-template (zie inventarisatie). Voorstel-tekst hieronder; akkoord of revisie?
+3. **Reply-to-policy**: alle outgoing → reply-to `info@clubalmanac.com`, of geen expliciete reply-to (default = from)? Voorstel: geen expliciete reply-to; from = ontvanger-route. Lichter te configureren in Mailjet, geen extra mailbox-overhead.
+4. **Group-delete notify-mail (oude `memberMail-lib.js`)**: oude AWS stuurde bij M2(e) cascade (laatste lid weg → group delete) een notify-mail naar alle ex-leden. Niet in v2-WP5-scope per draft. Bevestigen: bewust geschrapt, of mini-cyclus na WP5? Voorstel: schrappen — bij 16-user app gaat group-delete via expliciete user-actie en is in-app-notify (via membership-delete uit `groups.remove` cascade) voldoende.
+
+### Inventarisatie oude SES-templates
+
+Exacte AWS-paden voor 1:1 NL tone-of-voice port.
+
+| Kind | AWS-handler / template | NL-subject template | NL-body kernregel |
+|---|---|---|---|
+| `invite` (naar ontvanger) | `blob-images-api-groups/handlersGroup/sendInvite.js` r.84-99 + `blob-images-api-groups/emails/invite.js` r.9-35 | `${user.name} nodigt je uit om lid te worden van "${group.name}"` | `${fromName} nodigt je uit om lid te worden van ${groupName} op clubalmanac` + optional `message` + button "Bekijk online" → inviteUrl + `Deze uitnodiging is geldig tot ${expirationDate}` |
+| `accepted` (naar inviter) | `blob-images-api-invites/handlersInvite/acceptInvite.js` r.62-79 + `blob-images-api-invites/emails/acceptedInvite.js` r.9-33 | `${fromName} heeft je uitnodiging om lid te worden van "${groupName}" geaccepteerd` | `Hi ${toName}, Yeey! ${fromName} heeft je uitnodiging om lid te worden van ${groupName} geaccepteerd (en terecht). Kijk op de ${groupName} pagina om te zien of er nieuws is.` |
+| `declined` (naar inviter) | `blob-images-api-invites/handlersInvite/publicDeclineInvite.js` r.32-36 + `blob-images-api-invites/emails/declinedInvite.js` r.9-33 | `Helaas! ${fromName} heeft je uitnodiging om lid te worden van "${groupName}" afgewezen` | `Hi ${toName}, Balen! ${fromName} heeft je uitnodiging om lid te worden van ${groupName} afgewezen. Typisch geval van ongepast eigen initiatief. Vind troost en gezelligheid bij vrienden op de ${groupName} pagina.` |
+| `bounced` (naar inviter) | **Nieuw in v2** — oude AWS had geen bounce-feedback loop. A-draft, zie hieronder. | `Je uitnodiging voor "${groupName}" kon niet worden afgeleverd` (of `Je uitnodiging via clubalmanac kon niet worden afgeleverd` als `groupName` ontbreekt) | `Hi ${inviterName}, de uitnodiging die je naar ${bouncedEmail} hebt gestuurd is teruggekomen. Het emailadres lijkt niet (meer) te bestaan. Controleer of het adres klopt en probeer het opnieuw.` |
+| `flagDecisionDeny` (naar photo-owner) | `blob-images-api-photos/handlersPhoto/flagPhotoDecide.js` r.20-23 (text), r.41-56 (body), r.123-136 (call) | `Je bezwaar over een melding voor ongepaste inhoud is afgewezen` | `Hi ${toName}, HELAAS: Je bezwaar op de melding op 1 van je foto's is afgewezen. De foto zal binnenkort definitief van clubalmanac worden verwijderd.` |
+| `problemReport` (naar webmaster) | `blob-images-features/handlersProblem/problemMail.js` r.9-31 + `create.js` r.10-17 | `Probleem gemeld op ${STAGE}` (STAGE = dev/prod, op te lossen via env-var of `process.env.CONVEX_CLOUD_URL`-parse) | `Hi Admin, Er is een probleem gemeld op de ${STAGE} omgeving. Door ${name}, vanaf ${email}, op ${timestamp}. "${description}"` (+ optional logs) |
+
+**Tone-of-voice constraints** (bewust niet gewijzigd t.o.v. oude code):
+- Informeel "Hi ${name},"
+- NL throughout, geen Engelse afsluiting
+- Mailjet voegt `List-Unsubscribe` header toe (known-issue 1, niet uitzetbaar, geaccepteerd)
+- Geen handtekening-image (oude AWS gebruikte `signature_wouter.png` via S3 public-URL; v2 gebruikt inline tekst-afsluiting om hosting-dependency te vermijden — accept loss of visual polish voor minder ops-load)
+
+### Keuze verified-sender mechanisme — env-var-driven gate
+
+**Gekozen**: env-var `MAILJET_VERIFIED_SENDERS` (comma-separated, lowercased+trimmed lijst). Gate-helper `isSenderVerified(fromAddress)` leest de env-var op elke call en doet case-insensitive set-lookup. Élke send-action checkt vóór de Mailjet-fetch.
+
+**Motivatie**:
+- **Predictability**: lijst staat in deployment-config, leesbaar in Convex dashboard. Geen runtime-network-call die kan time-outen of nieuwe failure-modes introduceren.
+- **Performance**: geen extra REST-call per send. Mailjet free-tier is 6000/maand totaal — een per-send `/REST/sender`-fetch zou óf het quotum halveren (als dezelfde tier-counter telt) óf latency verdubbelen.
+- **Fail-closed semantiek**: env-var ontbreekt → álle sends throwen met `UNVERIFIED_SENDER:`-prefix. Mailjet-API-down beïnvloedt de gate niet — gate is independent.
+- **Ops-belasting**: aanpassen na Mailjet sender-status-change (zelden, jaarlijks order-of-magnitude). Documenteren in cutover-runbook.
+
+**Alternatief afgewezen — per-send REST-call**: extra latency per mail, halveert effectieve free-tier quotum, introduceert tweede failure-mode (Mailjet REST-API down ≠ Mailjet send-API down), geen voordeel boven stabiele env-var.
+
+**Alternatief afgewezen — setup-time module-scope cache**: Convex action-runtime heeft geen warm-start-garantie; module-scope state werkt onbetrouwbaar over isolations heen. Een dedicated `internal.email.refreshVerifiedSenders` op deploy-trigger plus DB-tabel-cache zou wel werken, maar voegt complexiteit toe (extra tabel, extra trigger, geen winst boven env-var).
+
+### Keuze webhook-auth mechanisme — Bearer-secret
+
+**Gekozen**: `Authorization: Bearer <MAILJET_WEBHOOK_SECRET>` header. Webhook-endpoint vergelijkt header tegen env-var (case-sensitive secret-string, hele header `=== "Bearer " + secret`). Mismatch of missing → 401, geen handleBounce-call. Env-var ontbreekt op deployment → **alle** /email-event-POSTs → 503 (fail-closed, hard ops-error).
+
+**Motivatie**:
+- **Mailjet biedt geen HMAC-signing op Event API** (verified per docs lookup 2026-05). Shared-secret in custom header is de gangbare oplossing voor deze provider.
+- **Custom-header support**: Mailjet dashboard ondersteunt per-webhook-URL custom headers. Header-config = deploy-time, secret rotation via env-var-update + dashboard-update.
+- **Constant-time compare** is good-to-have. Voor 6000/maand 1-secret-low-volume niet load-bearing; B mag `===` gebruiken. (Audit kan dit opbrengen als findings als ze willen verhogen.)
+
+**Alternatief afgewezen — query-string secret**: lekt in proxy-logs en HTTP-access-logs van Convex-side.
+
+**Alternatief afgewezen — IP-whitelist Mailjet-egress-ranges**: Mailjet publiceert geen vaste IP-allowlist; ranges veranderen. Webhook breekt onbedoeld.
+
+**Alternatief afgewezen — basic-auth in URL**: zelfde leak-pad als query-string; geen winst boven Bearer-header.
+
+### Test-locatie note voor B/audit
+
+A schrijft tests onder:
+- `tests/email/` — nieuw — Mailjet client-helper + webhook-auth + payload-shape + template-rendering
+- `tests/invites/sendInviteEmail.test.ts` — action wiring per kind
+- `tests/photos/sendFlagDecisionEmail.test.ts` — action wiring voor deny (approve-skip is al gepin'd in `decideFlag.test.ts`)
+- `tests/features/sendProblemReport.test.ts` — scheduler-call vanuit `features.create` met `type="problem"`
+
+Geen wijzigingen aan bestaande `tests/invites/bouncedHandler.test.ts` (handleBounce is af, blijft af).
