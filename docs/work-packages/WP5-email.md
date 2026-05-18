@@ -270,3 +270,45 @@ Commit-titel-suggestie: `WP5(B-followup): STAGE/APP_URL/Mailjet-creds fail-loud`
 ### Audit (deze follow-up)
 
 Niet nodig — fixes zijn directe respons op specifieke audit-bevindingen met file:line, en de impl-changes zijn klein + gespiegeld op bestaande pattern (`assertVerifiedSender`). Bij twijfel: regie reviewt B's commit zelf.
+
+---
+
+## Webhook-auth correctie (2026-05-18)
+
+Mailjet-capability-discovery tijdens gate-setup: dashboard ondersteunt geen custom HTTP-headers per webhook. Bearer-aanname uit eerdere spec was fout. Mailjet's eigen aanbeveling: HTTPS + basic-auth in URL.
+
+**Toelichting security-keuze**: basic-auth in URL (`https://<user>:<secret>@host/path`) travels niet in URL-lijn — HTTP-client strip't userinfo en stuurt `Authorization: Basic <base64>` header. Convex access-logs zien path zonder credential. Equivalent met Bearer-veiligheid, alleen andere encoding. A's eerdere afwijzing ("zelfde leak-pad als query-string") was incorrect.
+
+**Beslissing**: één env-var `MAILJET_WEBHOOK_SECRET` blijft, username hardcoded als `"mailjet"` (geen extra ops-surface; secret is de werkelijke gate, username conventioneel).
+
+### A-taken
+
+Eén commit, RED test in [`tests/email/webhookAuth.test.ts`](../../tests/email/webhookAuth.test.ts):
+
+- Happy path: `Authorization: Basic <base64("mailjet:" + SECRET)>` → 200, delegeert naar `handleBounce`
+- Oude Bearer-encoding (`"Bearer " + SECRET`) → 401, geen state-mutatie
+- Verkeerde username (`Basic <base64("other:" + SECRET)>`) → 401
+- Bestaande negatieve cases (missing header, lowercase-Bearer-variant uit S-1) blijven valide tegen de strict-equality op de nieuwe expected-string
+
+A past de bestaande "geldige header → 200"-case van Bearer naar Basic aan. Strict-equality discipline blijft (test pinnen dat `===` vergelijking gebruikt wordt, niet `.startsWith()`).
+
+**Verwacht: RED** voor de nieuwe Basic-cases tot B impl-change doet.
+
+### B-taken
+
+Eén impl-change in [`convex/http.ts:51`](../../convex/http.ts):
+
+```ts
+// Was:
+if (auth !== "Bearer " + secret) return 401;
+// Wordt:
+if (auth !== "Basic " + btoa("mailjet:" + secret)) return 401;
+```
+
+Plus comment-update bij r.14-23 (TODO over HMAC verwijderen, vervangen door verwijzing naar deze sectie).
+
+### Runbook-update
+
+[`docs/runbooks/wp5-mailjet-empirical-gates.md`](../runbooks/wp5-mailjet-empirical-gates.md) §A-3: Mailjet webhook-URL wordt `https://mailjet:<MAILJET_WEBHOOK_SECRET>@glorious-pheasant-759.convex.site/email-event`. Custom-header-stap vervalt — zit nu in de URL zelf. Regie werkt runbook bij na B-commit (inline, geen mini-cyclus).
+
+Geen audit voor deze correctie — scope < 30 regels diff, één impl-bestand, één test-bestand, één doc-update. Regie reviewt B's commit zelf.
