@@ -22,11 +22,12 @@ WP1-WP4 liepen vóór de formele spec-doc-discipline (geen WP-file). Status uit 
 
 | WP | Onderwerp | Spec-doc | Status |
 |---|---|---|---|
-| WP6 | Upload-pipeline empirische gates + integration-test (geen nieuwe impl; bewijs van pipeline op echte iPhone-foto's met EXIF/GPS) | (te schrijven) | 🆕 |
-| WP7 | Photo rotation (`photos.rotate` mutation + sharp scheduled action) + EXIF Orientation upstream | (te schrijven) | 🆕 |
+| WP6 | Clerk session-webhook + atomic onboarding (server-to-server `session.created` → idempotent users-row + invite-accept + membership in één Convex-transactie; verwijdert frontend-onboarding-windows) | [`WP6-clerk-session-webhook.md`](./WP6-clerk-session-webhook.md) | 🆕 draft |
+| WP7 | Upload-pipeline empirische gates + integration-test (geen nieuwe impl; bewijs van pipeline op echte iPhone-foto's met EXIF/GPS) | (te schrijven) | 🆕 |
+| WP8 | Photo rotation (`photos.rotate` mutation + sharp scheduled action) + EXIF Orientation upstream | (te schrijven) | 🆕 |
 | TBD | Crons-bundel: `expirePendingInvites` (IB2), eventueel andere scheduled functions | — | open |
-| TBD | Auth: Clerk pre-signup webhook | — | partially landed (defense-in-depth via users.register al gepind) |
 | TBD | Email Gate 1 happy-path + integration-test `tests/integration/mailjet/sendRoundtrip.test.ts` als follow-up van WP5 deferred-items | — | open |
+| TBD | Clerk Invitations API integratie (pre-create Clerk-user bij Convex `invites.create`, `users.status: "invited" \| "active"` voor visibility) — alternatief design op WP6, kan als upgrade later | — | open, design-discussie |
 | Phase 3 | Data migratie tooling (DynamoDB → Convex) | — | uit fase 2-scope |
 | Phase 4 | Clients (iPhone app SDK upgrade + Convex integratie; webapp) | — | uit fase 2-scope |
 | Phase 5 | Hard cutover | — | uit fase 2-scope |
