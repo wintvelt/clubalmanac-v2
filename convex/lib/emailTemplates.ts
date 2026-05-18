@@ -230,15 +230,28 @@ export function formatNlDate(timestamp: number): string {
 
 // Helper: invite-URL voor de landing-pagina. Frontend leeft op
 // `https://<deployment>.convex.site` of een custom-domain — we gebruiken
-// `CLUBALMANAC_APP_URL` env-var met fallback naar relative path.
+// `CLUBALMANAC_APP_URL` env-var. Audit-follow-up 2026-05-17 (S-3): geen
+// silent fallback meer naar `"https://clubalmanac.com"` — dat zou
+// dev-deployment-mails met prod-domain invite-links genereren. Fail-loud
+// met `APP_URL_MISSING:`-prefix zodat ops het in logs direct ziet.
 export function buildInviteUrl(token: string): string {
-  const base = (process.env.CLUBALMANAC_APP_URL ?? "https://clubalmanac.com")
-    .replace(/\/+$/, "");
+  const raw = process.env.CLUBALMANAC_APP_URL;
+  if (raw === undefined || raw === "") {
+    throw new Error("APP_URL_MISSING: CLUBALMANAC_APP_URL env-var unset");
+  }
+  const base = raw.replace(/\/+$/, "");
   return `${base}/invite/${encodeURIComponent(token)}`;
 }
 
-// Helper: stage-label voor problem-report (dev/prod). Convex deployment URL
-// bevat het deployment-type; we vallen terug op "dev" zonder env-var.
+// Helper: stage-label voor problem-report (dev/prod). Audit-follow-up
+// 2026-05-17 (S-3): geen silent fallback naar `"dev"` meer — een
+// verkeerd-geconfigureerde prod-deployment zou anders mails versturen met
+// label "dev" en dat blijft onopgemerkt. Fail-loud met `STAGE_MISSING:`-
+// prefix.
 export function getStageLabel(): string {
-  return process.env.CLUBALMANAC_STAGE ?? "dev";
+  const raw = process.env.CLUBALMANAC_STAGE;
+  if (raw === undefined || raw === "") {
+    throw new Error("STAGE_MISSING: CLUBALMANAC_STAGE env-var unset");
+  }
+  return raw;
 }

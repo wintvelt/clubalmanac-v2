@@ -48,6 +48,9 @@ beforeEach(() => {
   process.env.MAILJET_API_KEY = "k";
   process.env.MAILJET_API_SECRET = "s";
   process.env.WEBMASTER_EMAILS = WEBMASTER_EMAIL;
+  // Audit-follow-up 2026-05-17: getStageLabel() is nu fail-loud bij missing
+  // CLUBALMANAC_STAGE — problem-report-template gebruikt 'm voor het subject.
+  process.env.CLUBALMANAC_STAGE = "dev";
 });
 
 afterEach(() => {
@@ -55,6 +58,7 @@ afterEach(() => {
   delete process.env.MAILJET_API_KEY;
   delete process.env.MAILJET_API_SECRET;
   delete process.env.WEBMASTER_EMAILS;
+  delete process.env.CLUBALMANAC_STAGE;
   vi.unstubAllGlobals();
 });
 

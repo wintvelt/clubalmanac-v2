@@ -55,9 +55,22 @@ function assertVerifiedSender(fromAddress: string): void {
   }
 }
 
-// Mailjet API-creds als basic-auth header value. Lege env-var = lege header,
-// Mailjet retourneert dan 401; de send-call throwt dus alsnog.
+// Mailjet API-creds als basic-auth header value. Audit-follow-up 2026-05-17
+// (N-1): fail-fast bij ontbrekende creds in plaats van een 401-roundtrip
+// naar Mailjet. Spiegelt de bestaande verified-sender-gate-discipline
+// (fail-closed vóór externe call).
+function assertMailjetCreds(): void {
+  const key = process.env.MAILJET_API_KEY;
+  const secret = process.env.MAILJET_API_SECRET;
+  if (key === undefined || key === "" || secret === undefined || secret === "") {
+    throw new Error(
+      "MAILJET_CREDS_MISSING: MAILJET_API_KEY or MAILJET_API_SECRET env-var unset",
+    );
+  }
+}
+
 function basicAuthHeader(): string {
+  // assertMailjetCreds() is door de caller al gegooid als creds missen.
   const key = process.env.MAILJET_API_KEY ?? "";
   const secret = process.env.MAILJET_API_SECRET ?? "";
   return `Basic ${btoa(`${key}:${secret}`)}`;
@@ -70,6 +83,7 @@ function basicAuthHeader(): string {
 // verdediging.
 export async function sendMailjetMessage(msg: MailjetMessage): Promise<void> {
   assertVerifiedSender(msg.from.email);
+  assertMailjetCreds();
 
   const payload = {
     Messages: [

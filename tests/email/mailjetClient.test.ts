@@ -42,10 +42,19 @@ function setEnv(opts: {
   else process.env.MAILJET_API_SECRET = opts.apiSecret;
 }
 
+// Audit-follow-up 2026-05-17: `buildInviteUrl` throwt nu fail-loud bij
+// ontbrekende `CLUBALMANAC_APP_URL`. Voor tests die `kind:"invite"` gebruiken
+// moet de env-var gezet zijn anders firet de APP_URL_MISSING-throw vóór de
+// gate-check die deze suite probeert te pinnen.
+beforeEach(() => {
+  process.env.CLUBALMANAC_APP_URL = "https://app.example.com";
+});
+
 afterEach(() => {
   delete process.env.MAILJET_VERIFIED_SENDERS;
   delete process.env.MAILJET_API_KEY;
   delete process.env.MAILJET_API_SECRET;
+  delete process.env.CLUBALMANAC_APP_URL;
   vi.unstubAllGlobals();
 });
 

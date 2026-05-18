@@ -27,12 +27,16 @@ beforeEach(() => {
   process.env.MAILJET_VERIFIED_SENDERS = INVITES_SENDER;
   process.env.MAILJET_API_KEY = "k";
   process.env.MAILJET_API_SECRET = "s";
+  // Audit-follow-up 2026-05-17: buildInviteUrl is nu fail-loud bij missing
+  // CLUBALMANAC_APP_URL — kind="invite"-pad in de action gebruikt 'm.
+  process.env.CLUBALMANAC_APP_URL = "https://app.example.com";
 });
 
 afterEach(() => {
   delete process.env.MAILJET_VERIFIED_SENDERS;
   delete process.env.MAILJET_API_KEY;
   delete process.env.MAILJET_API_SECRET;
+  delete process.env.CLUBALMANAC_APP_URL;
   vi.unstubAllGlobals();
 });
 
