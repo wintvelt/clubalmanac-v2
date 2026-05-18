@@ -109,24 +109,15 @@ export async function sendMailjetMessage(msg: MailjetMessage): Promise<void> {
     body: JSON.stringify(payload),
   });
 
-  // Diagnostic logging (2026-05-18 gate-setup): Mailjet kan 200 OK retourneren
-  // met per-message Status="error" in body — silent failure die we anders
-  // niet zien. Log alleen status + body-snippet, géén gating op de inhoud
-  // (spec-discipline: verified-sender-env-var is de enige gate). Later
-  // gating-via-env-var `MAILJET_DEBUG` als logspam te veel wordt.
-  let bodyText = "";
-  try {
-    bodyText = await response.text();
-  } catch {
-    // best-effort body-read for log context
-  }
-  console.log(
-    `[mailjet] send status=${response.status} body=${bodyText.slice(0, 800)}`,
-  );
-
   if (!response.ok) {
+    let detail = "";
+    try {
+      detail = await response.text();
+    } catch {
+      // best-effort body-read for log context
+    }
     throw new Error(
-      `MAILJET_SEND_FAILED: status=${response.status} body=${bodyText.slice(0, 500)}`,
+      `MAILJET_SEND_FAILED: status=${response.status} body=${detail.slice(0, 500)}`,
     );
   }
 }
