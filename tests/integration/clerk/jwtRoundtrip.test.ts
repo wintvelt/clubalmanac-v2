@@ -45,9 +45,11 @@ function requireEnv(name: string): string {
 }
 
 /**
- * Convex httpActions leven op `<deployment>.convex.site`, queries/mutations/
- * actions op `<deployment>.convex.cloud`. `CONVEX_URL` wijst naar `.cloud` —
- * voor whoami swappen we het host-suffix.
+ * Convex httpActions leven op `<deployment>.<region>.convex.site`,
+ * queries/mutations/actions op `<deployment>.<region>.convex.cloud`.
+ * `CONVEX_URL` wijst naar `.cloud` — voor whoami swappen we alleen het
+ * `.cloud` → `.site` suffix; region blijft staan (region-suffix is
+ * verplicht voor EU-deployments, zie correctie 2026-05-18).
  */
 function getConvexSiteBase(): string {
   const cloudUrl = requireEnv("CONVEX_URL");
