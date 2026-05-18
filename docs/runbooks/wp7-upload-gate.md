@@ -57,7 +57,7 @@ Aanvullende verificatie via Convex Logs (Convex dashboard → Logs):
 - Eén `/upload` http-action hit, status 200
 - Eén `internal.uploads.reserve` mutation
 - Eén `internal.photos.createFromUploadInternal` mutation (atomic: photo insert + reservation patch + scheduler-queue)
-- Eén `internal.photos.extractMetadata` action, success
+- Eén `internal.photoMetadata.extractMetadata` action, success (let op: `photoMetadata` namespace, niet `photos` — verhuisd naar `"use node";` file in gate-fix)
 - Eventueel: Photon reverseGeocode fetch in log (debug-niveau)
 
 ## Bij fouten
