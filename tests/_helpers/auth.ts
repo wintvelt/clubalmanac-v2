@@ -1,16 +1,24 @@
 import type { convexTest } from "convex-test";
-import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
 
-// Shared test helpers voor auth + invite-gate (audit-7 §5).
-// Vanaf B's invite-gate fix moet `users.register` voor non-webmasters
-// een pending, niet-verlopen invite vinden. Tests die "normale" users
-// registreren gebruiken `registerUserWithInvite`; tests die expliciet
-// webmaster-bootstrap (zonder invite) testen blijven `registerUser` of
-// een rauwe `t.mutation(api.users.register, ...)` aanroepen.
+// Shared test helpers voor auth + onboarding-flow (WP6).
+//
+// Onboarding-discipline is gepin'd in `tests/users/registerFromSession.test.ts`
+// + `tests/clerk/webhookAuth.test.ts` + `tests/clerk/webhookPayloadShape.test.ts`.
+// Daar wordt `internal.users.registerFromSession` direct aangeroepen om het
+// onboarding-gedrag te valideren (auto-accept pending invites + membership-
+// insert binnen één transactie).
+//
+// Voor alle ANDERE tests (die alleen een users-row als seed-stap willen,
+// zonder onboarding-bijwerkingen op pre-existente pending invites) seeden
+// deze helpers de users-row direct via `t.run` + `ctx.db.insert`. Dat
+// vermijdt dat een register-call stille invite-accepts triggert op invites
+// die de test zelf orchestreert (bv. invite-accept-flows in
+// `tests/invites/*.test.ts`).
 
 export const ISSUER = "https://picked-quail-97.clerk.accounts.dev";
 const DAY_MS = 24 * 60 * 60 * 1000;
+const DEFAULT_PHOTO_LIMIT = 1000;
 
 export function withUser(
   t: ReturnType<typeof convexTest>,
@@ -38,7 +46,7 @@ export async function seedPendingInvite(
       subject: `__invite_seeder_${crypto.randomUUID()}`,
       email: `seeder_${crypto.randomUUID()}@seed.test`,
       photoCount: 0,
-      photoLimit: 1000,
+      photoLimit: DEFAULT_PHOTO_LIMIT,
       createdAt: Date.now(),
     });
     const inviteId = await ctx.db.insert("invites", {
@@ -53,35 +61,37 @@ export async function seedPendingInvite(
   });
 }
 
-// Rauwe register — gebruikt door tests die webmaster-bypass paden of
-// fail-modes van register zelf testen. Roept géén invite-seed aan.
+// Pure users-row seed. Bypassed registerFromSession op-zet zodat
+// pre-existente pending invites voor `email` niet stille worden geaccepteerd.
+// Tests die expliciet de onboarding-flow valideren roepen
+// `internal.users.registerFromSession` rechtstreeks aan.
 export async function registerUser(
   t: ReturnType<typeof convexTest>,
   subject: string,
   email: string,
   name?: string,
 ): Promise<Id<"users">> {
-  return await withUser(t, subject, email).mutation(api.users.register, {
-    email,
-    ...(name !== undefined ? { name } : {}),
-  });
+  return await t.run(async (ctx) =>
+    ctx.db.insert("users", {
+      subject,
+      email: email.toLowerCase().trim(),
+      ...(name !== undefined ? { name } : {}),
+      photoCount: 0,
+      photoLimit: DEFAULT_PHOTO_LIMIT,
+      createdAt: Date.now(),
+    }),
+  );
 }
 
-// Standaard pad voor "normale" users in tests: seed pending invite,
-// register, dan cleanup van seed-artefacten zodat invite-/user-queries
-// in test-assertions niet vervuild raken. Vervangt de oude lokale
-// `registerUser`-helpers die in elke test-file leefden.
+// Backwards-compatibele alias: de "with-invite" suffix verwijst naar het
+// pre-WP6 register-gate-pretext-pattern (seed invite zodat register-gate
+// passeert). Sinds WP6 is er geen gate; signature blijft hetzelfde zodat
+// call-sites onveranderd kunnen blijven.
 export async function registerUserWithInvite(
   t: ReturnType<typeof convexTest>,
   subject: string,
   email: string,
   name?: string,
 ): Promise<Id<"users">> {
-  const { inviteId, seederId } = await seedPendingInvite(t, email);
-  const userId = await registerUser(t, subject, email, name);
-  await t.run(async (ctx) => {
-    await ctx.db.delete(inviteId);
-    await ctx.db.delete(seederId);
-  });
-  return userId;
+  return await registerUser(t, subject, email, name);
 }

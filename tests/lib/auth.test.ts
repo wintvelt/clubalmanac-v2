@@ -1,6 +1,6 @@
 import { convexTest } from "convex-test";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { api } from "../../convex/_generated/api";
+import { api, internal } from "../../convex/_generated/api";
 import schema from "../../convex/schema";
 
 // Audit-7 §2 + §3 — requireWebmaster edge-case dekking.
@@ -32,37 +32,15 @@ async function registerUser(
   subject: string,
   email: string,
 ) {
-  // Audit-7 §5: seed pending invite zodat register-gate passeert ook
-  // wanneer WEBMASTER_EMAILS unset is (test #1, #2). Voor webmaster-bypass
-  // paden (WEBMASTER_EMAILS = email) is een extra invite harmloos.
-  const { inviteId, seederId } = await t.run(async (ctx) => {
-    const seederId = await ctx.db.insert("users", {
-      subject: `__invite_seeder_${crypto.randomUUID()}`,
-      email: `seeder_${crypto.randomUUID()}@seed.test`,
+  return await t.run(async (ctx) =>
+    ctx.db.insert("users", {
+      subject,
+      email: email.toLowerCase().trim(),
       photoCount: 0,
       photoLimit: 1000,
       createdAt: Date.now(),
-    });
-    const inviteId = await ctx.db.insert("invites", {
-      email: email.toLowerCase().trim(),
-      invitedBy: seederId,
-      token: crypto.randomUUID(),
-      status: "pending",
-      expiresAt: Date.now() + 14 * 24 * 60 * 60 * 1000,
-      createdAt: Date.now(),
-    });
-    return { inviteId, seederId };
-  });
-  const userId = await withUser(t, subject, email).mutation(api.users.register, {
-    email,
-  });
-  // Cleanup seed-artifacts zodat test-DB schoon blijft (geen extra
-  // pending invites of seeder-users die latere queries vervuilen).
-  await t.run(async (ctx) => {
-    await ctx.db.delete(inviteId);
-    await ctx.db.delete(seederId);
-  });
-  return userId;
+    }),
+  );
 }
 
 describe("requireWebmaster — env-var presence", () => {

@@ -10,7 +10,6 @@ import {
 import type { Doc } from "./_generated/dataModel";
 import { internalRemovePhoto } from "./photos";
 import { internalRemoveMember } from "./groups";
-import { getWebmasterEmails } from "./lib/auth";
 import { normalizeEmail } from "./lib/email";
 
 // Default upload-limiet voor nieuwe users. Mocht een admin een hogere limiet
@@ -63,41 +62,37 @@ export const getById = query({
   },
 });
 
-export const register = mutation({
+// WP6: Clerk session-webhook → atomic onboarding. Vervangt de publieke
+// `api.users.register` mutation. Webhook-laag (convex/http.ts /clerk-webhook)
+// verifieert Svix-signature + resolved subject/verified-email/name uit de
+// Clerk payload en delegeert naar deze internal mutation.
+//
+// Atomic flow binnen één Convex-transactie:
+//   1. Idempotent-on-subject: bestaande users-row → no-op return id.
+//   2. Email-uniqueness: throw bij andere subject met zelfde email
+//      (rollback laat geen halve state achter). Fail-loud zodat Clerk
+//      retry't en ops 't merkt — silent claim van orphan-row zou data van
+//      vorige user overerven naar nieuwe Clerk-subject.
+//   3. Insert users-row.
+//   4. Vind alle pending, niet-verlopen invites voor email; accept ze
+//      atomair (status=accepted + respondedAt) en insert membership voor
+//      elke invite met groupId.
+//
+// Re-login pad = idempotent no-op vóór invite-collect → nieuwe invites
+// tussen signup en re-login worden NIET stille geaccepteerd (re-login !=
+// onboarding).
+export const registerFromSession = internalMutation({
   args: {
+    subject: v.string(),
     email: v.string(),
     name: v.optional(v.string()),
   },
   returns: v.id("users"),
-  handler: async (ctx, { email, name }) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) throw new Error("Niet ingelogd");
-
-    const existing = await getBySubject(ctx, identity.subject);
+  handler: async (ctx, { subject, email, name }) => {
+    const existing = await getBySubject(ctx, subject);
     if (existing) return existing._id;
 
-    // Audit-7 §5: server-side invite gate. Defense-in-depth bovenop de
-    // Clerk pre-signup webhook — directe API-calls met geforceerde Clerk
-    // identity moeten ook geweigerd worden zonder pending invite.
-    // Webmaster-bypass: cold-start bootstrap conform oude AWS preSignup.js.
-    //
-    // Audit-8 bevinding 2: één normalizedEmail voor gate-lookup, dedup-check
-    // én insert. Mixed-case input mocht anders een tweede user aanmaken
-    // (by_email is case-sensitive) en ook de invites.create "al lid"-check
-    // doorbreken.
     const normalizedEmail = normalizeEmail(email);
-    const isWebmasterEmail = getWebmasterEmails().includes(normalizedEmail);
-    if (!isWebmasterEmail) {
-      const now = Date.now();
-      const invites = await ctx.db
-        .query("invites")
-        .withIndex("by_email", (q) => q.eq("email", normalizedEmail))
-        .collect();
-      const hasPending = invites.some(
-        (i) => i.status === "pending" && i.expiresAt > now,
-      );
-      if (!hasPending) throw new Error("Geen pending invite voor dit email");
-    }
 
     const byEmail = await ctx.db
       .query("users")
@@ -105,14 +100,38 @@ export const register = mutation({
       .unique();
     if (byEmail) throw new Error("Email is al in gebruik");
 
-    return await ctx.db.insert("users", {
-      subject: identity.subject,
+    const now = Date.now();
+    const userId = await ctx.db.insert("users", {
+      subject,
       email: normalizedEmail,
       name,
       photoCount: 0,
       photoLimit: DEFAULT_PHOTO_LIMIT,
-      createdAt: Date.now(),
+      createdAt: now,
     });
+
+    const invites = await ctx.db
+      .query("invites")
+      .withIndex("by_email", (q) => q.eq("email", normalizedEmail))
+      .collect();
+    for (const invite of invites) {
+      if (invite.status !== "pending") continue;
+      if (invite.expiresAt <= now) continue;
+      await ctx.db.patch(invite._id, {
+        status: "accepted",
+        respondedAt: now,
+      });
+      if (invite.groupId) {
+        await ctx.db.insert("memberships", {
+          userId,
+          groupId: invite.groupId,
+          role: invite.role ?? "member",
+          joinedAt: now,
+        });
+      }
+    }
+
+    return userId;
   },
 });
 

@@ -1,4 +1,5 @@
 import { httpRouter } from "convex/server";
+import { verifyWebhook } from "@clerk/backend/webhooks";
 import { httpAction } from "./_generated/server";
 import { internal } from "./_generated/api";
 
@@ -77,6 +78,105 @@ http.route({
         providerEventId,
       });
     }
+    return new Response(null, { status: 200 });
+  }),
+});
+
+// WP6: Clerk session-webhook → atomic onboarding. Svix Standard-Webhooks
+// signature-verify via `@clerk/backend.verifyWebhook` met expliciete
+// `signingSecret` pass-through (Clerk's default leest
+// `CLERK_WEBHOOK_SIGNING_SECRET`-env-var; we hanteren `CLERK_WEBHOOK_SECRET`
+// consistent met `MAILJET_WEBHOOK_SECRET`-pattern).
+//
+// Flow:
+//   1. `CLERK_WEBHOOK_SECRET` ontbreekt → 503 fail-closed (geen accidenteel
+//      open endpoint in prod, Mailjet-pattern).
+//   2. `verifyWebhook` throwt op missing/invalid Svix-headers of signature-
+//      mismatch → 401, geen state-mutatie.
+//   3. Event-type filter: alleen `session.created` triggert onboarding-flow.
+//      Andere types (user.created/updated/deleted, session.ended/etc.) →
+//      200 no-op (anders disablet Clerk de webhook bij blijvende 5xx).
+//   4. Payload-shape extractie:
+//        - data.user === null → 200 no-op
+//        - lege email_addresses → 200 no-op
+//        - resolve email via primary_email_address_id (NIET index 0);
+//          alleen address met verification.status === "verified" telt
+//        - primary_email_address_id wijst naar niet-bestaand of unverified
+//          address → 200 no-op
+//   5. Delegeer naar `internal.users.registerFromSession({subject, email, name?})`.
+//      Mutation is atomair + idempotent op subject; re-login = no-op.
+type ClerkEmailAddress = {
+  id?: string;
+  email_address?: string;
+  verification?: { status?: string } | null;
+};
+type ClerkUser = {
+  id?: string;
+  first_name?: string | null;
+  last_name?: string | null;
+  primary_email_address_id?: string | null;
+  email_addresses?: ClerkEmailAddress[];
+};
+
+function resolveVerifiedEmail(user: ClerkUser): string | null {
+  if (!user.primary_email_address_id) return null;
+  const addresses = user.email_addresses ?? [];
+  if (addresses.length === 0) return null;
+  const primary = addresses.find((a) => a.id === user.primary_email_address_id);
+  if (!primary) return null;
+  if (primary.verification?.status !== "verified") return null;
+  return primary.email_address ?? null;
+}
+
+function resolveName(user: ClerkUser): string | undefined {
+  const parts = [user.first_name, user.last_name]
+    .filter((p): p is string => typeof p === "string" && p.trim().length > 0)
+    .map((p) => p.trim());
+  if (parts.length === 0) return undefined;
+  return parts.join(" ");
+}
+
+http.route({
+  path: "/clerk-webhook",
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    const secret = process.env.CLERK_WEBHOOK_SECRET;
+    if (!secret) {
+      return new Response(null, { status: 503 });
+    }
+
+    let event;
+    try {
+      event = await verifyWebhook(request, { signingSecret: secret });
+    } catch {
+      return new Response(null, { status: 401 });
+    }
+
+    if (event.type !== "session.created") {
+      return new Response(null, { status: 200 });
+    }
+
+    const data = event.data as { user_id?: string; user?: ClerkUser | null };
+    const user = data.user;
+    if (!user) {
+      return new Response(null, { status: 200 });
+    }
+    const subject = data.user_id ?? user.id;
+    if (!subject) {
+      return new Response(null, { status: 200 });
+    }
+    const email = resolveVerifiedEmail(user);
+    if (!email) {
+      return new Response(null, { status: 200 });
+    }
+    const name = resolveName(user);
+
+    await ctx.runMutation(internal.users.registerFromSession, {
+      subject,
+      email,
+      ...(name !== undefined ? { name } : {}),
+    });
+
     return new Response(null, { status: 200 });
   }),
 });
