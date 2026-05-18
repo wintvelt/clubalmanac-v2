@@ -7,17 +7,18 @@ import { internal } from "./_generated/api";
 // + bouncedAt + notify-inviter + dedup op providerEventId).
 //
 // Mailjet webhook setup: configureer in Mailjet dashboard een "Event API"
-// callback naar https://<convex-deployment>.convex.site/email-event voor
-// events `bounce` en `blocked`. Voeg in de webhook-config een custom
-// header `Authorization: Bearer <MAILJET_WEBHOOK_SECRET>` toe — het secret
-// leeft als env-var op de Convex deployment.
+// callback naar https://mailjet:<MAILJET_WEBHOOK_SECRET>@<convex-deployment>.convex.site/email-event
+// voor events `bounce` en `blocked`. Mailjet ondersteunt geen custom
+// headers per webhook; userinfo in URL travels niet — HTTP-client strip't
+// het en stuurt `Authorization: Basic <base64("mailjet:"+secret)>`. Zie
+// docs/work-packages/WP5-email.md §Webhook-auth correctie (2026-05-18).
 //
 // WP5 auth + payload-shape:
 //   - MAILJET_WEBHOOK_SECRET ontbreekt op deployment → 503 fail-closed
 //     (geen accidenteel open endpoint in prod). Mailjet retry't op 5xx,
 //     wat hier ops-zichtbaar het probleem signaleert.
 //   - Missing/mismatch Authorization header → 401, geen state-mutatie.
-//   - Geldige Bearer → 200; payload-events worden gefilterd:
+//   - Geldige Basic → 200; payload-events worden gefilterd:
 //       event ∈ {bounce, blocked} → handleBounce
 //       andere event-types        → skip met 200 (anders disablet Mailjet
 //                                   de webhook bij blijvende non-2xx)
@@ -48,7 +49,7 @@ http.route({
       return new Response(null, { status: 503 });
     }
     const auth = request.headers.get("Authorization") ?? "";
-    if (auth !== `Bearer ${secret}`) {
+    if (auth !== `Basic ${btoa(`mailjet:${secret}`)}`) {
       return new Response(null, { status: 401 });
     }
 
