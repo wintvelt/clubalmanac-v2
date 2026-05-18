@@ -179,3 +179,106 @@ describe("/email-event — Authorization header validation", () => {
     }
   });
 });
+
+// ---------------------------------------------------------------------------
+// S-1 (audit-follow-up 2026-05-17): strict-equality varianten op
+// `convex/http.ts:51` (`auth !== "Bearer " + secret`). Regression-guards
+// die alarm slaan als iemand later een loosened compare (startsWith,
+// trim, lowercase) introduceert. Allen verwacht GROEN tegen huidige code.
+// ---------------------------------------------------------------------------
+
+describe("/email-event — strict-equality regression-guards (S-1)", () => {
+  it("lowercase prefix 'bearer <secret>' → 401, geen handleBounce-call", async () => {
+    process.env.MAILJET_WEBHOOK_SECRET = SECRET;
+    const t = convexTest(schema);
+    await seedPendingInviteForBounce(t, "bouncer@x.com");
+
+    const res = await t.fetch("/email-event", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `bearer ${SECRET}`,
+      },
+      body: bouncePayload({ email: "bouncer@x.com" }),
+    });
+
+    expect(res.status).toBe(401);
+    const events = await t.run((ctx) =>
+      ctx.db.query("inviteBounceEvents").collect(),
+    );
+    expect(events).toHaveLength(0);
+  });
+
+  it("dubbele spatie 'Bearer  <secret>' → 401, geen handleBounce-call", async () => {
+    process.env.MAILJET_WEBHOOK_SECRET = SECRET;
+    const t = convexTest(schema);
+    await seedPendingInviteForBounce(t, "bouncer@x.com");
+
+    const res = await t.fetch("/email-event", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer  ${SECRET}`,
+      },
+      body: bouncePayload({ email: "bouncer@x.com" }),
+    });
+
+    expect(res.status).toBe(401);
+    const events = await t.run((ctx) =>
+      ctx.db.query("inviteBounceEvents").collect(),
+    );
+    expect(events).toHaveLength(0);
+  });
+
+  it("geen spatie 'Bearer<secret>' → 401, geen handleBounce-call", async () => {
+    process.env.MAILJET_WEBHOOK_SECRET = SECRET;
+    const t = convexTest(schema);
+    await seedPendingInviteForBounce(t, "bouncer@x.com");
+
+    const res = await t.fetch("/email-event", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer${SECRET}`,
+      },
+      body: bouncePayload({ email: "bouncer@x.com" }),
+    });
+
+    expect(res.status).toBe(401);
+    const events = await t.run((ctx) =>
+      ctx.db.query("inviteBounceEvents").collect(),
+    );
+    expect(events).toHaveLength(0);
+  });
+
+  // [SPEC-DEVIATIE 2026-05-18] Audit-spec S-1 case #4 was "leading whitespace
+  // ' Bearer <secret>' → 401". Probleem: de HTTP-Headers-laag in edge-runtime
+  // strip't leading OWS uit header-values per RFC 7230 §3.2.4 vóórdat de
+  // httpAction-handler de waarde ziet. De server ziet dan `Bearer <SECRET>`
+  // (schoon) en strict-eq matcht — 200. Dat is normalisatie-gedrag boven
+  // `convex/http.ts:51`, niet een gat in B's impl. Pin't dus niet meaningful.
+  //
+  // Vervangen door trailing-junk variant: dezelfde regression-guard-intent
+  // (alarm bij refactor naar `auth.startsWith("Bearer " + secret)`) maar met
+  // een input die wél meaningful door de strict-eq-check rolt.
+  it("trailing junk na secret 'Bearer <secret>x' → 401 (pin't strict-eq vs startsWith)", async () => {
+    process.env.MAILJET_WEBHOOK_SECRET = SECRET;
+    const t = convexTest(schema);
+    await seedPendingInviteForBounce(t, "bouncer@x.com");
+
+    const res = await t.fetch("/email-event", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${SECRET}x`,
+      },
+      body: bouncePayload({ email: "bouncer@x.com" }),
+    });
+
+    expect(res.status).toBe(401);
+    const events = await t.run((ctx) =>
+      ctx.db.query("inviteBounceEvents").collect(),
+    );
+    expect(events).toHaveLength(0);
+  });
+});

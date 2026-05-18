@@ -289,4 +289,58 @@ describe("/email-event — payload-shape variaties", () => {
     expect(events).toHaveLength(1);
     expect(events[0]?.providerEventId).toBe("ev-id-fallback");
   });
+
+  // -------------------------------------------------------------------------
+  // S-2 (audit-follow-up 2026-05-17): end-to-end replay via Bearer-laag.
+  //
+  // `internal.invites.handleBounce` dedup-pad zit al gepin'd in
+  // tests/invites/bouncedHandler.test.ts. Dit pin't dat de webhook-laag
+  // (auth + parse + delegation) de dedup-keten niet ondergraaft: tweede
+  // identieke POST = no-op (geen extra dedup-record, geen extra
+  // notify-mail-schedule).
+  // -------------------------------------------------------------------------
+
+  it("end-to-end replay: tweede identieke POST is no-op (geen extra dedup-rij, geen extra schedule)", async () => {
+    const t = convexTest(schema);
+    await seedPendingInviteForBounce(t, "replay@x.com");
+
+    const init: RequestInit = {
+      method: "POST",
+      headers: authHeaders(),
+      body: JSON.stringify([
+        { event: "bounce", email: "replay@x.com", MessageID: "evt-replay" },
+      ]),
+    };
+
+    // Eerste call: nieuwe dedup-rij + 1 nieuwe notify-mail-schedule.
+    const scheduledBefore = await t.run(
+      async (ctx) =>
+        (await ctx.db.system.query("_scheduled_functions").collect()).length,
+    );
+    const res1 = await t.fetch("/email-event", init);
+    expect(res1.status).toBe(200);
+    const eventsAfter1 = await t.run((ctx) =>
+      ctx.db.query("inviteBounceEvents").collect(),
+    );
+    expect(eventsAfter1).toHaveLength(1);
+    const scheduledAfter1 = await t.run(
+      async (ctx) =>
+        (await ctx.db.system.query("_scheduled_functions").collect()).length,
+    );
+    expect(scheduledAfter1).toBeGreaterThan(scheduledBefore);
+
+    // Tweede call (replay van zelfde providerEventId): handleBounce-dedup
+    // moet 'm afvangen vóór state-mutatie of nieuwe schedule.
+    const res2 = await t.fetch("/email-event", init);
+    expect(res2.status).toBe(200);
+    const eventsAfter2 = await t.run((ctx) =>
+      ctx.db.query("inviteBounceEvents").collect(),
+    );
+    expect(eventsAfter2).toHaveLength(1);
+    const scheduledAfter2 = await t.run(
+      async (ctx) =>
+        (await ctx.db.system.query("_scheduled_functions").collect()).length,
+    );
+    expect(scheduledAfter2).toBe(scheduledAfter1);
+  });
 });

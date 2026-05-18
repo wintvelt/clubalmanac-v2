@@ -249,3 +249,87 @@ describe("mailjet client — send-call shape (Mailjet Send v3.1 contract)", () =
     ).rejects.toThrow();
   });
 });
+
+// ---------------------------------------------------------------------------
+// N-1 (audit-follow-up 2026-05-17): Mailjet API-creds fail-fast.
+//
+// Huidige `convex/lib/mailjet.ts:60-64` produceert bij ontbrekende creds een
+// header `Basic <btoa(":")>` en vertrouwt op een Mailjet 401-roundtrip. Dat
+// betekent: een netwerk-call per send + Mailjet logs vol "401 unauthorized"
+// + onnodige latency vóór de error duidelijk wordt. Spiegelt niet de
+// bestaande verified-sender-gate-discipline (fail-closed vóór externe call).
+//
+// RED-spec: `sendMailjetMessage()` throwt met prefix `MAILJET_CREDS_MISSING:`
+// als `MAILJET_API_KEY` of `MAILJET_API_SECRET` leeg/unset — vóór de fetch.
+//
+// We testen `sendMailjetMessage` direct (geen action-laag) zodat de assert
+// "fetch niet aangeroepen" niet afhankelijk is van wrapping-actions.
+// ---------------------------------------------------------------------------
+
+describe("mailjet client — creds fail-fast (N-1)", () => {
+  beforeEach(() => {
+    process.env.MAILJET_VERIFIED_SENDERS = INVITES_SENDER;
+  });
+
+  const validMsg = {
+    from: { email: INVITES_SENDER },
+    to: [{ email: "bob@x.com" }],
+    subject: "s",
+    htmlPart: "<p>h</p>",
+    textPart: "t",
+  };
+
+  it("MAILJET_API_KEY unset (secret wel gezet) → throwt MAILJET_CREDS_MISSING:, geen fetch", async () => {
+    delete process.env.MAILJET_API_KEY;
+    process.env.MAILJET_API_SECRET = "s";
+    const fetchSpy = vi.fn();
+    vi.stubGlobal("fetch", fetchSpy);
+
+    const { sendMailjetMessage } = await import("../../convex/lib/mailjet");
+    await expect(sendMailjetMessage(validMsg)).rejects.toThrow(
+      /^MAILJET_CREDS_MISSING:/,
+    );
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("MAILJET_API_SECRET unset (key wel gezet) → throwt MAILJET_CREDS_MISSING:, geen fetch", async () => {
+    process.env.MAILJET_API_KEY = "k";
+    delete process.env.MAILJET_API_SECRET;
+    const fetchSpy = vi.fn();
+    vi.stubGlobal("fetch", fetchSpy);
+
+    const { sendMailjetMessage } = await import("../../convex/lib/mailjet");
+    await expect(sendMailjetMessage(validMsg)).rejects.toThrow(
+      /^MAILJET_CREDS_MISSING:/,
+    );
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("MAILJET_API_KEY = '' (leeg) → throwt MAILJET_CREDS_MISSING:, geen fetch", async () => {
+    // Lege string is geen geldige API-key — silent leakage past niet bij
+    // de fail-closed-discipline van de andere gates.
+    process.env.MAILJET_API_KEY = "";
+    process.env.MAILJET_API_SECRET = "s";
+    const fetchSpy = vi.fn();
+    vi.stubGlobal("fetch", fetchSpy);
+
+    const { sendMailjetMessage } = await import("../../convex/lib/mailjet");
+    await expect(sendMailjetMessage(validMsg)).rejects.toThrow(
+      /^MAILJET_CREDS_MISSING:/,
+    );
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("MAILJET_API_SECRET = '' (leeg) → throwt MAILJET_CREDS_MISSING:, geen fetch", async () => {
+    process.env.MAILJET_API_KEY = "k";
+    process.env.MAILJET_API_SECRET = "";
+    const fetchSpy = vi.fn();
+    vi.stubGlobal("fetch", fetchSpy);
+
+    const { sendMailjetMessage } = await import("../../convex/lib/mailjet");
+    await expect(sendMailjetMessage(validMsg)).rejects.toThrow(
+      /^MAILJET_CREDS_MISSING:/,
+    );
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+});
