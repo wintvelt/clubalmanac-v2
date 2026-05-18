@@ -2,7 +2,7 @@
 
 Convex backend voor Clubalmanac. Vervangt de AWS-stack (DynamoDB + Lambda + S3 + Cognito) van de v1 repos.
 
-Zie [`docs/migratie-plan-convex.md`](docs/migratie-plan-convex.md) voor de plan en fasering.
+Zie [`docs/migratie-status.md`](docs/migratie-status.md) voor de status per fase (checklists + WP-cross-refs) en [`docs/migratie-plan-convex.md`](docs/migratie-plan-convex.md) voor de architectuur-rationale.
 
 ## Stack
 - **Backend:** Convex (EU/Dublin, Starter plan)

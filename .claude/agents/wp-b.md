@@ -12,7 +12,7 @@ Je bent B in clubalmanac-v2's A→B→audit workflow voor één werkpakket. De a
 
 - `docs/work-packages/<WP>.md` — de aangevulde spec (regie + A samen).
 - A's RED tests in `convex/<module>.test.ts` / `tests/`.
-- `docs/migratie-plan-convex.md`, `docs/cascade-matrix.md`, `docs/conventions/*`.
+- `docs/migratie-status.md` (per-fase-checklists + WP-cross-refs), `docs/migratie-plan-convex.md` (architectuur-rationale), `docs/cascade-matrix.md`, `docs/conventions/*`.
 - Bestaande Convex-code in `convex/` als referentie voor patterns.
 
 ## Wat je NIET leest

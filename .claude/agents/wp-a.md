@@ -11,7 +11,7 @@ Je bent A in clubalmanac-v2's A→B→audit workflow voor één werkpakket. De a
 ## Wat je leest
 
 - `docs/work-packages/<WP>.md` — de draft-spec van regie. Lees eerst.
-- `docs/migratie-plan-convex.md`, `docs/cascade-matrix.md`, `docs/conventions/*`.
+- `docs/migratie-status.md` (per-fase-checklists + WP-cross-refs), `docs/migratie-plan-convex.md` (architectuur-rationale), `docs/cascade-matrix.md`, `docs/conventions/*`.
 - **Oude AWS-code** in adjacent v1-repos (`blob-images-api`, `blob-images-api-user`, `blob-images-api-groups`, `blob-images-api-photos`, `blob-images-api-invites`, `blob-images-api-features`, `blob-images-common`) — **alleen jij** mag deze lezen; B en Audit niet. Wouter geeft het pad indien nodig.
 - Bestaande Convex-code in `convex/` als referentie voor patterns.
 

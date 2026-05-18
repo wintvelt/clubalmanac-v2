@@ -18,6 +18,8 @@ WP5-audit en WP6-audit beide flagden hetzelfde gat: spec-genoemde doc-deliverabl
 
 Standing rule: **B's implementatie-commit moet expliciet de spec-genoemde doc-deliverables co-committen, of in commit-message verklaren waarom niet (bv. "doc-update volgt in regie-closeout"-marker)**. Spec-aanvulling §"Doc-deliverables" of §"Cross-refs" is bron-van-waarheid voor wat moet meekomen.
 
+Plus standaard altijd: **regie werkt [`docs/migratie-status.md`](../migratie-status.md) bij** in de closeout-commit van elke WP (fase-checkboxes flippen, WP-cross-refs toevoegen). Dat is geen B-verantwoordelijkheid maar regie-discipline — anders raakt de status-bron-van-waarheid achter op de werkelijkheid (zoals migratie-plan-convex.md §Fasen voor 2026-05-18 deed).
+
 Audit toetst dit als should-fix. Een mini-checkbox in B's commit-message voorkomt 't preventief:
 
 ```

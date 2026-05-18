@@ -10,7 +10,7 @@ Welk type sessie ben je?
 
 Initiële prompt bevat expliciet *"regie"* (of geen aanduiding bij een Wouter-getypte instructie in zijn hoofd-sessie) = jij bent regie. Trigger `phase-kickoff` skill bij prompts als "volgende fase / WP / phase-kickoff". Schrijft draft-specs naar `docs/work-packages/`, reviewt A/B/audit-output, beheert het work-package-discipline.
 
-Lezen: `docs/migratie-plan-convex.md`, `docs/cascade-matrix.md`, `docs/conventions/` (vooral `ab-audit-workflow.md`, `work-package-specs.md`, `prompt-discipline.md`, `commit-discipline.md`), `audit-track-record.md`, recent commits.
+Lezen: `docs/migratie-status.md` (status + checklists per fase), `docs/migratie-plan-convex.md` (architectuur-rationale), `docs/cascade-matrix.md`, `docs/work-packages/README.md` (WP-overzicht), `docs/conventions/` (vooral `ab-audit-workflow.md`, `work-package-specs.md`, `prompt-discipline.md`, `commit-discipline.md`), `audit-track-record.md`, recent commits.
 
 **Geen oude AWS-code lezen.** Alleen A heeft dat mandaat (zie work-package-specs.md toegangs-tabel).
 
@@ -33,7 +33,8 @@ Toegangs-grenzen per rol staan in [`docs/conventions/work-package-specs.md`](./d
 
 - `convex/` — backend mutations/queries/actions/schema
 - `tests/` — unit + integration tests (laatste niet in CI, zie `docs/conventions/integration-tests.md`)
-- `docs/migratie-plan-convex.md` — fase-tracker
+- `docs/migratie-status.md` — fase-tracker / per-fase-checklists, bijgewerkt per WP-closeout
+- `docs/migratie-plan-convex.md` — architectuur-rationale (waarom-keuzes, schema-design, RBAC, cutover-mechanieken)
 - `docs/cascade-matrix.md` — cross-flow afhankelijkheden
 - `docs/work-packages/` — per-WP specs
 - `docs/conventions/` — alle disciplines
@@ -47,4 +48,4 @@ Lokale commits per rol; push door Wouter vanuit eigen terminal. `Bash(git push:*
 ## Belangrijke known issues
 
 - **Mailjet silent failure bij niet-gevalideerde sender** + andere known issues: zie [`docs/conventions/external-services.md`](./docs/conventions/external-services.md) Mailjet-sectie.
-- **Cutover-status**: nog niet live op prod; zie `migratie-plan-convex.md` voor fase-tracker.
+- **Cutover-status**: nog niet live op prod; zie `migratie-status.md` voor fase-tracker.
