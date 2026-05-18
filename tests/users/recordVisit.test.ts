@@ -1,7 +1,8 @@
 import { convexTest } from "convex-test";
 import { describe, expect, it } from "vitest";
-import { api, internal } from "../../convex/_generated/api";
+import { api } from "../../convex/_generated/api";
 import schema from "../../convex/schema";
+import { registerUser } from "../_helpers/auth";
 
 // Visit tracking: client roept users.recordVisit() bij AppState=active.
 // Server doet GEEN throttling — dat is client-side (max 1x/min). Server
@@ -22,10 +23,7 @@ describe("users.recordVisit", () => {
   it("patcht lastVisitAt naar Date.now() voor authenticated user", async () => {
     const t = convexTest(schema);
     const as = withUser(t, "user_alice");
-    const id = await t.mutation(internal.users.registerFromSession, {
-      subject: "user_alice",
-      email: "alice@x.com",
-    });
+    const id = await registerUser(t, "user_alice", "alice@x.com");
 
     const before = Date.now();
     await as.mutation(api.users.recordVisit, {});
@@ -46,10 +44,7 @@ describe("users.recordVisit", () => {
     // accepteren en lastVisitAt overschrijven, ook als ze snel na elkaar komen.
     const t = convexTest(schema);
     const as = withUser(t, "user_alice");
-    const id = await t.mutation(internal.users.registerFromSession, {
-      subject: "user_alice",
-      email: "alice@x.com",
-    });
+    const id = await registerUser(t, "user_alice", "alice@x.com");
 
     await as.mutation(api.users.recordVisit, {});
     const first = await t.run((ctx) => ctx.db.get(id));

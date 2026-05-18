@@ -48,6 +48,21 @@ Bij escalerende blockers op één van deze drie: heroverweeg Scaleway TEM. Pre-o
 
 Webmaster-rol via env-var `WEBMASTER_EMAILS` met case-insensitive match (audit-7 fix).
 
+### Vereiste env-vars per deployment (WP6)
+
+| Env-var | Waarde dev | Waarde prod | Wat gebeurt bij ontbreken |
+|---|---|---|---|
+| `WEBMASTER_EMAILS` | comma-sep, bv. `clubalmanac-integration-webmaster@example.com` | comma-sep, bv. `wintvelt@me.com` | webmaster-bypass werkt niet; bootstrap onmogelijk |
+| `CLERK_WEBHOOK_SECRET` | `whsec_<base64>` uit Clerk dashboard (Webhooks → Add endpoint → Signing secret) | aparte prod-`whsec_<base64>` | `/clerk-webhook` retourneert 503 voor élk POST (fail-closed, geen accidenteel-open endpoint) |
+
+Webhook-config Clerk dashboard:
+- **URL**: `https://<deployment>.<region>.convex.site/clerk-webhook` (region-suffix verplicht, zelfde discipline als Mailjet — zie [`work-packages/WP5-email.md`](../work-packages/WP5-email.md) §Webhook-auth correctie 2026-05-18)
+- **Events**: minimaal `session.created`. Andere events (`user.created`, `user.deleted`, etc.) worden 200-no-op door handler — geen schade, maar minder webhook-traffic = minder noise
+- **Signing**: standard Svix HMAC, geheel door Clerk geleverd. `CLERK_WEBHOOK_SECRET` is uit dashboard gekopieerd, **niet** zelf via `openssl rand -hex 32` gegenereerd zoals bij Mailjet
+- **Verification settings** (Clerk Configure → Email, Phone, Username): email-verification = **required before session**. Default-on; controleer dat 't aan blijft. Onverified-primary-email-pad in handler is defensive safety-net en mag niet getriggerd raken in normale flow
+
+Verified per WP6-spec §risico-assessment + §ops-runbook-impact + [`audit-track-record.md`](./audit-track-record.md) recurring-pattern §env-var-runbook-gap.
+
 ## Productie-blind-spots
 
 JWT validation roundtrip, Mailjet bounce webhook, Photon connection: deze zijn unit-test alleen via mocks gevalideerd. Echte service-integratie loopt via de [integration-test laag](./integration-tests.md) (`npm run test:integration`, niet in CI), per werkpakket apart. Photon (WP1) is gepind; Convex/Clerk/Mailjet (WP2-4) staan op de planning.

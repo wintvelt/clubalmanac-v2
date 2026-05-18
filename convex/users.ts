@@ -122,12 +122,24 @@ export const registerFromSession = internalMutation({
         respondedAt: now,
       });
       if (invite.groupId) {
-        await ctx.db.insert("memberships", {
-          userId,
-          groupId: invite.groupId,
-          role: invite.role ?? "member",
-          joinedAt: now,
-        });
+        // Defense-in-depth (WP6-audit N-6): existing-membership-check spiegelt
+        // de discipline van `invites.accept`. In praktijk niet te raken (user
+        // is vers gecreëerd in dezelfde tx; geen pre-existing memberships) maar
+        // bewaart de invariant als toekomstige aanpassingen `userId` hergebruiken.
+        const existing = await ctx.db
+          .query("memberships")
+          .withIndex("by_user_and_group", (q) =>
+            q.eq("userId", userId).eq("groupId", invite.groupId!),
+          )
+          .unique();
+        if (!existing) {
+          await ctx.db.insert("memberships", {
+            userId,
+            groupId: invite.groupId,
+            role: invite.role ?? "member",
+            joinedAt: now,
+          });
+        }
       }
     }
 

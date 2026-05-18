@@ -143,7 +143,7 @@ Uitzondering: queries zonder trigger (puur read-tests) leven bij de query-owner.
 
 | # | Oude handler | Trigger event | Effect | Cat | Convex aanpak | Test locatie | Status |
 |---|---|---|---|---|---|---|---|
-| S1 | `userStatsAddToMembership` | UP insert (na signup) | Auto-accept invite waarmee user uitgenodigd was | n.v.t. | Geen cascade, business logic in signup-flow. Convex: in `users.completeSignup` mutation, of als action triggered door Clerk webhook na user creation | `tests/users/signup.test.ts` (test dat invite-id in user creation leidt tot membership) | ⏳ |
+| S1 | `userStatsAddToMembership` | Clerk `session.created` webhook (was: UP-insert DynamoDB stream) | Atomic onboarding: insert users-row + accept alle pending non-expired invites voor email + insert membership(s) per invite met groupId — in één Convex-mutation-transactie. Idempotent op subject (re-login = no-op). Webmaster cold-start zonder invite acceptabel (users-row only) | 2+3 | `/clerk-webhook` httpAction in `convex/http.ts` met `@clerk/backend.verifyWebhook` (Svix Standard Webhooks, expliciete signingSecret-pass), delegeert naar `internal.users.registerFromSession({subject, email, name?})`. Mutation vervangt publieke `api.users.register`. Email-resolutie via `primary_email_address_id` + verified-check, niet via index-0 | `tests/clerk/webhookAuth.test.ts` + `tests/clerk/webhookPayloadShape.test.ts` + `tests/users/registerFromSession.test.ts` | ✅ |
 
 ## Open design decisions
 

@@ -12,6 +12,21 @@ Twee commits per A→B cyclus:
 
 Audit-fixes komen in volgende mini-A→B cyclus met eigen commits.
 
+## Doc-deliverable-checklist (post-WP5+WP6 recurring-pattern)
+
+WP5-audit en WP6-audit beide flagden hetzelfde gat: spec-genoemde doc-deliverables (cascade-matrix-rij-update, external-services env-var-tabel, runbook-entries) liepen achter op de code-commit. Audit moest ze achteraf alsnog laten landen.
+
+Standing rule: **B's implementatie-commit moet expliciet de spec-genoemde doc-deliverables co-committen, of in commit-message verklaren waarom niet (bv. "doc-update volgt in regie-closeout"-marker)**. Spec-aanvulling §"Doc-deliverables" of §"Cross-refs" is bron-van-waarheid voor wat moet meekomen.
+
+Audit toetst dit als should-fix. Een mini-checkbox in B's commit-message voorkomt 't preventief:
+
+```
+Doc-deliverables (spec §X):
+- [x] cascade-matrix-rij Y geüpdatet
+- [x] external-services.md tabel bijgewerkt
+- [ ] integration-test deferred — gemarkeerd in spec, niet aangemaakt
+```
+
 ## Push-blokkade (settings.json deny-rule)
 
 Sinds WP5(B) — waar de B-sessie pushte ondanks "Wouter pusht handmatig"-mandaat — staat `Bash(git push:*)` in `.claude/settings.json` als deny-rule. Deze geldt voor **elke** Claude Code-sessie in deze repo (zowel Wouter's hoofd-sessie als rol-sessies à la wp-a/wp-b/wp-audit). Sub-agents die via `Agent(subagent_type: ...)` worden gespawned erven dezelfde deny.

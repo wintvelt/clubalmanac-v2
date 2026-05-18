@@ -68,7 +68,7 @@ Wanneer een gebruiker zijn Clerk-signup voltooit (of opnieuw inlogt na een eerde
 
 ### Integration-tests (`npm run test:integration`, niet in CI)
 
-- `tests/integration/clerk/onboardingWebhook.test.ts` — pin tegen echte Clerk dev-instance test-event-payload (Clerk dashboard heeft "Send test event"-knop zoals Mailjet had). Verifieer end-to-end: Svix-verify werkt tegen Clerk's productie-signing, payload-parsing klopt, atomic-mutation draait succesvol.
+- `tests/integration/clerk/onboardingWebhook.test.ts` — **deferred naar pre-cutover** (zelfde patroon als WP5 Mailjet integration-test). Verifieer end-to-end: Svix-verify werkt tegen Clerk's productie-signing, payload-parsing klopt, atomic-mutation draait succesvol. Vervangen voor nu door de drie empirische mens-gates hieronder. Audit-WP6 §should-fix-4 bevestigde deze keuze: integration-file niet aanmaken in WP6-scope, wel benoemd in [`audit-track-record.md`](../conventions/audit-track-record.md) deferred-list parallel aan WP5.
 
 ### Empirische gate (mens, geen agent)
 
@@ -203,3 +203,40 @@ Bij `tests/clerk/webhookPayloadShape.test.ts`:
 - Primary-email-id punt naar onverified address → 200 no-op.
 - Lege `email_addresses[]` → 200 no-op.
 - Mixed-case email in payload → match op lowercase invite.
+
+---
+
+## Audit-follow-up (post-audit-2026-05-18)
+
+Audit vond geen code-blockers; twee doc-deliverables die in spec-acceptance stonden maar niet meegecommit waren (cascade-matrix S1, external-services Clerk-tabel), één deviatie van spec §test-migratie-strategie + één integration-test-deferral. Plus 2 nice-to-have die we meenemen + 1 cosmetisch.
+
+### Door regie opgelost (geen mini-A→B nodig)
+
+**Blockers (doc)**:
+- `docs/cascade-matrix.md` S1-rij geüpdatet conform spec-aanvulling vraag-5 AKKOORD: source-event flipt naar `Clerk session.created` webhook, effect-formulering matcht impl, status van ⏳ naar ✅
+- `docs/conventions/external-services.md` §Auth Clerk uitgebreid met env-var-tabel (`WEBMASTER_EMAILS` + `CLERK_WEBHOOK_SECRET`) + webhook-config-stappen + verification-required-aanname, parallel aan WP5 Mailjet-tabel
+
+**Should-fix #3 — Test-helper-strategie deviatie expliciet documenteren**:
+
+B koos voor directe `ctx.db.insert("users", ...)` in [`tests/_helpers/auth.ts`](../../tests/_helpers/auth.ts) `registerUser` / `registerUserWithInvite` i.p.v. de spec-prescribed `t.run(internal.users.registerFromSession, ...)`. Reden (gepind in commit-message + helper-comment): `registerFromSession`'s auto-accept-bijwerking zou pending invites die tests zelf orchestreren stille consumeren — voorbeeld: [`tests/invites/accept.test.ts`](../../tests/invites/accept.test.ts) seedt een pending invite en wil de token-accept-flow valideren; als de seed-helper die invite al stille accepteert via `registerFromSession`, valideert de test niets meer.
+
+**Bewuste keuze** post-WP6: spec-prescribed pad was te smal. Test-helper bypassed users-creatie-via-mutation om test-isolation te bewaren. Productie-codepath voor auto-accept is gepind in [`tests/users/registerFromSession.test.ts`](../../tests/users/registerFromSession.test.ts) + de twee webhook-files; cross-file-test-coverage is daar voldoende. Verdere helper-splitsing (`seedUserBypassOnboarding` vs `registerUser`-via-mutation) wordt **niet** geïntroduceerd — overkill voor 16-user app.
+
+Effect op spec-aanvulling §test-migratie-strategie: B's helper-implementatie is de canonical, de spec-prescribed `t.run(registerFromSession, ...)` wordt **niet** gevolgd voor seed-helpers. Aanvulling.
+
+**Should-fix #4 — Integration-test status**: bovenstaande in §Integration-tests bijgewerkt als "deferred naar pre-cutover", consistent met WP5-patroon.
+
+### Mini-fix (regie-direct, geen A→B)
+
+**N-6 — `registerFromSession` defense-in-depth membership-check**: 3-liner in [`convex/users.ts`](../../convex/users.ts) voor de membership-loop. Niet in praktijk te raken (user is vers, dus geen pre-existing memberships), maar spec-aanvulling pin'de de discipline expliciet. Goedkoop om alsnog mee te leveren.
+
+**N-7 — `recordVisit.test.ts` patroon-consistentie**: twee tests gebruiken `internal.users.registerFromSession` direct i.p.v. de shared helper. Cosmetisch; consistent maken in dezelfde commit.
+
+### Backlog
+
+**N-5 (webmaster-pad geen aparte code)**: future-flag voor als webmaster-pad ooit afwijkend moet zijn (bv. auto-admin-membership). Geen impact nu.
+
+### Recurring-pattern promotie
+
+Auditor flagde dit als tweede recurring hit (na WP5 `CLUBALMANAC_APP_URL`-runbook-fix-achteraf): **doc-deliverable-drift bij codecomplete-WPs**. Spec-genoemde doc-updates (cascade-matrix, external-services, runbook) lopen achter op de impl-commit. Promotie naar standing rule in [`commit-discipline.md`](../conventions/commit-discipline.md) — B's commit moet expliciet de spec-genoemde doc-deliverables co-committen of in commit-message verklaren waarom niet.
+
