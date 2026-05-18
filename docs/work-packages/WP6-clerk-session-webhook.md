@@ -132,12 +132,12 @@ Drie gates, allemaal getekend door Wouter vóór WP-afsluiting:
 
 ### Open product-vragen voor regie/Wouter
 
-1. **`whsec_`-prefix in `CLERK_WEBHOOK_SECRET`**: opslaan inclusief prefix (`whsec_xxx`) of zonder? `standardwebhooks` accepteert beide vormen. Aanbeveling: **inclusief prefix**, zoals Clerk dashboard 'm aanlevert — geen string-manipulatie tussen dashboard en env-var. Bevestiging?
-2. **Onverified-primary-email-flow**: voorstel = 200 no-op + log + géén users-row. Alternatief = users-row aanmaken op primary email, invite-match overslaan. Voorkeur?
-3. **Lege `email_addresses` array (oauth zonder email)**: 200 no-op of users-row met email = stub? Voorstel: 200 no-op (consistent met onverified-pad), gebruiker krijgt simpelweg geen users-row tot ze een verified email koppelen + opnieuw inloggen.
-4. **Email-uniqueness-clash bij re-signup met zelfde email + nieuwe Clerk subject**: voorstel = mutation-throw → webhook 500 → Clerk retried → ops merkt 't via logs. Alternatief = "silent claim" (oude row over-patchen naar nieuwe subject). Voorkeur is fail-loud — bevestiging?
-5. **Cascade-matrix-rij**: draft suggereert nieuwe rij `SE1`. Bestaande cascade-matrix heeft echter **`S1` (`userStatsAddToMembership`, status ⏳)** voor exact dit pad (auto-accept invite na signup). Voorstel: **S1 update** in plaats van SE1-toevoeging, met aangepast effect + Convex-aanpak (zie hieronder). Akkoord?
-6. **`user.deleted` event**: spec markeert "bewust niet" — bevestiging dat webhook desondanks 200 retourneert op het event (anders Clerk-disable-risico)? Geen DB-state-mutatie, alleen ack.
+1. **`whsec_`-prefix in `CLERK_WEBHOOK_SECRET`**: opslaan inclusief prefix (`whsec_xxx`) of zonder? `standardwebhooks` accepteert beide vormen. Aanbeveling: **inclusief prefix**, zoals Clerk dashboard 'm aanlevert — geen string-manipulatie tussen dashboard en env-var. Bevestiging? - AKKOORD
+2. **Onverified-primary-email-flow**: voorstel = 200 no-op + log + géén users-row. Alternatief = users-row aanmaken op primary email, invite-match overslaan. Voorkeur? - AKKOORD (defensive safety-net; Clerk-config-aanname blijft verification-required, dus dit pad triggert in praktijk nooit)
+3. **Lege `email_addresses` array (oauth zonder email)**: 200 no-op of users-row met email = stub? Voorstel: 200 no-op (consistent met onverified-pad), gebruiker krijgt simpelweg geen users-row tot ze een verified email koppelen + opnieuw inloggen. - AKKOORD
+4. **Email-uniqueness-clash bij re-signup met zelfde email + nieuwe Clerk subject**: voorstel = mutation-throw → webhook 500 → Clerk retried → ops merkt 't via logs. Alternatief = "silent claim" (oude row over-patchen naar nieuwe subject). Voorkeur is fail-loud — bevestiging? - AKKOORD (500 fail is OK)
+5. **Cascade-matrix-rij**: draft suggereert nieuwe rij `SE1`. Bestaande cascade-matrix heeft echter **`S1` (`userStatsAddToMembership`, status ⏳)** voor exact dit pad (auto-accept invite na signup). Voorstel: **S1 update** in plaats van SE1-toevoeging, met aangepast effect + Convex-aanpak (zie hieronder). Akkoord? - AKKOORD
+6. **`user.deleted` event**: spec markeert "bewust niet" — bevestiging dat webhook desondanks 200 retourneert op het event (anders Clerk-disable-risico)? Geen DB-state-mutatie, alleen ack. - AKKOORD
 
 ### Cascade-matrix-rij — voorstel-formulering (vervangt S1)
 
