@@ -59,7 +59,7 @@ import { registerUserWithInvite, withUser } from "../_helpers/auth";
 //
 // API-signaturen (ongewijzigd t.o.v. cyclus 1, alleen interne implementatie):
 //   internal.photos.reverseGeocode({lat, lon}): Promise<string | null>
-//   internal.photos.extractMetadata({photoId}): Promise<void>
+//   internal.photoMetadata.extractMetadata({photoId}): Promise<void>
 //   internal.photos.patchMetadata({photoId, ...metadataFields}): mutation
 //
 // Test-storage-aanpak — keuze gedocumenteerd:
@@ -188,7 +188,7 @@ describe("photos.extractMetadata — guard paths", () => {
     await withUser(t, "user_alice").mutation(api.photos.remove, { photoId });
 
     await expect(
-      t.action(internal.photos.extractMetadata, { photoId }),
+      t.action(internal.photoMetadata.extractMetadata, { photoId }),
     ).resolves.not.toThrow();
   });
 
@@ -202,7 +202,7 @@ describe("photos.extractMetadata — guard paths", () => {
     await t.run(async (ctx) => ctx.storage.delete(storageId));
 
     await expect(
-      t.action(internal.photos.extractMetadata, { photoId }),
+      t.action(internal.photoMetadata.extractMetadata, { photoId }),
     ).resolves.not.toThrow();
   });
 });
@@ -222,7 +222,7 @@ describe("photos.extractMetadata — no-EXIF graceful", () => {
 
     exifMock = { kind: "ok", tags: {} };
 
-    await t.action(internal.photos.extractMetadata, { photoId });
+    await t.action(internal.photoMetadata.extractMetadata, { photoId });
 
     const photo = await t.run((ctx) => ctx.db.get(photoId));
     expect(photo?.takenAt).toBeUndefined();
@@ -255,7 +255,7 @@ describe("photos.extractMetadata — EXIF parsing (mocked)", () => {
       tags: { DateTimeOriginal: 1700000000 }, // 2023-11-14
     };
 
-    await t.action(internal.photos.extractMetadata, { photoId });
+    await t.action(internal.photoMetadata.extractMetadata, { photoId });
 
     const photo = await t.run((ctx) => ctx.db.get(photoId));
     expect(photo?.takenAt).toBe(1700000000 * 1000);
@@ -274,7 +274,7 @@ describe("photos.extractMetadata — EXIF parsing (mocked)", () => {
       tags: { CreateDate: 1600000000 },
     };
 
-    await t.action(internal.photos.extractMetadata, { photoId });
+    await t.action(internal.photoMetadata.extractMetadata, { photoId });
 
     const photo = await t.run((ctx) => ctx.db.get(photoId));
     expect(photo?.takenAt).toBe(1600000000 * 1000);
@@ -296,7 +296,7 @@ describe("photos.extractMetadata — EXIF parsing (mocked)", () => {
       },
     };
 
-    await t.action(internal.photos.extractMetadata, { photoId });
+    await t.action(internal.photoMetadata.extractMetadata, { photoId });
 
     const photo = await t.run((ctx) => ctx.db.get(photoId));
     expect(photo?.takenAt).toBe(1700000000 * 1000);
@@ -312,7 +312,7 @@ describe("photos.extractMetadata — EXIF parsing (mocked)", () => {
 
     exifMock = { kind: "ok", tags: {} };
 
-    await t.action(internal.photos.extractMetadata, { photoId });
+    await t.action(internal.photoMetadata.extractMetadata, { photoId });
 
     const photo = await t.run((ctx) => ctx.db.get(photoId));
     expect(photo?.takenAt).toBeUndefined();
@@ -343,7 +343,7 @@ describe("photos.extractMetadata — EXIF parsing (mocked)", () => {
       ),
     );
 
-    await t.action(internal.photos.extractMetadata, { photoId });
+    await t.action(internal.photoMetadata.extractMetadata, { photoId });
 
     const photo = await t.run((ctx) => ctx.db.get(photoId));
     expect(photo?.latitude).toBe(52.37);
@@ -363,7 +363,7 @@ describe("photos.extractMetadata — EXIF parsing (mocked)", () => {
       );
       const photoId = await insertPhotoFixture(t, aliceId, storageId);
       exifMock = { kind: "ok", tags: { Orientation: o } };
-      await t.action(internal.photos.extractMetadata, { photoId });
+      await t.action(internal.photoMetadata.extractMetadata, { photoId });
       const photo = await t.run((ctx) => ctx.db.get(photoId));
       expect(photo?.exifOrientation).toBe(o);
     }
@@ -379,7 +379,7 @@ describe("photos.extractMetadata — EXIF parsing (mocked)", () => {
       );
       const photoId = await insertPhotoFixture(t, aliceId, storageId);
       exifMock = { kind: "ok", tags: { Orientation: o } };
-      await t.action(internal.photos.extractMetadata, { photoId });
+      await t.action(internal.photoMetadata.extractMetadata, { photoId });
       const photo = await t.run((ctx) => ctx.db.get(photoId));
       expect(photo?.exifOrientation).toBeUndefined();
     }
@@ -399,7 +399,7 @@ describe("photos.extractMetadata — EXIF parsing (mocked)", () => {
       imageSize: { width: 4032, height: 3024 },
     };
 
-    await t.action(internal.photos.extractMetadata, { photoId });
+    await t.action(internal.photoMetadata.extractMetadata, { photoId });
 
     const photo = await t.run((ctx) => ctx.db.get(photoId));
     expect(photo?.width).toBe(4032);
@@ -424,7 +424,7 @@ describe("photos.extractMetadata — granulaire foutpaden + logging", () => {
     const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 
     await expect(
-      t.action(internal.photos.extractMetadata, { photoId }),
+      t.action(internal.photoMetadata.extractMetadata, { photoId }),
     ).resolves.not.toThrow();
 
     // Log-sample assertion: enige aanroep met EXIF-context. Niet pinnen op
@@ -450,7 +450,7 @@ describe("photos.extractMetadata — granulaire foutpaden + logging", () => {
     const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 
     await expect(
-      t.action(internal.photos.extractMetadata, { photoId }),
+      t.action(internal.photoMetadata.extractMetadata, { photoId }),
     ).resolves.not.toThrow();
 
     expect(errSpy).toHaveBeenCalled();
@@ -482,7 +482,7 @@ describe("photos.extractMetadata — granulaire foutpaden + logging", () => {
     const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 
     await expect(
-      t.action(internal.photos.extractMetadata, { photoId }),
+      t.action(internal.photoMetadata.extractMetadata, { photoId }),
     ).resolves.not.toThrow();
 
     expect(errSpy).toHaveBeenCalled();
@@ -548,7 +548,7 @@ describe("photos.extractMetadata — HEIC/HEIF unsupported brands", () => {
       const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
 
       await expect(
-        t.action(internal.photos.extractMetadata, { photoId }),
+        t.action(internal.photoMetadata.extractMetadata, { photoId }),
       ).resolves.not.toThrow();
 
       // Log-hint dat skip bewust gebeurde (niet stilletjes als generieke
@@ -588,7 +588,7 @@ describe("photos.extractMetadata — Photon geocoding (graceful)", () => {
     const fetchSpy = vi.fn();
     vi.stubGlobal("fetch", fetchSpy);
 
-    await t.action(internal.photos.extractMetadata, { photoId });
+    await t.action(internal.photoMetadata.extractMetadata, { photoId });
 
     const calledPhoton = fetchSpy.mock.calls.some((c) =>
       String(c[0]).includes(PHOTON_HOST),
@@ -624,7 +624,7 @@ describe("photos.extractMetadata — Photon geocoding (graceful)", () => {
     );
     vi.stubGlobal("fetch", fetchSpy);
 
-    await t.action(internal.photos.extractMetadata, { photoId });
+    await t.action(internal.photoMetadata.extractMetadata, { photoId });
 
     // URL gaat naar photon.komoot.io (niet mapquest).
     const calledPhoton = fetchSpy.mock.calls.some((c) =>
@@ -676,7 +676,7 @@ describe("photos.extractMetadata — Photon geocoding (graceful)", () => {
       ),
     );
 
-    await t.action(internal.photos.extractMetadata, { photoId });
+    await t.action(internal.photoMetadata.extractMetadata, { photoId });
 
     const photo = await t.run((ctx) => ctx.db.get(photoId));
     expect(photo?.locationLabel).toBe("Rijksmuseum, Amsterdam, Nederland");
@@ -716,7 +716,7 @@ describe("photos.extractMetadata — Photon geocoding (graceful)", () => {
       ),
     );
 
-    await t.action(internal.photos.extractMetadata, { photoId });
+    await t.action(internal.photoMetadata.extractMetadata, { photoId });
 
     const photo = await t.run((ctx) => ctx.db.get(photoId));
     expect(photo?.locationLabel).toBe("Rijksmuseum, Amsterdam, Netherlands");
@@ -748,7 +748,7 @@ describe("photos.extractMetadata — Photon geocoding (graceful)", () => {
       ),
     );
 
-    await t.action(internal.photos.extractMetadata, { photoId });
+    await t.action(internal.photoMetadata.extractMetadata, { photoId });
 
     const photo = await t.run((ctx) => ctx.db.get(photoId));
     expect(photo?.locationLabel).toBe("Amsterdam, Nederland");
@@ -775,7 +775,7 @@ describe("photos.extractMetadata — Photon geocoding (graceful)", () => {
       ),
     );
 
-    await t.action(internal.photos.extractMetadata, { photoId });
+    await t.action(internal.photoMetadata.extractMetadata, { photoId });
 
     const photo = await t.run((ctx) => ctx.db.get(photoId));
     expect(photo?.locationLabel).toBe("Nederland");
@@ -802,7 +802,7 @@ describe("photos.extractMetadata — Photon geocoding (graceful)", () => {
       ),
     );
 
-    await t.action(internal.photos.extractMetadata, { photoId });
+    await t.action(internal.photoMetadata.extractMetadata, { photoId });
 
     const photo = await t.run((ctx) => ctx.db.get(photoId));
     expect(photo?.locationLabel).toBeUndefined();
@@ -829,7 +829,7 @@ describe("photos.extractMetadata — Photon geocoding (graceful)", () => {
     );
 
     await expect(
-      t.action(internal.photos.extractMetadata, { photoId }),
+      t.action(internal.photoMetadata.extractMetadata, { photoId }),
     ).resolves.not.toThrow();
 
     const photo = await t.run((ctx) => ctx.db.get(photoId));
@@ -857,7 +857,7 @@ describe("photos.extractMetadata — Photon geocoding (graceful)", () => {
     );
 
     await expect(
-      t.action(internal.photos.extractMetadata, { photoId }),
+      t.action(internal.photoMetadata.extractMetadata, { photoId }),
     ).resolves.not.toThrow();
 
     const photo = await t.run((ctx) => ctx.db.get(photoId));

@@ -19,6 +19,7 @@ import type * as lib_auth from "../lib/auth.js";
 import type * as lib_email from "../lib/email.js";
 import type * as lib_emailTemplates from "../lib/emailTemplates.js";
 import type * as lib_mailjet from "../lib/mailjet.js";
+import type * as photoMetadata from "../photoMetadata.js";
 import type * as photos from "../photos.js";
 import type * as ratings from "../ratings.js";
 import type * as smoke from "../smoke.js";
@@ -43,6 +44,7 @@ declare const fullApi: ApiFromModules<{
   "lib/email": typeof lib_email;
   "lib/emailTemplates": typeof lib_emailTemplates;
   "lib/mailjet": typeof lib_mailjet;
+  photoMetadata: typeof photoMetadata;
   photos: typeof photos;
   ratings: typeof ratings;
   smoke: typeof smoke;

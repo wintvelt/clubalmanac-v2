@@ -19,7 +19,7 @@ import { assertNotProd } from "../_helpers/safety";
 //     → reservation pattern
 //     → ctx.storage.store
 //     → internal.photos.createFromUploadInternal (atomic photo+reservation+schedule)
-//     → scheduler.runAfter(0, internal.photos.extractMetadata)
+//     → scheduler.runAfter(0, internal.photoMetadata.extractMetadata)
 //     → exif-parser (takenAt + GPS)
 //     → reverseGeocode via Photon (locationLabel)
 //

@@ -23,7 +23,7 @@ WP1-WP4 liepen vóór de formele spec-doc-discipline (geen WP-file). Status uit 
 | WP | Onderwerp | Spec-doc | Status |
 |---|---|---|---|
 | WP6 | Clerk session-webhook + atomic onboarding (server-to-server `session.created` → idempotent users-row + invite-accept + membership in één Convex-transactie; verwijdert frontend-onboarding-windows) | [`WP6-clerk-session-webhook.md`](./WP6-clerk-session-webhook.md) | 🆕 draft |
-| WP7 | Upload-pipeline empirische gates + integration-test (geen nieuwe impl; bewijs van pipeline op echte iPhone-foto's met EXIF/GPS) | (te schrijven) | 🆕 |
+| WP7 | Upload-pipeline empirische gates + integration-test (bewijs van pipeline op echte iPhone-foto's met EXIF/GPS) | [`runbooks/wp7-upload-gate.md`](../runbooks/wp7-upload-gate.md) + `tests/integration/uploads/uploadRoundtrip.test.ts` | ✅ dev gepasseerd 2026-05-18 |
 | WP8 | Photo rotation (`photos.rotate` mutation + sharp scheduled action) + EXIF Orientation upstream | (te schrijven) | 🆕 |
 | TBD | Crons-bundel: `expirePendingInvites` (IB2), eventueel andere scheduled functions | — | open |
 | TBD | Email Gate 1 happy-path + integration-test `tests/integration/mailjet/sendRoundtrip.test.ts` als follow-up van WP5 deferred-items | — | open |
