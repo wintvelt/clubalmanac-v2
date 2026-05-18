@@ -23,7 +23,8 @@ Tussen 2026-04 en 2026-05 hebben 14 audit-cycli op clubalmanac-v2 backend de vol
 - Reservation pattern voor uploads (cyclus 1 architectuur-rewrite)
 - EXIF/geocoding hardening + Photon switch (cyclus 2)
 - WP5 (Mailjet): verified-sender hard gate fail-closed, Bearer-auth webhook, NL-templates 1:1 oude SES, PII-guard structureel via template-signatures
-- WP5-audit follow-up: `Mailjet-creds-missing` fail-fast (N-1), webhook-auth test-completeness (S-1), end-to-end replay-test (S-2)
+- WP5-audit follow-up afgesloten 2026-05-18 (commit `9654f81`): webhook-auth strict-equality regression-guards (S-1), end-to-end replay-test (S-2), STAGE+APP_URL fail-loud (S-3), Mailjet-creds fail-fast vóór fetch (N-1). 445 tests groen, CI groen, geen blockers.
+- **WP5 deferred naar pre-cutover** (uit oorspronkelijke WP5-spec, niet in deze cyclus): integration-tests `tests/integration/mailjet/sendRoundtrip.test.ts` (niet in CI), en twee empirische mens-gates — Gate 1 send-roundtrip naar test-inbox (verified-sender silent-failure proof), Gate 2 bounce via Mailjet dashboard Event API "Test event"-knop met 4-punts verificatie. Wouter draait beide handmatig vóór cutover.
 
 ## Recurring-pattern: env-var-runbook-gap
 
