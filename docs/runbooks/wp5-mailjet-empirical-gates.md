@@ -8,8 +8,8 @@ Cross-ref: 5 env-vars + Mailjet-config in [`external-services.md` §Email Mailje
 
 ### A. Mailjet dashboard
 
-- [ ] **API keys genereren** (dev + prod aparte paren). Dashboard → Account Settings → REST API → Master API Key & Sub API Keys → "Create a new API key". Noteer Key + Secret beide; secret is na-aanmaak nooit meer leesbaar.
-- [ ] **Webhook secret genereren**: bv. `openssl rand -hex 32` lokaal. Dezelfde string straks in Convex env-var én in Mailjet webhook-header-config.
+- [x] **API keys genereren** (dev + prod aparte paren). Dashboard → Account Settings → REST API → Master API Key & Sub API Keys → "Create a new API key". Noteer Key + Secret beide; secret is na-aanmaak nooit meer leesbaar.
+- [x] **Webhook secret genereren**: bv. `openssl rand -hex 32` lokaal. Dezelfde string straks in Convex env-var én in Mailjet webhook-header-config.
 - [ ] **Event API webhook configureren**: dashboard → Account Settings → REST API → Event API. Add URL `https://glorious-pheasant-759.convex.site/email-event` (dev) of `https://<prod-deployment>.convex.site/email-event` (later prod). Event-types: minimaal `bounce` + `blocked` aanvinken. Custom header: `Authorization: Bearer <MAILJET_WEBHOOK_SECRET>`. Save.
 - [ ] **Verified senders bevestigen**: dashboard → Account Settings → Senders & Domains → Domain Authentication. `clubalmanac.com` moet groen staan (DKIM authenticated). Senders `invites@`, `info@`, `dpo@` zijn dan automatisch verified via domain-level DKIM (geen per-adres-verificatie nodig).
 
