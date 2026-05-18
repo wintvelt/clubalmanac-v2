@@ -1,16 +1,20 @@
-// WP5 RED-phase: /email-event webhook Bearer-auth.
+// WP5 RED-phase: /email-event webhook Basic-auth.
 //
-// Spec-aanvulling: webhook is niet-spoofbaar via shared-secret in
-// `Authorization: Bearer <MAILJET_WEBHOOK_SECRET>` header. Mailjet biedt
-// geen out-of-the-box HMAC-signing op Event API; shared-secret is de
-// gangbare oplossing voor deze provider.
+// Webhook-auth correctie 2026-05-18: Mailjet dashboard ondersteunt geen
+// custom HTTP-headers per webhook. Auth gebruikt nu `Authorization: Basic
+// <base64("mailjet:" + MAILJET_WEBHOOK_SECRET)>` (Mailjet's eigen
+// aanbeveling: HTTPS + basic-auth in URL). De HTTP-client strip't userinfo
+// uit de URL en stuurt 'm als Authorization-header — Convex access-logs
+// zien path zonder credential. Username hardcoded als `"mailjet"`, secret
+// blijft in env-var.
 //
 // Fail-modes:
 //   - MAILJET_WEBHOOK_SECRET ontbreekt op deployment → alle requests → 503
 //     (fail-closed; geen accidenteel open endpoint in prod).
 //   - Header missing → 401, geen handleBounce-call, geen state-mutatie.
-//   - Header mismatch → 401, idem.
-//   - Header geldig + bounce-payload → 200, handleBounce gecalled.
+//   - Header mismatch (wrong scheme, wrong username, wrong secret) → 401.
+//   - Header geldig (`Basic <base64("mailjet:" + secret)>`) → 200,
+//     handleBounce gecalled.
 //
 // convex-test fetch-pad: t.fetch(path, init) routeert via convex/http.ts;
 // custom headers worden 1:1 doorgegeven (zie tests/http/upload.test.ts voor
@@ -23,6 +27,7 @@ import schema from "../../convex/schema";
 import { registerUserWithInvite, withUser } from "../_helpers/auth";
 
 const SECRET = "test-webhook-secret-abc123";
+const BASIC_VALID = `Basic ${btoa(`mailjet:${SECRET}`)}`;
 
 afterEach(() => {
   delete process.env.MAILJET_WEBHOOK_SECRET;
@@ -142,7 +147,8 @@ describe("/email-event — Authorization header validation", () => {
     expect(res.status).toBe(401);
   });
 
-  it("Authorization 'Bearer ' + correct secret → 200, delegeert naar handleBounce", async () => {
+  it("Authorization 'Basic <base64(mailjet:correct-secret)>' → 200, delegeert naar handleBounce", async () => {
+    // Webhook-auth correctie 2026-05-18: valid header = Basic mailjet:SECRET.
     process.env.MAILJET_WEBHOOK_SECRET = SECRET;
     const t = convexTest(schema);
     await seedPendingInviteForBounce(t, "bouncer@x.com");
@@ -151,7 +157,7 @@ describe("/email-event — Authorization header validation", () => {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${SECRET}`,
+        Authorization: BASIC_VALID,
       },
       body: bouncePayload({
         email: "bouncer@x.com",
@@ -178,13 +184,75 @@ describe("/email-event — Authorization header validation", () => {
       expect(typeof i.bouncedAt).toBe("number");
     }
   });
+
+  it("oude Bearer-encoding 'Bearer <correct-secret>' → 401, geen state-mutatie", async () => {
+    // Webhook-auth correctie 2026-05-18: na de switch naar Basic-auth moet
+    // de oude Bearer-vorm — zelfs met correct secret — geweigerd worden.
+    // Pin't dat B daadwerkelijk over is op de Basic-string-check en geen
+    // beide vormen accepteert.
+    process.env.MAILJET_WEBHOOK_SECRET = SECRET;
+    const t = convexTest(schema);
+    await seedPendingInviteForBounce(t, "bouncer@x.com");
+
+    const res = await t.fetch("/email-event", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${SECRET}`,
+      },
+      body: bouncePayload({ email: "bouncer@x.com" }),
+    });
+
+    expect(res.status).toBe(401);
+    const events = await t.run((ctx) =>
+      ctx.db.query("inviteBounceEvents").collect(),
+    );
+    expect(events).toHaveLength(0);
+    const invites = await t.run((ctx) =>
+      ctx.db
+        .query("invites")
+        .filter((q) => q.eq(q.field("email"), "bouncer@x.com"))
+        .collect(),
+    );
+    for (const i of invites) {
+      expect(i.status).toBe("pending");
+      expect(i.bouncedAt).toBeUndefined();
+    }
+  });
+
+  it("verkeerde username 'Basic <base64(other:correct-secret)>' → 401, geen state-mutatie", async () => {
+    // Webhook-auth correctie 2026-05-18: username is hardcoded "mailjet".
+    // Pin't dat strict-eq de hele user:pass-string vergelijkt, niet alleen
+    // het secret-deel (zou anders weglek-pad zijn: aanvaller die alleen
+    // SECRET kent kan ook met andere username spoofen).
+    process.env.MAILJET_WEBHOOK_SECRET = SECRET;
+    const t = convexTest(schema);
+    await seedPendingInviteForBounce(t, "bouncer@x.com");
+
+    const res = await t.fetch("/email-event", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Basic ${btoa(`other:${SECRET}`)}`,
+      },
+      body: bouncePayload({ email: "bouncer@x.com" }),
+    });
+
+    expect(res.status).toBe(401);
+    const events = await t.run((ctx) =>
+      ctx.db.query("inviteBounceEvents").collect(),
+    );
+    expect(events).toHaveLength(0);
+  });
 });
 
 // ---------------------------------------------------------------------------
 // S-1 (audit-follow-up 2026-05-17): strict-equality varianten op
-// `convex/http.ts:51` (`auth !== "Bearer " + secret`). Regression-guards
-// die alarm slaan als iemand later een loosened compare (startsWith,
-// trim, lowercase) introduceert. Allen verwacht GROEN tegen huidige code.
+// `convex/http.ts:51`. Regression-guards die alarm slaan als iemand later
+// een loosened compare (startsWith, trim, lowercase) introduceert. Onder
+// de Basic-auth-impl (correctie 2026-05-18) blijven Bearer-vormen sowieso
+// 401 — deze cases pinnen dat de strict-eq discipline ook gold ondér het
+// vorige Bearer-schema en blijft gelden ondér Basic. Allen verwacht GROEN.
 // ---------------------------------------------------------------------------
 
 describe("/email-event — strict-equality regression-guards (S-1)", () => {

@@ -10,8 +10,10 @@
 //   - Mixed-case email-payload → resolveert tegen `findInvitesByEmail`
 //     (normalizeEmail in handleBounce)
 //
-// Alle tests draaien met geldige Bearer-auth (webhookAuth.test.ts dekt de
-// auth-laag apart).
+// Alle tests draaien met geldige Basic-auth (webhookAuth.test.ts dekt de
+// auth-laag apart). Webhook-auth correctie 2026-05-18: Mailjet ondersteunt
+// geen custom headers per webhook; auth is `Authorization: Basic
+// <base64("mailjet:" + MAILJET_WEBHOOK_SECRET)>`.
 
 import { convexTest } from "convex-test";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -24,7 +26,7 @@ const SECRET = "wp5-webhook-secret";
 function authHeaders(): Record<string, string> {
   return {
     "Content-Type": "application/json",
-    Authorization: `Bearer ${SECRET}`,
+    Authorization: `Basic ${btoa(`mailjet:${SECRET}`)}`,
   };
 }
 
@@ -291,7 +293,7 @@ describe("/email-event — payload-shape variaties", () => {
   });
 
   // -------------------------------------------------------------------------
-  // S-2 (audit-follow-up 2026-05-17): end-to-end replay via Bearer-laag.
+  // S-2 (audit-follow-up 2026-05-17): end-to-end replay via auth-laag.
   //
   // `internal.invites.handleBounce` dedup-pad zit al gepin'd in
   // tests/invites/bouncedHandler.test.ts. Dit pin't dat de webhook-laag
