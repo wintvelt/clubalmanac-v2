@@ -7,7 +7,10 @@ import { internal } from "./_generated/api";
 // + bouncedAt + notify-inviter + dedup op providerEventId).
 //
 // Mailjet webhook setup: configureer in Mailjet dashboard een "Event API"
-// callback naar https://mailjet:<MAILJET_WEBHOOK_SECRET>@<convex-deployment>.convex.site/email-event
+// callback naar https://mailjet:<MAILJET_WEBHOOK_SECRET>@<convex-deployment>.<region>.convex.site/email-event
+// NB: region-suffix verplicht voor EU-deployments (correctie 2026-05-18) —
+// Convex HTTP-routes domain volgt de RPC-URL pattern <deployment>.<region>.convex.site,
+// niet `<deployment>.convex.site` zoals eerder gedocumenteerd.
 // voor events `bounce` en `blocked`. Mailjet ondersteunt geen custom
 // headers per webhook; userinfo in URL travels niet — HTTP-client strip't
 // het en stuurt `Authorization: Basic <base64("mailjet:"+secret)>`. Zie

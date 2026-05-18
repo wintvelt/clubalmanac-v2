@@ -583,7 +583,7 @@ WP2's `convex/_test.ts`: env-var-gated test-only code, prod krijgt 'm nooit.
   - 4xx — env-var-gate gefaald (B kiest exact code, zie boven).
 
 A's tests (`tests/integration/clerk/jwtRoundtrip.test.ts`) doen directe
-`fetch()` naar `<deployment>.convex.site/_test/whoami` met een
+`fetch()` naar `<deployment>.<region>.convex.site/_test/whoami` met een
 `Authorization: Bearer <jwt>` header — geen function-reference nodig.
 
 **Token-mint via `@clerk/backend`.** Helper in
@@ -694,7 +694,7 @@ http.route({
 });
 ```
 
-URL `https://<deployment>.convex.site/email-event` configureren in Mailjet event-dashboard. Authenticatie via shared secret in header (Mailjet ondersteunt signed payloads).
+URL `https://<deployment>.<region>.convex.site/email-event` configureren in Mailjet event-dashboard. Authenticatie via shared secret in header (Mailjet ondersteunt signed payloads).
 
 **NL template-content migratie:**
 Alle NL teksten 1:1 overnemen uit oude SES templates. Tone-of-voice consistent houden. Templates inline in Convex actions (geen aparte template-engine nodig bij dit volume).
@@ -724,7 +724,7 @@ Sender addresses geverifieerd in Mailjet via domain-level DKIM (geen per-adres m
 
 SES Receiving rule (eu-west-1) recipient-list uitgebreid met `info@`, `invites@`, `dpo@` zodat verificatie/replies/DMARC-rapporten geaccepteerd worden.
 
-Webhook-URL voor Mailjet event-tracking gereserveerd: `https://glorious-pheasant-759.convex.site/email-event` (dev). Niet geconfigureerd in Mailjet — endpoint bestaat nog niet, activeren pas nadat Convex bounce-handler in fase 2 staat (anders 404's en Mailjet disablet de webhook).
+Webhook-URL voor Mailjet event-tracking gereserveerd: `https://glorious-pheasant-759.eu-west-1.convex.site/email-event` (dev). Correctie 2026-05-18: eerdere notitie zonder region-suffix gaf 404 — Convex HTTP-routes volgen het regional hostname-pattern. Niet geconfigureerd in Mailjet — endpoint bestaat nog niet, activeren pas nadat Convex bounce-handler in fase 2 staat (anders 404's en Mailjet disablet de webhook).
 
 API keys niet gegenereerd (komt bij start fase 2, dev/prod paar elk).
 

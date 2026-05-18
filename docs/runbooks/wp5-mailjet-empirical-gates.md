@@ -10,7 +10,7 @@ Cross-ref: 5 env-vars + Mailjet-config in [`external-services.md` §Email Mailje
 
 - [x] **API keys genereren** (dev + prod aparte paren). Dashboard → Account Settings → REST API → Master API Key & Sub API Keys → "Create a new API key". Noteer Key + Secret beide; secret is na-aanmaak nooit meer leesbaar.
 - [x] **Webhook secret genereren**: bv. `openssl rand -hex 32` lokaal. Dezelfde string straks in Convex env-var én in Mailjet webhook-header-config.
-- [x] **Event API webhook configureren**: dashboard → Account Settings → Event notifications. Add URL `https://mailjet:<MAILJET_WEBHOOK_SECRET>@glorious-pheasant-759.convex.site/email-event` (dev) of `https://mailjet:<SECRET>@<prod-deployment>.convex.site/email-event` (later prod). Event-types: minimaal `bounce` + `blocked` aanvinken. "Group events" aanzetten (Mailjet bundelt events tot 1 POST/sec — onze handler accepteert array én single, zie [`webhookPayloadShape.test.ts`](../../tests/email/webhookPayloadShape.test.ts)). Geen custom-header-stap: Mailjet dashboard ondersteunt 't niet (capability-discovery 2026-05-18, zie [`WP5-email.md` §Webhook-auth correctie](../work-packages/WP5-email.md)). De `<user>:<pass>@` in URL wordt door HTTP-client gestript en als `Authorization: Basic <base64>` header verstuurd — convex-side access-logs zien geen credential in path.
+- [x] **Event API webhook configureren**: dashboard → Account Settings → Event notifications. Add URL `https://mailjet:<MAILJET_WEBHOOK_SECRET>@glorious-pheasant-759.eu-west-1.convex.site/email-event` (dev) of `https://mailjet:<SECRET>@<prod-deployment>.convex.site/email-event` (later prod). Event-types: minimaal `bounce` + `blocked` aanvinken. "Group events" aanzetten (Mailjet bundelt events tot 1 POST/sec — onze handler accepteert array én single, zie [`webhookPayloadShape.test.ts`](../../tests/email/webhookPayloadShape.test.ts)). Geen custom-header-stap: Mailjet dashboard ondersteunt 't niet (capability-discovery 2026-05-18, zie [`WP5-email.md` §Webhook-auth correctie](../work-packages/WP5-email.md)). De `<user>:<pass>@` in URL wordt door HTTP-client gestript en als `Authorization: Basic <base64>` header verstuurd — convex-side access-logs zien geen credential in path.
 - [x] **Verified senders bevestigen**: dashboard → Account Settings → Senders & Domains → Domain Authentication. `clubalmanac.com` moet groen staan (DKIM authenticated). Senders `invites@`, `info@`, `dpo@` zijn dan automatisch verified via domain-level DKIM (geen per-adres-verificatie nodig).
 
 ### B. Convex dev-deployment env-vars ✅
@@ -77,7 +77,7 @@ Zorg dat er een pending invite is voor `bounce-test@example.invalid` (zie pre-fl
 1. Mailjet dashboard → Account Settings → REST API → Event API.
 2. Naast de geconfigureerde webhook-URL zit een "Test event"-knop. Klik 'm.
 3. Kies event-type `bounce`. Mailjet stuurt een synthetische payload met `email: bounce-test@example.invalid` (of laat je 't zelf invullen — gebruik dezelfde email als de pending invite).
-4. Mailjet POST't de payload naar `https://glorious-pheasant-759.convex.site/email-event` met de geconfigureerde Bearer-header. Response moet 200 zijn (zichtbaar in Mailjet test-event-result-modal).
+4. Mailjet POST't de payload naar `https://glorious-pheasant-759.eu-west-1.convex.site/email-event` met de geconfigureerde Bearer-header. Response moet 200 zijn (zichtbaar in Mailjet test-event-result-modal).
 
 ### Stap 3 — 4-punts verificatie via Convex dashboard
 
@@ -93,7 +93,7 @@ In Convex dashboard → Data:
 Optioneel maar aanbevolen voor extra zekerheid:
 
 ```bash
-curl -i -X POST https://glorious-pheasant-759.convex.site/email-event \
+curl -i -X POST https://glorious-pheasant-759.eu-west-1.convex.site/email-event \
   -H "Content-Type: application/json" \
   -d '{"event":"bounce","email":"bounce-test@example.invalid","MessageID":"99999"}'
 ```

@@ -82,7 +82,7 @@ Twee verplichte gates, beide getekend door Wouter vóór WP-afsluiting:
 - Tweede test: verander tijdelijk `WEBMASTER_EMAILS` naar een niet-verified from-address, herhaal: action moet **throwen of error loggen**, niet stilzwijgend slagen. Dit pin't de hard gate.
 
 **Gate 2 — Bounce-roundtrip (webhook end-to-end proof)**:
-- Mechanisme: **Mailjet dashboard → Account Settings → Event tracking (Event API) → "Test event" knop, kies event-type `bounce`**. Dit POST't een synthetische bounce-payload naar de geconfigureerde callback-URL `https://<deployment>.convex.site/email-event`.
+- Mechanisme: **Mailjet dashboard → Account Settings → Event tracking (Event API) → "Test event" knop, kies event-type `bounce`**. Dit POST't een synthetische bounce-payload naar de geconfigureerde callback-URL `https://<deployment>.<region>.convex.site/email-event` (region-suffix verplicht, correctie 2026-05-18 — earlier docs hadden de no-region variant en kregen 404).
 - Vereist vooraf in dev-deployment: een test-invite aanmaken voor email `bounce-test@example.invalid`, dan in Mailjet dashboard die email als bounce-event triggeren.
 - Verificatie via Convex dashboard:
   - (a) Test-event landt in `inviteBounceEvents` met juiste `providerEventId`
@@ -309,6 +309,6 @@ Plus comment-update bij r.14-23 (TODO over HMAC verwijderen, vervangen door verw
 
 ### Runbook-update
 
-[`docs/runbooks/wp5-mailjet-empirical-gates.md`](../runbooks/wp5-mailjet-empirical-gates.md) §A-3: Mailjet webhook-URL wordt `https://mailjet:<MAILJET_WEBHOOK_SECRET>@glorious-pheasant-759.convex.site/email-event`. Custom-header-stap vervalt — zit nu in de URL zelf. Regie werkt runbook bij na B-commit (inline, geen mini-cyclus).
+[`docs/runbooks/wp5-mailjet-empirical-gates.md`](../runbooks/wp5-mailjet-empirical-gates.md) §A-3: Mailjet webhook-URL wordt `https://mailjet:<MAILJET_WEBHOOK_SECRET>@glorious-pheasant-759.eu-west-1.convex.site/email-event` (region-suffix verplicht — correctie 2026-05-18). Custom-header-stap vervalt — zit nu in de URL zelf. Regie werkt runbook bij na B-commit (inline, geen mini-cyclus).
 
 Geen audit voor deze correctie — scope < 30 regels diff, één impl-bestand, één test-bestand, één doc-update. Regie reviewt B's commit zelf.

@@ -229,7 +229,7 @@ export function formatNlDate(timestamp: number): string {
 }
 
 // Helper: invite-URL voor de landing-pagina. Frontend leeft op
-// `https://<deployment>.convex.site` of een custom-domain — we gebruiken
+// `https://<deployment>.<region>.convex.site` of een custom-domain — we gebruiken
 // `CLUBALMANAC_APP_URL` env-var. Audit-follow-up 2026-05-17 (S-3): geen
 // silent fallback meer naar `"https://clubalmanac.com"` — dat zou
 // dev-deployment-mails met prod-domain invite-links genereren. Fail-loud
