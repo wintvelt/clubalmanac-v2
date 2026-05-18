@@ -47,7 +47,7 @@ Via Convex dashboard → Functions of via `npx convex run`:
 
 ### Stappen
 
-1. Ga naar Clerk dev-instance signup-pagina: `https://picked-quail-97.clerk.accounts.dev/sign-up`
+1. Ga naar Clerk dev-instance signup-pagina: `https://picked-quail-97.accounts.dev/sign-up`
 2. Signup met email `wintvelt+wp6-gate1@gmail.com` (zelfde als pending invite uit pre-flight D) + nieuw password
 3. Verificatie-mail van Clerk landt in je inbox — klik de verify-link
 4. Clerk redirect naar default after-signup-pagina (Clerk hosted — geen eigen frontend nodig)
