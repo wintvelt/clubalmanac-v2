@@ -49,7 +49,7 @@ describe("/clerk-webhook — event-type filter", () => {
     const t = convexTest(schema);
     // Inviter-user voor de invite-creator.
     await registerUserWithInvite(t, "user_inviter", "inviter@x.com", "Inviter");
-    const { groupId } = await withUser(t, "user_inviter").mutation(
+    const groupId = await withUser(t, "user_inviter").mutation(
       api.groups.create,
       { name: "Test group" },
     );
@@ -207,7 +207,7 @@ describe("/clerk-webhook — email-resolutie discipline", () => {
     // accepteren die niet voor 'm bedoeld is.
     const t = convexTest(schema);
     await registerUserWithInvite(t, "user_inviter", "inviter@x.com");
-    const { groupId } = await withUser(t, "user_inviter").mutation(
+    const groupId = await withUser(t, "user_inviter").mutation(
       api.groups.create,
       { name: "Test group" },
     );
@@ -251,7 +251,7 @@ describe("/clerk-webhook — email-resolutie discipline", () => {
   it("mixed-case email in payload → matcht lowercase pending invite", async () => {
     const t = convexTest(schema);
     await registerUserWithInvite(t, "user_inviter", "inviter@x.com");
-    const { groupId } = await withUser(t, "user_inviter").mutation(
+    const groupId = await withUser(t, "user_inviter").mutation(
       api.groups.create,
       { name: "Test group" },
     );

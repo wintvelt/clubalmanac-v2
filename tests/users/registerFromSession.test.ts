@@ -96,7 +96,7 @@ async function seedGroup(
     `${founderSubject}@x.com`,
     "Founder",
   );
-  const { groupId } = await withUser(t, founderSubject).mutation(
+  const groupId = await withUser(t, founderSubject).mutation(
     api.groups.create,
     { name: groupName },
   );
