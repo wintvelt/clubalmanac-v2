@@ -48,7 +48,7 @@ Uitzondering: queries zonder trigger (puur read-tests) leven bij de query-owner.
 | Ratings | 1 | ✅ R1 |
 | Memberships | 3 | ✅ M1, M2, M3 |
 | Flagging | 2 | ✅ FL1, FL2 |
-| Invites | 2 | ✅ IB1 (WP5 bounce-webhook); ⏳ IB2 (gebundeld met scheduled-functions werkpakket) |
+| Invites | 2 | ✅ IB1 (WP5 bounce-webhook), IB2 (WP9 natural-expiry cron) |
 | Uploads | 1 | ✅ UI1 (cyclus 1 architectuur rewrite + audit-cyclus-1 reservation-pattern hardening, 7d/30min cleanup) |
 
 ## Cascade rules
@@ -132,7 +132,7 @@ Uitzondering: queries zonder trigger (puur read-tests) leven bij de query-owner.
 | # | Oude handler | Trigger event | Effect | Cat | Convex aanpak | Test locatie | Status |
 |---|---|---|---|---|---|---|---|
 | IB1 | (nieuw, niet uit AWS — oude code had geen bounce-feedback loop) | Email provider bounce webhook | Markeer alle pending invites voor email als `expired` + zet `bouncedAt`, queue notify-mail naar inviter, dedup via `inviteBounceEvents` | 2 + 3 | `internal.invites.handleBounce` aangeroepen vanuit `convex/http.ts` `/email-event` webhook endpoint (WP5) met Basic-auth-in-URL parsing van Mailjet payload. Patcht invite-records, queue't `sendInviteEmail({kind:"bounced"})`, schrijft providerEventId-record voor dedup. Gate 2 dev gepasseerd 2026-05-18 (echte bounce + replay-test) | `tests/invites/bouncedHandler.test.ts` + WP5 Gate 2 | ✅ |
-| IB2 | (nieuw, niet uit AWS) | Daily cron | Patch invites met `status="pending"` en `expiresAt <= now` naar `status="expired"` (natural expiry, los van bounce; boundary `<=` consistent met FL1 + invites accept). Schrijft `bouncedAt` noch `respondedAt` — natural-expiry-fingerprint = `expired` zonder beide velden (WP9 inv. 3+8). Geen cascade, geen andere tabel, geen email | n.v.t. (single-row state-transition, geen cascade) | Convex scheduled cron `"expire pending invites"` 04:00 UTC → `internal.invites.expirePendingInvites` (WP9). `by_status`-index → in-memory `expiresAt <= now`-filter (geen composite-index nodig op 16-user schaal) | `tests/invites/naturalExpiry.test.ts` + `tests/crons/registration.test.ts` (statisch pin) | ⏳ |
+| IB2 | (nieuw, niet uit AWS) | Daily cron | Patch invites met `status="pending"` en `expiresAt <= now` naar `status="expired"` (natural expiry, los van bounce; boundary `<=` consistent met FL1 + invites accept). Schrijft `bouncedAt` noch `respondedAt` — natural-expiry-fingerprint = `expired` zonder beide velden (WP9 inv. 3+8). Geen cascade, geen andere tabel, geen email | n.v.t. (single-row state-transition, geen cascade) | Convex scheduled cron `"expire pending invites"` 04:00 UTC → `internal.invites.expirePendingInvites` (WP9). `by_status`-index → in-memory `expiresAt <= now`-filter (geen composite-index nodig op 16-user schaal) | `tests/invites/naturalExpiry.test.ts` + `tests/crons/registration.test.ts` (statisch pin) | ✅ |
 
 ### Trigger: Uploads (idempotency cleanup)
 

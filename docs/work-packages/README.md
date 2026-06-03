@@ -20,12 +20,12 @@ WP1-WP4 liepen vóór de formele spec-doc-discipline (geen WP-file). Status uit 
 | WP6 | Clerk session-webhook + atomic onboarding (server-to-server `session.created` → idempotent users-row + invite-accept + membership in één Convex-transactie) | [`WP6-clerk-session-webhook.md`](./WP6-clerk-session-webhook.md) | ✅ landed (gates 2026-05-18 dev) |
 | WP7 | Upload-pipeline empirische gates + integration-test (bewijs van pipeline op echte iPhone-foto's met EXIF/GPS) | [`runbooks/wp7-upload-gate.md`](../runbooks/wp7-upload-gate.md) + `tests/integration/uploads/uploadRoundtrip.test.ts` | ✅ landed (gate dev 2026-05-18 + 2 productie-bugs gefixed) |
 | WP8 | Photo rotation (`photos.rotate` mutation, EXIF-only — geen sharp/action) — DB-`exifOrientation` als bron-van-waarheid, client past CSS-transform toe (Phase-4 contract) | [`WP8-photo-rotation.md`](./WP8-photo-rotation.md) | ✅ landed (cyclus 1 + audit-bug #10 fix-cyclus 2026-06-03) |
+| WP9 | IB2 cron: `expirePendingInvites` daily — natural-expiry pad voor invites (los van bounce-pad IB1 uit WP5), stille expiry zonder email, fingerprint `expired` ∧ geen `bouncedAt` ∧ geen `respondedAt` | [`WP9-ib2-natural-expiry.md`](./WP9-ib2-natural-expiry.md) | ✅ landed 2026-06-03 |
 
 ## Open WPs (volgorde indicatief, regie beslist per kickoff)
 
 | WP | Onderwerp | Spec-doc | Status |
 |---|---|---|---|
-| WP9 | IB2 cron: `expirePendingInvites` daily — natural-expiry pad voor invites (los van bounce-pad IB1 uit WP5) | [`WP9-ib2-natural-expiry.md`](./WP9-ib2-natural-expiry.md) | 🆕 draft (regie 2026-06-03), klaar voor A |
 | TBD | Integrity-check / monitoring werkpakket: scheduled function die storage-orphans detecteert (storage-objects zonder photo-record, audit-10 + audit-12 §5 gap) + drift-checks op aggregate-velden (`users.photoCount`, `photos.ratingAverage`/`ratingCount`, `features.upvoteCount`) + alert-pad. Cyclus-2 backlog item, zie [`migratie-status.md`](../migratie-status.md) §Cyclus-2 backlog en [`migratie-plan-convex.md`](../migratie-plan-convex.md) §3 monitoring | — | open |
 | TBD | Email Gate 1 happy-path + integration-test `tests/integration/mailjet/sendRoundtrip.test.ts` als follow-up van WP5 deferred-items | — | open |
 | TBD | Clerk Invitations API integratie (pre-create Clerk-user bij Convex `invites.create`, `users.status: "invited" \| "active"` voor visibility) — alternatief design op WP6, kan als upgrade later | — | open, design-discussie |

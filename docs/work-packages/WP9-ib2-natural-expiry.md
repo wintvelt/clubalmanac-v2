@@ -11,7 +11,7 @@ Een invite waarvan de `expiresAt`-deadline gepasseerd is mag niet meer als "open
 Gedrag dat altijd waar moet zijn — user-truth, geen impl-vorm.
 
 1. **Expiry-transitie**: een invite met `status === "pending"` en `expiresAt <= now` is binnen één dag-tick van de cron gepatcht naar `status === "expired"`. Boundary `<=` is identiek aan FL1 (audit-9 hardening) en aan het invites-accept-pad.
-2. **Status-filter exclusiviteit**: IB2 raakt uitsluitend rijen waar `status === "pending"`. Rijen met status `bounced` / `accepted` / `declined` / reeds `expired` worden niet aangeraakt, ongeacht `expiresAt`-waarde.
+2. **Status-filter exclusiviteit**: IB2 raakt uitsluitend rijen waar `status === "pending"`. Rijen met status `accepted` / `declined` / reeds `expired` (ongeacht of dat natural- of bounce-expired is) worden niet aangeraakt, ongeacht `expiresAt`-waarde. *(`invites.status`-union is `pending | accepted | declined | expired`; bounce-pad zet óók `expired` + `bouncedAt`, geen aparte `bounced`-status.)*
 3. **bouncedAt-grens**: natural-expiry-pad zet `status="expired"` zonder ooit `bouncedAt` te schrijven of te wijzigen. Een rij die na IB2 als `expired` in de DB staat en geen `bouncedAt` heeft, is per definitie natural-expired (niet via bounce). Maakt achteraf-query "bounced vs natural expired" mogelijk.
 4. **Stille expiry**: geen email-side-effect. Inviter ontvangt geen notify-mail bij natural expiry — alleen IB1 (bounce-pad) verstuurt notify. Eerste-run op een bestaande dataset met stale pending invites veroorzaakt daarmee geen email-storm.
 5. **Idempotency over runs**: herhaalde runs op dezelfde dataset zijn no-op na de eerste run die de grens passeert. Een tweede cron-tick op een al-gepatchte rij produceert nul writes.
@@ -60,7 +60,7 @@ Per dimensie laag / medium / hoog + reden.
 
 **Tests** (`tests/invites/naturalExpiry.test.ts`, A schrijft RED):
 - Boundary-pins met fake-timer: `expiresAt = now + 1ms` (blijft pending), `expiresAt = now` (expired), `expiresAt = now - 1ms` (expired)
-- Status-filter exclusiviteit: rijen met status ∈ {`bounced`, `accepted`, `declined`, `expired`} blijven onaangeraakt, ook als `expiresAt < now`
+- Status-filter exclusiviteit: rijen met status ∈ {`accepted`, `declined`, `expired`} blijven onaangeraakt, ook als `expiresAt < now`. Bounce-expired rijen (`status="expired"` + `bouncedAt` gezet) blijven óók onaangeraakt — `pending`-filter sluit ze al uit.
 - `bouncedAt`-grens: na IB2-patch is `bouncedAt` op de gepatchte rij ongezet (of behoudt eventueel pre-existing waarde, A's keuze afhankelijk van bestaande schema-semantiek — maar IB2 zelf schrijft 't veld niet)
 - `respondedAt`-grens (invariant 8): na IB2-patch is `respondedAt` op de gepatchte rij ongezet. IB2 schrijft 't veld nooit.
 - Stille expiry: geen email-action gequeue'd na IB2-run
