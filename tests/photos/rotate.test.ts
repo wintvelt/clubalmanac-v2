@@ -1,63 +1,90 @@
 import { convexTest } from "convex-test";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
 import schema from "../../convex/schema";
 import { registerUser, withUser } from "../_helpers/auth";
 
 // ---------------------------------------------------------------------------
-// WP8 — photos.rotate MUTATION (isolate-runtime). Sessie A, RED-phase.
+// WP8 (EXIF-only) — photos.rotate MUTATION. Sessie A cyclus-2, RED-phase.
 //
-// Deze suite pint het synchrone deel van photo-rotation: auth-boundary,
-// argument-validation, en het schedulen van de Node-action. De zware
-// pixel-bewerking (sharp) zit in `internal.photoRotation.rotateAction` en
-// wordt apart gepind in `rotateAction.test.ts` (sharp gemockt).
+// Spec: docs/work-packages/WP8-photo-rotation.md (revisie 2026-05-19).
+// Geen pixel-rotatie, geen sharp, geen action: een pure isolate-mutation die
+// `photos.exifOrientation` herberekent via de 8-staat EXIF-arithmetiek-tabel
+// en `width`/`height` swapt bij 90°/270°.
 //
-// Spec: docs/work-packages/WP8-photo-rotation.md
-//   - Invariant "Geen frontend-blocking": mutation geeft snel terug + queue't
-//     de action; geen storageId-swap in de mutation zelf.
-//   - Invariant "Auth-boundary": owner OF group-admin van een publicatie-group
-//     (albumPhotos). NIET member-zonder-admin, NIET webmaster, NIET vreemde.
-//     A3: dit verstrakt v1 (oude code liet elk lid-met-toegang toe) — bewust.
-//   - Arg "rotation": v.union(0|90|180|270) — vrije hoeken geweigerd door
-//     de validator.
-//   - A5 (should): HEIC-bron → mutation fast-fail (typed error), geen action.
+// Wat gepind wordt (user-truth, niet impl-vorm):
+//   - EXIF-arithmetiek: (huidig 1..8, rotation, flipY) → nieuwe orientation,
+//     volgens de canonieke tabel (zie A-revisie in de spec). undefined → 1.
+//   - Delta (90×2 = 180) + inverse (90 dan 270 = terug).
+//   - width/height-swap UITSLUITEND bij rotation ∈ {90,270}; undefined blijft
+//     undefined.
+//   - Auth: owner OR group-admin van een publicatie-group; member-zonder-admin
+//     / webmaster / niet-ingelogd → reject (A3-verstrakking t.o.v. v1).
+//   - Cascade-safe: storageId + alle niet-oriëntatie-velden ongemoeid.
+//   - rotation literal-union weigert vrije hoeken.
 //
-// De mutation + action bestaan nog niet → RED tot B landt
-// (`api.photos.rotate` / `internal.photoRotation.rotateAction` niet
-// geregistreerd).
+// `api.photos.rotate` bestaat nog niet → RED tot B landt. Negatieve cases
+// gebruiken `expectRealRejection` zodat ze niet groen-om-de-verkeerde-reden
+// (function-missing) zijn.
 // ---------------------------------------------------------------------------
 
-const WEBMASTER_EMAIL = "wm@x.com";
+// ──────────────────────────────────────────────────────────────────────────
+// Canonieke EXIF-Orientation transitie-tabellen (ground-truth uit de spec).
+// 8 D4-symmetrieën: 1=normaal 2=mirror-H 3=180 4=mirror-V 5=transpose
+// 6=90°CW 7=transverse 8=90°CCW. rotation = clockwise; flipY = horizontale
+// mirror; combinatie = flip eerst, dan rotatie (matcht oude AWS).
+// ──────────────────────────────────────────────────────────────────────────
+const ROT0: Record<number, number> = { 1: 1, 2: 2, 3: 3, 4: 4, 5: 5, 6: 6, 7: 7, 8: 8 };
+const ROT90: Record<number, number> = { 1: 6, 2: 5, 3: 8, 4: 7, 5: 4, 6: 3, 7: 2, 8: 1 };
+const ROT180: Record<number, number> = { 1: 3, 2: 4, 3: 1, 4: 2, 5: 7, 6: 8, 7: 5, 8: 6 };
+const ROT270: Record<number, number> = { 1: 8, 2: 7, 3: 6, 4: 5, 5: 2, 6: 1, 7: 4, 8: 3 };
+// flip-only (rotation 0, flipY=true)
+const FLIP: Record<number, number> = { 1: 2, 2: 1, 3: 4, 4: 3, 5: 8, 6: 7, 7: 6, 8: 5 };
 
-beforeEach(() => {
-  // Webmaster bestaat als rol, maar mag GEEN rotate-backdoor krijgen (A: spec
-  // zegt expliciet "niet door webmaster"). We zetten de env zodat een
-  // eventuele requireWebmaster-leak zou slagen — de test bewijst dat rotate
-  // wm tóch weigert.
-  vi.stubEnv("WEBMASTER_EMAILS", WEBMASTER_EMAIL);
-});
+const STARTS = [1, 2, 3, 4, 5, 6, 7, 8] as const;
 
-afterEach(() => {
-  vi.unstubAllEnvs();
-});
+// RED-discipline: zolang `api.photos.rotate` ontbreekt rejected elke call met
+// "no such export" — een `.rejects.toThrow()` zou dan trivially groen zijn.
+// Deze helper eist een ECHTE auth/validation-fout, niet het function-missing-
+// artefact.
+async function expectRealRejection(p: Promise<unknown>): Promise<void> {
+  let err: unknown;
+  let threw = false;
+  try {
+    await p;
+  } catch (e) {
+    threw = true;
+    err = e;
+  }
+  expect(threw, "verwachtte een rejection").toBe(true);
+  const msg = String((err as { message?: unknown })?.message ?? err);
+  expect(msg).not.toMatch(
+    /could not find|no such export|exported from module|no function named|not a function|not registered/i,
+  );
+}
 
-// Seed een photo direct (bypass upload-pipeline). dims + mimeType optioneel.
 async function seedPhoto(
   t: ReturnType<typeof convexTest>,
   ownerId: Id<"users">,
-  opts: { mimeType?: string; width?: number; height?: number } = {},
+  opts: {
+    exifOrientation?: number;
+    width?: number;
+    height?: number;
+    mimeType?: string;
+  } = {},
 ): Promise<{ photoId: Id<"photos">; storageId: Id<"_storage"> }> {
   const storageId = await t.run(async (ctx) =>
-    ctx.storage.store(new Blob(["fake-jpeg-bytes"])),
+    ctx.storage.store(new Blob(["fake-bytes"])),
   );
   const photoId = await t.run(async (ctx) =>
     ctx.db.insert("photos", {
       ownerId,
       storageId,
-      mimeType: opts.mimeType,
+      exifOrientation: opts.exifOrientation,
       width: opts.width,
       height: opts.height,
+      mimeType: opts.mimeType,
       ratingCount: 0,
       createdAt: Date.now(),
     }),
@@ -65,8 +92,7 @@ async function seedPhoto(
   return { photoId, storageId };
 }
 
-// Publiceer een photo in een group via een album. role bepaalt de seed-rol
-// van `memberSubject` in die group.
+// Publiceer een photo in een group via een album; seed `memberId` met `role`.
 async function publishInGroupWithMember(
   t: ReturnType<typeof convexTest>,
   photoId: Id<"photos">,
@@ -103,44 +129,267 @@ async function publishInGroupWithMember(
   });
 }
 
-// RED-discipline voor negatieve tests: een test die `.rejects` verwacht wordt
-// trivially groen zolang `api.photos.rotate` nog niet bestaat (de call rejected
-// dan met "could not find function"). Deze helper eist dat de rejection een
-// ECHTE auth/validation/HEIC-fout is — niet het function-missing-artefact —
-// zodat de test nu RED is en pas groen wordt als B de juiste afwijzing bouwt.
-async function expectRealRejection(p: Promise<unknown>): Promise<void> {
-  let err: unknown;
-  let threw = false;
-  try {
-    await p;
-  } catch (e) {
-    threw = true;
-    err = e;
-  }
-  expect(threw, "verwachtte een rejection").toBe(true);
-  const msg = String((err as { message?: unknown })?.message ?? err);
-  expect(msg).not.toMatch(
-    /could not find|no such export|exported from module|no function named|not a function|not registered/i,
-  );
-}
-
-async function scheduledRotateActions(t: ReturnType<typeof convexTest>) {
-  const scheduled = await t.run((ctx) =>
-    ctx.db.system.query("_scheduled_functions").collect(),
-  );
-  return scheduled.filter((s) => String(s.name).includes("rotateAction"));
+async function getOrientation(
+  t: ReturnType<typeof convexTest>,
+  photoId: Id<"photos">,
+): Promise<number | undefined> {
+  const photo = await t.run((ctx) => ctx.db.get(photoId));
+  return photo?.exifOrientation;
 }
 
 // ---------------------------------------------------------------------------
-// Happy path + scheduling + atomic-swap (geen premature storageId-swap)
+// EXIF-arithmetiek — alle 8 startwaarden per delta
 // ---------------------------------------------------------------------------
 
-describe("photos.rotate — schedule + atomic-swap", () => {
-  it("owner rotate(90) → schedult precies één rotateAction, storageId nog ongewijzigd", async () => {
+describe("photos.rotate — EXIF-arithmetiek tabel", () => {
+  it.each(STARTS)(
+    "rotate(90) vanaf orientation %i → tabelwaarde",
+    async (start) => {
+      const t = convexTest(schema);
+      const aliceId = await registerUser(t, "user_alice", "a@x.com");
+      const { photoId } = await seedPhoto(t, aliceId, {
+        exifOrientation: start,
+      });
+
+      await withUser(t, "user_alice").mutation(api.photos.rotate, {
+        photoId,
+        rotation: 90,
+        flipY: false,
+      });
+
+      expect(await getOrientation(t, photoId)).toBe(ROT90[start]);
+    },
+  );
+
+  it.each(STARTS)(
+    "rotate(180) vanaf orientation %i → tabelwaarde",
+    async (start) => {
+      const t = convexTest(schema);
+      const aliceId = await registerUser(t, "user_alice", "a@x.com");
+      const { photoId } = await seedPhoto(t, aliceId, {
+        exifOrientation: start,
+      });
+
+      await withUser(t, "user_alice").mutation(api.photos.rotate, {
+        photoId,
+        rotation: 180,
+        flipY: false,
+      });
+
+      expect(await getOrientation(t, photoId)).toBe(ROT180[start]);
+    },
+  );
+
+  it.each(STARTS)(
+    "rotate(270) vanaf orientation %i → tabelwaarde",
+    async (start) => {
+      const t = convexTest(schema);
+      const aliceId = await registerUser(t, "user_alice", "a@x.com");
+      const { photoId } = await seedPhoto(t, aliceId, {
+        exifOrientation: start,
+      });
+
+      await withUser(t, "user_alice").mutation(api.photos.rotate, {
+        photoId,
+        rotation: 270,
+        flipY: false,
+      });
+
+      expect(await getOrientation(t, photoId)).toBe(ROT270[start]);
+    },
+  );
+
+  it.each(STARTS)(
+    "rotate(0) vanaf orientation %i → ongewijzigd (no-op rotatie)",
+    async (start) => {
+      const t = convexTest(schema);
+      const aliceId = await registerUser(t, "user_alice", "a@x.com");
+      const { photoId } = await seedPhoto(t, aliceId, {
+        exifOrientation: start,
+      });
+
+      await withUser(t, "user_alice").mutation(api.photos.rotate, {
+        photoId,
+        rotation: 0,
+        flipY: false,
+      });
+
+      expect(await getOrientation(t, photoId)).toBe(ROT0[start]);
+    },
+  );
+
+  it.each(STARTS)(
+    "flip-only (rotation 0, flipY) vanaf orientation %i → mirror-tabelwaarde",
+    async (start) => {
+      const t = convexTest(schema);
+      const aliceId = await registerUser(t, "user_alice", "a@x.com");
+      const { photoId } = await seedPhoto(t, aliceId, {
+        exifOrientation: start,
+      });
+
+      await withUser(t, "user_alice").mutation(api.photos.rotate, {
+        photoId,
+        rotation: 0,
+        flipY: true,
+      });
+
+      expect(await getOrientation(t, photoId)).toBe(FLIP[start]);
+    },
+  );
+
+  it.each(STARTS)(
+    "combinatie flipY + rotate(90) vanaf orientation %i → flip-dan-rotatie (volgorde-pin)",
+    async (start) => {
+      const t = convexTest(schema);
+      const aliceId = await registerUser(t, "user_alice", "a@x.com");
+      const { photoId } = await seedPhoto(t, aliceId, {
+        exifOrientation: start,
+      });
+
+      await withUser(t, "user_alice").mutation(api.photos.rotate, {
+        photoId,
+        rotation: 90,
+        flipY: true,
+      });
+
+      // Volgorde: flip eerst, dán rotatie (matcht oude AWS). Andersom zou een
+      // andere uitkomst geven — deze test pint de volgorde.
+      expect(await getOrientation(t, photoId)).toBe(ROT90[FLIP[start]]);
+    },
+  );
+});
+
+// ---------------------------------------------------------------------------
+// undefined exifOrientation → behandeld als 1 (normaal)
+// ---------------------------------------------------------------------------
+
+describe("photos.rotate — undefined orientation default = 1", () => {
+  it("undefined + rotate(90) → 6 (= tabel vanaf 1)", async () => {
     const t = convexTest(schema);
     const aliceId = await registerUser(t, "user_alice", "a@x.com");
-    const { photoId, storageId } = await seedPhoto(t, aliceId, {
-      mimeType: "image/jpeg",
+    const { photoId } = await seedPhoto(t, aliceId); // exifOrientation undefined
+
+    await withUser(t, "user_alice").mutation(api.photos.rotate, {
+      photoId,
+      rotation: 90,
+      flipY: false,
+    });
+
+    expect(await getOrientation(t, photoId)).toBe(ROT90[1]); // 6
+  });
+
+  it("undefined + rotate(270) → 8", async () => {
+    const t = convexTest(schema);
+    const aliceId = await registerUser(t, "user_alice", "a@x.com");
+    const { photoId } = await seedPhoto(t, aliceId);
+
+    await withUser(t, "user_alice").mutation(api.photos.rotate, {
+      photoId,
+      rotation: 270,
+      flipY: false,
+    });
+
+    expect(await getOrientation(t, photoId)).toBe(ROT270[1]); // 8
+  });
+
+  it("undefined + flip-only → 2", async () => {
+    const t = convexTest(schema);
+    const aliceId = await registerUser(t, "user_alice", "a@x.com");
+    const { photoId } = await seedPhoto(t, aliceId);
+
+    await withUser(t, "user_alice").mutation(api.photos.rotate, {
+      photoId,
+      rotation: 0,
+      flipY: true,
+    });
+
+    expect(await getOrientation(t, photoId)).toBe(FLIP[1]); // 2
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Delta-semantiek + inverse
+// ---------------------------------------------------------------------------
+
+describe("photos.rotate — delta + inverse", () => {
+  it.each(STARTS)(
+    "rotate(90) tweemaal = rotate(180) vanaf orientation %i",
+    async (start) => {
+      const t = convexTest(schema);
+      const aliceId = await registerUser(t, "user_alice", "a@x.com");
+      const { photoId } = await seedPhoto(t, aliceId, {
+        exifOrientation: start,
+      });
+
+      await withUser(t, "user_alice").mutation(api.photos.rotate, {
+        photoId,
+        rotation: 90,
+        flipY: false,
+      });
+      await withUser(t, "user_alice").mutation(api.photos.rotate, {
+        photoId,
+        rotation: 90,
+        flipY: false,
+      });
+
+      expect(await getOrientation(t, photoId)).toBe(ROT180[start]);
+    },
+  );
+
+  it.each(STARTS)(
+    "rotate(90) daarna rotate(270) → terug bij orientation %i (inverse)",
+    async (start) => {
+      const t = convexTest(schema);
+      const aliceId = await registerUser(t, "user_alice", "a@x.com");
+      const { photoId } = await seedPhoto(t, aliceId, {
+        exifOrientation: start,
+      });
+
+      await withUser(t, "user_alice").mutation(api.photos.rotate, {
+        photoId,
+        rotation: 90,
+        flipY: false,
+      });
+      await withUser(t, "user_alice").mutation(api.photos.rotate, {
+        photoId,
+        rotation: 270,
+        flipY: false,
+      });
+
+      expect(await getOrientation(t, photoId)).toBe(start);
+    },
+  );
+
+  it("flip-only tweemaal → terug bij start (mirror is eigen inverse)", async () => {
+    const t = convexTest(schema);
+    const aliceId = await registerUser(t, "user_alice", "a@x.com");
+    const { photoId } = await seedPhoto(t, aliceId, { exifOrientation: 6 });
+
+    await withUser(t, "user_alice").mutation(api.photos.rotate, {
+      photoId,
+      rotation: 0,
+      flipY: true,
+    });
+    await withUser(t, "user_alice").mutation(api.photos.rotate, {
+      photoId,
+      rotation: 0,
+      flipY: true,
+    });
+
+    expect(await getOrientation(t, photoId)).toBe(6);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// width/height-swap
+// ---------------------------------------------------------------------------
+
+describe("photos.rotate — width/height swap", () => {
+  it("rotate(90) → dims geswapt in DB", async () => {
+    const t = convexTest(schema);
+    const aliceId = await registerUser(t, "user_alice", "a@x.com");
+    const { photoId } = await seedPhoto(t, aliceId, {
+      exifOrientation: 1,
       width: 4000,
       height: 3000,
     });
@@ -151,24 +400,79 @@ describe("photos.rotate — schedule + atomic-swap", () => {
       flipY: false,
     });
 
-    // Action gequeued, exact 1.
-    const rotateCalls = await scheduledRotateActions(t);
-    expect(rotateCalls).toHaveLength(1);
-
-    // Atomic-swap-invariant: de mutation zelf swapt storageId NIET. De
-    // file-vervanging gebeurt pas in de action.
     const photo = await t.run((ctx) => ctx.db.get(photoId));
-    expect(photo?.storageId).toBe(storageId);
-    // exifOrientation/dims ook nog niet aangeraakt door de mutation.
-    expect(photo?.exifOrientation).toBeUndefined();
+    expect(photo?.width).toBe(3000);
+    expect(photo?.height).toBe(4000);
+  });
+
+  it("rotate(270) → dims geswapt", async () => {
+    const t = convexTest(schema);
+    const aliceId = await registerUser(t, "user_alice", "a@x.com");
+    const { photoId } = await seedPhoto(t, aliceId, {
+      exifOrientation: 1,
+      width: 4000,
+      height: 3000,
+    });
+
+    await withUser(t, "user_alice").mutation(api.photos.rotate, {
+      photoId,
+      rotation: 270,
+      flipY: false,
+    });
+
+    const photo = await t.run((ctx) => ctx.db.get(photoId));
+    expect(photo?.width).toBe(3000);
+    expect(photo?.height).toBe(4000);
+  });
+
+  it("rotate(180) → dims ongewijzigd", async () => {
+    const t = convexTest(schema);
+    const aliceId = await registerUser(t, "user_alice", "a@x.com");
+    const { photoId } = await seedPhoto(t, aliceId, {
+      exifOrientation: 1,
+      width: 4000,
+      height: 3000,
+    });
+
+    await withUser(t, "user_alice").mutation(api.photos.rotate, {
+      photoId,
+      rotation: 180,
+      flipY: false,
+    });
+
+    const photo = await t.run((ctx) => ctx.db.get(photoId));
     expect(photo?.width).toBe(4000);
     expect(photo?.height).toBe(3000);
   });
 
-  it("flip-only (rotation 0, flipY true) → action gescheduled", async () => {
+  it("rotate(0) → dims ongewijzigd", async () => {
     const t = convexTest(schema);
     const aliceId = await registerUser(t, "user_alice", "a@x.com");
-    const { photoId } = await seedPhoto(t, aliceId, { mimeType: "image/jpeg" });
+    const { photoId } = await seedPhoto(t, aliceId, {
+      exifOrientation: 1,
+      width: 4000,
+      height: 3000,
+    });
+
+    await withUser(t, "user_alice").mutation(api.photos.rotate, {
+      photoId,
+      rotation: 0,
+      flipY: false,
+    });
+
+    const photo = await t.run((ctx) => ctx.db.get(photoId));
+    expect(photo?.width).toBe(4000);
+    expect(photo?.height).toBe(3000);
+  });
+
+  it("flip-only (rotation 0, flipY) → dims ongewijzigd (mirror swapt niet)", async () => {
+    const t = convexTest(schema);
+    const aliceId = await registerUser(t, "user_alice", "a@x.com");
+    const { photoId } = await seedPhoto(t, aliceId, {
+      exifOrientation: 1,
+      width: 4000,
+      height: 3000,
+    });
 
     await withUser(t, "user_alice").mutation(api.photos.rotate, {
       photoId,
@@ -176,54 +480,47 @@ describe("photos.rotate — schedule + atomic-swap", () => {
       flipY: true,
     });
 
-    expect(await scheduledRotateActions(t)).toHaveLength(1);
+    const photo = await t.run((ctx) => ctx.db.get(photoId));
+    expect(photo?.width).toBe(4000);
+    expect(photo?.height).toBe(3000);
   });
-});
 
-// ---------------------------------------------------------------------------
-// Argument-validation
-// ---------------------------------------------------------------------------
-
-describe("photos.rotate — argument-validation", () => {
-  it("rotation buiten {0,90,180,270} (45) → afgewezen door validator, geen action", async () => {
+  it("flipY + rotate(90) → dims geswapt (rotatie bepaalt swap, niet de flip)", async () => {
     const t = convexTest(schema);
     const aliceId = await registerUser(t, "user_alice", "a@x.com");
-    const { photoId } = await seedPhoto(t, aliceId);
+    const { photoId } = await seedPhoto(t, aliceId, {
+      exifOrientation: 1,
+      width: 4000,
+      height: 3000,
+    });
 
-    await expectRealRejection(
-      withUser(t, "user_alice").mutation(api.photos.rotate, {
-        photoId,
-        // Bewust ongeldige hoek — de literal-union moet 'm weigeren.
-        rotation: 45 as unknown as 0,
-        flipY: false,
-      }),
-    );
+    await withUser(t, "user_alice").mutation(api.photos.rotate, {
+      photoId,
+      rotation: 90,
+      flipY: true,
+    });
 
-    expect(await scheduledRotateActions(t)).toHaveLength(0);
+    const photo = await t.run((ctx) => ctx.db.get(photoId));
+    expect(photo?.width).toBe(3000);
+    expect(photo?.height).toBe(4000);
   });
-});
 
-// ---------------------------------------------------------------------------
-// Bestaan + cleanup-race
-// ---------------------------------------------------------------------------
-
-describe("photos.rotate — photo bestaat niet", () => {
-  it("onbekende photoId → throw, geen action", async () => {
+  it("dims undefined + rotate(90) → blijven undefined (geen verzonnen waarden)", async () => {
     const t = convexTest(schema);
     const aliceId = await registerUser(t, "user_alice", "a@x.com");
-    const { photoId } = await seedPhoto(t, aliceId);
-    // Verwijder de photo zodat de id geldig-getypeerd maar weg is.
-    await t.run((ctx) => ctx.db.delete(photoId));
+    const { photoId } = await seedPhoto(t, aliceId, { exifOrientation: 1 });
 
-    await expectRealRejection(
-      withUser(t, "user_alice").mutation(api.photos.rotate, {
-        photoId,
-        rotation: 90,
-        flipY: false,
-      }),
-    );
+    await withUser(t, "user_alice").mutation(api.photos.rotate, {
+      photoId,
+      rotation: 90,
+      flipY: false,
+    });
 
-    expect(await scheduledRotateActions(t)).toHaveLength(0);
+    const photo = await t.run((ctx) => ctx.db.get(photoId));
+    expect(photo?.width).toBeUndefined();
+    expect(photo?.height).toBeUndefined();
+    // Orientation wel bijgewerkt ook al ontbreken dims.
+    expect(photo?.exifOrientation).toBe(ROT90[1]);
   });
 });
 
@@ -235,43 +532,39 @@ describe("photos.rotate — auth-boundary", () => {
   it("owner mag eigen foto roteren", async () => {
     const t = convexTest(schema);
     const aliceId = await registerUser(t, "user_alice", "a@x.com");
-    const { photoId } = await seedPhoto(t, aliceId);
+    const { photoId } = await seedPhoto(t, aliceId, { exifOrientation: 1 });
 
-    await expect(
-      withUser(t, "user_alice").mutation(api.photos.rotate, {
-        photoId,
-        rotation: 90,
-        flipY: false,
-      }),
-    ).resolves.not.toThrow();
-    expect(await scheduledRotateActions(t)).toHaveLength(1);
+    await withUser(t, "user_alice").mutation(api.photos.rotate, {
+      photoId,
+      rotation: 90,
+      flipY: false,
+    });
+
+    expect(await getOrientation(t, photoId)).toBe(ROT90[1]);
   });
 
-  it("group-admin van een publicatie-group mag andermans foto roteren", async () => {
+  it("group-admin van publicatie-group mag andermans foto roteren", async () => {
     const t = convexTest(schema);
     const aliceId = await registerUser(t, "user_alice", "a@x.com");
     const bobId = await registerUser(t, "user_bob", "b@x.com");
-    const { photoId } = await seedPhoto(t, aliceId);
-    // Bob is admin van de group waarin alice's foto gepubliceerd staat.
+    const { photoId } = await seedPhoto(t, aliceId, { exifOrientation: 1 });
     await publishInGroupWithMember(t, photoId, bobId, bobId, "admin");
 
-    await expect(
-      withUser(t, "user_bob").mutation(api.photos.rotate, {
-        photoId,
-        rotation: 180,
-        flipY: false,
-      }),
-    ).resolves.not.toThrow();
-    expect(await scheduledRotateActions(t)).toHaveLength(1);
+    await withUser(t, "user_bob").mutation(api.photos.rotate, {
+      photoId,
+      rotation: 180,
+      flipY: false,
+    });
+
+    expect(await getOrientation(t, photoId)).toBe(ROT180[1]);
   });
 
-  it("member-zonder-admin in de publicatie-group → geweigerd (verstrakking t.o.v. v1, A3)", async () => {
+  it("member-zonder-admin → geweigerd, orientation ongewijzigd (A3)", async () => {
     const t = convexTest(schema);
     const aliceId = await registerUser(t, "user_alice", "a@x.com");
     const bobId = await registerUser(t, "user_bob", "b@x.com");
     const carolId = await registerUser(t, "user_carol", "c@x.com");
-    const { photoId } = await seedPhoto(t, aliceId);
-    // Bob maakt de group (admin); carol is gewone member.
+    const { photoId } = await seedPhoto(t, aliceId, { exifOrientation: 1 });
     const groupId = await publishInGroupWithMember(
       t,
       photoId,
@@ -295,17 +588,15 @@ describe("photos.rotate — auth-boundary", () => {
         flipY: false,
       }),
     );
-    expect(await scheduledRotateActions(t)).toHaveLength(0);
+    expect(await getOrientation(t, photoId)).toBe(1);
   });
 
   it("admin van een group waar de foto NIET gepubliceerd staat → geweigerd", async () => {
     const t = convexTest(schema);
     const aliceId = await registerUser(t, "user_alice", "a@x.com");
     const daveId = await registerUser(t, "user_dave", "d@x.com");
-    const { photoId } = await seedPhoto(t, aliceId);
+    const { photoId } = await seedPhoto(t, aliceId, { exifOrientation: 1 });
 
-    // Dave is admin van een EIGEN group H, maar alice's foto staat daar niet
-    // gepubliceerd (geen albumPhotos-link).
     await t.run(async (ctx) => {
       const groupH = await ctx.db.insert("groups", {
         name: "H",
@@ -327,55 +618,51 @@ describe("photos.rotate — auth-boundary", () => {
         flipY: false,
       }),
     );
-    expect(await scheduledRotateActions(t)).toHaveLength(0);
+    expect(await getOrientation(t, photoId)).toBe(1);
   });
 
-  it("webmaster (geen owner, geen group-admin) → geweigerd (per spec, geen backdoor)", async () => {
+  it("webmaster (geen owner/admin) → geweigerd (geen backdoor)", async () => {
     const t = convexTest(schema);
     const aliceId = await registerUser(t, "user_alice", "a@x.com");
-    await registerUser(t, "user_wm", WEBMASTER_EMAIL);
-    const { photoId } = await seedPhoto(t, aliceId);
+    await registerUser(t, "user_wm", "wm@x.com");
+    const { photoId } = await seedPhoto(t, aliceId, { exifOrientation: 1 });
 
     await expectRealRejection(
-      withUser(t, "user_wm", WEBMASTER_EMAIL).mutation(api.photos.rotate, {
+      withUser(t, "user_wm", "wm@x.com").mutation(api.photos.rotate, {
         photoId,
         rotation: 90,
         flipY: false,
       }),
     );
-    expect(await scheduledRotateActions(t)).toHaveLength(0);
+    expect(await getOrientation(t, photoId)).toBe(1);
   });
 
-  it("vreemde user zonder enige relatie → geweigerd", async () => {
+  it("niet-ingelogd → geweigerd", async () => {
     const t = convexTest(schema);
     const aliceId = await registerUser(t, "user_alice", "a@x.com");
-    await registerUser(t, "user_eve", "e@x.com");
-    const { photoId } = await seedPhoto(t, aliceId);
+    const { photoId } = await seedPhoto(t, aliceId, { exifOrientation: 1 });
 
     await expectRealRejection(
-      withUser(t, "user_eve").mutation(api.photos.rotate, {
+      t.mutation(api.photos.rotate, {
         photoId,
         rotation: 90,
         flipY: false,
       }),
     );
-    expect(await scheduledRotateActions(t)).toHaveLength(0);
+    expect(await getOrientation(t, photoId)).toBe(1);
   });
 });
 
 // ---------------------------------------------------------------------------
-// A5 (should) — HEIC fast-fail in de mutation (synchroon, user-zichtbaar)
+// Bestaan + argument-validation
 // ---------------------------------------------------------------------------
 
-describe("photos.rotate — HEIC fast-fail (A5, should)", () => {
-  // Spec A5: de action is autoritatief (magic-bytes), maar de mutation kan op
-  // mimeType een snelle, user-zichtbare typed error geven. Async action-throw
-  // is voor de user onzichtbaar. RED tot B de fast-fail toevoegt — als regie
-  // de fast-fail NIET wil (open-vraag A6.3), wordt deze test geschrapt/herzien.
-  it("mimeType image/heic → mutation throwt, geen action gescheduled", async () => {
+describe("photos.rotate — guards", () => {
+  it("onbekende photoId → throw", async () => {
     const t = convexTest(schema);
     const aliceId = await registerUser(t, "user_alice", "a@x.com");
-    const { photoId } = await seedPhoto(t, aliceId, { mimeType: "image/heic" });
+    const { photoId } = await seedPhoto(t, aliceId);
+    await t.run((ctx) => ctx.db.delete(photoId));
 
     await expectRealRejection(
       withUser(t, "user_alice").mutation(api.photos.rotate, {
@@ -384,6 +671,79 @@ describe("photos.rotate — HEIC fast-fail (A5, should)", () => {
         flipY: false,
       }),
     );
-    expect(await scheduledRotateActions(t)).toHaveLength(0);
+  });
+
+  it("rotation buiten {0,90,180,270} (45) → afgewezen door validator", async () => {
+    const t = convexTest(schema);
+    const aliceId = await registerUser(t, "user_alice", "a@x.com");
+    const { photoId } = await seedPhoto(t, aliceId, { exifOrientation: 1 });
+
+    await expectRealRejection(
+      withUser(t, "user_alice").mutation(api.photos.rotate, {
+        photoId,
+        // Bewust ongeldige hoek — de literal-union moet 'm weigeren.
+        rotation: 45 as unknown as 0,
+        flipY: false,
+      }),
+    );
+    expect(await getOrientation(t, photoId)).toBe(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Cascade-safe — rotate raakt alleen orientation + dims
+// ---------------------------------------------------------------------------
+
+describe("photos.rotate — cascade-safe", () => {
+  it("storageId + alle niet-oriëntatie-velden ongemoeid na rotate", async () => {
+    const t = convexTest(schema);
+    const aliceId = await registerUser(t, "user_alice", "a@x.com");
+    const bobId = await registerUser(t, "user_bob", "b@x.com");
+
+    const storageId = await t.run(async (ctx) =>
+      ctx.storage.store(new Blob(["fake-bytes"])),
+    );
+    const now = Date.now();
+    const photoId = await t.run(async (ctx) =>
+      ctx.db.insert("photos", {
+        ownerId: aliceId,
+        storageId,
+        mimeType: "image/jpeg",
+        width: 4000,
+        height: 3000,
+        exifOrientation: 1,
+        takenAt: 1700000000000,
+        latitude: 52.37,
+        longitude: 4.89,
+        locationLabel: "Amsterdam, Nederland",
+        ratingAverage: 4,
+        ratingCount: 3,
+        flaggedAt: now,
+        flaggedBy: bobId,
+        createdAt: now,
+      }),
+    );
+
+    await withUser(t, "user_alice").mutation(api.photos.rotate, {
+      photoId,
+      rotation: 90,
+      flipY: false,
+    });
+
+    const photo = await t.run((ctx) => ctx.db.get(photoId));
+    // Gewijzigd: orientation + dims-swap.
+    expect(photo?.exifOrientation).toBe(ROT90[1]);
+    expect(photo?.width).toBe(3000);
+    expect(photo?.height).toBe(4000);
+    // Ongemoeid: bestand + alle nevenstaat.
+    expect(photo?.storageId).toBe(storageId);
+    expect(photo?.takenAt).toBe(1700000000000);
+    expect(photo?.latitude).toBe(52.37);
+    expect(photo?.longitude).toBe(4.89);
+    expect(photo?.locationLabel).toBe("Amsterdam, Nederland");
+    expect(photo?.ratingAverage).toBe(4);
+    expect(photo?.ratingCount).toBe(3);
+    expect(photo?.flaggedAt).toBe(now);
+    expect(photo?.flaggedBy).toBe(bobId);
   });
 });
