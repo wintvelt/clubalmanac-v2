@@ -15,6 +15,8 @@ import { internal } from "../../convex/_generated/api";
 // Cascade-matrix mapping:
 //   FL1 — `cleanup flagged photos` daily 03:00 UTC → internal.photos.cleanupFlaggedPhotos
 //   UI1 — `cleanup old upload idempotency` daily 03:30 UTC → internal.uploads.cleanupOld
+//   IB2 — `expire pending invites` daily 04:00 UTC → internal.invites.expirePendingInvites
+//         (04:00 gespreid na FL1 03:00 + UI1 03:30, geen runtime-overlap)
 
 describe("convex/crons.ts — cron registration", () => {
   it("FL1: 'cleanup flagged photos' is daily 03:00 UTC en verwijst naar internal.photos.cleanupFlaggedPhotos", () => {
@@ -39,10 +41,27 @@ describe("convex/crons.ts — cron registration", () => {
     expect(job.name).toBe(getFunctionName(internal.uploads.cleanupOld));
   });
 
-  it("registreert exact deze twee crons (geen onbedoelde extra registraties)", () => {
+  it("IB2: 'expire pending invites' is daily 04:00 UTC en verwijst naar internal.invites.expirePendingInvites", () => {
+    const job = crons.crons["expire pending invites"];
+    if (!job) throw new Error("cron 'expire pending invites' niet geregistreerd");
+    expect(job.schedule).toEqual({
+      type: "daily",
+      hourUTC: 4,
+      minuteUTC: 0,
+    });
+    expect(job.name).toBe(
+      getFunctionName(internal.invites.expirePendingInvites),
+    );
+  });
+
+  it("registreert exact deze drie crons (geen onbedoelde extra registraties)", () => {
     const ids = Object.keys(crons.crons).sort();
     expect(ids).toEqual(
-      ["cleanup flagged photos", "cleanup old upload idempotency"].sort(),
+      [
+        "cleanup flagged photos",
+        "cleanup old upload idempotency",
+        "expire pending invites",
+      ].sort(),
     );
   });
 });
