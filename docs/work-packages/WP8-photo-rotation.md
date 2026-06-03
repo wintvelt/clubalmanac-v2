@@ -59,6 +59,19 @@ User-truth, niet impl-vorm.
   - Géén nieuwe file `convex/photoRotation.ts` (was in oorspronkelijke spec).
   - `albumPhotos`-tabel + `memberships`-tabel voor group-admin-check (A9-pad blijft geldig).
 
+## Frontend-contract (voor Phase 4)
+
+WP8 maakt `photos.exifOrientation` in Convex de **enige bron-van-waarheid** voor display-oriëntatie. Het bestand zelf wordt door rotate niet aangeraakt — de embedded EXIF-tag in de blob kan dus blijven afwijken van de DB-waarde, en is **niet** wat clients horen te respecteren.
+
+Contract voor élke client (iPhone-app, webapp, toekomstige Android):
+
+- Bij rendering van een photo: lees `photos.exifOrientation` uit Convex (default 1 als undefined)
+- Pas de bijbehorende rotate/flip-transform toe op het bestand (CSS-transform of equivalent native primitive)
+- **Negeer** de Orientation-tag in het bestand zelf — die kan stale zijn
+- Bij user-rotate-actie: call `api.photos.rotate({photoId, rotation, flipY})`. Client kan optimistisch UI updaten op basis van de verwachte nieuwe waarde (zelfde EXIF-arithmetiek-tabel) of opnieuw queryen na de mutation
+
+Deze contract is in cyclus-2 hardening ingezet (`exifOrientation` veld + client CSS-transform) en wordt door WP8 verankerd. Bij Phase 4 client-integratie: pin in client-test dat de CSS-transform de DB-waarde gebruikt, niet de file-EXIF.
+
 ## Acceptance — hoe weten we dat het klaar is
 
 ### Tests (unit, mock-based)

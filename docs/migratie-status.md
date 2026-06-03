@@ -116,7 +116,7 @@ Werk door de app per feature. Elke stap lokaal testbaar in Expo dev build tegen 
 1. Auth screens (login/register met Clerk, vervangt Cognito)
 2. User profile (lezen/schrijven naar Convex)
 3. Groups overzicht + detail
-4. Albums + foto's bekijken
+4. Albums + foto's bekijken — **photo-display-contract**: client gebruikt `photos.exifOrientation` uit Convex (niet de file-EXIF-tag) voor de CSS-transform / native rotate. Bron: [`WP8-photo-rotation.md`](../work-packages/WP8-photo-rotation.md) §Frontend-contract.
 5. Foto upload flow
 6. Ratings
 7. Invites
