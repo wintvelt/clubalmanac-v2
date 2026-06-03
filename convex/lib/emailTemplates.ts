@@ -261,21 +261,38 @@ ${SIGNATURE_TEXT}`;
 // ---------------------------------------------------------------------------
 // Maandelijkse "alive"-mail (invariant 6). Passive meta-monitoring zodat
 // afwezigheid-van-mail niet als "geen drift" wordt gelezen.
+//
+// `driftPresent` (audit N-1): een heartbeat kan op een gededupte-drift-run
+// vuren — dan ís er openstaande drift die alleen geen nieuwe mail meer
+// triggert. De tekst krijgt dan een waarschuwings-tak (verwijst naar het
+// dashboard-log) i.p.v. de geruststellende "geen nieuwe drift"-tekst, zodat
+// de heartbeat geen vals "alles in orde" suggereert.
 export function monitorHeartbeatTemplate(opts: {
   timestamp: string;
+  driftPresent: boolean;
 }): TemplateBlock {
   const subject = `Clubalmanac integriteits-check: maandelijkse heartbeat`;
 
+  const statusHtml = opts.driftPresent
+    ? `<p><strong>Let op:</strong> er is openstaande drift die door dedup geen nieuwe alert-mail meer triggert. Raadpleeg het Convex dashboard-log voor de actuele drift-rijen.</p>`
+    : `<p>Geen nieuwe drift sinds de vorige melding.</p>`;
+  const statusText = opts.driftPresent
+    ? `Let op: er is openstaande drift die door dedup geen nieuwe alert-mail meer triggert. Raadpleeg het Convex dashboard-log voor de actuele drift-rijen.`
+    : `Geen nieuwe drift sinds de vorige melding.`;
+
   const htmlPart = `
 <p>Hi Admin,</p>
-<p>De dagelijkse integriteits-check draait nog (stand ${escapeHtml(opts.timestamp)}). Geen nieuwe drift sinds de vorige melding.</p>
+<p>De dagelijkse integriteits-check draait nog (stand ${escapeHtml(opts.timestamp)}).</p>
+${statusHtml}
 <p>Deze maandelijkse heartbeat bevestigt dat de monitor actief is — afwezigheid van mail is dus géén bewijs van "geen drift".</p>
 ${SIGNATURE_HTML}
 `.trim();
 
   const textPart = `Hi Admin,
 
-De dagelijkse integriteits-check draait nog (stand ${opts.timestamp}). Geen nieuwe drift sinds de vorige melding.
+De dagelijkse integriteits-check draait nog (stand ${opts.timestamp}).
+
+${statusText}
 
 Deze maandelijkse heartbeat bevestigt dat de monitor actief is — afwezigheid van mail is dus geen bewijs van "geen drift".
 

@@ -218,20 +218,21 @@ export const integrityCheck = internalMutation({
     const driftFound = lines.length > 0;
     const signature = driftFound ? hashSignature(lines) : "";
 
-    // ── Dedup-state + heartbeat-klok uit laatste runs ──────────────────
-    // Runs nieuw-naar-oud. lastRun → heartbeat-klok; laatste run die wél een
-    // drift-mail stuurde → de signature waartegen we dedupen.
-    const recentRuns = await ctx.db
+    // ── Dedup-state + heartbeat-klok uit de direct voorgaande run ──────
+    const lastRun = await ctx.db
       .query("monitoringRuns")
       .withIndex("by_runAt")
       .order("desc")
-      .collect();
-    const lastRun = recentRuns[0] ?? null;
-    const lastAlertedRun = recentRuns.find((r) => r.driftFound && r.emailSent);
-    const lastAlertedSignature = lastAlertedRun?.driftSignature ?? null;
+      .first();
 
-    // Drift-mail alleen bij nieuwe/gewijzigde drift-signature (invariant 4).
-    const driftEmail = driftFound && signature !== lastAlertedSignature;
+    // Drift-mail alleen wanneer de drift-signature verschilt van die van de
+    // DIRECT voorgaande run (strict-consecutive dedup, invariant 4 / audit
+    // S-1). Een schone tussenrun zet de vorige signature op "" ⇒ terugkerende
+    // identieke drift ná een clean is conceptueel een nieuw event en re-
+    // alarmeert. Persistente identieke drift over opeenvolgende runs houdt
+    // dezelfde signature en blijft dus één mail (storm-onderdrukking intact).
+    const previousSignature = lastRun?.driftSignature ?? null;
+    const driftEmail = driftFound && signature !== previousSignature;
 
     // Heartbeat (invariant 6, A's inline-keuze): als deze run géén drift-mail
     // queue'de én ≥30d sinds de laatste monitor-mail. Op de allereerste run is
@@ -268,12 +269,17 @@ export const integrityCheck = internalMutation({
         kind: "drift",
         lines,
         runAt: now,
+        driftPresent: true,
       });
     } else if (heartbeatEmail) {
+      // driftPresent geeft de heartbeat-tekst een waarschuwings-tak: een
+      // heartbeat die op een gededupte-drift-run vuurt mag niet "geen drift"
+      // suggereren — er ís openstaande drift (invariant 6 / audit N-1).
       await ctx.scheduler.runAfter(0, internal.monitoring.sendMonitoringAlert, {
         kind: "heartbeat",
         lines: [],
         runAt: now,
+        driftPresent: driftFound,
       });
     }
 
@@ -290,8 +296,9 @@ export const sendMonitoringAlert = internalAction({
     kind: v.union(v.literal("drift"), v.literal("heartbeat")),
     lines: v.array(v.string()),
     runAt: v.number(),
+    driftPresent: v.boolean(),
   },
-  handler: async (_ctx, { kind, lines, runAt }) => {
+  handler: async (_ctx, { kind, lines, runAt, driftPresent }) => {
     const webmasters = getWebmasterEmails();
     if (webmasters.length === 0) {
       console.log(`[sendMonitoringAlert] geen WEBMASTER_EMAILS geconfigureerd, skipping`);
@@ -302,7 +309,7 @@ export const sendMonitoringAlert = internalAction({
     const tpl =
       kind === "drift"
         ? monitorDriftAlertTemplate({ lines, timestamp })
-        : monitorHeartbeatTemplate({ timestamp });
+        : monitorHeartbeatTemplate({ timestamp, driftPresent });
 
     await sendMailjetMessage({
       from: { email: INFO_SENDER },
