@@ -20,14 +20,19 @@
 
 export type Rotation = 0 | 90 | 180 | 270;
 
-// Transitie-tabellen (huidige 1..8) → nieuwe 1..8. Ground-truth uit de spec,
-// afgeleid via D4-groep-compositie, geverifieerd op delta (90∘90=180) +
-// inverse (90 dán 270 = identiteit).
-const ROT90: Record<number, number> = { 1: 6, 2: 5, 3: 8, 4: 7, 5: 4, 6: 3, 7: 2, 8: 1 };
+// Transitie-tabellen (huidige 1..8) → nieuwe 1..8.
+//
+// WP8-audit bug #10: de eerste cyclus kopieerde de spec-tabel 1:1 in zowel test
+// als impl (circulaire validatie) en bevatte een 5↔7 transpose/transverse-
+// verwisseling die alle delta/inverse-pins overleefde (group-structuur-behoudende
+// swap). Deze tabellen zijn nu afgestemd op A's onafhankelijke pixel-array-oracle
+// in tests/photos/rotate.test.ts (`oracleOrientation`) — niet uit de spec
+// gekopieerd. ROT180 was al correct; ROT90/ROT270/FLIP zijn gecorrigeerd.
+const ROT90: Record<number, number> = { 1: 6, 2: 7, 3: 8, 4: 5, 5: 2, 6: 3, 7: 4, 8: 1 };
 const ROT180: Record<number, number> = { 1: 3, 2: 4, 3: 1, 4: 2, 5: 7, 6: 8, 7: 5, 8: 6 };
-const ROT270: Record<number, number> = { 1: 8, 2: 7, 3: 6, 4: 5, 5: 2, 6: 1, 7: 4, 8: 3 };
+const ROT270: Record<number, number> = { 1: 8, 2: 5, 3: 6, 4: 7, 5: 4, 6: 1, 7: 2, 8: 3 };
 // flip-only (horizontale mirror)
-const FLIP: Record<number, number> = { 1: 2, 2: 1, 3: 4, 4: 3, 5: 8, 6: 7, 7: 6, 8: 5 };
+const FLIP: Record<number, number> = { 1: 2, 2: 1, 3: 4, 4: 3, 5: 6, 6: 5, 7: 8, 8: 7 };
 
 const ROT: Record<Rotation, Record<number, number> | null> = {
   0: null, // identiteit — geen lookup nodig
