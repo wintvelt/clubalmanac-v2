@@ -1,7 +1,22 @@
 import { describe, expect, it } from "vitest";
 import { getFunctionName } from "convex/server";
+import type { FunctionReference } from "convex/server";
 import crons from "../../convex/crons";
 import { internal } from "../../convex/_generated/api";
+
+// Forward-declared ref voor B's nog-niet-bestaande internal.monitoring.integrityCheck
+// (WP10). Pre-impl resolveert dit naar undefined ⇒ getFunctionName throwt ⇒ RED.
+const integrityCheckRef = (
+  internal as unknown as {
+    monitoring: {
+      integrityCheck: FunctionReference<
+        "mutation",
+        "internal",
+        Record<string, never>
+      >;
+    };
+  }
+).monitoring.integrityCheck;
 
 // Cron registration pin (WP4 component 1).
 //
@@ -17,6 +32,8 @@ import { internal } from "../../convex/_generated/api";
 //   UI1 — `cleanup old upload idempotency` daily 03:30 UTC → internal.uploads.cleanupOld
 //   IB2 — `expire pending invites` daily 04:00 UTC → internal.invites.expirePendingInvites
 //         (04:00 gespreid na FL1 03:00 + UI1 03:30, geen runtime-overlap)
+//   WP10 — `integrity check` daily 04:30 UTC → internal.monitoring.integrityCheck
+//         (04:30 gespreid ná IB2 04:00, geen runtime-overlap)
 
 describe("convex/crons.ts — cron registration", () => {
   it("FL1: 'cleanup flagged photos' is daily 03:00 UTC en verwijst naar internal.photos.cleanupFlaggedPhotos", () => {
@@ -54,13 +71,25 @@ describe("convex/crons.ts — cron registration", () => {
     );
   });
 
-  it("registreert exact deze drie crons (geen onbedoelde extra registraties)", () => {
+  it("WP10: 'integrity check' is daily 04:30 UTC en verwijst naar internal.monitoring.integrityCheck", () => {
+    const job = crons.crons["integrity check"];
+    if (!job) throw new Error("cron 'integrity check' niet geregistreerd");
+    expect(job.schedule).toEqual({
+      type: "daily",
+      hourUTC: 4,
+      minuteUTC: 30,
+    });
+    expect(job.name).toBe(getFunctionName(integrityCheckRef));
+  });
+
+  it("registreert exact deze vier crons (geen onbedoelde extra registraties)", () => {
     const ids = Object.keys(crons.crons).sort();
     expect(ids).toEqual(
       [
         "cleanup flagged photos",
         "cleanup old upload idempotency",
         "expire pending invites",
+        "integrity check",
       ].sort(),
     );
   });
