@@ -1,8 +1,8 @@
 # Audit track record
 
-Tussen 2026-04 en 2026-05 hebben 14 audit-cycli op clubalmanac-v2 backend de volgende productie-bugs ontdekt en gefixt vóór cutover.
+Tussen 2026-04 en 2026-06 hebben 15 audit-cycli op clubalmanac-v2 backend de volgende productie-bugs ontdekt en gefixt vóór cutover.
 
-## 9 productie-bugs gevonden
+## 10 productie-bugs gevonden
 
 1. **U8** (audit-2): user-delete miste M2-cascade (founder/admin succession + group cleanup) — pure record-delete zonder downstream effect
 2. **AP4** (audit-4): album-photo delete miste group-cover cleanup — dangling cover-refs mogelijk
@@ -13,6 +13,7 @@ Tussen 2026-04 en 2026-05 hebben 14 audit-cycli op clubalmanac-v2 backend de vol
 7. **decline order-bug** (audit-8): idempotency werkte niet bij verkeerde caller
 8. **CLUBALMANAC_APP_URL silent prod-fallback** (WP5-audit S-3): dev-deployment zonder env-var → invite-links naar prod-host → 404 bij klik. Fix: fail-loud throw bij unset.
 9. **CLUBALMANAC_STAGE silent "dev"-fallback** (WP5-audit S-3): prod-deployment zonder env-var → problem-reports met label "dev" → urgency-mis-routing. Fix: fail-loud throw bij unset.
+10. **WP8 EXIF-arithmetiek 5↔7 verwisseling** (WP8-audit B1): `convex/lib/exifOrientation.ts` ROT90/ROT270/FLIP-tabellen hadden oriëntaties 5 (transpose) en 7 (transverse) verwisseld t.o.v. canonieke EXIF. Bereikbaar via `flipY`-feature (1→2 canoniek, daarna rotate 90 trapt erin) en via gespiegelde uploads (extractie leest tags.Orientation 1:1 uit exif-parser, dus front-camera-bestanden komen canoniek binnen en zouden onder rotate vergiftigd worden). Tests vingen 't niet omdat A's testbestand en B's impl dezelfde uit-de-spec-gekopieerde tabel deelden — circulaire validatie. Fix: A herleidde tabellen onafhankelijk via D4-matrix-compositie, pinde gespiegelde-start-rotaties tegen externe oracle; B paste impl aan; audit re-run focused op tabel-cellen + oracle-test.
 
 ## Plus
 
@@ -38,6 +39,10 @@ Tussen 2026-04 en 2026-05 hebben 14 audit-cycli op clubalmanac-v2 backend de vol
 ## Recurring-pattern: doc-deliverable-drift bij codecomplete-WPs
 
 WP5-audit (CLUBALMANAC_APP_URL/STAGE runbook-fix achteraf) en WP6-audit (cascade-matrix S1, external-services Clerk-tabel) flagden hetzelfde gat: spec-genoemde doc-deliverables liepen achter op de impl-commit. Gepromoveerd naar standing rule in [`commit-discipline.md`](./commit-discipline.md) §Doc-deliverable-checklist: B's commit-message moet expliciet de spec-genoemde doc-deliverables co-committen of een marker geven waarom niet. Audit toetst dit voortaan als should-fix.
+
+## Recurring-pattern: gedeelde-lookup-tabel blind spot
+
+WP8-audit (EXIF-arithmetiek 5↔7) liet zien dat wanneer A een waarheidstabel uit de spec in de test plaatst en B die in de impl her-codeert, A→B alleen interne consistentie valideert. Een wrong-but-self-consistent tabel passeert alle tests omdat test én impl dezelfde (afwijkende) bron delen. Delta-pins (90∘90=180, inverse) zijn hiervoor blind: groep-structuur-behoudende verwisselingen (zoals 5↔7) overleven ze. Gepromoveerd naar standing rule in [`ab-audit-workflow.md`](./ab-audit-workflow.md) §Anti-pattern: gedeelde lookup-tabel: bij arithmetiek of lookup-tabellen moet de test minstens enkele cellen tegen een *onafhankelijke* oracle pinnen (eerste-principes-afleiding of tweede, niet-spec-gekopieerde referentie), niet alleen tegen een tabel die uit dezelfde spec-bron komt als de impl.
 
 ## Recurring-pattern: env-var-runbook-gap
 
