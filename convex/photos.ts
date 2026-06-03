@@ -11,6 +11,10 @@ import type { Doc, Id } from "./_generated/dataModel";
 import { internal } from "./_generated/api";
 import { requireCurrentUser } from "./users";
 import { requireWebmaster } from "./lib/auth";
+import {
+  applyOrientation,
+  rotationSwapsDimensions,
+} from "./lib/exifOrientation";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const FLAG_DELETE_DAYS = 14;
@@ -265,6 +269,73 @@ export const remove = mutation({
       throw new Error("Alleen eigenaar kan foto verwijderen");
     }
     await internalRemovePhoto(ctx, photoId);
+  },
+});
+
+// WP8 (EXIF-only): roteer/spiegel een foto door `exifOrientation` te
+// herberekenen via de canonieke 8-staat-arithmetiek (convex/lib/exifOrientation).
+// Geen pixel-manipulatie: het bestand (`storageId`) en alle nevenstaat blijven
+// onaangeroerd. Een 90°/270°-rotatie wisselt `width`/`height` in dezelfde
+// transactie zodat de DB-row consistent blijft.
+//
+// Delta-semantiek: elke call past de transformatie één keer toe bovenop de
+// bestaande oriëntatie (rotate(90)×2 = 180°; rotate(90)→rotate(270) = terug).
+// Géén idempotency.
+//
+// Auth (A3-verstrakking t.o.v. v1): owner OF group-admin van een group waarin de
+// foto via albumPhotos gepubliceerd staat. Geen webmaster-bypass, geen
+// member-zonder-admin. Owner-check eerst; group-walk alleen als de caller niet
+// de owner is.
+export const rotate = mutation({
+  args: {
+    photoId: v.id("photos"),
+    rotation: v.union(
+      v.literal(0),
+      v.literal(90),
+      v.literal(180),
+      v.literal(270),
+    ),
+    flipY: v.boolean(),
+  },
+  handler: async (ctx, { photoId, rotation, flipY }) => {
+    const user = await requireCurrentUser(ctx);
+    const photo = await ctx.db.get(photoId);
+    if (!photo) throw new Error("Foto bestaat niet");
+
+    if (photo.ownerId !== user._id) {
+      // A9: group-admin-pad. albumPhotos draagt groupId direct (gedupliceerd),
+      // dus geen album-hop nodig. Admin in één publicatie-group volstaat.
+      const aps = await ctx.db
+        .query("albumPhotos")
+        .withIndex("by_photo", (q) => q.eq("photoId", photoId))
+        .collect();
+      const groupIds = [...new Set(aps.map((ap) => ap.groupId))];
+      let isAdmin = false;
+      for (const groupId of groupIds) {
+        const membership = await ctx.db
+          .query("memberships")
+          .withIndex("by_user_and_group", (q) =>
+            q.eq("userId", user._id).eq("groupId", groupId),
+          )
+          .unique();
+        if (membership?.role === "admin") {
+          isAdmin = true;
+          break;
+        }
+      }
+      if (!isAdmin) {
+        throw new Error("Alleen eigenaar of group-admin kan foto roteren");
+      }
+    }
+
+    const patch: Partial<Doc<"photos">> = {
+      exifOrientation: applyOrientation(photo.exifOrientation, rotation, flipY),
+    };
+    if (rotationSwapsDimensions(rotation)) {
+      patch.width = photo.height;
+      patch.height = photo.width;
+    }
+    await ctx.db.patch(photoId, patch);
   },
 });
 
