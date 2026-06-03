@@ -705,3 +705,100 @@ describe("integrityCheck — read-only + geen self-healing (inv 10 + 2d)", () =>
     expect(after).toEqual(before);
   });
 });
+
+// ════════════════════════════════════════════════════════════════════
+// 10. Audit-fix S-1 (strict-consecutive dedup) + N-1 (heartbeat-tekst)
+// ════════════════════════════════════════════════════════════════════
+
+describe("integrityCheck — recurrence-na-clean re-alert (audit S-1, inv 4)", () => {
+  it("drift X → schone run → drift X = RE-alert (vergelijk met direct voorgaande run, niet laatst-gealerte)", async () => {
+    // Strict-consecutive: de schone tussenrun reset de dedup-referentie naar "".
+    // De terugkerende identieke drift is conceptueel een nieuw event en moet
+    // opnieuw alarmeren. Tegen de OUDE "laatst-gealerte-run"-regel zou run 3
+    // gededupt worden (X === X) en delta 0 geven — vandaar RED tot B de fix landt.
+    const t = convexTest(schema);
+    const userId = await seedUser(t, { photoCount: 5 }); // drift X: photoCount 5 vs 0 photos
+
+    // Run 1: drift X → alert.
+    expect(await runMonitorDelta(t)).toBe(1);
+
+    // Run 2: drift opgelost (photoCount → 0) → schone run, geen email.
+    await t.run((ctx) => ctx.db.patch(userId, { photoCount: 0 }));
+    vi.setSystemTime(FIXED_NOW + DAY_MS);
+    expect(await runMonitorDelta(t)).toBe(0);
+
+    // Run 3: identieke drift X keert terug (photoCount → 5) → RE-alert.
+    await t.run((ctx) => ctx.db.patch(userId, { photoCount: 5 }));
+    vi.setSystemTime(FIXED_NOW + 2 * DAY_MS);
+    expect(await runMonitorDelta(t)).toBe(1);
+  });
+
+  it("persistente identieke drift over opeenvolgende runs blijft één email (strict-consecutive dedupt nog steeds)", async () => {
+    // Regressie-guard: de S-1-fix mag de normale storm-onderdrukking niet breken.
+    const t = convexTest(schema);
+    await seedUser(t, { photoCount: 5 });
+
+    expect(await runMonitorDelta(t)).toBe(1); // run 1: alert
+    vi.setSystemTime(FIXED_NOW + DAY_MS);
+    expect(await runMonitorDelta(t)).toBe(0); // run 2: zelfde signature als run 1 → dedup
+    vi.setSystemTime(FIXED_NOW + 2 * DAY_MS);
+    expect(await runMonitorDelta(t)).toBe(0); // run 3: idem → dedup
+  });
+});
+
+describe("integrityCheck — heartbeat-tekst conditioneel op gededupte drift (audit N-1, inv 6)", () => {
+  it("heartbeat op een gededupte-drift-run waarschuwt voor openstaande drift + dashboard", async () => {
+    // Persistente identieke drift: run 1 alarmeert, run 2 (30+ dagen later) wordt
+    // door dedup géén drift-mail maar vuurt de heartbeat. Die heartbeat mag NIET
+    // "geen nieuwe drift" suggereren — er ís openstaande drift. RED tot B de
+    // template conditioneel maakt (driftPresent-tak met marker-zinsnede).
+    const t = convexTest(schema);
+    await seedUser(t, { photoCount: 4 }); // persistente drift
+
+    const fetchSpy = mockMailjet2xx();
+
+    // Run 1 (T0): drift → alert.
+    await t.mutation(integrityCheckRef, {});
+
+    // Run 2 (T0+31d): zelfde drift → gededupt (geen drift-mail) + heartbeat vuurt.
+    vi.setSystemTime(FIXED_NOW + 31 * DAY_MS);
+    await t.mutation(integrityCheckRef, {});
+
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+
+    const msgs = allMailjetMessages(fetchSpy);
+    expect(msgs).toHaveLength(2); // drift-alert (run 1) + heartbeat (run 2)
+    const heartbeat = msgs[msgs.length - 1]!; // laatst gescheduled = heartbeat
+    const body = (
+      (heartbeat.HTMLPart ?? "") + (heartbeat.TextPart ?? "")
+    ).toLowerCase();
+
+    expect(body).toContain("openstaande drift");
+    expect(body).toContain("dashboard");
+  });
+
+  it("heartbeat op een schone run waarschuwt NIET voor openstaande drift", async () => {
+    // Contrast-guard: bij een echt schone run mag de marker-zinsnede er niet zijn
+    // (anders wordt elke heartbeat een vals alarm).
+    const t = convexTest(schema); // lege DB → altijd schoon
+
+    const fetchSpy = mockMailjet2xx();
+
+    // Run 1 (T0): baseline (initialiseert heartbeat-klok, geen mail).
+    await t.mutation(integrityCheckRef, {});
+
+    // Run 2 (T0+31d): schoon + heartbeat vuurt.
+    vi.setSystemTime(FIXED_NOW + 31 * DAY_MS);
+    await t.mutation(integrityCheckRef, {});
+
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+
+    const msgs = allMailjetMessages(fetchSpy);
+    expect(msgs).toHaveLength(1); // alleen de heartbeat
+    const body = (
+      (msgs[0]!.HTMLPart ?? "") + (msgs[0]!.TextPart ?? "")
+    ).toLowerCase();
+
+    expect(body).not.toContain("openstaande drift");
+  });
+});
