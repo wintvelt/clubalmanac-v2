@@ -131,3 +131,75 @@ Alle 5 vragen uit de eerste cyclus zijn met deze spec-revisie beantwoord of verv
 - 5 (Orientation≠1 fixture): n.v.t. — geen empirische pixel-gate
 
 A's revised commits hangen aan WP8-EXIF-only en zijn input voor B's impl.
+
+---
+
+### A-revisie cyclus 2 — canonieke EXIF-arithmetiek-tabel (ground-truth voor B)
+
+Dit is de bron-van-waarheid voor de mutation én de tests. De 8 EXIF-Orientation-
+waarden zijn de standaard-D4-symmetrieën (1=normaal, 2=mirror-H, 3=180,
+4=mirror-V, 5=transpose, 6=90° CW, 7=transverse, 8=90° CCW). Afgeleid via
+groep-compositie en geverifieerd op delta (90∘90=180) + inverse (90 dan 270 =
+identiteit).
+
+**Conventies (vastgelegd door A, B implementeert exact deze):**
+- `rotation` = **clockwise** ("draai rechts"). De CW/CCW-keuze is symmetrisch:
+  als de frontend later "links" blijkt te willen, is dat een knop-label-fix, niet
+  een tabel-wijziging. Tabel is intern consistent (delta+inverse kloppen).
+- `flipY` = **horizontale mirror** (zie A10). Volgorde bij combinatie: **flip
+  eerst, dán rotatie** (matcht oude AWS `image.flip(flipY,false).rotate(rotation)`).
+  Dus `nieuw = ROT[rotation]( FLIP( huidig ) )`.
+- Huidige `exifOrientation === undefined` → behandel als **1** (normaal) vóór de
+  arithmetiek. (Cascade-matrix P8: "default 1".)
+
+**Transitie-tabellen** `(huidige 1..8) → nieuwe 1..8`:
+
+| huidig | rot0 | rot90 (CW) | rot180 | rot270 | flip-only (rot0, flipY) |
+|---|---|---|---|---|---|
+| 1 | 1 | 6 | 3 | 8 | 2 |
+| 2 | 2 | 5 | 4 | 7 | 1 |
+| 3 | 3 | 8 | 1 | 6 | 4 |
+| 4 | 4 | 7 | 2 | 5 | 3 |
+| 5 | 5 | 4 | 7 | 2 | 8 |
+| 6 | 6 | 3 | 8 | 1 | 7 |
+| 7 | 7 | 2 | 5 | 4 | 6 |
+| 8 | 8 | 1 | 6 | 3 | 5 |
+
+Combinatie flip+rotatie = pas eerst de flip-kolom toe, dán de rotatie-kolom.
+Voorbeeld `flipY=true, rotation=90` vanaf 1: FLIP(1)=2, ROT90(2)=5 → **5**.
+Volledige flip+rot90-kolom: 1→5, 2→6, 3→7, 4→8, 5→1, 6→2, 7→3, 8→4.
+
+**Width/height-swap** hangt UITSLUITEND af van `rotation ∈ {90, 270}` (flip
+wisselt dims niet). 0/180/flip-only → geen swap. `undefined` dims blijven
+`undefined`.
+
+### Retained findings (cyclus 1, nog geldig in EXIF-only model)
+
+- **A1 — delta + inverse** (geen call-idempotentie): in de Invarianten-sectie ✅
+  Tests pinnen `rotate(90)×2 = rotate(180)` en `rotate(90)→rotate(270)` = terug.
+- **A3 — auth verstrakt t.o.v. v1**: oude code (`getPhotoById`) liet rotate toe
+  voor owner OF **elk lid-met-toegang** (géén rol-check; de "admins only"-comment
+  was onwaar). Spec verstrakt bewust naar owner OF group-admin. Tests pinnen de
+  strakke variant; een v1-member-zonder-admin verliest de rotate-mogelijkheid.
+- **A9 — group-admin query-pad**: owner-check eerst (`photo.ownerId === user._id`),
+  anders `albumPhotos.by_photo(photoId)` → unieke publicatie-`groupId`s → per group
+  `memberships.by_user_and_group(user, group)` met `role === "admin"`. Admin in
+  **één** publicatie-group volstaat. Geen webmaster-bypass.
+- **A10 — `flipY` is een horizontale mirror** (naamgeving uit Jimp-`flip(horizontal,
+  vertical)`; "Y" historisch verkeerd, behouden voor v1-continuïteit).
+
+### Vervallen (cyclus 1, niet meer toepasselijk)
+
+A2 (EXIF-bake-in), A5 (HEIC fast-fail), A7 (sharp-keuze), A8 (atomic storage-swap +
+cleanup-ordering) — allemaal pixel/sharp-gebonden, vervallen met het EXIF-only-pad.
+A4 (dims uit sharp-output) → vervangen door pure DB-swap op `rotation ∈ {90,270}`.
+A11 (cascade-rij) → P8 door regie herschreven, door A bevestigd.
+
+### Test-deliverables cyclus 2
+
+- `tests/photos/rotate.test.ts` — herzien: EXIF-tabel (alle 8 starts × rotaties +
+  flip + combinatie + undefined-default) + dim-swap + delta/inverse + auth +
+  cascade-safety. Geen sharp-mock, geen action-pad.
+- `tests/photos/rotateAction.test.ts` — **verwijderd** (geen action).
+- `tests/integration/uploads/rotateRoundtrip.test.ts` — **verwijderd** (geen
+  pixel-roundtrip).
