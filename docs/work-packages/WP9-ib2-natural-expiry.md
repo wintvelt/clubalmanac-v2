@@ -17,6 +17,7 @@ Gedrag dat altijd waar moet zijn — user-truth, geen impl-vorm.
 5. **Idempotency over runs**: herhaalde runs op dezelfde dataset zijn no-op na de eerste run die de grens passeert. Een tweede cron-tick op een al-gepatchte rij produceert nul writes.
 6. **Auth-boundary**: uitsluitend bereikbaar via de Convex cron-runtime + `internal.invites.expirePendingInvites`. Geen `api`-export, geen user-facing endpoint.
 7. **Cascade-vrijheid**: IB2 raakt geen andere tabel. Geen storage-touch, geen membership-touch, geen `inviteBounceEvents`-write. Single-row-patch op `invites`.
+8. **respondedAt-grens** (A toegevoegd): natural-expiry-pad zet `status="expired"` zonder ooit `respondedAt` te schrijven of te wijzigen. Per bestaande code-conventie is `respondedAt` exclusief voor user-initiated accept/decline; system-events (bounce → `bouncedAt`) raken 't nooit. Natural-expiry is óók een system-event. De volledige natural-expiry-fingerprint is daarmee: `status==="expired"` ∧ `bouncedAt===undefined` ∧ `respondedAt===undefined`. Samen met invariant 3 maakt dit drie terminal-herkomsten onderscheidbaar (natural / bounce / nooit-expired-via-accept-decline). Rationale in §Spec-criticus aanvullingen.
 
 ## Edge cases + scope-uitsluitingen
 
@@ -61,6 +62,7 @@ Per dimensie laag / medium / hoog + reden.
 - Boundary-pins met fake-timer: `expiresAt = now + 1ms` (blijft pending), `expiresAt = now` (expired), `expiresAt = now - 1ms` (expired)
 - Status-filter exclusiviteit: rijen met status ∈ {`bounced`, `accepted`, `declined`, `expired`} blijven onaangeraakt, ook als `expiresAt < now`
 - `bouncedAt`-grens: na IB2-patch is `bouncedAt` op de gepatchte rij ongezet (of behoudt eventueel pre-existing waarde, A's keuze afhankelijk van bestaande schema-semantiek — maar IB2 zelf schrijft 't veld niet)
+- `respondedAt`-grens (invariant 8): na IB2-patch is `respondedAt` op de gepatchte rij ongezet. IB2 schrijft 't veld nooit.
 - Stille expiry: geen email-action gequeue'd na IB2-run
 - Idempotency: tweede run op zelfde dataset doet nul writes (mutation kan dit aantonen via return-count of via spy op `ctx.db.patch`)
 - Cascade-vrijheid: geen writes op andere tabellen tijdens IB2-run
@@ -76,13 +78,32 @@ Per dimensie laag / medium / hoog + reden.
 
 ## Spec-criticus aanvullingen (A vult in)
 
-A leest cascade-matrix IB2-rij + bovenstaande spec, vult hier aan:
+**Oude AWS-code: niet gelezen.** Cascade-matrix IB2 bevestigt "nieuw, niet uit AWS" — geen `blob-images-api*`-repo relevant. Spec-criticus puur tegen bestaande Convex-code (IB1 `handleBounce`, FL1 `cleanupFlaggedPhotos`, UI1 `cleanupOld`) + cascade-matrix + de invite-accept/create-boundary-polariteit.
 
-- Ontbrekende invarianten: ...
-- Gemiste edge cases: ...
-- Risico-dimensie die regie overschatte/onderschatte: ...
-- Open product-vragen voor regie/Wouter: ...
-- Cascade-matrix cat-correctie (cat 3 → cat 2 of motivatie waarom cat 3 blijft): ...
-- Index-check op `invites`-tabel (bestaat `by_status` of equivalent; zo niet, motivatie scan vs index-additie): ...
+### Ontbrekende invariant: respondedAt-grens (invariant 8)
 
-(Leeg in draft. A commit edits hier.)
+De draft dekte `bouncedAt` (invariant 3) maar niet `respondedAt`. `invites` heeft beide optionele timestamp-velden. Per bestaande conventie (zie `bouncedHandler.test.ts`-kop + `accept`/`decline` in `invites.ts`) is `respondedAt` exclusief voor user-initiated accept/decline; het bounce-system-event gebruikt bewust `bouncedAt`, niet `respondedAt`. Natural-expiry is óók een system-event en moet dus consistent `respondedAt` ongemoeid laten. Toegevoegd als invariant 8 + acceptance-test. Geen scope-uitbreiding — explicitering van bestaand gedrag. (Notitie voor regie ter info.)
+
+### Index-check op `invites`-tabel
+
+`invites` heeft `by_status` index op `["status"]` — single-field, géén composite met `expiresAt`. IB2 kan daarom NIET range-querien zoals FL1 (`by_flagged_delete` `.lte()`) of UI1 (`by_status_and_createdAt` `.eq().lte()`). Correct patroon: `withIndex("by_status", q => q.eq("status","pending")).collect()` → in-memory filter `expiresAt <= now`. Identiek aan IB1 `handleBounce` (collect via `by_email` → in-memory status-filter). **Geen index-additie nodig** op 16-user schaal: de pending-set is klein, en elke run sluit gepasseerde rijen zodat de scan-set niet groeit. Bij toekomstige groei zou een `by_status_and_expiresAt`-composite + `.lte()` de scan-set verkleinen — valt onder het integrity-check/scaling-WP (TBD), niet deze WP. B mag `by_status` gebruiken; een full-table scan zónder status-index wordt afgekeurd (status-filter hoort via index, niet in-memory over álle invites).
+
+### Cascade-matrix cat-correctie: 3 → n.v.t.
+
+Noch cat 2 (transactional **aggregate**) noch cat 3 (**cascade delete**) past de legenda: IB2 doet géén delete, géén cascade, géén aggregate-herrekening — het is een self-contained single-row status-patch. De draft opperde cat 2, maar de matrix-legenda definieert cat 2 strikt als aggregate-herrekening; dat label zou misleiden. Correcte analoog is P8 (`n.v.t. (single-row mutation, geen cascade)`) en FL2 (`n.v.t. (action, geen cascade)`). **Cat in cascade-matrix gezet op `n.v.t. (single-row state-transition, geen cascade)`.** Tevens daar de effect-tekst boundary-correctie `expiresAt < now` → `expiresAt <= now` (harmoniseert met invariant 1 + FL1 + accept).
+
+### Cron-registratie-naam pinning
+
+Bestaande crons gebruiken descriptieve sleutels ("cleanup flagged photos", "cleanup old upload idempotency"). A pint de IB2-cron-sleutel op **`"expire pending invites"`** — 04:00 UTC → `internal.invites.expirePendingInvites`. Contract voor B: exact deze naam + schedule + function-ref. De "exact N crons"-test in `tests/crons/registration.test.ts` gaat van 2 → 3.
+
+### Idempotency / "nul writes" — observable
+
+"Nul writes bij tweede run" is niet direct meetbaar in convex-test (geen patch-spy op de interne `ctx.db`). De test pint het observeerbare equivalent: na een tweede run is (a) de rij ongewijzigd (status `expired`, géén nieuwe `bouncedAt`/`respondedAt`) en (b) de `_scheduled_functions`-count gelijk. Het garanderende mechanisme is de status-filter (invariant 2): een al-`expired` rij matcht niet meer. De tests hangen NIET aan de return-shape — B mag een count teruggeven of `void`, beide blijven groen.
+
+### Risico-dimensies
+
+Akkoord met regie's assessment (alles laag). Eén nuance op **ops**: de cron-registration-pin (statisch) dekt "cron verdween uit registratie", maar niet "cron geregistreerd maar faalt at runtime" — dat blijft observability via het Convex dashboard cron-status-panel, zoals de spec al noemt. Geen extra test mogelijk in-process; akkoord.
+
+### Geen open product-vragen
+
+Alle ambiguïteiten resolvable tegen bestaande code-conventies + cascade-matrix. Geen stop-en-rapporteer nodig.
