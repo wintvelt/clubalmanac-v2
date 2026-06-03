@@ -19,12 +19,12 @@ WP1-WP4 liepen vóór de formele spec-doc-discipline (geen WP-file). Status uit 
 | WP5 | Mailjet email (invite/accept/decline/bounce/flag-decide/problem-report) + bounce-webhook | [`WP5-email.md`](./WP5-email.md) | ✅ landed (gates 2026-05-18 dev) |
 | WP6 | Clerk session-webhook + atomic onboarding (server-to-server `session.created` → idempotent users-row + invite-accept + membership in één Convex-transactie) | [`WP6-clerk-session-webhook.md`](./WP6-clerk-session-webhook.md) | ✅ landed (gates 2026-05-18 dev) |
 | WP7 | Upload-pipeline empirische gates + integration-test (bewijs van pipeline op echte iPhone-foto's met EXIF/GPS) | [`runbooks/wp7-upload-gate.md`](../runbooks/wp7-upload-gate.md) + `tests/integration/uploads/uploadRoundtrip.test.ts` | ✅ landed (gate dev 2026-05-18 + 2 productie-bugs gefixed) |
+| WP8 | Photo rotation (`photos.rotate` mutation, EXIF-only — geen sharp/action) — DB-`exifOrientation` als bron-van-waarheid, client past CSS-transform toe (Phase-4 contract) | [`WP8-photo-rotation.md`](./WP8-photo-rotation.md) | ✅ landed (cyclus 1 + audit-bug #10 fix-cyclus 2026-06-03) |
 
 ## Open WPs (volgorde indicatief, regie beslist per kickoff)
 
 | WP | Onderwerp | Spec-doc | Status |
 |---|---|---|---|
-| WP8 | Photo rotation (`photos.rotate` mutation + sharp scheduled action) — EXIF Orientation upstream al af in cyclus-2 hardening | [`WP8-photo-rotation.md`](./WP8-photo-rotation.md) | 🆕 draft |
 | TBD | Crons-bundel: `expirePendingInvites` (IB2), eventueel andere scheduled functions | — | open |
 | TBD | Email Gate 1 happy-path + integration-test `tests/integration/mailjet/sendRoundtrip.test.ts` als follow-up van WP5 deferred-items | — | open |
 | TBD | Clerk Invitations API integratie (pre-create Clerk-user bij Convex `invites.create`, `users.status: "invited" \| "active"` voor visibility) — alternatief design op WP6, kan als upgrade later | — | open, design-discussie |

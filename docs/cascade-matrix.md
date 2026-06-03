@@ -43,7 +43,7 @@ Uitzondering: queries zonder trigger (puur read-tests) leven bij de query-owner.
 | Users | 10 | ✅ U3-U8, U10; ❌ U1, U2, U5, U9 eliminated |
 | Groups | 4 | ✅ G1-G4 |
 | Albums | 2 | ✅ A1, A2 |
-| Photos | 8 | ✅ P1-P7; 🚧 P8 (rotation, WP8 — RED-phase) |
+| Photos | 8 | ✅ P1-P8 |
 | Album-photos (publications) | 4 | ✅ AP1-AP4 |
 | Ratings | 1 | ✅ R1 |
 | Memberships | 3 | ✅ M1, M2, M3 |
@@ -95,7 +95,7 @@ Uitzondering: queries zonder trigger (puur read-tests) leven bij de query-owner.
 | P5 | `photoDelToCover` | PO delete | Clear cover-ref op group/album indien deze foto cover was | 3 (selectief) | In `photos.remove` mutation, full-table scan over groups/albums (acceptabel bij huidige schaal — TODO `by_cover` index als nodig) | `tests/photos/delete.test.ts` | ✅ |
 | P6 | `photoAddToStats` | PO insert | Increment `users.photoCount` | 2 | In `photos.create` mutation | `tests/photos/create.test.ts` | ✅ |
 | P7 | `photoDelToStats` | PO delete | Decrement `users.photoCount` | 2 | In `photos.remove` mutation | `tests/photos/delete.test.ts` | ✅ |
-| P8 | `fixPhotoRotation.js` (Jimp) | rotate-request (owner of group-admin) | **EXIF-only**: `photos.exifOrientation` waarde berekend via 8-staat-arithmetiek-tabel op `(rotation, flipY)`; `width`/`height` geswapt in DB bij 90°/270°; bestand zelf onaangeraakt. **Geen downstream cascade** — ratings/albumPhotos/group-+album-covers/flagging-state ongemoeid. Delta-semantiek (niet call-idempotent); inverse brengt terug. Per cyclus-2 hardening: clients passen CSS-transform toe gebaseerd op `photos.exifOrientation` uit DB (niet file-EXIF), dus DB-update = canonical rotate. Geen pixel-manipulatie nodig | n.v.t. (single-row mutation, geen cascade) | `photos.rotate` mutation (auth owner OR group-admin via `albumPhotos.by_photo`→publicatie-groups→`memberships` role=admin). Atomair: leest huidige `exifOrientation` (default 1), berekent nieuwe via lookup-tabel, patcht `exifOrientation` + (conditioneel) `width`/`height`-swap. Géén scheduled action, géén sharp, géén storage-swap, géén cleanup | `tests/photos/rotate.test.ts` (auth + EXIF-arithmetiek + dim-swap + delta+inverse) | 🚧 |
+| P8 | `fixPhotoRotation.js` (Jimp) | rotate-request (owner of group-admin) | **EXIF-only**: `photos.exifOrientation` waarde berekend via 8-staat-arithmetiek-tabel op `(rotation, flipY)`; `width`/`height` geswapt in DB bij 90°/270°; bestand zelf onaangeraakt. **Geen downstream cascade** — ratings/albumPhotos/group-+album-covers/flagging-state ongemoeid. Delta-semantiek (niet call-idempotent); inverse brengt terug. Per cyclus-2 hardening: clients passen CSS-transform toe gebaseerd op `photos.exifOrientation` uit DB (niet file-EXIF), dus DB-update = canonical rotate. Geen pixel-manipulatie nodig | n.v.t. (single-row mutation, geen cascade) | `photos.rotate` mutation (auth owner OR group-admin via `albumPhotos.by_photo`→publicatie-groups→`memberships` role=admin). Atomair: leest huidige `exifOrientation` (default 1), berekent nieuwe via lookup-tabel, patcht `exifOrientation` + (conditioneel) `width`/`height`-swap. Géén scheduled action, géén sharp, géén storage-swap, géén cleanup | `tests/photos/rotate.test.ts` (auth + EXIF-arithmetiek + dim-swap + delta+inverse + pixel-array-oracle op gespiegelde starts) | ✅ |
 
 ### Trigger: Album-photos (Publications)
 
