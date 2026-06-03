@@ -22,4 +22,15 @@ crons.daily(
   {},
 );
 
+// IB2: dagelijks pending invites waarvan expiresAt gepasseerd is naar
+// status="expired" patchen (natural expiry, stil — geen mail). Zie
+// cascade-matrix.md row IB2. 04:00 UTC zodat het niet samenvalt met
+// cleanupFlaggedPhotos (03:00) of cleanupOld (03:30).
+crons.daily(
+  "expire pending invites",
+  { hourUTC: 4, minuteUTC: 0 },
+  internal.invites.expirePendingInvites,
+  {},
+);
+
 export default crons;

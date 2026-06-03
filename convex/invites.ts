@@ -366,6 +366,38 @@ export const handleBounce = internalMutation({
   },
 });
 
+// IB2: natural-expiry cron. Patcht pending invites waarvan expiresAt
+// gepasseerd is naar status="expired". Los van het bounce-pad (handleBounce):
+// schrijft NOOIT bouncedAt of respondedAt en verstuurt geen notify-mail —
+// natural expiry is verwacht-gedrag en blijft stil. Zie cascade-matrix IB2
+// (single-row state-transition, geen cascade) + WP9-spec.
+//
+// by_status is single-field (geen composite met expiresAt), dus geen
+// range-query mogelijk: eq("status","pending") via index, daarna in-memory
+// expiresAt <= now-filter. Zelfde patroon als handleBounce (by_email collect
+// + in-memory status-filter). Boundary <= consistent met FL1, accept en
+// hasPendingForEmail (gespiegeld: expiresAt > now = nog geldig).
+export const expirePendingInvites = internalMutation({
+  args: {},
+  returns: v.object({ expired: v.number() }),
+  handler: async (ctx) => {
+    const now = Date.now();
+    const pending = await ctx.db
+      .query("invites")
+      .withIndex("by_status", (q) => q.eq("status", "pending"))
+      .collect();
+
+    let expired = 0;
+    for (const invite of pending) {
+      if (invite.expiresAt <= now) {
+        await ctx.db.patch(invite._id, { status: "expired" });
+        expired++;
+      }
+    }
+    return { expired };
+  },
+});
+
 // Internal helper-query voor sendInviteEmail-action. Action draait in
 // runtime zonder ctx.db; FK-walk gebeurt hier en levert een platte DTO.
 // Retourneert null als invite niet meer bestaat (race met sender die de
