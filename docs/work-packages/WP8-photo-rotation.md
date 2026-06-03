@@ -171,16 +171,11 @@ error, geen action gescheduled). Open of regie de fast-fail wil — zie A6.
 
 ### A6 — Open product-vragen voor regie/Wouter
 
-1. **Idempotency-herformulering** (A1): akkoord met delta + inverse i.p.v. call-idempotent?
-2. **Action-retry-hardening** (A1): single-apply-guard tegen dubbel-roteren bij scheduler-retry —
-   in scope voor WP8, of bewust best-effort + risico genoteerd (zoals storage-orphan)?
-3. **HEIC mutation-fast-fail** (A5): wil je de synchrone mutation-rejection op `mimeType`, of
-   alleen de autoritatieve action-rejection?
-4. **`sharp` vs `jimp`** (A7): migratie-plan koos `sharp`. Akkoord dat A de tests sharp-agnostisch
-   houdt (mock op chainable-niveau, geen method-namen hard-pinnen) zodat B vrij is sharp/jimp te
-   kiezen als de gate sharp-deploy-issues toont?
-5. **EXIF bake-in fixture** (A2): heb je een iPhone-JPEG met `Orientation=6` (niet 1) beschikbaar
-   voor Gate 1? Anders bewijst de gate de bake-in niet.
+1. **Idempotency-herformulering** (A1): akkoord met delta + inverse i.p.v. call-idempotent? — **AKKOORD** (regie was fout in oorspronkelijke formulering; delta+inverse is correcte user-truth)
+2. **Action-retry-hardening** (A1): single-apply-guard tegen dubbel-roteren bij scheduler-retry — in scope voor WP8, of bewust best-effort + risico genoteerd? — **OUT OF SCOPE, accepteer als known risk**. B voegt comment in rotateAction toe: "Convex scheduler kan deze action retry'en. Window: storageId al gepatcht + action throws after → retry zal de al-geroteerde blob opnieuw roteren = dubbel. Bij 16-user manual rotate-flow: zeldzaam + user-recoverable (rotate -90 fixt 't). Bewust accepteer hier i.p.v. reservation-pattern; future hardening via rotation-token op photos-row indien escalerend."
+3. **HEIC mutation-fast-fail** (A5): wil je de synchrone mutation-rejection op `mimeType`, of alleen de autoritatieve action-rejection? — **AKKOORD synchrone mutation-fast-fail**. Action behoudt autoritatieve magic-byte-check als defense-in-depth (mimeType is client-claim, magic-bytes is waarheid).
+4. **`sharp` vs `jimp`** (A7): migratie-plan koos `sharp`. Akkoord dat A de tests sharp-agnostisch houdt — **AKKOORD**. B kiest sharp als first try; jimp als fallback indien sharp-deploy-issues. Gate-validatie bepaalt.
+5. **EXIF bake-in fixture** (A2): heb je een iPhone-JPEG met `Orientation=6` (niet 1) beschikbaar voor Gate 1? — **Wouter actie**: zoek in Photos.app een landscape-foto die met telefoon-rechtop is genomen (= meestal Orientation=6 of 8). Verifieer met `file <path>` — output bevat `orientation=right-top` of `orientation=lower-right` voor non-1. Pad invullen in `.env.integration` als `UPLOAD_GATE_PHOTO_ROTATED_PATH` of vergelijkbaar (B definieert exact env-var-naam). De WP7-fixture (`wp7-gate-fixture.jpg`, Tbilisi, Orientation=upper-left=1) volstaat niet voor de bake-in-bewijs.
 
 ### A7 — `sharp`-versie + pure-JS fallback
 
