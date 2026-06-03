@@ -37,7 +37,9 @@ Cross-refs: [`work-packages/README.md`](./work-packages/README.md) (WP-overzicht
 
 Acceptatiecriterium fase 1: alle smoke tests groen. ✅ Klaar voor fase 2.
 
-## Fase 2: Convex backend bouwen + testen — IN PROGRESS
+## Fase 2: Convex backend bouwen + testen — BIJNA AFGEROND
+
+Alle domein-bullets ✅. Resterend voor sluiting: IB2 cron (`expirePendingInvites`, gebundeld in TBD crons-werkpakket) + pre-cutover deferred items (integration-tests + prod-env-configuratie, zie onderaan).
 
 De hele backend bouwen en testen, los van de app en los van de data. Tests draaien tegen een lege `convex-test` database.
 

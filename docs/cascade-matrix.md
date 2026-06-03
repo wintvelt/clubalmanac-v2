@@ -48,8 +48,8 @@ Uitzondering: queries zonder trigger (puur read-tests) leven bij de query-owner.
 | Ratings | 1 | ✅ R1 |
 | Memberships | 3 | ✅ M1, M2, M3 |
 | Flagging | 2 | ✅ FL1, FL2 |
-| Invites | 2 | 🚧 IB1 (handleBounce ✅, http endpoint ⏳ — audit-8 bev. 1); ⏳ IB2 (gebundeld met scheduled-functions werkpakket) |
-| Uploads | 1 | ⏳ UI1 (cyclus 1 architectuur rewrite + audit-cyclus-1 reservation-pattern hardening — RED-phase tests geschreven, B implementeert) |
+| Invites | 2 | ✅ IB1 (WP5 bounce-webhook); ⏳ IB2 (gebundeld met scheduled-functions werkpakket) |
+| Uploads | 1 | ✅ UI1 (cyclus 1 architectuur rewrite + audit-cyclus-1 reservation-pattern hardening, 7d/30min cleanup) |
 
 ## Cascade rules
 
@@ -131,14 +131,14 @@ Uitzondering: queries zonder trigger (puur read-tests) leven bij de query-owner.
 
 | # | Oude handler | Trigger event | Effect | Cat | Convex aanpak | Test locatie | Status |
 |---|---|---|---|---|---|---|---|
-| IB1 | (nieuw, niet uit AWS — oude code had geen bounce-feedback loop) | Email provider bounce webhook | Markeer alle pending invites voor email als `expired` + zet `bouncedAt`, queue notify-mail naar inviter, dedup via `inviteBounceEvents` | 2 + 3 | `internal.invites.handleBounce` (al aanwezig) aangeroepen vanuit een `convex/http.ts` webhook endpoint dat de Mailjet payload parsed — endpoint zelf moet nog gebouwd worden (email-werkpakket, audit-8 bevinding 1). Patcht invite-records, queue't `sendInviteEmail({kind:"bounced"})`, schrijft providerEventId-record voor dedup | `tests/invites/bouncedHandler.test.ts` | 🚧 (mutation ✅, http endpoint ⏳) |
+| IB1 | (nieuw, niet uit AWS — oude code had geen bounce-feedback loop) | Email provider bounce webhook | Markeer alle pending invites voor email als `expired` + zet `bouncedAt`, queue notify-mail naar inviter, dedup via `inviteBounceEvents` | 2 + 3 | `internal.invites.handleBounce` aangeroepen vanuit `convex/http.ts` `/email-event` webhook endpoint (WP5) met Basic-auth-in-URL parsing van Mailjet payload. Patcht invite-records, queue't `sendInviteEmail({kind:"bounced"})`, schrijft providerEventId-record voor dedup. Gate 2 dev gepasseerd 2026-05-18 (echte bounce + replay-test) | `tests/invites/bouncedHandler.test.ts` + WP5 Gate 2 | ✅ |
 | IB2 | (nieuw, niet uit AWS) | Daily cron | Patch invites met `status="pending"` en `expiresAt < now` naar `status="expired"` (natural expiry, los van bounce) | 3 | Convex scheduled cron `expirePendingInvites` (gebundeld met flagging-cron werkpakket — nog niet geleverd) | `tests/invites/naturalExpiry.test.ts` (volgt bij scheduled-functions werkpakket) | ⏳ |
 
 ### Trigger: Uploads (idempotency cleanup)
 
 | # | Oude handler | Trigger event | Effect | Cat | Convex aanpak | Test locatie | Status |
 |---|---|---|---|---|---|---|---|
-| UI1 | (nieuw, niet uit AWS) | Daily cron | Verwijder `uploadIdempotency` records met **twee thresholds** (audit-cyclus-1, reservation pattern): `status="completed"` ouder dan 7d (retry-safety horizon) én `status="in_progress"` ouder dan 30min (stale-reservation cleanup van gecrashte handlers tussen `reserve` en de atomic completion-patch in `createFromUploadInternal`). Boundary `<=`, consistent met FL1 + invites accept. Photos en storage-blobs blijven onaangetast — UI1 ruimt alleen reservation-state op (storage-orphans → integrity-check, cyclus-2 backlog) | 3 | Convex scheduled cron `cleanupOldUploadIdempotency` (in `convex/crons.ts`) roept `internal.uploads.cleanupOld` aan. Scant `uploadIdempotency.by_status_and_createdAt` voor beide paden: status="completed" + createdAt<=now-7d, en status="in_progress" + createdAt<=now-30min, per match `ctx.db.delete`. Eén cron-run dekt beide thresholds | `tests/uploads/cleanupOld.test.ts` + `tests/crons/registration.test.ts` (statisch pin op cron-registratie zelf — WP4 audit-13 follow-up) | ⏳ |
+| UI1 | (nieuw, niet uit AWS) | Daily cron | Verwijder `uploadIdempotency` records met **twee thresholds** (audit-cyclus-1, reservation pattern): `status="completed"` ouder dan 7d (retry-safety horizon) én `status="in_progress"` ouder dan 30min (stale-reservation cleanup van gecrashte handlers tussen `reserve` en de atomic completion-patch in `createFromUploadInternal`). Boundary `<=`, consistent met FL1 + invites accept. Photos en storage-blobs blijven onaangetast — UI1 ruimt alleen reservation-state op (storage-orphans → integrity-check, cyclus-2 backlog) | 3 | Convex scheduled cron `cleanupOldUploadIdempotency` (in `convex/crons.ts`) roept `internal.uploads.cleanupOld` aan. Scant `uploadIdempotency.by_status_and_createdAt` voor beide paden: status="completed" + createdAt<=now-7d, en status="in_progress" + createdAt<=now-30min, per match `ctx.db.delete`. Eén cron-run dekt beide thresholds | `tests/uploads/cleanupOld.test.ts` + `tests/crons/registration.test.ts` (statisch pin op cron-registratie zelf — WP4 audit-13 follow-up) | ✅ |
 
 ### Trigger: Stats / signup completion
 

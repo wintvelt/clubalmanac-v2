@@ -1,6 +1,6 @@
 # Conventions
 
-Werkdiscipline en architectuur-keuzes voor clubalmanac-v2 backend werk. Tijdens de migratie van AWS naar Convex zijn deze conventies door audits gevalideerd en aantoonbaar waardevol gebleken (7 productie-bugs gevonden vóór cutover).
+Werkdiscipline en architectuur-keuzes voor clubalmanac-v2 backend werk. Tijdens de migratie van AWS naar Convex zijn deze conventies door audits gevalideerd en aantoonbaar waardevol gebleken (10 productie-bugs gevonden vóór cutover).
 
 Files in deze folder:
 

@@ -377,41 +377,22 @@ Bestaande flag-state op DynamoDB photo records 1:1 overzetten — velden hebben 
 **Cascade-vraag bij user delete:**
 Als flagger (non-owner) verwijderd wordt, wijst `flaggedBy` naar niet-bestaande user. Drie opties: (a) clear alleen `flaggedBy`, flag blijft actief — content-inappropriateness staat los van flagger-bestaan, (b) clear hele flag — als melder weg is, vervalt de melding, (c) accepteer orphan ref. Default in cascade matrix: optie (a). Heroverwegen indien nodig.
 
-### Photo rotation (server-side fix)
+### Photo rotation (EXIF-only)
 
-Bestaande feature in oude AWS app (`fixPhotoRotation.js` met Jimp): users kunnen een geüploade foto roteren of flippen na de fact. Resulteert in een nieuwe S3-object met geüpdatete metadata. Endpoint zit in `clubalmanac-app/screens/PhotoEdit.jsx` via `useRotatePhoto` hook.
+Bestaande feature in oude AWS app (`fixPhotoRotation.js` met Jimp): users kunnen een geüploade foto roteren of flippen na de fact. Oude implementatie schreef een nieuw S3-object met geroteerde pixels. **In Convex bewust afwijkend opgelost** (WP8, 2026-06-03): geen pixel-rotatie meer.
 
-Reden om server-side te roteren ipv alleen client-side CSS-transform: foto wordt door anderen bekeken, op verschillende clients (iOS, web). Server-side fix garandeert consistente weergave.
+Reden: cyclus-2 hardening op de upload-flow seedt `photos.exifOrientation` rechtstreeks uit `tags.Orientation` (exif-parser), en het Phase-4 client-contract is dat clients de CSS-transform / native rotate toepassen op basis van die DB-waarde — niet op de file-EXIF-tag. DB is bron-van-waarheid. Pixel-rotatie wordt daardoor overbodig: rotate hoeft alleen de DB-waarde te updaten.
 
-**Mutation: `photos.rotate(photoId, { rotation, flipY })`**
+**Mutation: `photos.rotate(photoId, { rotation, flipY })`** ([WP8] — `convex/photos.ts` + `convex/lib/exifOrientation.ts`)
 
-Authorization: **owner van photo OF group-admin** waar de foto in een album zit. Reden: bij 16 users en hechte community lossen group-admins het sneller op dan dat ze de uploader achterna moeten. Webmaster heeft geen aparte rechten hierop nodig (dekking via group-admin ruim genoeg).
+- Authorization: **owner van photo OF group-admin** waar de foto in een album zit (via `albumPhotos.by_photo` → unieke `groupId`s → `memberships` met `role === "admin"`). Reden: bij 16 users + hechte community lossen group-admins het sneller op dan dat ze de uploader achterna moeten. Webmaster heeft geen aparte rechten hierop nodig.
+- Atomair: leest huidige `exifOrientation` (default 1), berekent nieuwe waarde via 8-staat-arithmetiek-tabel op `(rotation, flipY)` (canoniek EXIF, flip-eerst-dan-rotatie), patcht `exifOrientation` + (conditioneel) `width`/`height`-swap bij 90°/270°. Bestand zelf ongemoeid.
+- Géén scheduled action, géén `sharp`/`jimp`, géén `"use node"`-runtime, géén storage-swap, géén cascade — `storageId` en alle nevenstaat blijven intact.
 
-```ts
-// pseudo
-export const rotate = mutation({
-  args: { photoId: v.id("photos"), rotation: v.number(), flipY: v.boolean() },
-  handler: async (ctx, args) => {
-    const photo = await ctx.db.get(args.photoId);
-    const userId = await getCurrentUserId(ctx);
-    const isOwner = photo.ownerId === userId;
-    const isGroupAdmin = await checkGroupAdminForPhoto(ctx, args.photoId, userId);
-    if (!isOwner && !isGroupAdmin) throw new Error("Not authorized");
+Volledige spec + invarianten + audit-historie in [`work-packages/WP8-photo-rotation.md`](./work-packages/WP8-photo-rotation.md). Cascade-matrix-rij P8 documenteert de DB-niveau-cascade-afwezigheid.
 
-    // Schedule action: read file from storage, rotate via sharp/jimp, write new storageId
-    await ctx.scheduler.runAfter(0, internal.photos.processRotation, {
-      photoId: args.photoId, rotation: args.rotation, flipY: args.flipY
-    });
-  }
-});
-```
-
-De action zelf gebruikt `sharp` (Node-runtime in Convex actions) om het bestand te bewerken, schrijft naar nieuw storage-object, patcht photo record met nieuwe `storageId`, verwijdert oude file via `cleanupStorage` action.
-
-**EXIF Orientation als upstream fix:**
-Veel rotation-issues zijn eigenlijk al opgelost in de EXIF metadata maar worden door de client genegeerd. Update `extractPhotoMetadata` action (S3 trigger equivalent in Convex): parse ook EXIF `Orientation` tag (1-8) en sla op in `photos.exifOrientation`. Client gebruikt die voor initiële display via CSS-transform — voorkomt veel "scheve foto's" zonder server-side rotate-call.
-
-`photos.rotate` mutation blijft beschikbaar als handmatige fix wanneer EXIF Orientation niet klopt of user de foto sowieso anders wil oriënteren.
+**EXIF Orientation als upstream contract:**
+`extractMetadata` (in `convex/photoMetadata.ts`, `"use node";` runtime) parsed EXIF `Orientation` (1-8) en seedt `photos.exifOrientation` bij upload. Phase-4 clients lezen die waarde voor initiële display via CSS-transform. Voorkomt "scheve foto's" zonder server-side rotate-call. `photos.rotate` blijft beschikbaar als gebruiker de foto bewust anders wil oriënteren of EXIF-tag niet klopt.
 
 **EXIF/geocoding hardening (cyclus 2, audit-10):**
 
