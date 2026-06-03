@@ -231,4 +231,24 @@ export default defineSchema({
     .index("by_user_album", ["userId", "albumId"])
     .index("by_user", ["userId"]) // U9 cascade
     .index("by_album", ["albumId"]), // A2 cascade
+
+  // ──────────────────────────────────────────────────────────────────
+  // Monitoring runs (WP10: integrity-check / monitoring)
+  // ──────────────────────────────────────────────────────────────────
+  // Eén rij per integrity-check-run (daily cron 04:30 UTC). Additive — geen
+  // backfill, geen wijziging aan bestaande tables. State-tabel voor:
+  //   - alert-dedup: `driftSignature` (hash van de gevonden drift-rijen);
+  //     drift-mail gaat alleen als de signature verschilt van de laatste run
+  //     die wél een drift-mail stuurde (invariant 4).
+  //   - heartbeat: `lastHeartbeatAt` = tijdstip van laatste monitor-mail (drift
+  //     óf heartbeat). Reset bij élke mail; ≥30d sinds = stuur heartbeat (inv 6).
+  // `emailSent` = "gequeue'd door deze run", niet "afgeleverd" (best-effort,
+  // consistent met alle bestaande mail-paden).
+  monitoringRuns: defineTable({
+    runAt: v.number(),
+    driftFound: v.boolean(),
+    driftSignature: v.string(),
+    emailSent: v.boolean(),
+    lastHeartbeatAt: v.number(),
+  }).index("by_runAt", ["runAt"]),
 });

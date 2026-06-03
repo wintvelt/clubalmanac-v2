@@ -50,6 +50,7 @@ Uitzondering: queries zonder trigger (puur read-tests) leven bij de query-owner.
 | Flagging | 2 | ✅ FL1, FL2 |
 | Invites | 2 | ✅ IB1 (WP5 bounce-webhook), IB2 (WP9 natural-expiry cron) |
 | Uploads | 1 | ✅ UI1 (cyclus 1 architectuur rewrite + audit-cyclus-1 reservation-pattern hardening, 7d/30min cleanup) |
+| Monitoring | 1 | ✅ MON1 (WP10 integrity-check — detect-only, geen cascade) |
 
 ## Cascade rules
 
@@ -139,6 +140,12 @@ Uitzondering: queries zonder trigger (puur read-tests) leven bij de query-owner.
 | # | Oude handler | Trigger event | Effect | Cat | Convex aanpak | Test locatie | Status |
 |---|---|---|---|---|---|---|---|
 | UI1 | (nieuw, niet uit AWS) | Daily cron | Verwijder `uploadIdempotency` records met **twee thresholds** (audit-cyclus-1, reservation pattern): `status="completed"` ouder dan 7d (retry-safety horizon) én `status="in_progress"` ouder dan 30min (stale-reservation cleanup van gecrashte handlers tussen `reserve` en de atomic completion-patch in `createFromUploadInternal`). Boundary `<=`, consistent met FL1 + invites accept. Photos en storage-blobs blijven onaangetast — UI1 ruimt alleen reservation-state op (storage-orphans → integrity-check, cyclus-2 backlog) | 3 | Convex scheduled cron `cleanupOldUploadIdempotency` (in `convex/crons.ts`) roept `internal.uploads.cleanupOld` aan. Scant `uploadIdempotency.by_status_and_createdAt` voor beide paden: status="completed" + createdAt<=now-7d, en status="in_progress" + createdAt<=now-30min, per match `ctx.db.delete`. Eén cron-run dekt beide thresholds | `tests/uploads/cleanupOld.test.ts` + `tests/crons/registration.test.ts` (statisch pin op cron-registratie zelf — WP4 audit-13 follow-up) | ✅ |
+
+### Trigger: Monitoring (system events)
+
+| # | Oude handler | Trigger event | Effect | Cat | Convex aanpak | Test locatie | Status |
+|---|---|---|---|---|---|---|---|
+| MON1 | (nieuw, niet uit AWS — oude AWS had geen monitoring-loop) | Daily cron | **Detect-only — geen cascade**. Scant de volledige DB op stille datakorruptie in vier categorieën: storage-orphans (2a), aggregate-drift (2b: `users.photoCount`, `photos.ratingAverage`+`ratingCount`, `features.upvoteCount`), FK-integriteit (2c: 19 verplichte + 5 optionele FKs), en geen-self-healing (2d). Leest álle tabellen, schrijft **alleen** `monitoringRuns` + queue't bij drift één samenvattende alert-action. Fixt nooit iets. Dedup via drift-signature (één mail per persistente drift) + maandelijkse heartbeat | n.v.t. (detect-only, geen downstream-writes buiten `monitoringRuns`) | Convex scheduled cron `"integrity check"` 04:30 UTC → `internal.monitoring.integrityCheck` (WP10), gespreid ná IB2 (04:00). Eén `internalMutation` = één transactie/snapshot ⇒ race-resistentie (inv 11). Mail via `internal.monitoring.sendMonitoringAlert` action, `info@`-sender → `WEBMASTER_EMAILS` | `tests/monitoring/integrity.test.ts` + `tests/crons/registration.test.ts` (statisch pin) | ✅ |
 
 ### Trigger: Stats / signup completion
 

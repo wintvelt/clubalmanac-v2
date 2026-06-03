@@ -219,6 +219,71 @@ ${SIGNATURE_TEXT}`;
   return { subject, htmlPart, textPart };
 }
 
+// ---------------------------------------------------------------------------
+// kind = "monitor-drift-alert" (naar webmaster) — WP10
+// ---------------------------------------------------------------------------
+// PII-grens (invariant 9): de aanroeper levert al genormaliseerde drift-regels
+// die uitsluitend table-namen + record-IDs + counts bevatten. Geen user-content
+// (geen namen, emails, rating-comments, photo-bytes). De template echoot die
+// regels één-op-één en voegt geen extra velden toe.
+export function monitorDriftAlertTemplate(opts: {
+  lines: string[];
+  timestamp: string;
+}): TemplateBlock {
+  const subject = `Clubalmanac integriteits-check: drift gedetecteerd (${opts.lines.length})`;
+
+  const listHtml = opts.lines.map((l) => `<li>${escapeHtml(l)}</li>`).join("");
+  const listText = opts.lines.map((l) => `- ${l}`).join("\n");
+
+  const htmlPart = `
+<p>Hi Admin,</p>
+<p>De dagelijkse integriteits-check vond ${opts.lines.length} drift-rij(en) op ${escapeHtml(opts.timestamp)}.</p>
+<ul>${listHtml}</ul>
+<p>Detect-only: er is niets automatisch gerepareerd. Onderzoek de root-cause en herstel handmatig.</p>
+${SIGNATURE_HTML}
+`.trim();
+
+  const textPart = `Hi Admin,
+
+De dagelijkse integriteits-check vond ${opts.lines.length} drift-rij(en) op ${opts.timestamp}.
+
+${listText}
+
+Detect-only: er is niets automatisch gerepareerd. Onderzoek de root-cause en herstel handmatig.
+
+${SIGNATURE_TEXT}`;
+
+  return { subject, htmlPart, textPart };
+}
+
+// ---------------------------------------------------------------------------
+// kind = "monitor-heartbeat" (naar webmaster) — WP10
+// ---------------------------------------------------------------------------
+// Maandelijkse "alive"-mail (invariant 6). Passive meta-monitoring zodat
+// afwezigheid-van-mail niet als "geen drift" wordt gelezen.
+export function monitorHeartbeatTemplate(opts: {
+  timestamp: string;
+}): TemplateBlock {
+  const subject = `Clubalmanac integriteits-check: maandelijkse heartbeat`;
+
+  const htmlPart = `
+<p>Hi Admin,</p>
+<p>De dagelijkse integriteits-check draait nog (stand ${escapeHtml(opts.timestamp)}). Geen nieuwe drift sinds de vorige melding.</p>
+<p>Deze maandelijkse heartbeat bevestigt dat de monitor actief is — afwezigheid van mail is dus géén bewijs van "geen drift".</p>
+${SIGNATURE_HTML}
+`.trim();
+
+  const textPart = `Hi Admin,
+
+De dagelijkse integriteits-check draait nog (stand ${opts.timestamp}). Geen nieuwe drift sinds de vorige melding.
+
+Deze maandelijkse heartbeat bevestigt dat de monitor actief is — afwezigheid van mail is dus geen bewijs van "geen drift".
+
+${SIGNATURE_TEXT}`;
+
+  return { subject, htmlPart, textPart };
+}
+
 // Helper: NL-style date format voor invite-expiry. Output bv. "31-12-2026".
 export function formatNlDate(timestamp: number): string {
   const d = new Date(timestamp);
