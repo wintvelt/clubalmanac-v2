@@ -30,19 +30,139 @@ import { registerUser, withUser } from "../_helpers/auth";
 // ---------------------------------------------------------------------------
 
 // ──────────────────────────────────────────────────────────────────────────
-// Canonieke EXIF-Orientation transitie-tabellen (ground-truth uit de spec).
-// 8 D4-symmetrieën: 1=normaal 2=mirror-H 3=180 4=mirror-V 5=transpose
-// 6=90°CW 7=transverse 8=90°CCW. rotation = clockwise; flipY = horizontale
-// mirror; combinatie = flip eerst, dan rotatie (matcht oude AWS).
+// Canonieke EXIF-Orientation transitie-tabellen.
+//
+// WP8-audit bug #10 (5↔7 transpose/transverse-verwisseling): de eerste cyclus
+// kopieerde de spec-tabel 1:1 in zowel test als impl → circulaire validatie,
+// een group-structuur-behoudende swap overleefde alle delta/inverse-pins.
+// Deze tabellen zijn nu ONAFHANKELIJK herleid via de pixel-array-oracle
+// hieronder (`oracleOrientation`), NIET uit de spec gekopieerd. De
+// `describe("EXIF-tabel vs onafhankelijke array-oracle")` meta-test pint élke
+// cel tegen die oracle; de mutation-tests op gespiegelde starts pinnen
+// bovendien direct tegen de oracle (audit-track-record §gedeelde-lookup-tabel).
+//
+// 8 D4-symmetrieën (canonieke EXIF): 1=normaal 2=mirror-H 3=180 4=mirror-V
+// 5=transpose 6=90°CW 7=transverse 8=90°CCW. rotation = clockwise; flipY =
+// horizontale mirror; combinatie = flip eerst, dan rotatie (matcht oude AWS).
 // ──────────────────────────────────────────────────────────────────────────
 const ROT0: Record<number, number> = { 1: 1, 2: 2, 3: 3, 4: 4, 5: 5, 6: 6, 7: 7, 8: 8 };
-const ROT90: Record<number, number> = { 1: 6, 2: 5, 3: 8, 4: 7, 5: 4, 6: 3, 7: 2, 8: 1 };
+const ROT90: Record<number, number> = { 1: 6, 2: 7, 3: 8, 4: 5, 5: 2, 6: 3, 7: 4, 8: 1 };
 const ROT180: Record<number, number> = { 1: 3, 2: 4, 3: 1, 4: 2, 5: 7, 6: 8, 7: 5, 8: 6 };
-const ROT270: Record<number, number> = { 1: 8, 2: 7, 3: 6, 4: 5, 5: 2, 6: 1, 7: 4, 8: 3 };
+const ROT270: Record<number, number> = { 1: 8, 2: 5, 3: 6, 4: 7, 5: 4, 6: 1, 7: 2, 8: 3 };
 // flip-only (rotation 0, flipY=true)
-const FLIP: Record<number, number> = { 1: 2, 2: 1, 3: 4, 4: 3, 5: 8, 6: 7, 7: 6, 8: 5 };
+const FLIP: Record<number, number> = { 1: 2, 2: 1, 3: 4, 4: 3, 5: 6, 6: 5, 7: 8, 8: 7 };
 
 const STARTS = [1, 2, 3, 4, 5, 6, 7, 8] as const;
+
+// ──────────────────────────────────────────────────────────────────────────
+// Onafhankelijke pixel-array-oracle (geen spec-tabel, geen impl-import).
+//
+// We transformeren een volledig-asymmetrisch 2×3 raster en lezen de canonieke
+// EXIF-betekenis af. Per orientation O is de "correctie-transform" T_O wat een
+// viewer op de OPGESLAGEN pixels toepast om rechtop te tonen:
+//   1=identity 2=flipH 3=rot180 4=flipV 5=transpose 6=rot90CW 7=transverse
+//   8=rot90CCW
+// Een user-actie U op het GETOONDE beeld geeft nieuwe orientation O' met
+//   T_{O'} = U ∘ T_O   (flip eerst, dán rotatie — zelfde conventie als impl).
+// O' = de orientation waarvan T_{O'}(S) gelijk is aan U(T_O(S)). Omdat S
+// volledig asymmetrisch is, is die match uniek. Dit leidt elke cel af uit
+// pure array-manipulatie — onafhankelijk van zowel spec als impl-tabel.
+// ──────────────────────────────────────────────────────────────────────────
+type Grid = number[][];
+const ORACLE_S: Grid = [
+  [1, 2, 3],
+  [4, 5, 6],
+];
+
+function gDims(g: Grid): { h: number; w: number } {
+  return { h: g.length, w: g[0]!.length };
+}
+function gIdentity(g: Grid): Grid {
+  return g.map((r) => [...r]);
+}
+function gFlipH(g: Grid): Grid {
+  return g.map((r) => [...r].reverse());
+}
+function gFlipV(g: Grid): Grid {
+  return [...g].reverse().map((r) => [...r]);
+}
+function gRot180(g: Grid): Grid {
+  return [...g].reverse().map((r) => [...r].reverse());
+}
+function gRot90CW(g: Grid): Grid {
+  const { h, w } = gDims(g);
+  const out: Grid = [];
+  for (let i = 0; i < w; i++) {
+    const row: number[] = [];
+    for (let j = 0; j < h; j++) row.push(g[h - 1 - j]![i]!);
+    out.push(row);
+  }
+  return out;
+}
+function gRot90CCW(g: Grid): Grid {
+  const { h, w } = gDims(g);
+  const out: Grid = [];
+  for (let i = 0; i < w; i++) {
+    const row: number[] = [];
+    for (let j = 0; j < h; j++) row.push(g[j]![w - 1 - i]!);
+    out.push(row);
+  }
+  return out;
+}
+function gTranspose(g: Grid): Grid {
+  const { h, w } = gDims(g);
+  const out: Grid = [];
+  for (let i = 0; i < w; i++) {
+    const row: number[] = [];
+    for (let j = 0; j < h; j++) row.push(g[j]![i]!);
+    out.push(row);
+  }
+  return out;
+}
+function gTransverse(g: Grid): Grid {
+  const { h, w } = gDims(g);
+  const out: Grid = [];
+  for (let i = 0; i < w; i++) {
+    const row: number[] = [];
+    for (let j = 0; j < h; j++) row.push(g[h - 1 - j]![w - 1 - i]!);
+    out.push(row);
+  }
+  return out;
+}
+
+// Canonieke correctie-transforms per EXIF-orientation (toegepast op opgeslagen).
+const ORACLE_T: Record<number, (g: Grid) => Grid> = {
+  1: gIdentity,
+  2: gFlipH,
+  3: gRot180,
+  4: gFlipV,
+  5: gTranspose,
+  6: gRot90CW,
+  7: gTransverse,
+  8: gRot90CCW,
+};
+
+function gridEqual(a: Grid, b: Grid): boolean {
+  return JSON.stringify(a) === JSON.stringify(b);
+}
+
+// Leid de nieuwe orientation af uit pure pixel-manipulatie.
+function oracleOrientation(
+  start: number,
+  rotation: 0 | 90 | 180 | 270,
+  flipY: boolean,
+): number {
+  let g = ORACLE_T[start]!(ORACLE_S); // huidig getoond beeld
+  if (flipY) g = gFlipH(g); // user flipt eerst (horizontale mirror)
+  if (rotation === 90) g = gRot90CW(g);
+  else if (rotation === 180) g = gRot180(g);
+  else if (rotation === 270) g = gRot90CCW(g);
+  // rotation 0 = no-op
+  for (let o = 1; o <= 8; o++) {
+    if (gridEqual(ORACLE_T[o]!(ORACLE_S), g)) return o;
+  }
+  throw new Error(`oracle: geen matchende orientation voor (${start},${rotation},${flipY})`);
+}
 
 // RED-discipline: zolang `api.photos.rotate` ontbreekt rejected elke call met
 // "no such export" — een `.rejects.toThrow()` zou dan trivially groen zijn.
@@ -136,6 +256,110 @@ async function getOrientation(
   const photo = await t.run((ctx) => ctx.db.get(photoId));
   return photo?.exifOrientation;
 }
+
+// ---------------------------------------------------------------------------
+// META: literal-tabel vs onafhankelijke array-oracle (geen DB, geen impl).
+// Pin't dat de in dit bestand gebruikte tabellen canoniek-EXIF zijn — vangt
+// een 5↔7-achtige tabel-typo door A af vóór de mutation-tests erop bouwen.
+// ---------------------------------------------------------------------------
+
+describe("EXIF-tabel vs onafhankelijke array-oracle", () => {
+  it.each(STARTS)(
+    "alle delta's + flip vanaf orientation %i matchen de pixel-oracle",
+    (start) => {
+      expect(ROT0[start]).toBe(oracleOrientation(start, 0, false));
+      expect(ROT90[start]).toBe(oracleOrientation(start, 90, false));
+      expect(ROT180[start]).toBe(oracleOrientation(start, 180, false));
+      expect(ROT270[start]).toBe(oracleOrientation(start, 270, false));
+      expect(FLIP[start]).toBe(oracleOrientation(start, 0, true));
+      // combinatie flip+rot90 (volgorde: flip eerst)
+      expect(ROT90[FLIP[start]!]).toBe(oracleOrientation(start, 90, true));
+    },
+  );
+
+  it("oracle bevestigt canonieke 5=transpose / 7=transverse (audit #10 cel-check)", () => {
+    // De swap zat hier: rotate(90) op een gespiegelde start moet via transverse,
+    // niet transpose. Hard-gepinde canonieke uitkomsten (geen tabel-ref).
+    expect(oracleOrientation(2, 90, false)).toBe(7); // mirror-H + 90CW = transverse
+    expect(oracleOrientation(4, 90, false)).toBe(5); // mirror-V + 90CW = transpose
+    expect(oracleOrientation(5, 90, false)).toBe(2);
+    expect(oracleOrientation(7, 90, false)).toBe(4);
+    expect(oracleOrientation(1, 0, true)).toBe(2); // flipH op normaal = mirror-H
+    expect(oracleOrientation(5, 0, true)).toBe(6); // transpose + flipH = 90CW
+  });
+});
+
+// ---------------------------------------------------------------------------
+// MUTATION × onafhankelijke oracle — gespiegelde starts (audit #10)
+//
+// Pin de ECHTE mutation tegen de pixel-array-oracle, NIET tegen de lokale
+// tabel. Gespiegelde starts (2,4,5,7) zijn waar de 5↔7-swap zat; dit is de
+// niet-circulaire vangst die de eerste cyclus miste.
+// ---------------------------------------------------------------------------
+
+describe("photos.rotate × pixel-oracle (gespiegelde starts, audit #10)", () => {
+  const MIRRORED = [2, 4, 5, 7] as const;
+
+  it.each(MIRRORED)(
+    "rotate(90) vanaf gespiegelde orientation %i = oracle-uitkomst",
+    async (start) => {
+      const t = convexTest(schema);
+      const aliceId = await registerUser(t, "user_alice", "a@x.com");
+      const { photoId } = await seedPhoto(t, aliceId, {
+        exifOrientation: start,
+      });
+
+      await withUser(t, "user_alice").mutation(api.photos.rotate, {
+        photoId,
+        rotation: 90,
+        flipY: false,
+      });
+
+      expect(await getOrientation(t, photoId)).toBe(
+        oracleOrientation(start, 90, false),
+      );
+    },
+  );
+
+  it("flipY + rotate(90) vanaf 1 = oracle (flipY-feature trap uit audit)", async () => {
+    // 1 → flipH → 2 → rotate 90 CW. Canoniek = 7 (transverse). De buggy impl
+    // gaf 5 (transpose). Tegen de oracle, niet de tabel.
+    const t = convexTest(schema);
+    const aliceId = await registerUser(t, "user_alice", "a@x.com");
+    const { photoId } = await seedPhoto(t, aliceId, { exifOrientation: 1 });
+
+    await withUser(t, "user_alice").mutation(api.photos.rotate, {
+      photoId,
+      rotation: 90,
+      flipY: true,
+    });
+
+    expect(await getOrientation(t, photoId)).toBe(oracleOrientation(1, 90, true));
+  });
+
+  it("front-camera upload (orientation 2 binnen) overleeft rotate canoniek", async () => {
+    // Audit: extractMetadata leest tags.Orientation 1:1; gespiegelde/front-camera
+    // bestanden komen als 2 binnen. Twee rotate(90)-calls = 180-equivalent en
+    // moeten via de oracle kloppen, niet via een self-consistente foute tabel.
+    const t = convexTest(schema);
+    const aliceId = await registerUser(t, "user_alice", "a@x.com");
+    const { photoId } = await seedPhoto(t, aliceId, { exifOrientation: 2 });
+
+    await withUser(t, "user_alice").mutation(api.photos.rotate, {
+      photoId,
+      rotation: 90,
+      flipY: false,
+    });
+    expect(await getOrientation(t, photoId)).toBe(oracleOrientation(2, 90, false));
+
+    await withUser(t, "user_alice").mutation(api.photos.rotate, {
+      photoId,
+      rotation: 90,
+      flipY: false,
+    });
+    expect(await getOrientation(t, photoId)).toBe(oracleOrientation(2, 180, false));
+  });
+});
 
 // ---------------------------------------------------------------------------
 // EXIF-arithmetiek — alle 8 startwaarden per delta

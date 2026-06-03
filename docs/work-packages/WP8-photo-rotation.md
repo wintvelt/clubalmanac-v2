@@ -151,9 +151,17 @@ A's revised commits hangen aan WP8-EXIF-only en zijn input voor B's impl.
 
 Dit is de bron-van-waarheid voor de mutation én de tests. De 8 EXIF-Orientation-
 waarden zijn de standaard-D4-symmetrieën (1=normaal, 2=mirror-H, 3=180,
-4=mirror-V, 5=transpose, 6=90° CW, 7=transverse, 8=90° CCW). Afgeleid via
-groep-compositie en geverifieerd op delta (90∘90=180) + inverse (90 dan 270 =
-identiteit).
+4=mirror-V, 5=transpose, 6=90° CW, 7=transverse, 8=90° CCW).
+
+> **Correctie 2026-05-2x (WP8-audit bug #10)**: de eerste versie van deze tabel
+> had **5 (transpose) en 7 (transverse) verwisseld** in de rot90/rot270/flip-
+> kolommen. Test én impl kopieerden dezelfde foute tabel → circulaire validatie
+> die delta/inverse-pins overleefde. Tabel hieronder is nu **onafhankelijk
+> herleid** via een pixel-array-oracle (transformeer een asymmetrisch raster, lees
+> de canonieke EXIF-betekenis af) — niet uit een gedeelde bron gekopieerd. De
+> oracle staat in `tests/photos/rotate.test.ts` en pint élke cel + de mutation op
+> gespiegelde starts. Zie [`audit-track-record.md`](../conventions/audit-track-record.md)
+> §gedeelde-lookup-tabel.
 
 **Conventies (vastgelegd door A, B implementeert exact deze):**
 - `rotation` = **clockwise** ("draai rechts"). De CW/CCW-keuze is symmetrisch:
@@ -170,17 +178,17 @@ identiteit).
 | huidig | rot0 | rot90 (CW) | rot180 | rot270 | flip-only (rot0, flipY) |
 |---|---|---|---|---|---|
 | 1 | 1 | 6 | 3 | 8 | 2 |
-| 2 | 2 | 5 | 4 | 7 | 1 |
+| 2 | 2 | 7 | 4 | 5 | 1 |
 | 3 | 3 | 8 | 1 | 6 | 4 |
-| 4 | 4 | 7 | 2 | 5 | 3 |
-| 5 | 5 | 4 | 7 | 2 | 8 |
-| 6 | 6 | 3 | 8 | 1 | 7 |
-| 7 | 7 | 2 | 5 | 4 | 6 |
-| 8 | 8 | 1 | 6 | 3 | 5 |
+| 4 | 4 | 5 | 2 | 7 | 3 |
+| 5 | 5 | 2 | 7 | 4 | 6 |
+| 6 | 6 | 3 | 8 | 1 | 5 |
+| 7 | 7 | 4 | 5 | 2 | 8 |
+| 8 | 8 | 1 | 6 | 3 | 7 |
 
 Combinatie flip+rotatie = pas eerst de flip-kolom toe, dán de rotatie-kolom.
-Voorbeeld `flipY=true, rotation=90` vanaf 1: FLIP(1)=2, ROT90(2)=5 → **5**.
-Volledige flip+rot90-kolom: 1→5, 2→6, 3→7, 4→8, 5→1, 6→2, 7→3, 8→4.
+Voorbeeld `flipY=true, rotation=90` vanaf 1: FLIP(1)=2, ROT90(2)=7 → **7**.
+Volledige flip+rot90-kolom: 1→7, 2→6, 3→5, 4→8, 5→3, 6→2, 7→1, 8→4.
 
 **Width/height-swap** hangt UITSLUITEND af van `rotation ∈ {90, 270}` (flip
 wisselt dims niet). 0/180/flip-only → geen swap. `undefined` dims blijven
