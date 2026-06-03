@@ -17,13 +17,13 @@ WP1-WP4 liepen vóór de formele spec-doc-discipline (geen WP-file). Status uit 
 | WP3 | (overgeslagen — nummer niet gebruikt) | — | — |
 | WP4 | Clerk JWT roundtrip + `whoami` httpAction + upload 401-hardening | — (pre-discipline) | ✅ landed |
 | WP5 | Mailjet email (invite/accept/decline/bounce/flag-decide/problem-report) + bounce-webhook | [`WP5-email.md`](./WP5-email.md) | ✅ landed (gates 2026-05-18 dev) |
+| WP6 | Clerk session-webhook + atomic onboarding (server-to-server `session.created` → idempotent users-row + invite-accept + membership in één Convex-transactie) | [`WP6-clerk-session-webhook.md`](./WP6-clerk-session-webhook.md) | ✅ landed (gates 2026-05-18 dev) |
+| WP7 | Upload-pipeline empirische gates + integration-test (bewijs van pipeline op echte iPhone-foto's met EXIF/GPS) | [`runbooks/wp7-upload-gate.md`](../runbooks/wp7-upload-gate.md) + `tests/integration/uploads/uploadRoundtrip.test.ts` | ✅ landed (gate dev 2026-05-18 + 2 productie-bugs gefixed) |
 
 ## Open WPs (volgorde indicatief, regie beslist per kickoff)
 
 | WP | Onderwerp | Spec-doc | Status |
 |---|---|---|---|
-| WP6 | Clerk session-webhook + atomic onboarding (server-to-server `session.created` → idempotent users-row + invite-accept + membership in één Convex-transactie; verwijdert frontend-onboarding-windows) | [`WP6-clerk-session-webhook.md`](./WP6-clerk-session-webhook.md) | 🆕 draft |
-| WP7 | Upload-pipeline empirische gates + integration-test (bewijs van pipeline op echte iPhone-foto's met EXIF/GPS) | [`runbooks/wp7-upload-gate.md`](../runbooks/wp7-upload-gate.md) + `tests/integration/uploads/uploadRoundtrip.test.ts` | ✅ dev gepasseerd 2026-05-18 |
 | WP8 | Photo rotation (`photos.rotate` mutation + sharp scheduled action) + EXIF Orientation upstream | (te schrijven) | 🆕 |
 | TBD | Crons-bundel: `expirePendingInvites` (IB2), eventueel andere scheduled functions | — | open |
 | TBD | Email Gate 1 happy-path + integration-test `tests/integration/mailjet/sendRoundtrip.test.ts` als follow-up van WP5 deferred-items | — | open |
