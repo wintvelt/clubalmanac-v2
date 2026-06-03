@@ -25,7 +25,7 @@ WP1-WP4 liepen vóór de formele spec-doc-discipline (geen WP-file). Status uit 
 
 | WP | Onderwerp | Spec-doc | Status |
 |---|---|---|---|
-| TBD | IB2 cron: `expirePendingInvites` daily — natural-expiry pad voor invites (los van bounce-pad IB1 uit WP5) | — | open, next-up |
+| WP9 | IB2 cron: `expirePendingInvites` daily — natural-expiry pad voor invites (los van bounce-pad IB1 uit WP5) | [`WP9-ib2-natural-expiry.md`](./WP9-ib2-natural-expiry.md) | 🆕 draft (regie 2026-06-03), klaar voor A |
 | TBD | Integrity-check / monitoring werkpakket: scheduled function die storage-orphans detecteert (storage-objects zonder photo-record, audit-10 + audit-12 §5 gap) + drift-checks op aggregate-velden (`users.photoCount`, `photos.ratingAverage`/`ratingCount`, `features.upvoteCount`) + alert-pad. Cyclus-2 backlog item, zie [`migratie-status.md`](../migratie-status.md) §Cyclus-2 backlog en [`migratie-plan-convex.md`](../migratie-plan-convex.md) §3 monitoring | — | open |
 | TBD | Email Gate 1 happy-path + integration-test `tests/integration/mailjet/sendRoundtrip.test.ts` als follow-up van WP5 deferred-items | — | open |
 | TBD | Clerk Invitations API integratie (pre-create Clerk-user bij Convex `invites.create`, `users.status: "invited" \| "active"` voor visibility) — alternatief design op WP6, kan als upgrade later | — | open, design-discussie |
