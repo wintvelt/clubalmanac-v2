@@ -53,7 +53,7 @@ Alle templates leven in [`convex/lib/emailTemplates.ts`](../../convex/lib/emailT
 | `flagDecisionDeny` | `info@` | photo-owner | "Je bezwaar … is afgewezen" | owner-naam |
 | `problemReport` | `info@` | `WEBMASTER_EMAILS` | "Probleem gemeld op {stage}" | submitter-naam/email, titel, beschrijving |
 | `monitor-drift-alert` (WP10) | `info@` | `WEBMASTER_EMAILS` | "Clubalmanac integriteits-check: drift gedetecteerd (N)" | run-timestamp + per drift-rij `table/id: detail` (counts + IDs). **Géén user-content** (geen namen, emails, comments) — PII-grens invariant 9 |
-| `monitor-heartbeat` (WP10) | `info@` | `WEBMASTER_EMAILS` | "Clubalmanac integriteits-check: maandelijkse heartbeat" | run-timestamp + "monitor draait nog"-tekst. Geen drift-data |
+| `monitor-heartbeat` (WP10) | `info@` | `WEBMASTER_EMAILS` | "Clubalmanac integriteits-check: maandelijkse heartbeat" | run-timestamp + "monitor draait nog"-tekst. Conditioneel op drift-aanwezigheid: bij gededupte openstaande drift een waarschuwingszinsnede ("openstaande drift" + verwijzing naar dashboard-log) zonder drift-IDs (PII-grens invariant 9 blijft); schone run zonder waarschuwing |
 
 WP10-monitoring (`convex/monitoring.ts`) gebruikt dezelfde `info@`-sender en `getWebmasterEmails()`-bestemming als `problemReport`. Geen nieuwe env-vars: `WEBMASTER_EMAILS` is bestaand. Best-effort: lege `WEBMASTER_EMAILS` → no-op zonder throw (mag de daily cron niet stuk maken).
 
