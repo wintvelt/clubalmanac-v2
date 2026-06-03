@@ -43,7 +43,7 @@ Uitzondering: queries zonder trigger (puur read-tests) leven bij de query-owner.
 | Users | 10 | ✅ U3-U8, U10; ❌ U1, U2, U5, U9 eliminated |
 | Groups | 4 | ✅ G1-G4 |
 | Albums | 2 | ✅ A1, A2 |
-| Photos | 7 | ✅ P1-P7 |
+| Photos | 8 | ✅ P1-P7; 🚧 P8 (rotation, WP8 — RED-phase) |
 | Album-photos (publications) | 4 | ✅ AP1-AP4 |
 | Ratings | 1 | ✅ R1 |
 | Memberships | 3 | ✅ M1, M2, M3 |
@@ -95,6 +95,7 @@ Uitzondering: queries zonder trigger (puur read-tests) leven bij de query-owner.
 | P5 | `photoDelToCover` | PO delete | Clear cover-ref op group/album indien deze foto cover was | 3 (selectief) | In `photos.remove` mutation, full-table scan over groups/albums (acceptabel bij huidige schaal — TODO `by_cover` index als nodig) | `tests/photos/delete.test.ts` | ✅ |
 | P6 | `photoAddToStats` | PO insert | Increment `users.photoCount` | 2 | In `photos.create` mutation | `tests/photos/create.test.ts` | ✅ |
 | P7 | `photoDelToStats` | PO delete | Decrement `users.photoCount` | 2 | In `photos.remove` mutation | `tests/photos/delete.test.ts` | ✅ |
+| P8 | `fixPhotoRotation.js` (Jimp → nu sharp) | rotate-request (owner of group-admin) | Bestand fysiek geroteerd/geflipt: atomic `storageId`-swap → nieuwe blob, `exifOrientation`→1 (neutraliseert client-CSS), `width`/`height` = werkelijke output-dims (swap bij 90/270), cleanup oude blob. **Geen downstream cascade** — ratings/albumPhotos/group-+album-covers/flagging-state ongemoeid (cascade-safe). Delta-semantiek (niet call-idempotent); inverse brengt terug. EXIF-bake-in vóór user-delta (WP8 A2) | 3 (selectief, geen transitieve children) | `photos.rotate` mutation (auth owner OR group-admin via `albumPhotos.by_photo`→publicatie-groups→`memberships` role=admin) schedult `internal.photoRotation.rotateAction` (`"use node"`, sharp). Action: load blob → sharp rotate+flip → `ctx.storage.store` → internal patch-mutation (atomic storageId+exifOrientation+dims) die óók `internal.photos.cleanupStorage([oudeBlob])` schedult | `tests/photos/rotate.test.ts` + `tests/photos/rotateAction.test.ts` + `tests/integration/uploads/rotateRoundtrip.test.ts` | 🚧 |
 
 ### Trigger: Album-photos (Publications)
 

@@ -90,16 +90,149 @@ User-truth, niet impl-vorm.
 
 ---
 
-## Spec-criticus aanvullingen (A vult in)
+## Spec-criticus aanvullingen (A — ingevuld)
 
-A leest oude AWS-code + cascade-matrix + bovenstaande spec, vult hier aan:
+Bron-inspectie: `blob-images-api-photos/handlersPhoto/fixPhotoRotation.js` (Jimp) +
+`libs/dynamodb-lib-single.js::getPhotoById` + cascade-matrix + bestaande Convex-haken.
 
-- Ontbrekende invarianten: ...
-- Gemiste edge cases: ...
-- Risico-dimensie die regie overschatte/onderschatte: ...
-- Open product-vragen voor regie/Wouter: ...
-- Cascade-matrix-rij PR1 exact-formuleren: ...
-- Sharp-versie + alternatives-fallback (jimp als pure-JS escape-hatch): ...
-- Group-admin-check query-pad: via `albumPhotos.by_photoId` → group(s) → memberships.by_user_and_group → role == "admin"? Of efficienter pad? + motivatie
+### A1 — Idempotency-invariant is mis-geformuleerd (BLOCKER voor regie-review)
 
-(Leeg in draft. A commit edits hier.)
+De draft-invariant *"tweemaal dezelfde rotate-call → dezelfde eindstaat (idempotent visueel)"*
+is **onjuist voor fysieke server-side rotatie**. Rotatie is een **delta-operatie**: `rotate(90)`
+gevolgd door `rotate(90)` = 180° totaal, niet 90°. Dit matcht de oude AWS-code, die het nieuwe
+bestand altijd roteert vanaf het *huidige* bestand (geen idempotency). Twee user-initiated
+`rotate(90)`-calls horen dus legitiem 180° op te leveren.
+
+Wat regie waarschijnlijk bedoelde, en wat A als de échte testbare invariant pint:
+
+- **Delta-semantiek** (user-truth): elke rotate-request past precies één keer de gevraagde
+  transformatie toe bovenop de bestaande oriëntatie. De **inverse** brengt terug:
+  `rotate(90)` daarna `rotate(270)` = visueel terug bij af (dit staat al in Gate 1 replay-test
+  en is de juiste user-truth — niet "call-idempotent").
+- **Retry-veiligheid op action-niveau** (de échte risico-dimensie): de Convex-scheduler kan een
+  gefaalde action opnieuw draaien. Gevaarlijk window = `storageId` is al gepatcht naar de nieuwe
+  (geroteerde) blob, daarna crasht de action → een retry laadt de **al-geroteerde** blob en roteert
+  *nog een keer* → dubbele rotatie. Dit is geen storage-niveau-detail maar een zichtbaarheids-bug.
+  → Zie open-vraag A6: in-scope hardening (idempotency-token / single-apply-guard) of bewust
+  best-effort + gedocumenteerd risico?
+
+**Actie regie:** bevestig de delta-herformulering. A schrijft de tests op delta + inverse, NIET op
+call-idempotentie (die test zou onmogelijk groen kunnen worden zonder de operatie kapot te maken —
+conflict-protocol: niet gokken, geflagd).
+
+### A2 — EXIF-Orientation bake-in vóór de user-delta (ontbrekende invariant, correctness-kritisch)
+
+De draft pint "exifOrientation → 1 na rotate". Wat ontbreekt: **wat gebeurt er met een foto die
+nú correct getoond wordt dankzij de client-side CSS-transform op `exifOrientation` (bv. 6)?**
+
+In v2 toont de client een foto met `exifOrientation=6` rechtop via CSS (cyclus-2 hardening). Roteert
+de user dan 90°, en zet de action daarna `exifOrientation=1` (client stopt met CSS-corrigeren), dan
+**moet de action de bestaande oriëntatie eerst "inbakken"** in de pixels vóór de user-delta — anders
+verdwijnt de CSS-correctie en staat de foto na rotate scheef.
+
+Invariant toevoegen: *na rotate is het bestand fysiek correct, rekening houdend met (a) de
+oorspronkelijke EXIF/CSS-oriëntatie én (b) de door de user gevraagde delta. Het eindresultaat is wat
+de user op het scherm zag, plus zijn rotatie.* NB: `sharp`'s `rotate(angle)` met expliciete hoek
+auto-oriënteert **niet** op EXIF — dit is exact de val. Oude AWS (Jimp) negeerde EXIF-oriëntatie óók
+en neutraliseerde 'm niet; v2 voegt de neutralisatie nieuw toe en erft dus dit nieuwe samenspel.
+
+Unit-tests dekken dit niet (sharp is gemockt → geen pixel-waarheid). **Gate 1 moet daarom een
+fixture met `exifOrientation ≠ 1` gebruiken** (een iPhone-JPEG die op `Orientation=6` staat), zodat
+de bake-in empirisch bewezen wordt. A scherpt de gate hieronder aan.
+
+### A3 — Auth: spec verstrakt t.o.v. oude code (bevestig intentie)
+
+De oude handler-comment claimt "accessible only to admins of a group", maar de **werkelijke code**
+(`getPhotoById(photoId, userId)`) liet rotate toe voor **owner OF elk lid met toegang** (membership in
+een group waar de foto gepubliceerd staat) — **zónder rol-check**. De spec verstrakt dit bewust naar
+**owner OF group-admin** (member-zonder-admin geweigerd). Dat is een legitieme migratie-keuze
+(migratie-plan §Photo rotation), maar het is strikter dan v1. → Bevestigd als intentioneel; tests
+pinnen de strakke variant. Geflagd zodat regie weet dat dit gedrag wijzigt t.o.v. v1 (een v1-member
+die nu niet-admin is verliest de rotate-mogelijkheid).
+
+### A4 — width/height uit de werkelijke output-dims, niet blind swappen (ontbrekende invariant)
+
+De draft zegt "90/270 wisselt width en height". Blind de opgeslagen `width`/`height` swappen faalt als
+die velden **stale of `undefined`** zijn (foto nog niet door extractMetadata gelopen, HEIC-origine die
+geen dims kreeg, of EXIF-loze upload). Invariant scherper: *na rotate gelden `width`/`height` gelijk
+aan de werkelijke afmetingen van de nieuw-opgeslagen blob.* Dit dekt het swap-geval (90/270) én het
+geval waarin de bron-dims ontbraken/fout waren. Discriminerende test: rotate van een record met
+`width/height === undefined` → na afloop staan ze op de echte output-dims (niet `undefined`).
+
+### A5 — HEIC-rejection: waar? (action authoritative; mutation fast-fail als should)
+
+Spec lijst de action-rejection (magic-bytes, typed error, geen silent skip) als acceptance — A pint die.
+Aandachtspunt: de action is **async/gescheduled**, dus een action-throw is voor de user **onzichtbaar**
+(de mutation gaf al return). Voor goede UX zou de **mutation** een snelle fast-fail kunnen doen op
+`mimeType` die HEIC aangeeft (synchroon, user ziet direct een typed error), terwijl de action de
+autoritatieve magic-byte-check houdt. A pint de action-rejection (must, per spec) + voegt de
+mutation-fast-fail toe als **should** met aparte test (mimeType `image/heic` → mutation throwt typed
+error, geen action gescheduled). Open of regie de fast-fail wil — zie A6.
+
+### A6 — Open product-vragen voor regie/Wouter
+
+1. **Idempotency-herformulering** (A1): akkoord met delta + inverse i.p.v. call-idempotent?
+2. **Action-retry-hardening** (A1): single-apply-guard tegen dubbel-roteren bij scheduler-retry —
+   in scope voor WP8, of bewust best-effort + risico genoteerd (zoals storage-orphan)?
+3. **HEIC mutation-fast-fail** (A5): wil je de synchrone mutation-rejection op `mimeType`, of
+   alleen de autoritatieve action-rejection?
+4. **`sharp` vs `jimp`** (A7): migratie-plan koos `sharp`. Akkoord dat A de tests sharp-agnostisch
+   houdt (mock op chainable-niveau, geen method-namen hard-pinnen) zodat B vrij is sharp/jimp te
+   kiezen als de gate sharp-deploy-issues toont?
+5. **EXIF bake-in fixture** (A2): heb je een iPhone-JPEG met `Orientation=6` (niet 1) beschikbaar
+   voor Gate 1? Anders bewijst de gate de bake-in niet.
+
+### A7 — `sharp`-versie + pure-JS fallback
+
+`sharp` heeft native libvips-bindings; de hoog-risico-deploy-zorg in §Risico-assessment staat. A houdt
+de unit-tests **sharp-agnostisch**: de mock is een chainable-proxy die elke methode slikt en alleen op
+`toBuffer()`/`metadata()` terminaliseert. Daardoor pinnen de units **gedrag op het photo-record**
+(storageId-swap, exifOrientation=1, dims, cleanup-schedule) i.p.v. sharp's method-namen — B kan
+`sharp` of de pure-JS escape-hatch `jimp` (oude AWS gebruikte jimp) kiezen zonder dat de units breken.
+De échte runtime-validatie van de gekozen lib in de Convex `"use node"`-runtime zit in de
+integration-gate (`rotateRoundtrip`) + empirische Gate 1, conform `convex-runtimes.md` ("unit-tests
+vangen Buffer-runtime-issues niet"). Versie-pin laat A aan B/`package.json` over.
+
+### A8 — Atomic-swap + cleanup-ordering (aanbevolen gedrag, geen pseudo-code)
+
+Om de invarianten *atomic-storage-swap* + *cleanup-na-patch* samen te garanderen: de patch van
+`photos` (`storageId` → nieuw, `exifOrientation` → 1, `width`/`height` → output-dims) hoort in **één
+transactie** te gebeuren, en de cleanup van de **oude** blob hoort vanuit diezelfde mutatie gescheduled
+te worden (zodat de oude blob pas wordt verwijderd nadat de nieuwe `storageId` gecommit is). De action
+zelf doet de Node-bewerking (load → sharp → store) en delegeert daarna naar die internal mutation. Of
+dit een nieuwe `patchRotated`-helper is of een uitbreiding van `patchMetadata` met een `storageId`-arg
+laat A aan B; `patchMetadata` accepteert nu géén `storageId`, dus B moet iets toevoegen. Hergebruik van
+de bestaande `internal.photos.cleanupStorage(storageIds)` voor de oude-blob-cleanup is voldoende.
+
+### A9 — Group-admin-check query-pad
+
+Owner-check eerst (goedkoop: `photo.ownerId === user._id`). Anders: `albumPhotos.by_photo(photoId)`
+→ verzamel **unieke** `groupId`s van de publicaties → voor elke group `memberships.by_user_and_group
+(user._id, groupId)` en check `role === "admin"`. Admin in **één** publicatie-group volstaat (foto kan
+in meerdere groups gepubliceerd zijn). Bestaande helper `groups.requireAdmin(ctx, groupId)` past hier
+niet 1:1 (die throwt bij niet-member en kent maar één group); B bouwt een "is-admin-in-enige-
+publicatie-group"-check. Bij 16 users + bescheiden publicatie-aantal is de scan acceptabel — geen
+nieuwe index nodig. Geen toegang via publicatie-group waar de user géén admin is → geweigerd; webmaster
+zonder owner/admin → geweigerd (per spec).
+
+### A10 — `flipY` is een horizontale mirror (naamgeving)
+
+De oude AWS-code roept `image.flip(flipY, false)` — Jimp's signatuur is `flip(horizontal, vertical)`,
+dus `flipY` werd als **horizontale** flip toegepast (mirror links↔rechts), ondanks de "Y" in de naam.
+Spec bevestigt dit ("horizontale flip (mirror)"). A behoudt de argnaam `flipY` voor continuïteit met v1
+maar de tests + invariant beschrijven het als horizontale mirror. Een 90°/270°-rotatie + flip swapt
+nog steeds w/h (rotatie domineert de dims); flip-only (rotation 0) laat w/h gelijk.
+
+### A11 — Cascade-matrix-rij (toegevoegd door A — zie `docs/cascade-matrix.md`)
+
+Nieuwe rij **P8** onder Trigger: Photos. Geen downstream cascade (ratings/albumPhotos/group-+album-
+covers/flagging-state ongemoeid — alleen het beeldbestand + de dims/oriëntatie wijzigen). A pint
+"cascade-safe" expliciet met een test.
+
+### A12 — Aanscherping Gate 1 (empirische gate)
+
+- Fixture **moet** `exifOrientation ≠ 1` hebben (bv. iPhone-JPEG `Orientation=6`) om de bake-in (A2)
+  te bewijzen — niet alleen een al-rechtopstaande foto.
+- Verifieer naast `exifOrientation === 1` ná rotate óók dat de foto die vóór rotate via CSS rechtop
+  stond, ná rotate **zonder CSS-transform** nog steeds rechtop + plus-90° staat.
+- Replay `rotation: 270` brengt visueel terug bij af (delta-inverse, niet call-idempotentie).
