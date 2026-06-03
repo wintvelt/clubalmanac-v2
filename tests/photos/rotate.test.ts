@@ -254,7 +254,7 @@ describe("photos.rotate — EXIF-arithmetiek tabel", () => {
 
       // Volgorde: flip eerst, dán rotatie (matcht oude AWS). Andersom zou een
       // andere uitkomst geven — deze test pint de volgorde.
-      expect(await getOrientation(t, photoId)).toBe(ROT90[FLIP[start]]);
+      expect(await getOrientation(t, photoId)).toBe(ROT90[FLIP[start]!]);
     },
   );
 });
