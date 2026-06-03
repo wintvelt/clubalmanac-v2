@@ -11,25 +11,42 @@ Stille datakorruptie blijft niet lang stil — een drift tussen DB-aggregates en
 1. **Scan-frequentie**: dagelijks runt een scheduled function (04:30 UTC, gespreid na IB2 04:00) die de DB-staat valideert.
 
 2. **Scan-scope** — vier categorieën, allen detecteren-niet-fixen:
-   - **(a) Storage-orphans**: elke entry in Convex storage moet matchen op een `photos.storageId`. Orphans (storage-entries zonder photo-record) zijn drift.
+   - **(a) Storage-orphans**: elke entry in Convex storage moet matchen op een bekende storage-referentie. **[A-correctie]** Niet alleen `photos.storageId` — óók `users.profilePhotoStorageId` (schema r.21) is een legitieme referentie. Een storage-entry is pas orphan als hij in géén van beide voorkomt. Orphan-set = `alle _storage-ids` − (`{photos.storageId}` ∪ `{users.profilePhotoStorageId waar gezet}`). Enumeratie van storage via `ctx.db.system.query("_storage")`.
    - **(b) Aggregate-drift**: denormalized counters matchen live-recompute:
      - `users.photoCount` vs `count(photos waar ownerId === user._id)`
      - `photos.ratingAverage` + `photos.ratingCount` vs `ratings`-aggregaat per photo
      - `features.upvoteCount` vs `count(featureUpvotes waar featureId === feature._id)`
-   - **(c) FK-integriteit**: alle foreign keys verwijzen naar bestaande records. Indicatieve lijst (A vult aan na schema-scan):
-     - `albumPhotos.photoId` → `photos`
-     - `albumPhotos.albumId` → `albums`
-     - `memberships.userId` → `users`
-     - `memberships.groupId` → `groups`
-     - `photos.ownerId` → `users`
-     - `ratings.photoId` → `photos`
-     - `ratings.userId` → `users`
-     - `albumLastSeen.userId` → `users`
-     - `albumLastSeen.albumId` → `albums`
-     - `albums.groupId` → `groups`
+   - **(c) FK-integriteit**: alle foreign keys verwijzen naar bestaande records. **[A: volledige lijst na schema-scan]** — onderverdeeld in verplicht en optioneel. **Optionele FKs (`v.optional(v.id(...))`) zijn alleen drift wanneer ze gezet zijn én niet resolven** — een ongezette optionele FK is géén dangling FK.
+     - Verplicht (altijd resolven):
+       - `groups.createdBy` → `users`
+       - `memberships.userId` → `users`
+       - `memberships.groupId` → `groups`
+       - `albums.groupId` → `groups`
+       - `albums.createdBy` → `users`
+       - `albumPhotos.albumId` → `albums`
+       - `albumPhotos.photoId` → `photos`
+       - `albumPhotos.groupId` → `groups`
+       - `albumPhotos.addedBy` → `users`
+       - `photos.ownerId` → `users`
+       - `uploadIdempotency.ownerId` → `users`
+       - `ratings.photoId` → `photos`
+       - `ratings.userId` → `users`
+       - `invites.invitedBy` → `users`
+       - `features.submittedBy` → `users`
+       - `featureUpvotes.featureId` → `features`
+       - `featureUpvotes.userId` → `users`
+       - `albumLastSeen.userId` → `users`
+       - `albumLastSeen.albumId` → `albums`
+     - Optioneel (alleen drift bij gezet + niet-resolvend):
+       - `groups.coverPhotoId` → `photos`
+       - `albums.coverPhotoId` → `photos`
+       - `photos.flaggedBy` → `users`
+       - `uploadIdempotency.photoId` → `photos`
+       - `invites.groupId` → `groups`
+     - Géén FK (eigen orphan-categorie 2a, niet hier): `photos.storageId`, `users.profilePhotoStorageId` → `_storage`.
    - **(d) Geen self-healing**: monitor detecteert + alerteert, fixt nooit. Buggy self-healer vermenigvuldigt schade — bewuste niet-scope (zie §scope-uitsluitingen).
 
-3. **Tolerantie**: drift wordt gerapporteerd bij verschil ≥ 1. Strikt, geen race-marge.
+3. **Tolerantie**: drift wordt gerapporteerd bij élk verschil, geen race-marge. **[A-verfijning]** "Verschil ≥ 1" is correct voor de integer-counters (`photoCount`, `ratingCount`, `upvoteCount`): die kunnen alleen met gehele stappen driften, dus ≥1 == elk nonzero verschil. Maar `photos.ratingAverage` is een **float** in [1,5] — een ≥1-drempel zou een stille drift van bv. opgeslagen 4.5 vs werkelijk 3.7 (Δ 0.8) missen, wat juist een monitor-blind-spot is. Daarom: `ratingAverage`-drift = exacte mismatch met float-epsilon (`Math.abs(stored − recompute) > 1e-9`), niet ≥1. Undefined-semantiek: stored `undefined` ⇔ recompute `undefined` (count 0) = match; één van beide gezet en de ander niet = drift. FK- en storage-checks zijn binair (resolved/orphan), geen drempel.
 
 4. **Alert-dedup via state-tabel**: nieuwe `monitoringRuns`-tabel houdt `lastAlertedDriftSignature` bij. Drift-email gaat uitsluitend wanneer de signature verschilt van vorige alert. Persistente drift over meerdere runs = één email, geen storm.
 
@@ -123,14 +140,51 @@ Stille datakorruptie blijft niet lang stil — een drift tussen DB-aggregates en
 
 A leest spec + relevante repo-conventies (`commit-discipline.md`, `external-services.md`, `convex-runtimes.md`) + cascade-matrix + relevante `convex/`-modules indien strikt nodig voor schema-FK-inventarisatie. Geen oude AWS-code (was er niet voor deze WP).
 
-A vult hier aan:
+### Architectuur (A's vorm-keuze, geen impl-detail)
 
-- Ontbrekende invarianten: ...
-- Gemiste edge cases: ...
-- FK-lijst (invariant 2c) volledig gemaakt na schema-scan: ...
-- Risico-dimensie die regie overschatte/onderschatte: ...
-- Heartbeat-implementatie: aparte cron of inline-state-check in monitor-mutation — A's keuze met motivatie
-- Cascade-matrix-keuze: nieuwe meta-rij/sectie, of n.v.t. — A's call
-- Open product-vragen voor regie/Wouter: ...
+Eén `internal.monitoring.integrityCheck` **internalMutation** (geen action) doet de volledige scan + state-write + email-besluit. Eén Convex-mutation = één transactie = één consistente snapshot van álle tabellen → dat geeft invariant 11 (race-resistentie) **structureel** cadeau: er is geen tussen-read waarin een gelijktijdige user-mutation een vals-positief kan injecteren. De daadwerkelijke Mailjet-send gebeurt in een aparte `internal.monitoring.sendMonitoringAlert` **internalAction**, gequeue'd via `ctx.scheduler.runAfter(0, …)` — exact het `sendProblemReport`-patroon (mutation queue't action; action doet de externe call). De mutation logt áltijd via `console.log` (invariant 5) en schrijft één `monitoringRuns`-rij.
 
-(Leeg in draft. A commit edits hier.)
+> **[A-correctie op spec-terminologie]** De spec spreekt van "het bestaande `sendEmail`-action-pad". Er bestaat géén generieke `sendEmail`-action; het bestaande patroon is een **per-mail-kind internalAction** (`sendProblemReport`, `sendInviteEmail`) die een template bouwt en `sendMailjetMessage` (`convex/lib/mailjet.ts`) aanroept met `from: { email: INFO_SENDER }`. WP10 volgt dat: nieuwe `sendMonitoringAlert`-action, `INFO_SENDER` (`info@clubalmanac.com`, consistent met problem-report), recipients uit `getWebmasterEmails()` (`convex/lib/auth.ts`). `WEBMASTER_EMAILS` leeg/ontbreekt → no-op zonder throw (action mag scheduler niet stuk maken), gelijk aan `sendProblemReport`.
+
+### Ontbrekende invarianten / correcties op de draft
+
+- **Storage-orphan referentie-set onvolledig** (invariant 2a) — `users.profilePhotoStorageId` ontbrak; zónder deze fix wordt élke profielfoto een vals-positief orphan. Gecorrigeerd inline + RED-test pint het.
+- **`ratingAverage`-drempel** (invariant 3) — float, niet integer; ≥1-drempel mist sub-1.0-drift. Gecorrigeerd naar epsilon-mismatch + undefined-semantiek inline. RED-test pint een Δ0.5-drift als drift (oracle-anker, zie hieronder).
+- **FK-lijst** (invariant 2c) — van 10 indicatief naar 24 volledig, gesplitst verplicht/optioneel met "optioneel-ongezet = géén drift"-semantiek. Inline gecorrigeerd.
+- **`emailSent` betekent "gequeue'd", niet "afgeleverd"** — de mutation zet `emailSent` op basis van of zij de action queue't; Mailjet-falen in de action draait dat niet terug (best-effort, consistent met alle bestaande mail-paden). Spec-acceptance "email queued" is dus de testbare grens, niet "aangekomen".
+
+### Gemiste edge cases (in RED-tests gepind)
+
+- **Lege DB** → OK-run, geen email, geen throw (mirror van naturalExpiry "lege dataset").
+- **Optionele FK ongezet** (bv. `photos.flaggedBy === undefined`) → géén drift; alleen gezet-én-dangling telt.
+- **Cover-photo dangling** (`groups.coverPhotoId`/`albums.coverPhotoId` → verwijderde photo) → drift; veelvoorkomend reëel scenario (photo-delete liet cover-ref achter).
+- **`ratingAverage` undefined-grens** — count 0 + stored `undefined` = OK; count 0 + stored getal = drift; count>0 + stored `undefined` = drift.
+- **Persistente deduped-drift + heartbeat** — zie heartbeat-besluit hieronder.
+
+### Heartbeat-implementatie — A's keuze: **inline state-check in de monitor-mutation** (géén aparte cron)
+
+Motivatie: een aparte heartbeat-cron is zélf een silent-failure-surface (precies wat de heartbeat moet bewaken) én vereist een eigen registration-pin. Inline is goedkoper en robuuster: de mutation leest tóch al de laatste `monitoringRuns`-rij voor dedup; één extra vergelijking `now − lastHeartbeatAt ≥ 30d` volstaat.
+
+Regel (superset van de acceptance-spec): aan het eind van elke run — **als deze run géén (drift-)email queue'de én `now − lastHeartbeatAt ≥ 30d`, queue een heartbeat-email**. `lastHeartbeatAt` reset bij élke monitor-email (drift óf heartbeat). Dit voldoet exact aan de acceptance-cases (OK-run +≥30d → heartbeat; OK-run +<30d → niets) én dekt bovendien **persistente deduped-drift**: bij een drift-run die door signature-dedup géén email stuurt, vuurt na 30d alsnog de heartbeat — anders zou een al-30-dagen-stille-maar-driftende monitor onterecht als "alle emails = geen drift" gelezen worden. Zie open vraag 1.
+
+### Cascade-matrix — A's keuze: **één meta-rij in de system-events-sectie**
+
+De monitor is géén cascade (geen trigger, geen downstream-writes buiten `monitoringRuns`). Maar FL1/UI1/IB2 staan óók als daily system-event-crons in de cascade-matrix (categorie "system events"). Voor consistentie krijgt de integrity-check een rij in diezelfde sectie, expliciet gemarkeerd **"detect-only — geen cascade, leest alles, schrijft alleen `monitoringRuns` + queue't alert-action"**. B levert deze doc-edit mee (per commit-discipline standing rule); audit toetst.
+
+### Risico-dimensie die regie over/onder-schatte
+
+- **Onderschat: false-positive-storm bij eerste prod-run.** Als de orphan-set-fix (profilePhotoStorageId) níét landt, alarmeert run-1 op élke profielfoto. De RED-test dekt dit, maar het pint ook hoe kritisch de volledige referentie-set is — niet "indicatief".
+- **Correct ingeschat: ops-silent-failure.** Heartbeat + dashboard-log-altijd is de juiste mitigatie; A's inline-heartbeat sluit de persistente-deduped-drift-gat-variant extra.
+- **`ctx.db.system.query("_storage")`-afhankelijkheid** — orphan-detectie staat of valt met deze API. Bevestigd dat `convex-test` `_storage` als system-tabel ondersteunt (blobs via `ctx.storage.store` belanden in dezelfde store; system-query leest ze). In prod is dit de officiële storage-enumeratie-API. Geen blind-spot, maar wel een harde dependency die B in een query-helper moet isoleren.
+
+### Test-strategie voor de lastige invarianten
+
+- **Read-only-discipline (inv. 10) + geen-self-healing (2d)** — niet via een `ctx.db.patch`-spy (niet observeerbaar van buiten convex-test), maar **behavioraal**: seed bewuste drift (bv. `photoCount` te hoog), draai de monitor, assert dat de gedrifte bron-waarde **onveranderd** blijft (monitor "fixt" niet) én dat geen enkele andere tabel dan `monitoringRuns` muteert (rij-counts vóór/na). Mirror van de naturalExpiry-idempotency-aanpak.
+- **Race-resistentie (inv. 11)** — convex-test is single-threaded en kan de concurrent-mutation-race niet simuleren. Géén nep-test die om de verkeerde reden rood is. In plaats daarvan: een **structurele pin + comment** dat de hele scan in één `internalMutation` (= één transactie/snapshot) draait; B's afwijking hiervan (scan opsplitsen over meerdere mutations/actions) zou de invariant breken en moet in B's commit gemotiveerd. Plus de "alles in één run consistent"-assertie die impliciet volgt uit de andere tests.
+- **Oracle-anker (ab-audit-workflow §anti-pattern)** — `ratingAverage`-recompute deelt anders dezelfde `sum/count`-formule in test én impl (interne-consistentie-val). Anker: minstens één aggregate-test met een **handberekende** verwachte waarde (ratings [4,5] → avg 4.5, count 2) i.p.v. recompute-vs-recompute, plus de Δ0.5-drift-pin die tegen een onafhankelijk getal valt.
+
+### Open product-vragen voor regie/Wouter
+
+1. **Heartbeat bij persistente deduped-drift** — A koos de superset-regel (heartbeat vuurt ook op een drift-run die door dedup géén email stuurt). Akkoord, of strikt-literal "alleen op OK-run" (laat dan een 30d+-gat bij stille aanhoudende drift)? RED-tests pinnen vooralsnog de acceptance-cases die in beide lezingen gelijk zijn; de persistente-deduped-drift-case markeer ik als A's voorkeur, makkelijk om te draaien.
+2. **`monitoringRuns`-retentie** — de tabel groeit 1 rij/dag, onbegrensd. Buiten WP10-scope? (Geen cleanup-cron gespecificeerd; 365 rijen/jaar × 16-user-app is verwaarloosbaar, maar de "monitor schrijft onbegrensd"-ironie verdient een expliciet ja/nee.) A laat het buiten scope tenzij regie anders beslist.
+3. **Drift-IDs in email bij grote drift-set** — invariant 8 ("één samenvattende email") + invariant 9 (IDs toegestaan). Bij een echte ramp (honderden orphans) wordt de mail enorm. Cap op N IDs per categorie met "+M meer"-suffix? A pint vooralsnog géén cap (16-user-volume), maar markeert het.
