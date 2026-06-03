@@ -2,12 +2,12 @@
 
 Status-overzicht van de AWS → Convex migratie. WP's updaten dit doc bij elke closeout. Architectuur-detail blijft in [`migratie-plan-convex.md`](./migratie-plan-convex.md); operationele lopende-staat staat hier.
 
-**Huidige stand 2026-06-03**:
+**Huidige stand 2026-06-04**:
 - Fase 1 (project setup) ✅ afgerond
-- Fase 2 (backend) — **in progress**; alle domein- + cron-werk klaar, twee pakketten resteren: integrity-check/monitoring WP en pre-cutover-prep WP
-- Fase 3-5 — wachten tot fase 2 dicht is
+- Fase 2 (backend) — **in progress**; alle domein- + cron-werk klaar, twee pakketten resteren: integrity-check/monitoring WP10 (in audit) en WP5/WP6 deferred integration-tests
+- Fase 3-5 — wachten tot fase 2 dicht is; prod-env-activatie + prod-Gates-herhaling staan in fase 5 T-4-weken-stappenplan
 
-**Volgende WP (per [`work-packages/README.md`](./work-packages/README.md))**: integrity-check / monitoring werkpakket (storage-orphans + aggregate-drift-checks). Daarna pre-cutover-prep.
+**Volgende WP (per [`work-packages/README.md`](./work-packages/README.md))**: WP10 integrity-monitoring (in audit, closeout volgt). Daarna deferred integration-tests als laatste fase-2-werk.
 
 Cross-refs: [`work-packages/README.md`](./work-packages/README.md) (WP-overzicht), [`conventions/audit-track-record.md`](./conventions/audit-track-record.md) (bugs + recurring patterns), [`cascade-matrix.md`](./cascade-matrix.md) (cross-flow afhankelijkheden).
 
@@ -63,7 +63,7 @@ Per domein: unit tests eerst, dan implementatie.
 - [x] **Auth:** Clerk + Convex integratie via `session.created` webhook + atomic onboarding (`/clerk-webhook` httpAction + `internal.users.registerFromSession` mutation). `requireWebmaster(ctx)` helper op basis van `WEBMASTER_EMAILS` env-var. Implementatie via **[WP4]** (JWT roundtrip + `whoami`) + **[WP6]** (session.created webhook + atomic onboarding). Gates 1+2+3 op dev gepasseerd 2026-05-18. Audit-7 fixes (case-insensitive webmaster, server-side invite-gate, RBAC drift) gepind. **Pre-signup webhook** uit oorspronkelijke plan is bewust **niet** geïmplementeerd — vervangen door defense-in-depth `users.register` + `session.created`-pad (per WP6 design-discussie). Pre-cutover deferred: integration-test.
 - [x] **IB2 natural-expiry cron:** scheduled Convex cron `"expire pending invites"` 04:00 UTC → `internal.invites.expirePendingInvites` patcht `invites` met `status="pending"` en `expiresAt <= now` naar `status="expired"`. Boundary `<=` consistent met FL1 + invites-accept. Stille expiry (geen email-action, geen `bouncedAt`/`respondedAt`-write). Natural-expiry-fingerprint = `expired` ∧ geen `bouncedAt` ∧ geen `respondedAt` — onderscheidbaar van bounce-expiry (IB1) en user-decline. `by_status`-index + in-memory filter (geen composite-index nodig op 16-user schaal). Implementatie via **[WP9]**. 15 tests groen, suite 578, geen blockers/should-fix uit audit.
 - [ ] **Integrity-check / monitoring:** scheduled functies die DB-state vergelijken met "wat zou moeten zijn" + alerten bij drift. Scope: (a) storage-orphans (`_storage`-entries zonder photo-record, audit-10 + audit-12 §5), (b) aggregate-drift (`users.photoCount`, `photos.ratingAverage`/`ratingCount`, `features.upvoteCount` vs live-recompute), (c) alert-pad. **Alert-pad keuze (regie 2026-06-03)**: Convex dashboard log altijd (incl. OK-runs voor traceability), email naar webmaster alleen bij gevonden drift/orphans (consistent met bestaand problem-report Mailjet-pad). Eigen WP, A→B→audit-discipline, kickoff via `phase-kickoff`-skill.
-- [ ] **Pre-cutover-prep:** deferred items uit fase 2 + prod-env-setup. Niet feature-werk, eerder runbook + execute. Scope: WP5/WP6 integration-tests schrijven (`tests/integration/mailjet/sendRoundtrip.test.ts` + `tests/integration/clerk/onboardingWebhook.test.ts`), prod-Gates 1+2 (Mailjet) + 1+2+3 (Clerk) herhalen op prod-deployment, prod env-vars opzetten (`MAILJET_*`, `CLUBALMANAC_APP_URL=https://clubalmanac.com`, `CLUBALMANAC_STAGE=prod`, `CLERK_WEBHOOK_SECRET`, aparte `WEBMASTER_EMAILS`), prod webhook-configs (Mailjet + Clerk eigen URL/secret). Details onder §Pre-cutover deferred items onderaan dit doc.
+- [ ] **Deferred integration-tests (WP5+WP6 follow-up):** `tests/integration/mailjet/sendRoundtrip.test.ts` + `tests/integration/clerk/onboardingWebhook.test.ts` als follow-up van de in WP5/WP6 deferred items. Pure backend-code, env-var-gated (zoals WP1/WP2 integration-tests). Niet-WP-blockers van WP5/WP6 zelf maar wel laatste-mijl-discipline vóór fase 2 afsluit. Prod-Gates herhalen + prod-env-setup zelf zijn fase-5-werk — staan in cutover-stappenplan T-4 weken.
 
 Backend is client-agnostisch. Zelfde queries/mutations werken straks voor zowel iPhone app als webapp.
 
@@ -183,7 +183,12 @@ Dus: communicatie en blokkade gaan **buiten de oude app om**.
 ### Cutover stappenplan
 
 - [ ] T-4 weken: prod environments activeren — Convex prod deployment aanmaken (EU Dublin), Clerk prod instance activeren, env-paren wirën (Convex `CLERK_FRONTEND_API_URL` → prod Clerk, EAS prod build profile met juiste keys)
+- [ ] T-4 weken: prod env-vars op Convex deployment zetten (apart van dev) — `MAILJET_API_KEY`, `MAILJET_SECRET_KEY`, `MAILJET_SENDER_EMAIL`, `MAILJET_WEBHOOK_USER`, `MAILJET_WEBHOOK_SECRET`, `CLUBALMANAC_APP_URL=https://clubalmanac.com`, `CLUBALMANAC_STAGE=prod`, `CLERK_WEBHOOK_SECRET` (prod Svix), aparte `WEBMASTER_EMAILS`
+- [ ] T-4 weken: Mailjet prod webhook-config — eigen webhook-URL (`https://<prod-deployment>.eu-west-1.convex.site/email-event`) + eigen Basic-auth-secret in Mailjet dashboard configureren
+- [ ] T-4 weken: Clerk prod webhook-config — eigen `/clerk-webhook`-URL (`https://<prod-deployment>.eu-west-1.convex.site/clerk-webhook`) + eigen Svix signing-secret + verification-required-flag aan
 - [ ] T-4 weken: smoke test prod env (lege DB, dummy registratie, JWT round-trip via prod build van app)
+- [ ] T-4 weken: WP5 prod-Gates 1+2 herhalen op prod-deployment (send-roundtrip naar test-inbox + bounce-roundtrip via echte bounce of dashboard test-event)
+- [ ] T-4 weken: WP6 prod-Gates 1+2+3 herhalen op prod-deployment (atomic-onboarding happy-path + idempotency-relogin + zero-invite-fallback via Clerk Account Portal)
 - [ ] T-3 weken: cutover-datum vastleggen, communicatie naar 16 users
 - [ ] T-2 weken: 16 Clerk prod users vooraf aanmaken via Clerk Invitations API met bestaande emails — Clerk IDs zijn dan bekend voor data-import mapping
 - [ ] T-1 week: group-injection aanzetten in DynamoDB (in-app reminder verschijnt)
@@ -212,13 +217,12 @@ Dus: communicatie en blokkade gaan **buiten de oude app om**.
 
 ## Pre-cutover deferred items
 
-Items die per WP-spec deferred zijn naar pre-cutover-prep (niet WP-blockers):
+WP5/WP6 deferred items zijn nu verdeeld over fase 2 en fase 5:
 
-- **WP5 Mailjet integration-test** `tests/integration/mailjet/sendRoundtrip.test.ts` + prod-deployment-gate-herhaling (Gates 1+2 op prod)
-- **WP6 Clerk integration-test** `tests/integration/clerk/onboardingWebhook.test.ts` + prod-deployment-gate-herhaling (Gates 1+2+3 op prod)
-- **Env-vars op prod-deployment** (apart van dev): `MAILJET_*`, `CLUBALMANAC_APP_URL=https://clubalmanac.com`, `CLUBALMANAC_STAGE=prod`, `CLERK_WEBHOOK_SECRET` (prod), aparte `WEBMASTER_EMAILS`
-- **Mailjet prod webhook-config** (eigen webhook-URL + eigen Basic-auth-secret)
-- **Clerk prod webhook-config** (eigen `/clerk-webhook` URL + eigen Svix-secret + verification-required-flag on)
+- **Backend-code** (fase 2, [ ]-bullet bovenaan §Fase 2): WP5/WP6 integration-tests `tests/integration/mailjet/sendRoundtrip.test.ts` + `tests/integration/clerk/onboardingWebhook.test.ts`
+- **Prod-env activatie + Gates herhalen** (fase 5 T-4 weken, zie §Cutover stappenplan): prod env-vars, Mailjet prod webhook-config, Clerk prod webhook-config, WP5 Gates 1+2 herhalen, WP6 Gates 1+2+3 herhalen
+
+Reden voor split: integration-tests zijn écht backend-code (env-var-gated, in CI-uitsluitingslijst per `integration-tests.md`) — past in fase 2. Prod-env-activatie heeft pas zin in T-4 weken (idle prod-deployment eerder = cost + drift-risico, plus Gates moeten toch herhaald worden vlak vóór T-0).
 
 ## Hoe dit doc bijwerken
 
