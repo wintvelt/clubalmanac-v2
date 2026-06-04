@@ -27,7 +27,8 @@ Integration suite groeit per werkpakket. Elk werkpakket = aparte sub-folder.
 | WP1 | Photon (Komoot) reverse geocoding | `photon/` | _(geen)_ |
 | WP2 | Convex storage roundtrip via `ConvexHttpClient` | `convex/` | `CONVEX_URL` |
 | WP4 | Clerk JWT validation roundtrip via `whoami` httpAction | `clerk/` | `CLERK_SECRET_KEY`, `CLERK_TEST_USER_*_EMAIL` |
-| WP5 | Mailjet send + bounce webhook | `mailjet/` _(planned)_ | `MAILJET_*` |
+| WP11 | Mailjet Send-API contract (direct) | `mailjet/` | `MAILJET_API_KEY`, `MAILJET_API_SECRET`, `MAILJET_TEST_*_FROM` |
+| WP11 | Clerk onboarding-webhook (atomic, live route) | `clerk/` | `CONVEX_URL`, `CLERK_WEBHOOK_SECRET` |
 
 Env-vars voor WP2-4 lopen via `.env.integration` (in `.gitignore`),
 geladen door [`_helpers/setup.ts`](./_helpers/setup.ts) via `dotenv` —

@@ -27,7 +27,8 @@ Elk werkpakket pinnt het contract van één externe service:
 | WP1 | Photon reverse-geocoding | landed |
 | WP2 | Convex storage roundtrip via `ConvexHttpClient` | landed |
 | WP4 | Clerk JWT roundtrip via `whoami` httpAction | A landed, B WIP |
-| WP5 | Mailjet send + bounce webhook | planned |
+| WP5 | Mailjet send (direct Send-API-contract, via WP11) | landed |
+| WP6 | Clerk onboarding-webhook (atomic, via WP11) | landed |
 
 ## Discipline
 
