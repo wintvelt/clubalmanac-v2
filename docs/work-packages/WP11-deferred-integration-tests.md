@@ -113,15 +113,64 @@ Als A onderweg ontdekt dat een nieuwe httpAction/helper nodig is om iets testbaa
 
 ---
 
-## Spec-criticus aanvullingen (A vult in)
+## Spec-criticus aanvullingen (A — 2026-06-04)
 
-A leest spec + `integration-tests.md` + `external-services.md` Mailjet+Clerk-secties + WP5/WP6-specs + WP7-runbook-precedent + bestaande `tests/integration/`-structuur (niet bestaande convex/-impl). Vult hier aan:
+A heeft spec + `integration-tests.md` + `external-services.md` Mailjet+Clerk-secties + WP5/WP6-impl (`convex/lib/mailjet.ts`, `convex/http.ts`, `convex/users.ts`, `convex/_test.ts`, `convex/schema.ts`) + bestaande unit-suite (`tests/email/mailjetClient.test.ts`, `tests/clerk/webhookAuth.test.ts`, `tests/clerk/webhookPayloadShape.test.ts`, `tests/users/registerFromSession.test.ts`, `tests/_helpers/svix.ts`) + WP7-integration-precedent gelezen.
 
-- Ontbrekende invarianten: ...
-- Gemiste edge cases: ...
-- Risico-dimensie die regie overschatte/onderschatte: ...
-- Open product-vragen voor regie/Wouter: ...
-- Capture-replay fixture-strategie: A's exacte plan (waar wordt de fixture lokaal bewaard, hoe wordt hij vervangen bij rotatie van Clerk-secret, etc.)
-- Cleanup-volgorde Clerk-test: A's plan (memberships eerst? users-row laatst? albumLastSeen?)
+**Conclusie: A is gestopt vóór de test-fase en rapporteert.** Twee structurele spec-impl-mismatches reframen beide test-files. Eén ervan (Clerk DB-verificatie + cleanup) raakt productie-adjacent code (`convex/_test.ts`) en triggert de §Workflow-afwijking-escape-hatch (→ A→B→audit voor dat deel). A heeft géén tests geschreven; dat wacht op regie-besluiten hieronder.
 
-(Leeg in draft. A commit edits hier.)
+### BLOKKER 1 — Mailjet invariant 1 pin't een mechanisme dat niet bestaat
+
+Invariant 1 + acceptance sub-tests 1 & 2 gaan uit van een "bestaande Mailjet verified-sender-REST-call (`/REST/sender`)" die "unit-tests wegmocken" en die deze integration-test "tegen de echte REST API" zou pinnen.
+
+Die REST-call bestaat niet. De verified-sender-gate in `convex/lib/mailjet.ts` is een **pure in-memory env-var-check** (`isSenderVerified` leest de comma-separated set `MAILJET_VERIFIED_SENDERS`). Er is geen enkele netwerk-call naar Mailjet's `/REST/sender`. De énige Mailjet-netwerk-call in de codebase is de Send API (`https://api.mailjet.com/v3.1/send`). `external-services.md` known-issue 2 bood twee opties ("REST-call óf setup-time env-var-gate"); de impl koos de env-var-gate.
+
+Gevolg: er is in de gate niets externs te pinnen. Sub-tests 1 & 2 (verified → no throw, onverified → `UNVERIFIED_SENDER:`-throw) zouden pure logica zonder netwerk her-draaien — dat is per definitie geen integration-test, en het is al uitputtend gedekt als unit-test in `tests/email/mailjetClient.test.ts` (verified / ontbrekend / leeg / whitespace / mixed-case + creds-fail-fast). Ze één-op-één naar de integration-laag kopiëren voegt nul contract-dekking toe en schendt "integration-tests pinnen externe contracten, niet ons eigen gedrag".
+
+### BLOKKER 2 — Het écht pinbare Mailjet-contract staat niet in de spec
+
+Het hele bestaansrecht van de gate (known-issue 2): Mailjet retourneert **200 OK óók bij een niet-geverifieerde from-address** — silent failure. Dát is het externe contract dat een integration-test waard is. Maar onze productie-code raakt dat pad nooit (de gate blokkeert de send vóór de fetch). Om Mailjet's echte gedrag te pinnen moet de test de Send API **direct** aanroepen met een onverified From en observeren dat Mailjet 200 teruggeeft terwijl er niets verstuurd wordt. Dat vereist géén productie-code en is veel waardevoller dan onze pure gate her-testen. De spec draait dit om: ze wil de gate (al unit-getest) pinnen en slaat de echte externe verrassing over.
+
+### BLOKKER 3 — `sendMailjetMessage` retourneert `void`; happy-path kan geen MessageID opleveren
+
+Acceptance sub-test 3 wil "verified sender → 200 + niet-lege `MessageID`". Maar `sendMailjetMessage` (`convex/lib/mailjet.ts`) retourneert `Promise<void>` en parsed bewust de 2xx-body niet ("Mailjet's contract op response-shape is onstabiel"). Een MessageID is dus niet uit de productie-functie te halen. Wil je op `MessageID` asserteren, dan moet de test de Send API direct aanroepen (productie-payload-shape repliceren) — legitiem voor een "pin-the-contract"-integration-test, maar de spec suggereert ten onrechte dat het uit bestaande productie-code komt. Alternatief: alleen no-throw asserteren via `sendMailjetMessage` (dan geen MessageID-pin).
+
+### BLOKKER 4 — Clerk DB-verificatie + cleanup vereisen NIEUWE test-only Convex-functies (B-fase)
+
+Invarianten 7, 8 (lees users-row by subject + accepted invites + memberships + albumLastSeen) en 11 (self-cleanup: delete users-row + memberships + albumLastSeen) vereisen lezen/schrijven van DB-state voor een **arbitrair fake subject** (`user_wp11_<ts>`) via `ConvexHttpClient`. `ConvexHttpClient` kan alleen **public** functies aanroepen. In de huidige codebase bestaat:
+
+- géén public query om een user op `subject` te lezen (`getBySubjectInternal` is internal);
+- géén public read voor invites-by-email / memberships-by-user / albumLastSeen;
+- géén public mutation om user + memberships + albumLastSeen voor een gegeven subject te verwijderen (`deleteSelf` vereist de eigen auth van die user — onmogelijk voor een fake subject; `internalRemoveMember` is internal).
+
+Het WP7-cleanup-precedent werkte omdat `api.photos.remove` een echte public mutation is. WP11 heeft geen equivalent. Verifiëren + opruimen van de onboarding vereist dus NIEUWE functies in `convex/_test.ts` (gegate op `INTEGRATION_TEST_ENABLED`): een by-subject read-back query + een by-subject teardown mutation. Per de spec's eigen §Workflow-afwijking ("nieuwe httpAction/helper nodig → stop + rapporteer → switch naar A→B→audit voor dat deel") én `integration-tests.md` §"Test-only Convex functions" (die expliciet de volle A→B→audit-cyclus triggeren, niet de A+audit-norm) is dit een stop-conditie.
+
+### Wat WEL doelbaar is zonder regie-besluit (ter info, niet uitgevoerd)
+
+- **Clerk live-endpoint-roundtrip** (delen van invarianten 6, 9, 10): met de echte `CLERK_WEBHOOK_SECRET` lokaal een `session.created`-payload tekenen via `standardwebhooks` en POSTen naar `<deployment>.<region>.convex.site/clerk-webhook` → 200; gemanipuleerde signature → 401. Géén productie-code nodig. De toegevoegde waarde t.o.v. de unit-suite (die Svix-verify + payload-shape al pint via in-process `t.fetch`) is uitsluitend: doet de échte gedeployde route het met de échte secret + region-suffix-URL. De DB-verificatie-helft blijft geblokkeerd door BLOKKER 4.
+
+### Gemiste edge cases / accuraatheids-correcties
+
+- **Invariant 7 "dezelfde `createdAt`-timestamp"**: de drie tabellen gebruiken verschillende veldnamen — `users.createdAt`, `invites.respondedAt`, `memberships.joinedAt`. Alledrie krijgen wel dezelfde `now` binnen de transactie, maar de atomic-pin moet op die drie verschillende velden asserteren, niet op één `createdAt`.
+- **Re-login vs onboarding (`registerFromSession` r.92-93)**: bestaande subject → idempotent no-op vóór invite-collect. Invariant 8 ("fresh subject per run") is dus terecht, maar de spec moet expliciet maken dat een tweede webhook-call met hetzelfde fresh subject géén tweede invite-accept doet (re-login-pad) — een waardevolle extra pin als we toch test-only read-back bouwen.
+- **`resolveVerifiedEmail` (`convex/http.ts` r.121-129)**: onboarding gebeurt alléén bij een `primary_email_address_id` dat naar een `verification.status === "verified"` address wijst. De fixture/payload moet dus een verified primary email hebben, anders is het een 200-no-op (geen users-row) en faalt de assertie om de verkeerde reden.
+- **Region-suffix-pin (invarianten 3, 10)**: er is geen onafhankelijke oracle voor "juiste region-suffix". De test kan alleen de `CONVEX_URL` uit env nemen en loud falen als het endpoint 404't/niet resolvet. Het is dus geen aparte assertie maar een gevolg van de `getConvexSiteBase`-helper (`.cloud`→`.site`, region blijft staan) + een echte roundtrip. Framing in de spec bijstellen.
+- **`getConvexSiteBase` is gedupliceerd** in `jwtRoundtrip.test.ts` + `uploadRoundtrip.test.ts`. WP11 zou 't een derde keer dupliceren — kandidaat om naar `tests/integration/_helpers/` te tillen (kleine cleanup, geen blokker).
+
+### Open product-vragen voor regie/Wouter
+
+1. **Mailjet reframe (BLOKKER 1-3)**: vervangen we sub-tests 1 & 2 (pure-gate-herhaling) door één echte externe-contract-pin = "directe Send-API-call met onverified From → observeer 200-maar-niet-verzonden" (BLOKKER 2)? En sub-test 3 (happy-path) = directe Send-call → 200 + MessageID (BLOKKER 3)? Of wil regie de Mailjet-helft anders scopen?
+2. **Clerk B-fase (BLOKKER 4)**: bevestigen we de switch naar A→B→audit voor de `convex/_test.ts`-helpers (by-subject read-back query + teardown mutation)? Zo niet, dan vervalt de DB-verificatie + cleanup en blijft alleen de live-endpoint-roundtrip-pin (200/401) over — wat grotendeels de unit-suite dupliceert en weinig toevoegt.
+3. **Capture-replay vs fresh-subject (invarianten 6 ↔ 8)**: deze twee staan op gespannen voet. Een écht gecapturede payload heeft een echt, vast subject; invariant 8 eist een nieuw subject per run. Zodra je subject + email + `primary_email_address_id` in de capture herschrijft, is het geen pure capture-replay meer. Voorstel: een gesynthetiseerde-maar-getrouwe payload met fresh subject (hergebruik/optil van `tests/_helpers/svix.ts` `sessionCreatedPayload`), niet een gecommiteerde capture-fixture. Akkoord, of wil regie tóch een echte capture (met de bijbehorende manuele-capture-stap + gitignore-fixture)?
+
+### Capture-replay fixture-strategie (afhankelijk van vraag 3)
+
+Als regie tóch capture-replay wil: fixture lokaal in een gitignore'd folder (precedent: WP7's `UPLOAD_GATE_PHOTO_PATH` buiten repo, pad via env-var) — bv. `CLERK_WEBHOOK_FIXTURE_PATH` in `.env.integration`. Bij Clerk-secret-rotatie verandert de payload-inhoud niet (de secret tekent alleen de headers, niet de body); de fixture blijft geldig zolang Clerk's payload-shape niet wijzigt. A's aanbeveling blijft echter vraag-3-voorstel (gesynthetiseerd + fresh subject) boven een gecommiteerde/gecapturede fixture.
+
+### Cleanup-volgorde Clerk-test (afhankelijk van BLOKKER 4-besluit)
+
+Als de teardown-mutation er komt: omgekeerde insert-volgorde, kindrecords eerst. Concreet: albumLastSeen (`by_user`-index) → memberships (`by_user`-index) → users-row laatst. Invites-accept terugdraaien is niet nodig als de test fresh invites zelf seedt; anders ook invites resetten/verwijderen. Dit spiegelt de `deleteSelf`-cascade-volgorde-rationale (`convex/users.ts` r.197-236) maar moet by-subject werken zonder auth, vandaar de gegate test-only mutation.
+
+---
+
+> **Status na A-pass (2026-06-04)**: spec-criticus afgerond, tests NIET geschreven (geblokkeerd op regie-besluiten 1-3 hierboven). Géén `tests/`-, `runbook`-, `.env.integration.example`- of `integration-tests.md`-tabel-edits in deze commit — die wachten op de scope-beslissing. A heeft alleen dit spec-doc aangevuld.
