@@ -27,7 +27,7 @@ WP1-WP4 liepen vóór de formele spec-doc-discipline (geen WP-file). Status uit 
 
 | WP | Onderwerp | Spec-doc | Status |
 |---|---|---|---|
-| WP11 | Deferred integration-tests: `sendRoundtrip.test.ts` (WP5 Mailjet, sender-pre-check + send happy-path) + `onboardingWebhook.test.ts` (WP6 Clerk capture-and-replay + atomic onboarding verify + 401-pad). A+audit-workflow (geen B-fase) per integration-tests.md-norm. Combo-runbook. | [`WP11-deferred-integration-tests.md`](./WP11-deferred-integration-tests.md) | 🆕 draft (regie 2026-06-05), klaar voor A |
+| WP11 | Deferred integration-tests: `sendRoundtrip.test.ts` (WP5 Mailjet directe Send-API call, silent-failure-pin + happy-path) + `onboardingWebhook.test.ts` (WP6 Clerk synth-payload met echte HMAC + atomic onboarding verify + 401-pad). **Split-workflow** na A's spec-criticus-pass: Mailjet = A+audit, Clerk = A→B→audit (B levert `convex/_test.ts`-helpers voor DB-reads + cleanup). Combo-runbook. | [`WP11-deferred-integration-tests.md`](./WP11-deferred-integration-tests.md) | 🆕 draft (regie 2026-06-05, spec-correctie 2026-06-06), klaar voor A |
 | TBD | Email Gate 1 happy-path + integration-test `tests/integration/mailjet/sendRoundtrip.test.ts` als follow-up van WP5 deferred-items | — | open |
 | TBD | Clerk Invitations API integratie (pre-create Clerk-user bij Convex `invites.create`, `users.status: "invited" \| "active"` voor visibility) — alternatief design op WP6, kan als upgrade later | — | open, design-discussie |
 | Phase 3 | Data migratie tooling (DynamoDB → Convex) | — | uit fase 2-scope |

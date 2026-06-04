@@ -6,46 +6,50 @@
 
 Mailjet's silent-sender-failure-pad en Clerk's Svix-HMAC + atomic-onboarding-pad worden gepind tegen de echte services, zodat contract-regressies (sender-verification, payload-shape, signing-discipline, region-suffix-URL) door een groene WP-impl heen niet stilletjes naar cutover schuiven.
 
-## Workflow-afwijking — A + audit, geen B
+## Workflow — split: Mailjet A+audit, Clerk A→B→audit
 
-Per [`integration-tests.md`](../conventions/integration-tests.md) §Discipline (regel 59-64): voor pure pin-the-contract integration-tests is **A + audit de norm**, niet de volle A→B→audit. B-fase wordt alleen toegevoegd wanneer de pin een productie-code-wijziging vereist (bv. nieuwe httpAction die nodig is om iets testbaar te maken).
+Per [`integration-tests.md`](../conventions/integration-tests.md) §Discipline: voor pure pin-the-contract integration-tests is A+audit de norm; B-fase alleen wanneer de pin productie-code-wijziging vereist. A's spec-criticus-pass (zie aanvulling onderaan) maakte de split expliciet:
 
-WP11 pin't bestaande WP5+WP6 productie-code zonder die aan te raken. Verwachte flow:
-1. **Regie**: deze draft, commit + push
-2. **A-sessie**: spec-criticus-aanvulling + schrijft `tests/integration/mailjet/sendRoundtrip.test.ts` + `tests/integration/clerk/onboardingWebhook.test.ts` + doc-deliverables (zie §Acceptance) + commit + stop
-3. **Regie**: review A's commit, beslis audit-go of mini-fix-eerst
-4. **Audit-sessie**: rapport in chat
-5. **Regie**: bij groen → WP11-closeout, fase 2 → AFGEROND
+**Mailjet-helft — A + audit, geen B.** Test pin't het externe Mailjet-contract direct via `fetch` naar Mailjet's Send API. Geen Convex-code aangeraakt. Pure pin-the-contract.
 
-Als A onderweg ontdekt dat een nieuwe httpAction/helper nodig is om iets testbaar te maken: stop + rapporteer aan regie. Dan switchen we naar A→B→audit voor dat deel.
+**Clerk-helft — A → B → audit.** Test moet `users`/`memberships`/`invites`/`albumLastSeen` lezen + opruimen voor een fresh subject, zonder Clerk JWT. Per [`integration-tests.md`](../conventions/integration-tests.md) §Test-only-Convex-functions vereist dat nieuwe `convex/_test.ts`-helpers (`INTEGRATION_TEST_ENABLED`-gated). Dat is productie-code-wijziging → A schrijft RED tests verwijzend naar nog-bestaande helpers, B implementeert, audit reviewt.
+
+Verwachte flow:
+1. **Regie**: deze draft + spec-correctie post A's spec-criticus-pass, commit + push
+2. **A-sessie**: schrijft `tests/integration/mailjet/sendRoundtrip.test.ts` (pin't Mailjet direct) + `tests/integration/clerk/onboardingWebhook.test.ts` (RED, refereert aan toekomstige `convex/_test.ts`-helpers) + doc-deliverables, commit + stop
+3. **Regie**: review A's commits, geef B groen licht voor de Clerk-helpers
+4. **B-sessie**: implementeert `convex/_test.ts`-helpers tot Clerk-test groen wordt, commit + stop
+5. **Audit-sessie**: rapport over de combined diff
+6. **Regie**: bij groen → WP11-closeout, fase 2 → AFGEROND
 
 ## Invarianten
 
 ### Mailjet sendRoundtrip
 
-1. **Verified-sender pre-check**: integration-test asserteert dat de bestaande Mailjet verified-sender-REST-call (`/REST/sender` of equivalent uit `convex/lib/mailjet.ts`) een onverified-sender herkent en throwt vóór de send. Dit pin't de WP5 hard-gate uit `external-services.md` §Known issues #2 (silent failure bij niet-gevalideerde sender). De gate is precies waar Mailjet's "200 OK ondanks niet-verzonden" bias zit — unit-tests mocken 'm weg, deze test pin't 'm tegen de echte REST API.
-2. **Send happy-path**: één echte send vanaf een verified sender (`info@` of `invites@`) naar de bestaande test-bestemming `clubalmanac-integration-regular@example.com` (zelfde patroon als WP4/WP7-test-user). Response = 200 met geldige `MessageID` (string, niet-leeg). **Geen** follow-up message-status-poll (Mailjet eventual-consistency maakt test flakier; sender-verification is de echte silent-failure-gate, gepind in invariant 1).
-3. **Region-suffix discipline-pin**: test gebruikt hardcoded `CONVEX_URL` met region-suffix uit `.env.integration`. Test faalt loud bij missende of foutieve region-suffix. WP5-audit S-3-precedent (404 op webhook-URL zonder region).
-4. **Primary-key only**: test gebruikt de primary Mailjet API-key uit dev-deployment. Geen sub-account-keys (WP5 known issue #3).
-5. **Geen mailbox-pollutie-checks**: test verifieert niet of de mail in de inbox aankomt — alleen dat Mailjet hem accepteert (sender-verified + 200 + MessageID). Inbox-arrival is buiten test-scope want niet-deterministisch.
+**Pin't het externe Mailjet-contract direct via `fetch` naar de Send API — niet via `convex/lib/mailjet.ts`.** Onze interne sender-gate (`isSenderVerified` op `MAILJET_VERIFIED_SENDERS` env-var) is een pure logica-check, al unit-getest, en hoort hier niet thuis. Wat we hier pinnen is *Mailjet's eigen gedrag* — en specifiek de silent-failure-bias die WP5's setup-time-gate motiveerde.
+
+1. **Silent-failure pin (onverified From)**: directe `fetch` naar Mailjet Send API met een onverified From-address (een variant die expliciet **niet** in `MAILJET_VERIFIED_SENDERS` staat — bijv. `unverified+wp11@example.com`). Verwachte response = **200 OK** met body die *geen* successful-send indicatie geeft (geen bezorgings-MessageID, eventueel een sender-status-veld). Dit pin't Mailjet's silent-failure-gedrag empirisch. **Als Mailjet ooit z'n gedrag wijzigt** (bv. 400 in plaats van silent 200), faalt deze test — exact wat we willen weten vóór cutover.
+2. **Send happy-path (verified From)**: directe `fetch` naar Mailjet Send API met een verified From (`info@<verified-domain>` of `invites@<verified-domain>`, uit `MAILJET_VERIFIED_SENDERS`) naar test-bestemming `clubalmanac-integration-regular@example.com`. Verwachte response = **200 OK** met body die een geldige `MessageID` retourneert (string, niet-leeg). Pin't dat het happy-pad daadwerkelijk een send produceert.
+3. **Primary-key only**: test gebruikt de primary Mailjet API-key uit dev-deployment via `MAILJET_API_KEY` + `MAILJET_API_SECRET`. Geen sub-account-keys (WP5 known issue #3).
+4. **Geen mailbox-pollutie-checks + geen message-status-poll**: test verifieert niet of de mail in de inbox aankomt en doet geen follow-up `/REST/message/{ID}`-poll. Sender-pre-check + 200 + MessageID is de testbare contract-grens; inbox-arrival en message-status zijn mens-stap in cutover-week (zie runbook §pre-cutover) en Mailjet's eventual-consistency maakt automated poll te flaky.
 
 ### Clerk onboardingWebhook
 
-6. **Capture-and-replay payload**: test gebruikt een vooraf gecapturede echte Clerk `session.created`-webhook-payload (fixture-file, niet in repo gecommit — staat in `.gitignore`'d folder, pad in `.env.integration`). Test stuurt deze payload via `fetch` naar `/clerk-webhook` met geldige Svix-headers (signature gegenereerd met `CLERK_WEBHOOK_SECRET` uit env). Dit pin't payload-shape én Svix-HMAC-verify in één test — dichter bij echte contract dan een self-generated mock-payload (vraag #3-keuze in kickoff).
-7. **Atomic onboarding-pad geverifieerd**: na de webhook-call leest test via `ConvexHttpClient` dat:
+5. **Synthesized-but-faithful payload + fresh subject**: test bouwt per run een Clerk `session.created`-webhook-payload (helper bv. `tests/_helpers/svix.ts`) met **alle velden die de productie-handler daadwerkelijk leest** (`type`, `data.user_id`, `data.user.email_addresses[].email_address`, `data.user.email_addresses[].verification.status`, `data.user.primary_email_address_id`, `data.user.first_name`/`last_name`). De `subject` (= `data.user_id`) is een **fresh** ID per run (bv. `user_wp11_${randomUUID()}`) zodat de insert-pad daadwerkelijk wordt geraakt, niet stilletjes het idempotency-pad. Svix-headers (`svix-id`, `svix-timestamp`, `svix-signature`) worden gegenereerd met de echte `CLERK_WEBHOOK_SECRET` uit `.env.integration` — dat pin't Svix-HMAC-verify tegen de productie-discipline (geen self-bypass). Geen gecommitte capture-fixture (raakt verouderd zonder dat we 't merken).
+6. **Atomic onboarding-pad geverifieerd via test-only helpers**: na de webhook-call leest test via nieuwe `convex/_test.ts`-helpers (B levert) dat:
    - `users`-row bestaat voor de fixture-`subject` met juiste email + naam
    - Eventuele pending invites voor diezelfde email zijn ge-accept (status `accepted` + `respondedAt` gezet)
    - Memberships zijn aangemaakt per geaccepteerde invite
-   - Alles met dezelfde `createdAt`-timestamp (atomic-transactie-pin)
-8. **Fresh subject per run**: elke test-run genereert een **nieuw** Clerk-`subject`-ID (random UUID-prefix bv. `user_wp11_<timestamp>`) zodat de insert-pad daadwerkelijk wordt geraakt — niet stilletjes het `register`-idempotency-pad. Bestaand `clubalmanac-integration-regular@example.com` mag **niet** als subject hergebruikt worden (zou onboarding niet meer triggeren).
-9. **Webhook 401-pad**: tweede sub-test stuurt zelfde payload met **gemanipuleerde** signature → assert 401 (of 503 als secret ontbreekt). Pin't de Svix-verify-discipline.
-10. **Region-suffix discipline-pin**: zelfde als invariant 3 — `/clerk-webhook` URL gebruikt region-suffix.
+   - Alle drie writes binnen dezelfde transactie — gepind via gelijke timestamp-waarde op `users.createdAt`, `invites.respondedAt`, `memberships.joinedAt` (drie verschillende velden in drie tabellen, alle drie gezet op één `now` per `registerFromSession`)
+7. **Webhook 401-pad**: tweede sub-test stuurt geldige payload met **gemanipuleerde** signature → assert 401 (of 503 als secret ontbreekt). Pin't de Svix-verify-discipline.
+8. **Region-suffix discipline-pin**: `/clerk-webhook` URL gebruikt region-suffix (`https://<deployment>.eu-west-1.convex.site/clerk-webhook`). Test faalt loud bij missende of foutieve region-suffix. WP5-audit S-3-precedent (404 op webhook-URL zonder region) geldt onverkort voor Clerk.
 
 ### Self-protection + cleanup
 
-11. **Self-cleanup**: na de Clerk-test deletet test zelf de fixture-`users`-row + alle bijhorende memberships + albumLastSeen via `ConvexHttpClient` calls (zelfde patroon als WP7-test). Test eindigt met de DB in dezelfde staat als ervoor (uitgezonderd Mailjet's send-log die we niet zien). Mailjet-test heeft geen cleanup-spoor in DB.
-12. **`assertNotProd`-safety**: beide tests roepen `assertNotProd(process.env.CONVEX_URL)` als eerste statement aan. Hergebruik bestaande helper uit `tests/integration/_helpers/safety.ts`. Test weigert te draaien tegen prod-URL — twee-laags-self-protect via deze assert + Convex dashboard `INTEGRATION_TEST_ENABLED`-env-var.
-13. **`INTEGRATION_TEST_ENABLED`-gate**: niet direct toepasselijk hier (gate is voor `convex/_test.ts`-functions, niet voor pure integration-tests die externe contracten pinnen). Maar tests skippen wel netjes met duidelijke reason als één van de vereiste env-vars ontbreekt (geen stille pass).
+9. **Self-cleanup via test-only helpers**: na de Clerk-test deletet test zelf de fixture-`users`-row + alle bijhorende memberships + `albumLastSeen` via nieuwe `convex/_test.ts`-helpers (B levert). Test eindigt met de DB in dezelfde staat als ervoor. Mailjet-test heeft geen cleanup-spoor in DB. **Cleanup-volgorde**: A bepaalt en pin't (memberships eerst, dan albumLastSeen, dan users-row — om FK-orphan-blip te voorkomen tijdens cleanup, ook al duurt 't milliseconds).
+10. **`assertNotProd`-safety**: beide tests roepen `assertNotProd(process.env.CONVEX_URL)` als eerste statement aan. Hergebruik bestaande helper uit `tests/integration/_helpers/safety.ts`. Test weigert te draaien tegen prod-URL.
+11. **`INTEGRATION_TEST_ENABLED`-gate**: de nieuwe `convex/_test.ts`-helpers (voor DB-reads + cleanup) gaten op `process.env.INTEGRATION_TEST_ENABLED === "true"` en throwen anders met duidelijke melding. Env-var staat alleen op dev-deployment, prod krijgt 'm nooit. Twee-laags self-protect: deze gate + `assertNotProd`. Standard `convex/_test.ts`-patroon (WP2-precedent).
+12. **Tests skippen netjes bij ontbrekende env-vars**: ontbreekt één van de vereiste vars (`CONVEX_URL`, `CLERK_WEBHOOK_SECRET`, `MAILJET_*`, etc.), dan skipt de betreffende test-file met duidelijke skip-reason — geen stille pass.
 
 ## Edge cases + scope-uitsluitingen
 
@@ -60,8 +64,9 @@ Als A onderweg ontdekt dat een nieuwe httpAction/helper nodig is om iets testbaa
 - **Mailbox-arrival-check**: test verifieert niet of mail visueel aankomt in inbox. Sender-verified + 200 + MessageID is de testbare gate; visuele inbox-check is mens-stap in cutover-week (zie pre-cutover-sectie in runbook).
 - **Mailjet message-status-poll**: niet pinnen (Mailjet eventual-consistency, te flaky voor automated test).
 - **Prod-deployment-run**: deze WP draait alleen tegen dev. Prod-Gates herhalen staat in fase 5 T-4-weken-stappenplan (al gedocumenteerd in `migratie-status.md`).
-- **Self-generated payload voor Clerk** (kickoff-vraag #3 = optie b): afgewezen, want pin't alleen Svix-HMAC-mechaniek, niet de echte Clerk-payload-shape. Capture-and-replay is dichter bij contract.
-- **Productie-code-edits**: WP11 raakt alleen `tests/integration/`, runbook + docs. Geen `convex/`-file-edits, geen schema-change, geen helper-additions. Als A onderweg ontdekt dat een edit nodig is: stop + rapporteer (workflow-afwijking switcht dan naar A→B→audit voor dat deel).
+- **Capture-and-replay payload-fixture**: afgewezen na A's spec-criticus-pass. Een gecaptureerde echte payload zou met een **vast** subject komen (botst met invariant 5 fresh-subject) en raakt verouderd zonder dat we 't merken (Clerk wijzigt payload-shape → test blijft groen tegen verouderde fixture). Synthesized-but-faithful met fresh subject + echte HMAC dekt het pinbare contract (Svix-verify + payload-parsing van velden-die-we-lezen + insert-pad).
+- **Mailjet sender-pre-check via `isSenderVerified`**: afgewezen na A's spec-criticus-pass. Onze interne env-var-check is een pure logica-functie, al unit-getest. Een integration-test die 'm her-draait pin't geen extern contract. Het echte pinbare gedrag (Mailjet's silent-200 bij onverified From) raakt productie nooit omdat onze gate vóór de fetch blokkeert — daarom in deze WP een **directe** Mailjet-Send-call buiten Convex om, om dat externe gedrag empirisch te bewijzen.
+- **Productie-code-edits buiten `convex/_test.ts`**: WP11 raakt geen bestaande productie-code. Wel: B levert nieuwe test-only helpers in `convex/_test.ts` (INTEGRATION_TEST_ENABLED-gated, WP2-precedent) voor de Clerk-DB-reads + cleanup. Geen schema-change, geen impact op niet-test-paden.
 - **Bounce-webhook integration-test**: niet opnieuw — al gedaan in WP5 Gate 2 dev 2026-05-18 als handmatige echte-bounce + replay-test. Geen automatisering nodig; runbook §pre-cutover wijst naar handmatige herhaling.
 
 ## Risico-assessment
@@ -71,7 +76,7 @@ Als A onderweg ontdekt dat een nieuwe httpAction/helper nodig is om iets testbaa
 - **external deps: medium** — twee externe services. Mailjet sandbox 6000/maand voldoende. Geen rate-limit-risico bij occasional runs. Region-discipline gepind in invarianten 3+10.
 - **multi-user/concurrency: laag** — sequentiele tests, single-tenant.
 - **data/schema-evolutie: laag** — geen schema-change. Clerk-test maakt DB-state aan + ruimt zichzelf op (invariant 11). Mailjet-test heeft geen DB-spoor.
-- **ops-runbook-impact**: één nieuwe runbook (combo, `wp11-deferred-integration-gates.md`), `.env.integration.example` uitbreiden, `integration-tests.md`-tabel-update. Géén nieuwe env-vars op prod-deployment (hergebruik bestaande Mailjet/Clerk dev-secrets; prod-vars staan al in fase-5-stappenplan).
+- **ops-runbook-impact**: één nieuwe runbook (combo, `wp11-deferred-integration-gates.md`), `.env.integration.example` uitbreiden, `integration-tests.md`-tabel-update (WP5 `planned` → `landed`, WP6 toevoegen). Géén nieuwe env-vars op prod-deployment (hergebruik bestaande Mailjet/Clerk dev-secrets; prod-vars staan al in fase-5-stappenplan). `INTEGRATION_TEST_ENABLED` op dev staat al aan sinds WP2.
 
 ## Cross-refs
 
@@ -85,16 +90,26 @@ Als A onderweg ontdekt dat een nieuwe httpAction/helper nodig is om iets testbaa
 
 ## Acceptance — hoe weten we dat het klaar is
 
-**Tests** (A schrijft, geen RED-fase want pure pin-the-contract — groen-vanaf-eerste-run is acceptabel per integration-tests.md):
+**Mailjet-test** (A schrijft, geen B, groen-vanaf-eerste-run acceptabel):
 
 - `tests/integration/mailjet/sendRoundtrip.test.ts`:
-  - Sub-test 1: verified-sender pre-check (positief — verified sender → no throw)
-  - Sub-test 2: onverified-sender pre-check (negatief — onverified sender → throw met `UNVERIFIED_SENDER:`-prefix)
-  - Sub-test 3: send happy-path (verified sender → 200 + niet-lege `MessageID`)
+  - Sub-test 1: onverified From → directe Mailjet-fetch → 200-zonder-geldige-MessageID (silent-failure-pin)
+  - Sub-test 2: verified From → directe Mailjet-fetch → 200 + niet-lege `MessageID` (happy-path)
+
+**Clerk-test** (A schrijft RED, B implementeert helpers tot groen):
+
 - `tests/integration/clerk/onboardingWebhook.test.ts`:
-  - Sub-test 1: capture-and-replay happy-path (200 + DB-staat correct)
-  - Sub-test 2: gemanipuleerde signature → 401 (of 503 als secret ontbreekt)
-  - Sub-test 3: cleanup runt en deletet alle fixture-state
+  - Sub-test 1: synth-payload met fresh subject + echte HMAC → POST /clerk-webhook → 200; daarna via `convex/_test.ts`-helpers asserteer users-row + invite-accept + memberships + timestamp-gelijkheid op de drie write-velden
+  - Sub-test 2: zelfde payload met gemanipuleerde signature → 401 (of 503)
+  - Sub-test 3: cleanup-flow draait succesvol (`afterEach` of einde test), DB-state terug naar baseline
+
+**B's deliverable** — nieuwe `convex/_test.ts`-helpers (alleen actief bij `INTEGRATION_TEST_ENABLED=true`):
+- `getUserBySubject` (read)
+- `listInvitesByEmail` (read)
+- `listMembershipsByUserId` (read)
+- `cleanupUserBySubject` (delete users-row + memberships + albumLastSeen, in juiste volgorde per invariant 9)
+
+A bepaalt de exacte helper-namen + return-shapes in z'n RED tests; B implementeert tot de tests groen worden, zonder spec/test-edits.
 
 **Runbook** (`docs/runbooks/wp11-deferred-integration-gates.md`, A levert mee):
 - Pre-flight checklist (combined): `.env.integration` vars, Convex dev-deployment, test-user `clubalmanac-integration-regular@example.com` bestaat, Clerk-payload-fixture-pad gezet
