@@ -77,7 +77,7 @@ Bouw migratie-tooling die zowel dev (subset) als prod (volledig) kan vullen. Eé
 - [ ] Transformatie script: DynamoDB records → Convex documents per table, met filter-config voor dev (zie [§Dev seed strategie in migratie-plan-convex.md](./migratie-plan-convex.md#dev-seed-strategie)) vs prod (alles)
 - [ ] Cognito sub → Clerk ID mapping mechanisme:
    - Dev: 3 chosen Cognito subs handmatig naar Clerk dev IDs in script config
-   - Prod: post-cutover via email-match (Clerk prod users worden vooraf via Clerk Invitations API aangemaakt met de 16 bestaande emails, zodat IDs vóór data-import bekend zijn)
+   - Prod: **pre-create via Clerk Invitations API** (regie-keuze 2026-06-21). Vóór T-0 worden alle 16 prod-users via Clerk's API aangemaakt met hun bestaande emails — Clerk-IDs zijn dan bekend voor data-import (email→Clerk-ID lookup). Data-import schrijft alle `userId`-FKs direct met de echte Clerk-IDs — geen placeholders, geen lazy-rewrite, geen schema-impact. Alternatief (lazy-rewrite post-cutover) afgewezen wegens schema-impact (placeholder-strings op alle FKs) + halfgemigreerde-state-risico + WP10-monitoring-noise. Zie fase 5 T-2-weken stap voor de Clerk-pre-create-actie.
 - [ ] S3 → Convex file storage migratie:
    - Dev: alleen photos van de 3 chosen (~paar honderd MB, snel)
    - Prod: alle ~1650 foto's + 6 video's (~8.3 GB, paar uur) — pas in fase 5
@@ -192,7 +192,7 @@ Dus: communicatie en blokkade gaan **buiten de oude app om**.
 - [ ] T-4 weken: WP5 prod-Gates 1+2 herhalen op prod-deployment (send-roundtrip naar test-inbox + bounce-roundtrip via echte bounce of dashboard test-event)
 - [ ] T-4 weken: WP6 prod-Gates 1+2+3 herhalen op prod-deployment (atomic-onboarding happy-path + idempotency-relogin + zero-invite-fallback via Clerk Account Portal)
 - [ ] T-3 weken: cutover-datum vastleggen, communicatie naar 16 users
-- [ ] T-2 weken: 16 Clerk prod users vooraf aanmaken via Clerk Invitations API met bestaande emails — Clerk IDs zijn dan bekend voor data-import mapping
+- [ ] T-2 weken: 16 Clerk prod users vooraf aanmaken via Clerk Invitations API met bestaande emails — Clerk-IDs zijn dan bekend voor data-import mapping (zie fase 3 §Cognito sub → Clerk ID mapping mechanisme). Clerk verstuurt invite-mails naar elke user — verwacht dat users hierover vragen stellen vóór T-1-dag, vermelden in T-3-weken-communicatie ("rond DD-MM krijg je een mail van Clerk om je nieuwe account te activeren — dat is goed, klik op de link").
 - [ ] T-1 week: group-injection aanzetten in DynamoDB (in-app reminder verschijnt)
 - [ ] T-1 week: nieuwe iPhone app live in App Store (beschikbaar voor download), nieuwe webapp live, beide tegen prod env
 - [ ] T-1 dag: laatste reminder via WhatsApp/email + Clerk invitation links versturen
