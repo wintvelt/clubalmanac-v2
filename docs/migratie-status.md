@@ -2,12 +2,12 @@
 
 Status-overzicht van de AWS → Convex migratie. WP's updaten dit doc bij elke closeout. Architectuur-detail blijft in [`migratie-plan-convex.md`](./migratie-plan-convex.md); operationele lopende-staat staat hier.
 
-**Huidige stand 2026-06-04**:
+**Huidige stand 2026-06-21**:
 - Fase 1 (project setup) ✅ afgerond
-- Fase 2 (backend) — **in progress**; alle domein- + cron-werk + monitoring klaar (WP10 net dicht). Eén pakket resteert: WP5/WP6 deferred integration-tests
-- Fase 3-5 — wachten tot fase 2 dicht is; prod-env-activatie + prod-Gates-herhaling staan in fase 5 T-4-weken-stappenplan
+- Fase 2 (backend) ✅ **AFGEROND** — alle domein- + cron-werk + monitoring + deferred integration-tests klaar (WP11 net dicht)
+- Fase 3-5 — open. Volgende keuze: fase 3 (data migratie tooling), fase 4 (clients), of fase 5 cutover-prep (T-4-weken-stappenplan: prod-env-vars + prod-Gates-herhaling). Regie beslist per kickoff.
 
-**Volgende WP (per [`work-packages/README.md`](./work-packages/README.md))**: deferred integration-tests als laatste fase-2-werk.
+**Volgende fase**: regie's keuze — fase 3, fase 4, of fase 5 cutover-prep.
 
 Cross-refs: [`work-packages/README.md`](./work-packages/README.md) (WP-overzicht), [`conventions/audit-track-record.md`](./conventions/audit-track-record.md) (bugs + recurring patterns), [`cascade-matrix.md`](./cascade-matrix.md) (cross-flow afhankelijkheden).
 
@@ -37,9 +37,11 @@ Cross-refs: [`work-packages/README.md`](./work-packages/README.md) (WP-overzicht
 
 Acceptatiecriterium fase 1: alle smoke tests groen. ✅ Klaar voor fase 2.
 
-## Fase 2: Convex backend bouwen + testen — IN PROGRESS
+## Fase 2: Convex backend bouwen + testen ✅ AFGEROND
 
-Alle domein-bullets + crons (IB2 dicht via WP9) ✅. Twee WP's open vóór fase 2 = AFGEROND: integrity-check/monitoring en pre-cutover-prep (volgorde A→B per regie 2026-06-03).
+Alle domein-bullets + crons (FL1, UI1, IB2 via WP9) + monitoring (MON1 via WP10) + deferred integration-tests (WP11) klaar. Fase 2 gesloten 2026-06-21.
+
+Prod-env-activatie + prod-Gates-herhaling (Mailjet + Clerk) staan in fase 5 T-4-weken-stappenplan — niet in fase 2.
 
 De hele backend bouwen en testen, los van de app en los van de data. Tests draaien tegen een lege `convex-test` database.
 
@@ -63,7 +65,7 @@ Per domein: unit tests eerst, dan implementatie.
 - [x] **Auth:** Clerk + Convex integratie via `session.created` webhook + atomic onboarding (`/clerk-webhook` httpAction + `internal.users.registerFromSession` mutation). `requireWebmaster(ctx)` helper op basis van `WEBMASTER_EMAILS` env-var. Implementatie via **[WP4]** (JWT roundtrip + `whoami`) + **[WP6]** (session.created webhook + atomic onboarding). Gates 1+2+3 op dev gepasseerd 2026-05-18. Audit-7 fixes (case-insensitive webmaster, server-side invite-gate, RBAC drift) gepind. **Pre-signup webhook** uit oorspronkelijke plan is bewust **niet** geïmplementeerd — vervangen door defense-in-depth `users.register` + `session.created`-pad (per WP6 design-discussie). Pre-cutover deferred: integration-test.
 - [x] **IB2 natural-expiry cron:** scheduled Convex cron `"expire pending invites"` 04:00 UTC → `internal.invites.expirePendingInvites` patcht `invites` met `status="pending"` en `expiresAt <= now` naar `status="expired"`. Boundary `<=` consistent met FL1 + invites-accept. Stille expiry (geen email-action, geen `bouncedAt`/`respondedAt`-write). Natural-expiry-fingerprint = `expired` ∧ geen `bouncedAt` ∧ geen `respondedAt` — onderscheidbaar van bounce-expiry (IB1) en user-decline. `by_status`-index + in-memory filter (geen composite-index nodig op 16-user schaal). Implementatie via **[WP9]**. 15 tests groen, suite 578, geen blockers/should-fix uit audit.
 - [x] **Integrity-check / monitoring:** dagelijkse `internal.monitoring.integrityCheck` 04:30 UTC scant vier categorieën in één transactie (storage-orphans incl. `users.profilePhotoStorageId`, aggregate-drift met float-epsilon op `ratingAverage`, FK-integriteit 19 verplicht + 5 optioneel, geen self-healing). Alert-pad via bestaand Mailjet `info@`-sender → `WEBMASTER_EMAILS`: dashboard-log altijd autoritatief, drift-mail met strict-consecutive dedup (drift→clean→drift = re-alert per audit-S-1-fix), maandelijkse heartbeat met conditionele warning bij gededupte drift (per audit-N-1-fix). Nieuwe `monitoringRuns` tabel met `by_runAt` index. Implementatie via **[WP10]** (cyclus 1 + audit-fix-cyclus 2026-06-04). 30 tests groen, suite 609, typecheck clean.
-- [ ] **Deferred integration-tests (WP5+WP6 follow-up):** `tests/integration/mailjet/sendRoundtrip.test.ts` + `tests/integration/clerk/onboardingWebhook.test.ts` als follow-up van de in WP5/WP6 deferred items. Pure backend-code, env-var-gated (zoals WP1/WP2 integration-tests). Niet-WP-blockers van WP5/WP6 zelf maar wel laatste-mijl-discipline vóór fase 2 afsluit. Prod-Gates herhalen + prod-env-setup zelf zijn fase-5-werk — staan in cutover-stappenplan T-4 weken.
+- [x] **Deferred integration-tests (WP5+WP6 follow-up):** `tests/integration/mailjet/sendRoundtrip.test.ts` (directe Send-API call, silent-failure-pin van WP5 known-issue #2 + happy-path met MessageID) + `tests/integration/clerk/onboardingWebhook.test.ts` (synth-payload met fresh subject + echte Svix-HMAC, atomic onboarding pin op drie velden `users.createdAt`/`invites.respondedAt`/`memberships.joinedAt`, tamper→401-pad). Zes nieuwe `INTEGRATION_TEST_ENABLED`-gated helpers in `convex/_test.ts` (seed/reads/cleanup voor Clerk-fixture). `getConvexSiteBase` + `requireEnv` gecentraliseerd in `tests/integration/_helpers/convexSite.ts`. Combo-runbook `docs/runbooks/wp11-deferred-integration-gates.md`. Implementatie via **[WP11]**. Niet tegen live services gedraaid in deze WP — dat is runbook-stap pre-cutover. Prod-Gates herhalen staat in fase 5 T-4-weken-stappenplan.
 
 Backend is client-agnostisch. Zelfde queries/mutations werken straks voor zowel iPhone app als webapp.
 

@@ -3,7 +3,7 @@ import {
   mintTokenForEmail,
   revokeSessionQuietly,
 } from "../_helpers/clerkAuth";
-import { assertNotProd } from "../_helpers/safety";
+import { getConvexSiteBase, requireEnv } from "../_helpers/convexSite";
 
 // ---------------------------------------------------------------------------
 // Clerk JWT roundtrip — live integration tests (WP4)
@@ -33,35 +33,6 @@ import { assertNotProd } from "../_helpers/safety";
 //   2. Op Convex dev-deployment: `INTEGRATION_TEST_ENABLED=true` én
 //      `WEBMASTER_EMAILS` bevat de webmaster-test-user.
 // ---------------------------------------------------------------------------
-
-function requireEnv(name: string): string {
-  const v = process.env[name];
-  if (!v || v.length === 0) {
-    throw new Error(
-      `${name} ontbreekt. Zet 'm in .env.integration (zie .env.integration.example).`,
-    );
-  }
-  return v;
-}
-
-/**
- * Convex httpActions leven op `<deployment>.<region>.convex.site`,
- * queries/mutations/actions op `<deployment>.<region>.convex.cloud`.
- * `CONVEX_URL` wijst naar `.cloud` — voor whoami swappen we alleen het
- * `.cloud` → `.site` suffix; region blijft staan (region-suffix is
- * verplicht voor EU-deployments, zie correctie 2026-05-18).
- */
-function getConvexSiteBase(): string {
-  const cloudUrl = requireEnv("CONVEX_URL");
-  assertNotProd(cloudUrl);
-  if (!cloudUrl.includes(".convex.cloud")) {
-    throw new Error(
-      `CONVEX_URL ("${cloudUrl}") heeft geen ".convex.cloud" suffix; ` +
-        `kan httpAction-host niet afleiden. Verwacht een dev-deployment URL.`,
-    );
-  }
-  return cloudUrl.replace(".convex.cloud", ".convex.site");
-}
 
 const WHOAMI_PATH = "/_test/whoami";
 

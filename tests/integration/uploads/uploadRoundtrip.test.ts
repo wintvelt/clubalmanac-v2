@@ -9,7 +9,7 @@ import {
   revokeSessionQuietly,
 } from "../_helpers/clerkAuth";
 import { makeConvexClient } from "../_helpers/convexClient";
-import { assertNotProd } from "../_helpers/safety";
+import { getConvexSiteBase, requireEnv } from "../_helpers/convexSite";
 
 // ---------------------------------------------------------------------------
 // WP7: upload-pipeline empirische gate — live integration test
@@ -44,30 +44,6 @@ import { assertNotProd } from "../_helpers/safety";
 //   3. Regular test-user heeft Convex users-row (via WP4 setup of WP6
 //      registerFromSession-flow).
 // ---------------------------------------------------------------------------
-
-function requireEnv(name: string): string {
-  const v = process.env[name];
-  if (!v || v.length === 0) {
-    throw new Error(
-      `${name} ontbreekt. Zet 'm in .env.integration (zie .env.integration.example).`,
-    );
-  }
-  return v;
-}
-
-function getConvexSiteBase(): string {
-  const cloudUrl = requireEnv("CONVEX_URL");
-  assertNotProd(cloudUrl);
-  if (!cloudUrl.includes(".convex.cloud")) {
-    throw new Error(
-      `CONVEX_URL ("${cloudUrl}") heeft geen ".convex.cloud" suffix; ` +
-        `kan httpAction-host niet afleiden. Verwacht een dev-deployment URL.`,
-    );
-  }
-  // Replace alleen het `.cloud` → `.site` suffix. Region blijft staan
-  // (region-suffix verplicht voor EU-deployments, zie WP5 correctie 2026-05-18).
-  return cloudUrl.replace(".convex.cloud", ".convex.site");
-}
 
 describe("WP7 — upload-pipeline empirische gate", () => {
   let jwt: string;

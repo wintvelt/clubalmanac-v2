@@ -46,4 +46,4 @@ Geboren uit WP8-audit (EXIF-arithmetiek 5↔7-verwisseling, oriëntaties transpo
 
 ## Waarom
 
-Tussen 2026-04 en 2026-06 hebben 17 audit-cycli op clubalmanac-v2 backend 10 productie-bugs ontdekt en gefixt vóór cutover. Voor 16-user app met hard cutover (geen parallel draaien) is pre-cutover bug-vangst cruciaal. Discipline werkt aantoonbaar — zie [`audit-track-record.md`](./audit-track-record.md).
+Tussen 2026-04 en 2026-06 hebben 18 audit-cycli op clubalmanac-v2 backend 10 productie-bugs ontdekt en gefixt vóór cutover. Voor 16-user app met hard cutover (geen parallel draaien) is pre-cutover bug-vangst cruciaal. Discipline werkt aantoonbaar — zie [`audit-track-record.md`](./audit-track-record.md).
