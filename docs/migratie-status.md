@@ -74,7 +74,7 @@ Backend is client-agnostisch. Zelfde queries/mutations werken straks voor zowel 
 Bouw migratie-tooling die zowel dev (subset) als prod (volledig) kan vullen. Eén script, twee config-modes. Dev wordt nu gevuld; prod gebeurt pas op cutover-dag (zie fase 5).
 
 - [ ] DynamoDB full table scan → JSON export (snapshot)
-- [ ] Transformatie script: DynamoDB records → Convex documents per table, met filter-config voor dev (zie Dev seed strategie) vs prod (alles)
+- [ ] Transformatie script: DynamoDB records → Convex documents per table, met filter-config voor dev (zie [§Dev seed strategie in migratie-plan-convex.md](./migratie-plan-convex.md#dev-seed-strategie)) vs prod (alles)
 - [ ] Cognito sub → Clerk ID mapping mechanisme:
    - Dev: 3 chosen Cognito subs handmatig naar Clerk dev IDs in script config
    - Prod: post-cutover via email-match (Clerk prod users worden vooraf via Clerk Invitations API aangemaakt met de 16 bestaande emails, zodat IDs vóór data-import bekend zijn)
