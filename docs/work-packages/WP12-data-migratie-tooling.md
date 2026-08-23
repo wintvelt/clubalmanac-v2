@@ -639,3 +639,165 @@ overeenkomstig bijgewerkt.
   het runbook: die dekken de runs, niet de voorfase.
 - **S-4** — commit-hygiëne; punt voor regie in `commit-discipline.md`, geen
   code-actie.
+
+---
+
+## Fix-cyclus 2 — invarianten bij de audit-bevindingen (A, 2026-08-23)
+
+Zelfde vorm als fix-cyclus 1: de audit zegt *wat* er mis is, deze sectie zet de
+gedrags-eis eronder die B moet halen. Waaraan is het af te lezen, niet hoe het
+gebouwd wordt.
+
+Scope van de cyclus: **R2-1 t/m R2-5.** De nice-to-haves blijven nice-to-have,
+op drie runbook-regels na die in dezelfde pass vallen — die staan onderaan als
+losse actie.
+
+Deze cyclus is van een andere soort dan de vorige. Cyclus 1 sloot gaten waar
+data door verdween; hier verdwijnt vandaag niets. Wat hier misgaat is dat de
+*suite* een verdwijning niet meer zou zien. Twee gevolgen voor de vorm van het
+werk: een deel van de fix zit in de testlaag en is daarmee van A, en niet elke
+test in deze cyclus kan rood beginnen — een test die een vandaag-correcte
+functie tegen een handmatige oracle pint is groen bij oplevering en is precies
+daarom het net dat R2-1 vraagt. Waar dat zo is, staat het er expliciet bij.
+
+### Invariant — de verwachting van een test is met de hand opgeschreven (R2-1)
+
+- **De set bestanden die mee moet, is user-truth en geen implementatiedetail**:
+  elke foto en elke profielfoto van elke user in de output. De fixture kent die
+  set uit zichzelf — met de hand opgesomd uit de bron-items — en leidt hem niet
+  af uit de functie die hem in productie berekent.
+- **Aflezing:** vergeet de productiefunctie een hele categorie, dan valt er een
+  test om. De twee categorieën worden apart genoemd, want het is de tweede
+  (profielfoto's) die in de wegwerp-kopie van de auditor ongemerkt wegviel: die
+  zit in geen enkele telling en heeft geen eigen tabel.
+- **Dit geldt voor alles wat het harnas als "wereld" neerzet.** De storage-map
+  van de fixture is de toestand die `load-files` achterliet, niet wat de tooling
+  denkt nodig te hebben. Zodra het harnas die twee door elkaar haalt, test de
+  suite de tooling tegen zichzelf.
+- **Toegevoegd door A — één aflezing aan de andere kant.** Na een geslaagde
+  `load-records` heeft élke user die in de records een profielfoto-sleutel droeg
+  een profielfoto in de deployment. Zonder die controle is het verlies alleen
+  aan de gate af te lezen en niet aan het resultaat, en een gate is nu net het
+  ding waarvan we niet meer aannemen dat hij dekt wat hij zegt te dekken.
+
+### Invariant — beide takken van de storage-map-regel zijn gepind (R2-2)
+
+- `load-files` op een lege werkmap is de **normale eerste run**: nul bekende
+  bestanden, geen fout. `load-records` op diezelfde lege werkmap is een
+  **weigering**. Eén regel, twee takken, en pas als ze allebei vastliggen is de
+  regel vastgelegd — nu kan de weigering ongemerkt naar de andere stap
+  uitlekken en breekt de allereerste prod-run op T-2.
+- Aflezing: één test per tak. De tak die vandaag ongedekt is (`load-files` mag
+  wél) begint groen; dat is de aard van een dekkingsgat.
+
+### Invariant — één bron voor de tabellen- en FK-set (R2-3)
+
+- **WP10's integriteitsscan is de autoriteit.** Elke tabel die hij aanraakt en
+  elke FK die hij controleert bepaalt waar de migratie-tooling op moet werken:
+  de leeg-preconditie van `load-records`, wat `reset` leegmaakt, wat `verify`
+  telt en wat de transform referentieel gesloten moet opleveren.
+- **Aflezing:** een tabel of FK die in de scan bijkomt, hoeft nergens in de
+  tooling bijgeschreven te worden. Gebeurt dat toch met de hand, dan valt er een
+  test om — geen tweede lijst die stil achterloopt zoals de doc-comment op
+  `types.ts` die gelijkheid claimde die niet meer bestond.
+- **`verify` telt élke tabel uit die set**, niet alleen de tabellen die de
+  import vult. "Verwacht 0" is ook een verwachting; nu is `uploadIdempotency`
+  na de load ongecontroleerd terwijl hij vóór de load wél in de preconditie zit.
+  (Dit was een nice-to-have; hij hoort inhoudelijk bij deze eis en niet apart.)
+- **Nuance, en dit is een correctie op de bevinding.** De vierde lijst — de
+  handmatig opgesomde FK's in `transform.test.ts` — is géén overbodige kopie.
+  `transform.ts` gebruikt `FKS` zélf voor zijn slotcontrole; zou de test
+  dezelfde lijst importeren, dan controleert de transform-test de transform met
+  het materiaal van de transform. Dat is precies het patroon dat deze cyclus
+  bestrijdt. De handmatige lijst blijft dus staan als oracle. Wat eraan
+  ontbreekt is niet zijn bestaan maar zijn verankering: **de lijsten mogen van
+  elkaar verschillen noch stil uit elkaar lopen — elke afwijking valt op een
+  test.** Handmatig blijft handmatig, alleen niet meer vrijblijvend.
+
+### Invariant — een invite zonder groep blijft een invite (R2-4)
+
+Besluit Wouter, vastgelegd bij de audit hierboven. Als gedrags-eis:
+
+- **Een optionele verwijzing die niet resolvet wordt gewist en geteld — zonder
+  uitzonderingen.** `invites.groupId` is optioneel in het schema en valt onder
+  dezelfde regel als de cover-foto's. De rij blijft, het veld gaat leeg, het
+  transform-rapport noemt het.
+- **Een groeploze invite is geen kapotte invite.** Accepteren levert een account
+  zonder lidmaatschap; dat pad bestaat sinds WP6 als zero-invite-fallback.
+- **De dev-filter blijft wél overslaan.** Twee takken die niet op één hoop
+  mogen: "de groep bestaat niet in de bron" is een bronfout en krijgt het
+  bovenstaande gedrag; "de groep is uit de dev-set gefilterd" is de filter die
+  zijn werk doet en blijft overslaan. Verwar je ze, dan lekt er een invite naar
+  een groep die in dev niet bestaat — of verdwijnt in prod een invite die had
+  moeten blijven.
+- **De anonimisatie verandert niet mee.** De bron-sleutel van zo'n invite is een
+  emailadres; die rij haalt nu wél de output en valt daarmee onder de
+  bestaande PII-invariant, in het records-deel én in de waarschuwing.
+- Zijdelings, kost niets in dezelfde regel: de waarschuwing noemt een invite nu
+  een membership.
+
+### Invariant — er is een route voor orphans tussen T-2 en T-0 (R2-5)
+
+- **Elk storage-object dat niemand meer nodig heeft, is te wissen zonder de
+  bestanden weg te gooien die wél nodig zijn.** Vandaag is de enige knop
+  "alles", en die kost de uren upload die het gefaseerde ontwerp juist moest
+  sparen. Een `verify` die iets meldt wat je niet kúnt oplossen is een
+  half-afgemaakte controle.
+- **"Niemand nodig" heeft twee voorwaarden, en die tweede is de
+  veiligheidsklep.** Een object gaat alleen weg als géén geladen record ernaar
+  verwijst **én** de huidige `convex-records.json` er niet naar verwijst.
+  Tussen T-2 en T-0 staat de deployment leeg terwijl elk bestand nog nodig is:
+  een opruiming die alleen naar de deployment kijkt, wist daar precies
+  álles. Dat is de duurste denkbare fout in dit werkpakket.
+- **Zonder `convex-records.json` weigert het commando.** Zonder die tweede
+  voorwaarde is elke opruiming een gok.
+- **Even destructief als `reset`, dus dezelfde discipline**: expliciete
+  bevestiging, en tegen prod bovendien de bestaande prod-gate.
+- **Na afloop klopt de storage-map weer met de werkelijkheid.** Geen enkele
+  entry wijst naar een gewist object — anders is dit dezelfde stille
+  corruptie-route die `reset --all` met een blijvende map zou zijn.
+- **`verify` noemt élk object dat weg zou gaan, niet een greep eruit.** De
+  operator moet de lijst kunnen bekijken vóór hij hem uitvoert; een sample van
+  tien is genoeg om te alarmeren en te weinig om op te beslissen.
+
+### Vormkeuzes die de tests opleggen
+
+Verder niets; zonder afspraak over een naam is er geen test te schrijven.
+
+| Wat | Naam waar de test op rekent |
+|---|---|
+| R2-3 | `convex/monitoring.ts` exporteert `MONITORED_FKS` (één lijst met per FK de tabel, het veld en of hij verplicht is) en `MONITORED_TABLES` (élke tabel die de scan aanraakt, dus inclusief de aggregate-tabellen zonder FK) |
+| R2-5 | `scripts/migrate/pruneStorage.ts` exporteert `pruneStorage(target, confirmed)`, en de deployment kent `internal.migration.deleteStorageObjects({ ids })` |
+
+De handmatige oracle waar die lijsten tegenaan liggen staat in
+`tests/migration/fkOracle.ts` en `tests/migration/fixture.ts`. Die twee zijn met
+de hand uit het schema en uit de bron-items overgeschreven; verandert er iets,
+dan is dát de plek waar je het nabouwt en waar de rest zich naar voegt.
+
+### Losse acties zonder test
+
+- **Runbook §A** — `verify` wordt aangeraden als verbindingstest, maar hij leest
+  eerst `convex-records.json` en faalt daarop. Vervangen door een stap die op
+  dat moment kán slagen.
+- **Runbook §0** — de count-baseline-run van `verify` is per definitie rood.
+  Vermelden, anders leest de operator dat als een probleem.
+- **Runbook** — een paragraaf over de orphan-route uit R2-5, inclusief de
+  volgorde `verify` → opruimen → `verify`.
+
+### Doorgeschoven nice-to-haves, met reden
+
+Niet in deze cyclus, wel bewust bekeken:
+
+- `missing-files.json` veroudert stil — het bestand duidt alleen, het is nooit
+  een gate (fix-cyclus 1, B-1). Verkeerde duiding is hinderlijk, geen verlies.
+- Een photo-rij zonder `storageKey` — kan niet ontstaan: de transform slaat een
+  foto zonder `url` al over en meldt dat. Blijft de misleidende waarschuwing.
+- De S-1-scrub is email-only — de claim afzwakken of de scrub verbreden; het
+  meldkanaal is vandaag aantoonbaar schoon voor de fixture-namen.
+- `recomputeAggregates` draait onvoorwaardelijk. Het is dezelfde familie, maar
+  de schade is beperkt: de hertelling maakt een transform-fout onzichtbaar,
+  terwijl de aggregates in Convex er wél door kloppen. De transform-tests pinnen
+  de aggregates al aan de bronkant. Voor regie als kandidaat voor een volgende
+  cyclus, niet als blocker voor de cutover.
+- Random invite-token in plaats van een hash van PII — lekt niets, past wel
+  beter bij het besluit "tokens vernieuwen".
