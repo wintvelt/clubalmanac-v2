@@ -52,7 +52,9 @@ Cognito met invite-only signup (pre-signup Lambda checkt invite in DB), custom e
 - **Webapp** (legacy): fallback voor Android-users die door corporate restricties geen apps kunnen installeren. Zelfde AWS backend.
 
 ### Schaal
-16 users, ~1650 foto's (~5.3 GB), 6 video's (~3 GB), laag/casual gebruik. AWS kost ~$10/maand.
+20 users, 6 groepen, 17 albums, ~1544 foto's (~5,3 GB), 1524 album-koppelingen, 3 openstaande invites, en 12 likes in totaal. Plus 10 video's (~19 GB) in een aparte bucket `blob-videos` — die gaan niet mee naar Convex, zie [`work-packages/WP12-data-migratie-tooling.md`](./work-packages/WP12-data-migratie-tooling.md) §Video's. Laag/casual gebruik. AWS kost ~$10/maand.
+
+Deze cijfers komen uit `npm run migrate -- inspect` op de productie-tabel, 2026-08-23. Het plan ging tot dan uit van 16 users en 6 video's van 3 GB; beide klopten niet.
 
 ## Convex: kan het?
 
@@ -159,7 +161,7 @@ Voordeel boven `photos.by_storageId`: de mapping leeft van `clientUploadId` (geg
 Nettowinst: robustness over een minimale extra hop. Bij JPEG-uploads (~2-5 MB typisch) is de extra latency verwaarloosbaar bij Convex EU.
 
 **Upload-size limit (known limitation, audit-cyclus-1 §5):**
-Convex httpAction request body limit is ~20 MiB (default, niet configureerbaar tot R2-pad). Voldoende voor JPEG/HEIC photos in de huidige content-mix (typisch 2–10 MB). Bij body > 20 MiB faalt Convex de hele request al vóór de httpAction draait — geen 4xx/5xx vanuit onze handler, maar een platform-niveau reject. Cyclus 1 kiest bewust om dat **niet** te fixen: het pad voor groot-bestanden (HEIC live-photos, video) loopt sowieso via Cloudflare R2 met presigned-PUT in cyclus 3+, en een tussentijdse mitigatie zou de huidige flow nodeloos compliceren. Risico: een gebruiker met een 25 MB foto krijgt een onduidelijke fout in plaats van een herkenbare 413. Acceptabel bij 16 users; documenteren we als known limitation tot R2-switch.
+Convex httpAction request body limit is ~20 MiB (default, niet configureerbaar tot R2-pad). Voldoende voor JPEG/HEIC photos in de huidige content-mix (typisch 2–10 MB). Bij body > 20 MiB faalt Convex de hele request al vóór de httpAction draait — geen 4xx/5xx vanuit onze handler, maar een platform-niveau reject. Cyclus 1 kiest bewust om dat **niet** te fixen: het pad voor groot-bestanden (HEIC live-photos, video) loopt sowieso via Cloudflare R2 met presigned-PUT in cyclus 3+, en een tussentijdse mitigatie zou de huidige flow nodeloos compliceren. Risico: een gebruiker met een 25 MB foto krijgt een onduidelijke fout in plaats van een herkenbare 413. Acceptabel bij 20 users; documenteren we als known limitation tot R2-switch.
 
 **Performance:** je huidige setup heeft last van Lambda cold starts bij foto laden. Convex heeft geen cold starts, maar native file storage heeft ook geen CDN edge caching. Twee opties:
 
@@ -201,7 +203,7 @@ Boundary in beide gevallen `<=` (consistent met FL1 `flaggedDeleteDate <= now` e
 Toekomstige cron-toevoeging: `expirePendingInvites` voor IB2 (natural-expiry op invites — gebundeld met scheduled-functions werkpakket, nog niet geleverd).
 
 ### Auth
-Aanbeveling: **Clerk + Convex** (bewezen Expo combo, werkt ook voor web). 16 users: gewoon opnieuw laten registreren. Cognito wordt volledig vervangen. Clerk heeft aparte dev en prod instances (zie Environments).
+Aanbeveling: **Clerk + Convex** (bewezen Expo combo, werkt ook voor web). 20 users: gewoon opnieuw laten registreren. Cognito wordt volledig vervangen. Clerk heeft aparte dev en prod instances (zie Environments).
 
 ### Webmaster-rol (RBAC)
 
@@ -244,7 +246,7 @@ Webmaster-gated operations (uit oude AWS code):
 
 Bootstrap: jouw email handmatig in Clerk dashboard aanmaken pre-cutover, env-var `WEBMASTER_EMAILS=wintvelt@me.com` zetten in Convex prod deployment. Dev-deployment krijgt z'n eigen test-email-set bij WP4-setup (zie WP4-sectie hieronder): `WEBMASTER_EMAILS` op dev bevat de webmaster-test-user (`clubalmanac-integration-webmaster@example.com`), zodat de JWT-roundtrip-pin op een echte webmaster-flow draait zonder met Wouter's prod-email te overlappen.
 
-**YAGNI keuze:** Clerk publicMetadata-rol of Convex DB-flag zou flexibeler zijn (multi-webmaster zonder redeploy), maar bij 16 users + 1 webmaster levert het niks op. Bij behoefte aan tweede webmaster ooit: ~30 min werk om over te zetten. Probleem-report email-bestemming gebruikt dezelfde env-var.
+**YAGNI keuze:** Clerk publicMetadata-rol of Convex DB-flag zou flexibeler zijn (multi-webmaster zonder redeploy), maar bij 20 users + 1 webmaster levert het niks op. Bij behoefte aan tweede webmaster ooit: ~30 min werk om over te zetten. Probleem-report email-bestemming gebruikt dezelfde env-var.
 
 **TODO voor Fase 4A2 (client-integratie):** verifieer dat `convex/auth.config.ts` daadwerkelijk de `email`-claim uit het Clerk JWT doorgeeft, zodat `ctx.auth.getUserIdentity().email` in productie gevuld is. Implementatie + tests gebruiken `withIdentity({ email })` wat altijd werkt; productie hangt af van Clerk JWT template configuratie. Als email-claim niet doorkomt: Clerk JWT template aanpassen óf `requireWebmaster` switchen naar DB-lookup via `users.email`.
 
@@ -393,7 +395,7 @@ Reden: cyclus-2 hardening op de upload-flow seedt `photos.exifOrientation` recht
 
 **Mutation: `photos.rotate(photoId, { rotation, flipY })`** ([WP8] — `convex/photos.ts` + `convex/lib/exifOrientation.ts`)
 
-- Authorization: **owner van photo OF group-admin** waar de foto in een album zit (via `albumPhotos.by_photo` → unieke `groupId`s → `memberships` met `role === "admin"`). Reden: bij 16 users + hechte community lossen group-admins het sneller op dan dat ze de uploader achterna moeten. Webmaster heeft geen aparte rechten hierop nodig.
+- Authorization: **owner van photo OF group-admin** waar de foto in een album zit (via `albumPhotos.by_photo` → unieke `groupId`s → `memberships` met `role === "admin"`). Reden: bij 20 users + hechte community lossen group-admins het sneller op dan dat ze de uploader achterna moeten. Webmaster heeft geen aparte rechten hierop nodig.
 - Atomair: leest huidige `exifOrientation` (default 1), berekent nieuwe waarde via 8-staat-arithmetiek-tabel op `(rotation, flipY)` (canoniek EXIF, flip-eerst-dan-rotatie), patcht `exifOrientation` + (conditioneel) `width`/`height`-swap bij 90°/270°. Bestand zelf ongemoeid.
 - Géén scheduled action, géén `sharp`/`jimp`, géén `"use node"`-runtime, géén storage-swap, géén cascade — `storageId` en alle nevenstaat blijven intact.
 
@@ -423,7 +425,7 @@ Cyclus 1 gebruikte MapQuest met `MAPQUEST_KEY` env-var. Cyclus 2 vervangt dat do
 - `lang=en`: voor internationale leesbaarheid. Reizen naar landen met eigen schrift (Georgië → Georgisch, Nepal → Devanagari) krijgen Latijnse labels ipv onleesbare native script. NL-photos: minor cosmetisch verschil (`country: "Netherlands"` ipv `"Nederland"`, street/city-namen blijven gelijk). Photon ondersteunt `default, de, en, fr` — geen `nl`.
 - Geen API key — publieke instance, OSM-data, EU-gebaseerd (Berlijn)
 - Response: GeoJSON FeatureCollection. Properties bevatten `street`, `city`, `country`, `state`, `postcode` (alle optioneel). Lege uitkomst: `features: []`.
-- Volume: ruim binnen Photon fair-use voor 16 users (~hooguit honderden geocodes/maand). Bij groei: zelf-hosten van Photon-instance is een paar uur werk.
+- Volume: ruim binnen Photon fair-use voor 20 users (~hooguit honderden geocodes/maand). Bij groei: zelf-hosten van Photon-instance is een paar uur werk.
 - Graceful degradation: 5xx, network error, of lege features → `locationLabel` undefined, geen throw
 
 Voordeel boven MapQuest: één env-var minder (geen secret-management coupling tussen dev/prod), EU data-residency expliciet, en de `${street}, ${city}, ${country}` velden zijn 1:1 in de response zonder de MapQuest `adminArea*`-puzzel.
@@ -733,12 +735,12 @@ Verified-sender-check als hard gate. Mailjet retourneert `200 OK` op de send-cal
 
 ## Environments
 
-Twee environments, geen aparte staging bij 16 users.
+Twee environments, geen aparte staging bij 20 users.
 
 | | Convex deployment | Clerk instance | Doel |
 |--|---|---|--|
 | **Dev** | `glorious-pheasant-759` (eu-west-1) | `picked-quail-97.clerk.accounts.dev` | development, testing, geseede subset van prod data (3 chosen users) |
-| **Prod** | apart aanmaken in fase 5 | apart activeren in fase 5 | de 16 users na cutover, volledige data |
+| **Prod** | apart aanmaken in fase 5 | apart activeren in fase 5 | de 20 users na cutover, volledige data |
 
 **Koppeling per env:** elke Convex deployment heeft een `CLERK_FRONTEND_API_URL` env var die naar de matching Clerk instance wijst. Verwisselen = kapot. Dev Convex praat alleen met dev Clerk, prod met prod.
 
@@ -849,7 +851,7 @@ Scheduled Convex function (dagelijks/wekelijks) die denormalized data valideert:
 - Bij inconsistentie: alert email
 
 ### 4. App-level testen
-Handmatig per feature in Expo dev build. Bij 16 users pragmatisch genoeg, geen apart beta-programma nodig.
+Handmatig per feature in Expo dev build. Bij 20 users pragmatisch genoeg, geen apart beta-programma nodig.
 
 ## Migratieplan in fasen
 
@@ -872,7 +874,7 @@ Detail van data-migratie-tooling, client-tracks (iPhone + webapp) en hard-cutove
 
 ## Cutover-mechanieken (architectuur-rationale)
 
-Geen parallel draaien. Bij 16 users en een 3 jaar oude oude app is parallel draaien absurd veel werk (dual-write, sync layer, Cognito↔Clerk mapping). Hard cut.
+Geen parallel draaien. Bij 20 users en een 3 jaar oude oude app is parallel draaien absurd veel werk (dual-write, sync layer, Cognito↔Clerk mapping). Hard cut.
 
 ### Constraints
 
@@ -886,9 +888,9 @@ Dus: communicatie en blokkade gaan **buiten de oude app om**.
 ### Mechanieken
 
 **1. Out-of-band communicatie (primair kanaal)**
-- WhatsApp/email blast naar alle 16 users met datum X en download-link nieuwe app
+- WhatsApp/email blast naar alle 20 users met datum X en download-link nieuwe app
 - 1 week vooraf, opnieuw 1 dag vooraf
-- Voor de 16 users persoonlijk genoeg om hard genoeg aan te komen
+- Voor de 20 users persoonlijk genoeg om hard genoeg aan te komen
 
 **2. In-app reminder via group-injection (creatieve hack, geen code-update nodig)**
 - Server-side een "cutover-group" aanmaken in DynamoDB en aan elke user koppelen via membership
@@ -925,4 +927,4 @@ Concrete cutover-stappenplan + Monitoring/Backup + Cyclus-2 backlog: zie [`migra
 | **Vendor lock-in** | Convex is relatief nieuw | Open-source + self-hostable mitigeert dit. R2 als file storage maakt je nog minder afhankelijk |
 | **Invite-only signup** | Custom Cognito trigger | Herbouwen als Clerk custom flow |
 | **Env-cross-contamination** | Dev build die per ongeluk naar prod Convex/Clerk wijst, of `pk_test_` in prod release | EAS profiles expliciet, géén defaults. Build-time check in CI die `pk_test_` weigert in prod profile. `CLERK_FRONTEND_API_URL` per Convex deployment matchend gezet |
-| **Prod user pre-registration** | 16 Clerk-IDs moeten bekend zijn vóór data-import om mapping op email te kunnen doen | Clerk Invitations API: 16 users vooraf aanmaken met bestaande emails, IDs ophalen, mapping vastzetten vóór T-0 |
+| **Prod user pre-registration** | 20 Clerk-IDs moeten bekend zijn vóór data-import om mapping op email te kunnen doen | Clerk Invitations API: 20 users vooraf aanmaken met bestaande emails, IDs ophalen, mapping vastzetten vóór T-0 |

@@ -80,7 +80,7 @@ Bouw migratie-tooling die zowel dev (subset) als prod (volledig) kan vullen. Eé
 - [ ] Transformatie script: DynamoDB records → Convex documents per table, met filter-config voor dev (zie [§Dev seed strategie in migratie-plan-convex.md](./migratie-plan-convex.md#dev-seed-strategie)) vs prod (alles)
 - [ ] Cognito sub → Clerk ID mapping mechanisme:
    - Dev: 3 chosen Cognito subs handmatig naar Clerk dev IDs in script config
-   - Prod: **pre-create via Clerk Invitations API** (regie-keuze 2026-06-21). Vóór T-0 worden alle 16 prod-users via Clerk's API aangemaakt met hun bestaande emails — Clerk-IDs zijn dan bekend voor data-import (email→Clerk-ID lookup). Data-import schrijft alle `userId`-FKs direct met de echte Clerk-IDs — geen placeholders, geen lazy-rewrite, geen schema-impact. Alternatief (lazy-rewrite post-cutover) afgewezen wegens schema-impact (placeholder-strings op alle FKs) + halfgemigreerde-state-risico + WP10-monitoring-noise. Zie fase 5 T-2-weken stap voor de Clerk-pre-create-actie.
+   - Prod: **pre-create via Clerk Invitations API** (regie-keuze 2026-06-21). Vóór T-0 worden alle 20 prod-users via Clerk's API aangemaakt met hun bestaande emails — Clerk-IDs zijn dan bekend voor data-import (email→Clerk-ID lookup). Data-import schrijft alle `userId`-FKs direct met de echte Clerk-IDs — geen placeholders, geen lazy-rewrite, geen schema-impact. Alternatief (lazy-rewrite post-cutover) afgewezen wegens schema-impact (placeholder-strings op alle FKs) + halfgemigreerde-state-risico + WP10-monitoring-noise. Zie fase 5 T-2-weken stap voor de Clerk-pre-create-actie.
 - [ ] S3 → Convex file storage migratie:
    - Dev: alleen photos van de 3 chosen (~paar honderd MB, snel)
    - Prod: alle ~1650 foto's + 6 video's (~8.3 GB, paar uur) — pas in fase 5
@@ -150,7 +150,7 @@ Webapp is fallback voor Android users met corporate restricties. Niet schrappen.
 
 ## Fase 5: Lancering — hard cutover — open
 
-Geen parallel draaien. Bij 16 users en een 3 jaar oude oude app is parallel draaien absurd veel werk (dual-write, sync layer, Cognito↔Clerk mapping). Hard cut.
+Geen parallel draaien. Bij 20 users en een 3 jaar oude oude app is parallel draaien absurd veel werk (dual-write, sync layer, Cognito↔Clerk mapping). Hard cut.
 
 ### Constraints
 
@@ -164,9 +164,9 @@ Dus: communicatie en blokkade gaan **buiten de oude app om**.
 ### Cutover-mechanieken
 
 **1. Out-of-band communicatie (primair kanaal)**
-- WhatsApp/email blast naar alle 16 users met datum X en download-link nieuwe app
+- WhatsApp/email blast naar alle 20 users met datum X en download-link nieuwe app
 - 1 week vooraf, opnieuw 1 dag vooraf
-- Voor de 16 users persoonlijk genoeg om hard genoeg aan te komen
+- Voor de 20 users persoonlijk genoeg om hard genoeg aan te komen
 
 **2. In-app reminder via group-injection (creatieve hack, geen code-update nodig)**
 - Server-side een "cutover-group" aanmaken in DynamoDB en aan elke user koppelen via membership
@@ -195,8 +195,8 @@ Dus: communicatie en blokkade gaan **buiten de oude app om**.
 - [ ] T-4 weken: smoke test prod env (lege DB, dummy registratie, JWT round-trip via prod build van app)
 - [ ] T-4 weken: WP5 prod-Gates 1+2 herhalen op prod-deployment (send-roundtrip naar test-inbox + bounce-roundtrip via echte bounce of dashboard test-event)
 - [ ] T-4 weken: WP6 prod-Gates 1+2+3 herhalen op prod-deployment (atomic-onboarding happy-path + idempotency-relogin + zero-invite-fallback via Clerk Account Portal)
-- [ ] T-3 weken: cutover-datum vastleggen, communicatie naar 16 users
-- [ ] T-2 weken: 16 Clerk prod users vooraf aanmaken via Clerk Invitations API met bestaande emails — Clerk-IDs zijn dan bekend voor data-import mapping (zie fase 3 §Cognito sub → Clerk ID mapping mechanisme). Clerk verstuurt invite-mails naar elke user — verwacht dat users hierover vragen stellen vóór T-1-dag, vermelden in T-3-weken-communicatie ("rond DD-MM krijg je een mail van Clerk om je nieuwe account te activeren — dat is goed, klik op de link").
+- [ ] T-3 weken: cutover-datum vastleggen, communicatie naar 20 users
+- [ ] T-2 weken: 20 Clerk prod users vooraf aanmaken via Clerk Invitations API met bestaande emails — Clerk-IDs zijn dan bekend voor data-import mapping (zie fase 3 §Cognito sub → Clerk ID mapping mechanisme). Clerk verstuurt invite-mails naar elke user — verwacht dat users hierover vragen stellen vóór T-1-dag, vermelden in T-3-weken-communicatie ("rond DD-MM krijg je een mail van Clerk om je nieuwe account te activeren — dat is goed, klik op de link").
 - [ ] T-2 weken, **vóór `load-files`**: `integrityCheck`-cron op prod uitzetten of de storage-orphan-check tijdelijk stilzetten. Tussen T-2 en T-0 staat er ~8,3 GB storage in prod met nul records; de dagelijkse check meldt dan twee weken lang 1650+ storage-orphans. Zonder deze stap is de eerste ervaring met de monitoring op prod een stortvloed vals-positieven. Weer aanzetten na de `verify` op T-0. (WP12 A-rol, risico-assessment ops.)
 - [ ] T-2 weken: `load-files` op prod draaien (WP12) — alle fotobestanden naar Convex-prod-storage, `.data/storage-map.json` gevuld. ~5,3 GB, ordegrootte een uur over een lijn van <20 Mbit/s; hervatbaar. Video's blijven op S3 (besluit 2026-08-23, zie WP12 §Video's).
 - [ ] T-1 week: group-injection aanzetten in DynamoDB (in-app reminder verschijnt)
@@ -206,8 +206,8 @@ Dus: communicatie en blokkade gaan **buiten de oude app om**.
 - [ ] T-0: `integrityCheck`-cron op prod weer aanzetten, ná een groene `verify`
 - [ ] T-0: backend write-block aan op AWS
 - [ ] T-0: webapp redirect aan
-- [ ] T-0: 16 users informeren dat ze nu kunnen overstappen, korte instructie voor Clerk login
-- [ ] T+1: bevestigen dat alles werkt voor alle 16 users
+- [ ] T-0: 20 users informeren dat ze nu kunnen overstappen, korte instructie voor Clerk login
+- [ ] T+1: bevestigen dat alles werkt voor alle 20 users
 - [ ] T+30: AWS resources opschonen (S3 `blob-images` nog even bewaren als backup tot ~T+90). **Uitzondering: bucket `blob-videos` blijft staan** — daar draait de video-weergave van de nieuwe app op tot de R2-overstap. Niet opruimen, ook niet na T+90.
 - [ ] T+30: cutover-group uit Convex verwijderen (was alleen reminder voor oude app)
 
