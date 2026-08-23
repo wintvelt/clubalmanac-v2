@@ -339,6 +339,54 @@ Dit is dezelfde familie als het bestaande anti-patroon "gedeelde lookup-tabel" u
 
 ---
 
+## Audit-bevindingen cyclus 3 (2026-08-23)
+
+Audit gedraaid op `5aedb7c` + `eaeff8e` + `b4028a7` + `61a4185`. Suite 748 groen, typecheck clean. Methode: 15 geïnjecteerde regressies volgens de toets uit [`ab-audit-workflow.md` §Vorm 2](../conventions/ab-audit-workflow.md). Alle 13 netten uit fix-cyclus 2 spannen — elke injectie liet tests omvallen, van 1 tot 60. Eén blocker, vier should-fixes.
+
+### R3-1 (blocker) — `prune-storage` kan de volledige T-2-upload wissen
+
+De invariant onder R2-5 eist twee voorwaarden en noemt de tweede de veiligheidsklep. In de implementatie doet die tweede voorwaarde het werk niet; de bescherming zit in een derde, niet-gespecificeerd mechanisme — de tellingsvergelijking op `pruneStorage.ts:63-80`. Die vergelijking is triviaal waar zodra beide kanten nul zijn.
+
+Gereproduceerd met het bestaande harnas: 6 objecten geüpload, daarna een `convex-records.json` met nul rijen en `meta.counts` overal nul, deployment leeg. `prune-storage` wist alle 6 en leegt `storage-map.json` — de uren upload én de hervatbaarheid in één commando.
+
+Het pad ernaartoe loopt via de tool zelf. Een `extract` tegen de verkeerde DynamoDB-tabel geeft nul items — en `MIGRATE_DYNAMO_TABLE` is een env-var, terwijl er een tweede AWS-omgeving bestaat die we bewust negeren. `transform`, `load-records` en `verify` slagen daarop allemaal zonder fout. `verify` meldt dan 1601 wezen mét de instructie `prune-storage` te draaien (`verify.ts:117-120`). De operator volgt die instructie en verliest 5,6 GB.
+
+**Eis: een vloer die niet van de tellingen afhangt.** `prune-storage` weigert wanneer hij alles zou wissen wat er is, wanneer er geen enkel record naar storage verwijst terwijl de storage-map niet leeg is, of wanneer `meta.counts` in totaal nul is. Alles wissen is `reset --all`, en dat is een ander commando met een andere bedoeling.
+
+### R3-2 (should-fix) — spec-voorwaarde 2 is dode code
+
+`pruneStorage.ts:94` muteren naar `filter((id) => true || !needed.has(id))` laat 139/139 groen: geen enkele test onderscheidt "geen geladen record" van "geen verwijzing uit `convex-records.json`". Dat kan ook niet — ná de tellingscontrole is elk `needed`-object per definitie aan een geladen record gekoppeld. `const spared = inventory.orphanCount - doomed.length` is altijd 0, dus de tak op `:99` is onbereikbaar.
+
+Kies één van twee: geef voorwaarde 2 een eigen, aflezende betekenis (bijvoorbeeld als de vloer uit R3-1), of noteer expliciet dat de tellingscontrole hem vervangt. In het tweede geval moet runbook-regel 152 mee — die beschrijft vandaag twee mechanismen als één ding.
+
+### R3-3 (should-fix) — fixture-gat op de dev-filtertak van invites
+
+De invariant onder R2-4 is stellig over de twee takken die niet op één hoop mogen. De implementatie scheidt ze correct, maar de fixture bevat geen invite in de combinatie die het onderscheid aflegt: `G-2` valt in dev weg op "founder niet chosen" en heeft alleen memberships, geen invite. De mutatie waarin de dev-filtertak invites dóórlaat valt vandaag alleen om via de `G-verdwenen`-assertie.
+
+Eis: één invite op `G-2` in de fixture, met twee assertions — dev slaat over en telt hem als filter, prod houdt hem mét `groupId`.
+
+### R3-4 (should-fix) — `verify` adviseert opruimen terwijl zijn eigen controle rood is
+
+`verify.ts:110-121` toont de opruim-instructie zodra `orphanCount > 0`, ongeacht `problems`. Tussen T-2 en T-0 is dat de normale toestand, en het is de instructie die naar R3-1 leidt. Toon het advies alleen wanneer de rij-aantallen kloppen; anders de tekst uit de meldingen-tabel — elk bestand is nog nodig, draai eerst `load-records`.
+
+### R3-5 (should-fix) — `prune-storage` geeft exitcode 0 als hij weigert
+
+`pruneStorage.ts:79` geeft `0` terug in de mismatch-tak, en de CLI geeft die door. `verify` geeft in vergelijkbare situaties 1. Een weigering die als succes exit is onzichtbaar in een scriptketen op cutover-dag.
+
+### Nice-to-have
+
+- `verify.ts:74-79` leidt zijn tabellenset af uit het antwoord van de deployment die hij controleert. Vandaag afgedekt door de oracle-test, maar `MONITORED_TABLES` direct importeren sluit de vorm.
+- `FULL_LIST = 1_000_000` staat twee keer, in `verify.ts:38` en `pruneStorage.ts:34`.
+- `deleteStorageObjects` telt `deleted += 1` onvoorwaardelijk; een id die niet meer bestaat breekt de batch af met een misleidende telling.
+- De commando-tabel in deze spec (§De commando's) kent `prune-storage` nog niet en zegt "zeven losse commando's". README en `migratie-status.md` zijn al bijgewerkt.
+- De prod-gate op `prune-storage` en `reset` is ongetest — de tests mocken `convexAdmin.ts` volledig.
+
+### Recurring-pattern-kandidaat
+
+R3-1 en R3-2 samen: **de tekst noemt beveiliging X, de code beschermt via mechanisme Y, en X is daardoor ongetest en onbereikbaar.** Hier staat het twee keer op papier — spec-invariant en runbook — zonder dat één test het onderscheid maakt. De bijbehorende toets heeft dezelfde vorm als de bestaande: schakel uit wat de tekst belooft en kijk of er iets omvalt. Regie voegt dit toe als regel onder §Vorm 2, niet als eigen sectie.
+
+---
+
 ## Spec-criticus aanvullingen (A, 2026-08-23)
 
 A heeft de oude AWS-code gelezen (`blob-images-api`, `-user`, `-groups`, `-photos`, `-invites`, `blob-images-features`, `blob-common`) en de draft daartegen gelegd. De draft klopt op mechanisme, planning en risico-weging. Waar hij niet klopt is in de **aanname dat de brondata dezelfde vorm en betekenis heeft als het Convex-schema**. Op zes punten is dat aantoonbaar niet zo. Die staan hieronder als correcties, gevolgd door de invarianten en edge cases die daaruit volgen.
