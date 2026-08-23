@@ -12,6 +12,7 @@
 // vragen volledig beantwoordt, wordt apart gepind in migrationFunctions.test.ts.
 
 import { getFunctionName } from "convex/server";
+import { vi } from "vitest";
 import type { StorageMapFile } from "../../scripts/migrate/loadFiles";
 import type { RecordsFile } from "../../scripts/migrate/runTransform";
 import { transform } from "../../scripts/migrate/transform";
@@ -39,6 +40,45 @@ export const FAKE_DEV_URL = "https://fake-dev-deployment.convex.cloud";
  * krimpt de vraag mee met het antwoord.
  */
 export const DEPLOYMENT_TABLES = MONITORED_TABLE_ORACLE;
+
+// ── terminal-output ───────────────────────────────────────────────────
+
+type SpyLike = { mock: { calls: unknown[][] } };
+
+const asText = (spy: SpyLike): string =>
+  spy.mock.calls.map((call) => call.map((part) => String(part)).join(" ")).join("\n");
+
+/**
+ * Stilte op de terminal, plus een leesvenster op wat een commando er in DEZE
+ * test neerzette. Eén plek, omdat de valkuil in de opzet zit en niet in het
+ * gebruik.
+ *
+ * De `restoreAllMocks` vooraf is het hele punt. `vi.spyOn` op een al
+ * bespioneerde `console.log` geeft dezelfde spy terug en laat `mock.calls`
+ * staan, en `vitest.config.ts` zet geen `restoreMocks`. Zonder die regel leest
+ * een test ook de regels van élke eerdere test in hetzelfde bestand: een
+ * `not.toContain` slaagt dan nooit meer op eigen kracht, en een `toContain` kan
+ * slagen op de output van een test die iets heel anders deed. Dat is dezelfde
+ * fout die deze WP in de tooling bestrijdt — een controle die zijn antwoord
+ * ergens anders vandaan haalt dan uit de stap die hij controleert — alleen dan
+ * in het harnas, waar hij niemand meer waarschuwt.
+ */
+export function captureConsole() {
+  vi.restoreAllMocks();
+  const log = vi.spyOn(console, "log").mockImplementation(() => {}) as unknown as SpyLike;
+  const warn = vi.spyOn(console, "warn").mockImplementation(() => {}) as unknown as SpyLike;
+  const error = vi.spyOn(console, "error").mockImplementation(() => {}) as unknown as SpyLike;
+  return {
+    /** Alles wat deze test naar stdout schreef, als één blok tekst. */
+    log: (): string => asText(log),
+    /** Idem voor de waarschuwingen. */
+    warn: (): string => asText(warn),
+    /** Idem voor de foutmeldingen. */
+    error: (): string => asText(error),
+  };
+}
+
+export type ConsoleCapture = ReturnType<typeof captureConsole>;
 
 // ── records-fixture ───────────────────────────────────────────────────
 

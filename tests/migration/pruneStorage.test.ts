@@ -28,6 +28,7 @@ import type { FakeDeployment } from "./_harness";
 import {
   buildRecordsFile,
   buildStorageMap,
+  captureConsole,
   createFakeDeployment,
   createFakeFiles,
 } from "./_harness";
@@ -129,9 +130,7 @@ function recordsWithoutStorageRefs(): RecordsFile {
 }
 
 beforeEach(() => {
-  vi.spyOn(console, "log").mockImplementation(() => {});
-  vi.spyOn(console, "warn").mockImplementation(() => {});
-  vi.spyOn(console, "error").mockImplementation(() => {});
+  captureConsole();
   deployment = createFakeDeployment();
   h.deployment = deployment;
   records = buildRecordsFile("dev");

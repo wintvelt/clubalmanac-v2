@@ -18,6 +18,8 @@ import type { FakeDeployment } from "./_harness";
 import {
   buildRecordsFile,
   buildStorageMap,
+  captureConsole,
+  type ConsoleCapture,
   createFakeDeployment,
   createFakeFiles,
   DEPLOYMENT_TABLES,
@@ -67,11 +69,13 @@ function put(files: Record<string, unknown>): void {
   h.files = createFakeFiles(files);
 }
 
-/** Alles wat verify naar de terminal schreef, als één blok tekst. */
-function logged(): string {
-  const calls = (console.log as unknown as { mock: { calls: unknown[][] } }).mock.calls;
-  return calls.map((call) => call.map((part) => String(part)).join(" ")).join("\n");
-}
+/**
+ * Alles wat verify in DEZE test naar de terminal schreef. De afbakening per
+ * test is geen detail: zonder haar leest elke assertie hieronder ook de output
+ * van de tests ervoor (zie `captureConsole` in het harnas).
+ */
+let console_: ConsoleCapture;
+const logged = (): string => console_.log();
 
 /** Zet de bestanden uit de storage-map ook echt in de nep-storage neer. */
 function materializeStorage(map: StorageMapFile): void {
@@ -79,9 +83,7 @@ function materializeStorage(map: StorageMapFile): void {
 }
 
 beforeEach(() => {
-  vi.spyOn(console, "log").mockImplementation(() => {});
-  vi.spyOn(console, "warn").mockImplementation(() => {});
-  vi.spyOn(console, "error").mockImplementation(() => {});
+  console_ = captureConsole();
   deployment = createFakeDeployment();
   h.deployment = deployment;
   records = buildRecordsFile("dev");
@@ -180,6 +182,22 @@ describe("verify: de orphan-bevinding is volledig", () => {
     for (const id of orphans) {
       expect(report, `${id} staat niet in het rapport`).toContain(id);
     }
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// Het harnas zelf — nagekomen defect uit fix-cyclus 3
+//
+// De test hierboven laat `verify` een volledig rapport afdrukken, inclusief het
+// opruim-advies. Lekt die output door naar de volgende test, dan slaagt geen
+// enkele `not.toContain` in dit bestand nog op eigen kracht en kan elke
+// `toContain` slagen op de output van een test die iets heel anders deed. Deze
+// test staat hier bewust ná de luidruchtigste: hij valt om zodra de afbakening
+// per test verdwijnt.
+// ─────────────────────────────────────────────────────────────────────────
+describe("harnas: een test leest alleen zijn eigen terminal-output", () => {
+  test("de vorige test heeft hier niets achtergelaten", () => {
+    expect(logged(), "terminal-output van een eerdere test lekt door").toBe("");
   });
 });
 
