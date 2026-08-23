@@ -23,6 +23,7 @@ import {
   createFakeDeployment,
   createFakeFiles,
   DEPLOYMENT_TABLES,
+  storageKeyOf,
 } from "./_harness";
 import type { RecordsFile } from "../../scripts/migrate/runTransform";
 import type { StorageMapFile } from "../../scripts/migrate/loadFiles";
@@ -141,6 +142,73 @@ describe("verify: de verwachting komt uit de transform, niet uit de laadstap", (
     materializeStorage(storageMap);
     deployment.setDrift(["users/abc: photoCount 3 ≠ 2 werkelijke foto's"]);
     await expect(verify("dev")).resolves.not.toBe(0);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// R4-1 — aflezing aan de resultaatkant
+//
+// De gate van `load-records` is niet de laatste kans om verlies te zien; hij is
+// de eerste. Wie hem opent met `--accept-missing-files` heeft daarna alleen nog
+// `verify`, en die moet het verlies aan het resultaat kunnen aflezen en niet
+// alleen aan de gate die de operator net zelf heeft opengezet.
+//
+// Het scherpste geval is de profielfoto, want die zit in geen enkele telling.
+// Eén ontbrekende sleutel in `storage-map.json`, en de user landt zonder foto
+// terwijl elke tabel exact het verwachte aantal rijen heeft, geen record naar
+// een niet-bestaand bestand wijst en geen bestand zonder record in storage
+// staat. Alles wat "twee kanten vergelijkt" is groen; alleen de vergelijking
+// met de records zelf laat zien dat er iets weg is.
+// ─────────────────────────────────────────────────────────────────────────
+describe("verify: een user die zijn profielfoto kwijt is, is een bevinding", () => {
+  test("ontbrekende profielfoto — élke telling klopt en verify is toch niet groen", async () => {
+    const missingKey = storageKeyOf(records, "users", "U-alice");
+    const alice = records.records.users.find((u) => u.sourceKey === "U-alice")!;
+    expect(alice.profilePhotoStorageKey, "de fixture-user draagt een profielfoto").toBe(missingKey);
+
+    // `load-files` heeft precies dit ene bestand niet geüpload.
+    storageMap = buildStorageMap(records, { omit: [missingKey] });
+    put({ "convex-records.json": records, "storage-map.json": storageMap });
+    materializeStorage(storageMap);
+    await expect(loadRecords("dev", true), "de accept-vlag laat de load slagen").resolves.toBe(0);
+
+    // Premisse 1 — het verlies is echt: de rij droeg een sleutel, het document
+    // in de deployment heeft geen foto.
+    const loadedAlice = deployment.insertCalls.find(
+      (call) => call.table === "users" && call.sourceKey === "U-alice",
+    )!;
+    expect(loadedAlice.doc.profilePhotoStorageId, "de user heeft zijn foto nog").toBeUndefined();
+    const loadedBob = deployment.insertCalls.find(
+      (call) => call.table === "users" && call.sourceKey === "U-bob",
+    )!;
+    expect(loadedBob.doc.profilePhotoStorageId, "de fixture verliest álle foto's").toBeDefined();
+
+    // Premisse 2 — niets anders kan `verify` rood maken. Elke tabel telt exact
+    // wat de transform beloofde, en de storage reconcilieert twee kanten op.
+    for (const table of DEPLOYMENT_TABLES) {
+      expect(deployment.count(table), `${table} telt niet zoals verwacht`).toBe(
+        records.meta.counts[table] ?? 0,
+      );
+    }
+    const referenced = new Set(
+      deployment.insertCalls
+        .flatMap((call) => [call.doc.storageId, call.doc.profilePhotoStorageId])
+        .filter((id): id is string => typeof id === "string"),
+    );
+    for (const id of referenced) {
+      expect(deployment.hasStorage(id), `record wijst naar een niet-bestaand bestand: ${id}`).toBe(
+        true,
+      );
+    }
+    for (const id of deployment.storageIds()) {
+      expect(referenced.has(id), `storage-object zonder record: ${id}`).toBe(true);
+    }
+
+    // Vanaf hier alleen nog het rapport van verify zelf.
+    console_ = captureConsole();
+
+    await expect(verify("dev")).resolves.not.toBe(0);
+    expect(logged(), "verify noemt het bestand niet dat niet geladen is").toContain(missingKey);
   });
 });
 
