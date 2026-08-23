@@ -562,6 +562,62 @@ describe("dev-filter", () => {
   });
 });
 
+// ────────────────────────────────────────────────────────────────────────
+// Fix-cyclus 1, S-2 — de geratificeerde dev-invite-filterregel
+//
+// Het plan zei "invites: alleen tussen de 3 chosen". Onhoudbaar: een invite aan
+// iemand zónder account is juist het normale geval, en die persoon kán geen
+// chosen user zijn — met die lezing bevat de dev-seed nul invites en is de
+// invite-flow er niet op te testen. Regie ratificeerde de drie clausules
+// hieronder; deze tests pinnen ze, zodat de regel niet nog eens ongemerkt
+// verschuift.
+// ────────────────────────────────────────────────────────────────────────
+describe("dev-filter: invites", () => {
+  test("een invite aan een adres zónder account blijft staan", () => {
+    const { records } = runDev();
+    expect(records.invites.length).toBeGreaterThan(0);
+    // De uitnodiger is de enige verplichte FK; die moet chosen zijn.
+    for (const i of records.invites as Row[]) {
+      expect(CHOSEN).toContain(i.invitedBy);
+    }
+  });
+
+  test("een invite van een niet-chosen uitnodiger valt weg", () => {
+    const { records } = runDev();
+    expect(records.invites.map((i: Row) => i.invitedBy)).not.toContain("U-dave");
+  });
+
+  test("een invite aan een bestaande, niet-chosen user valt weg", () => {
+    const { records } = runDev();
+    expect(records.invites.map((i: Row) => i.sourceKey)).not.toContain("U-dave#G-3");
+  });
+
+  test("een invite in een groep die niet in de dev-set zit valt weg", () => {
+    const { records } = runDev();
+    const groupKeys = new Set(records.groups.map((g: Row) => g.sourceKey));
+    for (const i of records.invites as Row[]) {
+      if (i.groupId === undefined) continue;
+      expect(groupKeys.has(i.groupId)).toBe(true);
+    }
+  });
+
+  test("prod filtert geen enkele invite weg", () => {
+    const { records } = runProd();
+    const keys = records.invites.map((i: Row) => i.sourceKey);
+    expect(keys).toContain("U-dave#G-3");
+    expect(keys).toContain("nieuweling@example.test#G-1");
+  });
+
+  test("een invite in een groep die niet meer bestaat is een bronfout, geen invite", () => {
+    // Overslaan én melden: de rij hoort nergens, maar de operator moet 'm zien.
+    const { records, warnings } = runProd();
+    expect(records.invites.map((i: Row) => i.sourceKey)).not.toContain(
+      "ander@example.test#G-verdwenen",
+    );
+    expect(warnings.some((w: string) => /G-verdwenen/.test(w))).toBe(true);
+  });
+});
+
 describe("anonimisatie", () => {
   // Storage-sleutels bevatten de Cognito-sub in het pad. Die zijn nodig om het
   // bestand op te halen en verdwijnen na `load-files`; ze belanden nooit in
@@ -576,6 +632,26 @@ describe("anonimisatie", () => {
     for (const secret of SOURCE_PII) {
       expect(blob.includes(secret), `PII lekt: ${secret}`).toBe(false);
     }
+  });
+
+  // Fix-cyclus 1, S-1. De invariant gaat over het hele bestand dat de transform
+  // verlaat, niet over het records-deel ervan: de waarschuwingen worden mee
+  // weggeschreven in convex-records.json en staan daarmee op dezelfde laptop.
+  // Een overgeslagen invite wordt gemeld met zijn bron-sleutel, en die sleutel
+  // ís een emailadres als de genodigde geen account heeft.
+  test("ook het waarschuwingskanaal bevat geen bron-naam of bron-email", () => {
+    const { records, warnings } = runDev();
+    const blob = stripStorageKeys({ records, warnings });
+    for (const secret of SOURCE_PII) {
+      expect(blob.includes(secret), `PII lekt via de transform-output: ${secret}`).toBe(false);
+    }
+  });
+
+  test("een overgeslagen invite blijft wél herleidbaar — anonimiseren is niet weglaten", () => {
+    // De operator moet kunnen zien dát er een invite is overgeslagen en in
+    // welke groep. Alleen de identiteit van de genodigde is vervangen.
+    const { warnings } = runDev();
+    expect(warnings.some((w: string) => /G-verdwenen/.test(w))).toBe(true);
   });
 
   test("ook de bron-sleutels zelf zijn geanonimiseerd — een invite-ID is een emailadres", () => {

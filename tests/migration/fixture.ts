@@ -44,6 +44,10 @@ export const SOURCE_PII = [
   "carol@example.test",
   "dave@example.test",
   "genodigde@example.test",
+  "nieuweling@example.test",
+  "ander@example.test",
+  "Nieuweling Bronwerk",
+  "Ander Bronwerk",
   "Kom je ook wandelen?",
 ];
 
@@ -150,6 +154,42 @@ export function buildExtract(): SourceItem[] {
       user: CAROL,
       invitation: { from: ALICE, message: "Kom je ook wandelen?" },
       createdAt: "2022-01-01",
+    },
+    // Dave (niet-chosen) is gewoon lid van G-1 en nodigt daar iemand uit.
+    // Twee clausules van de dev-invite-filterregel hangen hieraan: in dev valt
+    // Daves membership weg (user niet chosen) en zijn invite ook (uitnodiger
+    // niet chosen), terwijl prod ze allebei houdt.
+    { PK: "UMU-dave", SK: "G-1", role: "guest", status: "active", user: DAVE, createdAt: "2021-06-05" },
+    {
+      PK: "UMnieuweling@example.test",
+      SK: "G-1",
+      status: "invite",
+      role: "guest",
+      user: { name: "Nieuweling Bronwerk", email: "nieuweling@example.test" },
+      invitation: { from: DAVE, message: "Kom je ook wandelen?" },
+      createdAt: "2026-08-21",
+    },
+    // Derde clausule: de genodigde ís een bestaande user, maar niet chosen.
+    {
+      PK: "UMU-dave",
+      SK: "G-3",
+      status: "invite",
+      role: "guest",
+      user: DAVE,
+      invitation: { from: ALICE, message: "Kom je ook wandelen?" },
+      createdAt: "2026-08-21",
+    },
+    // Invite naar een adres zonder account, in een groep die niet (meer)
+    // bestaat: overgeslagen record, mét waarschuwing. De bron-ID van zo'n
+    // invite ís het emailadres — het meldkanaal draagt dus PII.
+    {
+      PK: "UMander@example.test",
+      SK: "G-verdwenen",
+      status: "invite",
+      role: "guest",
+      user: { name: "Ander Bronwerk", email: "ander@example.test" },
+      invitation: { from: ALICE, message: "Kom je ook wandelen?" },
+      createdAt: "2026-08-22",
     },
 
     // ── albums ────────────────────────────────────────────────────────
