@@ -31,6 +31,12 @@ import { summarize } from "./runTransform.ts";
 import type { RecordsFile } from "./runTransform.ts";
 import { TABLE_ORDER } from "./types.ts";
 
+/**
+ * "Geef de hele lijst" voor `storageInventory`. Bewust een groot getal en geen
+ * aparte query-vorm: de bovengrens is het aantal storage-objecten (prod: ~1600).
+ */
+const FULL_LIST = 1_000_000;
+
 export async function verify(target: Target): Promise<number> {
   const recordsFile = readData<RecordsFile>(RECORDS_FILE);
   const admin = makeAdminClient(target, false);
@@ -57,7 +63,21 @@ export async function verify(target: Target): Promise<number> {
         ` verklaarbaar is niet goedgekeurd`
       : "";
   console.log(`\n[verify] rij-aantallen (verwacht = de transform-telling):`);
-  for (const table of TABLE_ORDER) {
+  // Élke tabel die de deployment telt, niet alleen de tabellen die de import
+  // vult (WP12 fix-cyclus 2, R2-3). "Verwacht 0" is ook een verwachting:
+  // `uploadIdempotency` zit wél in de leeg-preconditie van `load-records` en was
+  // erna ongecontroleerd, terwijl juist dán zijn `ownerId`'s naar verwijderde
+  // users kunnen wijzen — precies wat WP10 de ochtend erna meldt. De set komt
+  // uit `tableCounts`, die hem op zijn beurt uit WP10's `MONITORED_TABLES`
+  // afleidt; de verwachting blijft uit `meta.counts` komen en dus uit de
+  // eerdere, onafhankelijke laag (B-1c).
+  const countedTables = [
+    ...TABLE_ORDER,
+    ...Object.keys(counts.tables).filter(
+      (table) => !(TABLE_ORDER as readonly string[]).includes(table),
+    ),
+  ];
+  for (const table of countedTables) {
     const expected = recordsFile.meta.counts[table] ?? 0;
     const actual = counts.tables[table] ?? 0;
     const ok = expected === actual;
@@ -69,7 +89,12 @@ export async function verify(target: Target): Promise<number> {
   }
 
   // ── 2. storage, twee kanten op ──────────────────────────────────────
-  const inventory = await runQuery(admin, internal.migration.storageInventory, {});
+  // De volledige lijst, geen greep van tien (WP12 fix-cyclus 2, R2-5). Wie
+  // `prune-storage` gaat draaien moet vooraf kunnen zien wát er precies weggaat;
+  // een sample is genoeg om te alarmeren en te weinig om op te beslissen.
+  const inventory = await runQuery(admin, internal.migration.storageInventory, {
+    sampleSize: FULL_LIST,
+  });
   console.log(
     `\n[verify] storage: ${inventory.storageObjects} objecten ` +
       `(${(inventory.totalBytes / 1_000_000).toFixed(1)} MB), ` +
@@ -78,15 +103,20 @@ export async function verify(target: Target): Promise<number> {
   if (inventory.danglingCount > 0) {
     problems += 1;
     console.log(
-      `  FOUT ${inventory.danglingCount} record(s) verwijzen naar een niet-bestaand bestand: ` +
-        inventory.danglingSample.join(", "),
+      `  FOUT ${inventory.danglingCount} record(s) verwijzen naar een niet-bestaand bestand:`,
     );
+    for (const id of inventory.danglingSample) console.log(`    - ${id}`);
   }
   if (inventory.orphanCount > 0) {
     problems += 1;
     console.log(
-      `  FOUT ${inventory.orphanCount} storage-object(en) hangen aan geen enkel record: ` +
-        `${inventory.orphanSample.join(", ")} — dit is precies wat WP10 dagelijks zou melden`,
+      `  FOUT ${inventory.orphanCount} storage-object(en) hangen aan geen enkel record ` +
+        `— dit is precies wat WP10 dagelijks zou melden:`,
+    );
+    for (const id of inventory.orphanSample) console.log(`    - ${id}`);
+    console.log(
+      `  Ruim ze op met 'prune-storage --target ${target} --yes'; dat wist exact deze objecten ` +
+        `en laat de bestanden staan waar convex-records.json nog naar verwijst.`,
     );
   }
 

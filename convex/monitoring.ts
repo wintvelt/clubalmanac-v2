@@ -34,39 +34,71 @@ import {
 const HEARTBEAT_INTERVAL_MS = 30 * 24 * 60 * 60 * 1000;
 const RATING_AVERAGE_EPSILON = 1e-9;
 
-// Verplichte FKs (altijd resolven). Géén storage-refs hier — die vallen onder
-// de storage-orphan-categorie (2a), niet onder FK-integriteit (2c).
-const REQUIRED_FKS: Array<{ table: TableNames; field: string }> = [
-  { table: "groups", field: "createdBy" },
-  { table: "memberships", field: "userId" },
-  { table: "memberships", field: "groupId" },
-  { table: "albums", field: "groupId" },
-  { table: "albums", field: "createdBy" },
-  { table: "albumPhotos", field: "albumId" },
-  { table: "albumPhotos", field: "photoId" },
-  { table: "albumPhotos", field: "groupId" },
-  { table: "albumPhotos", field: "addedBy" },
-  { table: "photos", field: "ownerId" },
-  { table: "uploadIdempotency", field: "ownerId" },
-  { table: "ratings", field: "photoId" },
-  { table: "ratings", field: "userId" },
-  { table: "invites", field: "invitedBy" },
-  { table: "features", field: "submittedBy" },
-  { table: "featureUpvotes", field: "featureId" },
-  { table: "featureUpvotes", field: "userId" },
-  { table: "albumLastSeen", field: "userId" },
-  { table: "albumLastSeen", field: "albumId" },
+/**
+ * Élke foreign key die deze scan controleert, in één lijst.
+ *
+ * `required: true` = altijd gezet én resolvend. `required: false` =
+ * `v.optional(v.id(...))`: alleen drift wanneer gezet én niet-resolvend; een
+ * ongezette optionele FK is géén dangling FK. Géén storage-refs hier — die
+ * vallen onder de storage-orphan-categorie (2a), niet onder FK-integriteit (2c).
+ *
+ * Deze lijst is **de autoriteit** voor de migratie-tooling (WP12 fix-cyclus 2,
+ * R2-3): wat hier dagelijks op prod gecontroleerd wordt, bepaalt waar de tooling
+ * op moet werken — de leeg-preconditie van `load-records`, wat `reset`
+ * leegmaakt, wat `verify` telt, en wat de transform referentieel gesloten moet
+ * opleveren. Er is dus geen tweede lijst die stil kan achterlopen; wie hier een
+ * FK bijschrijft, ziet dat vanzelf in `tests/migration/sharedLists.test.ts`
+ * terug tegen de handmatige oracle.
+ */
+export const MONITORED_FKS: Array<{
+  table: TableNames;
+  field: string;
+  required: boolean;
+}> = [
+  { table: "groups", field: "createdBy", required: true },
+  { table: "groups", field: "coverPhotoId", required: false },
+  { table: "memberships", field: "userId", required: true },
+  { table: "memberships", field: "groupId", required: true },
+  { table: "albums", field: "groupId", required: true },
+  { table: "albums", field: "createdBy", required: true },
+  { table: "albums", field: "coverPhotoId", required: false },
+  { table: "photos", field: "ownerId", required: true },
+  { table: "photos", field: "flaggedBy", required: false },
+  { table: "albumPhotos", field: "albumId", required: true },
+  { table: "albumPhotos", field: "photoId", required: true },
+  { table: "albumPhotos", field: "groupId", required: true },
+  { table: "albumPhotos", field: "addedBy", required: true },
+  { table: "ratings", field: "photoId", required: true },
+  { table: "ratings", field: "userId", required: true },
+  { table: "invites", field: "invitedBy", required: true },
+  { table: "invites", field: "groupId", required: false },
+  { table: "features", field: "submittedBy", required: true },
+  { table: "featureUpvotes", field: "featureId", required: true },
+  { table: "featureUpvotes", field: "userId", required: true },
+  { table: "albumLastSeen", field: "userId", required: true },
+  { table: "albumLastSeen", field: "albumId", required: true },
+  { table: "uploadIdempotency", field: "ownerId", required: true },
+  { table: "uploadIdempotency", field: "photoId", required: false },
 ];
 
-// Optionele FKs (v.optional(v.id(...))): alleen drift wanneer gezet én niet-
-// resolvend. Een ongezette optionele FK is géén dangling FK.
-const OPTIONAL_FKS: Array<{ table: TableNames; field: string }> = [
-  { table: "groups", field: "coverPhotoId" },
-  { table: "albums", field: "coverPhotoId" },
-  { table: "photos", field: "flaggedBy" },
-  { table: "uploadIdempotency", field: "photoId" },
-  { table: "invites", field: "groupId" },
+// Tabellen waarvan de scan een aggregate of een storage-referentie herrekent
+// zonder dat er een FK op staat. `users` is de enige die niet al uit MONITORED_
+// FKS volgt (photoCount + profilePhotoStorageId); `photos` en `features` staan
+// er voor de volledigheid bij, zodat de reden expliciet is en niet toevallig.
+const AGGREGATE_TABLES: TableNames[] = ["users", "photos", "features"];
+
+/**
+ * Élke tabel die deze scan aanraakt: afgeleid uit `MONITORED_FKS` plus de
+ * aggregate-tabellen. Afgeleid en niet met de hand opgesomd, zodat een tabel die
+ * er via een nieuwe FK bijkomt nergens nog bijgeschreven hoeft te worden (WP12
+ * fix-cyclus 2, R2-3). `convex/migration.ts` telt en leegt precies deze set.
+ */
+export const MONITORED_TABLES: TableNames[] = [
+  ...new Set<TableNames>([...MONITORED_FKS.map((fk) => fk.table), ...AGGREGATE_TABLES]),
 ];
+
+const REQUIRED_FKS = MONITORED_FKS.filter((fk) => fk.required);
+const OPTIONAL_FKS = MONITORED_FKS.filter((fk) => !fk.required);
 
 type DriftRow = { table: string; id: string; detail: string };
 

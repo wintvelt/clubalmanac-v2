@@ -15,7 +15,8 @@ npm run migrate -- <commando> --target dev|prod [opties]
 | 4 | `load-files` | records + S3 (read-only) | Convex-storage + `scripts/.data/storage-map.json` |
 | 5 | `load-records` | records + storage-map | de Convex-tabellen |
 | 6 | `verify` | beide bestanden + de deployment | rapport in de terminal |
-| 7 | `reset` | — | leegt de tabellen; met `--all` ook de storage |
+| 7 | `prune-storage` | records + storage-map + de deployment | wist exact de storage-objecten waar niets meer naar verwijst |
+| 8 | `reset` | — | leegt de tabellen; met `--all` ook de storage |
 
 ## Pre-flight
 
@@ -26,6 +27,10 @@ Verplicht per [`data-migration-preflight.md`](../conventions/data-migration-pref
 - [ ] Git tag op de commit waarmee je draait: `git tag pre-wp12-<dev|prod> && git push origin pre-wp12-<dev|prod>`.
 - [ ] `npx convex export [--prod] --path ./backups/pre-wp12-<dev|prod>.zip`, plus een tweede kopie via het dashboard (Settings → Snapshot export). Twee onafhankelijke fallbacks.
 - [ ] Count-baseline van de doel-deployment: draai ná `transform` en vóór `load-files`/`load-records` één keer `npm run migrate -- verify --target <dev|prod>`. Dat commando is read-only en drukt per tabel af wat er staat (baseline: nul) tegenover wat de transform gaat laden. Noteer beide kolommen.
+
+  Deze baseline-run is **per definitie rood**: er staat nog niets, dus elke tabel wijkt af van de transform-telling en er zijn nog geen bestanden geüpload. Dat is de meting, geen probleem. Rood ná `load-records` is dat wél.
+
+  Het is meteen het eerste moment waarop een read-only commando de deployment aanraakt, en dus de verbindingstest: een afgewezen admin-key komt eruit met een expliciete melding (zie §A).
 - [ ] Go/no-go-notitie in `docs/migratie-status.md`: counts, datum, en het besluit. Ligt er meer dan een week tussen deze meting en de run, herhaal 'm dan.
 
 ### A. `.env.migrate` (gitignored)
@@ -50,7 +55,7 @@ MIGRATE_CONVEX_ADMIN_KEY_PROD=prod:<prod-deployment>|<key>
 ```
 
 - [ ] AWS-credentials staan in de omgeving (`AWS_PROFILE` of `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY`). Gebruik een **read-only** IAM-user of -rol: het script schrijft nooit naar AWS, en die belofte hoort ook in de policy te staan. Deze credentials gaan **nooit** als Convex-env-var; ze staan alleen lokaal.
-- [ ] Verbinding testen vóór je iets schrijft: `npm run migrate -- verify --target dev`. Dat commando is read-only; het faalt met een expliciete melding als de admin-key niet geaccepteerd wordt.
+- [ ] Verbinding testen vóór je iets schrijft: dat gebeurt bij de count-baseline uit §0, dus ná `transform` en vóór `load-files`. Eerder kán `verify` niet slagen — hij leest `convex-records.json` voordat hij de deployment aanraakt en faalt anders op dat bestand. De baseline-run is read-only en meldt een niet-geaccepteerde admin-key expliciet.
 
 ### B. Config-bestanden in `scripts/.data/` (gitignored, bevatten PII)
 
@@ -129,8 +134,24 @@ npm run migrate -- verify --target prod
 - [ ] `verify` is groen: rij-aantallen kloppen, geen dangling storage-verwijzingen, geen storage-orphans, integriteitsscan leeg.
 
   `verify` vergelijkt met de tellingen die de **transform** heeft vastgelegd, niet met een herberekening uit de storage-map. Dat betekent dat een run met `--accept-missing-files` per definitie níet groen is: het verlies is verklaarbaar, maar verklaarbaar is niet goedgekeurd. Lees dan de bevinding, controleer dat het verschil exact de geaccepteerde bestanden betreft, en teken er bewust voor af.
+- [ ] Storage-orphans opgeruimd, als `verify` ze meldt — zie hieronder.
 - [ ] `integrityCheck`-cron op prod weer aan.
 - [ ] `unset MIGRATE_ALLOW_PROD`.
+
+#### Storage-orphans tussen T-2 en T-0
+
+De bestanden staan sinds T-2 in Convex-storage. Wordt in die twee weken een foto in de oude app verwijderd, dan is het bestand op T-0 geüpload terwijl er geen record meer naar verwijst: een storage-orphan, en precies wat WP10 de ochtend erna zou melden.
+
+```bash
+npm run migrate -- verify --target prod          # noemt élk object dat weg zou gaan
+npm run migrate -- prune-storage --target prod --yes
+npm run migrate -- verify --target prod          # nu groen
+```
+
+- `verify` drukt de volledige lijst af, geen greep van tien: je moet vóór het opruimen kunnen zien wat er weggaat.
+- `prune-storage` wist alleen objecten die aan géén enkel geladen record hangen **én** waar `convex-records.json` niet naar verwijst. Die tweede voorwaarde is de veiligheidsklep: tussen T-2 en T-0 is de deployment leeg terwijl elk bestand nog nodig is. Draai je het commando dán, dan constateert het dat de deployment niet overeenkomt met `convex-records.json` en wist het niets.
+- Het commando verwijdert in dezelfde beweging de bijbehorende entry's uit `storage-map.json`, zodat de map niet naar gewiste objecten wijst.
+- Gebruik hier nooit `reset --all`: dat wist de complete storage en maakt de map ongeldig — daarmee gooi je de uren upload weg die het gefaseerde ontwerp juist moest sparen.
 
 Breekt `load-records` halverwege af, dan stopt hij luid met de bron-sleutel in de melding. Het antwoord is altijd hetzelfde: `reset --target prod --yes` (zónder `--all`, de bestanden blijven staan) en opnieuw. Hervatten wordt bewust niet ondersteund — dat zou een tweede foutbron zijn in een run van minuten.
 
@@ -141,6 +162,7 @@ Breekt `load-records` halverwege af, dan stopt hij luid met de bron-sleutel in d
 | `groep X heeft geen membership met isFounder` | `groups.createdBy` is niet af te leiden. Zet een `founderOverrides`-entry. |
 | `user X heeft geen Clerk-ID in de ID-map` | De ID-map mist een user. Geen placeholder-subject: die user zou nooit kunnen inloggen. |
 | `de doel-deployment is niet leeg` | `load-records` weigert te verdubbelen. Draai `reset`. Ook achtergebleven `uploadIdempotency`-rijen tellen mee: die staan onder WP10's FK-controle en `reset` haalt ze weg. |
+| `de deployment komt niet overeen met convex-records.json` | `prune-storage` weigert op te ruimen zolang de records niet (volledig) geladen zijn: elk bestand is dan nog nodig. Draai eerst `load-records`, daarna `verify`. |
 | `storage-map.json bestaat niet` | `load-files` is niet (af)gedraaid. `load-records` weigert; "nul bestanden bekend, dus nul foto's" is geen geldige conclusie. |
 | `N van de M verwezen bestand(en) staan niet in storage-map.json` | De gate vóór de eerste schrijf. Draai `load-files` (opnieuw) af — hij hervat waar hij gebleven was. Staan de bestanden aantoonbaar niet in S3, dan pas `--accept-missing-files`. |
 | `N bestand(en) ... staan niet in de bucket` | Records verwijzen naar een verdwenen S3-object. Bekijk `scripts/.data/missing-files.json`; met `--accept-missing-files` slaat `load-records` die foto's over, benoemt ze per bron-sleutel, en `verify` meldt het verschil daarna als bevinding. |

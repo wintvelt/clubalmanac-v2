@@ -1,7 +1,7 @@
 import { v } from "convex/values";
 import { internalMutation, internalQuery } from "./_generated/server";
 import type { Doc, Id, TableNames } from "./_generated/dataModel";
-import { collectDriftLines } from "./monitoring";
+import { collectDriftLines, MONITORED_TABLES } from "./monitoring";
 
 // WP12 — migratie-only Convex-functies (data-import vanuit AWS).
 //
@@ -42,22 +42,32 @@ const LOAD_TABLES = [
  * andere tabel waarop WP10's `integrityCheck` een controle doet (WP12
  * fix-cyclus 1, B-2).
  *
- * `uploadIdempotency` staat er daarom bij. WP10 controleert er twee FK's op
- * (`ownerId` verplicht, `photoId` optioneel). Zat de tabel hier niet in, dan
- * zou de preconditie "alle doel-tabellen leeg" een uitspraak over een
- * deelverzameling zijn en zou `reset` de rijen niet weg kunnen halen — waarna
- * hun `ownerId`'s na een seed naar verwijderde users wijzen en de dagelijkse
- * scan dangling FK's meldt. De dev-deployment heeft zulke rijen aantoonbaar:
+ * **Afgeleid, niet overgeschreven** (WP12 fix-cyclus 2, R2-3). `MONITORED_TABLES`
+ * in convex/monitoring.ts is de autoriteit: wat daar dagelijks gecontroleerd
+ * wordt, is wat hier geteld en geleegd moet worden. Een tabel die daar bijkomt
+ * valt hier vanzelf onder; een tweede handbijgehouden lijst zou stil kunnen
+ * achterlopen, en dat is precies wat er met `uploadIdempotency` gebeurd is.
+ *
+ * Die tabel is ook meteen het voorbeeld van het verschil met `LOAD_TABLES`. WP10
+ * controleert er twee FK's op (`ownerId` verplicht, `photoId` optioneel), maar
+ * de import vult hem nooit: hij hoort bij de upload-flow, niet bij de brondata.
+ * Tellen en leegmaken wél, invoegen niet. Zat hij hier niet in, dan zou de
+ * preconditie "alle doel-tabellen leeg" een uitspraak over een deelverzameling
+ * zijn en zou `reset` de rijen niet weg kunnen halen — waarna hun `ownerId`'s na
+ * een seed naar verwijderde users wijzen en de dagelijkse scan dangling FK's
+ * meldt. De dev-deployment heeft zulke rijen aantoonbaar:
  * tests/integration/uploads/uploadRoundtrip.test.ts schrijft ze.
  *
- * De import vult de tabel nooit: hij hoort bij de upload-flow, niet bij de
- * brondata. Tellen en leegmaken wél, invoegen niet — vandaar twee lijsten met
- * één insluiting, niet twee lijsten die uit elkaar kunnen lopen.
+ * De laad-tabellen staan vooraan zodat de telling in laad-volgorde leest; de
+ * insluiting `MIGRATION_TABLES ⊇ MONITORED_TABLES` volgt uit de constructie.
  */
-const MIGRATION_TABLES = [...LOAD_TABLES, "uploadIdempotency"] as const;
+const MIGRATION_TABLES: readonly TableNames[] = [
+  ...LOAD_TABLES,
+  ...MONITORED_TABLES.filter((table) => !(LOAD_TABLES as readonly string[]).includes(table)),
+];
 
 type LoadTable = (typeof LOAD_TABLES)[number];
-type MigrationTable = (typeof MIGRATION_TABLES)[number];
+type MigrationTable = TableNames;
 
 function assertMigrationTable(table: string): MigrationTable {
   if (!(MIGRATION_TABLES as readonly string[]).includes(table)) {
@@ -250,6 +260,31 @@ export const clearTable = internalMutation({
     }
     const next = await ctx.db.query(name).take(1);
     return { deleted: docs.length, remaining: next.length > 0 };
+  },
+});
+
+/**
+ * Wist exact de opgegeven storage-objecten en verder niets (WP12 fix-cyclus 2,
+ * R2-5). De bouwsteen onder `prune-storage`: tussen T-2 en T-0 kan een foto in
+ * de oude app verwijderd worden, en dan staat het bestand op T-0 zonder record
+ * in de storage. Zonder deze knop is de enige route naar "geen storage-orphans"
+ * een `clearStorage`, en die kost de uren upload die het gefaseerde ontwerp
+ * juist moest sparen.
+ *
+ * Welke ID's dat zijn wordt hier niet bepaald: die afweging (geen geladen record
+ * én geen verwijzing uit convex-records.json) hoort in het script, dat beide
+ * lagen kent. Deze mutation voert alleen uit.
+ */
+export const deleteStorageObjects = internalMutation({
+  args: { ids: v.array(v.string()) },
+  returns: v.object({ deleted: v.number() }),
+  handler: async (ctx, { ids }) => {
+    let deleted = 0;
+    for (const id of ids) {
+      await ctx.storage.delete(id as Id<"_storage">);
+      deleted += 1;
+    }
+    return { deleted };
   },
 });
 

@@ -502,10 +502,33 @@ export function transform(items: SourceItem[], config: TransformConfig): Transfo
   // Zelfde recordtype in de bron; `status: 'invite'` maakt het verschil.
   for (const m of src.memberships) {
     const { inviteeKey, groupId, item } = m;
-    if (!includedGroups.has(groupId)) {
-      if (src.groups.has(groupId)) countFiltered("membership/invite uitgesloten: groep niet opgenomen");
-      else warn(`membership ${inviteeKey}#${groupId}: groep bestaat niet — overgeslagen`);
-      continue;
+    // Twee takken die niet op één hoop mogen (WP12 fix-cyclus 2, R2-4):
+    //   - "de groep is uit de dev-set gefilterd" is de filter die zijn werk
+    //     doet — overslaan en tellen, voor invites net zo goed als voor
+    //     memberships. Anders lekt er een invite naar een groep die in dev niet
+    //     bestaat.
+    //   - "de groep bestaat niet in de bron" is een bronfout. Voor een
+    //     membership blijft overslaan het enige juiste gedrag: `groupId` is daar
+    //     verplicht. Voor een invite is hij optioneel, en dan geldt de gewone
+    //     regel voor optionele verwijzingen — wissen en melden, rij behouden.
+    //     Dat laatste alleen op prod (besluit Wouter): prod is een migratie,
+    //     weggooien is daar onomkeerbaar; dev is een samengestelde
+    //     deelverzameling en een groeploze invite van een geanonimiseerde
+    //     afzender naar iemand buiten de seed is ruis. Overslaan is ook in dev
+    //     niet stil — de waarschuwing noemt de groep.
+    const groupDropped = !includedGroups.has(groupId);
+    if (groupDropped) {
+      if (src.groups.has(groupId)) {
+        countFiltered("membership/invite uitgesloten: groep niet opgenomen");
+        continue;
+      }
+      if (!isInvite(item) || config.target === "dev") {
+        warn(
+          `${isInvite(item) ? "invite" : "membership"} ${inviteeKey}#${groupId}: ` +
+            `groep bestaat niet — overgeslagen`,
+        );
+        continue;
+      }
     }
 
     if (!isInvite(item)) {
@@ -575,11 +598,19 @@ export function transform(items: SourceItem[], config: TransformConfig): Transfo
     const keyPart = inviteeIsUser ? inviteeKey : inviteeEmail(rawEmail);
     const sourceKey = `${keyPart}#${groupId}`;
 
+    // Optionele verwijzing die niet resolvet: gewist en gemeld, zoals de
+    // cover-foto's. Een groeploze invite is geen kapotte invite — accepteren
+    // levert een account zonder lidmaatschap, en dat pad bestaat sinds WP6 als
+    // de zero-invite-fallback.
+    if (groupDropped) {
+      warn(`invite ${sourceKey}: groep ${groupId} bestaat niet — groupId gewist`);
+    }
+
     records.invites.push({
       sourceKey,
       email: inviteeIsUser ? userEmail(inviteeKey, rawEmail) : inviteeEmail(rawEmail),
       invitedBy: inviter,
-      groupId,
+      groupId: groupDropped ? undefined : groupId,
       role: mapRole(item.role, `invite ${sourceKey}`),
       token: `mig${stableHash(sourceKey)}`,
       // Geaccepteerde/geweigerde invites bestaan niet meer als record; alleen

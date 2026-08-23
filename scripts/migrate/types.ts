@@ -45,9 +45,21 @@ export type TransformResult = {
 export type FkSpec = { field: string; target: TableName; required: boolean };
 
 /**
- * Foreign keys per tabel. Dezelfde lijst als `REQUIRED_FKS`/`OPTIONAL_FKS` in
- * convex/monitoring.ts — wat de transform hier laat glippen, meldt WP10's
- * integrityCheck vanaf dag één elke dag.
+ * Foreign keys per tabel, met de doel-tabel erbij — die informatie kent
+ * `MONITORED_FKS` in convex/monitoring.ts niet (een Convex-id draagt zijn eigen
+ * tabel) en heeft de transform wél nodig om FK's op te lossen.
+ *
+ * Verder is dit exact `MONITORED_FKS` beperkt tot de tabellen die de import zelf
+ * vult: wat de transform hier laat glippen, meldt WP10's integrityCheck vanaf
+ * dag één elke ochtend. Die gelijkheid is geen belofte in een comment maar een
+ * test — `tests/migration/sharedLists.test.ts` legt beide lijsten naast de
+ * handmatige oracle, in beide richtingen (WP12 fix-cyclus 2, R2-3). De lijst
+ * blijft met de hand bijgehouden en importeert monitoring.ts bewust niet: de
+ * transform gebruikt hem voor zijn eigen slotcontrole, en een gedeelde lijst zou
+ * die controle met het materiaal van de gecontroleerde stap voeden.
+ *
+ * `uploadIdempotency` ontbreekt hier met opzet: WP10 bewaakt die tabel (dus
+ * `reset` en de telling raken hem), maar de import vult hem nooit.
  */
 export const FKS: Record<TableName, FkSpec[]> = {
   users: [],
