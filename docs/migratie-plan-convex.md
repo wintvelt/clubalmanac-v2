@@ -312,15 +312,23 @@ Filter op `photo.ownerId` (niet `albumPhoto.addedBy`): als Bob een foto van Alic
 
 **Migratie van bestaande seenPics state:**
 
-Oude AWS state heeft `seenPics` array per membership (per user × group), bevat photoIds van foto's die user heeft gezien. Deze state moeten we omzetten naar `albumLastSeen` records.
+> **Gecorrigeerd 2026-08-23 (WP12, A-rol).** Dit stuk stond hiervoor omgekeerd beschreven: `seenPics` werd gelezen als een historie van *geziene* foto's. Dat is fout, en het bijbehorende algoritme zou elke user na cutover nul ongelezen foto's geven — precies het omgekeerde van wat de oude app toont. Onderbouwing uit de bron staat in [`work-packages/WP12-data-migratie-tooling.md`](./work-packages/WP12-data-migratie-tooling.md) §Correctie 2.
 
-Algoritme (per membership):
-1. Walk `seenPics` array, look up elk photoId in `albumPhotos` om (albumId, addedAt) te vinden — beperk tot albums in deze membership's groep
-2. Group by albumId, take `max(addedAt)` per album
-3. Voor elke (user, album) met seen photos: insert `albumLastSeen` record met die max addedAt
-4. Geen seen photos in album → geen record (fallback regelt het: `max(album.createdAt, membership.joinedAt)`)
+Oude AWS state heeft een `seenPics` array per membership (per user × group). Die array is een **wachtrij van ongelezen foto's**, geen historie van gelezen foto's:
 
-Lossy edge case: als user album-photo A (oudste addedAt) en C (nieuwste) zag maar B (midden) oversloeg, wordt B nu "seen" omdat C's addedAt de cutoff is. In de praktijk niet relevant: oude app-logica bumped seenPics chronologisch (zien van later impliceert zien van eerder), dus deze case komt niet voor.
+- Bij elke nieuwe albumfoto komt er een entry `{ albumId, photoId }` bij voor álle groepsleden behalve de eigenaar.
+- Een entry **zonder** `seenDate` is ongelezen.
+- Een entry **met** `seenDate` is één dag geleden getoond en wordt daarna opgeruimd.
+
+Algoritme (per membership, per album):
+1. Verzamel de `seenPics`-entries voor dat album **zonder** `seenDate`, waarvan het bijbehorende `albumPhotos`-record nog bestaat. Dat is de ongelezen-set.
+2. Ongelezen-set niet leeg → `lastSeenAt` = de **kleinste** `addedAt` binnen die set, **min 1 ms**. De `-1 ms` is nodig omdat de query strict `>` gebruikt: zonder die correctie valt de oudste ongelezen foto zelf buiten de telling.
+3. Album heeft wel albumfoto's maar een lege ongelezen-set → `lastSeenAt` = de **grootste** `addedAt` in dat album. Alles is gelezen.
+4. Album heeft geen albumfoto's → geen record; de fallback `max(album.createdAt, membership.joinedAt)` regelt het.
+
+Entries die verwijzen naar een album buiten de groep van de membership, naar een verwijderd album of naar een verwijderde foto: overslaan en tellen in het transform-rapport.
+
+**Richtings-invariant.** De afleiding mag fout gaan richting *te veel ongelezen*, nooit richting *ten onrechte gelezen*. Een badge die één keer te veel staat is een schoonheidsfoutje; een foto die de user nooit te zien krijgt is verlies. Dit vangt ook de dag-granulariteit van de brondata op — `createdAt` is een `YYYY-MM-DD`-string, dus alle foto's van dezelfde dag delen één `addedAt`. Staan een gelezen en een ongelezen foto op dezelfde dag, dan worden ze allebei ongelezen.
 
 ### Photo flagging (inappropriate content)
 
