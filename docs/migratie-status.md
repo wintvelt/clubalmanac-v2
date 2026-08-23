@@ -5,7 +5,7 @@ Status-overzicht van de AWS → Convex migratie. WP's updaten dit doc bij elke c
 **Huidige stand 2026-08-23**:
 - Fase 1 (project setup) ✅ afgerond
 - Fase 2 (backend) ✅ **AFGEROND** — alle domein- + cron-werk + monitoring + deferred integration-tests klaar (WP11 net dicht)
-- Fase 3 (data migratie tooling) — **gestart** 2026-08-23, spec in [WP12](./work-packages/WP12-data-migratie-tooling.md)
+- Fase 3 (data migratie tooling) — **tooling klaar** 2026-08-23 via [WP12](./work-packages/WP12-data-migratie-tooling.md) (vier audit-rondes, drie fix-cycli, 764 tests groen). Resteert: pre-flight §0, de 3 chosen users kiezen, en de dev-seed draaien.
 - Fase 4 (clients) + fase 5 (cutover-prep: prod-env-vars + prod-Gates-herhaling) — open
 
 **Volgende fase**: fase 3 loopt (WP12).
@@ -72,20 +72,22 @@ Backend is client-agnostisch. Zelfde queries/mutations werken straks voor zowel 
 
 ## Fase 3: Data migratie tooling + dev seed — open
 
-Uitgewerkt in **[WP12](./work-packages/WP12-data-migratie-tooling.md)** (draft-spec 2026-08-23). Mechanisme = API-import: het script schrijft via internal Convex-mutations en storage-uploads, Convex mint `_id` en `_storage`. De route via een zelfgebouwde snapshot-zip is getest en afgewezen — `convex import` weigert een zelf-gemunte `_id`. Acht commando's: `extract` / `inspect` / `transform` / `load-files` / `load-records` / `verify` / `prune-storage` / `reset`. De splitsing tussen bestanden en records is nodig omdat de uploadlijn <20 Mbit/s haalt: bestanden gaan op T-2 weken omhoog, records op T-0. Scope van WP12 = tooling + gedraaide dev-seed; de prod-run blijft fase 5, T-0.
+Uitgewerkt in **[WP12](./work-packages/WP12-data-migratie-tooling.md)** (afgerond 2026-08-23, tooling geleverd). Mechanisme = API-import: het script schrijft via internal Convex-mutations en storage-uploads, Convex mint `_id` en `_storage`. De route via een zelfgebouwde snapshot-zip is getest en afgewezen — `convex import` weigert een zelf-gemunte `_id`. Acht commando's: `extract` / `inspect` / `transform` / `load-files` / `load-records` / `verify` / `prune-storage` / `reset`. De splitsing tussen bestanden en records is nodig omdat de uploadlijn <20 Mbit/s haalt: bestanden gaan op T-2 weken omhoog, records op T-0. Scope van WP12 = tooling + gedraaide dev-seed; de prod-run blijft fase 5, T-0.
 
 Bouw migratie-tooling die zowel dev (subset) als prod (volledig) kan vullen. Eén script, twee config-modes. Dev wordt nu gevuld; prod gebeurt pas op cutover-dag (zie fase 5).
 
-- [ ] DynamoDB full table scan → JSON export (snapshot)
-- [ ] Transformatie script: DynamoDB records → Convex documents per table, met filter-config voor dev (zie [§Dev seed strategie in migratie-plan-convex.md](./migratie-plan-convex.md#dev-seed-strategie)) vs prod (alles)
-- [ ] Cognito sub → Clerk ID mapping mechanisme:
+- [x] DynamoDB full table scan → JSON export (snapshot)
+- [x] Transformatie script: DynamoDB records → Convex documents per table, met filter-config voor dev (zie [§Dev seed strategie in migratie-plan-convex.md](./migratie-plan-convex.md#dev-seed-strategie)) vs prod (alles)
+- [x] Cognito sub → Clerk ID mapping mechanisme:
    - Dev: 3 chosen Cognito subs handmatig naar Clerk dev IDs in script config
    - Prod: **pre-create via Clerk Invitations API** (regie-keuze 2026-06-21). Vóór T-0 worden alle 20 prod-users via Clerk's API aangemaakt met hun bestaande emails — Clerk-IDs zijn dan bekend voor data-import (email→Clerk-ID lookup). Data-import schrijft alle `userId`-FKs direct met de echte Clerk-IDs — geen placeholders, geen lazy-rewrite, geen schema-impact. Alternatief (lazy-rewrite post-cutover) afgewezen wegens schema-impact (placeholder-strings op alle FKs) + halfgemigreerde-state-risico + WP10-monitoring-noise. Zie fase 5 T-2-weken stap voor de Clerk-pre-create-actie.
-- [ ] S3 → Convex file storage migratie:
+- [x] S3 → Convex file storage migratie:
    - Dev: alleen photos van de 3 chosen (~paar honderd MB, snel)
    - Prod: alle bestanden uit `blob-images` — 1601 objecten, 5,6 GB (gemeten 2026-08-23). Video's gaan niet mee, zie WP12 §Video's. Pas in fase 5.
-- [ ] Photo records updaten met storage IDs
-- [ ] **AlbumLastSeen herleiden uit seenPics:** `seenPics` is een wachtrij van **ongelezen** foto's — entry zonder `seenDate` = ongelezen. Per (user, album): ongelezen entries aanwezig → `lastSeenAt` = kleinste `addedAt` min 1 ms; alles gelezen → grootste `addedAt`; geen albumfoto's → geen record. Volledige afleiding in [`migratie-plan-convex.md` §Unread-count](./migratie-plan-convex.md#unread-count-per-album-per-user-albumlastseen).
+- [x] Photo records updaten met storage IDs
+- [x] **AlbumLastSeen herleiden uit seenPics:** `seenPics` is een wachtrij van **ongelezen** foto's — entry zonder `seenDate` = ongelezen. Per (user, album): ongelezen entries aanwezig → `lastSeenAt` = kleinste `addedAt` min 1 ms; alles gelezen → grootste `addedAt`; geen albumfoto's → geen record. Volledige afleiding in [`migratie-plan-convex.md` §Unread-count](./migratie-plan-convex.md#unread-count-per-album-per-user-albumlastseen).
+- [ ] **Pre-flight §0** vóór de eerste `load-records`: git tag, `convex export`-anker, count-baseline ná `transform`, go/no-go-notitie. Zie [`runbooks/wp12-data-migratie.md`](./runbooks/wp12-data-migratie.md) §0.
+- [ ] **3 chosen users kiezen** op basis van `inspect`. Voorstel: Wouter (enige met meerdere groepen, alle founder-rollen, alle invites) plus de twee met de meeste foto's.
 - [ ] **Dev seed draaien:** filter + anonimiseer aan, push naar Convex dev
 - [ ] **Validatie dev:** counts kloppen met filter, referentiële integriteit, alle storage IDs geldig
 - [ ] **Idempotentie dev:** drop + reseed in 5 min werkt, voor schema-iteraties
