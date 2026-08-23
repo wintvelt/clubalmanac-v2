@@ -148,8 +148,17 @@ npm run migrate -- prune-storage --target prod --yes
 npm run migrate -- verify --target prod          # nu groen
 ```
 
-- `verify` drukt de volledige lijst af, geen greep van tien: je moet vóór het opruimen kunnen zien wat er weggaat.
-- `prune-storage` wist alleen objecten die aan géén enkel geladen record hangen **én** waar `convex-records.json` niet naar verwijst. Die tweede voorwaarde is de veiligheidsklep: tussen T-2 en T-0 is de deployment leeg terwijl elk bestand nog nodig is. Draai je het commando dán, dan constateert het dat de deployment niet overeenkomt met `convex-records.json` en wist het niets.
+- `verify` drukt de volledige lijst af, geen greep van tien: je moet vóór het opruimen kunnen zien wat er weggaat. Hij **adviseert** het opruimen alleen als de rij-aantallen kloppen; doen ze dat niet, dan is elk bestand nog nodig en stuurt hij je naar `load-records`. Tussen T-2 en T-0 is "storage-objecten zonder record" de normale toestand en niet iets om op te handelen.
+- `prune-storage` wist alleen objecten die aan géén enkel geladen record hangen **én** waar `convex-records.json` niet naar verwijst. Daar staan **drie afzonderlijke mechanismen** omheen — ze doen verschillend werk en zijn eerder ten onrechte als één ding beschreven (WP12 fix-cyclus 3, R3-2):
+
+  | Mechanisme | Vraag | Bij weigering |
+  |---|---|---|
+  | Toestandscontrole | beschrijft `convex-records.json` de deployment die er nú staat? | `de deployment komt niet overeen met convex-records.json`, exitcode 1 |
+  | Vloer | zou dit commando alles wissen wat er staat? Óf: nul rijen in de transform-telling? Óf: geen enkel bestand dat de records nog nodig hebben, terwijl de map vol is? | `VLOER: …`, exitcode 1 |
+  | Per-object-bescherming | verwijst `convex-records.json` nog naar dit object? | het object blijft staan; het rapport telt ze als "beschermd door convex-records.json" |
+
+  De toestandscontrole alleen is niet genoeg: hij is triviaal waar zodra beide kanten nul zijn — een `extract` tegen de verkeerde tabel of omgeving levert nul items, en op nul items slagen `transform`, `load-records` én `verify`. De vloer is dan het laatste dat nog tussen jou en 5,6 GB staat. De per-object-bescherming houdt `convex-records.json` laadbaar: `reset` (zónder `--all`) plus `load-records` moet erna nog slagen zonder `--accept-missing-files`, ook als een foto tussendoor geroteerd is en het oude bestand aan geen record meer hangt.
+- Elke weigering exit met code 1, "niets op te ruimen" met 0. Op cutover-dag lopen deze commando's in een keten: lees de uitkomst uit de exitcode, niet uit twintig regels terminal.
 - Het commando verwijdert in dezelfde beweging de bijbehorende entry's uit `storage-map.json`, zodat de map niet naar gewiste objecten wijst.
 - Gebruik hier nooit `reset --all`: dat wist de complete storage en maakt de map ongeldig — daarmee gooi je de uren upload weg die het gefaseerde ontwerp juist moest sparen.
 
@@ -162,7 +171,11 @@ Breekt `load-records` halverwege af, dan stopt hij luid met de bron-sleutel in d
 | `groep X heeft geen membership met isFounder` | `groups.createdBy` is niet af te leiden. Zet een `founderOverrides`-entry. |
 | `user X heeft geen Clerk-ID in de ID-map` | De ID-map mist een user. Geen placeholder-subject: die user zou nooit kunnen inloggen. |
 | `de doel-deployment is niet leeg` | `load-records` weigert te verdubbelen. Draai `reset`. Ook achtergebleven `uploadIdempotency`-rijen tellen mee: die staan onder WP10's FK-controle en `reset` haalt ze weg. |
-| `de deployment komt niet overeen met convex-records.json` | `prune-storage` weigert op te ruimen zolang de records niet (volledig) geladen zijn: elk bestand is dan nog nodig. Draai eerst `load-records`, daarna `verify`. |
+| `de deployment komt niet overeen met convex-records.json` | De toestandscontrole van `prune-storage`: hij weigert op te ruimen zolang de records niet (volledig) geladen zijn, want elk bestand is dan nog nodig. Draai eerst `load-records`, daarna `verify`. Exitcode 1. |
+| `VLOER: convex-records.json beschrijft nul rijen in totaal` | Het transform-resultaat is leeg — vrijwel altijd een `extract` tegen de verkeerde tabel of AWS-omgeving. Controleer `MIGRATE_DYNAMO_TABLE` en draai `extract` + `transform` opnieuw. Er is niets gewist. Exitcode 1. |
+| `VLOER: N bestand(en) in storage-map.json, en convex-records.json heeft er geen enkele van nodig` | Tegenspraak tussen de twee werkbestanden, geen opruimopdracht. Controleer of `convex-records.json` en `storage-map.json` bij dezelfde run horen. Exitcode 1. |
+| `VLOER: alle N object(en) in storage zouden weg gaan` | Dit is geen selectieve opruiming meer. Alles wissen is `reset --all` — een ander commando, een andere bedoeling. Zoek eerst uit waarom er niets meer verwezen wordt. Exitcode 1. |
+| `verify`: `Nog niet opruimen: de rij-aantallen kloppen niet` | Normale toestand tussen T-2 en T-0: de bestanden staan er, de records nog niet. Niet opruimen; draai `load-records` en daarna opnieuw `verify`. |
 | `storage-map.json bestaat niet` | `load-files` is niet (af)gedraaid. `load-records` weigert; "nul bestanden bekend, dus nul foto's" is geen geldige conclusie. |
 | `N van de M verwezen bestand(en) staan niet in storage-map.json` | De gate vóór de eerste schrijf. Draai `load-files` (opnieuw) af — hij hervat waar hij gebleven was. Staan de bestanden aantoonbaar niet in S3, dan pas `--accept-missing-files`. |
 | `N bestand(en) ... staan niet in de bucket` | Records verwijzen naar een verdwenen S3-object. Bekijk `scripts/.data/missing-files.json`; met `--accept-missing-files` slaat `load-records` die foto's over, benoemt ze per bron-sleutel, en `verify` meldt het verschil daarna als bevinding. |

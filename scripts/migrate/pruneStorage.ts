@@ -8,17 +8,42 @@
 // `reset --all` maakt de storage-map bovendien ongeldig — daarmee verdwijnen
 // precies de uren upload die het gefaseerde ontwerp moest sparen.
 //
-// "Niemand nodig" heeft twee voorwaarden, en de tweede is de veiligheidsklep:
+// "Niemand nodig" heeft twee voorwaarden:
 //
 //   1. Geen enkel geladen record verwijst ernaar (de storage-inventaris van de
 //      deployment).
 //   2. De huidige `convex-records.json` verwijst er niet naar (via de sleutels
-//      in `storage-map.json`).
+//      in `storage-map.json`) — de per-object-bescherming.
 //
-// Zonder die tweede zou dit commando tussen T-2 en T-0 — deployment leeg,
-// bestanden er al — precies alles wissen. Dat is de duurste denkbare fout in dit
-// werkpakket, en daarom weigert het commando ook zonder `convex-records.json`:
-// zonder die lijst is elke opruiming een gok.
+// Daar staan twee andere mechanismen náást, en het zijn er dus drie, niet één
+// (WP12 fix-cyclus 3, R3-2 — de tekst beloofde één ding en de code beschermde
+// via een ander):
+//
+//   * de **toestandscontrole**: beschrijft `convex-records.json` de deployment
+//     die er nú staat? Kloppen de rij-aantallen niet, dan zijn de records niet
+//     (volledig) geladen en is elk bestand nog nodig. Dat is geen voorwaarde
+//     per object maar een uitspraak over het hele commando.
+//   * de **vloer** (R3-1): `prune-storage` wist nooit alles. De toestand-
+//     controle is namelijk triviaal waar zodra beide kanten nul zijn — een
+//     `extract` tegen de verkeerde DynamoDB-tabel (het is een env-var, en er
+//     bestaat een tweede AWS-omgeving die we bewust negeren) levert nul items,
+//     en op nul items slagen `transform`, `load-records` én `verify`. De vloer
+//     is het laatste dat dan nog tussen de operator en 5,6 GB staat, dus hangt
+//     hij niet van diezelfde vergelijking af. Alles wissen heet `reset --all`:
+//     een ander commando, een andere bedoeling.
+//
+// De per-object-bescherming heeft daarmee zijn eigen, aflezende betekenis: de
+// huidige `convex-records.json` blijft na een opruiming laadbaar. `reset`
+// (zonder `--all`) plus `load-records` moet erna nog kunnen slagen zonder
+// `--accept-missing-files`. Die tak is bereikbaar zodra de app draait: een
+// rotatie (WP8) schrijft een nieuw object en laat het oude achter, dus het oude
+// hangt aan geen record meer terwijl de rij-aantallen ongewijzigd blijven.
+//
+// Het commando weigert ook zonder `convex-records.json`: zonder die lijst is
+// elke opruiming een gok. Elke weigering eindigt met een niet-nul exitcode
+// (R3-5) — op cutover-dag lopen deze commando's in een keten en leest de
+// operator de uitkomst uit de exitcode, niet uit twintig regels terminal.
+// "Niets te doen" is wél succes.
 //
 // Daar bovenop de knop-discipline van `reset`: expliciete `--yes`, en tegen prod
 // de MIGRATE_ALLOW_PROD-gate uit convexAdmin.ts.
@@ -56,7 +81,39 @@ export async function pruneStorage(target: Target, confirmed: boolean): Promise<
 
   console.log(`[prune-storage] doel: ${target} (${admin.url})`);
 
-  // ── veiligheidsklep: staat de deployment die de records beschrijven er? ──
+  // ── de per-object-bescherming: wat heeft convex-records.json nog nodig? ──
+  // Puur uit de twee bestanden, zonder de deployment: dit is de lijst die de
+  // terugvalroute van de operator (`reset` + `load-records`) overeind houdt.
+  const mapSize = Object.keys(storageMap.files).length;
+  const needed = new Set<string>();
+  for (const key of referencedStorageKeys(recordsFile)) {
+    const entry = storageMap.files[key];
+    if (entry !== undefined) needed.add(entry.storageId);
+  }
+
+  // ── vloer, deel 1 + 2: de twee toestanden die je uit de bestanden ziet ──
+  // Bewust vóór de toestandscontrole: in precies deze toestanden is die
+  // vergelijking triviaal waar, dus mag de bescherming er niet achter zitten.
+  const plannedRows = Object.values(recordsFile.meta.counts).reduce((sum, n) => sum + n, 0);
+  if (plannedRows === 0) {
+    console.log(
+      `[prune-storage] VLOER: convex-records.json beschrijft nul rijen in totaal. Dat is geen ` +
+        `opruimopdracht maar een leeg transform-resultaat — vrijwel altijd een 'extract' tegen ` +
+        `de verkeerde tabel of omgeving. Er wordt niets gewist en ${STORAGE_MAP_FILE} blijft ` +
+        `zoals hij is. Controleer MIGRATE_DYNAMO_TABLE en draai 'extract' + 'transform' opnieuw.`,
+    );
+    return 1;
+  }
+  if (needed.size === 0 && mapSize > 0) {
+    console.log(
+      `[prune-storage] VLOER: ${mapSize} bestand(en) in ${STORAGE_MAP_FILE}, en convex-records.json ` +
+        `heeft er geen enkele van nodig. Dat is een tegenspraak, geen opruimopdracht, en die los ` +
+        `je niet op door de complete upload weg te gooien. Er wordt niets gewist.`,
+    );
+    return 1;
+  }
+
+  // ── toestandscontrole: staat de deployment die de records beschrijven er? ──
   // Tussen T-2 en T-0 is de deployment leeg terwijl élk bestand nog nodig is.
   // Een opruiming die dan draait, ziet alles als wees. De verwachting komt uit
   // `meta.counts` — de eerdere, onafhankelijke laag, net als bij `verify`.
@@ -76,7 +133,7 @@ export async function pruneStorage(target: Target, confirmed: boolean): Promise<
         `is elk bestand nog nodig — dat is precies de situatie tussen T-2 en T-0. ` +
         `Draai eerst 'load-records' en daarna 'verify'.`,
     );
-    return 0;
+    return 1;
   }
 
   // ── voorwaarde 1: hangt er een geladen record aan? ──────────────────
@@ -84,23 +141,33 @@ export async function pruneStorage(target: Target, confirmed: boolean): Promise<
     sampleSize: FULL_LIST,
   });
 
-  // ── voorwaarde 2: verwijst convex-records.json ernaar? ──────────────
-  const needed = new Set<string>();
-  for (const key of referencedStorageKeys(recordsFile)) {
-    const entry = storageMap.files[key];
-    if (entry !== undefined) needed.add(entry.storageId);
-  }
-
+  // Voorwaarde 2 is `needed` hierboven. Wat daardoor blijft staan wordt geteld
+  // en gemeld: een bescherming die nooit iets meldt is niet te onderscheiden
+  // van een bescherming die er niet is — precies hoe R3-2 ontstond.
   const doomed = inventory.orphanSample.filter((id) => !needed.has(id));
-  const spared = inventory.orphanCount - doomed.length;
+  const spared = inventory.orphanSample.length - doomed.length;
   console.log(
     `[prune-storage] ${inventory.storageObjects} object(en) in storage, ` +
       `${inventory.orphanCount} zonder record` +
-      (spared > 0 ? `, waarvan ${spared} beschermd door convex-records.json` : ``),
+      (spared > 0
+        ? `, waarvan ${spared} beschermd door convex-records.json (die blijven staan, zodat ` +
+          `'reset' + 'load-records' erna nog slaagt)`
+        : ``),
   );
   if (doomed.length === 0) {
     console.log(`[prune-storage] niets op te ruimen.`);
     return 0;
+  }
+
+  // ── vloer, deel 3: dit is geen opruiming meer maar een leegmaak-actie ──
+  if (doomed.length === inventory.storageObjects) {
+    console.log(
+      `[prune-storage] VLOER: alle ${inventory.storageObjects} object(en) in storage zouden weg ` +
+        `gaan. Wat er ook misging — dit is geen selectieve opruiming meer. Alles wissen is ` +
+        `'reset --all': een ander commando, een andere bedoeling, een andere bevestiging. ` +
+        `Er wordt niets gewist en ${STORAGE_MAP_FILE} blijft zoals hij is.`,
+    );
+    return 1;
   }
 
   for (const id of doomed) console.log(`[prune-storage]   wist ${id}`);

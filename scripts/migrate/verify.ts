@@ -77,11 +77,19 @@ export async function verify(target: Target): Promise<number> {
       (table) => !(TABLE_ORDER as readonly string[]).includes(table),
     ),
   ];
+  // Apart bijgehouden, want er hangt een handelingsadvies aan (WP12 fix-cyclus
+  // 3, R3-4): een advies gaat over de toestand die `verify` zélf heeft
+  // vastgesteld, en volgt nooit uit één deel-bevinding terwijl een ander deel
+  // rood is.
+  let countProblems = 0;
   for (const table of countedTables) {
     const expected = recordsFile.meta.counts[table] ?? 0;
     const actual = counts.tables[table] ?? 0;
     const ok = expected === actual;
-    if (!ok) problems += 1;
+    if (!ok) {
+      problems += 1;
+      countProblems += 1;
+    }
     console.log(
       `  ${ok ? "ok " : "FOUT"} ${table.padEnd(16)} verwacht ${expected}, gevonden ${actual}` +
         (ok ? "" : explain),
@@ -114,10 +122,22 @@ export async function verify(target: Target): Promise<number> {
         `— dit is precies wat WP10 dagelijks zou melden:`,
     );
     for (const id of inventory.orphanSample) console.log(`    - ${id}`);
-    console.log(
-      `  Ruim ze op met 'prune-storage --target ${target} --yes'; dat wist exact deze objecten ` +
-        `en laat de bestanden staan waar convex-records.json nog naar verwijst.`,
-    );
+    // Het advies volgt alleen uit een controle die klopt. Tussen T-2 en T-0 is
+    // "storage-objecten zonder record" de normale toestand — de bestanden staan
+    // er, de records nog niet — en wie dán gaat opruimen gooit de complete
+    // upload weg. Dat is de route naar de blocker uit fix-cyclus 3 (R3-1).
+    if (countProblems === 0) {
+      console.log(
+        `  Ruim ze op met 'prune-storage --target ${target} --yes'; dat wist exact deze objecten ` +
+          `en laat de bestanden staan waar convex-records.json nog naar verwijst.`,
+      );
+    } else {
+      console.log(
+        `  Nog niet opruimen: de rij-aantallen kloppen niet, dus elk bestand is nog nodig — ` +
+          `dat is de normale toestand tussen T-2 en T-0. Draai eerst 'load-records' en ` +
+          `daarna opnieuw 'verify'.`,
+      );
+    }
   }
 
   // ── 3. WP10-integriteitsscan ────────────────────────────────────────
