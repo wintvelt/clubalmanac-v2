@@ -149,13 +149,14 @@ Gevolgen elders: fase 4 moet ze in de nieuwe app weer tonen (de verwijzing zit i
 
 ### Bestanden en records
 
-- **`load-files` is record-gedreven, nooit bucket-gedreven.** De set is exact `photos.url` ∪ `users.photoUrl` uit de getransformeerde records. Een bucket-listing zou wezen, `iscopy`-objecten en mail-assets meenemen en vanaf dag één WP10-drift produceren.
+- **`load-files` is record-gedreven, nooit bucket-gedreven.** De set is exact `storageKey` ∪ `profilePhotoStorageKey` uit de getransformeerde records. Een bucket-listing zou wezen, `iscopy`-objecten en mail-assets meenemen en vanaf dag één WP10-drift produceren.
 - **Bestanden worden nooit twee keer geüpload.** `storage-map.json` houdt S3-sleutel → `_storage`-id bij; opnieuw draaien hervat waar het gebleven was.
 - **Twee bestanden met dezelfde S3-sleutel worden één storage-object.** De standaard-profielfoto's zijn gedeeld; de relatie record ↔ object is niet 1:1 en `verify` mag daar niet van uitgaan.
 - **Een ontbrekend bestand is nooit een stille aftrekpost.** `load-records` begint niet aan zijn eerste schrijf zolang niet vaststaat dat elke storage-sleutel waar een record naar verwijst een bestand in de map heeft. "Nul bestanden bekend, dus nul foto's te laden" is nooit een geldige conclusie.
 - **`load-files` mag een ontbrekende map wél als eerste run lezen, `load-records` niet.** Het verschil zit in de stap, niet in het bestand.
 - **De gate hangt niet af van een artefact dat pas aan het eind van de vorige stap geschreven wordt.** Een halverwege afgebroken `load-files` is juist het scenario waarin hij moet werken.
 - **De accept-vlag is een bevestiging van verlies, geen draai-voorwaarde.** Het verlies wordt geteld, benoemd met bron-sleutel, en komt terug in `verify`.
+- **Aflezing aan de resultaatkant.** Na een geslaagde `load-records` heeft élke user die in de records een profielfoto-sleutel droeg ook een profielfoto in de deployment. Zonder die controle is verlies alleen aan de gate af te lezen en niet aan het resultaat — en een gate is nu net het ding waarvan we niet meer aannemen dat hij dekt wat hij zegt te dekken.
 
 ### Controle
 
@@ -178,6 +179,7 @@ Gevolgen elders: fase 4 moet ze in de nieuwe app weer tonen (de verwijzing zit i
 - **Drie mechanismen, apart benoemd**: de toestandscontrole (beschrijft `convex-records.json` de deployment die er nu staat?), de vloer, en de per-object-bescherming. Spec, code en runbook noemen ze apart, want het zijn er drie.
 - **Wat gespaard wordt, wordt geteld en gemeld.** Een bescherming die nooit iets meldt is niet te onderscheiden van een die er niet is.
 - **Na afloop klopt de storage-map met de werkelijkheid.** Geen entry wijst naar een gewist object.
+- **`prune-storage` weigert zonder expliciete bevestiging en zonder `convex-records.json`.** Zonder dat bestand is elke opruiming een gok.
 - **Een weigering exit niet als succes.** Elke tak waarin een commando weigert eindigt niet-nul. "Niets te doen" is wél succes.
 - **Verkeerde deployment.** Tweede laag die weigert naar prod te schrijven tenzij expliciet aangezet, hetzelfde patroon als `tests/integration/_helpers/safety.ts`.
 
@@ -311,6 +313,10 @@ Bewust doorgeschoven, geen cutover-blocker:
 - `missing-files.json` veroudert stil — het duidt alleen, het is nooit een gate.
 - De prod-gate op `prune-storage` en `reset` is ongetest; hoort bij de empirische afdekking van de eerste prod-run.
 - Het schema-commentaar bij `ratings.value` ("bv. 1..5") past niet bij de werkelijke feature (like, 0/1).
+- Het invite-token is `mig{FNV-1a(email#oude-groupId)}` — een publiek herrekenbare functie van PII, terwijl `invites.getByToken` een publieke, niet-geauthenticeerde query is die email en groep teruggeeft. Niet exploiteerbaar zonder de oude groupId (die staat nergens in de nieuwe app) en `accept` bindt bovendien op email. Een random token past beter bij het besluit "tokens vernieuwen".
+- Een photo-rij zonder `storageKey` glipt langs de dekkingsgate en wordt daarna wél gedropt, met een waarschuwing die naar een niet-gezette vlag verwijst. Kan vandaag niet ontstaan — de transform slaat zo'n foto al over.
+- `FULL_LIST` staat twee keer, in `verify.ts` en `pruneStorage.ts`.
+- `restoreMocks: true` in `vitest.config.ts` zou de console-afbakening volgorde-onafhankelijk en repo-breed maken, in plaats van per testbestand.
 
 ## Cross-refs
 
@@ -319,4 +325,4 @@ Bewust doorgeschoven, geen cutover-blocker:
 - cascade-matrix: AP1/AP2 voor de `seenPics`-afleiding
 - `internal.monitoring.integrityCheck` (WP10) wordt hergebruikt door `verify`
 - oude AWS-code (alleen A leest): `blob-images-api*`
-- Historie van drie audit-rondes en drie fix-cycli: git-log en [`audit-track-record.md`](../conventions/audit-track-record.md)
+- Historie van vier audit-rondes en drie fix-cycli: git-log; samenvatting bij closeout in [`audit-track-record.md`](../conventions/audit-track-record.md)

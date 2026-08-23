@@ -52,7 +52,7 @@ Cognito met invite-only signup (pre-signup Lambda checkt invite in DB), custom e
 - **Webapp** (legacy): fallback voor Android-users die door corporate restricties geen apps kunnen installeren. Zelfde AWS backend.
 
 ### Schaal
-20 users, 6 groepen, 17 albums, ~1544 foto's (~5,3 GB), 1524 album-koppelingen, 3 openstaande invites, en 12 likes in totaal. Plus 10 video's (~19 GB) in een aparte bucket `blob-videos` — die gaan niet mee naar Convex, zie [`work-packages/WP12-data-migratie-tooling.md`](./work-packages/WP12-data-migratie-tooling.md) §Video's. Laag/casual gebruik. AWS kost ~$10/maand.
+20 users, 6 groepen, 17 albums, ~1544 foto's (bucket `blob-images`: 1601 objecten, 5,6 GB), 1524 album-koppelingen, 3 openstaande invites, en 12 likes in totaal. Plus 10 video's (~19 GB) in een aparte bucket `blob-videos` — die gaan niet mee naar Convex, zie [`work-packages/WP12-data-migratie-tooling.md`](./work-packages/WP12-data-migratie-tooling.md) §Video's. Laag/casual gebruik. AWS kost ~$10/maand.
 
 Deze cijfers komen uit `npm run migrate -- inspect` op de productie-tabel, 2026-08-23. Het plan ging tot dan uit van 16 users en 6 video's van 3 GB; beide klopten niet.
 

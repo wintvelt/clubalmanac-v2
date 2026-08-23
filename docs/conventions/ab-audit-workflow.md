@@ -59,6 +59,8 @@ Mitigatie: de verwachting komt uit een eerdere, onafhankelijke laag — het arte
 
 Audit moet dit checken met een geïnjecteerde regressie: haal één blok uit de gedeelde functie en kijk of er iets omvalt. Blijft alles groen, dan valideert de controle zichzelf.
 
+**Vaste auditstap:** elke nieuw toegevoegde bescherming krijgt één mutatie-check vóór de merge — zet hem uit en kijk of er iets omvalt. In WP12 werden vier bevindingen op rij zo gevonden, en geen ervan was uit lezen alleen zichtbaar: de code klopte telkens, alleen hield niets hem vast.
+
 Geboren uit WP12-audit, twee instanties binnen één werkpakket. Cyclus 1: `verify` leidde zijn verwachting af met dezelfde `applyStorageMap` die `load-records` gebruikte, waardoor stil verlies van álle foto's een groene uitslag gaf. Cyclus 2: na die fix deelden de dekkings-gate én de fixture die hem testte `referencedStorageKeys`, waardoor het weglaten van het profielfoto-blok twee foto's liet verdwijnen met 103 tests groen.
 
 ## Waarom
