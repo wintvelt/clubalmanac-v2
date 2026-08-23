@@ -172,7 +172,7 @@ Simpelste setup. Serving via signed URLs direct vanuit Convex. Prima startpunt, 
 Files in Cloudflare R2, metadata in Convex. Voordelen:
 - **Nul egress kosten** (de grootste Convex kostenpost verdwijnt)
 - Cloudflare edge network = snellere delivery wereldwijd
-- R2 free tier: 10 GB storage + 10M reads/maand gratis. Jouw 8.3 GB valt daar volledig binnen → **$0/maand voor file storage en bandwidth**
+- R2 free tier: 10 GB storage + 10M reads/maand gratis. Jouw 5.6 GB valt daar volledig binnen → **$0/maand voor file storage en bandwidth**
 - Switch is relatief makkelijk: alleen storage layer verandert, Convex queries/mutations blijven gelijk
 
 Aanbeveling: start met A, switch naar B als performance of kosten een issue worden.
@@ -808,7 +808,7 @@ EU (Dublin) beschikbaar op alle plans. Free plan included resources gelden allee
 | Action compute | ~0.1 GB-hr | $0.43/GB-hr | $0.04 |
 | DB storage | ~10 MB | $0.29/GB/mo | $0.00 |
 | DB bandwidth | ~200 MB | $0.29/GB | $0.06 |
-| File storage | 8.3 GB | $0.04/GB/mo | $0.32 |
+| File storage | 5.6 GB | $0.04/GB/mo | $0.32 |
 | File bandwidth | 5-20 GB | $0.43/GB | $2.15 - $8.58 |
 | **Totaal** | | | **$2.71 - $9.15** |
 

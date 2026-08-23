@@ -84,13 +84,13 @@ npm run migrate -- verify --target dev
 
 ## Run 2 — prod (fase 5)
 
-De uploadlijn haalt minder dan 20 Mbit/s. 8,3 GB past daarmee niet in een cutover-venster, dus de run is gesplitst. Fotobestanden zijn onveranderlijk: eenmaal geüpload verandert er niets meer.
+De uploadlijn haalt minder dan 20 Mbit/s. 5,6 GB past daarmee niet in een cutover-venster, dus de run is gesplitst. Fotobestanden zijn onveranderlijk: eenmaal geüpload verandert er niets meer.
 
 De video's blijven buiten deze migratie: ze staan in een eigen bucket (`blob-videos`), hebben geen DynamoDB-record, en gaan pas mee bij de latere R2-overstap (WP12 §Video's — buiten scope). `load-files` is record-gedreven en raakt die bucket dus vanzelf niet aan — er is geen extra stap of uitzondering voor nodig.
 
 ### T-2 weken
 
-- [ ] `integrityCheck`-cron op prod uitzetten. Tussen T-2 en T-0 staat er 8,3 GB storage met nul records; de dagelijkse check zou twee weken lang 1650+ storage-orphans melden. Weer aanzetten na een groene `verify` op T-0.
+- [ ] `integrityCheck`-cron op prod uitzetten. Tussen T-2 en T-0 staat er 5,6 GB storage met nul records; de dagelijkse check zou twee weken lang 1600+ storage-orphans melden. Weer aanzetten na een groene `verify` op T-0.
 - [ ] Clerk-pre-create is gedaan en `prod-config.json` is gevuld.
 - [ ] `npx convex export --prod --path ./backups/wp12-prod-t2.zip` als anker vóór de eerste schrijf-actie, plus een tweede kopie via het dashboard ([`data-migration-preflight.md`](../conventions/data-migration-preflight.md)). `backups/` is gitignored.
 
@@ -101,7 +101,7 @@ npm run migrate -- transform --target prod
 npm run migrate -- load-files --target prod    # uren; hervatbaar
 ```
 
-`load-files` rapporteert de gehaalde doorvoer in MB/s en een schatting voor 8,3 GB. Breekt de run af: gewoon opnieuw starten — wat in `storage-map.json` staat wordt overgeslagen.
+`load-files` rapporteert de gehaalde doorvoer in MB/s en een schatting voor 5,6 GB. Breekt de run af: gewoon opnieuw starten — wat in `storage-map.json` staat wordt overgeslagen.
 
 
 ### T-0

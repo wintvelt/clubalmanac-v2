@@ -85,13 +85,13 @@ Stap 7 is een aparte pass omdat groups en albums vooruit verwijzen naar photos, 
 | Anonimisatie | namen → herkenbare dev-namen, emails → `dev-{n}@clubalmanac.test` | uit |
 | User-ID-map | 3 Cognito-subs → 3 handmatig aangemaakte Clerk-dev-ID's | email → Clerk-prod-ID (vooraf aangemaakt op T-2 weken via de Invitations API) |
 | Doel | dev-deployment | prod-deployment |
-| Omvang storage | enkele honderden MB | ~8,3 GB |
+| Omvang storage | enkele honderden MB | ~5,6 GB |
 
 Filterregels per entiteit staan in [`migratie-plan-convex.md` §Dev seed strategie](../migratie-plan-convex.md#dev-seed-strategie) en worden daar niet gedupliceerd.
 
 ## Gefaseerde prod-run
 
-De uploadverbinding waarop de prod-run draait haalt minder dan 20 Mbit/s omhoog. 8,3 GB is dan ruim een uur pure zendtijd, en met de overhead per bestand over 1650+ objecten zijn enkele uren realistisch. Dat past niet in een cutover-venster.
+De uploadverbinding waarop de prod-run draait haalt minder dan 20 Mbit/s omhoog. De bucket `blob-images` bevat 1601 objecten van samen 5,6 GB (gemeten met `aws s3 ls --summarize`, 2026-08-23). Dat is ruim drie kwartier pure zendtijd, en met de overhead per bestand over 1601 objecten loopt dat naar ruim een uur. Te veel voor een cutover-venster.
 
 Foto- en videobestanden zijn onveranderlijk: eenmaal geüpload verandert er niets meer aan. Daarom wordt de prod-run gesplitst.
 
@@ -162,7 +162,7 @@ Bewust geaccepteerd door Wouter op 2026-08-23, met die einddatum als voorwaarde.
 ## Risico-assessment
 
 - **security/privacy**: **hoog** — productie-PII van 16 mensen komt op een laptop te staan: namen, emails, foto's, locatiegegevens. Mitigatie: alles onder één gitignored map, anonimisatie in de transform en niet erna, synthetische testfixtures, en een expliciete opruim-instructie in de runbook.
-- **ops**: **hoog** — de uploadlijn haalt minder dan 20 Mbit/s, waardoor 8,3 GB niet binnen een cutover-venster past. Het gefaseerde ontwerp (bestanden op T-2, records op T-0) is daarmee geen optimalisatie maar een harde eis, en `load-files` moet hervatbaar zijn. Zie §Gefaseerde prod-run.
+- **ops**: **hoog** — de uploadlijn haalt minder dan 20 Mbit/s, waardoor 5,6 GB niet binnen een cutover-venster past. Het gefaseerde ontwerp (bestanden op T-2, records op T-0) is daarmee geen optimalisatie maar een harde eis, en `load-files` moet hervatbaar zijn. Zie §Gefaseerde prod-run.
 - **external deps**: **medium** — nieuwe AWS-SDK-dependencies. De onbevestigde Convex-limiet op bestandsgrootte is vervallen als risico nu de video's buiten scope zijn; de grootste resterende bestanden zijn gewone foto's.
 - **multi-user/concurrency**: **laag** — één operator, geen gelijktijdig verkeer op de doel-deployment.
 - **data/schema-evolutie**: **hoog** — dit ís de cutover-batch. Pre-flight per [`data-migration-preflight.md`](../conventions/data-migration-preflight.md) is verplicht vóór de eerste regel implementatiecode, inclusief `npx convex export` als anker.
@@ -209,6 +209,62 @@ Na A's spec-criticus-pass, tweede ronde:
 ## Omgeving
 
 AWS-bron staat in **eu-central-1** (bucket `blob-images` en de DynamoDB-tabel). Doel is Convex in eu-west-1 (Dublin). Vastgesteld door A; stond niet in het migratieplan.
+
+---
+
+## Audit-bevindingen cyclus 1 (2026-08-23)
+
+Audit gedraaid op `28d5c1d` + `f86b2c2` + `03a52db`. Suite 675 groen, typecheck clean. Drie blockers, vijf should-fixes. A schrijft hier RED tests op, B fixt daarna.
+
+### B-1 (blocker) — stil fotoverlies met een groene `verify`
+
+`readStorageMap` (`scripts/migrate/loadFiles.ts:53-56`) geeft een lege map terug als het bestand ontbreekt, zonder fout. `applyStorageMap` (`loadRecords.ts:232-238`) gooit vervolgens elke foto weg waarvan de sleutel niet in die map staat; het enige signaal is een `console.warn`. De `--accept-missing-files`-gate helpt niet, want die kijkt naar `missing-files.json` en dat wordt pas aan het eind van `load-files` geschreven — juist niet als de run halverwege afbreekt.
+
+Empirisch op A's fixture met een lege map: `photos` 5 → 0, `albumPhotos` 3 → 0, `ratings` 3 → 0, 2 covers en 3 profielfoto's gewist, alle `photoCount` op 0.
+
+`verify` ziet dit structureel niet, want die past dezelfde `applyStorageMap` toe op zijn eigen verwachting (`verify.ts:28`). Verwacht 0, gevonden 0, dus `ok`. Storage-orphans vangen het ook niet — de weggevallen foto's staan per definitie niet in storage.
+
+Fix-richting: (a) `load-records` weigert bij een ontbrekende `storage-map.json`; (b) coverage-check `referencedStorageKeys(recordsFile)` ⊆ `storageMap.files` vóór de eerste schrijf, harde fout tenzij `--accept-missing-files`; (c) `verify` neemt zijn verwachting uit `recordsFile.meta.counts` — de onafhankelijke, eerdere laag — en rapporteert elk verschil als bevinding in plaats van als aftrekpost.
+
+### B-2 (blocker) — `uploadIdempotency` valt buiten de migratie-tabellen
+
+`MIGRATION_TABLES` (`convex/migration.ts:26-38`) mist `uploadIdempotency`, terwijl WP10 er twee FK's op controleert (`convex/monitoring.ts:50` en `:68`). Gevolg: de preconditie "alle doeltabellen leeg" ziet achtergebleven rijen niet, en `reset` kan ze niet verwijderen omdat `assertMigrationTable` de naam weigert. De dev-deployment heeft aantoonbaar zulke rijen — `tests/integration/uploads/uploadRoundtrip.test.ts` schrijft ze. Na `reset` plus seed wijzen die `ownerId`'s naar verwijderde users, en meldt `integrityCheck` dagelijks dangling FK's. De acceptatie-eis "`verify` groen en geen drift" is dan niet haalbaar zonder handwerk buiten de tool om.
+
+### B-3 (blocker) — twee acceptatie-eisen zonder dekking
+
+De ID-map-unit-tests en de integration-test uit §Acceptance bestaan niet. `grep -rn "applyStorageMap\|loadRecords\|loadFiles\|migration\." tests/` geeft nul treffers. Ongetest: `loadRecords.ts`, `loadFiles.ts`, `verify.ts`, `reset.ts`, `config.ts` en `convex/migration.ts`. B-1 en B-2 waren met die tests waarschijnlijk gevonden. `toDoc` en `applyStorageMap` zijn pure, geëxporteerde functies — goedkoop te dekken. `convex/migration.ts` is met `convex-test` te dekken zoals elke andere convex-module hier. Uitstel van de *integration*-test past in het WP5/WP6/WP11-precedent, maar dan met een expliciete marker in spec én commit-message.
+
+### S-1 (should-fix) — PII lekt via `warnings`
+
+De anonimisatie-invariant eist dat in de volledige `convex-records.json` van een dev-run geen bron-naam of bron-email voorkomt. `warnings` zit in dat bestand (`runTransform.ts:33-42`), en de warn-teksten gebruiken de rauwe `inviteeKey` — die *is* een emailadres bij een invite aan iemand zonder account (`transform.ts:474-475` en `:518`). Gereproduceerd. De records zelf zijn schoon; het lek zit puur in het waarschuwingskanaal. A's scan mist het omdat die op `runDev().records` test in plaats van op het weggeschreven bestand.
+
+### S-2 (should-fix) — invite-filterregel wijkt af van het plan
+
+`migratie-plan-convex.md` §Dev seed strategie zegt "Invites: alleen tussen de 3 chosen". De implementatie leest het als: uitnodiger chosen, groep opgenomen, en een genodigde die al user is moet chosen zijn. **Geratificeerd door regie** — de planregel is onhoudbaar, want een invite aan iemand zónder account is juist het normale geval en die persoon kán geen chosen user zijn. Zonder deze lezing bevat de dev-seed nul invites. Actie: planregel bijwerken en één test die de gekozen regel pint.
+
+### S-3 (should-fix) — cijfer-drift *(afgehandeld door regie)*
+
+Opgelost door te meten in plaats van te redeneren: `aws s3 ls s3://blob-images/ --recursive --summarize` geeft 1601 objecten, 5.605.457.261 bytes = **5,6 GB**. De 8,3 GB uit het oorspronkelijke plan was het totaal inclusief video's, en die gaan niet mee. Alle documentatie staat nu op 5,6 GB. **Rest voor B:** `loadFiles.ts:154` en `:222` hebben 8,3 GB respectievelijk `8.3e9` hardcoded staan.
+
+### S-4 (should-fix) — commit-hygiëne
+
+De volledige implementatie landde in `28d5c1d`, een commit met een docs-titel over het video-besluit, samen met spec-edits die niet van B waren. Wie dit WP later reconstrueert vindt de implementatie niet terug via de commit-messages, en de rolgrens is niet uit de historie af te lezen. Geen code-actie; wel een punt voor `commit-discipline.md`.
+
+### S-5 (should-fix) — pre-flight §0 nooit uitgevoerd
+
+`data-migration-preflight.md` schrijft een 0e sub-fase voor vóór de eerste regel implementatiecode: git tag, snapshot, count-query, go/no-go. Er is geen tag en geen status-notitie. B heeft de export-ankers wel in het runbook gezet, maar dat dekt de runs, niet de verplichte voorfase. Alsnog doen vóór de eerste echte `load-records`.
+
+### Nice-to-have
+
+- `fetchFromS3` (`loadFiles.ts:188-192`) vangt alleen `NoSuchKey`/`NotFound`. Zonder `s3:ListBucket` geeft S3 op een niet-bestaande sleutel `AccessDenied`, en breekt de hele run af. Opnemen in de runbook-policy.
+- Een user met alleen een `UVvisit`-record valt hard om op `transform.ts:406` of `:412`, met een melding die de operator naar de verkeerde oorzaak stuurt. Overweeg overslaan plus rapporteren.
+- Een ontbrekende *profielfoto* valt in dezelfde gate als een echte foto, waardoor de operator `--accept-missing-files` moet zetten en daarmee ook de gate op echt fotoverlies opent. Splitsen.
+- `sourceKey` draagt de Cognito-sub ook in geanonimiseerde dev-output. Verdedigbaar, maar de spec noemt die uitzondering alleen voor storage-sleutels.
+- Typo `loadRecords.ts:75`: "Aggregates zijn hertelt" → "herteld".
+
+### Recurring pattern — self-referentiële verificatie
+
+B-1 is een herhaling van het WP10-patroon *geen recompute-vs-recompute*, één laag hoger: `verify.ts:28` en `loadRecords.ts:69` roepen dezelfde `applyStorageMap` aan, dus de controlestap kan de belangrijkste fout van de laadstap structureel niet zien. Voorstel voor `ab-audit-workflow.md`: **een verify- of check-stap mag zijn verwachting nooit afleiden met code die hij deelt met de te controleren stap — de verwachting komt uit de eerdere, onafhankelijke artefact-laag.**
 
 ---
 
@@ -369,7 +425,7 @@ Aanvullend op §Invarianten in de draft:
 - **data/schema-evolutie: hoog blijft hoog, maar om een andere reden dan de draft geeft.** De draft ziet het risico in "dit is de cutover-batch". Het echte risico is dat de brondata *semantisch* afwijkt van het doelschema op minstens zes punten (correcties 1-6), waarvan er één — `seenPics` — in het migratieplan zélf verkeerd gedocumenteerd staat. Wat hier misgaat is niet zichtbaar als een foutmelding; het is data die er correct uitziet en het niet is. Vandaar dat de transform-tests unit-tests zijn met een synthetische fixture waarin de semantiek expliciet gepind wordt.
 - **security/privacy: hoog, en breder dan de draft schat.** De draft noemt "namen, emails, foto's, locatiegegevens". Daar komt bij: **Cognito-subs** (identificerend), **gedenormaliseerde user-kopieën** verspreid over `UM`, `PO`, `GP` en `NFfeature`-records, en de **volledige inhoud van invite-berichten** (`invitation.message`, vrije tekst van de uitnodiger). De anonimisatie moet die allemaal raken, niet alleen de velden op `users`.
 - **external deps: van medium naar medium/hoog.** Naast de AWS-SDK en de onbevestigde storage-limiet: de video's van ~500 MB moeten in één keer door een Convex-upload-URL heen over een lijn van <20 Mbit/s. Dat is ruim drie minuten per bestand aan pure zendtijd bij een perfecte verbinding. Of Convex' upload-URL zo lang openblijft, is een tweede onbevestigde aanname naast de groottelimiet.
-- **ops: hoog, correct ingeschat.** Eén toevoeging: het gefaseerde scenario betekent dat er twee weken lang een prod-deployment bestaat met **8,3 GB storage en nul records**. WP10's `integrityCheck` draait daar dagelijks en meldt dan 1650+ storage-orphans, elke dag, twee weken lang. Dat moet vóór T-2 geregeld zijn — of de cron staat nog uit op prod, of de check wordt tijdelijk stilgezet. Als dat niet geregeld is, is de eerste ervaring met de monitoring op prod een stortvloed vals-positieven, en dat is precies hoe monitoring genegeerd gaat worden.
+- **ops: hoog, correct ingeschat.** Eén toevoeging: het gefaseerde scenario betekent dat er twee weken lang een prod-deployment bestaat met **5,6 GB storage en nul records**. WP10's `integrityCheck` draait daar dagelijks en meldt dan 1600+ storage-orphans, elke dag, twee weken lang. Dat moet vóór T-2 geregeld zijn — of de cron staat nog uit op prod, of de check wordt tijdelijk stilgezet. Als dat niet geregeld is, is de eerste ervaring met de monitoring op prod een stortvloed vals-positieven, en dat is precies hoe monitoring genegeerd gaat worden.
 
 ### Transform-outputcontract
 
