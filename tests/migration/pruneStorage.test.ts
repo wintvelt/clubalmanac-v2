@@ -1,4 +1,5 @@
-// WP12 fix-cyclus 2 (R2-5) — RED tests op de orphan-route tussen T-2 en T-0.
+// WP12 fix-cyclus 2 (R2-5) + fix-cyclus 3 (R3-1, R3-2, R3-5) — tests op de
+// orphan-route tussen T-2 en T-0.
 //
 // Het gefaseerde ontwerp zet de bestanden twee weken vóór de cutover in
 // Convex-storage. Wordt in die twee weken een foto in de oude app verwijderd,
@@ -10,8 +11,17 @@
 // De gevaarlijkste kant van deze opruiming zit in de andere richting. Tussen
 // T-2 en T-0 staat de deployment leeg terwijl élk bestand nog nodig is; een
 // opruiming die alleen "hangt er een record aan?" vraagt, wist daar in één keer
-// alles. Vandaar twee voorwaarden: geen geladen record én geen verwijzing uit
-// de huidige `convex-records.json`.
+// alles.
+//
+// Fix-cyclus 3 (R3-1/R3-2) heeft de bescherming uit elkaar getrokken, omdat de
+// tekst één ding beloofde en de code via een ander mechanisme beschermde. Het
+// zijn er drie, en ze staan hieronder alle drie apart gepind:
+//   1. de toestandscontrole — beschrijft `convex-records.json` de deployment
+//      die er nu staat?
+//   2. de vloer — `prune-storage` wist nooit alles, ongeacht wat die
+//      vergelijking zegt; in de nul-toestand is ze namelijk triviaal waar;
+//   3. de per-object-bescherming — wat de huidige `convex-records.json` nog
+//      nodig heeft blijft staan, zodat dat bestand laadbaar blijft.
 
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import type { FakeDeployment } from "./_harness";
@@ -23,6 +33,7 @@ import {
 } from "./_harness";
 import type { RecordsFile } from "../../scripts/migrate/runTransform";
 import type { StorageMapFile } from "../../scripts/migrate/loadFiles";
+import { TABLE_ORDER, type Records, type Row } from "../../scripts/migrate/types";
 
 const h = vi.hoisted(() => ({
   deployment: null as any,
@@ -57,6 +68,7 @@ vi.mock("../../scripts/migrate/paths.ts", () => ({
 const { pruneStorage } = await import("../../scripts/migrate/pruneStorage.ts");
 const { loadRecords } = await import("../../scripts/migrate/loadRecords.ts");
 const { verify } = await import("../../scripts/migrate/verify.ts");
+const { reset } = await import("../../scripts/migrate/reset.ts");
 
 /** De foto die tussen T-2 en T-0 in de oude app verwijderd werd. */
 const DELETED_SINCE_T2 = "protected/U-alice-sub/verwijderd.jpg";
@@ -74,6 +86,47 @@ function materializeStorage(map: StorageMapFile): void {
 }
 
 const idOf = (key: string): string => storageMap.files[key]!.storageId;
+
+/** De sleutels in de storage-map, om te kunnen zien dat er niets uit verdween. */
+const mapKeys = (): string[] =>
+  Object.keys((h.files.read("storage-map.json") as StorageMapFile).files).sort();
+
+/**
+ * Een `convex-records.json` zonder één rij, met alle tellingen op nul — precies
+ * wat een `extract` tegen de verkeerde DynamoDB-tabel oplevert. `transform`,
+ * `load-records` en `verify` slagen daar allemaal op: nul verwacht, nul
+ * gevonden. Dat is de toestand waarin elke vergelijking triviaal waar is.
+ */
+function emptyRecordsFile(): RecordsFile {
+  const leeg = {} as Records;
+  const counts: Record<string, number> = {};
+  for (const table of TABLE_ORDER) {
+    leeg[table] = [];
+    counts[table] = 0;
+  }
+  return { ...records, meta: { ...records.meta, counts }, records: leeg };
+}
+
+/**
+ * Dezelfde records, maar zonder één verwijzing naar een bestand. De rijen — en
+ * dus de tellingen — blijven exact gelijk.
+ */
+function recordsWithoutStorageRefs(): RecordsFile {
+  const strip = (rows: Row[], field: string): Row[] =>
+    rows.map((row) => {
+      const copy = { ...row };
+      delete copy[field];
+      return copy;
+    });
+  return {
+    ...records,
+    records: {
+      ...records.records,
+      photos: strip(records.records.photos, "storageKey"),
+      users: strip(records.records.users, "profilePhotoStorageKey"),
+    },
+  };
+}
 
 beforeEach(() => {
   vi.spyOn(console, "log").mockImplementation(() => {});
@@ -93,11 +146,15 @@ describe("prune-storage: alleen wat niemand meer nodig heeft", () => {
     // De situatie waarin dit commando het meeste schade kan aanrichten: de
     // bestanden staan er al, de records nog niet. Elk object is dan "orphan"
     // in de deployment, en toch is er niets weg te gooien.
+    //
+    // De exitcode is sinds fix-cyclus 3 (R3-5) niet-nul: dit is een weigering,
+    // geen geslaagde opruiming. Op cutover-dag lopen deze commando's in een
+    // keten en leest de operator de uitkomst uit de exitcode.
     materializeStorage(storageMap);
     const before = deployment.storageCount();
     expect(before).toBeGreaterThan(0);
 
-    await expect(pruneStorage("dev", true)).resolves.toBe(0);
+    await expect(pruneStorage("dev", true)).resolves.not.toBe(0);
 
     expect(deployment.storageCount(), "de upload van T-2 is weggegooid").toBe(before);
   });
@@ -168,6 +225,136 @@ describe("prune-storage: alleen wat niemand meer nodig heeft", () => {
     await pruneStorage("dev", true);
 
     await expect(verify("dev")).resolves.toBe(0);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// R3-1 — een vloer die niet van de tellingen afhangt
+//
+// De veiligheidsklep uit fix-cyclus 2 deed het werk niet: de bescherming zat in
+// de vergelijking tussen `meta.counts` en de deployment, en die is triviaal waar
+// zodra beide kanten nul zijn. De route ernaartoe loopt door de tool zelf — de
+// brontabel is een env-var, er bestaat een tweede AWS-omgeving die we bewust
+// negeren, en een `extract` daartegen levert nul items. Op nul items slagen
+// `transform`, `load-records` én `verify`.
+//
+// `prune-storage` wist daarom nooit alles. Alles wissen heet `reset --all`:
+// een ander commando, een andere bedoeling, een andere bevestiging.
+// ─────────────────────────────────────────────────────────────────────────
+describe("prune-storage: de vloer", () => {
+  test("een lege convex-records.json wist niets — ook niet als de deployment net zo leeg is", async () => {
+    // De reproductie uit de audit: zes objecten geüpload, nul rijen, nul
+    // tellingen, deployment leeg. Alles klopt met alles, en er staat 5,6 GB op
+    // het spel.
+    materializeStorage(storageMap);
+    const before = deployment.storageCount();
+    const keysBefore = mapKeys();
+    put({ "convex-records.json": emptyRecordsFile(), "storage-map.json": storageMap });
+
+    await expect(pruneStorage("dev", true)).resolves.not.toBe(0);
+
+    expect(deployment.storageCount(), "de upload is weg").toBe(before);
+    expect(mapKeys(), "de storage-map is leeggehaald — de hervatbaarheid ook").toEqual(keysBefore);
+  });
+
+  test("geen enkel record dat naar storage verwijst, terwijl de map vol is", async () => {
+    // Tellingen die kloppen zijn hier geen bewijs: de rijen staan er, ze
+    // verwijzen alleen nergens naar. Een storage-map vol bestanden en een
+    // records-bestand dat er geen enkel nodig heeft is geen opruimopdracht maar
+    // een tegenspraak, en die los je niet op door 5,6 GB weg te gooien.
+    materializeStorage(storageMap);
+    const before = deployment.storageCount();
+    deployment.seed(records.meta.counts);
+    put({ "convex-records.json": recordsWithoutStorageRefs(), "storage-map.json": storageMap });
+
+    await expect(pruneStorage("dev", true)).resolves.not.toBe(0);
+
+    expect(deployment.storageCount()).toBe(before);
+    expect(mapKeys()).toHaveLength(Object.keys(storageMap.files).length);
+  });
+
+  test("wist nooit élk object dat er staat", async () => {
+    // De storage bevat uitsluitend objecten die niemand nodig heeft, en alles
+    // wat de records wél nodig hebben ontbreekt. Wat er ook misging — dit is
+    // geen opruiming meer maar een leegmaak-actie, en daar is een ander
+    // commando voor.
+    deployment.seed(records.meta.counts);
+    deployment.putStorage(idOf(DELETED_SINCE_T2));
+
+    await expect(pruneStorage("dev", true)).resolves.not.toBe(0);
+
+    expect(deployment.storageCount(), "de enige inhoud van de storage is weg").toBe(1);
+  });
+
+  test("nul objecten om op te ruimen blijft gewoon groen", async () => {
+    // De vloer mag de normale uitkomst niet omdraaien: niets te doen is een
+    // geslaagde run, geen weigering.
+    storageMap = buildStorageMap(records);
+    put({ "convex-records.json": records, "storage-map.json": storageMap });
+    materializeStorage(storageMap);
+    await loadRecords("dev", false);
+
+    await expect(pruneStorage("dev", true)).resolves.toBe(0);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// R3-2 — de tweede voorwaarde doet eigen, aflezend werk
+//
+// Ná de toestandscontrole hing elk beschermd object per definitie aan een
+// geladen record: de bescherming was onbereikbaar en daarmee niet van een
+// niet-bestaande bescherming te onderscheiden. Haar eigen betekenis: de huidige
+// `convex-records.json` blijft laadbaar. Dat bestand is de terugvaloptie van de
+// operator — `reset` plus `load-records` moet erna nog kunnen slagen.
+//
+// De toestand tussen laden en opruimen is niet bevroren. Zodra de app draait
+// kan een foto van bestand wisselen (de rotatie uit WP8 schrijft een nieuw
+// object en laat het oude achter): het oude object hangt dan aan geen record
+// meer, terwijl de rij-aantallen ongewijzigd blijven.
+// ─────────────────────────────────────────────────────────────────────────
+describe("prune-storage: wat convex-records.json nog nodig heeft blijft staan", () => {
+  /** Simuleert een rotatie ná de load: de foto wijst naar een nieuw bestand. */
+  async function rotateFirstPhoto(): Promise<{ oud: string; nieuw: string }> {
+    const photo = deployment.docs("photos")[0]!;
+    const oud = String(photo.storageId);
+    const nieuw = "kg_geroteerd";
+    deployment.putStorage(nieuw);
+    photo.storageId = nieuw;
+    return { oud, nieuw };
+  }
+
+  test("een object waar de records nog naar wijzen blijft, ook zonder geladen record", async () => {
+    materializeStorage(storageMap);
+    await loadRecords("dev", false);
+    const { oud } = await rotateFirstPhoto();
+    // Vóór de opruiming aflezen: het commando haalt de entry uit de map.
+    const wees = idOf(DELETED_SINCE_T2);
+
+    await expect(pruneStorage("dev", true)).resolves.toBe(0);
+
+    expect(deployment.hasStorage(oud), "het bestand dat de records nog nodig hebben is weg").toBe(
+      true,
+    );
+    expect(deployment.hasStorage(wees), "de echte wees is blijven staan").toBe(false);
+  });
+
+  test("na de opruiming is convex-records.json nog steeds laadbaar", async () => {
+    // De aflezing die ertoe doet: de terugvalroute van de operator werkt nog.
+    // Reset laat de bestanden staan, en load-records moet daarna slagen zonder
+    // dat er ook maar één bestand geaccepteerd verlies is.
+    materializeStorage(storageMap);
+    await loadRecords("dev", false);
+    await rotateFirstPhoto();
+    await pruneStorage("dev", true);
+
+    await expect(reset("dev", false, true)).resolves.toBe(0);
+    await expect(loadRecords("dev", false)).resolves.toBe(0);
+    for (const photo of deployment.docs("photos")) {
+      expect(
+        deployment.hasStorage(String(photo.storageId)),
+        `foto ${photo.sourceKey} verwijst naar een bestand dat niet meer bestaat`,
+      ).toBe(true);
+    }
   });
 });
 

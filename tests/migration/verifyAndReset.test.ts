@@ -183,6 +183,48 @@ describe("verify: de orphan-bevinding is volledig", () => {
   });
 });
 
+// ─────────────────────────────────────────────────────────────────────────
+// R3-4 — een advies volgt alleen uit een controle die klopt
+//
+// `verify` toonde de opruim-instructie zodra er storage-objecten zonder record
+// waren, ongeacht de rest van zijn eigen rapport. Tussen T-2 en T-0 is dat de
+// normale toestand: de bestanden staan er, de records nog niet, dus élk object
+// is een "wees". Wie die instructie dan opvolgt, gooit de complete upload weg.
+//
+// Een handelingsadvies uit `verify` gaat over de toestand die `verify` heeft
+// vastgesteld. Volgt het uit één deel-bevinding terwijl een ander deel rood is,
+// dan is het een instructie om de fout te vergroten.
+// ─────────────────────────────────────────────────────────────────────────
+describe("verify: het advies past bij de toestand", () => {
+  test("tussen T-2 en T-0 adviseert verify geen opruiming", async () => {
+    // De bestanden staan er, de deployment is leeg. Elk object hangt aan geen
+    // record en elk bestand is nog nodig.
+    materializeStorage(storageMap);
+    expect(records.meta.counts.photos, "de fixture heeft foto's").toBeGreaterThan(0);
+
+    await expect(verify("dev")).resolves.not.toBe(0);
+
+    const report = logged();
+    expect(report, "verify stuurt de operator naar het commando dat de upload wist").not.toContain(
+      "prune-storage",
+    );
+    expect(report, "verify zegt niet wat er dan wél moet gebeuren").toContain("load-records");
+  });
+
+  test("kloppen de rij-aantallen, dan is de wees wél op te ruimen", async () => {
+    // De andere tak van dezelfde regel: op T-0, met alles geladen, is een
+    // object zonder record een echte wees en hoort de operator te weten met
+    // welk commando hij hem weghaalt.
+    await loadRecords("dev", false);
+    materializeStorage(storageMap);
+    deployment.putStorage("kg_wees");
+
+    await expect(verify("dev")).resolves.not.toBe(0);
+
+    expect(logged()).toContain("prune-storage");
+  });
+});
+
 // ────────────────────────────────────────────────────────────────────────
 // B-2 — reset dekt dezelfde tabellen als de leeg-preconditie
 // ────────────────────────────────────────────────────────────────────────

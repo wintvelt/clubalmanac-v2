@@ -637,6 +637,51 @@ describe("dev-filter: invites", () => {
     expect(records.invites.map((i: Row) => i.sourceKey).join()).not.toMatch(/G-verdwenen/);
   });
 
+  // ──────────────────────────────────────────────────────────────────────
+  // R3-3 — de andere tak van dezelfde regel, met een eigen bronvoorbeeld.
+  //        "De groep is uit de dev-set gefilterd" is de filter die zijn werk
+  //        doet; "de groep bestaat niet in de bron" is een bronfout. Ze mogen
+  //        niet op één hoop, want dan lekt er in dev een invite naar een groep
+  //        die daar niet bestaat. G-2 legt precies dat onderscheid af: hij
+  //        bestaat in de bron en valt in dev weg op "founder niet chosen".
+  // ──────────────────────────────────────────────────────────────────────
+  test("een invite in een groep die dev wegfiltert verdwijnt daar — en niet als groeploze rij", () => {
+    const { records } = runDev();
+    const keys = (records.invites as Row[]).map((i) => i.sourceKey);
+    expect(keys.join(), "de dev-filter liet een invite naar G-2 door").not.toMatch(/#G-2$|#G-2,/);
+    // Doorlekken kan twee vormen aannemen: mét groupId (een verwijzing naar een
+    // groep die in dev niet bestaat) of zónder (de bronfout-tak, die hier niet
+    // van toepassing is). Allebei fout.
+    for (const i of records.invites as Row[]) {
+      expect(i.groupId, `invite ${i.sourceKey} wijst naar de weggefilterde G-2`).not.toBe("G-2");
+    }
+  });
+
+  test("dev telt hem als filter, niet als bronfout", () => {
+    // Een groep die er in de bron gewoon is, is geen ontbrekende groep. Meldt
+    // de transform hem als "groep bestaat niet", dan leest de operator een
+    // bronprobleem waar alleen zijn eigen dev-filter aan het werk was.
+    const { warnings } = runDev();
+    expect(
+      warnings.some((w: string) =>
+        /filter \(dev\).*membership\/invite uitgesloten: groep niet opgenomen/.test(w),
+      ),
+      "de weggefilterde invite komt niet terug in de filtertelling",
+    ).toBe(true);
+    expect(
+      warnings.some((w: string) => /G-2.*bestaat niet/.test(w)),
+      "een bestaande groep wordt als ontbrekend gemeld",
+    ).toBe(false);
+  });
+
+  test("prod houdt diezelfde invite, mét zijn groep", () => {
+    const { records } = runProd();
+    const invite = bySource(records.invites, "fietser@example.test#G-2");
+    expect(invite.groupId).toBe("G-2");
+    expect(invite.invitedBy).toBe("U-alice");
+    expect(invite.email).toBe("fietser@example.test");
+  });
+
   test("een membership naar een verwijderde groep verdwijnt wél — groupId is daar verplicht", () => {
     // Dezelfde bronfout, andere entiteit: memberships.groupId is geen optionele
     // verwijzing, dus daar is wissen geen optie en blijft overslaan het juiste

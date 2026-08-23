@@ -46,8 +46,10 @@ export const SOURCE_PII = [
   "genodigde@example.test",
   "nieuweling@example.test",
   "ander@example.test",
+  "fietser@example.test",
   "Nieuweling Bronwerk",
   "Ander Bronwerk",
+  "Fietser Bronwerk",
   "Kom je ook wandelen?",
 ];
 
@@ -228,6 +230,20 @@ export function buildExtract(): SourceItem[] {
       user: DAVE,
       invitation: { from: ALICE, message: "Kom je ook wandelen?" },
       createdAt: "2026-08-21",
+    },
+    // De andere tak van dezelfde regel (WP12 fix-cyclus 3, R3-3): een invite in
+    // een groep die in de bron gewoon bestaat, maar in dev wegvalt omdat haar
+    // founder niet chosen is. De uitnodiger ís chosen en de genodigde heeft
+    // geen account — zo is de groepsfilter aantoonbaar de enige reden dat deze
+    // rij in dev verdwijnt, en niet een van de twee andere clausules.
+    {
+      PK: "UMfietser@example.test",
+      SK: "G-2",
+      status: "invite",
+      role: "guest",
+      user: { name: "Fietser Bronwerk", email: "fietser@example.test" },
+      invitation: { from: ALICE, message: "Kom je ook wandelen?" },
+      createdAt: "2026-08-19",
     },
     // Invite naar een adres zonder account, in een groep die niet (meer)
     // bestaat: overgeslagen record, mét waarschuwing. De bron-ID van zo'n
