@@ -84,6 +84,8 @@ De data-migratie leest de oude AWS-omgeving: DynamoDB-tabel `blob-images-photos-
 
 Read-only, altijd. Het script heeft geen enkele write-operatie richting DynamoDB of S3; gebruik daarom ook een read-only IAM-user of -rol, zodat die belofte in de policy staat en niet alleen in de code.
 
+De bucket `blob-videos` blijft buiten de migratie: die bestanden hebben geen DynamoDB-record, en `load-files` is record-gedreven. Ze blijven op S3 tot de latere R2-overstap en mogen bij de T+30-opruiming dus niet weg.
+
 ### Env-vars (lokaal, `.env.migrate` — nooit als Convex-env-var)
 
 | Env-var | Waarde | Wat gebeurt bij ontbreken |

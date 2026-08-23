@@ -139,7 +139,7 @@ export async function loadFiles(target: Target): Promise<number> {
       writeData(STORAGE_MAP_FILE, map);
       uploaded += 1;
       bytesTotal += object.body.byteLength;
-      if (uploaded % 25 === 0 || object.body.byteLength > 50_000_000) {
+      if (uploaded % 25 === 0) {
         console.log(`[load-files] ${uploaded}/${todo.length} — ${throughput(bytesTotal, startedAt)}`);
       }
     }
@@ -180,8 +180,9 @@ async function fetchFromS3(
     const result = await s3.send(new GetObjectCommand({ Bucket: bucket, Key: key }));
     if (result.Body === undefined) return null;
     // Bufferen in plaats van streamen: de Convex-upload-URL wil een Content-
-    // Length, en zelfs de video's (~500 MB) passen in het geheugen van de
-    // machine die deze run doet.
+    // Length. De grootste bestanden zijn foto's van enkele MB's — de video's
+    // gaan niet mee naar Convex (WP12 §Video's — buiten scope), dus dit blijft
+    // ruim binnen het geheugen.
     const body = await result.Body.transformToByteArray();
     return { body, contentType: result.ContentType };
   } catch (error) {

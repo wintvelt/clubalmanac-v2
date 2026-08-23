@@ -185,8 +185,8 @@ export const integrityReport = internalQuery({
 /**
  * Batch upload-URL's. Eén call per bestand zou over 1650+ objecten een
  * onnodige round-trip-berg opleveren; te grote batches lopen tegen de
- * geldigheidsduur van een URL aan (relevant bij video's van ~500 MB over een
- * lijn van <20 Mbit/s). Het script kiest de batchgrootte.
+ * geldigheidsduur van een URL aan, wat over een lijn van <20 Mbit/s meetelt.
+ * Het script kiest de batchgrootte.
  */
 export const generateUploadUrls = internalMutation({
   args: { count: v.number() },

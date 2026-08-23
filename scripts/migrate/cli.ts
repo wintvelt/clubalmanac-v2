@@ -28,7 +28,7 @@ commando's
   extract         DynamoDB volledig scannen → scripts/.data/dynamo-extract.json
   inspect         overzicht per user uit het extract (om de 3 chosen te kiezen)
   transform       extract + config → scripts/.data/convex-records.json
-  load-files      foto's en video's uit S3 → Convex-storage (hervatbaar)
+  load-files      foto's uit S3 → Convex-storage (hervatbaar)
   load-records    de records → de Convex-tabellen (niet hervatbaar; reset + opnieuw)
   verify          tellingen, storage twee kanten op, WP10-integriteitsscan
   reset           tabellen leegmaken; met --all ook de storage

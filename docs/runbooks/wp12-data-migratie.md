@@ -84,7 +84,9 @@ npm run migrate -- verify --target dev
 
 ## Run 2 — prod (fase 5)
 
-De uploadlijn haalt minder dan 20 Mbit/s. 8,3 GB past daarmee niet in een cutover-venster, dus de run is gesplitst. Foto- en videobestanden zijn onveranderlijk: eenmaal geüpload verandert er niets meer.
+De uploadlijn haalt minder dan 20 Mbit/s. 8,3 GB past daarmee niet in een cutover-venster, dus de run is gesplitst. Fotobestanden zijn onveranderlijk: eenmaal geüpload verandert er niets meer.
+
+De video's blijven buiten deze migratie: ze staan in een eigen bucket (`blob-videos`), hebben geen DynamoDB-record, en gaan pas mee bij de latere R2-overstap (WP12 §Video's — buiten scope). `load-files` is record-gedreven en raakt die bucket dus vanzelf niet aan — er is geen extra stap of uitzondering voor nodig.
 
 ### T-2 weken
 
@@ -101,7 +103,6 @@ npm run migrate -- load-files --target prod    # uren; hervatbaar
 
 `load-files` rapporteert de gehaalde doorvoer in MB/s en een schatting voor 8,3 GB. Breekt de run af: gewoon opnieuw starten — wat in `storage-map.json` staat wordt overgeslagen.
 
-**Vooraf te verifiëren, één keer:** houdt een Convex-upload-URL lang genoeg stand voor een videobestand van ~500 MB (ruim 3 minuten pure zendtijd), en accepteert Convex-storage die omvang? Test dit met één video vóór de volle run.
 
 ### T-0
 

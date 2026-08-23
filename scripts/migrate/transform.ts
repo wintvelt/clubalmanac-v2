@@ -498,6 +498,14 @@ export function transform(items: SourceItem[], config: TransformConfig): Transfo
     // (PK `UM{email}`); in beide gevallen wordt het een invites-rij en nooit
     // een membership. `user.email` is leidend boven de sleutel: de invitee kan
     // zijn adres later gewijzigd hebben.
+    //
+    // Dev-filterregel. Het migratieplan zegt "Invites: alleen tussen de 3
+    // chosen", maar een invite aan iemand zónder account is juist het normale
+    // geval — die persoon kán geen chosen user zijn. Gelezen als: de
+    // **uitnodiger** moet chosen zijn (dat is ook de enige verplichte FK,
+    // `invitedBy`), de groep opgenomen, en als de genodigde wél een bestaande
+    // user is moet die chosen zijn. Anders zou de dev-seed nul invites bevatten
+    // en is de invite-flow er niet op te testen.
     const inviteeIsUser = src.users.has(inviteeKey);
     if (inviteeIsUser && !includedUsers.has(inviteeKey)) {
       countFiltered("invite uitgesloten: genodigde niet chosen");
