@@ -39,6 +39,22 @@ Als Wouter incidenteel tóch vanuit Claude Code wil pushen: voeg lokaal `Bash(gi
 
 Eerdere versie van dit doc claimde een pre-push hook; die bestond niet (`.git/hooks/pre-push` ontbrak, `core.hooksPath` unset). Permission-deny is de simpelere oplossing — geen extra files in versie-control, geen fresh-clone-setup nodig.
 
+## Niet pushen terwijl een rol-sessie draait
+
+Rol-sessies committen lokaal en mogen hun eigen laatste commit bijwerken zolang die nog niet gepubliceerd is. Wordt er tussendoor gepusht, dan herschrijft zo'n bijwerking gepubliceerde historie en is een force-push nodig om er weer uit te komen.
+
+Regel: **push pas als er geen A-, B- of audit-sessie meer draait.** Regie zegt expliciet wanneer het kan. Tussen A en B is de suite per definitie rood — dat is de bedoelde RED-toestand, geen reden om snel te pushen.
+
+Voor rol-sessies: gebruik `git commit`, nooit `git commit --amend` op een commit die je niet in dezelfde sessie hebt gemaakt. Een correctie op eerder werk is een nieuwe commit.
+
+Geboren uit WP12 fix-cyclus 2: regie gaf een push-moment terwijl A nog liep, A werkte daarna zijn eigen doc-commit bij, en de gepushte commit verdween uit de lokale historie. Opgelost met `git push --force-with-lease` — werkbaar in een solo-repo, maar precies het soort ingreep dat een discipline hoort te voorkomen. Eerder in dezelfde WP landde een `git commit --amend` van een rol-sessie op een commit van regie; die is via de reflog hersteld.
+
+## Eén commit, één onderwerp
+
+De titel van een commit moet dekken wat erin zit. In WP12 landde een volledige implementatie van 25 bestanden onder een titel over een documentatie-besluit, samen met spec-wijzigingen die niet van de implementer waren. Gevolg: wie het werkpakket later reconstrueert vindt de implementatie niet terug via de commit-messages, en de rolgrens is niet uit de historie af te lezen.
+
+Praktisch: scheid doc-besluiten van implementatie, en scheid werk van verschillende rollen. Bij twijfel liever twee commits dan één.
+
 ## Waarom
 
 Voorkomt ophoping van werktree changes. Per A→B cyclus committen geeft cleaner git-history. Auditor produceert tekst, niet code → niets te committen. Push centraal bij Wouter houdt CI-rood-vensters (verwacht tussen A en B) onder regie.

@@ -72,7 +72,7 @@ Backend is client-agnostisch. Zelfde queries/mutations werken straks voor zowel 
 
 ## Fase 3: Data migratie tooling + dev seed — open
 
-Uitgewerkt in **[WP12](./work-packages/WP12-data-migratie-tooling.md)** (draft-spec 2026-08-23). Mechanisme = API-import: het script schrijft via internal Convex-mutations en storage-uploads, Convex mint `_id` en `_storage`. De route via een zelfgebouwde snapshot-zip is getest en afgewezen — `convex import` weigert een zelf-gemunte `_id`. Zeven commando's: `extract` / `inspect` / `transform` / `load-files` / `load-records` / `verify` / `reset`. De splitsing tussen bestanden en records is nodig omdat de uploadlijn <20 Mbit/s haalt: bestanden gaan op T-2 weken omhoog, records op T-0. Scope van WP12 = tooling + gedraaide dev-seed; de prod-run blijft fase 5, T-0.
+Uitgewerkt in **[WP12](./work-packages/WP12-data-migratie-tooling.md)** (draft-spec 2026-08-23). Mechanisme = API-import: het script schrijft via internal Convex-mutations en storage-uploads, Convex mint `_id` en `_storage`. De route via een zelfgebouwde snapshot-zip is getest en afgewezen — `convex import` weigert een zelf-gemunte `_id`. Acht commando's: `extract` / `inspect` / `transform` / `load-files` / `load-records` / `verify` / `prune-storage` / `reset`. De splitsing tussen bestanden en records is nodig omdat de uploadlijn <20 Mbit/s haalt: bestanden gaan op T-2 weken omhoog, records op T-0. Scope van WP12 = tooling + gedraaide dev-seed; de prod-run blijft fase 5, T-0.
 
 Bouw migratie-tooling die zowel dev (subset) als prod (volledig) kan vullen. Eén script, twee config-modes. Dev wordt nu gevuld; prod gebeurt pas op cutover-dag (zie fase 5).
 
