@@ -622,16 +622,19 @@ describe("dev-filter: invites", () => {
     expect(warnings.some((w: string) => /G-verdwenen/.test(w))).toBe(true);
   });
 
-  test("ook in dev blijft hij staan: de uitnodiger is chosen en de groep bestond nergens", () => {
-    // De twee takken niet verwarren. "Groep bestaat niet in de bron" is een
-    // bronfout en krijgt het bovenstaande gedrag; "groep is uit de dev-set
-    // gefilterd" is de filter die zijn werk doet en blijft overslaan.
+  test("in dev valt diezelfde invite juist wél weg", () => {
+    // Aanvulling Wouter: het behouden geldt alleen op prod. Prod is een
+    // migratie — wat er was blijft er, want weggooien is onomkeerbaar. Dev is
+    // een samengestelde deelverzameling, en een uitnodiging zonder groep, van
+    // een geanonimiseerde afzender, naar iemand die niet in de seed zit, is
+    // ruis bij het bouwen van de clients.
+    //
+    // Overslaan is hier niet stil: dát het gebeurd is blijft zichtbaar in het
+    // meldkanaal (zie "een overgeslagen invite blijft wél herleidbaar").
     const { records } = runDev();
-    const invite = (records.invites as Row[]).find((i) =>
-      String(i.sourceKey).endsWith("#G-verdwenen"),
-    );
-    expect(invite, "de invite is in dev ten onrechte overgeslagen").toBeDefined();
-    expect(invite!.groupId).toBeUndefined();
+    const groeploos = (records.invites as Row[]).filter((i) => i.groupId === undefined);
+    expect(groeploos, "de dev-seed heeft een groeploze invite gekregen").toHaveLength(0);
+    expect(records.invites.map((i: Row) => i.sourceKey).join()).not.toMatch(/G-verdwenen/);
   });
 
   test("een membership naar een verwijderde groep verdwijnt wél — groupId is daar verplicht", () => {
