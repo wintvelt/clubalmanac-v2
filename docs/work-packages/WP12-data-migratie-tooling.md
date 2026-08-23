@@ -52,10 +52,11 @@ Het alternatief — een zelfgebouwde snapshot-zip met `npx convex import` — is
 | 5 | `load-records` | `.data/convex-records.json` + `.data/storage-map.json` | de Convex-tabellen | minuten |
 | 6 | `verify` | beide `.data`-bestanden + de deployment | rapport in terminal | minuten |
 | 7 | `reset` | — | leegt de tabellen; met `--all` ook de storage | minuten |
+| 8 | `prune-storage` | `.data/convex-records.json` + `.data/storage-map.json` + de deployment | wist exact de storage-objecten waar niets meer naar verwijst, en haalt hun entry uit de map | minuten |
 
-`extract` is traag en de uitkomst is herbruikbaar; bij het itereren op `transform` mag DynamoDB niet opnieuw geraakt worden. Daarom zeven losse commando's en geen enkele knop.
+`extract` is traag en de uitkomst is herbruikbaar; bij het itereren op `transform` mag DynamoDB niet opnieuw geraakt worden. Daarom acht losse commando's en geen enkele knop.
 
-De splitsing tussen `load-files` en `load-records` is geen netheid maar noodzaak — zie §Gefaseerde prod-run. `reset` leegt standaard alleen de tabellen, zodat een reset vóór T-0 de al geüploade bestanden niet weggooit.
+De splitsing tussen `load-files` en `load-records` is geen netheid maar noodzaak — zie §Gefaseerde prod-run. `reset` leegt standaard alleen de tabellen, zodat een reset vóór T-0 de al geüploade bestanden niet weggooit. `prune-storage` kwam er in fix-cyclus 2 bij (R2-5): tussen T-2 en T-0 kan een foto in de oude app verdwijnen, en `reset --all` als enige opruimknop kost de uren upload die het gefaseerde ontwerp juist spaart.
 
 `inspect` bestaat om de 3 chosen users op feiten te kiezen in plaats van uit het geheugen. De uitkomst gaat handmatig in de dev-config.
 
@@ -858,3 +859,162 @@ Niet in deze cyclus, wel bewust bekeken:
   cyclus, niet als blocker voor de cutover.
 - Random invite-token in plaats van een hash van PII — lekt niets, past wel
   beter bij het besluit "tokens vernieuwen".
+
+---
+
+## Fix-cyclus 3 — invarianten bij de audit-bevindingen (A, 2026-08-23)
+
+Zelfde vorm als de vorige twee cycli: de audit zegt *wat* er mis is, deze sectie
+zet de gedrags-eis eronder die B moet halen. Waaraan is het af te lezen, niet hoe
+het gebouwd wordt.
+
+Scope van de cyclus: **R3-1 t/m R3-5.** De nice-to-haves blijven nice-to-have,
+op één na die geen code raakt: de commando-tabel in §De commando's kende
+`prune-storage` nog niet en is in dezelfde pass bijgewerkt.
+
+De cyclus draait om één commando. Dat is geen toeval: `prune-storage` is het
+enige commando dat data weggooit die niet met een druk op de knop terugkomt.
+Alles wat `load-records` fout doet, herstelt `reset` in minuten. Wat
+`prune-storage` fout doet, kost uren zendtijd op een lijn die minder dan
+20 Mbit/s haalt — en op cutover-dag zijn die uren er niet.
+
+### Invariant — een opruiming heeft een vloer die niet van de tellingen afhangt (R3-1)
+
+- **`prune-storage` wist nooit alles.** Alles wissen is `reset --all`: een ander
+  commando, een andere bedoeling, een andere bevestiging. Een selectieve
+  opruiming die de volledige inhoud van de storage meeneemt is per definitie de
+  verkeerde knop — ongeacht welke redenering hem daar bracht.
+- **Drie toestanden waarin het commando weigert, en die weigering hangt niet af
+  van een vergelijking die in diezelfde toestand triviaal waar kan zijn:**
+  1. hij zou elk object wissen dat er staat;
+  2. geen enkel record verwijst naar storage, terwijl de storage-map niet leeg
+     is;
+  3. de transform-telling in `meta.counts` is in totaal nul.
+- **Waarom een vloer en niet nog een controle:** de route ernaartoe loopt door
+  de tool zelf. De brontabel is een env-var, er bestaat een tweede AWS-omgeving
+  die we bewust negeren, en een `extract` daartegen levert nul items. Op nul
+  items slagen `transform`, `load-records` én `verify` allemaal — de tellingen
+  kloppen dan namelijk met elkaar. Alles wat "beide kanten vergelijkt" is in die
+  toestand groen. De vloer is het laatste dat dan nog tussen de operator en
+  5,6 GB staat, dus mag hij niet van diezelfde vergelijking afhangen.
+- **Aflezing:** zet de tool in de nul-toestand (records leeg, tellingen nul,
+  deployment leeg, bestanden geüpload) en er verdwijnt geen enkel object, en de
+  storage-map blijft ongewijzigd. De hervatbaarheid is even belangrijk als de
+  bestanden: een map die zichzelf leegt is een tweede verlies bovenop het eerste.
+
+### Invariant — de bescherming die de tekst noemt is aan gedrag af te lezen (R3-2)
+
+De audit gaf twee uitwegen. Gekozen: **voorwaarde 2 krijgt zijn eigen,
+aflezende betekenis** — en daarmee een naam die klopt met wat hij doet.
+
+- **De huidige `convex-records.json` blijft na een opruiming laadbaar.** Elk
+  bestand waar dat bestand naar verwijst overleeft, óók als geen enkel geladen
+  record er nog aan hangt. `convex-records.json` is de terugvaloptie van de
+  operator: `reset` (zonder `--all`) plus `load-records` moet erna nog kunnen
+  slagen zonder `--accept-missing-files`. Een opruiming die die route breekt
+  kost precies de uren die het gefaseerde ontwerp spaart.
+- **De toestand tussen laden en opruimen is niet bevroren.** Zodra de app draait
+  kan een foto van bestand wisselen — de rotatie uit WP8 schrijft een nieuw
+  object en laat het oude achter. Het oude object hangt dan aan geen enkel
+  record meer, terwijl de rij-aantallen ongewijzigd blijven. Dat is de aflezing
+  die voorwaarde 2 eigen maakt: de toestandscontrole is groen, en het object
+  gaat tóch niet weg.
+- **De tellingsvergelijking heet wat hij is**: een toestandscontrole — beschrijft
+  `convex-records.json` de deployment die er nu staat? Hij is geen van de twee
+  voorwaarden. Spec, code-commentaar en runbook noemen voortaan drie dingen
+  apart, want het zijn er drie: de toestandscontrole, de vloer (R3-1) en de
+  per-object-bescherming.
+- **Wat gespaard wordt, wordt geteld en gemeld.** Een bescherming die nooit iets
+  meldt is niet te onderscheiden van een bescherming die er niet is; dat is
+  precies hoe deze bevinding ontstond.
+- Runbook-regel 152 beschrijft vandaag twee mechanismen als één ding en gaat
+  mee in deze correctie.
+
+### Invariant — beide takken van de invite-groepregel hebben een eigen bronvoorbeeld (R3-3)
+
+- De fixture bevat **een invite in een groep die in de bron bestaat maar in dev
+  wegvalt**. Dev: overslaan en tellen als filter — geen rij, en zeker geen
+  groeploze rij. Prod: de rij blijft, mét `groupId`.
+- **Voorwaarde aan die fixture-rij, anders meet de test iets anders dan hij
+  beweert**: de uitnodiger is chosen en de genodigde heeft geen account. Dan is
+  de groepsfilter aantoonbaar de enige reden dat de rij in dev wegvalt, en niet
+  een van de twee andere clausules van de dev-invite-regel.
+- Aflezing: laat de dev-filtertak invites door, dan verschijnt er in dev een
+  invite die naar een groep wijst die daar niet bestaat — en dat valt op een
+  test die die ene rij bij naam noemt, niet alleen op de aggregatie-assertie van
+  een andere bevinding.
+
+### Invariant — een advies volgt alleen uit een controle die klopt (R3-4)
+
+- **`verify` raadt een opruiming alleen aan wanneer de rij-aantallen kloppen.**
+  Kloppen ze niet, dan is de bevinding "elk bestand is nog nodig, draai eerst
+  `load-records`" — de tekst die al in de meldingen-tabel van het runbook staat.
+- **Algemener, en dat is de reden dat dit een invariant is en geen tekstfix:**
+  een handelingsadvies uit `verify` gaat over de toestand die `verify` heeft
+  vastgesteld. Een advies dat uit één deel-bevinding volgt terwijl een ander
+  deel rood is, is een instructie om de fout te vergroten. Tussen T-2 en T-0 is
+  "storage-objecten zonder record" de normale toestand en niet iets om op te
+  handelen.
+
+### Invariant — een weigering exit niet als succes (R3-5)
+
+- **Elke tak waarin een commando weigert te doen waarvoor het is aangeroepen,
+  eindigt met een niet-nul exitcode.** "Niets te doen" is wél succes: nul
+  objecten op te ruimen is een geldige, groene uitkomst.
+- Reden: op cutover-dag lopen deze commando's in een keten en leest de operator
+  de uitkomst uit de exitcode, niet uit twintig regels terminal. Een weigering
+  die als succes exit is onzichtbaar, en de volgende stap draait door alsof de
+  vorige klaar was.
+
+### Vormkeuzes die de tests opleggen
+
+Geen nieuwe namen. De tests van deze cyclus draaien op de bestaande signatures
+uit fix-cyclus 2 (`pruneStorage(target, confirmed)`, `verify(target)`) en op de
+handmatige oracles in `tests/migration/fixture.ts` en
+`tests/migration/fkOracle.ts`. De fixture krijgt er één bron-item bij (R3-3);
+dat is de plek waar de wereld beschreven wordt en waar de rest zich naar voegt.
+
+### Tests die groen beginnen, en waarom dat klopt
+
+Twee van de netten in deze cyclus zijn dekkingsgaten en geen gedragsfouten; die
+zijn bij oplevering groen en horen dat te zijn:
+
+- de per-object-bescherming uit R3-2 doet vandaag het juiste werk, alleen
+  onbereikbaar achter de toestandscontrole. De rotatie-test maakt de tak
+  bereikbaar en pint hem; hij valt om zodra de bescherming wegvalt.
+- de prod-tak van R3-3 klopt vandaag al; er stond alleen geen bron-item onder.
+
+De overige tests (de drie vloeren, de exitcodes, het advies van `verify`)
+beginnen rood.
+
+### Losse acties zonder test
+
+- **Runbook** — regel 152 en de meldingen-tabel: de drie mechanismen apart
+  benoemen (toestandscontrole, vloer, per-object-bescherming), en bij de
+  orphan-paragraaf vermelden dat `verify` tussen T-2 en T-0 geen opruiming
+  adviseert.
+- **Deze spec** — §De commando's is in dezelfde pass bijgewerkt met
+  `prune-storage`.
+
+### Doorgeschoven nice-to-haves, met reden
+
+Niet in deze cyclus, wel bewust bekeken:
+
+- `verify` leidt zijn tabellenset af uit het antwoord van de deployment die hij
+  controleert. Zelfde familie als het recurring pattern, maar de oracle-test
+  dekt hem vandaag; regie kan hem in een volgende cyclus laten sluiten door
+  `MONITORED_TABLES` direct te importeren.
+- `FULL_LIST` staat twee keer. Kosmetisch; de twee waarden kunnen uit elkaar
+  lopen zonder dat er iets misgaat (beide betekenen "de hele lijst").
+- `deleteStorageObjects` telt onvoorwaardelijk op. De mutation is
+  transactioneel: een id dat niet meer bestaat laat de hele batch terugdraaien,
+  dus er verdwijnt niets stils. Wat er wél gebeurt is dat een halverwege
+  afgebroken opruiming de storage-map achterlaat met entry's naar gewiste
+  objecten — dezelfde corruptie-route die de R2-5-invariant voor de geslaagde
+  run al afsluit. Kandidaat voor een volgende cyclus, geen blocker: de volgende
+  `load-records` weigert dan luid op zijn dekkingsgate.
+- De prod-gate op `prune-storage` en `reset` is ongetest, omdat de tests
+  `convexAdmin.ts` volledig mocken. Dat is dezelfde grens als bij de uitgestelde
+  integration-test: de gate leest een env-var en spreekt een echte deployment
+  aan. Hoort bij de empirische afdekking van de eerste prod-run, niet bij de
+  unit-laag.
