@@ -30,7 +30,7 @@ WP1-WP4 liepen vóór de formele spec-doc-discipline (geen WP-file). Status uit 
 |---|---|---|---|
 | TBD | Email Gate 1 happy-path + integration-test `tests/integration/mailjet/sendRoundtrip.test.ts` als follow-up van WP5 deferred-items | — | open |
 | TBD | Clerk Invitations API integratie als **permanent design-patroon** (pre-create Clerk-user bij Convex `invites.create`, `users.status: "invited" \| "active"` voor visibility) — alternatief design op WP6, kan als upgrade later. **Niet te verwarren met de eenmalige cutover-pre-create** op T-2 weken (16 prod-users via Invitations API voor data-import-mapping, regie-keuze 2026-06-21, zie fase 5 stappenplan) — die gebruikt dezelfde API maar is eenmalig en raakt geen permanente flow. | — | open, design-discussie |
-| Phase 3 | Data migratie tooling (DynamoDB → Convex) | — | uit fase 2-scope |
+| WP12 | Data-migratie tooling (DynamoDB + S3 → Convex). Zes commando's (`extract`/`inspect`/`transform`/`load`/`verify`/`reset`) in `scripts/`, één tool met een dev- en een prod-configuratie. Mechanisme = **API-import**: script schrijft via internal Convex-mutations, Convex mint `_id` en `_storage`. De zelfgebouwde-snapshot-zip-route is getest en afgewezen (`invalid _id`, 2026-08-23). Scope = tooling + dev-seed gedraaid; de prod-run staat in fase 5 op T-0. | [`WP12-data-migratie-tooling.md`](./WP12-data-migratie-tooling.md) | draft-spec, wacht op A |
 | Phase 4 | Clients (iPhone app SDK upgrade + Convex integratie; webapp) | — | uit fase 2-scope |
 | Phase 5 | Hard cutover | — | uit fase 2-scope |
 
