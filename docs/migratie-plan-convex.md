@@ -787,8 +787,16 @@ Vaak overlapt dit; 3 unieke users is genoeg.
 | Albums | in groepen waar de 3 in zitten |
 | AlbumPhotos | alleen voor photos van de 3 |
 | Ratings | rater én photo-owner beide in de 3 chosen |
-| Invites | alleen tussen de 3 chosen |
+| Invites | uitnodiger is chosen, groep is opgenomen, en een genodigde die al user is moet chosen zijn (zie hieronder) |
 | Features / upvotes | alleen door de 3 chosen |
+
+De invite-regel las eerder "alleen tussen de 3 chosen". Die is onhoudbaar: een
+invite aan iemand **zonder** account is juist het normale geval, en die persoon
+kán per definitie geen chosen user zijn. Met de oude lezing bevat de dev-seed
+nul invites en is de invite-flow er niet op te testen. Geratificeerd door regie
+bij WP12 fix-cyclus 1 (2026-08-23); `invitedBy` is de enige verplichte FK van
+een invite, dus de uitnodiger-clausule is wat de referentiële geslotenheid
+bewaakt.
 
 **ID mapping:** Cognito sub van de 3 chosen → Clerk dev user IDs (1:1, configureerbaar in script config). Clerk dev users vooraf aanmaken via Clerk API.
 

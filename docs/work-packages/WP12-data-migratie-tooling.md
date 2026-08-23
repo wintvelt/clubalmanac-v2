@@ -450,3 +450,130 @@ De vier vragen uit de draft, plus wat er bij komt.
 7. ~~Nieuw, voor regie: WP10's cron op prod tussen T-2 en T-0.~~ **Opgelost** door regie in `migratie-status.md` (fase 5-stappenplan: cron uit vóór `load-files` op T-2, weer aan na een groene `verify` op T-0).
 8. **Nieuw, voor Wouter: hoe lost de dev-filter een groep op waarvan de founder niet chosen is?** De twee bruikbare uitwegen zijn "groep uitsluiten" of "founder als vierde user meenemen" — die tweede vereist een vierde Clerk-dev-ID en botst met "3 chosen users". De tests pinnen alleen dat de output referentieel gesloten is, niet welke uitweg gekozen wordt; die keuze is aan Wouter, want hij bepaalt wat er in dev testbaar moet zijn.
 9. ~~Nieuw, voor regie: de `seenPics`-beschrijving in `migratie-plan-convex.md` §Unread-count klopt niet~~ (correctie 2). **Opgelost** door regie: §Unread-count draagt nu de gecorrigeerde afleiding plus de richtings-invariant.
+
+---
+
+## Fix-cyclus 1 — invarianten bij de audit-bevindingen (A, 2026-08-23)
+
+De audit hierboven beschrijft *wat* er mis is en geeft per bevinding een
+fix-richting. Deze sectie zet daar de gedrags-eis onder die B moet halen, in
+dezelfde vorm als §Invarianten: waaraan is het af te lezen, niet hoe het
+gebouwd wordt. De RED tests van deze cyclus pinnen precies deze punten.
+
+Scope van de cyclus: **B-1, B-2, B-3, S-1, S-2.** S-3 (het resterende
+8,3 GB-cijfer in de tooling), S-4 (commit-hygiëne, regie) en S-5 (pre-flight §0,
+operationeel) hebben geen test — ze staan hieronder als losse actie. De
+nice-to-haves blijven nice-to-have: geen test, geen verplichting in deze cyclus.
+
+### Invariant — een ontbrekend bestand is nooit een stille aftrekpost (B-1)
+
+Het onderliggende gedrag dat misging: de tool kon een volledige dataset laden
+mét nul foto's, mét lege cover- en profielfoto-verwijzingen, mét alle
+`photoCount` op 0, en dat afsluiten met een groene `verify`. Dat is precies de
+klasse fout die deze WP niet mag hebben: data die er correct uitziet en het niet
+is.
+
+- **`load-records` begint niet aan zijn eerste schrijf zolang niet vaststaat dat
+  elke storage-sleutel waar een record naar verwijst een bestand in de
+  storage-map heeft.** Een ontbrekende, lege of onvolledige map is een harde
+  fout. "Nul bestanden bekend, dus nul foto's te laden" is nooit een geldige
+  conclusie.
+- **`load-files` mag een ontbrekende map wél als eerste run lezen.** Het verschil
+  zit in de stap, niet in het bestand: voor `load-files` is een lege map het
+  normale begin, voor `load-records` het bewijs dat de vorige stap niet
+  (af)gedraaid is.
+- **De ontsnapping is expliciet en zichtbaar.** Alleen met de accept-vlag gaat
+  een run door met bestanden die aantoonbaar niet in S3 staan; het verlies wordt
+  dan geteld, benoemd met bron-sleutel, en komt terug in het `verify`-rapport.
+  De vlag is geen voorwaarde om te kunnen draaien maar een bevestiging van
+  geaccepteerd verlies.
+- **De gate mag niet afhangen van een artefact dat pas aan het eind van de
+  vorige stap geschreven wordt.** Een `load-files` die halverwege afbreekt is
+  juist het scenario waarin de gate moet werken.
+
+### Invariant — een controle leidt zijn verwachting niet af uit de gecontroleerde stap (B-1c)
+
+- **De verwachting van `verify` komt uit de eerdere, onafhankelijke laag**: de
+  tellingen die `transform` in `convex-records.json` heeft vastgelegd. Niet uit
+  een herberekening die dezelfde weg aflegt als de laadstap.
+- **Elk verschil tussen die verwachting en de deployment is een bevinding**, ook
+  als het verschil verklaarbaar is door overgeslagen bestanden. Verklaarbaar is
+  niet hetzelfde als goedgekeurd: de operator moet het zien en accepteren, en
+  `verify` is de laatste plek waar dat nog kan vóór T-0 doorgaat.
+- Dit is de WP-specifieke vorm van een algemene regel die regie in
+  `ab-audit-workflow.md` opneemt (§Recurring pattern in de audit hierboven).
+
+### Invariant — de migratie-tabellenset is dezelfde set die WP10 bewaakt (B-2)
+
+- **Elke tabel waarop `internal.monitoring.integrityCheck` een controle doet,
+  valt onder de leeg-preconditie van `load-records` én onder `reset`.** Anders
+  is "groene `verify` en geen drift" niet haalbaar zonder handwerk buiten de
+  tool om — en handwerk buiten de tool is op cutover-dag precies wat we niet
+  willen.
+- **Aflezing:** na een `reset` is élke tabel die de preconditie telt leeg, en de
+  preconditie telt élke tabel die WP10 aanraakt. Twee lijsten die uit elkaar
+  kunnen lopen zijn een ontwerpfout; dat ze vandaag uit elkaar lopen is de
+  bevinding.
+- Concreet gemist: `uploadIdempotency`. De dev-deployment heeft er aantoonbaar
+  rijen in (de upload-roundtrip-integration-test schrijft ze), met `ownerId`'s
+  die na een reset naar verwijderde users wijzen.
+
+### Invariant — anonimisatie geldt over alles wat de transform verlaat (S-1)
+
+- De bestaande invariant ("in de volledige `convex-records.json` van een dev-run
+  komt geen enkele bron-naam of bron-email voor") gaat over **het bestand**, niet
+  over het records-deel ervan. Het waarschuwingskanaal zit in datzelfde bestand
+  en valt er dus onder.
+- De scan die dat aantoont neemt daarom de waarschuwingen mee. Storage-sleutels
+  blijven de enige uitzondering, om de reden die in §Toegevoegde invarianten
+  staat.
+- Dit raakt de records niet: die waren schoon. Het is het meldkanaal dat de
+  invariant breekt — en dat is precies waarom de scan over het geheel moet en
+  niet per veld.
+
+### Geratificeerde regel — de dev-invite-filter (S-2)
+
+Regie heeft de lezing van de implementatie geratificeerd; de planregel "invites:
+alleen tussen de 3 chosen" is onhoudbaar. De regel is:
+
+- de **uitnodiger** moet een chosen user zijn — dat is ook de enige verplichte
+  FK (`invitedBy`);
+- de **groep** moet in de dev-set zitten;
+- is de **genodigde** een bestaande user, dan moet die chosen zijn; is hij dat
+  niet (invite aan een adres zonder account), dan is dat juist het normale geval
+  en blijft de invite staan.
+
+Zonder de derde clausule bevat de dev-seed nul invites en is de invite-flow er
+niet op te testen. `migratie-plan-convex.md` §Dev seed strategie is
+overeenkomstig bijgewerkt.
+
+### Testbaarheid — waar de tests aan mogen raken (B-3)
+
+- **Geen enkele test raakt `scripts/.data/`.** Daar staat productie-PII; een
+  test die daar leest of schrijft kan de werkdata van een lopende migratie
+  overschrijven. De bestandslaag en de Convex-verbinding zijn in een test
+  vervangbaar, en die vervangbaarheid is een eis aan de tooling, niet een
+  toevalligheid van de huidige opzet.
+- **De laadstappen zijn zonder deployment te controleren.** Wat `load-records`
+  de deployment in stuurt (documenten met opgeloste FK's en storage-ID's, zonder
+  tooling-interne velden), wat `reset` leegmaakt en waar `verify` op afgaat, is
+  vast te stellen zonder AWS en zonder Convex-cloud.
+- **De integration-test uit §Acceptance is uitgesteld**, met hetzelfde precedent
+  als WP5/WP6/WP11: hij vereist AWS-credentials plus een dev-deployment en is
+  daarmee dezelfde categorie als de bestaande `tests/integration/**`-laag.
+  *Marker:* WP12-integration-test (load-files → load-records → verify,
+  inclusief de tweede `load-files`-run die overslaan aantoont) staat open en
+  wordt bij de dev-seed-run empirisch afgedekt. Dit uitstel hoort expliciet in
+  de commit-message van de cyclus.
+
+### Losse acties zonder test
+
+- **S-3** — de tooling meldt de prod-planning nog in 8,3 GB. Het gemeten getal
+  is 5,6 GB (1601 objecten, 5.605.457.261 bytes); de video's zitten er niet in.
+  Eén getal, één plek.
+- **S-5** — pre-flight §0 uit `data-migration-preflight.md` alsnog uitvoeren
+  vóór de eerste echte `load-records`: git tag, `npx convex export` als anker,
+  count-baseline, go/no-go-notitie. Niet te vervangen door de export-ankers in
+  het runbook: die dekken de runs, niet de voorfase.
+- **S-4** — commit-hygiëne; punt voor regie in `commit-discipline.md`, geen
+  code-actie.
