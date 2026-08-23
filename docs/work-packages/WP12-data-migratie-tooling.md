@@ -302,6 +302,15 @@ De invariant op regel 390 zegt dat optionele verwijzingen die niet resolven word
 
 Let op de scheiding tussen de twee takken in `transform.ts:504-509`. Alleen de tak "groep bestaat niet in de bron" krijgt het nieuwe gedrag. De tak "groep is weggefilterd uit de dev-set" blijft overslaan — dat is de dev-filter die zijn werk doet, en dat is met S-2 al geratificeerd. A past de bestaande test aan.
 
+**Aanvulling Wouter, 2026-08-23 — het behouden geldt alleen op prod.** In dev valt de rij alsnog weg. Prod is een migratie: alles wat er was blijft er, want weggooien is onomkeerbaar. Dev is een samengestelde deelverzameling: een uitnodiging zonder groep, van een geanonimiseerde afzender, naar iemand die niet in de seed zit, is ruis waar je bij het bouwen van de clients niets aan hebt.
+
+Concreet per tak, met de groep afwezig in de bron:
+
+| Doel | Gedrag |
+|---|---|
+| prod | rij behouden, `groupId` wissen, tellen |
+| dev | overslaan, tellen |
+
 ### R2-5 (should-fix) — geen pad voor orphans tussen T-2 en T-0
 
 `load-files` is puur additief (`loadFiles.ts:130`). Wordt een foto in de oude app verwijderd tussen T-2 en T-0, dan staat het bestand op T-0 in Convex-storage zonder record. `verify` meldt dat correct als bevinding, en het runbook eist "geen storage-orphans" — maar er is geen manier om alleen die objecten te wissen. `clearStorage` wist alles, en `reset --all` maakt de storage-map ongeldig, waarmee precies de uren upload verdwijnen die het gefaseerde ontwerp moest sparen.
