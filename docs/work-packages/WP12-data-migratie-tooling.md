@@ -268,6 +268,68 @@ B-1 is een herhaling van het WP10-patroon *geen recompute-vs-recompute*, één l
 
 ---
 
+## Audit-bevindingen cyclus 2 (2026-08-23)
+
+Audit gedraaid op `bd19f88` + `acdc4bb` + `12595fe`. Suite 712 groen, typecheck clean. **Geen blockers** — de vijf bevindingen uit cyclus 1 zijn inhoudelijk afgesloten. Wat volgt zit in de tweede orde: correcte fixes die niet vastgeklonken zijn.
+
+### R2-1 (should-fix) — gate en fixture delen `referencedStorageKeys`
+
+`loadRecords.ts:78-79` bepaalt de dekkingsvraag met `referencedStorageKeys`, en `tests/migration/_harness.ts:72` bouwt de storage-map van de fixture met diezelfde functie. `verify.ts:40` gebruikt hem ook. Een defect ín die functie is daarmee voor de hele suite onzichtbaar — dezelfde klasse fout die B-1 moest afsluiten, één laag dieper.
+
+Aangetoond in een wegwerp-kopie door het profielfoto-blok uit `loadFiles.ts:108-111` te verwijderen: 2 profielfoto's in de records, 0 aangekomen, `verify` exitcode 0, `tests/migration` 103/103 groen. `applyStorageMap` wist `profilePhotoStorageKey` zonder dat `toDoc` erop afketst, en de uncovered-set is leeg omdat de gate dezelfde blinde vlek heeft.
+
+Eis: de fixture leidt zijn dekking niet af uit de productiefunctie. Een handmatig opgesomde sleutel-lijst in `fixture.ts`, of minimaal één test die `referencedStorageKeys` tegen een met de hand opgeschreven verwachting pint — foto-sleutels én profielfoto-sleutels.
+
+### R2-2 (should-fix) — de andere helft van de B-1-invariant is ongepind
+
+§Fix-cyclus 1 zegt: `load-files` mag een ontbrekende map wél als eerste run lezen. De implementatie doet dat (`loadFiles.ts:76-85`), maar geen test raakt dat pad. `if (!allowMissing)` naar `if (true)` veranderen laat 103/103 groen, terwijl de allereerste `load-files` op prod-T-2 dan afbreekt met "storage-map.json bestaat niet".
+
+Eis: één test die `readStorageMap` met `allowMissing` op een lege bestandslaag `{ files: {} }` ziet teruggeven.
+
+### R2-3 (should-fix) — vier handbijgehouden FK-lijsten
+
+Na de B-2-fix bestaan er vier lijsten zonder onderlinge assertie: `REQUIRED_FKS`/`OPTIONAL_FKS` (`convex/monitoring.ts:39-69`, de bron van de eis), `MIGRATION_TABLES` (`convex/migration.ts:57`), `FKS` (`scripts/migrate/types.ts:52`) en een vierde kopie in `transform.test.ts:439-468`. De doc-comment op `types.ts:48-50` claimt gelijkheid met `monitoring.ts` die sinds deze cyclus niet meer bestaat: `uploadIdempotency.ownerId` en `.photoId` ontbreken.
+
+De generieke test is bovendien zelf-referentieel: `migrationFunctions.test.ts:81-82` loopt over `Object.keys(counts.tables)`, en die keys kómen uit `MIGRATION_TABLES`. Verdwijnt daar een tabel, dan krimpen beide kanten mee.
+
+Eis: één bron. Exporteer de tabellen-set uit `monitoring.ts` of leid hem af uit `REQUIRED_FKS ∪ OPTIONAL_FKS` plus de aggregate-tabellen, en assert `MIGRATION_TABLES ⊇ die set`.
+
+### R2-4 (should-fix) — invite naar een verwijderde groep *(besluit genomen)*
+
+De invariant op regel 390 zegt dat optionele verwijzingen die niet resolven worden gewist en geteld, en noemt `invites.groupId` expliciet. De implementatie gooit bij invites de hele rij weg (`transform.ts:504-509`), en `transform.test.ts:606-613` legt dat vast als gewenst. Spec en test spreken elkaar tegen.
+
+**Besluit Wouter, 2026-08-23: rij behouden, `groupId` wissen, en tellen.** Redenen: het volgt de geschreven invariant, het geeft één regel voor alle optionele FK's in plaats van een uitzondering, en het vermijdt stil dataverlies — de lijn die dit hele werkpakket aanhoudt. Een groeploze invite is geen probleem: accepteren levert een account zonder lidmaatschap, en dat pad bestaat al sinds WP6 als de zero-invite-fallback.
+
+Let op de scheiding tussen de twee takken in `transform.ts:504-509`. Alleen de tak "groep bestaat niet in de bron" krijgt het nieuwe gedrag. De tak "groep is weggefilterd uit de dev-set" blijft overslaan — dat is de dev-filter die zijn werk doet, en dat is met S-2 al geratificeerd. A past de bestaande test aan.
+
+### R2-5 (should-fix) — geen pad voor orphans tussen T-2 en T-0
+
+`load-files` is puur additief (`loadFiles.ts:130`). Wordt een foto in de oude app verwijderd tussen T-2 en T-0, dan staat het bestand op T-0 in Convex-storage zonder record. `verify` meldt dat correct als bevinding, en het runbook eist "geen storage-orphans" — maar er is geen manier om alleen die objecten te wissen. `clearStorage` wist alles, en `reset --all` maakt de storage-map ongeldig, waarmee precies de uren upload verdwijnen die het gefaseerde ontwerp moest sparen.
+
+Eis: `verify` somt de te verwijderen storage-ID's op, en er komt een `prune-storage`-commando dat exact de orphans wist. Een runbook-paragraaf met de handmatige route is het minimum.
+
+### Nice-to-have
+
+- Runbook §A regel 53 raadt `verify` aan als verbindingstest, maar `verify` leest eerst `convex-records.json` en faalt daarop. De test kan daar nooit slagen.
+- Runbook §0: de count-baseline-run van `verify` is per definitie rood. Vermelden, anders leest de operator dat als een probleem.
+- `missing-files.json` veroudert stil: wordt alleen geschreven als er in díe run iets ontbrak, dus een hersteld bestand blijft als "bevestigd afwezig" gelabeld.
+- Een photo-rij zonder `storageKey` glipt langs de gate en wordt daarna wél gedropt, met een waarschuwing die naar een niet-gezette vlag verwijst.
+- De S-1-scrub is email-only. De claim "een nieuw meldpunt is geen nieuw lek" geldt voor adressen, niet voor namen. Ofwel de claim afzwakken, ofwel de scrub uitbreiden.
+- `recomputeAggregates` draait onvoorwaardelijk, waardoor de aggregates uit de transform nooit landen. Botst met de invariant dat ze in de transform berekend worden, en maakt een transform-fout end-to-end onzichtbaar.
+- `verify` controleert `uploadIdempotency` niet — loopt over `TABLE_ORDER` in plaats van over de sleutels van `counts.tables`.
+- Warn-tekst noemt een invite een membership (`transform.ts:507`).
+- Het invite-token is een deterministische hash van PII. Lekt niets, maar bij het besluit "tokens vernieuwen" past een random token beter.
+
+### Recurring pattern — breder geformuleerd
+
+R2-1 en R2-3 zijn twee verse instanties van het patroon uit cyclus 1. De auditor stelt een bredere regel voor, die ik overneem:
+
+> Een controle — en óók de fixture waarmee die controle getest wordt — mag zijn verwachting niet afleiden met code die hij deelt met de te controleren stap. De verwachting komt uit de eerdere, onafhankelijke artefact-laag of uit een handmatig opgesomde oracle.
+
+Dit is dezelfde familie als het bestaande anti-patroon "gedeelde lookup-tabel" uit WP8. Regie voegt ze samen in `ab-audit-workflow.md`.
+
+---
+
 ## Spec-criticus aanvullingen (A, 2026-08-23)
 
 A heeft de oude AWS-code gelezen (`blob-images-api`, `-user`, `-groups`, `-photos`, `-invites`, `blob-images-features`, `blob-common`) en de draft daartegen gelegd. De draft klopt op mechanisme, planning en risico-weging. Waar hij niet klopt is in de **aanname dat de brondata dezelfde vorm en betekenis heeft als het Convex-schema**. Op zes punten is dat aantoonbaar niet zo. Die staan hieronder als correcties, gevolgd door de invarianten en edge cases die daaruit volgen.
