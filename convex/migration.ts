@@ -22,8 +22,8 @@ import { collectDriftLines } from "./monitoring";
 // lopen, dan zou elke insert de tellers opnieuw bijwerken en zouden ze twee
 // keer geteld worden.
 
-/** Alle tabellen die de import raakt, in laad-volgorde. */
-const MIGRATION_TABLES = [
+/** De tabellen die de import zelf vult, in laad-volgorde. */
+const LOAD_TABLES = [
   "users",
   "groups",
   "memberships",
@@ -37,6 +37,26 @@ const MIGRATION_TABLES = [
   "albumLastSeen",
 ] as const;
 
+/**
+ * De volledige set die de tooling telt en leegmaakt: de laad-tabellen plus élke
+ * andere tabel waarop WP10's `integrityCheck` een controle doet (WP12
+ * fix-cyclus 1, B-2).
+ *
+ * `uploadIdempotency` staat er daarom bij. WP10 controleert er twee FK's op
+ * (`ownerId` verplicht, `photoId` optioneel). Zat de tabel hier niet in, dan
+ * zou de preconditie "alle doel-tabellen leeg" een uitspraak over een
+ * deelverzameling zijn en zou `reset` de rijen niet weg kunnen halen — waarna
+ * hun `ownerId`'s na een seed naar verwijderde users wijzen en de dagelijkse
+ * scan dangling FK's meldt. De dev-deployment heeft zulke rijen aantoonbaar:
+ * tests/integration/uploads/uploadRoundtrip.test.ts schrijft ze.
+ *
+ * De import vult de tabel nooit: hij hoort bij de upload-flow, niet bij de
+ * brondata. Tellen en leegmaken wél, invoegen niet — vandaar twee lijsten met
+ * één insluiting, niet twee lijsten die uit elkaar kunnen lopen.
+ */
+const MIGRATION_TABLES = [...LOAD_TABLES, "uploadIdempotency"] as const;
+
+type LoadTable = (typeof LOAD_TABLES)[number];
 type MigrationTable = (typeof MIGRATION_TABLES)[number];
 
 function assertMigrationTable(table: string): MigrationTable {
@@ -46,6 +66,15 @@ function assertMigrationTable(table: string): MigrationTable {
     );
   }
   return table as MigrationTable;
+}
+
+function assertLoadTable(table: string): LoadTable {
+  if (!(LOAD_TABLES as readonly string[]).includes(table)) {
+    throw new Error(
+      `[migration] '${table}' wordt niet door de import gevuld. Toegestaan: ${LOAD_TABLES.join(", ")}`,
+    );
+  }
+  return table as LoadTable;
 }
 
 // ── load-records ──────────────────────────────────────────────────────
@@ -63,10 +92,10 @@ export const insertRows = internalMutation({
   },
   returns: v.array(v.object({ sourceKey: v.string(), id: v.string() })),
   handler: async (ctx, { table, rows }) => {
-    const name = assertMigrationTable(table);
+    const name = assertLoadTable(table);
     const out: Array<{ sourceKey: string; id: string }> = [];
     for (const row of rows) {
-      const id = await ctx.db.insert(name, row.doc as Doc<MigrationTable>);
+      const id = await ctx.db.insert(name, row.doc as Doc<LoadTable>);
       out.push({ sourceKey: row.sourceKey, id });
     }
     return out;
@@ -86,15 +115,15 @@ export const patchRefs = internalMutation({
   },
   returns: v.number(),
   handler: async (ctx, { table, patches }) => {
-    const name = assertMigrationTable(table);
+    const name = assertLoadTable(table);
     for (const patch of patches) {
-      const doc = await ctx.db.get(patch.id as Id<MigrationTable>);
+      const doc = await ctx.db.get(patch.id as Id<LoadTable>);
       if (doc === null) {
         throw new Error(`[migration] patchRefs: ${name}/${patch.id} bestaat niet`);
       }
-      await ctx.db.patch(patch.id as Id<MigrationTable>, {
+      await ctx.db.patch(patch.id as Id<LoadTable>, {
         [patch.field]: patch.value,
-      } as Partial<Doc<MigrationTable>>);
+      } as Partial<Doc<LoadTable>>);
     }
     return patches.length;
   },

@@ -10,11 +10,24 @@
 // het antwoord `reset` en opnieuw — hervatting zou een tweede foutbron zijn.
 // Daarom ook de preconditie: alle doel-tabellen leeg, vóór de eerste schrijf
 // gecontroleerd en niet halverwege ontdekt.
+//
+// Twee gates vóór de eerste schrijf, allebei omdat een half geslaagde run hier
+// erger is dan een geweigerde:
+//   1. **Storage-dekking.** Elke sleutel waar een record naar verwijst moet een
+//      bestand in `storage-map.json` hebben. Een ontbrekende, lege of
+//      onvolledige map is een harde fout — nooit "nul bestanden bekend, dus nul
+//      foto's te laden" (WP12 fix-cyclus 1, B-1).
+//   2. **Leeg.** Elke tabel die `tableCounts` telt is leeg, inclusief de
+//      tabellen die de import zelf niet vult maar WP10 wél bewaakt.
+// `--accept-missing-files` opent gate 1, en dan alleen luidruchtig: het verlies
+// wordt geteld, per bron-sleutel benoemd, en `verify` meldt het naderhand als
+// bevinding. De vlag is een bevestiging van geaccepteerd verlies, geen
+// voorwaarde om te kunnen draaien.
 
 import { internal } from "../../convex/_generated/api.js";
 import type { Target } from "./config.ts";
 import { makeAdminClient, runMutation, runQuery } from "./convexAdmin.ts";
-import { readStorageMap, type StorageMapFile } from "./loadFiles.ts";
+import { readStorageMap, referencedStorageKeys, type StorageMapFile } from "./loadFiles.ts";
 import {
   MISSING_FILES_FILE,
   RECORDS_FILE,
@@ -45,7 +58,10 @@ export async function loadRecords(target: Target, acceptMissingFiles: boolean): 
     );
   }
   const admin = makeAdminClient(target, true);
-  const storageMap = readStorageMap(target, admin.url);
+  // Een ontbrekende map is hier een harde fout: voor `load-files` is hij het
+  // normale begin, voor `load-records` het bewijs dat die stap niet
+  // (af)gedraaid is (WP12 fix-cyclus 1, B-1).
+  const storageMap = readStorageMap(target, admin.url, { allowMissing: false });
 
   console.log(`[load-records] doel: ${target} (${admin.url})`);
   console.log(
@@ -53,26 +69,49 @@ export async function loadRecords(target: Target, acceptMissingFiles: boolean): 
       `transform van ${recordsFile.meta.transformedAt}`,
   );
 
-  if (dataFileExists(MISSING_FILES_FILE)) {
-    const missing = readData<{ keys: string[] }>(MISSING_FILES_FILE);
-    if (missing.keys.length > 0 && !acceptMissingFiles) {
-      throw new Error(
-        `[load-records] ${missing.keys.length} bestand(en) uit scripts/.data/${MISSING_FILES_FILE} ` +
-          `ontbreken in S3. Die foto's kunnen niet geladen worden (photos.storageId is verplicht). ` +
-          `Bekijk de lijst; draai daarna opnieuw met --accept-missing-files om het verlies te ` +
-          `accepteren, of los het in de bron op.`,
-      );
-    }
+  // ── gate: dekt de storage-map élke verwezen sleutel? ─────────────────
+  // Vóór de eerste schrijf, en op de records zelf — niet op missing-files.json.
+  // Dat bestand valt pas aan het eind van `load-files`, dus juist in het
+  // scenario waarin de gate moet werken (een run die halverwege afbrak) bestaat
+  // het niet. Zonder deze check kon een lege of onvolledige map een complete
+  // dataset zonder foto's opleveren, met een groene `verify` erachteraan.
+  const referenced = referencedStorageKeys(recordsFile);
+  const uncovered = referenced.filter((key) => storageMap.files[key] === undefined);
+  if (uncovered.length > 0 && !acceptMissingFiles) {
+    throw new Error(
+      `[load-records] ${uncovered.length} van de ${referenced.length} ` +
+        `verwezen bestand(en) staan niet in scripts/.data/storage-map.json:\n` +
+        uncovered
+          .slice(0, 20)
+          .map((key) => `  - ${key}`)
+          .join("\n") +
+        (uncovered.length > 20 ? `\n  … en nog ${uncovered.length - 20}` : "") +
+        `\nZonder bestand kan de foto niet geladen worden (photos.storageId is verplicht) en ` +
+        `zou alles wat ernaar verwijst stilletjes wegvallen. Draai 'load-files' (opnieuw) af; ` +
+        `staan de bestanden aantoonbaar niet in S3 (zie ${MISSING_FILES_FILE}), draai dan ` +
+        `opnieuw met --accept-missing-files om dat verlies expliciet te accepteren.`,
+    );
   }
 
   // ── voorbewerking: records zonder bestand ───────────────────────────
   const { records, dropped } = applyStorageMap(recordsFile.records, storageMap);
   if (dropped.photos.length > 0 || dropped.profilePhotos > 0) {
+    const provenMissing = knownMissingKeys();
     console.warn(
-      `[load-records] ${dropped.photos.length} foto('s) overgeslagen wegens ontbrekend bestand, ` +
-        `${dropped.profilePhotos} profielfoto('s) zonder bestand gewist, ` +
-        `${dropped.albumPhotos} albumfoto('s) en ${dropped.ratings} like(s) meegevallen, ` +
-        `${dropped.coverPhotos} cover-verwijzing(en) gewist. Aggregates zijn hertelt.`,
+      `[load-records] --accept-missing-files: ${dropped.photos.length} foto('s) overgeslagen ` +
+        `wegens ontbrekend bestand, ${dropped.profilePhotos} profielfoto('s) zonder bestand ` +
+        `gewist, ${dropped.albumPhotos} albumfoto('s) en ${dropped.ratings} like(s) meegevallen, ` +
+        `${dropped.coverPhotos} cover-verwijzing(en) gewist. Aggregates zijn herteld.`,
+    );
+    for (const key of uncovered) {
+      console.warn(
+        `[load-records]   ontbreekt: ${key}` +
+          (provenMissing.has(key) ? ` (bevestigd afwezig in S3)` : ` (niet geüpload)`),
+      );
+    }
+    console.warn(
+      `[load-records] verlies per foto: ${dropped.photos.join(", ")}. ` +
+        `Dit komt terug in het verify-rapport.`,
     );
   }
 
@@ -139,6 +178,16 @@ export async function loadRecords(target: Target, acceptMissingFiles: boolean): 
   console.log(`[load-records] klaar: ${total} rijen, ${patched} cover-verwijzing(en) nagevuld.`);
   console.log(`[load-records] draai nu 'verify'.`);
   return 0;
+}
+
+/**
+ * De sleutels die `load-files` aantoonbaar niet in S3 vond. Puur om het verlies
+ * te duiden — nooit als gate: `missing-files.json` wordt pas aan het eind van
+ * `load-files` geschreven en ontbreekt dus juist bij een afgebroken run.
+ */
+function knownMissingKeys(): Set<string> {
+  if (!dataFileExists(MISSING_FILES_FILE)) return new Set();
+  return new Set(readData<{ keys: string[] }>(MISSING_FILES_FILE).keys);
 }
 
 function emptyIdMaps(): IdMaps {
@@ -210,10 +259,16 @@ export type DropReport = {
 
 /**
  * Foto's zonder bestand in de storage-map kunnen niet geladen worden
- * (`photos.storageId` is verplicht). A-besluit: rapporteren en overslaan — één
- * ontbrekend bestand mag een cutover van 1650 foto's niet blokkeren, maar het
- * moet zichtbaar zijn. Alles wat naar zo'n foto verwees gaat mee, en de
- * aggregates worden herteld: anders meldt WP10 vanaf dag één drift.
+ * (`photos.storageId` is verplicht). Rapporteren en overslaan — één ontbrekend
+ * bestand mag een cutover van 1650 foto's niet blokkeren, maar het moet
+ * zichtbaar zijn. Alles wat naar zo'n foto verwees gaat mee, en de aggregates
+ * worden herteld: anders meldt WP10 vanaf dag één drift.
+ *
+ * Bereikbaar is dit pad alleen ná `--accept-missing-files`: zonder die vlag is
+ * de gate in `loadRecords` er al op afgeketst. Wat hier wegvalt is dus altijd
+ * geaccepteerd verlies, nooit een stille aftrekpost — en `verify` leidt zijn
+ * verwachting bewust niet met deze functie af, anders zou de controle de fout
+ * van de laadstap structureel niet kunnen zien (WP12 fix-cyclus 1, B-1c).
  */
 export function applyStorageMap(
   input: Records,

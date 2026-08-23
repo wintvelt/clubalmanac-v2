@@ -50,6 +50,14 @@ const INVITE_TTL_MS = 30 * DAY_MS;
 // telt de generator door; anonimiseren mag nooit op een naam-collisie stuklopen.
 const DEV_NAMES = ["Dev Wouter", "Dev Anna", "Dev Bram", "Dev Chris", "Dev Dana"];
 
+// Domein van alle vervangende adressen. Wat hierop eindigt is al geanonimiseerd
+// en mag niet nog een keer door de scrub.
+const ANON_DOMAIN = "clubalmanac.test";
+
+// Emailadres in vrije tekst. Ruim genomen: liever één te veel gemaskeerd dan
+// één bron-adres dat in een waarschuwing blijft staan.
+const EMAIL_IN_TEXT = /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g;
+
 // ── kleine helpers ────────────────────────────────────────────────────
 
 /** Lege string = afwezig (correctie 6), niet "lege waarde". */
@@ -394,11 +402,35 @@ export function transform(items: SourceItem[], config: TransformConfig): Transfo
     return anonInviteeEmail.get(raw)!;
   };
 
+  /**
+   * Anonimisatie geldt over álles wat de transform verlaat, niet alleen over de
+   * records (WP12 fix-cyclus 1, S-1). De waarschuwingen worden mee weggeschreven
+   * in convex-records.json en staan daarmee op dezelfde laptop; een
+   * overgeslagen record wordt gemeld met zijn bron-sleutel, en die sleutel ís
+   * een emailadres als de genodigde geen account heeft.
+   *
+   * Daarom één scrub over de hele tekst in plaats van een ingreep per meldpunt:
+   * een nieuw meldpunt erbij mag geen nieuw lek zijn. Adressen van bestaande
+   * users krijgen hun dev-adres, de rest hetzelfde stabiele invitee-alias als in
+   * de records — de melding blijft dus herleidbaar, alleen de identiteit is weg.
+   */
+  const anonymizeText = (message: string): string => {
+    if (!config.anonymize) return message;
+    return message.replace(EMAIL_IN_TEXT, (raw) => {
+      const normalized = normalizeEmail(raw);
+      if (normalized === undefined || normalized.endsWith(`@${ANON_DOMAIN}`)) return raw;
+      const userId = emailToUserId.get(normalized);
+      return userId !== undefined ? anonUserEmail(userId) : inviteeEmail(normalized);
+    });
+  };
+
   const records: Records = emptyRecords();
 
   // ── users ───────────────────────────────────────────────────────────
   // Vier bronrecords (UBbase / UPstats / UVvisit / USER) worden één rij.
-  const seenEmails = new Map<string, string>();
+  // De map dient twee doelen: botsende adressen betrappen, en de scrub laten
+  // zien welk bron-adres bij welke user hoort.
+  const emailToUserId = new Map<string, string>();
   for (const userId of [...includedUsers].sort()) {
     const user = src.users.get(userId)!;
     const subject = str(config.subjectByUserId[userId]);
@@ -410,14 +442,14 @@ export function transform(items: SourceItem[], config: TransformConfig): Transfo
     }
     const rawEmail = normalizeEmail(user.base.email);
     if (rawEmail === undefined) fail(`user ${userId} heeft geen email`);
-    const clash = seenEmails.get(rawEmail);
+    const clash = emailToUserId.get(rawEmail);
     if (clash !== undefined) {
       fail(
         `users ${clash} en ${userId} hebben na normalisatie hetzelfde emailadres. ` +
           `Geen "laatste wint" — dit moet in de bron opgelost worden.`,
       );
     }
-    seenEmails.set(rawEmail, userId);
+    emailToUserId.set(rawEmail, userId);
 
     const createdAt = toEpoch(user.base.createdAt);
     if (createdAt === undefined) fail(`user ${userId} heeft geen bruikbare createdAt`);
@@ -764,7 +796,7 @@ export function transform(items: SourceItem[], config: TransformConfig): Transfo
       "bestaan niet in DynamoDB en blijven leeg",
   );
 
-  return { records, warnings };
+  return { records, warnings: warnings.map(anonymizeText) };
 }
 
 // ── albumLastSeen ─────────────────────────────────────────────────────

@@ -2,20 +2,30 @@
 // bedoelden te laden?
 //
 // Drie controles, en de derde is de reden dat dit commando bestaat:
-//   1. Rij-aantallen per tabel = de rijen uit convex-records.json (na aftrek van
-//      wat wegens een ontbrekend bestand is overgeslagen).
+//   1. Rij-aantallen per tabel = de tellingen die `transform` in
+//      convex-records.json heeft vastgelegd.
 //   2. Storage twee kanten op: elke `storageId` in een record bestaat, én elk
 //      object in `_storage` hangt aan minstens één record. Dat tweede is exact
 //      wat WP10 dagelijks meldt — beter hier op T-0 zien dan de volgende
 //      ochtend per mail.
 //   3. De volledige WP10-integriteitsscan, read-only (geen monitoringRuns-rij,
 //      geen drift-mail): aggregates, FK's, orphans.
+//
+// De verwachting komt uit `meta.counts` — de eerdere, onafhankelijke laag — en
+// nooit uit een herberekening die dezelfde weg aflegt als `load-records` (WP12
+// fix-cyclus 1, B-1c). Dat was precies het gat: `verify` paste dezelfde
+// `applyStorageMap` toe op zijn eigen verwachting, dus bij een lege storage-map
+// verwachtte hij 0 foto's, vond er 0, en meldde "ok".
+//
+// Gevolg, en dat is bedoeld: draai je met `--accept-missing-files`, dan is
+// `verify` niet groen. Verklaarbaar verlies is geen goedgekeurd verlies; de
+// operator moet het zien en accepteren, en dit is de laatste plek waar dat nog
+// kan vóór T-0 doorgaat.
 
 import { internal } from "../../convex/_generated/api.js";
 import type { Target } from "./config.ts";
 import { makeAdminClient, runQuery } from "./convexAdmin.ts";
-import { readStorageMap } from "./loadFiles.ts";
-import { applyStorageMap } from "./loadRecords.ts";
+import { readStorageMap, referencedStorageKeys } from "./loadFiles.ts";
 import { RECORDS_FILE, readData } from "./paths.ts";
 import { summarize } from "./runTransform.ts";
 import type { RecordsFile } from "./runTransform.ts";
@@ -24,8 +34,12 @@ import { TABLE_ORDER } from "./types.ts";
 export async function verify(target: Target): Promise<number> {
   const recordsFile = readData<RecordsFile>(RECORDS_FILE);
   const admin = makeAdminClient(target, false);
-  const storageMap = readStorageMap(target, admin.url);
-  const { records, dropped } = applyStorageMap(recordsFile.records, storageMap);
+  // Verify mag niet omvallen op een ontbrekende map: hij rapporteert, hij
+  // blokkeert niet. De map dient hier alleen om een verschil te duiden.
+  const storageMap = readStorageMap(target, admin.url, { allowMissing: true });
+  const uncovered = referencedStorageKeys(recordsFile).filter(
+    (key) => storageMap.files[key] === undefined,
+  );
 
   console.log(`[verify] doel: ${target} (${admin.url})`);
   console.log(
@@ -37,13 +51,21 @@ export async function verify(target: Target): Promise<number> {
 
   // ── 1. rij-aantallen ────────────────────────────────────────────────
   const counts = await runQuery(admin, internal.migration.tableCounts, {});
-  console.log(`\n[verify] rij-aantallen:`);
+  const explain =
+    uncovered.length > 0
+      ? ` — mogelijk verklaard door ${uncovered.length} ontbrekend(e) bestand(en), maar` +
+        ` verklaarbaar is niet goedgekeurd`
+      : "";
+  console.log(`\n[verify] rij-aantallen (verwacht = de transform-telling):`);
   for (const table of TABLE_ORDER) {
-    const expected = records[table].length;
+    const expected = recordsFile.meta.counts[table] ?? 0;
     const actual = counts.tables[table] ?? 0;
     const ok = expected === actual;
     if (!ok) problems += 1;
-    console.log(`  ${ok ? "ok " : "FOUT"} ${table.padEnd(16)} verwacht ${expected}, gevonden ${actual}`);
+    console.log(
+      `  ${ok ? "ok " : "FOUT"} ${table.padEnd(16)} verwacht ${expected}, gevonden ${actual}` +
+        (ok ? "" : explain),
+    );
   }
 
   // ── 2. storage, twee kanten op ──────────────────────────────────────
@@ -76,11 +98,29 @@ export async function verify(target: Target): Promise<number> {
   if (drift.length > 0) problems += 1;
 
   // ── rapport ─────────────────────────────────────────────────────────
-  if (dropped.photos.length > 0) {
+  // Geen aftrekpost, maar een bevinding met naam en toenaam: welke bestanden
+  // ontbraken en welke foto's daaraan hingen. De tellingen hierboven zijn er al
+  // op afgeketst; dit is de duiding die de operator nodig heeft om te beslissen.
+  if (uncovered.length > 0) {
+    // Ook als de rij-aantallen toevallig kloppen. Een ontbrekende *profielfoto*
+    // verandert geen enkele telling en zou hier anders alsnog stil wegvallen.
+    problems += 1;
+    const uncoveredSet = new Set(uncovered);
+    const affected = recordsFile.records.photos
+      .filter((photo) => uncoveredSet.has(photo.storageKey as string))
+      .map((photo) => photo.sourceKey);
     console.log(
-      `\n[verify] ${dropped.photos.length} foto('s) zijn niet geladen omdat hun bestand niet in ` +
-        `S3 stond: ${dropped.photos.slice(0, 10).join(", ")}${dropped.photos.length > 10 ? " …" : ""}`,
+      `\n[verify] BEVINDING: ${uncovered.length} verwezen bestand(en) staan niet in ` +
+        `storage-map.json. Alles wat eraan hing is niet geladen.`,
     );
+    for (const key of uncovered.slice(0, 10)) console.log(`  - ${key}`);
+    if (uncovered.length > 10) console.log(`  … en nog ${uncovered.length - 10}`);
+    if (affected.length > 0) {
+      console.log(
+        `  geraakte foto's: ${affected.slice(0, 10).join(", ")}` +
+          `${affected.length > 10 ? " …" : ""}`,
+      );
+    }
   }
   console.log(`\n[verify] waarschuwingen uit de transform:`);
   for (const line of summarize(recordsFile.warnings)) console.log(`  - ${line}`);

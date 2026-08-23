@@ -50,8 +50,37 @@ export type StorageMapFile = {
 
 const URL_BATCH = 10;
 
-export function readStorageMap(target: Target, convexUrl: string): StorageMapFile {
+/**
+ * Het te verwachten prod-volume, gemeten op 2026-08-23 met
+ * `aws s3 ls s3://blob-images/ --recursive --summarize`: 1601 objecten,
+ * 5.605.457.261 bytes. De 8,3 GB uit het oorspronkelijke plan was inclusief de
+ * video's, en die gaan niet mee (WP12 §Video's — buiten scope). Eén getal, één
+ * plek: hier.
+ */
+const PROD_VOLUME_BYTES = 5_605_457_261;
+const PROD_VOLUME_LABEL = "5,6 GB";
+
+/**
+ * Leest `storage-map.json`.
+ *
+ * `allowMissing` is geen gemak maar het verschil tussen twee stappen (WP12
+ * fix-cyclus 1, B-1): voor `load-files` is een ontbrekende map het normale
+ * begin van de eerste run, voor `load-records` is hij het bewijs dat de vorige
+ * stap niet (af)gedraaid is. Alleen `load-files` mag hem dus verzinnen.
+ */
+export function readStorageMap(
+  target: Target,
+  convexUrl: string,
+  { allowMissing }: { allowMissing: boolean },
+): StorageMapFile {
   if (!dataFileExists(STORAGE_MAP_FILE)) {
+    if (!allowMissing) {
+      throw new Error(
+        `[migrate] scripts/.data/${STORAGE_MAP_FILE} bestaat niet. Zonder die map is niet vast ` +
+          `te stellen welke bestanden geladen zijn — "nul bestanden bekend, dus nul foto's te ` +
+          `laden" is nooit een geldige conclusie. Draai eerst 'load-files'.`,
+      );
+    }
     return { meta: { target, convexUrl, updatedAt: new Date().toISOString() }, files: {} };
   }
   const map = readData<StorageMapFile>(STORAGE_MAP_FILE);
@@ -96,7 +125,7 @@ export async function loadFiles(target: Target): Promise<number> {
   const source = awsSource();
   const s3 = new S3Client({ region: source.region });
 
-  const map = readStorageMap(target, admin.url);
+  const map = readStorageMap(target, admin.url, { allowMissing: true });
   const keys = referencedStorageKeys(recordsFile);
   const todo = keys.filter((key) => map.files[key] === undefined);
 
@@ -151,7 +180,7 @@ export async function loadFiles(target: Target): Promise<number> {
       `${elapsed.toFixed(0)}s — ${throughput(bytesTotal, startedAt)}`,
   );
   console.log(
-    `[load-files] meting voor de prod-planning: bij dit tempo duurt 8,3 GB ` +
+    `[load-files] meting voor de prod-planning: bij dit tempo duurt ${PROD_VOLUME_LABEL} ` +
       `${estimateHours(bytesTotal, elapsed)}.`,
   );
 
@@ -219,6 +248,6 @@ function throughput(bytes: number, startedAt: number): string {
 function estimateHours(bytes: number, seconds: number): string {
   if (bytes === 0) return "onbekend (niets geüpload)";
   const perByte = seconds / bytes;
-  const hours = (8.3e9 * perByte) / 3600;
+  const hours = (PROD_VOLUME_BYTES * perByte) / 3600;
   return `ongeveer ${hours.toFixed(1)} uur`;
 }

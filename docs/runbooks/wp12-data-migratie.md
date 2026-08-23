@@ -19,6 +19,15 @@ npm run migrate -- <commando> --target dev|prod [opties]
 
 ## Pre-flight
 
+### §0 — meten vóór de eerste echte `load-records`
+
+Verplicht per [`data-migration-preflight.md`](../conventions/data-migration-preflight.md), per doel-deployment één keer, en **niet** te vervangen door de export-ankers verderop in dit runbook: die dekken de runs, de §0 dekt de voorfase. Alleen meten, niets wijzigen.
+
+- [ ] Git tag op de commit waarmee je draait: `git tag pre-wp12-<dev|prod> && git push origin pre-wp12-<dev|prod>`.
+- [ ] `npx convex export [--prod] --path ./backups/pre-wp12-<dev|prod>.zip`, plus een tweede kopie via het dashboard (Settings → Snapshot export). Twee onafhankelijke fallbacks.
+- [ ] Count-baseline van de doel-deployment: draai ná `transform` en vóór `load-files`/`load-records` één keer `npm run migrate -- verify --target <dev|prod>`. Dat commando is read-only en drukt per tabel af wat er staat (baseline: nul) tegenover wat de transform gaat laden. Noteer beide kolommen.
+- [ ] Go/no-go-notitie in `docs/migratie-status.md`: counts, datum, en het besluit. Ligt er meer dan een week tussen deze meting en de run, herhaal 'm dan.
+
 ### A. `.env.migrate` (gitignored)
 
 ```
@@ -81,6 +90,7 @@ npm run migrate -- verify --target dev
 - Anonimisatie staat automatisch aan bij `--target dev` en zit ín de transform: echte namen en adressen verlaten die stap niet, ook niet in invite-sleutels of -tokens. Foto's blijven echt (visuele realiteit) — de dev-database dus nooit publiek delen.
 - Een groep waarvan de founder niet chosen is, valt volledig af. Blijkt bij `inspect` dat je daarmee een groep kwijtraakt die je wilde testen, kies dan andere users — niet de regel verzachten.
 - Opnieuw seeden (bv. na een schema-wijziging): `reset --target dev --yes` en dan `load-records` opnieuw. De bestanden blijven staan, dus dat duurt minuten. Alleen als je ook de bestanden weg wilt: `reset --target dev --yes --all` — dat maakt `storage-map.json` in dezelfde beweging ongeldig.
+- `reset` leegt precies de tabellen die de leeg-preconditie van `load-records` telt — inclusief `uploadIdempotency`, dat de import zelf niet vult maar dat wél onder WP10's FK-controle valt. De dev-deployment heeft er rijen in van de upload-integration-test; bleven die staan, dan wezen hun `ownerId`'s na de seed naar verwijderde users en meldde de dagelijkse scan drift.
 
 ## Run 2 — prod (fase 5)
 
@@ -117,6 +127,8 @@ npm run migrate -- verify --target prod
 ```
 
 - [ ] `verify` is groen: rij-aantallen kloppen, geen dangling storage-verwijzingen, geen storage-orphans, integriteitsscan leeg.
+
+  `verify` vergelijkt met de tellingen die de **transform** heeft vastgelegd, niet met een herberekening uit de storage-map. Dat betekent dat een run met `--accept-missing-files` per definitie níet groen is: het verlies is verklaarbaar, maar verklaarbaar is niet goedgekeurd. Lees dan de bevinding, controleer dat het verschil exact de geaccepteerde bestanden betreft, en teken er bewust voor af.
 - [ ] `integrityCheck`-cron op prod weer aan.
 - [ ] `unset MIGRATE_ALLOW_PROD`.
 
@@ -128,8 +140,10 @@ Breekt `load-records` halverwege af, dan stopt hij luid met de bron-sleutel in d
 |---|---|
 | `groep X heeft geen membership met isFounder` | `groups.createdBy` is niet af te leiden. Zet een `founderOverrides`-entry. |
 | `user X heeft geen Clerk-ID in de ID-map` | De ID-map mist een user. Geen placeholder-subject: die user zou nooit kunnen inloggen. |
-| `de doel-deployment is niet leeg` | `load-records` weigert te verdubbelen. Draai `reset`. |
-| `N bestand(en) ... staan niet in de bucket` | Records verwijzen naar een verdwenen S3-object. Bekijk `scripts/.data/missing-files.json`; met `--accept-missing-files` slaat `load-records` die foto's over (en telt ze in het rapport). |
+| `de doel-deployment is niet leeg` | `load-records` weigert te verdubbelen. Draai `reset`. Ook achtergebleven `uploadIdempotency`-rijen tellen mee: die staan onder WP10's FK-controle en `reset` haalt ze weg. |
+| `storage-map.json bestaat niet` | `load-files` is niet (af)gedraaid. `load-records` weigert; "nul bestanden bekend, dus nul foto's" is geen geldige conclusie. |
+| `N van de M verwezen bestand(en) staan niet in storage-map.json` | De gate vóór de eerste schrijf. Draai `load-files` (opnieuw) af — hij hervat waar hij gebleven was. Staan de bestanden aantoonbaar niet in S3, dan pas `--accept-missing-files`. |
+| `N bestand(en) ... staan niet in de bucket` | Records verwijzen naar een verdwenen S3-object. Bekijk `scripts/.data/missing-files.json`; met `--accept-missing-files` slaat `load-records` die foto's over, benoemt ze per bron-sleutel, en `verify` meldt het verschil daarna als bevinding. |
 | `stemscore votes=N gaat verloren` | Bewust: de bron kent geen per-user upvotes, dus `upvoteCount` wordt 0. De oude score staat in het rapport zodat je 'm desgewenst handmatig terugzet. |
 | `createdBy gesynthetiseerd` | `albums.createdBy` bestaat niet in de bron en valt terug op de founder van de groep. |
 
