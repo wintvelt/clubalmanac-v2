@@ -12,9 +12,13 @@
     "resolveJsonModule": true,
     "isolatedModules": true,
     "noEmit": true,
+    // scripts/migrate draait rechtstreeks op Node's type-stripping (node
+    // scripts/migrate/cli.ts), en ESM eist daar een expliciete extensie in het
+    // import-specifier. Alleen zinnig samen met noEmit.
+    "allowImportingTsExtensions": true,
     "types": ["node"],
     "jsx": "react-jsx"
   },
-  "include": ["convex/**/*.ts", "tests/**/*.ts"],
+  "include": ["convex/**/*.ts", "tests/**/*.ts", "scripts/**/*.ts"],
   "exclude": ["node_modules"]
 }

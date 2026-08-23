@@ -11,11 +11,13 @@ import type { Doc } from "./_generated/dataModel";
 import { internalRemovePhoto } from "./photos";
 import { internalRemoveMember } from "./groups";
 import { normalizeEmail } from "./lib/email";
+import { DEFAULT_PHOTO_LIMIT } from "./lib/constants";
 
 // Default upload-limiet voor nieuwe users. Mocht een admin een hogere limiet
 // willen geven, dan kan dat via directe DB patch (geen public mutation in
 // fase 2 — admin flows komen later).
-export const DEFAULT_PHOTO_LIMIT = 1000;
+// Gedeeld met scripts/migrate (WP12) via convex/lib/constants.ts.
+export { DEFAULT_PHOTO_LIMIT };
 
 export async function getBySubject(
   ctx: QueryCtx,

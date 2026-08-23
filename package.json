@@ -10,9 +10,13 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:integration": "vitest run --config vitest.integration.config.ts"
+    "test:integration": "vitest run --config vitest.integration.config.ts",
+    "migrate": "node scripts/migrate/cli.ts"
   },
   "devDependencies": {
+    "@aws-sdk/client-dynamodb": "^3.1116.0",
+    "@aws-sdk/client-s3": "^3.1116.0",
+    "@aws-sdk/lib-dynamodb": "^3.1116.0",
     "@clerk/backend": "^3.4.4",
     "@edge-runtime/vm": "^5.0.0",
     "@types/node": "^25.6.0",

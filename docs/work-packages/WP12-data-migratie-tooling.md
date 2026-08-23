@@ -109,17 +109,28 @@ Dit stelt twee eisen aan het ontwerp:
 
 Gevolg voor de planning: de Convex-prod-deployment moet op T-2 weken al bestaan. Dat past binnen het bestaande T-4-weken-blok in `migratie-status.md`.
 
-## Video's
+## Video's — buiten scope
 
-De 6 video's (~3 GB samen) gaan mee naar Convex-storage. Ze zijn géén user-feature: er komen geen API-endpoints voor video, niet in deze WP en niet in fase 4. Het doel is uitsluitend dat de content niet verloren gaat bij het opruimen van AWS.
+**Besluit Wouter, 2026-08-23: de video's gaan niet mee naar Convex.** Ze blijven op S3 staan tot de overstap naar Cloudflare R2. WP12 raakt de bucket `blob-videos` niet: geen extract, geen upload, geen records.
 
-Uit te zoeken door A, vóór B begint:
+De aanname in het migratieplan klopte niet. Empirisch vastgesteld:
 
-1. **Staat er in DynamoDB een verwijzing naar de video's?** Bijvoorbeeld als `PO`-record met een video-`mimeType`, of in een ander patroon. Het antwoord bepaalt de rest.
-2. Als er wél een verwijzing is: die records migreren mee via het normale pad, en het enige extra risico is de bestandsgrootte.
-3. Als er géén verwijzing is: dan komen de bestanden in Convex-storage te staan zonder bijbehorend record. `internal.monitoring.integrityCheck` uit WP10 meldt zulke bestanden als storage-orphan, en zou dan vanaf dag één elke dag drift rapporteren. Dat is onacceptabel — het maakt de monitoring waardeloos. In dat geval moet WP12 een expliciete keuze maken: een minimale tabel voor video-records, of een gedocumenteerde uitzondering in de orphan-check.
+| | Plan | Werkelijkheid |
+|---|---|---|
+| Aantal | 6 | 10 |
+| Omvang | ~3 GB | ~19 GB (17,7 GiB) |
+| Grootste bestand | — | 5,8 GiB |
+| Locatie | aangenomen: `blob-images/protected/` | eigen bucket `blob-videos` |
 
-Daarnaast: bij een orde van 500 MB per bestand moet geverifieerd worden dat Convex-storage die omvang aankan, en via welk uploadpad. De 20 MiB-limiet van httpActions is hier niet van toepassing — `load-files` gebruikt het upload-URL-pad — maar dat er géén andere limiet speelt is nog niet vastgesteld.
+Ze staan dus buiten het bereik van de S3-trigger op `blob-images/protected/`, en hebben daarom géén `PO`-record in DynamoDB. Het orphan-scenario dat A signaleerde was reëel — en verdwijnt doordat de bestanden nu helemaal buiten Convex blijven.
+
+Waarom niet meenemen: de video's zouden ~80% van de overzettijd opslokken (~3 uur extra bij <20 Mbit/s), het bestand van 5,8 GiB moet in één keer door een upload-URL zonder hervattingsmogelijkheid, en er is geen user-feature die ze nodig heeft. De opslagkosten waren het bezwaar niet ($0,04/GB/maand).
+
+Naast de video's staat er een map `covers/` met 9 PNG's, genoemd naar reis en jaartal (1991 Tanzania t/m 2022 Georgië). Die worden in de oude iPhone-app getoond, maar de verwijzing staat **niet in DynamoDB** — hij zit in de front-end. Gevolgen buiten WP12:
+
+- **Fase 4**: de nieuwe app moet de video's en covers weer tonen. Bron blijft S3, later R2.
+- **Fase 5, T+30**: bij het opruimen van AWS mag `blob-videos` **niet** weg. Zolang R2 er niet is, is dat de live bron voor de app.
+- **Nieuw werkpakket**: video's van S3 naar R2. Losstaand van de cutover.
 
 ## Migratiecode in `convex/`
 
@@ -136,7 +147,6 @@ Bewust geaccepteerd door Wouter op 2026-08-23, met die einddatum als voorwaarde.
 **In scope**
 - Alle tien de tabellen uit `schema.ts` die brondata hebben, plus `albumLastSeen` als afgeleide.
 - Profielfoto's (`users.profilePhotoStorageId`), niet alleen album-foto's.
-- De 6 video's als storage-content — zie §Video's.
 - `load-files` is hervatbaar. `load-records` niet: dat is een run van minuten, daar volstaat `reset` en opnieuw.
 - Afbreken halverwege `load-records`: fail-loud, met een bruikbare foutmelding en de instructie om `reset` te draaien.
 - Prod-configuratie wordt gebouwd en reviewbaar opgeleverd, maar in deze WP niet uitgevoerd.
@@ -144,7 +154,7 @@ Bewust geaccepteerd door Wouter op 2026-08-23, met die einddatum als voorwaarde.
 **Bewust niet**
 - De prod-run zelf. Die staat in fase 5 op T-0.
 - Hervatten na een afgebroken `load-records`. `reset` plus opnieuw duurt minuten; hervatting zou een tweede foutbron zijn.
-- API-endpoints voor video. De bestanden gaan mee, de feature niet.
+- De video's en hun covers. Blijven op S3 tot de R2-overstap — zie §Video's.
 - Vergelijken van dev-data met prod na afloop. Dev is geanonimiseerd en gefilterd; die vergelijking bestaat niet.
 - R2-storage. Blijft Convex-storage, conform het plan.
 - Terugmigratie naar AWS.
@@ -153,7 +163,7 @@ Bewust geaccepteerd door Wouter op 2026-08-23, met die einddatum als voorwaarde.
 
 - **security/privacy**: **hoog** — productie-PII van 16 mensen komt op een laptop te staan: namen, emails, foto's, locatiegegevens. Mitigatie: alles onder één gitignored map, anonimisatie in de transform en niet erna, synthetische testfixtures, en een expliciete opruim-instructie in de runbook.
 - **ops**: **hoog** — de uploadlijn haalt minder dan 20 Mbit/s, waardoor 8,3 GB niet binnen een cutover-venster past. Het gefaseerde ontwerp (bestanden op T-2, records op T-0) is daarmee geen optimalisatie maar een harde eis, en `load-files` moet hervatbaar zijn. Zie §Gefaseerde prod-run.
-- **external deps**: **medium** — nieuwe AWS-SDK-dependencies, plus één onbevestigde Convex-limiet: de maximale bestandsgrootte in storage, bij video's van ordegrootte 500 MB. Zie §Video's.
+- **external deps**: **medium** — nieuwe AWS-SDK-dependencies. De onbevestigde Convex-limiet op bestandsgrootte is vervallen als risico nu de video's buiten scope zijn; de grootste resterende bestanden zijn gewone foto's.
 - **multi-user/concurrency**: **laag** — één operator, geen gelijktijdig verkeer op de doel-deployment.
 - **data/schema-evolutie**: **hoog** — dit ís de cutover-batch. Pre-flight per [`data-migration-preflight.md`](../conventions/data-migration-preflight.md) is verplicht vóór de eerste regel implementatiecode, inclusief `npx convex export` als anker.
 - **ops-runbook-impact**: nieuwe AWS-credentials (read-only, alleen lokaal — nooit als Convex-env-var), plus een runbook die beide runs beschrijft. Landt in `docs/runbooks/`. De prod-run-stappen moeten aansluiten op het bestaande T-0-blok in `migratie-status.md`.
@@ -194,9 +204,7 @@ Na A's spec-criticus-pass, tweede ronde:
 
 ## Nog open
 
-1. **Empirisch, vóór B klaar is**: onder welke S3-prefix staan de 6 video's? A stelde vast dat de trigger op `protected/` zonder filter op bestandstype een `PO`-record maakt voor elk object. Staan de video's daar, dan rijden ze mee via het normale pad en verdwijnt het orphan-scenario uit §Video's. Eén `aws s3 ls` beantwoordt dit.
-2. **Voor B, vóór implementatie**: bevestig de maximale bestandsgrootte van Convex-storage, en of een upload-URL lang genoeg openblijft voor ~500 MB over een lijn van <20 Mbit/s. Staat ook als T-2-stap in `migratie-status.md`.
-3. **Voor Wouter, ná `inspect`**: welke 3 users worden de chosen? Kan pas beantwoord worden als het overzicht er is.
+1. **Voor Wouter, ná `inspect`**: welke 3 users worden de chosen? Kan pas beantwoord worden als het overzicht er is.
 
 ## Omgeving
 
@@ -377,7 +385,7 @@ Om `transform` als pure functie te kunnen testen — en omdat `load-files`, `loa
 
 De vier vragen uit de draft, plus wat er bij komt.
 
-1. **Video's — code-antwoord gevonden, empirisch deel blijft open.** De S3-trigger (`blob-images-api-photos/serverless.yml`) staat op prefix `protected/` zónder suffix-filter, en `createPhoto.js` maakt een `PO`-record voor élk object daaronder dat geen `Metadata.iscopy` draagt — ongeacht bestandstype. EXIF-extractie faalt bij een video, wordt gevangen, en het record wordt alsnog geschreven. Er is verder nergens in de backend een spoor van video: geen mime-check, geen apart endpoint, geen apart pad. **Conclusie:** staan de video's onder `protected/`, dan hebben ze gewoon een `PO`-record en lopen ze via het normale pad mee — het derde scenario uit §Video's (bestanden zonder record) vervalt dan. De resterende vraag is puur empirisch en niet uit code te beantwoorden: **onder welke prefix staan de 6 video's in bucket `blob-images`?** Antwoord met een `aws s3 ls`, vóór B begint. Staan ze buiten `protected/`, dan is de keuze uit §Video's alsnog nodig.
+1. **Video's — code-antwoord gevonden, empirisch deel blijft open.** De S3-trigger (`blob-images-api-photos/serverless.yml`) staat op prefix `protected/` zónder suffix-filter, en `createPhoto.js` maakt een `PO`-record voor élk object daaronder dat geen `Metadata.iscopy` draagt — ongeacht bestandstype. EXIF-extractie faalt bij een video, wordt gevangen, en het record wordt alsnog geschreven. Er is verder nergens in de backend een spoor van video: geen mime-check, geen apart endpoint, geen apart pad. **Conclusie:** staan de video's onder `protected/`, dan hebben ze gewoon een `PO`-record en lopen ze via het normale pad mee — het derde scenario uit §Video's (bestanden zonder record) vervalt dan. De resterende vraag is puur empirisch en niet uit code te beantwoorden: **onder welke prefix staan de video's?** — is inmiddels empirisch beantwoord: ze staan in een eigen bucket `blob-videos`, buiten het bereik van de trigger, en hebben dus géén record. Wouter heeft daarop besloten ze buiten Convex te houden. Zie §Video's.
 2. **Attribuutnamen per entiteit — beantwoord.** Zie §Bronwerkelijkheid en correcties 1-6.
 3. **Convex-storage-limiet — nog open, voor B.** Uitgebreid: naast de maximale bestandsgrootte ook de levensduur van een upload-URL, gegeven ~3 minuten zendtijd per video.
 4. **Chosen users — nog open, voor Wouter na `inspect`.**

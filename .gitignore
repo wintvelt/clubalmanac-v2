@@ -17,6 +17,7 @@ build/
 .env.development
 .env.production
 .env.integration
+.env.migrate
 
 # Logs
 *.log
@@ -33,6 +34,9 @@ Thumbs.db
 .idea/
 *.swp
 *.swo
+
+# Convex snapshot-exports (data-migration-preflight). Bevat prod-data.
+backups/
 
 # Migratie-werkdata (WP12): echte prod-PII + foto's uit AWS. NOOIT committen.
 scripts/.data/

@@ -132,6 +132,7 @@ Werk door de app per feature. Elke stap lokaal testbaar in Expo dev build tegen 
 7. Invites
 8. Features/problem reporting
 9. Flagging (`Inappropriate.jsx` voor user, `InappropriateAdmin.jsx` voor webmaster, flag-knop + `HelperFlaggedPhotoModal` in `PhotoMenu.jsx`)
+10. **Video's + covers.** 10 clubfilms (~19 GB) met 9 cover-PNG's per reis, in S3-bucket `blob-videos`. Staan **niet** in DynamoDB en gaan niet naar Convex (besluit 2026-08-23, zie [`WP12`](./work-packages/WP12-data-migratie-tooling.md) §Video's) — de verwijzing zit in de oude front-end. De nieuwe app moet ze weer tonen; bron blijft S3 tot de R2-overstap. Uitzoeken bij het bouwen: hoe de oude app de lijst en de covers opbouwt.
 
 Per scherm: oude `aws-amplify` API call vervangen door `useQuery` / `useMutation`. De oude productie-app blijft draaien op AWS totdat de nieuwe versie helemaal klaar is.
 
@@ -197,7 +198,7 @@ Dus: communicatie en blokkade gaan **buiten de oude app om**.
 - [ ] T-3 weken: cutover-datum vastleggen, communicatie naar 16 users
 - [ ] T-2 weken: 16 Clerk prod users vooraf aanmaken via Clerk Invitations API met bestaande emails — Clerk-IDs zijn dan bekend voor data-import mapping (zie fase 3 §Cognito sub → Clerk ID mapping mechanisme). Clerk verstuurt invite-mails naar elke user — verwacht dat users hierover vragen stellen vóór T-1-dag, vermelden in T-3-weken-communicatie ("rond DD-MM krijg je een mail van Clerk om je nieuwe account te activeren — dat is goed, klik op de link").
 - [ ] T-2 weken, **vóór `load-files`**: `integrityCheck`-cron op prod uitzetten of de storage-orphan-check tijdelijk stilzetten. Tussen T-2 en T-0 staat er ~8,3 GB storage in prod met nul records; de dagelijkse check meldt dan twee weken lang 1650+ storage-orphans. Zonder deze stap is de eerste ervaring met de monitoring op prod een stortvloed vals-positieven. Weer aanzetten na de `verify` op T-0. (WP12 A-rol, risico-assessment ops.)
-- [ ] T-2 weken: `load-files` op prod draaien (WP12) — alle foto- en videobestanden naar Convex-prod-storage, `.data/storage-map.json` gevuld. Uren werk over een lijn van <20 Mbit/s; hervatbaar. **Vooraf verifiëren:** houdt een Convex-upload-URL lang genoeg stand voor een videobestand van ~500 MB? Dat is ruim drie minuten pure zendtijd bij een perfecte verbinding, en een onbevestigde aanname naast de storage-groottelimiet. Faalt dit, dan is er een ander pad nodig voor de 6 video's. (WP12 A-rol, risico-assessment external deps.)
+- [ ] T-2 weken: `load-files` op prod draaien (WP12) — alle fotobestanden naar Convex-prod-storage, `.data/storage-map.json` gevuld. ~5,3 GB, ordegrootte een uur over een lijn van <20 Mbit/s; hervatbaar. Video's blijven op S3 (besluit 2026-08-23, zie WP12 §Video's).
 - [ ] T-1 week: group-injection aanzetten in DynamoDB (in-app reminder verschijnt)
 - [ ] T-1 week: nieuwe iPhone app live in App Store (beschikbaar voor download), nieuwe webapp live, beide tegen prod env
 - [ ] T-1 dag: laatste reminder via WhatsApp/email + Clerk invitation links versturen
@@ -207,7 +208,7 @@ Dus: communicatie en blokkade gaan **buiten de oude app om**.
 - [ ] T-0: webapp redirect aan
 - [ ] T-0: 16 users informeren dat ze nu kunnen overstappen, korte instructie voor Clerk login
 - [ ] T+1: bevestigen dat alles werkt voor alle 16 users
-- [ ] T+30: AWS resources opschonen (S3 nog even bewaren als backup tot ~T+90)
+- [ ] T+30: AWS resources opschonen (S3 `blob-images` nog even bewaren als backup tot ~T+90). **Uitzondering: bucket `blob-videos` blijft staan** — daar draait de video-weergave van de nieuwe app op tot de R2-overstap. Niet opruimen, ook niet na T+90.
 - [ ] T+30: cutover-group uit Convex verwijderen (was alleen reminder voor oude app)
 
 ## Monitoring & backup (ongoing) — open

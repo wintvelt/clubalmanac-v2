@@ -78,6 +78,26 @@ Webhook-config Clerk dashboard:
 
 Verified per WP6-spec §risico-assessment + §ops-runbook-impact + [`audit-track-record.md`](./audit-track-record.md) recurring-pattern §env-var-runbook-gap.
 
+## AWS (alleen migratie, WP12)
+
+De data-migratie leest de oude AWS-omgeving: DynamoDB-tabel `blob-images-photos-prod` en S3-bucket `blob-images`, beide in **eu-central-1** (Frankfurt). Doel is Convex in eu-west-1 (Dublin).
+
+Read-only, altijd. Het script heeft geen enkele write-operatie richting DynamoDB of S3; gebruik daarom ook een read-only IAM-user of -rol, zodat die belofte in de policy staat en niet alleen in de code.
+
+### Env-vars (lokaal, `.env.migrate` — nooit als Convex-env-var)
+
+| Env-var | Waarde | Wat gebeurt bij ontbreken |
+|---|---|---|
+| `MIGRATE_CONVEX_URL_DEV` / `_PROD` | deployment-URL, mét region-suffix | commando stopt met melding |
+| `MIGRATE_CONVEX_ADMIN_KEY_DEV` / `_PROD` | deployment-scoped deploy key (dashboard → Settings → Deploy Keys) | commando stopt; de migratie-functies zijn internal en anders niet aanroepbaar |
+| `MIGRATE_ALLOW_PROD` | `yes`, alleen tijdens de prod-run | elke schrijf-actie op prod wordt geweigerd (tweede laag naast de URL-check) |
+| `MIGRATE_AWS_REGION` / `MIGRATE_DYNAMO_TABLE` / `MIGRATE_S3_BUCKET` | optioneel; defaults `eu-central-1` / `blob-images-photos-prod` / `blob-images` | defaults worden gebruikt en staan in de banner van elke run |
+| AWS-credentials | `AWS_PROFILE` of `AWS_ACCESS_KEY_ID`+`AWS_SECRET_ACCESS_KEY` | AWS-SDK faalt met een credential-fout |
+
+De AWS-credentials horen **niet** in Convex: geen enkele Convex-function praat met AWS. Ze leven op de laptop van de operator, voor de duur van de migratie, en worden bij T+30 ingetrokken.
+
+Draaiboek + opruimstap: [`runbooks/wp12-data-migratie.md`](../runbooks/wp12-data-migratie.md).
+
 ## Productie-blind-spots
 
 JWT validation roundtrip, Mailjet bounce webhook, Photon connection: deze zijn unit-test alleen via mocks gevalideerd. Echte service-integratie loopt via de [integration-test laag](./integration-tests.md) (`npm run test:integration`, niet in CI), per werkpakket apart. Photon (WP1) is gepind; Convex/Clerk/Mailjet (WP2-4) staan op de planning.
