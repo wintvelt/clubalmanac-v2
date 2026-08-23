@@ -59,7 +59,7 @@ type Row = Record<string, any>;
 const bySource = (rows: Row[], key: string): Row => {
   const found = rows.filter((r) => r.sourceKey === key);
   expect(found, `geen unieke rij met sourceKey ${key}`).toHaveLength(1);
-  return found[0];
+  return found[0]!;
 };
 
 // ────────────────────────────────────────────────────────────────────────
