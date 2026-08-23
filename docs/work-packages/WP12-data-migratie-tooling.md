@@ -184,12 +184,23 @@ Bewust geaccepteerd door Wouter op 2026-08-23, met die einddatum als voorwaarde.
 | Hoe snel is de upload? | Minder dan 20 Mbit/s omhoog. Daarmee is de gefaseerde prod-run verplicht. |
 | Migratiecode in `convex/`? | Akkoord, mits die na T+30 weer weg gaat. |
 
+Na A's spec-criticus-pass, tweede ronde:
+
+| Vraag | Besluit |
+|---|---|
+| Gaan de stemscores op features verloren? | **Ja.** `upvoteCount = 0`, geen `featureUpvotes`-records. Bevestigt A-besluit optie 3 bij correctie 3. De oude `votes`-waarde komt in het transform-rapport, zodat Wouter 'm desgewenst handmatig terugzet. |
+| Invite-tokens overnemen of vernieuwen? | **Vernieuwen.** Uitstaande invite-links uit oude mails werken na cutover niet meer; genodigden krijgen handmatig een nieuwe uitnodiging. Het oude token is base64 van `{PK, SK}` en draagt daarmee een emailadres plus de DynamoDB-sleutelvorm — dat halen we niet over. Dekt de drie RED privacy-tests uit `7281232`. |
+| Dev-filter: groep opgericht door een niet-chosen user? | **Groep uitsluiten.** Geen vierde Clerk-dev-account. Als bij `inspect` blijkt dat dit een groep wegneemt die je juist wilde testen, is dat een reden om de keuze van de 3 chosen users te herzien — niet om de regel te verzachten. |
+
 ## Nog open
 
-1. **Voor A**: staat er in DynamoDB een verwijzing naar de video's, en zo ja in welk patroon? Bepaalt of ze via het normale pad mee kunnen of dat er een aparte oplossing nodig is. Zie §Video's.
-2. **Voor A**: de werkelijke attribuutnamen per entiteit in DynamoDB. De spec gaat uit van de PK/SK-patronen uit het migratieplan, maar niet van de veldnamen daarbinnen.
-3. **Voor B, vóór implementatie**: bevestig de maximale bestandsgrootte van Convex-storage.
-4. **Voor Wouter, ná `inspect`**: welke 3 users worden de chosen? Kan pas beantwoord worden als het overzicht er is.
+1. **Empirisch, vóór B klaar is**: onder welke S3-prefix staan de 6 video's? A stelde vast dat de trigger op `protected/` zonder filter op bestandstype een `PO`-record maakt voor elk object. Staan de video's daar, dan rijden ze mee via het normale pad en verdwijnt het orphan-scenario uit §Video's. Eén `aws s3 ls` beantwoordt dit.
+2. **Voor B, vóór implementatie**: bevestig de maximale bestandsgrootte van Convex-storage, en of een upload-URL lang genoeg openblijft voor ~500 MB over een lijn van <20 Mbit/s. Staat ook als T-2-stap in `migratie-status.md`.
+3. **Voor Wouter, ná `inspect`**: welke 3 users worden de chosen? Kan pas beantwoord worden als het overzicht er is.
+
+## Omgeving
+
+AWS-bron staat in **eu-central-1** (bucket `blob-images` en de DynamoDB-tabel). Doel is Convex in eu-west-1 (Dublin). Vastgesteld door A; stond niet in het migratieplan.
 
 ---
 
