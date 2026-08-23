@@ -80,6 +80,8 @@ MIGRATE_CONVEX_ADMIN_KEY_PROD=prod:<prod-deployment>|<key>
 
 ## Run 1 — dev-seed
 
+Doe eerst §0 hierboven — git tag, export-anker, count-baseline, go/no-go. Die stap is verplicht en niet te vervangen door het anker in dit blok.
+
 ```bash
 npx convex export --path ./backups/wp12-dev-voor-seed.zip   # anker (pre-flight)
 npm run migrate -- extract                     # minuten, leest productie-DynamoDB
@@ -184,8 +186,8 @@ Breekt `load-records` halverwege af, dan stopt hij luid met de bron-sleutel in d
 
 ## Opruimen (verplicht, niet optioneel)
 
-`scripts/.data/` bevat productie-PII van 16 mensen: namen, adressen, Cognito-subs (ook in S3-sleutels), invite-berichten en de volledige recordset. De map staat in `.gitignore`, maar dat is geen bewaartermijn.
+`scripts/.data/` bevat productie-PII van 20 mensen: namen, adressen, Cognito-subs (ook in S3-sleutels), invite-berichten en de volledige recordset. De map staat in `.gitignore`, maar dat is geen bewaartermijn.
 
-- [ ] Na een geslaagde dev-seed: `rm -rf scripts/.data/dynamo-extract.json scripts/.data/convex-records.json` — de config- en storage-map-bestanden bewaar je tot de volgende seed.
+- [ ] Na een geslaagde dev-seed: `rm scripts/.data/dynamo-extract.json`. Dat is het bestand met de onbewerkte productiedata — namen, adressen, invite-berichten. `convex-records.json`, `storage-map.json` en de config blijven staan tot de volgende seed: `reset` + `load-records` heeft ze nodig, en `verify` en `prune-storage` ook. Let op: `convex-records.json` is geanonimiseerd maar niet PII-vrij — de S3-sleutels dragen Cognito-subs. Weg bij de eindopruiming hieronder.
 - [ ] Na T-0 en een groene `verify`: `rm -rf scripts/.data/` volledig, plus `.env.migrate`.
 - [ ] Bij T+30, samen met de rest van de cutover-opruiming: `convex/migration.ts` en `scripts/migrate/` verwijderen, en de AWS-read-only-credentials intrekken. Zie het fase 5-stappenplan in `migratie-status.md`.
