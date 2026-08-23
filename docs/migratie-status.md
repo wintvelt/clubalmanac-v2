@@ -2,12 +2,13 @@
 
 Status-overzicht van de AWS → Convex migratie. WP's updaten dit doc bij elke closeout. Architectuur-detail blijft in [`migratie-plan-convex.md`](./migratie-plan-convex.md); operationele lopende-staat staat hier.
 
-**Huidige stand 2026-06-21**:
+**Huidige stand 2026-08-23**:
 - Fase 1 (project setup) ✅ afgerond
 - Fase 2 (backend) ✅ **AFGEROND** — alle domein- + cron-werk + monitoring + deferred integration-tests klaar (WP11 net dicht)
-- Fase 3-5 — open. Volgende keuze: fase 3 (data migratie tooling), fase 4 (clients), of fase 5 cutover-prep (T-4-weken-stappenplan: prod-env-vars + prod-Gates-herhaling). Regie beslist per kickoff.
+- Fase 3 (data migratie tooling) — **gestart** 2026-08-23, spec in [WP12](./work-packages/WP12-data-migratie-tooling.md)
+- Fase 4 (clients) + fase 5 (cutover-prep: prod-env-vars + prod-Gates-herhaling) — open
 
-**Volgende fase**: regie's keuze — fase 3, fase 4, of fase 5 cutover-prep.
+**Volgende fase**: fase 3 loopt (WP12).
 
 Cross-refs: [`work-packages/README.md`](./work-packages/README.md) (WP-overzicht), [`conventions/audit-track-record.md`](./conventions/audit-track-record.md) (bugs + recurring patterns), [`cascade-matrix.md`](./cascade-matrix.md) (cross-flow afhankelijkheden).
 
@@ -70,6 +71,8 @@ Per domein: unit tests eerst, dan implementatie.
 Backend is client-agnostisch. Zelfde queries/mutations werken straks voor zowel iPhone app als webapp.
 
 ## Fase 3: Data migratie tooling + dev seed — open
+
+Uitgewerkt in **[WP12](./work-packages/WP12-data-migratie-tooling.md)** (draft-spec 2026-08-23). Mechanisme = API-import: het script schrijft via internal Convex-mutations en storage-uploads, Convex mint `_id` en `_storage`. De route via een zelfgebouwde snapshot-zip is getest en afgewezen — `convex import` weigert een zelf-gemunte `_id`. Zeven commando's: `extract` / `inspect` / `transform` / `load-files` / `load-records` / `verify` / `reset`. De splitsing tussen bestanden en records is nodig omdat de uploadlijn <20 Mbit/s haalt: bestanden gaan op T-2 weken omhoog, records op T-0. Scope van WP12 = tooling + gedraaide dev-seed; de prod-run blijft fase 5, T-0.
 
 Bouw migratie-tooling die zowel dev (subset) als prod (volledig) kan vullen. Eén script, twee config-modes. Dev wordt nu gevuld; prod gebeurt pas op cutover-dag (zie fase 5).
 

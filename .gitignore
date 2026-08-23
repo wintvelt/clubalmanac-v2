@@ -34,6 +34,9 @@ Thumbs.db
 *.swp
 *.swo
 
+# Migratie-werkdata (WP12): echte prod-PII + foto's uit AWS. NOOIT committen.
+scripts/.data/
+
 # Test coverage
 coverage/
 .vitest-cache/
