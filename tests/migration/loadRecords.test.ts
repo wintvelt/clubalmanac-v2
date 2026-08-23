@@ -223,6 +223,34 @@ describe("load-records: de ID-map", () => {
     }
   });
 
+  test("elke user met een profielfoto in de records heeft er één in de deployment", async () => {
+    // De aflezing aan de resultaatkant van R2-1. Profielfoto's zitten in geen
+    // enkele rij-telling: gaan ze verloren, dan verandert er niets aan de
+    // aantallen en meldt `verify` niets. De storage-map van het harnas komt uit
+    // de handmatige oracle, dus deze test is blind voor een blinde vlek in de
+    // functie die de upload-set bepaalt — en dat is precies de bedoeling.
+    const expected = records.records.users.filter(
+      (u) => typeof u.profilePhotoStorageKey === "string" && u.profilePhotoStorageKey.length > 0,
+    );
+    expect(expected.length, "de fixture heeft users met een profielfoto").toBeGreaterThan(0);
+
+    await expect(loadRecords("dev", false)).resolves.toBe(0);
+
+    const landed = deployment.docs("users").filter((u) => u.profilePhotoStorageId !== undefined);
+    expect(landed).toHaveLength(expected.length);
+  });
+
+  test("een user zonder profielfoto krijgt er geen aangemeten", async () => {
+    // Carol heeft haar foto gewist (lege-string-sentinel). Een lege string mag
+    // nooit als storage-id landen: Convex verwacht daar een v.id("_storage").
+    await expect(loadRecords("dev", false)).resolves.toBe(0);
+    const zonder = deployment.docs("users").filter((u) => u.profilePhotoStorageId === undefined);
+    expect(zonder.length).toBeGreaterThan(0);
+    for (const user of deployment.docs("users")) {
+      expect(user.profilePhotoStorageId).not.toBe("");
+    }
+  });
+
   test("een cover-foto wordt na de foto's ingevuld met een echt _id", async () => {
     await expect(loadRecords("dev", false)).resolves.toBe(0);
     const photoIds = new Set(deployment.docs("photos").map((p) => p._id));

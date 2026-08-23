@@ -53,6 +53,56 @@ export const SOURCE_PII = [
 
 export const CHOSEN = ["U-alice", "U-bob", "U-carol"];
 
+/**
+ * De bestanden die uit S3 mee moeten, met de hand opgeschreven uit de items
+ * hieronder (WP12 fix-cyclus 2, R2-1).
+ *
+ * Bewust niet afgeleid uit `referencedStorageKeys`: die functie bepaalt in
+ * productie wat `load-files` uploadt én waar de dekkings-gate van
+ * `load-records` op afgaat. Bouwt het harnas zijn storage-map met diezelfde
+ * functie, dan is een blinde vlek erin voor de hele suite onzichtbaar — dan
+ * kan de functie een categorie vergeten, uploadt `load-files` die niet, ziet
+ * de gate niets, en is `verify` groen.
+ *
+ * Twee categorieën, apart genoemd omdat de tweede in geen enkele telling zit:
+ *   - foto-bestanden (`PO.url`);
+ *   - profielfoto's (`UBbase.photoUrl`), inclusief de gedeelde "knor" buiten
+ *     `protected/` en exclusief Carol, die haar foto met de lege-string-
+ *     sentinel gewist heeft.
+ *
+ * Dev heeft alleen de bestanden van de drie chosen users; Dave valt weg.
+ */
+export const EXPECTED_PHOTO_KEYS = {
+  prod: [
+    "protected/U-alice-sub/laat.jpg",
+    "protected/U-alice-sub/vroeg.jpg",
+    "protected/U-bob-sub/bob1.jpg",
+    "protected/U-bob-sub/bob2.jpg",
+    "protected/U-dave-sub/dave1.jpg",
+  ],
+  dev: [
+    "protected/U-alice-sub/laat.jpg",
+    "protected/U-alice-sub/vroeg.jpg",
+    "protected/U-bob-sub/bob1.jpg",
+    "protected/U-bob-sub/bob2.jpg",
+  ],
+} as const;
+
+export const EXPECTED_PROFILE_PHOTO_KEYS = {
+  prod: [
+    "protected/U-alice-sub/U-alice-avatar.jpg",
+    "protected/U-dave-sub/U-dave-avatar.jpg",
+    "public/img/knorren/knor7.jpg",
+  ],
+  dev: ["protected/U-alice-sub/U-alice-avatar.jpg", "public/img/knorren/knor7.jpg"],
+} as const;
+
+/** Alles bij elkaar, gesorteerd — de volgorde waarin `load-files` ze afwerkt. */
+export const EXPECTED_STORAGE_KEYS = {
+  prod: [...EXPECTED_PHOTO_KEYS.prod, ...EXPECTED_PROFILE_PHOTO_KEYS.prod].sort(),
+  dev: [...EXPECTED_PHOTO_KEYS.dev, ...EXPECTED_PROFILE_PHOTO_KEYS.dev].sort(),
+} as const;
+
 export function buildExtract(): SourceItem[] {
   return [
     // ── users: vier records per user ──────────────────────────────────

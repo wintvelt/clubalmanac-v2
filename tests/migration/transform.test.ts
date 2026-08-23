@@ -30,6 +30,7 @@ import {
   PROD_SUBJECTS,
   SOURCE_PII,
 } from "./fixture";
+import { OPTIONAL_FK_ORACLE, REQUIRED_FK_ORACLE } from "./fkOracle";
 
 const NOW = day("2026-08-23");
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -436,33 +437,23 @@ describe("albumLastSeen", () => {
 // ────────────────────────────────────────────────────────────────────────
 // Referentiële integriteit — in beide configuraties
 // ────────────────────────────────────────────────────────────────────────
-const REQUIRED_FKS: Array<[string, string, string]> = [
-  ["groups", "createdBy", "users"],
-  ["memberships", "userId", "users"],
-  ["memberships", "groupId", "groups"],
-  ["albums", "groupId", "groups"],
-  ["albums", "createdBy", "users"],
-  ["albumPhotos", "albumId", "albums"],
-  ["albumPhotos", "photoId", "photos"],
-  ["albumPhotos", "groupId", "groups"],
-  ["albumPhotos", "addedBy", "users"],
-  ["photos", "ownerId", "users"],
-  ["ratings", "photoId", "photos"],
-  ["ratings", "userId", "users"],
-  ["invites", "invitedBy", "users"],
-  ["features", "submittedBy", "users"],
-  ["featureUpvotes", "featureId", "features"],
-  ["featureUpvotes", "userId", "users"],
-  ["albumLastSeen", "userId", "users"],
-  ["albumLastSeen", "albumId", "albums"],
-];
+// De FK's komen uit de handmatige oracle in `fkOracle.ts` en bewust niet uit
+// `FKS` in scripts/migrate/types.ts: `transform.ts` gebruikt die lijst zélf voor
+// zijn slotcontrole. Zou deze test hem importeren, dan controleerde hij de
+// transform met het materiaal van de transform (WP12 fix-cyclus 2, R2-3). De
+// oracle staat buiten beide en wordt in `sharedLists.test.ts` aan monitoring.ts
+// en aan de tooling vastgeklonken.
+const REQUIRED_FKS: Array<[string, string, string]> = REQUIRED_FK_ORACLE.map((fk) => [
+  fk.table,
+  fk.field,
+  fk.target,
+]);
 
-const OPTIONAL_FKS: Array<[string, string, string]> = [
-  ["groups", "coverPhotoId", "photos"],
-  ["albums", "coverPhotoId", "photos"],
-  ["photos", "flaggedBy", "users"],
-  ["invites", "groupId", "groups"],
-];
+const OPTIONAL_FKS: Array<[string, string, string]> = OPTIONAL_FK_ORACLE.map((fk) => [
+  fk.table,
+  fk.field,
+  fk.target,
+]);
 
 function assertClosed(records: Record<string, Row[]>) {
   const keysOf = (table: string) => new Set((records[table] ?? []).map((r) => r.sourceKey));
@@ -608,13 +599,52 @@ describe("dev-filter: invites", () => {
     expect(keys).toContain("nieuweling@example.test#G-1");
   });
 
-  test("een invite in een groep die niet meer bestaat is een bronfout, geen invite", () => {
-    // Overslaan én melden: de rij hoort nergens, maar de operator moet 'm zien.
-    const { records, warnings } = runProd();
-    expect(records.invites.map((i: Row) => i.sourceKey)).not.toContain(
-      "ander@example.test#G-verdwenen",
-    );
+  // ──────────────────────────────────────────────────────────────────────
+  // R2-4 — een invite naar een verwijderde groep. Besluit Wouter: rij
+  //        behouden, groupId wissen, tellen. Dat volgt de invariant voor
+  //        optionele FK's (gewist en geteld, geen uitzonderingen) en vermijdt
+  //        stil dataverlies. Een groeploze invite is geen kapotte invite:
+  //        accepteren levert een account zonder lidmaatschap, en dat pad
+  //        bestaat sinds WP6 als zero-invite-fallback.
+  // ──────────────────────────────────────────────────────────────────────
+  test("een invite naar een verwijderde groep blijft bestaan, zonder groep", () => {
+    const { records } = runProd();
+    const invite = bySource(records.invites, "ander@example.test#G-verdwenen");
+    expect(invite.groupId, "een verwijderde groep hoort gewist, niet dangling").toBeUndefined();
+    // De rest van de invite blijft gewoon een bruikbare invite.
+    expect(invite.invitedBy).toBe("U-alice");
+    expect(invite.email).toBe("ander@example.test");
+    expect(invite.token).toBeDefined();
+  });
+
+  test("het wissen wordt gemeld — stil is het niet", () => {
+    const { warnings } = runProd();
     expect(warnings.some((w: string) => /G-verdwenen/.test(w))).toBe(true);
+  });
+
+  test("ook in dev blijft hij staan: de uitnodiger is chosen en de groep bestond nergens", () => {
+    // De twee takken niet verwarren. "Groep bestaat niet in de bron" is een
+    // bronfout en krijgt het bovenstaande gedrag; "groep is uit de dev-set
+    // gefilterd" is de filter die zijn werk doet en blijft overslaan.
+    const { records } = runDev();
+    const invite = (records.invites as Row[]).find((i) =>
+      String(i.sourceKey).endsWith("#G-verdwenen"),
+    );
+    expect(invite, "de invite is in dev ten onrechte overgeslagen").toBeDefined();
+    expect(invite!.groupId).toBeUndefined();
+  });
+
+  test("een membership naar een verwijderde groep verdwijnt wél — groupId is daar verplicht", () => {
+    // Dezelfde bronfout, andere entiteit: memberships.groupId is geen optionele
+    // verwijzing, dus daar is wissen geen optie en blijft overslaan het juiste
+    // gedrag.
+    const { records } = runProd();
+    const groupKeys = new Set(records.groups.map((g: Row) => g.sourceKey));
+    for (const m of records.memberships as Row[]) {
+      expect(groupKeys.has(m.groupId), `membership ${m.sourceKey} hangt aan een lege groep`).toBe(
+        true,
+      );
+    }
   });
 });
 

@@ -67,6 +67,12 @@ function put(files: Record<string, unknown>): void {
   h.files = createFakeFiles(files);
 }
 
+/** Alles wat verify naar de terminal schreef, als één blok tekst. */
+function logged(): string {
+  const calls = (console.log as unknown as { mock: { calls: unknown[][] } }).mock.calls;
+  return calls.map((call) => call.map((part) => String(part)).join(" ")).join("\n");
+}
+
 /** Zet de bestanden uit de storage-map ook echt in de nep-storage neer. */
 function materializeStorage(map: StorageMapFile): void {
   for (const entry of Object.values(map.files)) deployment.putStorage(entry.storageId, entry.bytes);
@@ -133,6 +139,47 @@ describe("verify: de verwachting komt uit de transform, niet uit de laadstap", (
     materializeStorage(storageMap);
     deployment.setDrift(["users/abc: photoCount 3 ≠ 2 werkelijke foto's"]);
     await expect(verify("dev")).resolves.not.toBe(0);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// R2-3 — verify telt élke tabel uit de bewaakte set, niet alleen de tabellen
+//        die de import vult
+// ─────────────────────────────────────────────────────────────────────────
+describe("verify: de telling dekt de hele bewaakte set", () => {
+  test("achtergebleven uploadIdempotency-rijen zijn een bevinding, geen blinde vlek", async () => {
+    // Vóór de load telt deze tabel wel mee (de leeg-preconditie kijkt ernaar),
+    // erna niet. Dat is precies de plek waar hij ertoe doet: zijn ownerId's
+    // wijzen dan naar users die niet meer bestaan, en dat is wat WP10 de
+    // ochtend erna meldt. "Verwacht 0" is ook een verwachting.
+    await loadRecords("dev", false);
+    materializeStorage(storageMap);
+    deployment.seed({ uploadIdempotency: 2 });
+
+    await expect(verify("dev")).resolves.not.toBe(0);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// R2-5 — een bevinding waar de operator naar kan handelen
+// ─────────────────────────────────────────────────────────────────────────
+describe("verify: de orphan-bevinding is volledig", () => {
+  test("elk object dat weg zou gaan wordt genoemd, niet een greep van tien", async () => {
+    // Een sample van tien is genoeg om te alarmeren en te weinig om op te
+    // beslissen. Wie de opruiming gaat draaien moet vooraf kunnen zien wat er
+    // precies weggaat — anders is "geen storage-orphans" een eis waar je
+    // blind aan voldoet.
+    await loadRecords("dev", false);
+    materializeStorage(storageMap);
+    const orphans = Array.from({ length: 12 }, (_, i) => `kg_wees${i}`);
+    for (const id of orphans) deployment.putStorage(id);
+
+    await expect(verify("dev")).resolves.not.toBe(0);
+
+    const report = logged();
+    for (const id of orphans) {
+      expect(report, `${id} staat niet in het rapport`).toContain(id);
+    }
   });
 });
 

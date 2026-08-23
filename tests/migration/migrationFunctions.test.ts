@@ -16,6 +16,7 @@ import { describe, expect, test } from "vitest";
 import { internal } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
 import schema from "../../convex/schema";
+import { MONITORED_TABLE_ORACLE } from "./fkOracle";
 
 const NOW = Date.parse("2026-08-23T00:00:00.000Z");
 
@@ -74,15 +75,26 @@ describe("migratie-tabellen = de tabellen die WP10 bewaakt", () => {
     expect(counts.tables.uploadIdempotency).toBe(0);
   });
 
-  test("elke tabel die de telling noemt is ook leeg te maken", async () => {
-    // De twee lijsten mogen niet uit elkaar lopen: wat je kunt tellen moet je
-    // kunnen resetten, anders is een schone start niet met de tool te bereiken.
+  test("elke tabel die WP10 bewaakt wordt geteld", async () => {
+    // Fix-cyclus 2, R2-3. Deze lus liep eerst over `Object.keys(counts.tables)`
+    // — en die sleutels kómen uit de lijst die de test moest controleren.
+    // Verdween daar een tabel, dan kromp de vraag mee met het antwoord. De
+    // verwachting komt nu uit de handmatige oracle.
     const t = convexTest(schema);
     const counts = await t.query(internal.migration.tableCounts, {});
-    for (const table of Object.keys(counts.tables)) {
+    for (const table of MONITORED_TABLE_ORACLE) {
+      expect(counts.tables[table], `${table} wordt bewaakt maar niet geteld`).toBeDefined();
+    }
+  });
+
+  test("elke tabel die WP10 bewaakt is ook leeg te maken", async () => {
+    // Wat je kunt tellen moet je kunnen resetten, anders is een schone start
+    // niet met de tool te bereiken.
+    const t = convexTest(schema);
+    for (const table of MONITORED_TABLE_ORACLE) {
       await expect(
         t.mutation(internal.migration.clearTable, { table, limit: 1 }),
-        `${table} wordt geteld maar niet gereset`,
+        `${table} wordt bewaakt maar niet gereset`,
       ).resolves.toBeDefined();
     }
   });
@@ -151,6 +163,41 @@ describe("de bouwstenen van load-records", () => {
     expect(inventory.referencedByRecords).toBe(1);
     expect(inventory.orphanCount).toBe(1);
     expect(inventory.danglingCount).toBe(0);
+  });
+
+  test("een opgegeven storage-object gaat weg, de rest blijft staan", async () => {
+    // Fix-cyclus 2, R2-5. De bouwsteen onder `prune-storage`: exact deze
+    // objecten, geen "alles". Zonder deze knop is de enige route naar "geen
+    // storage-orphans" een reset van de complete storage — en dat kost op T-0
+    // de uren upload die het gefaseerde ontwerp juist moest sparen.
+    const t = convexTest(schema);
+    const { storageId } = await seedUploadLeftovers(t);
+    const wees = await t.run(async (ctx) =>
+      ctx.storage.store(new Blob(["wees"], { type: "image/jpeg" })),
+    );
+
+    const result = await t.mutation(internal.migration.deleteStorageObjects, { ids: [wees] });
+    expect(result.deleted).toBe(1);
+
+    const inventory = await t.query(internal.migration.storageInventory, {});
+    expect(inventory.storageObjects).toBe(1);
+    expect(inventory.orphanCount).toBe(0);
+    expect(inventory.danglingCount, "het bestand van een foto is meegegaan").toBe(0);
+    const stillThere = await t.run(async (ctx) => ctx.storage.getUrl(storageId));
+    expect(stillThere).not.toBeNull();
+  });
+
+  test("storageInventory kan de volledige orphan-lijst geven, niet alleen een greep", async () => {
+    // De operator moet vóór het opruimen kunnen zien wat er weggaat.
+    const t = convexTest(schema);
+    await t.run(async (ctx) => {
+      for (let i = 0; i < 12; i++) {
+        await ctx.storage.store(new Blob([`wees-${i}`], { type: "image/jpeg" }));
+      }
+    });
+    const inventory = await t.query(internal.migration.storageInventory, { sampleSize: 1000 });
+    expect(inventory.orphanCount).toBe(12);
+    expect(inventory.orphanSample).toHaveLength(12);
   });
 
   test("integrityReport meldt dezelfde drift die WP10 zou mailen", async () => {

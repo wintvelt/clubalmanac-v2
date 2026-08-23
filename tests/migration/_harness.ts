@@ -13,11 +13,17 @@
 
 import { getFunctionName } from "convex/server";
 import type { StorageMapFile } from "../../scripts/migrate/loadFiles";
-import { referencedStorageKeys } from "../../scripts/migrate/loadFiles";
 import type { RecordsFile } from "../../scripts/migrate/runTransform";
 import { transform } from "../../scripts/migrate/transform";
 import { TABLE_ORDER } from "../../scripts/migrate/types";
-import { buildExtract, CHOSEN, DEV_SUBJECTS, PROD_SUBJECTS } from "./fixture";
+import {
+  buildExtract,
+  CHOSEN,
+  DEV_SUBJECTS,
+  EXPECTED_STORAGE_KEYS,
+  PROD_SUBJECTS,
+} from "./fixture";
+import { MONITORED_TABLE_ORACLE } from "./fkOracle";
 
 export const FAKE_DEV_URL = "https://fake-dev-deployment.convex.cloud";
 
@@ -26,8 +32,13 @@ export const FAKE_DEV_URL = "https://fake-dev-deployment.convex.cloud";
  * leeg-preconditie van `load-records` én onder `reset` te vallen (WP12
  * fix-cyclus 1, B-2). `uploadIdempotency` staat er expliciet bij: WP10
  * controleert er twee FK's op, en de dev-deployment heeft er rijen in.
+ *
+ * De set komt uit de handmatige oracle en niet uit `TABLE_ORDER` (WP12
+ * fix-cyclus 2, R2-3): de nep-deployment moet antwoord geven op wat er in de
+ * echte deployment stáát, niet op wat de tooling toevallig opsomt. Anders
+ * krimpt de vraag mee met het antwoord.
  */
-export const DEPLOYMENT_TABLES = [...TABLE_ORDER, "uploadIdempotency"] as const;
+export const DEPLOYMENT_TABLES = MONITORED_TABLE_ORACLE;
 
 // ── records-fixture ───────────────────────────────────────────────────
 
@@ -62,14 +73,25 @@ export function buildRecordsFile(target: "dev" | "prod" = "prod"): RecordsFile {
   };
 }
 
-/** Storage-map alsof `load-files` klaar is. `omit` laat bestanden ontbreken. */
+/**
+ * Storage-map alsof `load-files` klaar is: de wereld zoals die stap hem
+ * achterliet, niet wat de tooling denkt nodig te hebben (WP12 fix-cyclus 2,
+ * R2-1). De sleutels komen daarom uit de handmatige oracle in `fixture.ts` en
+ * niet uit `referencedStorageKeys` — die functie is hier onderwerp van
+ * onderzoek, geen bron van waarheid.
+ *
+ * `omit` laat bestanden ontbreken (een afgebroken of onvolledige `load-files`),
+ * `extra` voegt bestanden toe die wél geüpload zijn maar waar geen record meer
+ * naar verwijst (een foto die tussen T-2 en T-0 verwijderd werd).
+ */
 export function buildStorageMap(
   file: RecordsFile,
-  options: { omit?: string[] } = {},
+  options: { omit?: string[]; extra?: string[] } = {},
 ): StorageMapFile {
   const omit = new Set(options.omit ?? []);
   const files: StorageMapFile["files"] = {};
-  for (const key of referencedStorageKeys(file)) {
+  const keys = [...EXPECTED_STORAGE_KEYS[file.meta.target], ...(options.extra ?? [])];
+  for (const key of keys) {
     if (omit.has(key)) continue;
     files[key] = {
       storageId: `kg_${key.replace(/[^a-z0-9]/gi, "")}`,
@@ -124,7 +146,7 @@ export function createFakeDeployment() {
     return referenced;
   };
 
-  async function query(_admin: unknown, ref: any, _args: unknown): Promise<any> {
+  async function query(_admin: unknown, ref: any, args: any): Promise<any> {
     const name = getFunctionName(ref);
     if (name === "migration:tableCounts") {
       const counts: Record<string, number> = {};
@@ -132,6 +154,9 @@ export function createFakeDeployment() {
       return { tables: counts, storageObjects: storage.size };
     }
     if (name === "migration:storageInventory") {
+      // `sampleSize` wordt gerespecteerd, net als in de echte query: wie de
+      // volledige lijst wil (om hem te tonen of op te ruimen) kan erom vragen.
+      const sample = (args?.sampleSize as number | undefined) ?? 10;
       const referenced = referencedStorageIds();
       const orphans = [...storage.keys()].filter((id) => !referenced.has(id));
       const dangling = [...referenced].filter((id) => !storage.has(id));
@@ -139,9 +164,9 @@ export function createFakeDeployment() {
         storageObjects: storage.size,
         referencedByRecords: referenced.size,
         orphanCount: orphans.length,
-        orphanSample: orphans.slice(0, 10),
+        orphanSample: orphans.slice(0, sample),
         danglingCount: dangling.length,
-        danglingSample: dangling.slice(0, 10),
+        danglingSample: dangling.slice(0, sample),
         totalBytes: [...storage.values()].reduce((sum, n) => sum + n, 0),
       };
     }
@@ -176,6 +201,15 @@ export function createFakeDeployment() {
       const deleted = list.splice(0, args.limit).length;
       return { deleted, remaining: list.length > 0 };
     }
+    if (name === "migration:deleteStorageObjects") {
+      // Exact deze objecten, geen greep en geen "alles". De opruiming tussen
+      // T-2 en T-0 mag de uren upload niet meenemen (WP12 fix-cyclus 2, R2-5).
+      let deleted = 0;
+      for (const id of args.ids as string[]) {
+        if (storage.delete(id)) deleted += 1;
+      }
+      return { deleted };
+    }
     if (name === "migration:clearStorage") {
       const ids = [...storage.keys()].slice(0, args.limit);
       for (const id of ids) storage.delete(id);
@@ -208,6 +242,8 @@ export function createFakeDeployment() {
       storage.set(storageId, bytes);
     },
     storageCount: (): number => storage.size,
+    storageIds: (): string[] => [...storage.keys()],
+    hasStorage: (storageId: string): boolean => storage.has(storageId),
     setDrift: (lines: string[]): void => {
       driftLines = lines;
     },
