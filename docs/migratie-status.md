@@ -196,10 +196,13 @@ Dus: communicatie en blokkade gaan **buiten de oude app om**.
 - [ ] T-4 weken: WP6 prod-Gates 1+2+3 herhalen op prod-deployment (atomic-onboarding happy-path + idempotency-relogin + zero-invite-fallback via Clerk Account Portal)
 - [ ] T-3 weken: cutover-datum vastleggen, communicatie naar 16 users
 - [ ] T-2 weken: 16 Clerk prod users vooraf aanmaken via Clerk Invitations API met bestaande emails — Clerk-IDs zijn dan bekend voor data-import mapping (zie fase 3 §Cognito sub → Clerk ID mapping mechanisme). Clerk verstuurt invite-mails naar elke user — verwacht dat users hierover vragen stellen vóór T-1-dag, vermelden in T-3-weken-communicatie ("rond DD-MM krijg je een mail van Clerk om je nieuwe account te activeren — dat is goed, klik op de link").
+- [ ] T-2 weken, **vóór `load-files`**: `integrityCheck`-cron op prod uitzetten of de storage-orphan-check tijdelijk stilzetten. Tussen T-2 en T-0 staat er ~8,3 GB storage in prod met nul records; de dagelijkse check meldt dan twee weken lang 1650+ storage-orphans. Zonder deze stap is de eerste ervaring met de monitoring op prod een stortvloed vals-positieven. Weer aanzetten na de `verify` op T-0. (WP12 A-rol, risico-assessment ops.)
+- [ ] T-2 weken: `load-files` op prod draaien (WP12) — alle foto- en videobestanden naar Convex-prod-storage, `.data/storage-map.json` gevuld. Uren werk over een lijn van <20 Mbit/s; hervatbaar. **Vooraf verifiëren:** houdt een Convex-upload-URL lang genoeg stand voor een videobestand van ~500 MB? Dat is ruim drie minuten pure zendtijd bij een perfecte verbinding, en een onbevestigde aanname naast de storage-groottelimiet. Faalt dit, dan is er een ander pad nodig voor de 6 video's. (WP12 A-rol, risico-assessment external deps.)
 - [ ] T-1 week: group-injection aanzetten in DynamoDB (in-app reminder verschijnt)
 - [ ] T-1 week: nieuwe iPhone app live in App Store (beschikbaar voor download), nieuwe webapp live, beide tegen prod env
 - [ ] T-1 dag: laatste reminder via WhatsApp/email + Clerk invitation links versturen
-- [ ] T-0: frisse data migratie herhalen (fase 3 tooling) met actuele DynamoDB-snapshot, prod-mode, push naar Convex prod
+- [ ] T-0: verse `extract` + `transform` op actuele DynamoDB-stand, dan `load-files` (alleen de delta sinds T-2), dan `load-records` + `verify` (WP12, prod-config). Minuten, niet uren — de bulk staat al in storage sinds T-2.
+- [ ] T-0: `integrityCheck`-cron op prod weer aanzetten, ná een groene `verify`
 - [ ] T-0: backend write-block aan op AWS
 - [ ] T-0: webapp redirect aan
 - [ ] T-0: 16 users informeren dat ze nu kunnen overstappen, korte instructie voor Clerk login
