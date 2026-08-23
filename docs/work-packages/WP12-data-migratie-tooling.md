@@ -193,11 +193,180 @@ Bewust geaccepteerd door Wouter op 2026-08-23, met die einddatum als voorwaarde.
 
 ---
 
-## Spec-criticus aanvullingen (A vult in)
+## Spec-criticus aanvullingen (A, 2026-08-23)
 
-- Ontbrekende invarianten: ...
-- Gemiste edge cases: ...
-- Risico-dimensie die regie overschatte/onderschatte: ...
-- Open product-vragen voor regie/Wouter: ...
+A heeft de oude AWS-code gelezen (`blob-images-api`, `-user`, `-groups`, `-photos`, `-invites`, `blob-images-features`, `blob-common`) en de draft daartegen gelegd. De draft klopt op mechanisme, planning en risico-weging. Waar hij niet klopt is in de **aanname dat de brondata dezelfde vorm en betekenis heeft als het Convex-schema**. Op zes punten is dat aantoonbaar niet zo. Die staan hieronder als correcties, gevolgd door de invarianten en edge cases die daaruit volgen.
 
-(Leeg in draft. A commit edits hier.)
+### Bronwerkelijkheid — wat er écht in DynamoDB staat
+
+Tabel `blob-images-photos-prod`, bucket `blob-images`, regio **eu-central-1** (Frankfurt). Die regio staat nergens in de draft; hij bepaalt wel de AWS-client-config en de latency van `extract` en `load-files`.
+
+| Convex-tabel | Bron-record(s) | Bijzonderheid |
+|---|---|---|
+| `users` | `UBbase / U{sub}` (naam, email, profielfoto), `UPstats / U{sub}` (photoCount), `UVvisit / U{sub}` (bezoekdata, cognitoId), `USER / U{sub}` (afgeleide merge, geschreven door de stream) | Eén user = vier records. `USER` is een **afgeleide kopie** en is dus géén bron — hij kan achterlopen. |
+| `groups` | `GBbase / {groupId}` | |
+| `memberships` | `UM{userId} / {groupId}` **zonder** `status: 'invite'` | |
+| `invites` | `UM{inviteeId} / {groupId}` **mét** `status: 'invite'` | `inviteeId` is `U{sub}` óf een **emailadres**. Zelfde recordtype als membership. |
+| `albums` | `GA{groupId} / {albumId}` | |
+| `albumPhotos` | `GP{groupId}#{albumId} / {photoId}` | |
+| `photos` | `PO{photoId} / U{ownerSub}` | |
+| `ratings` | `UF{photoId} / U{userSub}` | |
+| `features` | `NFfeature / {featureId}` | |
+| `featureUpvotes` | — | **geen bron**, zie correctie 3 |
+| `albumLastSeen` | `seenPics` op `UM`-records | zie correctie 2 |
+
+### Correctie 1 — `createdAt` is een kalenderdag, geen timestamp
+
+`blob-common/core/date.js` levert `YYYY-MM-DD`. Élk `createdAt`, `exifDate`, `flaggedDate`, `flaggedDeleteDate`, `flaggedAppealDate` en `visitDateLast` in de bron is een datumstring op dag-granulariteit. Het Convex-schema verwacht overal `v.number()` (epoch-ms).
+
+Gevolgen die de draft niet noemt:
+
+- **Tijd-op-de-dag bestaat niet in de bron.** Alle foto's van dezelfde dag krijgen dezelfde `createdAt`/`addedAt`. Sorteervolgorde binnen een dag is niet reconstrueerbaar. De oude app gebruikte `dateSK = createdAt + '#' + photoId` als tiebreak; die volgorde is willekeurig en hoeft niet bewaard te worden.
+- **De strict-`>`-semantiek van `albumLastSeen` botst hierop.** Zie correctie 2.
+- **Conversie-afspraak (A-besluit, regie mag overrulen):** `YYYY-MM-DD` → epoch-ms op **UTC-middernacht** van die dag. Deterministisch, omkeerbaar, en de kalenderdag blijft in Europe/Amsterdam dezelfde. Geen "slimme" spreiding van timestamps binnen de dag om ties te breken — dat verzint data die niet bestaat.
+- **Invariant:** een datum die in de oude app als 14 juli werd getoond, wordt na migratie ook als 14 juli getoond. Dat is de acceptatie-eis, niet de exacte ms-waarde.
+
+### Correctie 2 — `seenPics` is een **ongelezen**-lijst, niet een gelezen-lijst
+
+Dit is de zwaarste vondst. `migratie-plan-convex.md` §Unread-count beschrijft `seenPics` als "bevat photoIds van foto's die user heeft gezien" en leidt daaruit `lastSeenAt = max(addedAt)` af. De bron zegt het omgekeerde:
+
+- `blob-images-api/handlersDBstreams/groupPhotoAddToMember.js` voegt bij **elke nieuwe albumfoto** een entry `{ albumId, photoId }` toe aan `seenPics` van álle groepsleden behalve de eigenaar.
+- `blob-images-api-groups/libs/lib-newPics.js` telt precies die entries als **nieuw**: `filter(item => !item.seenDate || item.seenDate === today)`.
+- `userChangeToMembership.js` stempelt bij een nieuw bezoek `seenDate = visitDateLast` op entries zonder stempel, en verwijdert entries waarvan de `seenDate` ouder is dan de huidige bezoekdag.
+
+Dus: **entry zonder `seenDate` = ongelezen. Entry met `seenDate` = één dag geleden getoond, daarna opgeruimd.** De array is een wachtrij van ongelezen foto's, geen historie van gelezen foto's.
+
+Het algoritme uit het migratieplan toegepast op deze data zet `lastSeenAt` op de *nieuwste ongelezen* foto — waardoor iedere user na cutover exact nul ongelezen foto's ziet, terwijl de badge in de oude app juist wél stond. Precies de omgekeerde uitkomst.
+
+**Correcte afleiding (A-besluit):** per (user, album):
+
+- `ongelezen` = de `seenPics`-entries voor dat album **zonder** `seenDate`, waarvan het bijbehorende `GP`-record nog bestaat.
+- Heeft het album ongelezen entries → `lastSeenAt` = de kleinste `addedAt` binnen die ongelezen set, **min 1 ms**.
+- Heeft het album wél albumfoto's maar geen ongelezen entries → `lastSeenAt` = de grootste `addedAt` in dat album.
+- Heeft het album geen albumfoto's → geen record; de bestaande fallback in `albums.ts` regelt het.
+
+**Richtings-invariant bij twijfel:** de afleiding mag fout gaan richting *"te veel ongelezen"*, nooit richting *"ten onrechte gelezen"*. Een badge die één keer te veel staat is een schoonheidsfoutje; een foto die de user nooit te zien krijgt is verlies. Dit is de regel die de dag-granulariteit uit correctie 1 opvangt: staan een gelezen en een ongelezen foto op dezelfde dag, dan worden ze allebei ongelezen.
+
+Entries verwijzen naar een album buiten de groep van de membership, naar een verwijderd album, of naar een verwijderde foto → overslaan, geteld in het transform-rapport.
+
+### Correctie 3 — `featureUpvotes` heeft geen brondata
+
+`blob-images-features/handlers/upvote.js` doet één anonieme increment op `NFfeature.votes`, met als enige conditie "je bent niet de indiener". Er wordt **geen** per-user record geschreven. Bovendien start `votes` in `handlers/create.js` op **10**, niet op 0 — het is een score, geen telling.
+
+De draft zegt "`features.upvoteCount` wordt in de transform berekend uit de brondata". Dat kan niet: er is geen brondata om uit te rekenen, en `internal.monitoring.integrityCheck` (WP10) eist keihard `features.upvoteCount === count(featureUpvotes met dat featureId)`.
+
+Drie opties, waarvan er maar één zowel eerlijk als integriteits-schoon is:
+
+| Optie | Uitkomst |
+|---|---|
+| `upvoteCount = votes`, geen upvote-records | Permanente dagelijkse drift-mail vanaf dag één. Onacceptabel, zelfde bezwaar als bij de video's. |
+| Upvote-records verzinnen en aan willekeurige users toeschrijven | Fabriceert attributie die nooit bestaan heeft. Afgewezen. |
+| **`upvoteCount = 0`, geen `featureUpvotes`-records** | De stemscore gaat verloren, de rest van de feature blijft. Integriteits-schoon. |
+
+**A-besluit: optie 3.** De oude `votes`-waarde wordt wel in het transform-rapport genoemd, zodat Wouter 'm desgewenst handmatig terugzet. Expliciet als data-verlies te bevestigen door Wouter — zie §Nog open.
+
+### Correctie 4 — rollen, statussen en types matchen niet
+
+| Bron | Convex | Regel |
+|---|---|---|
+| `role: 'guest'` (default bij invite) | `role: 'member'` | `guest` → `member`, `admin` → `admin`. Een andere waarde is een harde fout. |
+| membership zonder `status` (aangemaakt via `createGroup`) of `status: 'active'` | `memberships` | lid |
+| `status: 'invite'` | `invites` | **geen** membership |
+| `isFounder: true` op membership | `groups.createdBy` | zie edge cases |
+| feature `status: 'submitted'` | `'open'` | |
+| feature `status: 'in progress'` | `'inProgress'` | |
+| feature `status: 'completed'` | `'done'` | |
+| feature `type` | `'feature'` | Problem-reports gingen alleen per mail (`handlersProblem/create.js` schrijft niets naar DynamoDB). Er is dus geen enkele `type: 'problem'`-rij te migreren. |
+| rating `0` / `1` | `ratings.value` | Het oude "rating" is een **like** (0 of 1), geen 1..5-score. |
+
+Over ratings: `updateRating.js` schrijft ook een record met `rating: 0` als een user zijn like weer intrekt. **A-besluit:** alleen records met `rating === 1` worden een `ratings`-rij (met `value: 1`); `rating: 0` levert geen rij op. `photos.ratingCount` = aantal likes, `photos.ratingAverage` = `1` bij ≥1 like en `undefined` bij 0 likes. Daarmee is de user-truth "aantal likes" bewaard en klopt de aggregate met WP10.
+
+Zijdelings: het schema-commentaar bij `ratings.value` ("bv. 1..5") past niet bij de werkelijke feature. Dat is geen WP12-werk, wel een signaal voor regie.
+
+Feature-veld `comment` (webmaster-notitie) heeft geen Convex-veld. Gaat verloren; noemen in het rapport.
+
+### Correctie 5 — velden die het Convex-schema verplicht stelt maar de bron niet heeft
+
+| Convex-veld | Bron | Regel |
+|---|---|---|
+| `groups.createdBy` (verplicht) | geen veld op `GBbase`; wel `isFounder: true` op één `UM`-record | afleiden uit de founder-membership. Géén founder gevonden → **harde fout**, met een config-override per groepId als ontsnapping. Niet stilletjes de oudste member pakken. |
+| `albums.createdBy` (verplicht) | **bestaat niet**, in geen enkele vorm | valt terug op de founder van de groep (`groups.createdBy`). Gesynthetiseerd, dus expliciet als zodanig in het rapport tellen. |
+| `albumPhotos.addedBy` (verplicht) | bestaat niet op `GP` | valt terug op de eigenaar van de foto. Verdedigbaar: beide schrijfpaden (`createAlbumPhoto.js` en de `albumphoto`-actie in `createPhoto.js`) staan alleen toe dat je je **eigen** foto publiceert. |
+| `albums.description` (optioneel) | `createAlbum.js` schrijft 'm nooit | blijft leeg |
+| `users.subject` (verplicht) | Cognito-sub, geen Clerk-ID | uit de ID-map. Ontbrekende mapping = harde fout, geen placeholder-subject. |
+| `users.photoLimit` (verplicht) | stond in AWS als env-var, niet per user | `DEFAULT_PHOTO_LIMIT` uit `convex/users.ts` |
+| `users.photoCount` | `UPstats.photoCount` | **niet overnemen** maar hertellen uit de `PO`-records. Het oude veld werd bijgehouden door een stream met bekende drift-historie (`fixPhotoStats.js` bestaat niet voor niks), en WP10 eist dat het klopt met de werkelijke rijen. |
+| `photos.mimeType`, `filename`, `width`, `height` | **niet in DynamoDB** | blijven leeg. Alleen af te leiden uit S3-metadata; dat is geen verplichting van deze WP. Als `load-files` de content-type toch al van S3 krijgt, is 'm meenemen gratis — maar het is geen acceptatie-eis. |
+| `photos.exifOrientation` | bestaat niet | blijft leeg. De oude app roteerde het bestand zelf (`fixPhotoRotation.js`), dus de bytes staan al goed. |
+| `photos.flagReason` | bestaat niet | blijft leeg |
+| `invites.token` | `otob({PK, SK})` — base64 van de invite-sleutel | zie edge cases |
+| `invites.expiresAt` | `createdAt + 30 dagen` (`expireDate`) | |
+
+### Correctie 6 — lege string als "leeg"-sentinel
+
+`updateUser.js` zet `photoUrl: ''` en `photoId: ''` om een profielfoto te wissen; `flagPhotoAppeal.js` zet `flaggedDeleteDate: ''`. Die lege strings staan gewoon in de tabel. De transform moet `''` als *afwezig* behandelen — anders landt er een lege string waar Convex een `v.id("_storage")` of een `v.number()` verwacht en faalt `load-records` halverwege.
+
+Zelfde categorie: `photoId` verwijst naar een foto die intussen verwijderd is. Komt voor bij `groups.coverPhotoId`, `albums.coverPhotoId` en `users.profilePhotoStorageId`.
+
+### Toegevoegde invarianten
+
+Aanvullend op §Invarianten in de draft:
+
+- **De transform faalt luid op onoplosbare verplichte FK's.** Een verplichte verwijzing die niet resolvet stopt de run met de bron-sleutel in de melding. Nooit `undefined` doorlaten, nooit de rij stilletjes overslaan. Optionele verwijzingen (cover-foto's, `invites.groupId`) die niet resolven worden **gewist** en geteld — die zijn ontworpen om leeg te mogen zijn.
+- **Referentiële geslotenheid van de dev-filter.** De filterregels in `migratie-plan-convex.md` §Dev seed strategie garanderen die geslotenheid *niet*: een groep wordt opgenomen zodra één chosen user lid is, maar de founder — en dus `groups.createdBy` — kan een niet-chosen user zijn. Zelfde probleem bij cover-foto's van niet-chosen eigenaren. De regel wordt: na filtering resolvet elke verplichte FK binnen de gefilterde set, of de transform stopt. Waar dat niet kan zonder data te verzinnen, is dat een filterregel die aangescherpt moet worden (bijvoorbeeld: neem de founder van een opgenomen groep altijd mee als user), niet iets om in de load op te lossen.
+- **Anonimisatie is aantoonbaar volledig.** Niet "namen en emails zijn vervangen" maar: in de volledige `convex-records.json` van een dev-run komt geen enkele bron-naam, bron-email of Cognito-sub voor. Dit is als test uit te voeren over de hele output, niet per veld. Let op de plekken waar PII gedenormaliseerd meelift: `UM.user`, `UM.invitation.from`, `PO.user`, `GP.photo.user` bevatten allemaal complete user-kopieën.
+- **Email-normalisatie.** Elke email die de transform verlaat is `trim().toLowerCase()`, conform §Email-normalisatie invariant in het migratieplan. Twee bron-users die daarna botsen op hetzelfde adres = harde fout, geen "laatste wint".
+- **`load-files` is record-gedreven, nooit bucket-gedreven.** De set te uploaden bestanden is exact: `photos.url` ∪ `users.photoUrl` uit de getransformeerde records. Nooit een `ListObjectsV2` over de bucket. De bucket bevat aantoonbaar objecten zonder record: `fixPhotoRotation.js` schrijft een nieuw object en verwijdert het oude pas daarna (een gefaalde delete laat een wees achter), objecten met `Metadata.iscopy` worden door de S3-trigger genegeerd, en `public/img/...` bevat mail-assets. Een bucket-listing zou die allemaal importeren en daarmee vanaf dag één WP10-drift produceren.
+- **Twee bestanden met dezelfde S3-sleutel worden één storage-object.** De standaard-profielfoto's zijn gedeeld (zie edge cases); `storage-map.json` op S3-sleutel geeft die dedup gratis. Het is dus geen 1:1 relatie tussen records en storage-objecten, en `verify` mag daar niet van uitgaan.
+- **`verify` reconcilieert twee kanten op.** Niet alleen "elke `storageId` in een record bestaat" maar ook "elk object in `_storage` is aan minstens één record gekoppeld" — dat is exact de check die WP10 dagelijks draait, en het is beter die op T-0 al te zien dan de volgende ochtend per mail.
+- **`extract` legt vast wanneer hij gedraaid is.** Een `transform` op een extract van twee weken oud tegen een `storage-map.json` van vandaag is een reële fout in het gefaseerde scenario. Het extract-bestand draagt zijn eigen tijdstempel en bron (tabelnaam + regio + account), en de latere stappen tonen die.
+- **Geen enkel commando schrijft naar zowel AWS als Convex in dezelfde stap.** Al impliciet in "AWS wordt nooit geschreven", maar het maakt de leesrichting expliciet: DynamoDB en S3 zijn read-only bronnen, `.data/` is de enige tussenlaag.
+
+### Gemiste edge cases
+
+- **Invite-records met een emailadres als sleutel.** `UM{email} / {groupId}` — de PK bevat een `@`. Dat is de reden dat `inviteHelpers.js` op `PK.includes('@')` test. Voor de transform betekent het: een invite hoort niet bij een user, `invites` heeft geen `userId`, en het emailadres komt uit `PK.slice(2)` óf uit `user.email`. Die twee kunnen verschillen als de invitee later zijn adres wijzigde; `user.email` is leidend.
+- **Invite naar een bestaande user.** Dan is de PK `UMU{sub}` en zit de email in `user.email`. Ook dan wordt het een `invites`-rij, niet een membership.
+- **Invite-status bij migratie.** Geaccepteerde en geweigerde invites bestaan niet meer als record — accepteren zet `status: 'active'` (wordt membership), weigeren verwijdert de rij. Er zijn dus alleen `pending` en `expired` te migreren. Een invite waarvan `createdAt + 30 dagen` in het verleden ligt wordt `expired`, de rest `pending`. `respondedAt` en `bouncedAt` blijven leeg.
+- **Invite-tokens.** De oude token is base64 van `{PK, SK}` en zit in mails die mogelijk nog in iemands inbox staan. Hem overnemen houdt oude links werkend maar lekt de DynamoDB-sleutelvorm in het nieuwe systeem; een nieuwe token genereren maakt uitstaande links dood. Bij ≤30 dagen geldigheid en een cutover die dat venster overspant, is dit een echte keuze — zie §Nog open.
+- **Verlopen invites en de "actief lid"-vraag.** De oude leeslaag filtert verlopen invites weg (`dynamodb-lib-memberships.js`: `expireDate(createdAt) >= today`), maar verwijdert ze niet. In de tabel staan dus invites van jaren geleden. Ze migreren als `expired` is correct; ze meetellen als membership zou zomaar een 17e "lid" opleveren.
+- **Standaard-profielfoto's ("knorren").** `createUser.js` geeft elke nieuwe user `public/img/knorren/knor{0..22}.jpg` als `photoUrl`. Dat zijn **gedeelde** bestanden buiten `protected/`, zonder `PO`-record. Ze zijn geen photo's; ze zijn wel de profielfoto van waarschijnlijk meerdere van de 16 users. Twee dingen volgen: het pad naar `users.profilePhotoStorageId` loopt niet altijd via een `photos`-record, en of die objecten überhaupt nog in de bucket staan is niet uit de code af te leiden — als ze ontbreken moet de user gewoon zonder profielfoto landen, niet crashen.
+- **De S3-sleutel is geen betrouwbare eigenaars-aanwijzing.** `createPhoto.js` accepteert zowel `protected/{sub}/...` als `protected/eu-central-1:{identityId}/...` en zoekt de user in het tweede geval op via de `cog-idx`. Eigendom komt uit `PO.SK`, nooit uit het pad. Voor `load-files` maakt het niet uit — `photo.url` is de volledige sleutel — maar een tool die eigenaarschap uit het pad afleidt is fout op een deel van de data.
+- **URL-encoding in S3-sleutels.** De S3-event-sleutel is percent-encoded en `createPhoto.js` decodeert alleen het derde segment. Bestandsnamen met spaties of diakritieken staan daardoor mogelijk in een andere vorm in `photo.url` dan in de bucket. `load-files` moet een 404 op een bestaand record als **fout** melden, niet als "overslaan" — anders verdwijnt een foto zonder dat iemand het merkt.
+- **`photos` zonder bijbehorend S3-object.** Kan bestaan (mislukte rotatie, handmatig opgeruimde bucket). `photos.storageId` is verplicht, dus zo'n record kán niet zonder bestand geladen worden. Beslissing nodig: overslaan-en-rapporteren of hard falen. **A-besluit: rapporteren en overslaan, met het aantal in het `verify`-rapport** — één ontbrekend bestand mag een cutover van 1650 foto's niet blokkeren, maar het moet zichtbaar zijn.
+- **Groepen zonder chosen founder in dev**, cover-foto's van niet-chosen eigenaren, ratings waarvan één kant wegvalt — zie de geslotenheids-invariant hierboven.
+- **`albumPhotos.groupId` is gedenormaliseerd** in Convex. Hij zit in de `GP`-PK, dus hij is beschikbaar; hij moet wél consistent zijn met `albums.groupId` van hetzelfde album. Inconsistentie hier is een bronfout die zichtbaar moet worden.
+- **Dezelfde foto in meerdere albums.** `GP`-records zijn per (groep, album, foto); één foto kan in meerdere albums zitten. De ID-map foto → Convex-id moet dus 1:N-gebruik aankunnen, en `load-files` mag zo'n foto maar één keer uploaden.
+- **`reset` en de storage-map.** `reset` zonder `--all` laat de bestanden staan, maar leegt wel de tabellen. `storage-map.json` blijft dan geldig. `reset --all` maakt hem juist **ongeldig** — als hij daarna blijft staan, verwijst `load-records` naar storage-ID's die niet meer bestaan. Dat is een stille corruptie-route: `reset --all` moet de storage-map in dezelfde beweging ongeldig maken.
+- **`load-records` op een niet-lege deployment.** De draft eist fail-loud. Concreet: de precondition is "alle doel-tabellen zijn leeg", vóór de eerste schrijf gecontroleerd, niet halverwege ontdekt.
+- **Verkeerde deployment.** Hetzelfde patroon als `tests/integration/_helpers/safety.ts`: een tweede laag die weigert te schrijven naar prod tenzij expliciet aangezet. `reset` tegen prod is de duurste knop in dit werkpakket.
+- **De ID-map is niet één map maar acht.** Users, groups, albums, photos, features en de koppel-entiteiten hebben elk hun eigen sleutelruimte, en de sleutels overlappen niet toevallig (`P…`, `G…`, `A…`, `F…`, `U…`). Toch: een gedeelde platte map waarin een photoId per ongeluk als groupId resolvet is een klasse fouten die met gescheiden namespaces niet bestaat.
+
+### Risico-dimensies — bijstellingen
+
+- **data/schema-evolutie: hoog blijft hoog, maar om een andere reden dan de draft geeft.** De draft ziet het risico in "dit is de cutover-batch". Het echte risico is dat de brondata *semantisch* afwijkt van het doelschema op minstens zes punten (correcties 1-6), waarvan er één — `seenPics` — in het migratieplan zélf verkeerd gedocumenteerd staat. Wat hier misgaat is niet zichtbaar als een foutmelding; het is data die er correct uitziet en het niet is. Vandaar dat de transform-tests unit-tests zijn met een synthetische fixture waarin de semantiek expliciet gepind wordt.
+- **security/privacy: hoog, en breder dan de draft schat.** De draft noemt "namen, emails, foto's, locatiegegevens". Daar komt bij: **Cognito-subs** (identificerend), **gedenormaliseerde user-kopieën** verspreid over `UM`, `PO`, `GP` en `NFfeature`-records, en de **volledige inhoud van invite-berichten** (`invitation.message`, vrije tekst van de uitnodiger). De anonimisatie moet die allemaal raken, niet alleen de velden op `users`.
+- **external deps: van medium naar medium/hoog.** Naast de AWS-SDK en de onbevestigde storage-limiet: de video's van ~500 MB moeten in één keer door een Convex-upload-URL heen over een lijn van <20 Mbit/s. Dat is ruim drie minuten per bestand aan pure zendtijd bij een perfecte verbinding. Of Convex' upload-URL zo lang openblijft, is een tweede onbevestigde aanname naast de groottelimiet.
+- **ops: hoog, correct ingeschat.** Eén toevoeging: het gefaseerde scenario betekent dat er twee weken lang een prod-deployment bestaat met **8,3 GB storage en nul records**. WP10's `integrityCheck` draait daar dagelijks en meldt dan 1650+ storage-orphans, elke dag, twee weken lang. Dat moet vóór T-2 geregeld zijn — of de cron staat nog uit op prod, of de check wordt tijdelijk stilgezet. Als dat niet geregeld is, is de eerste ervaring met de monitoring op prod een stortvloed vals-positieven, en dat is precies hoe monitoring genegeerd gaat worden.
+
+### Transform-outputcontract
+
+Om `transform` als pure functie te kunnen testen — en omdat `load-files`, `load-records` en `verify` alle drie op dezelfde vorm leunen — ligt de vorm van `.data/convex-records.json` vast:
+
+- Per Convex-tabel een lijst rijen. Elke rij draagt de Convex-veldnamen.
+- Elke rij heeft een `sourceKey`: de natuurlijke bron-ID (`U{sub}`, `{groupId}`, `{albumId}`, `{photoId}`, `{featureId}`; voor koppel-entiteiten de samenstelling daarvan).
+- Foreign-key-velden bevatten de `sourceKey` van het doel, niet een Convex-`_id`. `load-records` vervangt ze.
+- Storage-verwijzingen zijn **S3-sleutels** in een apart veld (`storageKey` op photos, `profilePhotoStorageKey` op users), niet `storageId`. `load-records` vervangt ze aan de hand van `storage-map.json`.
+- Naast de records levert de transform een lijst waarschuwingen op: overgeslagen records, gewiste optionele FK's, gesynthetiseerde velden, verloren gegane data. Die lijst is de input van het `inspect`/`verify`-rapport en van de opruim-verantwoording in de runbook.
+
+### Openstaande vragen — bijgewerkt
+
+De vier vragen uit de draft, plus wat er bij komt.
+
+1. **Video's — code-antwoord gevonden, empirisch deel blijft open.** De S3-trigger (`blob-images-api-photos/serverless.yml`) staat op prefix `protected/` zónder suffix-filter, en `createPhoto.js` maakt een `PO`-record voor élk object daaronder dat geen `Metadata.iscopy` draagt — ongeacht bestandstype. EXIF-extractie faalt bij een video, wordt gevangen, en het record wordt alsnog geschreven. Er is verder nergens in de backend een spoor van video: geen mime-check, geen apart endpoint, geen apart pad. **Conclusie:** staan de video's onder `protected/`, dan hebben ze gewoon een `PO`-record en lopen ze via het normale pad mee — het derde scenario uit §Video's (bestanden zonder record) vervalt dan. De resterende vraag is puur empirisch en niet uit code te beantwoorden: **onder welke prefix staan de 6 video's in bucket `blob-images`?** Antwoord met een `aws s3 ls`, vóór B begint. Staan ze buiten `protected/`, dan is de keuze uit §Video's alsnog nodig.
+2. **Attribuutnamen per entiteit — beantwoord.** Zie §Bronwerkelijkheid en correcties 1-6.
+3. **Convex-storage-limiet — nog open, voor B.** Uitgebreid: naast de maximale bestandsgrootte ook de levensduur van een upload-URL, gegeven ~3 minuten zendtijd per video.
+4. **Chosen users — nog open, voor Wouter na `inspect`.**
+5. **Nieuw, voor Wouter: het verlies van de feature-stemmen bevestigen.** Zie correctie 3.
+6. **Nieuw, voor Wouter: invite-tokens overnemen of hergenereren?** Zie edge cases.
+7. **Nieuw, voor regie: WP10's cron op prod tussen T-2 en T-0.** Zie risico-dimensies.
+8. **Nieuw, voor regie: de `seenPics`-beschrijving in `migratie-plan-convex.md` §Unread-count klopt niet** (correctie 2). Dat doc is de architectuur-bron; zolang de fout er staat, kan een volgende WP 'm opnieuw overnemen.
