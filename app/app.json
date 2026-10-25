@@ -2,12 +2,16 @@
   "expo": {
     "name": "Clubalmanac",
     "slug": "clubalmanac-app",
+    "owner": "wintvelt",
     "version": "2.0.0",
     "scheme": "clubalmanac",
     "orientation": "default",
     "ios": {
       "bundleIdentifier": "com.wintvelt.clubalmanac-app",
-      "supportsTablet": true
+      "supportsTablet": true,
+      "config": {
+        "usesNonExemptEncryption": false
+      }
     },
     "plugins": ["expo-status-bar", "expo-secure-store"],
     "extra": {

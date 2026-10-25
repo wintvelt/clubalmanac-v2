@@ -93,6 +93,13 @@ Het tweede deel telt even zwaar als het eerste. Een geblokkeerde upload met een 
 
 | Locatie | Pakket | Ernst | Besluit | Reden |
 |---|---|---|---|---|
+| root | `vitest` / `@vitest/mocker` 4.1.5 | moderate | opgelost: 4.1.12 via `npm audit fix` | patch binnen `^4.1.5` |
+| root | `vite` 8.2.2 (via vitest) | high | opgelost: 8.3.5 via `npm audit fix` | minor, transitief; alleen test-tooling |
+| root | `source-map-js` 1.2.1 | high | opgelost: 1.2.2 via `npm audit fix` | patch, transitief |
+| `app/` | `vitest` / `@vitest/mocker` 4.1.5 | moderate | opgelost: pin naar 4.1.12 in `package.json` | `app/` pint exact, dus `audit fix` wilde `--force`; dit is een patch, geen major |
+| `app/` | `node-forge` (via `@expo/cli`, `@expo/code-signing-certificates`) | high | geaccepteerd | geen fix beschikbaar. Zit in de Expo-CLI (code signing voor `expo-updates`), niet in de app-bundel; de app gebruikt geen `expo-updates`. Opnieuw bekijken bij een Expo-update |
+| `app/` | `zod` 3.25.76 (via `@expo/cli` en `@clerk/expo` → `@base-org/account`) | high | geaccepteerd | geen fix binnen zod 3, en `audit fix` kan de ouders niet ophogen. De DoS vraagt grote invoer die door zod gevalideerd wordt; de app voert geen user-invoer door zod. Opnieuw bekijken bij een Clerk- of Expo-update |
+| `app/` | `expo`, `@expo/cli`, `@clerk/expo` | high | geaccepteerd | alleen meldingen omdat ze van `node-forge` / `zod` hierboven afhangen. Geen eigen kwetsbaarheid |
 
 ## Uitkomsten spike
 

@@ -4,6 +4,9 @@
   "private": true,
   "description": "Clubalmanac — Convex backend (migratie van AWS).",
   "type": "module",
+  "engines": {
+    "node": "24.x"
+  },
   "scripts": {
     "convex:dev": "convex dev",
     "convex:codegen": "convex codegen",
@@ -19,7 +22,7 @@
     "@aws-sdk/lib-dynamodb": "^3.1116.0",
     "@clerk/backend": "^3.4.4",
     "@edge-runtime/vm": "^5.0.0",
-    "@types/node": "^25.6.0",
+    "@types/node": "^24.19.2",
     "convex-test": "^0.0.50",
     "dotenv": "^17.4.2",
     "typescript": "^6.0.3",

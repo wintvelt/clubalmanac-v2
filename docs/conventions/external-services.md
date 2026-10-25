@@ -88,7 +88,7 @@ De Expo-app in `app/` leest twee publieke vars. Ze komen leesbaar in de app-bund
 | `EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY` | `pk_test_…` van `picked-quail-97` (Clerk → API keys) | `pk_live_…` van de prod-instance (fase 5) | idem |
 
 - **Lokaal**: `app/.env.local` (gitignored via de root-`.gitignore`). Sjabloon: `app/.env.example`. Expo leest het bestand bij `npx expo start` / `expo run:ios`.
-- **EAS (WP14)**: per build-profiel als EAS-env-var (`eas env:create`, zichtbaarheid "plaintext" volstaat: beide zijn publiek). Dev-profiel → dev-waarden, production-profiel → prod-waarden.
+- **EAS**: als EAS-env-var per EAS-omgeving, zie §EAS-build en TestFlight hieronder.
 - **Verkeerde combinatie** (URL van de ene, key van de andere omgeving): de app start, maar Convex weigert het token. De app toont dan "Verbinden met de server lukt niet" met een uitlog-knop.
 
 Clerk-dashboard voor de app-login (per instance, dev al gedaan, prod in fase 5):
@@ -96,6 +96,39 @@ Clerk-dashboard voor de app-login (per instance, dev al gedaan, prod in fase 5):
 - **Configure → Attack protection**: bescherming tegen enumeratie aan. De app verraadt een onbekend adres ook niet als die uit staat.
 - **Configure → Native applications**: Native API aan.
 - **JWT-template `convex`**: bestaat al (WP4); zonder template weigert Convex het token.
+
+### EAS-build en TestFlight (WP14)
+
+Config: [`app/eas.json`](../../app/eas.json). EAS project `@wintvelt/clubalmanac-app` (`bd5c6c93-…`), owner `wintvelt` in `app/app.json`. ASC-app-ID `1663038609` staat in `eas.json` §submit.
+
+| Profiel (build + submit) | EAS-omgeving | Backend | Status |
+|---|---|---|---|
+| `dev` | `development` | `glorious-pheasant-759` + `picked-quail-97` | in gebruik (TestFlight, internal testing) |
+| `production` | `production` | prod (fase 5) | nog geen env-vars: een build start met "verkeerd ingesteld" |
+
+- **Node**: 24 overal. `.nvmrc` (root) stuurt CI en lokaal fnm, `engines` + `engine-strict` in beide `package.json`'s laten `npm ci`/`npm install` op een andere versie stoppen met `EBADENGINE`. EAS leest `.nvmrc` niet: `eas.json` `build.base.node` pint een exacte 24-versie. Bij een Node-update beide aanpassen.
+- **Buildnummer**: `appVersionSource: remote` + `autoIncrement`. EAS telt door; `app.json` heeft geen `buildNumber`. Laatste oude build in App Store Connect is 38, dus de teller moet op ≥ 38 staan vóór de eerste build.
+- **Wat EAS uploadt**: de hele git-repo (de app typecheckt tegen `../convex`), zonder wat `.gitignore` uitsluit. Dus geen `app/ios/` (EAS doet zelf prebuild uit `app.json`), geen `.env.local`, geen `backups/` of `scripts/.data/`. Maak géén `.easignore`: die vervangt `.gitignore` voor EAS, en dan gaat prod-data mee als je hem niet volledig overneemt.
+- **Env-vars**: alleen de twee `EXPO_PUBLIC_`-vars, zichtbaarheid `plaintext` (publiek). Geen geheimen in EAS-env-vars of `eas.json`.
+- **Credentials**: EAS-managed. Distributiecertificaat en provisioning profile maakt EAS aan of vernieuwt ze tijdens `eas build`, na login met Apple ID. Voor `eas submit` laat EAS een App Store Connect API key aanmaken en bewaart die. Wouter beantwoordt deze vragen zelf.
+- **Exportcompliance**: `ios.config.usesNonExemptEncryption: false` (alleen standaard-HTTPS). App Store Connect vraagt het dan niet per build.
+- **Alleen internal testing** zolang de build tegen dev praat (echte data van dev-users). Geen externe testers, geen Beta App Review.
+
+Gate-commando's (Wouter, in `app/`, Node 24 actief):
+
+1. Node 24 via fnm: `brew install fnm`, `eval "$(fnm env --use-on-cd --shell zsh)"` in `~/.zshrc`, dan `fnm install 24`. fnm leest `.nvmrc` en schakelt bij `cd` in de repo over. Check: `node -v` toont `v24.x`.
+2. `npm install -g eas-cli` en `eas login`. Check: `eas whoami` toont `wintvelt`.
+3. Env-vars voor `development`, waarden uit `app/.env.local`:
+   - `eas env:set --environment development --name EXPO_PUBLIC_CONVEX_URL --value https://glorious-pheasant-759.eu-west-1.convex.cloud --visibility plaintext --scope project`
+   - `eas env:set --environment development --name EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY --value <pk_test_… uit app/.env.local> --visibility plaintext --scope project`
+   - Check: `eas env:list --environment development`
+4. Buildteller: `eas build:version:get -p ios -e dev`. Lager dan 38 of leeg: `eas build:version:set -p ios -e dev` en vul `38` in.
+5. `eas build -p ios --profile dev`. Kies EAS-managed credentials; log in met Apple ID als EAS dat vraagt.
+6. `eas submit -p ios --profile dev --latest`. Laat EAS een App Store Connect API key aanmaken.
+7. App Store Connect → TestFlight: wacht tot de build verwerkt is, voeg hem toe aan een interne testgroep met Wouter erin.
+8. iPhone: TestFlight-app → installeren → inloggen met code → eigen naam. App sluiten en openen → nog ingelogd. Uitloggen werkt.
+
+Blokkeert een stap (overeenkomsten, lidmaatschap, Apple-mail met ITMS-code), noteer de letterlijke melding in WP14 §Uitkomsten spike.
 
 ## AWS (alleen migratie, WP12)
 
