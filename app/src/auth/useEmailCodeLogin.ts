@@ -159,9 +159,17 @@ export function useEmailCodeLogin(): EmailCodeLogin {
 
   const changeEmail = useCallback(
     () =>
-      run("changeEmail", async () => {
+      run("changeEmail", async ({ fail }) => {
+        // De user geeft deze poging op; na een herstart mag hij niet terugkomen
+        // (invariant 20 geldt alleen voor een lopende poging). signIn.reset()
+        // wist alleen lokale state: de poging blijft bij Clerk staan. Een nieuwe
+        // lege poging vervangt hem daar, zonder code te sturen.
+        const { error: clerkError } = await signIn.create({});
+        if (clerkError) {
+          fail(loginErrorMessage(clerkError));
+          return;
+        }
         unknownAccount.current = false;
-        await signIn.reset();
         setStep({ step: "email" });
       }),
     [run, signIn],
