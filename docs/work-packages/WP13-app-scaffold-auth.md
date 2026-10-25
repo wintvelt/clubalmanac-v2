@@ -13,7 +13,7 @@ Een bestaande user opent de nieuwe app op een iPhone (simulator), logt in met zi
 3. **Backend-tooling blijft ongemoeid.** `npm ci`, `npm run typecheck` en `npm test` in de root doen na deze WP hetzelfde als ervoor. App-bestanden lekken niet in de root-typecheck of de vitest-suite.
 4. **Ingelogd = geldige Clerk-sessie + gevonden users-rij.** Het hoofdscherm toont alleen data als `users.current` een rij teruggeeft. Ingelogd zonder rij (webhook nog niet verwerkt, of geen account) is een eigen, zichtbare toestand: geen leeg scherm en geen crash.
 5. **Sessie overleeft een herstart.** Het Clerk-token staat in de veilige opslag van het toestel, niet in platte opslag.
-6. **Uitloggen is volledig.** Na uitloggen staat er geen token meer op het toestel, en de Convex-client stuurt geen identiteit meer mee.
+6. **Uitloggen is volledig.** Na uitloggen staat er geen token met een actieve sessie meer op het toestel, en de Convex-client stuurt geen identiteit meer mee. (Clerk kan een token zonder sessie terugschrijven; dat geeft geen toegang.)
 7. **Geen stille env-defaults.** Ontbreekt de Convex-URL of de Clerk publishable key, dan stopt de app bij de start met een duidelijke melding. Geen terugval op een hardcoded deployment, zeker niet op prod.
 8. **App Store-identiteit.** Bundle ID `com.wintvelt.clubalmanac-app` en EAS project `bd5c6c93-059d-409f-bca5-f658ec5722d5`. Het versie- en buildnummer liggen boven de laatst gepubliceerde versie van de oude app, zodat WP14 zonder aanpassing kan uploaden.
 9. **Inloggen wijzigt de gezaaide data niet.** Inloggen als een van de drie dev-accounts maakt geen tweede users-rij aan en overschrijft geen velden van de gezaaide rij. Dit loopt via het bestaande `session.created`-pad (WP6).
@@ -67,6 +67,8 @@ Een bestaande user opent de nieuwe app op een iPhone (simulator), logt in met zi
   2. App afsluiten en opnieuw openen → nog ingelogd
   3. Uitloggen → inlogscherm; opnieuw openen → nog steeds uitgelogd
   4. Verkeerde code → leesbare foutmelding; nieuwe code aanvragen werkt
+  4a. Verlopen code → eigen leesbare melding (bevestigt meteen de Clerk-foutcodes uit het test-contract)
+  4b. Code aanvragen, "ander e-mailadres" kiezen, app afsluiten en openen → het code-scherm van het oude adres komt niet terug
   5. Na de gate: de users-rij van dev1 is ongewijzigd (invariant 9)
   6. Ruimte voor bevindingen buiten deze scenario's
 
