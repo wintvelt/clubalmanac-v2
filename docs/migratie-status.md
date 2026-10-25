@@ -5,7 +5,7 @@ Status-overzicht van de AWS → Convex migratie. WP's updaten dit doc bij elke c
 **Huidige stand 2026-08-23**:
 - Fase 1 (project setup) ✅ afgerond
 - Fase 2 (backend) ✅ **AFGEROND** — alle domein- + cron-werk + monitoring + deferred integration-tests klaar (WP11 net dicht)
-- Fase 3 (data migratie tooling) — **tooling klaar** 2026-08-23 via [WP12](./work-packages/WP12-data-migratie-tooling.md) (vier audit-rondes, drie fix-cycli, 764 tests groen). Resteert: pre-flight §0, de 3 chosen users kiezen, en de dev-seed draaien.
+- Fase 3 (data migratie tooling) — **tooling klaar** 2026-08-23 via [WP12](./work-packages/WP12-data-migratie-tooling.md) (vier audit-rondes, drie fix-cycli, 764 tests groen). Resteert: de dev-seed draaien en valideren.
 - Fase 4 (clients) + fase 5 (cutover-prep: prod-env-vars + prod-Gates-herhaling) — open
 
 **Volgende fase**: fase 3 loopt (WP12).
@@ -82,12 +82,12 @@ Bouw migratie-tooling die zowel dev (subset) als prod (volledig) kan vullen. Eé
    - Dev: 3 chosen Cognito subs handmatig naar Clerk dev IDs in script config
    - Prod: **pre-create via Clerk Invitations API** (regie-keuze 2026-06-21). Vóór T-0 worden alle 20 prod-users via Clerk's API aangemaakt met hun bestaande emails — Clerk-IDs zijn dan bekend voor data-import (email→Clerk-ID lookup). Data-import schrijft alle `userId`-FKs direct met de echte Clerk-IDs — geen placeholders, geen lazy-rewrite, geen schema-impact. Alternatief (lazy-rewrite post-cutover) afgewezen wegens schema-impact (placeholder-strings op alle FKs) + halfgemigreerde-state-risico + WP10-monitoring-noise. Zie fase 5 T-2-weken stap voor de Clerk-pre-create-actie.
 - [x] S3 → Convex file storage migratie:
-   - Dev: alleen photos van de 3 chosen (~paar honderd MB, snel)
+   - Dev: alleen photos van de 3 chosen (1002 bestanden, ~3,6 GB)
    - Prod: alle bestanden uit `blob-images` — 1601 objecten, 5,6 GB (gemeten 2026-08-23). Video's gaan niet mee, zie WP12 §Video's. Pas in fase 5.
 - [x] Photo records updaten met storage IDs
 - [x] **AlbumLastSeen herleiden uit seenPics:** `seenPics` is een wachtrij van **ongelezen** foto's — entry zonder `seenDate` = ongelezen. Per (user, album): ongelezen entries aanwezig → `lastSeenAt` = kleinste `addedAt` min 1 ms; alles gelezen → grootste `addedAt`; geen albumfoto's → geen record. Volledige afleiding in [`migratie-plan-convex.md` §Unread-count](./migratie-plan-convex.md#unread-count-per-album-per-user-albumlastseen).
-- [ ] **Pre-flight §0** vóór de eerste `load-records`: git tag, `convex export`-anker, count-baseline ná `transform`, go/no-go-notitie. Zie [`runbooks/wp12-data-migratie.md`](./runbooks/wp12-data-migratie.md) §0.
-- [ ] **3 chosen users kiezen** op basis van `inspect`. Voorstel: Wouter (enige met meerdere groepen, alle founder-rollen, alle invites) plus de twee met de meeste foto's.
+- [x] **Pre-flight §0 dev** (2026-10-25): tag `pre-wp12-dev`, export `backups/pre-wp12-dev.zip` (alleen CLI, geen dashboard-kopie). Count-baseline dev ná transform: users 6→3, groups 1→5, memberships 2→7, invites 2→3, rest 0→ albums 17 / photos 1001 / albumPhotos 992 / ratings 6 / features 4 / albumLastSeen 43; storage 0, integriteitsscan 0. De 6/1/2/2 zijn testdata uit eerdere WP's. **Go**, met `reset --target dev --yes` vóór `load-records`.
+- [x] **3 chosen users** (2026-10-25): Wouter, vincent, Michiel — 5 groepen, 1002 bestanden. Eén groep valt af (founder niet chosen).
 - [ ] **Dev seed draaien:** filter + anonimiseer aan, push naar Convex dev
 - [ ] **Validatie dev:** counts kloppen met filter, referentiële integriteit, alle storage IDs geldig
 - [ ] **Idempotentie dev:** drop + reseed in 5 min werkt, voor schema-iteraties

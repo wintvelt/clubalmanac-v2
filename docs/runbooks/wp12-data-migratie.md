@@ -88,7 +88,7 @@ npm run migrate -- extract                     # minuten, leest productie-Dynamo
 npm run migrate -- inspect                     # kies de 3 chosen users op feiten
 #   → vul scripts/.data/dev-config.json
 npm run migrate -- transform --target dev      # seconden
-npm run migrate -- load-files --target dev     # enkele honderden MB
+npm run migrate -- load-files --target dev     # ~3,6 GB, ≥25 min bij <20 Mbit/s; hervatbaar
 npm run migrate -- load-records --target dev   # minuten
 npm run migrate -- verify --target dev
 ```

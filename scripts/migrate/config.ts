@@ -5,7 +5,7 @@
 // verschil dat niet in config uit te drukken is, is een ontwerpfout."
 //
 // De ID-map staat NIET in de repo. Dev bevat Cognito-subs, prod bovendien de
-// 16 echte emailadressen — beide PII. Ze wonen in `scripts/.data/`, dat
+// 20 echte emailadressen — beide PII. Ze wonen in `scripts/.data/`, dat
 // gitignored is.
 
 import { DEFAULT_PHOTO_LIMIT } from "../../convex/lib/constants.ts";
