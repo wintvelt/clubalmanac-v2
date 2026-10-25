@@ -2,13 +2,14 @@
 
 Status-overzicht van de AWS → Convex migratie. WP's updaten dit doc bij elke closeout. Architectuur-detail blijft in [`migratie-plan-convex.md`](./migratie-plan-convex.md); operationele lopende-staat staat hier.
 
-**Huidige stand 2026-08-23**:
+**Huidige stand 2026-10-25**:
 - Fase 1 (project setup) ✅ afgerond
 - Fase 2 (backend) ✅ **AFGEROND** — alle domein- + cron-werk + monitoring + deferred integration-tests klaar (WP11 net dicht)
-- Fase 3 (data migratie tooling) — **tooling klaar** 2026-08-23 via [WP12](./work-packages/WP12-data-migratie-tooling.md) (vier audit-rondes, drie fix-cycli, 764 tests groen). Dev-seed gedraaid en groen 2026-10-25. Resteert: performance-check (vraagt een client, dus samen met fase 4).
-- Fase 4 (clients) + fase 5 (cutover-prep: prod-env-vars + prod-Gates-herhaling) — open
+- Fase 3 (data migratie) ✅ — tooling via [WP12](./work-packages/WP12-data-migratie-tooling.md), dev-seed gedraaid en groen 2026-10-25. Performance-check foto laden schuift mee naar fase 4.
+- Fase 4 (clients) — start: verse Expo-app in `app/` (besluit 2026-10-25)
+- Fase 5 (cutover-prep: prod-env-vars + prod-Gates-herhaling) — open
 
-**Volgende fase**: fase 3 loopt (WP12).
+**Volgende fase**: fase 4, Track A (iPhone-app).
 
 Cross-refs: [`work-packages/README.md`](./work-packages/README.md) (WP-overzicht), [`conventions/audit-track-record.md`](./conventions/audit-track-record.md) (bugs + recurring patterns), [`cascade-matrix.md`](./cascade-matrix.md) (cross-flow afhankelijkheden).
 
@@ -70,7 +71,7 @@ Per domein: unit tests eerst, dan implementatie.
 
 Backend is client-agnostisch. Zelfde queries/mutations werken straks voor zowel iPhone app als webapp.
 
-## Fase 3: Data migratie tooling + dev seed — open
+## Fase 3: Data migratie tooling + dev seed ✅ AFGEROND
 
 Uitgewerkt in **[WP12](./work-packages/WP12-data-migratie-tooling.md)** (afgerond 2026-08-23, tooling geleverd). Mechanisme = API-import: het script schrijft via internal Convex-mutations en storage-uploads, Convex mint `_id` en `_storage`. De route via een zelfgebouwde snapshot-zip is getest en afgewezen — `convex import` weigert een zelf-gemunte `_id`. Acht commando's: `extract` / `inspect` / `transform` / `load-files` / `load-records` / `verify` / `prune-storage` / `reset`. De splitsing tussen bestanden en records is nodig omdat de uploadlijn <20 Mbit/s haalt: bestanden gaan op T-2 weken omhoog, records op T-0. Scope van WP12 = tooling + gedraaide dev-seed; de prod-run blijft fase 5, T-0.
 
@@ -100,19 +101,14 @@ Twee parallelle tracks. Beide kunnen onafhankelijk doorlopen worden, maar moeten
 
 ### Track A: iPhone app
 
-**Stap A1: Expo upgrade (los van Convex)**
+**Besluit 2026-10-25: verse app in `app/` van deze repo, geen upgrade van de oude.**
 
-Huidige stack is Expo SDK 47 / RN 0.70 (eind 2022). Upgrade naar huidige SDK is fors: 5+ majors, native deps zoals `react-native-maps`, `expo-camera`, `react-native-pager-view` kunnen breken.
+- Oude app (`../DEV/clubalmanac-app`, Expo 47, ~10k regels JS, 47 schermen) is alleen referentie en checklist. Upgraden loont niet: de datalaag (Amplify + react-query) gaat er toch uit.
+- Monorepo, zodat de app de getypeerde Convex-API (`convex/_generated`) direct importeert.
+- Zelfde App Store-identiteit: bundle ID `com.wintvelt.clubalmanac-app`, EAS project `bd5c6c93-059d-409f-bca5-f658ec5722d5`. Apple heeft de oude app op 2026-07-28 uit distributie gehaald (geen update in 3 jaar); het record bestaat nog en een goedgekeurde update zet hem terug. De nieuwe app gaat live als update, bestaande users hoeven niets te zoeken.
+- Open: of nieuwe TestFlight-builds werken zolang de app uit distributie is.
 
-- [ ] Branch maken
-- [ ] Stapsgewijs Expo SDK + React Native upgraden naar huidige versie
-- [ ] Breaking changes fixen, native deps updaten
-- [ ] `aws-amplify` v5 deps voorlopig laten staan (worden in stap A2 vervangen)
-- [ ] Bevestigen dat de app nog werkt tegen de oude AWS backend
-- [ ] Migreren naar TypeScript (incrementeel of in één keer)
-- [ ] **Dit is een apart stuk werk; doe dit eerst**
-
-**Stap A2: Convex integratie, scherm voor scherm**
+**Bouwvolgorde, feature voor feature**
 
 **Subscription discipline (vooraf vastleggen):**
 
@@ -136,14 +132,14 @@ Werk door de app per feature. Elke stap lokaal testbaar in Expo dev build tegen 
 9. Flagging (`Inappropriate.jsx` voor user, `InappropriateAdmin.jsx` voor webmaster, flag-knop + `HelperFlaggedPhotoModal` in `PhotoMenu.jsx`)
 10. **Video's + covers.** 10 clubfilms (~19 GB) met 9 cover-PNG's per reis, in S3-bucket `blob-videos`. Staan **niet** in DynamoDB en gaan niet naar Convex (besluit 2026-08-23, zie [`WP12`](./work-packages/WP12-data-migratie-tooling.md) §Video's) — de verwijzing zit in de oude front-end. De nieuwe app moet ze weer tonen; bron blijft S3 tot de R2-overstap. Uitzoeken bij het bouwen: hoe de oude app de lijst en de covers opbouwt.
 
-Per scherm: oude `aws-amplify` API call vervangen door `useQuery` / `useMutation`. De oude productie-app blijft draaien op AWS totdat de nieuwe versie helemaal klaar is.
+Per feature: het gedrag van de oude app is de checklist, data komt via `useQuery` / `useMutation`. Wie de oude app nog heeft, blijft tot cutover op AWS werken.
 
 ### Track B: Webapp
 
 Webapp is fallback voor Android users met corporate restricties. Niet schrappen.
 
-- [ ] **Keuze maken:** Expo Web (zelfde codebase, simpelste pad — `expo start --web` werkt al) vs aparte Next.js app (betere desktop UX, meer werk)
-- [ ] Default-aanbeveling: **Expo Web**, gegeven de smalle use case (foto's bekijken/uploaden) en dat de huidige codebase al een `web` script heeft
+- [ ] **Keuze maken:** Expo Web vanuit `app/` (zelfde codebase, simpelste pad) vs aparte Next.js app (betere desktop UX, meer werk)
+- [ ] Default-aanbeveling: **Expo Web**, gegeven de smalle use case (foto's bekijken/uploaden)
 - [ ] Scope bepalen: feature-pariteit met iPhone of view-only?
 - [ ] Backend: gedeelde Convex deployment, geen extra werk in fase 2
 - [ ] Auth: Clerk web component
@@ -166,7 +162,7 @@ Dus: communicatie en blokkade gaan **buiten de oude app om**.
 ### Cutover-mechanieken
 
 **1. Out-of-band communicatie (primair kanaal)**
-- WhatsApp/email blast naar alle 20 users met datum X en download-link nieuwe app
+- WhatsApp/email blast naar alle 20 users met datum X: de nieuwe app komt als update van de bestaande (zie fase 4 Track A)
 - 1 week vooraf, opnieuw 1 dag vooraf
 - Voor de 20 users persoonlijk genoeg om hard genoeg aan te komen
 
@@ -223,7 +219,7 @@ Dus: communicatie en blokkade gaan **buiten de oude app om**.
 
 ## Cyclus-2 backlog (audit-12 follow-up)
 
-- **Integration smoke-test voor upload-flow**: race-409 verifie via parallel POST met zelfde X-Upload-Id (Convex OCC race-detectie pinnen) + JWT round-trip met echte Clerk-token. Gepland voor **[WP7]** of fase 4A2.
+- **Integration smoke-test voor upload-flow**: race-409 verifie via parallel POST met zelfde X-Upload-Id (Convex OCC race-detectie pinnen) + JWT round-trip met echte Clerk-token. Gepland voor **[WP7]** of fase 4.
 - **Integrity-check storage orphans**: scheduled function die storage objects zonder photo-record detecteert en alert/cleanupt. Audit-10 + audit-12 §5 identificeerden deze gap. Werkpakket: monitoring/integrity-checks (TBD).
 - **`.take(N)` guard in cleanupOld**: preventieve cap tegen toekomstige transactie-limit overschrijding (16k records). Niet kritiek bij huidige schaal maar grow-guard waardig.
 

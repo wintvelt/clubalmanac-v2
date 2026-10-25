@@ -248,9 +248,9 @@ Bootstrap: jouw email handmatig in Clerk dashboard aanmaken pre-cutover, env-var
 
 **YAGNI keuze:** Clerk publicMetadata-rol of Convex DB-flag zou flexibeler zijn (multi-webmaster zonder redeploy), maar bij 20 users + 1 webmaster levert het niks op. Bij behoefte aan tweede webmaster ooit: ~30 min werk om over te zetten. Probleem-report email-bestemming gebruikt dezelfde env-var.
 
-**TODO voor Fase 4A2 (client-integratie):** verifieer dat `convex/auth.config.ts` daadwerkelijk de `email`-claim uit het Clerk JWT doorgeeft, zodat `ctx.auth.getUserIdentity().email` in productie gevuld is. Implementatie + tests gebruiken `withIdentity({ email })` wat altijd werkt; productie hangt af van Clerk JWT template configuratie. Als email-claim niet doorkomt: Clerk JWT template aanpassen óf `requireWebmaster` switchen naar DB-lookup via `users.email`.
+**TODO voor fase 4 (client-integratie):** verifieer dat `convex/auth.config.ts` daadwerkelijk de `email`-claim uit het Clerk JWT doorgeeft, zodat `ctx.auth.getUserIdentity().email` in productie gevuld is. Implementatie + tests gebruiken `withIdentity({ email })` wat altijd werkt; productie hangt af van Clerk JWT template configuratie. Als email-claim niet doorkomt: Clerk JWT template aanpassen óf `requireWebmaster` switchen naar DB-lookup via `users.email`.
 
-> **Productie-blind-spot (audit-7):** vitest-suite simuleert de email-claim via `t.withIdentity({ email })`, dat zegt NIETS over de Clerk JWT-template in productie. Pas in Phase 4A2 met een smoke-test (HTTP-endpoint dat `ctx.auth.getUserIdentity()` reflecteert óf log, eenmalig) is verifieerbaar of de claim daadwerkelijk doorkomt. Tot die smoke-test landt: groen-passende tests garanderen geen werkende webmaster-flow op prod. **Status (WP4):** gepind via een `whoami` httpAction + Clerk JWT roundtrip in `tests/integration/clerk/jwtRoundtrip.test.ts` — zie WP4-sectie verderop. Niet schrappen: blijft historisch belangrijk omdat het de motivatie voor WP4 is.
+> **Productie-blind-spot (audit-7):** vitest-suite simuleert de email-claim via `t.withIdentity({ email })`, dat zegt NIETS over de Clerk JWT-template in productie. Pas in fase 4 met een smoke-test (HTTP-endpoint dat `ctx.auth.getUserIdentity()` reflecteert óf log, eenmalig) is verifieerbaar of de claim daadwerkelijk doorkomt. Tot die smoke-test landt: groen-passende tests garanderen geen werkende webmaster-flow op prod. **Status (WP4):** gepind via een `whoami` httpAction + Clerk JWT roundtrip in `tests/integration/clerk/jwtRoundtrip.test.ts` — zie WP4-sectie verderop. Niet schrappen: blijft historisch belangrijk omdat het de motivatie voor WP4 is.
 
 ### Email-normalisatie invariant
 
@@ -361,7 +361,7 @@ photos: {
 - `listMyFlagged()` — current user's eigen photos die geflagd zijn (voor `Inappropriate.jsx`)
 - `listAllFlagged()` — webmaster only, scan `by_flagged` index (voor `InappropriateAdmin.jsx`)
 
-**TODO voor Fase 4A2 (client-integratie + dev-deployment validatie):** in `convex-test` blijkt index `by_flagged` óók records te returnen met `flaggedAt = undefined` — niet sparse-strict. B's implementatie heeft daarom een JS-filter na `.collect()` toegevoegd voor zowel `listMyFlagged` als `listAllFlagged`. Verifieer tegen de echte Convex dev deployment of de index daar wél sparse is. Zo ja: filter weghalen (cleanup-PR). Zo nee: filter laten staan en accepteren.
+**TODO voor fase 4 (client-integratie + dev-deployment validatie):** in `convex-test` blijkt index `by_flagged` óók records te returnen met `flaggedAt = undefined` — niet sparse-strict. B's implementatie heeft daarom een JS-filter na `.collect()` toegevoegd voor zowel `listMyFlagged` als `listAllFlagged`. Verifieer tegen de echte Convex dev deployment of de index daar wél sparse is. Zo ja: filter weghalen (cleanup-PR). Zo nee: filter laten staan en accepteren.
 
 **Scheduled cron (daily):**
 Vind photos waar `flaggedDeleteDate < now` (en niet onder appeal), auto-delete via `internalRemovePhoto`. Was niet expliciet in oude AWS code (mogelijk handmatig opgeruimd of bug). Convex cron lost dit definitief op.
@@ -802,7 +802,7 @@ bewaakt.
 
 **Anonimiseren:** namen → "Dev Wouter / Anna / Bram" (herkenbaar tijdens testing). Emails → `dev-{n}@clubalmanac.test`. Foto's blijven echt voor visuele realiteit; dev DB nooit publiek delen.
 
-**Idempotentie:** script moet droppen + reseeden in 5 min, voor snelle schema-iteraties tijdens fase 4A2.
+**Idempotentie:** script moet droppen + reseeden in 5 min, voor snelle schema-iteraties tijdens fase 4.
 
 **Member-list edge cases:** 3 members per groep is realistisch genoeg voor de meeste UI-testen. Als bij testen blijkt dat large-group rendering issues geven, synthetic dummy users toevoegen in dev.
 
@@ -926,7 +926,7 @@ Concrete cutover-stappenplan + Monitoring/Backup + Cyclus-2 backlog: zie [`migra
 |------|--------|-------------|
 | **Foto laden performance** | Huidige Lambda cold starts zijn al een probleem. Convex native storage heeft geen CDN | Start met native storage (geen cold starts = al beter dan nu). Switch naar R2 component als het niet snel genoeg is. R2 heeft edge caching + nul egress |
 | **Video streaming** | 30-min video's, bandwidth | Upload is handmatig (geen issue). Streaming: native Convex werkt, R2 is beter vanwege edge caching. Geen harde limiet op file size |
-| **Expo upgrade** | App lang niet geüpdatet (SDK 47 → huidige = 5+ majors), native deps kunnen breken | Apart behandelen (fase 4 track A1) voordat Convex integratie begint. Stapsgewijs upgraden |
+| **Oude app niet upgradebaar** | SDK 47 → huidige = 5+ majors; datalaag gaat er toch uit | Verse app in `app/` (besluit 2026-10-25, zie `migratie-status.md` fase 4 Track A) |
 | **Geen update-mechanisme oude app** | Geen `expo-updates`, geen push, App Store submit van 3 jaar oude codebase wordt afgeraden | Forceert hard cutover. Communicatie via out-of-band kanalen + group-injection als in-app reminder + backend write-block |
 | **Webapp scope** | Camera/maps werken niet 1:1 in browser (`react-native-maps` heeft geen web support) | Scope vroeg in fase 4B bepalen: view-only vs full feature. Maps: Leaflet of Google Maps JS als web-alternatief |
 | **Stream handler vertaling** | Complex cascade logic, 27 handlers | Test-driven bouwen. Grootste kans: Convex transacties elimineren veel complexiteit |
