@@ -1,0 +1,30 @@
+{
+  "name": "clubalmanac-app",
+  "version": "2.0.0",
+  "private": true,
+  "main": "index.ts",
+  "scripts": {
+    "start": "expo start",
+    "ios": "expo run:ios",
+    "typecheck": "tsc -b",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@clerk/expo": "4.14.1",
+    "convex": "1.45.0",
+    "expo": "58.0.19",
+    "expo-constants": "58.0.13",
+    "expo-secure-store": "58.0.2",
+    "expo-status-bar": "58.0.4",
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
+    "react-native": "0.88.0",
+    "react-native-safe-area-context": "5.10.1"
+  },
+  "devDependencies": {
+    "@types/node": "25.9.9",
+    "@types/react": "19.3.0",
+    "typescript": "6.0.3",
+    "vitest": "4.1.5"
+  }
+}

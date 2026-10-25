@@ -1,0 +1,19 @@
+{
+  "expo": {
+    "name": "Clubalmanac",
+    "slug": "clubalmanac-app",
+    "version": "2.0.0",
+    "scheme": "clubalmanac",
+    "orientation": "default",
+    "ios": {
+      "bundleIdentifier": "com.wintvelt.clubalmanac-app",
+      "supportsTablet": true
+    },
+    "plugins": ["expo-status-bar", "expo-secure-store"],
+    "extra": {
+      "eas": {
+        "projectId": "bd5c6c93-059d-409f-bca5-f658ec5722d5"
+      }
+    }
+  }
+}

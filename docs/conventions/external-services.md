@@ -78,6 +78,25 @@ Webhook-config Clerk dashboard:
 
 Verified per WP6-spec §risico-assessment + §ops-runbook-impact + [`audit-track-record.md`](./audit-track-record.md) recurring-pattern §env-var-runbook-gap.
 
+### App-client-env (WP13)
+
+De Expo-app in `app/` leest twee publieke vars. Ze komen leesbaar in de app-bundel; nooit een `sk_…` gebruiken (de app weigert die bij de start).
+
+| Env-var | Waarde dev | Waarde prod | Wat gebeurt bij ontbreken of ongeldig |
+|---|---|---|---|
+| `EXPO_PUBLIC_CONVEX_URL` | `https://glorious-pheasant-759.eu-west-1.convex.cloud` | prod-`https://<deployment>.<region>.convex.cloud` (fase 5) | app toont bij de start "verkeerd ingesteld" met de var-naam; geen terugval |
+| `EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY` | `pk_test_…` van `picked-quail-97` (Clerk → API keys) | `pk_live_…` van de prod-instance (fase 5) | idem |
+
+- **Lokaal**: `app/.env.local` (gitignored via de root-`.gitignore`). Sjabloon: `app/.env.example`. Expo leest het bestand bij `npx expo start` / `expo run:ios`.
+- **EAS (WP14)**: per build-profiel als EAS-env-var (`eas env:create`, zichtbaarheid "plaintext" volstaat: beide zijn publiek). Dev-profiel → dev-waarden, production-profiel → prod-waarden.
+- **Verkeerde combinatie** (URL van de ene, key van de andere omgeving): de app start, maar Convex weigert het token. De app toont dan "Verbinden met de server lukt niet" met een uitlog-knop.
+
+Clerk-dashboard voor de app-login (per instance, dev al gedaan, prod in fase 5):
+- **Configure → Email, Phone, Username**: e-mailadres met **verificatiecode** als enige inlogmethode. Wachtwoord uit. Sign-up uit of invite-only.
+- **Configure → Attack protection**: bescherming tegen enumeratie aan. De app verraadt een onbekend adres ook niet als die uit staat.
+- **Configure → Native applications**: Native API aan.
+- **JWT-template `convex`**: bestaat al (WP4); zonder template weigert Convex het token.
+
 ## AWS (alleen migratie, WP12)
 
 De data-migratie leest de oude AWS-omgeving: DynamoDB-tabel `blob-images-photos-prod` en S3-bucket `blob-images`, beide in **eu-central-1** (Frankfurt). Doel is Convex in eu-west-1 (Dublin).

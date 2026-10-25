@@ -1,0 +1,10 @@
+# Expo
+.expo/
+expo-env.d.ts
+
+# Native mappen: expo prebuild / expo run:ios maakt ze uit app.json.
+ios/
+android/
+
+# Output van tsconfig.backend.json (npm run typecheck)
+.backend-types/

@@ -1,0 +1,27 @@
+{
+  // WP13 invariant 1: de app typecheckt tegen convex/ van deze repo. Die
+  // bronnen compileren hier met de instellingen van de root (Node-types), niet
+  // met die van Expo: in Expo is process.env.X `any`, en dan faalt strict op
+  // backend-code die in de root wel klopt. De app ziet alleen de .d.ts-output
+  // (gitignored, bij elke `npm run typecheck` opnieuw gemaakt).
+  "compilerOptions": {
+    "composite": true,
+    "emitDeclarationOnly": true,
+    "rootDir": "../convex",
+    "outDir": ".backend-types",
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "lib": ["ES2022", "DOM"],
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "allowImportingTsExtensions": true,
+    "types": ["node"]
+  },
+  "include": ["../convex/**/*.ts"]
+}
