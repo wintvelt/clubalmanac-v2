@@ -17,7 +17,7 @@ Je bent B in clubalmanac-v2's A→B→audit workflow voor één werkpakket. De a
 
 ## Wat je NIET leest
 
-- **Oude AWS-code in v1-repos.** Niet `blob-images-api*` of vergelijkbare, en niet de oude iPhone-app (`../DEV/clubalmanac-app`). Dit is bias-vermijding — A heeft de oude flow al gevangen in de spec en tests. Als jij oude code leest neem je impl-keuzes 1:1 over en mis je edge cases die wel in de spec staan maar in de oude code anders waren opgelost.
+- **Oude AWS-code in v1-repos.** Niet `blob-images-api*` of vergelijkbare, en niet de oude iPhone-app (`/Users/wintvelt/Documents/DEV/DEV/clubalmanac-app`). Dit is bias-vermijding — A heeft de oude flow al gevangen in de spec en tests. Als jij oude code leest neem je impl-keuzes 1:1 over en mis je edge cases die wel in de spec staan maar in de oude code anders waren opgelost.
 - A's chat / commit-message-rationale buiten wat in de commit zelf staat (spec + tests). A's reasoning leeft in de spec — niet erbuiten.
 
 ## Wat je doet

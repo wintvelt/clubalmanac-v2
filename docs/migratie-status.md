@@ -103,11 +103,11 @@ Twee parallelle tracks. Beide kunnen onafhankelijk doorlopen worden, maar moeten
 
 **Besluit 2026-10-25: verse app in `app/` van deze repo, geen upgrade van de oude.**
 
-- Oude app (`../DEV/clubalmanac-app`, Expo 47, ~10k regels JS, 47 schermen) is alleen referentie en checklist. Upgraden loont niet: de datalaag (Amplify + react-query) gaat er toch uit.
+- Oude app (`/Users/wintvelt/Documents/DEV/DEV/clubalmanac-app`, Expo 47, ~10k regels JS, 47 schermen) is alleen referentie en checklist. Upgraden loont niet: de datalaag (Amplify + react-query) gaat er toch uit.
 - Monorepo, zodat de app de getypeerde Convex-API (`convex/_generated`) direct importeert.
 - Zelfde App Store-identiteit: bundle ID `com.wintvelt.clubalmanac-app`, EAS project `bd5c6c93-059d-409f-bca5-f658ec5722d5`. Apple heeft de oude app op 2026-07-28 uit distributie gehaald (geen update in 3 jaar); het record bestaat nog en een goedgekeurde update zet hem terug. De nieuwe app gaat live als update, bestaande users hoeven niets te zoeken.
 - Open: of nieuwe TestFlight-builds werken zolang de app uit distributie is. Beantwoord door de spike in WP14.
-- Opgeknipt in WP13-WP21, met een designstap na WP14 (zie [`work-packages/README.md`](./work-packages/README.md)). Alleen A leest de oude app-repo. [WP13](./work-packages/WP13-app-scaffold-auth.md) = scaffold + Clerk-login.
+- Opgeknipt in WP13-WP21, met een designstap na WP14 (zie [`work-packages/README.md`](./work-packages/README.md)). Alleen A leest de oude app-repo. [WP13](./work-packages/WP13-app-scaffold-auth.md) ✅ 2026-10-25: scaffold + code-login, gate op dev groen.
 
 **Bouwvolgorde, feature voor feature**
 

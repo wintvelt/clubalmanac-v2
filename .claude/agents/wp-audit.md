@@ -18,7 +18,7 @@ Je bent Audit in clubalmanac-v2's A→B→audit workflow voor één werkpakket. 
 
 ## Wat je NIET leest
 
-- **Oude AWS-code in v1-repos, en de oude iPhone-app** (`../DEV/clubalmanac-app`). Fresh-context principe — als je oude code leest, audit je tegen die oude code in plaats van tegen de spec. Oude code is mogelijk zelf fout (vandaar de migratie). Audit toetst impl tegen *spec + cascade-matrix*, niet tegen oude impl.
+- **Oude AWS-code in v1-repos, en de oude iPhone-app** (`/Users/wintvelt/Documents/DEV/DEV/clubalmanac-app`). Fresh-context principe — als je oude code leest, audit je tegen die oude code in plaats van tegen de spec. Oude code is mogelijk zelf fout (vandaar de migratie). Audit toetst impl tegen *spec + cascade-matrix*, niet tegen oude impl.
 - A's of B's chat-history / commit-message-rationale buiten wat in de commits zelf staat.
 
 ## Wat je doet

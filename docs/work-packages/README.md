@@ -32,7 +32,7 @@ WP1-WP4 liepen vóór de formele spec-doc-discipline (geen WP-file). Status uit 
 | TBD | Email Gate 1 happy-path + integration-test `tests/integration/mailjet/sendRoundtrip.test.ts` als follow-up van WP5 deferred-items | — | open |
 | TBD | Clerk Invitations API integratie als **permanent design-patroon** (pre-create Clerk-user bij Convex `invites.create`, `users.status: "invited" \| "active"` voor visibility) — alternatief design op WP6, kan als upgrade later. **Niet te verwarren met de eenmalige cutover-pre-create** op T-2 weken (prod-users via de Users-API voor data-import-mapping, zie fase 5 stappenplan). | — | open, design-discussie |
 | TBD | Video's van S3 naar Cloudflare R2. 10 clubfilms (~19 GB) + 9 cover-PNG's in bucket `blob-videos`, zonder DynamoDB-record — de oude app heeft de verwijzing hardcoded in de front-end. Buiten WP12 gehouden (besluit 2026-08-23): ~80% van de overzettijd voor nul feature-winst, plus een bestand van 5,8 GiB door een upload-URL zonder hervatting. Blijft op S3 tot dit WP draait; `blob-videos` mag daarom niet mee in de T+30-opruiming. | — | open |
-| WP13 | App-scaffold in `app/` + Clerk-login + `users.current` op scherm (fase 4 Track A) | [`WP13-app-scaffold-auth.md`](./WP13-app-scaffold-auth.md) | draft |
+| WP13 | App-scaffold in `app/` + code-login via Clerk + `users.current` op scherm (fase 4 Track A) | [`WP13-app-scaffold-auth.md`](./WP13-app-scaffold-auth.md) | ✅ landed 2026-10-25 (gate dev, 4a → WP22) |
 | WP14 | Spike: EAS-build van WP13 naar TestFlight (werkt TestFlight terwijl de app uit distributie is?) | — | open |
 | TBD | Designstap: UI evalueren/moderniseren, navigatiestructuur + thema vóór de feature-WP's. Vuistregel uit de WP13-gate: een melding staat direct onder de actie die hem veroorzaakte. | — | open, na WP14 |
 | WP15 | Navigatie-skelet + subscription-discipline + profiel + `recordVisit` | — | open |
@@ -42,7 +42,7 @@ WP1-WP4 liepen vóór de formele spec-doc-discipline (geen WP-file). Status uit 
 | WP19 | Ratings + invites (incl. signup) | — | open |
 | WP20 | Features/probleem melden + flagging | — | open |
 | WP21 | Video's + covers vanaf S3 | — | open |
-| WP22 | Link in de login-mail opent de app en rondt de login af (eis Wouter, verplicht vóór T0). Vervangt de reset-WP: er is geen wachtwoord meer. | — | open |
+| WP22 | Link in de login-mail opent de app en rondt de login af (eis Wouter, verplicht vóór T0). Vervangt de reset-WP: er is geen wachtwoord meer. Gate test ook een verlopen code (WP13-gate 4a). Input: WP13 §Mail-links in de oude app. | — | open |
 | Phase 4 Track B | Webapp | — | open |
 | Phase 5 | Hard cutover | — | uit fase 2-scope |
 

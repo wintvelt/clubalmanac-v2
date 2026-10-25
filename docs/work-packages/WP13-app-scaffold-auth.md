@@ -72,6 +72,8 @@ Een bestaande user opent de nieuwe app op een iPhone (simulator), logt in met zi
   5. Na de gate: de users-rij van dev1 is ongewijzigd (invariant 9)
   6. Ruimte voor bevindingen buiten deze scenario's
 
+**Gate-uitslag 2026-10-25 (dev):** 1-4, 4b en 5 groen. 4a niet te testen: de vaste testcode van `+clerk_test`-adressen verloopt niet; schuift naar de WP22-gate. Gevonden en gefixt: meldingen onder de verkeerde actie (`5787544`), oud code-scherm na "Ander e-mailadres" + herstart (`d0415d1`).
+
 ---
 
 ## Regie-besluit 2026-10-25: code-login, geen wachtwoord
@@ -85,7 +87,7 @@ Gevolgen:
 
 ## Spec-criticus aanvullingen (A, 2026-10-25)
 
-Bron: oude app `../DEV/clubalmanac-app` (Expo 47, Amplify/Cognito), `app.json`, `eas.json` en de meegeleverde `.ipa`. De oude login was volledig client-side Cognito; de AWS-backend speelt geen rol in deze flow.
+Bron: oude app `/Users/wintvelt/Documents/DEV/DEV/clubalmanac-app` (Expo 47, Amplify/Cognito), `app.json`, `eas.json` en de meegeleverde `.ipa`. De oude login was volledig client-side Cognito; de AWS-backend speelt geen rol in deze flow.
 
 ### Invariant 8: versie en build
 

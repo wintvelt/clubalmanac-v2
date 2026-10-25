@@ -39,7 +39,7 @@ Toegangs-grenzen per rol staan in [`docs/conventions/work-package-specs.md`](./d
 - `docs/work-packages/` — per-WP specs
 - `docs/conventions/` — alle disciplines
 - `.claude/agents/` — rol-mandaten voor A/B/Audit
-- Adjacent v1-repos (alleen A): `../blob-images-api`, `../blob-images-api-{user,groups,photos,invites,features}`, `../blob-images-common`, oude app `../DEV/clubalmanac-app`
+- Oude repos (alleen A), in `/Users/wintvelt/Documents/DEV/DEV/`: `blob-images-api`, `blob-images-api-{user,groups,photos,invites,features}`, `blob-images-common`, oude app `clubalmanac-app`
 
 ## Commit + push
 
