@@ -126,6 +126,10 @@ De extra toegankelijkheidsstanden (AX1–AX5) vallen buiten invariant 4. De app 
 | Jaartal-kop | — | Literata in `primary`, met het verloopstreepje erachter. |
 | Melding, laden, leeg | — | Zie §6. |
 
+**Iconen: Ionicons** via `@expo/vector-icons` (besluit Wouter 2026-10-25). De oude app gebruikte ze ook, ze hebben een lijn- en een gevulde variant (inactief en actief), en ze werken ook in de webapp (Track B). Lijn voor gewone iconen, gevuld voor de actieve tab. Geen zelf getekende iconen, behalve het app-icoon.
+
+**Ingevuld in stap 7** (niet in de mockups): kleine knop 16 pt vet, meta-regel 17 pt, "ingedrukt" = lagere dekking, Uitloggen op Home als tweede knop, laadtekst "Laden…".
+
 ## 6. Meldingen en toestanden (invariant 5)
 
 Eén patroon, overal hetzelfde. Kleur is nooit het enige signaal: elke toestand heeft een icoon en tekst.
