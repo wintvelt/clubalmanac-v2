@@ -3,9 +3,12 @@
   "compilerOptions": {
     "strict": true,
     "noUncheckedIndexedAccess": true,
-    "types": ["node"]
+    "types": ["node"],
+    // tsc -b schrijft ook voor dit noEmit-project een buildinfo; houd alle
+    // typecheck-output in .tsbuild/.
+    "tsBuildInfoFile": ".tsbuild/app.tsbuildinfo"
   },
   "include": ["**/*.ts", "**/*.tsx"],
-  "exclude": ["node_modules", ".backend-types"],
+  "exclude": ["node_modules", ".tsbuild"],
   "references": [{ "path": "./tsconfig.backend.json" }]
 }

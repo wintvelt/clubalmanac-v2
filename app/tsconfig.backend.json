@@ -3,12 +3,13 @@
   // bronnen compileren hier met de instellingen van de root (Node-types), niet
   // met die van Expo: in Expo is process.env.X `any`, en dan faalt strict op
   // backend-code die in de root wel klopt. De app ziet alleen de .d.ts-output
-  // (gitignored, bij elke `npm run typecheck` opnieuw gemaakt).
+  // (.tsbuild/, gitignored, bij elke `npm run typecheck` bijgewerkt).
   "compilerOptions": {
     "composite": true,
     "emitDeclarationOnly": true,
     "rootDir": "../convex",
-    "outDir": ".backend-types",
+    "outDir": ".tsbuild/backend",
+    "tsBuildInfoFile": ".tsbuild/backend.tsbuildinfo",
     "target": "ES2022",
     "module": "ESNext",
     "moduleResolution": "Bundler",

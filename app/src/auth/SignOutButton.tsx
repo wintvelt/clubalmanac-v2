@@ -4,12 +4,12 @@ import { Text } from "react-native";
 import { Button } from "../components/Button";
 import { LOGIN_MESSAGES } from "../lib/loginErrors";
 import { ui } from "../ui";
-import { clearStoredTokens } from "./tokenCache";
+import { wipeStoredTokens } from "./tokenCache";
 
 // WP13 invarianten 6 + 11: uitloggen kan in elke ingelogde toestand en laat
 // geen token achter. Clerk beëindigt de sessie; daarna wissen we wat Clerk in
 // de keychain zette. De Convex-client volgt Clerk en stopt met identiteit
-// meesturen.
+// meesturen. Een mislukte wis toont het inlogscherm (zie wipeStoredTokens).
 export function SignOutButton() {
   const { signOut } = useClerk();
   const [busy, setBusy] = useState(false);
@@ -23,13 +23,14 @@ export function SignOutButton() {
     setError(null);
     try {
       await signOut();
-      await clearStoredTokens();
     } catch {
       setError(LOGIN_MESSAGES.generic);
+      return;
     } finally {
       inFlight.current = false;
       setBusy(false);
     }
+    await wipeStoredTokens();
   }
 
   return (

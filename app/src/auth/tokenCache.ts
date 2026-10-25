@@ -1,4 +1,5 @@
 import type { TokenCache } from "@clerk/expo";
+import { useSyncExternalStore } from "react";
 import { tokenCache as secureStoreTokenCache } from "@clerk/expo/token-cache";
 
 // WP13 invarianten 5 + 6. Clerk bewaart via deze cache zijn client-token in de
@@ -28,7 +29,36 @@ export const tokenCache: TokenCache = {
   clearToken: (key) => requireSecureStore().clearToken?.(key),
 };
 
-export async function clearStoredTokens(): Promise<void> {
-  const store = requireSecureStore();
-  await Promise.all([...touchedKeys].map((key) => store.clearToken?.(key)));
+// Mislukt het wissen na een geslaagde signOut, dan is de user al uitgelogd en
+// staat het inlogscherm er. Dat scherm leest deze vlag, toont de fout en laat
+// opnieuw wissen.
+let wipeFailed = false;
+const listeners = new Set<() => void>();
+
+function setWipeFailed(value: boolean) {
+  if (wipeFailed === value) return;
+  wipeFailed = value;
+  listeners.forEach((listener) => listener());
+}
+
+export async function wipeStoredTokens(): Promise<boolean> {
+  try {
+    const store = requireSecureStore();
+    await Promise.all([...touchedKeys].map((key) => store.clearToken?.(key)));
+    setWipeFailed(false);
+    return true;
+  } catch {
+    setWipeFailed(true);
+    return false;
+  }
+}
+
+export function useTokenWipeFailed(): boolean {
+  return useSyncExternalStore(
+    (listener) => {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
+    () => wipeFailed,
+  );
 }

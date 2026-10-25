@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { KeyboardAvoidingView, Text, TextInput } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { useTokenWipeFailed, wipeStoredTokens } from "../auth/tokenCache";
 import { useEmailCodeLogin } from "../auth/useEmailCodeLogin";
 import { Button } from "../components/Button";
 import { LinkButton } from "../components/LinkButton";
@@ -14,11 +15,21 @@ export function LoginScreen() {
     login.step.step === "code" ? login.step.email : "",
   );
   const [code, setCode] = useState("");
+  const wipeFailed = useTokenWipeFailed();
 
   return (
     <SafeAreaView style={ui.screen}>
       <KeyboardAvoidingView behavior="padding" style={ui.centered}>
         <Text style={ui.title}>Clubalmanac</Text>
+
+        {wipeFailed && (
+          <>
+            <Text style={ui.error}>
+              Je bent uitgelogd, maar je inloggegevens konden niet van dit toestel worden gewist.
+            </Text>
+            <LinkButton title="Opnieuw wissen" onPress={() => void wipeStoredTokens()} />
+          </>
+        )}
 
         {login.step.step === "email" ? (
           <>

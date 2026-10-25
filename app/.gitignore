@@ -6,5 +6,5 @@ expo-env.d.ts
 ios/
 android/
 
-# Output van tsconfig.backend.json (npm run typecheck)
-.backend-types/
+# Typecheck-output (npm run typecheck = tsc -b)
+.tsbuild/
