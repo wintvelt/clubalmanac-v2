@@ -5,7 +5,7 @@ Status-overzicht van de AWS → Convex migratie. WP's updaten dit doc bij elke c
 **Huidige stand 2026-08-23**:
 - Fase 1 (project setup) ✅ afgerond
 - Fase 2 (backend) ✅ **AFGEROND** — alle domein- + cron-werk + monitoring + deferred integration-tests klaar (WP11 net dicht)
-- Fase 3 (data migratie tooling) — **tooling klaar** 2026-08-23 via [WP12](./work-packages/WP12-data-migratie-tooling.md) (vier audit-rondes, drie fix-cycli, 764 tests groen). Dev-seed gedraaid en groen 2026-10-25. Resteert: idempotentie-check en performance-check.
+- Fase 3 (data migratie tooling) — **tooling klaar** 2026-08-23 via [WP12](./work-packages/WP12-data-migratie-tooling.md) (vier audit-rondes, drie fix-cycli, 764 tests groen). Dev-seed gedraaid en groen 2026-10-25. Resteert: performance-check (vraagt een client, dus samen met fase 4).
 - Fase 4 (clients) + fase 5 (cutover-prep: prod-env-vars + prod-Gates-herhaling) — open
 
 **Volgende fase**: fase 3 loopt (WP12).
@@ -90,7 +90,7 @@ Bouw migratie-tooling die zowel dev (subset) als prod (volledig) kan vullen. Eé
 - [x] **3 chosen users** (2026-10-25): Wouter, vincent, Michiel — 5 groepen, 1002 bestanden. Eén groep valt af (founder niet chosen).
 - [x] **Dev seed gedraaid** (2026-10-25): `reset` → `load-files` → `load-records`, 2081 rijen, 1002 bestanden (3,1 GB). Doorvoer gemeten: ~3,6 MB/s (~29 Mbit/s).
 - [x] **Validatie dev** (2026-10-25): `verify` groen — alle counts gelijk aan de transform, integriteitsscan 0, 1002/1002 storage-objecten door records gebruikt.
-- [ ] **Idempotentie dev:** drop + reseed in 5 min werkt, voor schema-iteraties
+- [x] **Dev leegmaken + herladen** (2026-10-25): `reset` + `load-records` + groene `verify` in enkele minuten; bestanden blijven staan. Zo herlaad je dev bij elke schema-wijziging in fase 4.
 - [ ] Performance check op foto laden in dev. Als te traag: switch naar R2 component (kan ook later)
 - [ ] S3 prod data laten staan als backup tot ~T+90
 
