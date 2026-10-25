@@ -108,15 +108,19 @@ Bron: oude app `../DEV/clubalmanac-app` (Expo 47, Amplify/Cognito), `app.json`, 
 12. **"Ingelogd zonder rij" lost zichzelf op.** `users.current` is live. Maakt de webhook de rij alsnog aan, dan gaat het scherm vanzelf naar "ingelogd met rij", zonder herstart of opnieuw inloggen.
 13. **Geen data van de vorige user.** Log in als A, log uit, log in als B: het scherm toont nooit, ook niet heel kort, de naam van A. Als Clerk uitgelogd is, wint dat altijd van gecachte Convex-data.
 14. **Geen geheimen in de app-bundel.** Alles met `EXPO_PUBLIC_` komt leesbaar in de app. Een Clerk *secret* key (`sk_…`) in plaats van de publishable key moet de app weigeren bij de start. De foutmelding toont de waarde niet.
-15. **Geen test-inloggegevens in de app.** De oude app had in de dev-build knoppen met hardcoded e-mail + wachtwoord. Dat nemen we niet over: ook niet achter een dev-vlag, ook niet voor de dev-accounts.
+15. **Geen test-inloggegevens in de app.** De oude app had in de dev-build knoppen met hardcoded e-mail + wachtwoord. Dat nemen we niet over. Ook geen vooringevulde `+clerk_test`-adressen of vaste testcode, niet achter een dev-vlag en niet voor de dev-accounts.
 16. **Inloggen roept alleen lees-functies aan.** WP13 roept geen `recordVisit` aan (dat is WP15). Anders schrijft inloggen `lastVisitAt` en breekt invariant 9.
-17. **Foutmeldingen verraden niet of een account bestaat.** Bij een verkeerd wachtwoord en bij een onbekend e-mailadres toont de app dezelfde melding. Zo deed de oude app het ook (Cognito: "Email of wachtwoord is niet correct"). Een geblokkeerd account (te veel pogingen) krijgt wél een eigen melding: de oude app meldde "15 minuten geblokkeerd". Een onbekende fout toont een algemene NL-melding, nooit de ruwe Engelse Clerk-tekst.
+17. **Een eigen melding per oorzaak.** Onbekend e-mailadres (bij de e-mailstap), verkeerde code, verlopen code, te veel pogingen en een geblokkeerd account krijgen elk een eigen NL-melding. Een onbekende fout toont een algemene NL-melding, nooit de ruwe Engelse Clerk-tekst. Het onbekende e-mailadres melden we wél: anders wacht iemand met een tikfout op een mail die nooit komt. Bij een besloten club van 16 leden weegt dat zwaarder dan verbergen wie lid is.
+20. **Naar Mail en terug breekt de login niet.** De user verlaat de app om de code te lezen. Komt hij terug, dan staat het code-scherm er nog, voor hetzelfde e-mailadres. De app vraagt bij terugkomst nooit uit zichzelf een nieuwe code aan: dan klopt de code in de mail niet meer.
 
 ### Edge cases bij inloggen
 
-- **Inloggen is niet altijd in één stap klaar.** Na een correct wachtwoord kan Clerk een extra stap eisen. Dat hangt af van de instance-instellingen (bijvoorbeeld een e-mailcode op een nieuw toestel, of MFA). Elke simulator en elke telefoon bij cutover is een nieuw toestel. Een poging die niet "klaar" is, is een eigen toestand: of de app ondersteunt de stap, of hij toont een duidelijke melding. Nooit stil blijven hangen. B checkt de instellingen van de dev-instance; zie open vraag 1.
+- **Twee stappen.** Stap 1: e-mailadres → Clerk stuurt een code. Stap 2: code invoeren. Vanaf stap 2 kan de user terug naar stap 1 om een ander adres te kiezen.
+- **Code opnieuw sturen.** Vanaf het code-scherm. De app meldt dat er een nieuwe code onderweg is en dat alleen de nieuwste code werkt. Clerk begrenst hoe vaak dat mag; de melding daarvan valt onder invariant 17.
+- **Code plakken of laten invullen.** iOS kan een code uit Mail zelf voorstellen boven het toetsenbord. Het invoerveld staat dat toe (veld voor eenmalige codes, cijfertoetsenbord). Geplakte tekst met spaties of een streepje ("123 456") werkt ook. Dit is ook de opstap voor invariant 19.
+- **Inloggen is na de code niet altijd klaar.** Geeft Clerk na een juiste code nog een vervolgstap terug (bv. een tweede factor als iemand die ooit aanzet), dan is dat een zichtbare melding. Nooit stil blijven hangen.
 - **E-mailadres invoeren.** Spaties voor of achter het adres halen we weg. Geen autocorrectie of hoofdletter aan het begin (de oude app had die ook uit).
-- **Dubbel tikken op "Log in"** start geen tweede poging terwijl de eerste loopt.
+- **Dubbel tikken** op "stuur code" of "log in" start geen tweede poging terwijl de eerste loopt. Bij "stuur code" zou een tweede poging de eerste code ongeldig maken.
 - **Geen netwerk**: een leesbare melding, geen crash.
 - **Env-vars en Expo.** Expo neemt een `EXPO_PUBLIC_`-var alleen in de build op bij letterlijke toegang (`process.env.EXPO_PUBLIC_X`). Een dynamische lookup levert `undefined` in de build. Door invariant 7 crasht de app dan bij de start. Dat is luid, maar wel verwarrend.
 - **Twee kopieën van `convex`.** De app importeert `convex/_generated` uit de root. Die bestanden lossen `convex/*` op vanuit de root-`node_modules`, terwijl de app zijn eigen `convex` heeft. Daarom bestaat invariant 2, en de test hieronder bewaakt hem via de lockfiles.
@@ -131,14 +135,15 @@ Tests staan in `app/tests/`. Ze draaien met vitest in Node, zonder React Native,
 | `app/src/lib/env.ts` | `parseClientEnv(env: { EXPO_PUBLIC_CONVEX_URL?: string; EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY?: string }): { convexUrl: string; clerkPublishableKey: string }` | Invarianten 7 en 14. Gooit een `Error` die elke ontbrekende of ongeldige var bij naam noemt. Convex-URL: `https`, host eindigt op `.convex.cloud` (niet `.convex.site`, dat is de HTTP-actions-host). Clerk-key: begint met `pk_test_` of `pk_live_`. |
 | `app/src/lib/authState.ts` | `deriveAuthState(input: { clerkLoaded: boolean; clerkSignedIn: boolean; convexAuthLoading: boolean; convexAuthenticated: boolean; currentUser: undefined \| null \| object }): "loading" \| "signedOut" \| "convexAuthFailed" \| "noUserRow" \| "ready"` | Invarianten 4, 10 en 13. `currentUser` volgt de `useQuery`-conventie: `undefined` = laadt, `null` = geen rij. |
 | `app/src/lib/loginErrors.ts` | `loginErrorMessage(error: unknown): string` | Invariant 17. Input = wat Clerk gooit: een object met `errors: [{ code, message, longMessage }]`, of iets anders. Gooit zelf nooit. |
+| `app/src/lib/loginCode.ts` | `normalizeLoginCode(input: string): string \| null` | Invariant 19 + plakken. Geeft de 6 cijfers terug als de invoer na het weghalen van spaties, streepjes en regeleinden precies 6 cijfers is; anders `null`. Raadt niet uit langere tekst. |
 | (geen module) | `app/tests/convexVersion.test.ts` | Invariant 2: de `convex`-versie in `app/package-lock.json` is gelijk aan die in de root-`package-lock.json`. |
 
-De Clerk-errorcodes in de tests: `form_password_incorrect`, `form_identifier_not_found`, `user_locked`, `too_many_requests`. B checkt ze tegen de Clerk-versie die hij vastzet.
+De Clerk-errorcodes in de tests: `form_identifier_not_found`, `form_code_incorrect`, `verification_expired`, `verification_failed`, `user_locked`, `too_many_requests`. B checkt ze tegen de Clerk-versie die hij vastzet. Staat in Clerk de bescherming tegen account-enumeratie aan, dan meldt Clerk een onbekend adres niet als fout; B zet die uit (invariant 17) en noemt dat in het runbook.
 
 ### Ops-runbook (aanvulling op B's entry in `external-services.md`)
 
 - De namen van de env-vars liggen vast: `EXPO_PUBLIC_CONVEX_URL` en `EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY`. Lokaal in `app/.env.local`, gitignored. De root-`.gitignore` dekt `.env.local` al in submappen; B checkt dat met `git check-ignore`.
-- Clerk-dashboard: de Native API moet aan staan voor Expo (Configure → Native applications). Zet ook de instellingen voor de extra stap van open vraag 1 in het runbook.
+- Clerk-dashboard: de Native API moet aan staan voor Expo (Configure → Native applications). E-mailcode als enige inlogmethode, wachtwoord uit, enumeratie-bescherming uit.
 
 ### Pariteit-checklist Track A
 
@@ -148,14 +153,13 @@ Per scherm het gedrag van de oude app, in het kort. "Backend?" = iets dat B of d
 
 | Scherm (oude naam) | Gedrag | WP |
 |---|---|---|
-| Inloggen | E-mail + wachtwoord. Melding bij verkeerde gegevens, geblokkeerd account en algemene fout. Links naar "wachtwoord vergeten" en "ik heb een uitnodiging". Tabbalk: inloggen / uitnodiging / info. | **WP13** |
-| Vergeten | E-mail → resetcode per mail → "Nieuw wachtwoord". Ook "ik heb al een code". | reset-WP (TBD) |
-| Nieuw wachtwoord | E-mail + code + nieuw wachtwoord (min. 8 tekens), "code opnieuw sturen". Na succes direct ingelogd. Deep link `newPassword/:email/:code`. | reset-WP (TBD) |
+| Inloggen | E-mail + wachtwoord. Melding bij verkeerde gegevens, geblokkeerd account en algemene fout. Links naar "wachtwoord vergeten" en "ik heb een uitnodiging". Tabbalk: inloggen / uitnodiging / info. | **WP13**, als e-mail + code (invariant 18) |
+| Vergeten / Nieuw wachtwoord | Resetcode per mail, daarna een nieuw wachtwoord. Na succes direct ingelogd. Deep link `newPassword/:email/:code`. | vervalt (code-login). Het patroon "code uit de mail" leeft voort in WP13 + WP22 |
 | Berichten | Uitnodigingscode invoeren → uitnodiging ophalen → "Uitnodiging". Foutmodaal bij een ongeldige of verlopen code. Link naar "e-mail bevestigen". | WP19 |
 | Uitnodiging | Brief: van wie, bericht, groepscover. Accepteren → aanmelden; afwijzen. Deep link `invites/:inviteId`. | WP19 |
 | Aanmelden | Code, naam, e-mail, nieuw wachtwoord, opt-in → "E-mail bevestigen". | WP19 |
 | E-mail bevestigen | E-mail + code. Bug in de oude app: "code opnieuw sturen" riep wachtwoord-reset aan. Niet overnemen. | WP19 |
-| Account maken | Cognito-flow voor accounts die de beheerder aanmaakte (tijdelijk wachtwoord → naam + nieuw wachtwoord). | vervalt; vervangen door Clerk-activatie (fase 5, zie open vraag 2) |
+| Account maken | Cognito-flow voor accounts die de beheerder aanmaakte (tijdelijk wachtwoord → naam + nieuw wachtwoord). | vervalt: accounts worden vooraf aangemaakt (fase 5), de eerste login is een gewone code-login |
 | Info / Over ons / Algemene voorwaarden / Privacy | App-naam en -versie, statische teksten. Privacy werd opgehaald van de oude API (`/info/privacy/nl`). | WP15. Backend? privacytekst |
 | Probleem | E-mail en naam (optioneel), omschrijving, opt-in. Stuurt het lokale logbestand mee. Werkt ook zonder login. | WP20. Backend? melding zonder login |
 
@@ -184,23 +188,40 @@ Per scherm het gedrag van de oude app, in het kort. "Backend?" = iets dat B of d
 | Kaart | Foto's met GPS als geclusterde markers. Foto's zonder locatie in een aparte stapel. Adres bij een marker. | **geen WP** |
 | Foto locatie | Pin verslepen om de locatie van een foto te zetten, opslaan. | **geen WP** |
 | Film | Videospeler, geluid ook in de stille modus. Lijst en covers hardcoded; volledige films alleen voor één groep. | WP21 |
-| Profiel | Header: naam, avatar, lid sinds, aantal foto's. E-mail, "laatste bezoek". Menu: meldingen beoordelen (webmaster, als er iets openstaat), groepen, uitnodigingen, mijn gemelde foto's (met badge), profiel aanpassen, wachtwoord aanpassen, uitloggen, account verwijderen. | WP15 (+19/20) |
+| Profiel | Header: naam, avatar, lid sinds, aantal foto's. E-mail, "laatste bezoek". Menu: meldingen beoordelen (webmaster, als er iets openstaat), groepen, uitnodigingen, mijn gemelde foto's (met badge), profiel aanpassen, wachtwoord aanpassen (vervalt), uitloggen, account verwijderen. | WP15 (+19/20) |
 | Profiel bewerken | Naam + avatar (uploaden of verwijderen). | WP15 |
-| Wachtwoord aanpassen | Huidig + nieuw wachtwoord. | reset-WP (TBD) |
-| Account verwijderen | Uitleg (definitief, lidmaatschappen en foto's weg). Wachtwoord opnieuw invoeren, verwijderen, uitloggen. | **geen WP** (backend `users.deleteSelf` bestaat) |
+| Wachtwoord aanpassen | Huidig + nieuw wachtwoord. | vervalt (code-login) |
+| Account verwijderen | Uitleg (definitief, lidmaatschappen en foto's weg). Ter bevestiging het wachtwoord opnieuw invoeren, dan verwijderen en uitloggen. Zonder wachtwoord is een andere bevestiging nodig. | **geen WP** (backend `users.deleteSelf` bestaat) |
 | Uitnodigingen / Uitgenodigd | Lijst met openstaande uitnodigingen + code handmatig invoeren. Accepteren (groep wordt home, ga naar groep) of afwijzen. Melding "uitnodiging voor iemand anders". | WP19 |
 | Ongepast / Review ongepast | Eigen gemelde foto's: bezwaar maken of verwijderen. Webmaster: lijst met bezwaren bovenaan, goedkeuren of afwijzen. | WP20 |
 | Instellingen | Home-groep wissen, hulpteksten aan/uit, app-versie, links naar info, voorwaarden, privacy en probleem melden (naam en e-mail vooraf ingevuld). | WP15 |
 
 **Bewust niet overnemen:** de dev-knoppen met wachtwoorden (invariant 15), de hardcoded premium-groep-ID's (WP21 kiest een andere bron), de lege knop "groep verwijderen", de verkeerde "code opnieuw sturen".
 
+### Mail-links in de oude app (input voor WP22)
+
+De oude app opende alleen links met een **eigen scheme**: `clubalmanac://`. Er waren geen universal links: geen associated domains in de app en geen `apple-app-site-association` in de oude web-frontend. `Info.plist` registreerde de schemes `clubalmanac`, `com.wintvelt.clubalmanac-app` en `exp+clubalmanac-app` (die laatste alleen voor de dev-client).
+
+| Mail | Wie stuurde hem | Link naar de app | Web-link in dezelfde mail | Scherm in de app |
+|---|---|---|---|---|
+| Wachtwoord resetten | Cognito, `CustomMessage_ForgotPassword` | `clubalmanac://newPassword/<email>/<code>` | `https://clubalmanac.com/confirmpsw?email=…&code=…` | "Nieuw wachtwoord", e-mail en code ingevuld |
+| Aanmelding bevestigen | Cognito, `CustomMessage_SignUp` / `_ResendCode` | `clubalmanac:/verify/<email>/<code>` (één slash: waarschijnlijk een bug) | `…/verifysignup?email=…&code=…` | "E-mail bevestigen", e-mail en code ingevuld |
+| Account activeren | Cognito, `CustomMessage_AdminCreateUser` | `clubalmanac://createAccount/<email>/<tijdelijk wachtwoord>` | `…/completepsw?email=…` | "Account maken" |
+| Groepsuitnodiging | eigen Lambda `sendInvite` | `clubalmanac://invites/<code>` | `https://clubalmanac.com/invites/<code>` | "Uitnodiging" (uitgelogd) of "Uitgenodigd" (ingelogd) |
+
+Bronnen (alleen A): `blob-images-api/handlersCognito/{sync,forgotPassword,verifySignup,tempPassword}.js`, `blob-images-api-groups/handlersGroup/sendInvite.js` + `emails/invite.js`, de `linking`-config in `clubalmanac-app/screens/NAVIGATOR.jsx`.
+
+Wat WP22 hiervan kan leren:
+- **Invullen, niet afronden.** De oude links vulden e-mail en code in het formulier in. De user tikte zelf nog op "bevestigen". De app rondde niets automatisch af.
+- **De code stond als leesbare tekst in de mail**, naast de link ("Of kopieer onderstaande code"). De link was een extra.
+- **Een eigen scheme is onbetrouwbaar in mail.** In de reset-mail stond de knop "Open in app" uitgecommentarieerd met de notitie *"button werkt niet in deze mail"*. Alleen een tekstlink bleef over. De mail zei er ook bij: alleen klikken "als je de app hebt en dit op je telefoon leest". Een universal link (https op een eigen domein + `apple-app-site-association`) valt terug op de browser als de app er niet is. Daarvoor is een domein nodig dat we zelf beheren.
+- **E-mailadres en geheim stonden in het pad**, zonder encoding (`@`, `+`). Breekbaar, en het tijdelijke wachtwoord stond leesbaar in een URL.
+- **Ingelogd en uitgelogd hadden elk een eigen link-config.** Hetzelfde pad (`invites/:id`) kwam in beide terecht, op een ander scherm.
+
 ### Open vragen voor regie / Wouter
 
-1. **Extra stap na het wachtwoord.** Eist de Clerk-instance een e-mailcode op een nieuw toestel (of MFA)? Zo ja: ondersteunt WP13 die stap, of zet je hem uit? Bij cutover is elke telefoon een nieuw toestel, dus "uitzetten" weegt veiligheid af tegen 16 frustraties op dag 1.
-2. **Hoe komen de bestaande users aan een wachtwoord?** Cognito-wachtwoorden gaan niet mee. Fase 5 rekent op Clerk-uitnodigingen. Te verifiëren: een Clerk-*invitation* levert pas een user-ID op als de genodigde hem accepteert. Fase 5 gaat ervan uit dat de ID's vóór de data-import bekend zijn. Valt dit tegen, dan is "users vooraf aanmaken via de Users-API + wachtwoord-reset" het alternatief. Dan moet de reset-WP vóór de cutover klaar zijn.
-3. **Wachtwoord vergeten** hoort hoe dan ook vóór de cutover: het is de enige route voor wie de activatie-mail kwijt is.
-4. **Ratings hebben geen scherm in de oude app.** De backend had ze wel (en Convex ook). Is WP19 "ratings" een nieuwe feature, of vervalt hij?
-5. **"Laatste bezoek" op het profiel.** De oude backend bewaarde per dag het vorige bezoek (`visitDatePrev`) en toonde dat. Convex heeft alleen `lastVisitAt`, en `recordVisit` overschrijft die. Tonen we dit nog (WP15)?
-6. **Kaart, foto-locatie en account verwijderen** vallen in geen enkel WP.
-7. **Invite-links.** De backend mailt `https://…/invite/<token>` (`CLUBALMANAC_APP_URL`). De oude app gebruikte `clubalmanac://invites/<id>`. WP19 kiest: universal links naar de app, of eerst de webapp (Track B).
-8. **DEV-label.** Wil je in niet-prod builds een zichtbaar "DEV"-label (afgeleid van `pk_test_`), als extra vangnet bij invariant 7? Niet gepind.
+1. **Ratings hebben geen scherm in de oude app.** De backend had ze wel (en Convex ook). Is WP19 "ratings" een nieuwe feature, of vervalt hij?
+2. **"Laatste bezoek" op het profiel.** De oude backend bewaarde per dag het vorige bezoek (`visitDatePrev`) en toonde dat. Convex heeft alleen `lastVisitAt`, en `recordVisit` overschrijft die. Tonen we dit nog (WP15)?
+3. **Kaart, foto-locatie en account verwijderen** vallen in geen enkel WP. Account verwijderen vraagt bovendien een nieuwe bevestiging nu het wachtwoord weg is.
+4. **Invite-links.** De backend mailt `https://…/invite/<token>` (`CLUBALMANAC_APP_URL`). De oude app gebruikte `clubalmanac://invites/<id>`. Dat is dezelfde keuze als in WP22 (universal link of scheme); slim om die één keer te maken.
+5. **DEV-label.** Wil je in niet-prod builds een zichtbaar "DEV"-label (afgeleid van `pk_test_`), als extra vangnet bij invariant 7? Niet gepind.
