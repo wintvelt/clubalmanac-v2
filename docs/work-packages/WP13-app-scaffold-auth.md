@@ -4,7 +4,7 @@
 
 ## Productdoel
 
-Een bestaande user opent de nieuwe app op een iPhone (simulator), logt in met zijn Clerk-account en ziet zijn eigen naam uit Convex. Na het herstarten van de app is hij nog steeds ingelogd.
+Een bestaande user opent de nieuwe app op een iPhone (simulator), logt in met zijn e-mailadres en een code uit zijn mail, en ziet zijn eigen naam uit Convex. Na het herstarten van de app is hij nog steeds ingelogd.
 
 ## Invarianten
 
@@ -17,12 +17,14 @@ Een bestaande user opent de nieuwe app op een iPhone (simulator), logt in met zi
 7. **Geen stille env-defaults.** Ontbreekt de Convex-URL of de Clerk publishable key, dan stopt de app bij de start met een duidelijke melding. Geen terugval op een hardcoded deployment, zeker niet op prod.
 8. **App Store-identiteit.** Bundle ID `com.wintvelt.clubalmanac-app` en EAS project `bd5c6c93-059d-409f-bca5-f658ec5722d5`. Het versie- en buildnummer liggen boven de laatst gepubliceerde versie van de oude app, zodat WP14 zonder aanpassing kan uploaden.
 9. **Inloggen wijzigt de gezaaide data niet.** Inloggen als een van de drie dev-accounts maakt geen tweede users-rij aan en overschrijft geen velden van de gezaaide rij. Dit loopt via het bestaande `session.created`-pad (WP6).
+18. **Inloggen = e-mailadres + eenmalige code uit de mail. Geen wachtwoord.** De app vraagt nergens om een wachtwoord en biedt geen wachtwoord-schermen.
+19. **De login-flow laat ruimte voor de mail-link.** Een later WP (WP22) laat een link in de mail de app openen en de login afronden. WP13 bouwt die link niet, maar niets in WP13 mag hem blokkeren: de code moet ook van buiten het invoerveld in de lopende login terecht kunnen komen.
 
 ## Edge cases + scope-uitsluitingen
 
 **In scope:**
 - Verse Expo-app in `app/` (huidige stabiele Expo SDK), TypeScript strict
-- Inlogscherm (email-login van Clerk, de methode die de dev-instance aan heeft staan), uitloggen, foutmeldingen bij een verkeerd wachtwoord of een onbekend account
+- Inlogscherm: e-mailadres → code per mail → code invoeren. Opnieuw sturen van de code. Uitloggen. Foutmeldingen bij een verkeerde of verlopen code en een onbekend account
 - Eén scherm achter de login dat `users.current` toont
 - De drie toestanden van invariant 4: niet ingelogd / ingelogd zonder rij / ingelogd met rij
 - Typecheck van de app in CI, naast de bestaande root-checks
@@ -30,7 +32,8 @@ Een bestaande user opent de nieuwe app op een iPhone (simulator), logt in met zi
 
 **Bewust niet (voor deze WP):**
 - Registreren / signup: dat is invite-only en hoort bij de invites-WP
-- Wachtwoord vergeten / reset: A noteert in de checklist hoe de oude app dit deed; regie plant het in
+- De link in de mail die de app opent: WP22
+- Clerk-dev-instance omzetten naar code-login (wachtwoord uit): dashboard-actie van Wouter, vóór B start
 - Navigatiestructuur, thema, design: designstap na WP14
 - Subscription-discipline (AppState-pauze, unmount bij blur): WP15
 - EAS-build en TestFlight: WP14
@@ -44,7 +47,7 @@ Een bestaande user opent de nieuwe app op een iPhone (simulator), logt in met zi
 - **external deps: medium.** Clerk Expo SDK + Expo SDK. Versies vastzetten, geen `latest`.
 - **multi-user/concurrency: laag.** Alleen lezen.
 - **data/schema-evolutie: laag.** Geen schema-wijziging. Invariant 9 beschermt de gezaaide dev-data.
-- **ops-runbook-impact:** twee nieuwe client-env-vars: Convex-URL en Clerk publishable key, per omgeving (dev nu, prod in fase 5). Ze landen in [`external-services.md`](../conventions/external-services.md), met waar ze lokaal staan (gitignored) en hoe ze later in EAS komen. Ook de Clerk-dashboardinstelling voor de app-login (toegestane redirect/native-app-config, als Clerk die vraagt) komt daar. B levert de runbook-entry mee.
+- **ops-runbook-impact:** twee nieuwe client-env-vars: Convex-URL en Clerk publishable key, per omgeving (dev nu, prod in fase 5). Ze landen in [`external-services.md`](../conventions/external-services.md), met waar ze lokaal staan (gitignored) en hoe ze later in EAS komen. Ook de Clerk-dashboardinstellingen voor de app-login komen daar: e-mailcode als enige inlogmethode, wachtwoord uit, en de native-app-config als Clerk die vraagt. B levert de runbook-entry mee.
 
 ## Cross-refs
 
@@ -63,11 +66,20 @@ Een bestaande user opent de nieuwe app op een iPhone (simulator), logt in met zi
   1. Inloggen als dev1 → eigen naam uit de dev-seed zichtbaar
   2. App afsluiten en opnieuw openen → nog ingelogd
   3. Uitloggen → inlogscherm; opnieuw openen → nog steeds uitgelogd
-  4. Verkeerd wachtwoord → leesbare foutmelding
+  4. Verkeerde code → leesbare foutmelding; nieuwe code aanvragen werkt
   5. Na de gate: de users-rij van dev1 is ongewijzigd (invariant 9)
   6. Ruimte voor bevindingen buiten deze scenario's
 
 ---
+
+## Regie-besluit 2026-10-25: code-login, geen wachtwoord
+
+Na A's open vragen 1-3 koos Wouter voor **inloggen met een code per mail, zonder wachtwoord**. Reden: met "wachtwoord vergeten" via de mail is een wachtwoord niet sterker dan de mailbox zelf, en het scheelt de wachtwoord-schermen plus het activatieprobleem bij de cutover. Eis van Wouter: een link in de mail opent de app op de telefoon en rondt de login af. Die link komt in WP22 (invariant 19).
+
+Gevolgen:
+- Invarianten 15 en 17 en het test-contract voor `loginErrors` hieronder gingen uit van een wachtwoord. A werkt ze bij.
+- Open vragen 1-3 zijn hiermee beantwoord. Fase 5 maakt de Clerk-accounts vooraf aan via de Users-API, zonder wachtwoord en zonder uitnodiging.
+- Dev-testaccounts `devN+clerk_test@example.com` krijgen geen echte mail. Clerk accepteert daar de vaste testcode.
 
 ## Spec-criticus aanvullingen (A, 2026-10-25)
 

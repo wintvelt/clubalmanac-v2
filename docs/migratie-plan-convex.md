@@ -203,7 +203,7 @@ Boundary in beide gevallen `<=` (consistent met FL1 `flaggedDeleteDate <= now` e
 Toekomstige cron-toevoeging: `expirePendingInvites` voor IB2 (natural-expiry op invites — gebundeld met scheduled-functions werkpakket, nog niet geleverd).
 
 ### Auth
-Aanbeveling: **Clerk + Convex** (bewezen Expo combo, werkt ook voor web). 20 users: gewoon opnieuw laten registreren. Cognito wordt volledig vervangen. Clerk heeft aparte dev en prod instances (zie Environments).
+Aanbeveling: **Clerk + Convex** (bewezen Expo combo, werkt ook voor web). Cognito wordt volledig vervangen. Login = e-mailadres + code per mail, geen wachtwoord (besluit 2026-10-25, zie WP13). De 20 users worden vooraf aangemaakt via de Clerk Users-API; Cognito-wachtwoorden gaan niet mee. Clerk heeft aparte dev en prod instances (zie Environments).
 
 ### Webmaster-rol (RBAC)
 
@@ -691,7 +691,7 @@ URL `https://<deployment>.<region>.convex.site/email-event` configureren in Mail
 Alle NL teksten 1:1 overnemen uit oude SES templates. Tone-of-voice consistent houden. Templates inline in Convex actions (geen aparte template-engine nodig bij dit volume).
 
 **Cognito-mails (Clerk-zijde):**
-Clerk free tier verstuurt vanaf `accounts.clerk.dev`. Custom email domain is paid feature, niet de moeite voor 16 initiële signups + sporadische password resets. Acceptabel dat users tijdens cutover een mail van `accounts.clerk.dev` krijgen — communicatie hierover via cutover-mailing op clubalmanac.com kanaal.
+Clerk free tier verstuurt vanaf `accounts.clerk.dev`. Custom email domain is paid feature, niet de moeite voor 16 initiële signups. Let op: met code-login stuurt Clerk bij elke nieuwe login een mail; WP22 bepaalt of die via Clerk of via Mailjet gaat. Acceptabel dat users tijdens cutover een mail van `accounts.clerk.dev` krijgen — communicatie hierover via cutover-mailing op clubalmanac.com kanaal.
 
 **Beslispunten/risico's:**
 - Mailjet domein-validatie kan paar uur duren — initiate vroeg in fase 2
@@ -935,4 +935,4 @@ Concrete cutover-stappenplan + Monitoring/Backup + Cyclus-2 backlog: zie [`migra
 | **Vendor lock-in** | Convex is relatief nieuw | Open-source + self-hostable mitigeert dit. R2 als file storage maakt je nog minder afhankelijk |
 | **Invite-only signup** | Custom Cognito trigger | Herbouwen als Clerk custom flow |
 | **Env-cross-contamination** | Dev build die per ongeluk naar prod Convex/Clerk wijst, of `pk_test_` in prod release | EAS profiles expliciet, géén defaults. Build-time check in CI die `pk_test_` weigert in prod profile. `CLERK_FRONTEND_API_URL` per Convex deployment matchend gezet |
-| **Prod user pre-registration** | 20 Clerk-IDs moeten bekend zijn vóór data-import om mapping op email te kunnen doen | Clerk Invitations API: 20 users vooraf aanmaken met bestaande emails, IDs ophalen, mapping vastzetten vóór T-0 |
+| **Prod user pre-registration** | 20 Clerk-IDs moeten bekend zijn vóór data-import om mapping op email te kunnen doen | Clerk Users-API: 20 users vooraf aanmaken met bestaande emails, zonder wachtwoord, IDs ophalen, mapping vastzetten vóór T0. Niet de Invitations-API: die maakt de user pas aan bij acceptatie |
