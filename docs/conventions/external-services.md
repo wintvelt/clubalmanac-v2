@@ -118,15 +118,15 @@ Gate-commando's (Wouter, in `app/`, Node 24 actief):
 
 1. Node 24 via fnm: `brew install fnm`, `eval "$(fnm env --use-on-cd --version-file-strategy=recursive)"` in `~/.zshrc`, dan `fnm install 24 && fnm default 24`. `recursive` is nodig omdat `.nvmrc` alleen in de root staat en je in `app/` werkt. Een terminal die al open was, ziet dit pas na `fnm use 24` of in een nieuw tabblad. Check: `node -v` toont `v24.x`.
 2. `npm install -g eas-cli@25.3.0` (vaste versie, geen `latest`) en `eas login`. Check: `eas whoami` toont `wintvelt`.
-3. Env-vars voor `development`, waarden uit `app/.env.local`:
+3. Env-vars voor `development`, waarden uit `app/.env.local` (niet de root-`.env.local`, die is van de backend):
    - `eas env:set --environment development --name EXPO_PUBLIC_CONVEX_URL --value https://glorious-pheasant-759.eu-west-1.convex.cloud --visibility plaintext --scope project`
-   - `eas env:set --environment development --name EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY --value <pk_test_… uit app/.env.local> --visibility plaintext --scope project`
+   - `eas env:set --environment development --name EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY --value "$(grep '^EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY=' .env.local | cut -d= -f2- | tr -d '"')" --visibility plaintext --scope project`
    - Check: `eas env:list --environment development`
-4. Buildteller: `eas build:version:get -p ios -e dev`. Lager dan 38 of leeg: `eas build:version:set -p ios -e dev` en vul `38` in.
-5. `eas build -p ios --profile dev`. Kies EAS-managed credentials; log in met Apple ID als EAS dat vraagt.
+4. Buildteller: `eas build:version:get -p ios -e dev`. Lager dan 38 of leeg: `eas build:version:set -p ios -e dev` en vul `38` in. Een mislukte build kan een nummer verbruiken; dat is geen probleem.
+5. `eas build -p ios --profile dev`. Kies EAS-managed credentials; log in met Apple ID als EAS dat vraagt. Stopt hij op *"agreement updates"*: accepteer de overeenkomst op developer.apple.com/account en in App Store Connect → Business, en probeer opnieuw. Certificaat en profiel (aangemaakt 2026-10-25) verlopen **2027-10-25**; daarna maakt EAS bij de volgende build nieuwe aan.
 6. `eas submit -p ios --profile dev --latest`. Laat EAS een App Store Connect API key aanmaken.
-7. App Store Connect → TestFlight: wacht tot de build verwerkt is, voeg hem toe aan een interne testgroep met Wouter erin.
-8. iPhone: TestFlight-app → installeren → inloggen met code → eigen naam. App sluiten en openen → nog ingelogd. Uitloggen werkt.
+7. App Store Connect → TestFlight: wacht tot de build verwerkt is (~10 min, mail van Apple). Hij komt automatisch in de interne groep "Clubalmanac test groep" (tester `wintvelt@mac.com`). Niet in "Blob testgroep" (extern).
+8. iPhone: TestFlight-app (ingelogd als `wintvelt@mac.com`) → installeren → inloggen als dev1 met de Clerk-testcode → eigen naam. App sluiten en openen → nog ingelogd. Uitloggen werkt.
 
 Blokkeert een stap (overeenkomsten, lidmaatschap, Apple-mail met ITMS-code), noteer de letterlijke melding in WP14 §Uitkomsten spike.
 

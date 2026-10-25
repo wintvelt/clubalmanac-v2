@@ -1,6 +1,6 @@
 # WP14: Spike EAS-build → TestFlight
 
-> Regie-draft. Spike, Setup 1 (solo). Geen A: er valt niets uit oude code te vertalen, de benodigde feiten staan in [WP13](./WP13-app-scaffold-auth.md) §Invariant 8. Eén uitvoer-sessie met het `wp-b`-mandaat doet de repo-wijzigingen. Wouter draait alle commando's die externe accounts raken (EAS, Apple). Regie reviewt de diff.
+> ✅ Afgerond 2026-10-25. Spike, Setup 1 (solo). Geen A: er valt niets uit oude code te vertalen, de benodigde feiten staan in [WP13](./WP13-app-scaffold-auth.md) §Invariant 8. Eén uitvoer-sessie met het `wp-b`-mandaat doet de repo-wijzigingen. Wouter draait alle commando's die externe accounts raken (EAS, Apple). Regie reviewt de diff.
 
 ## Productdoel
 
@@ -103,13 +103,21 @@ Het tweede deel telt even zwaar als het eerste. Een geblokkeerde upload met een 
 
 ## Uitkomsten spike
 
-> Regie vult in na de gate.
+Gate 2026-10-25, Wouter, echte iPhone. **TestFlight werkt terwijl de app "Removed from Sale" is.**
 
 | Vraag | Uitkomst |
 |---|---|
-| Build op EAS gelukt? (build-ID, buildnummer) | |
-| Upload naar App Store Connect gelukt en verwerkt? | |
-| Beschikbaar voor internal testing terwijl de app uit distributie is? | |
-| Installeerbaar en werkend op de iPhone (login, naam, herstart)? | |
-| Meldingen van Apple (letterlijk) | |
-| Gevolg voor het Track A-plan | |
+| Build op EAS gelukt? | Ja. Build `07ae707b-…`, 2.0.0 (40). |
+| Upload naar App Store Connect gelukt en verwerkt? | Ja. `eas submit` geaccepteerd, verwerkt binnen ~10 min. Geen ITMS-meldingen, geen "Missing Compliance". |
+| Beschikbaar voor internal testing? | Ja. Build 40 kwam automatisch in de bestaande interne groep "Clubalmanac test groep". |
+| Werkend op de iPhone? | Ja. Login als dev1 met code, eigen naam zichtbaar, ingelogd na herstart, uitloggen werkt. |
+| Meldingen van Apple (letterlijk) | Eerste `eas build` stopte op: *"App Store Connect has agreement updates that must be resolved"*. Na accepteren door Wouter liep alles door. De verwerkingsmail biedt zelf aan: *"submit it for distribution"*. |
+| Gevolg voor het Track A-plan | Geen blokkade. Elke WP vanaf de designstap kan via TestFlight op een toestel getest worden. De App Store-indiening blijft een update van de bestaande app (T-1 week). Geen vervolg-WP nodig. |
+
+**Bevindingen buiten de scenario's:**
+- Buildnummer werd 40, niet 39: de mislukte eerste poging verbruikte er een. Geen probleem, nummers hoeven niet aansluitend.
+- Distributiecertificaat en provisioning profile uit 2023 waren verlopen. Nieuwe zijn geldig tot **2027-10-25**.
+- EAS zette automatisch een push-sleutel op bij Apple. Zonder `expo-notifications` doet die niets.
+- Het app-icoon is leeg. Voor de App Store-indiening is een icoon nodig: designstap.
+- De bestaande externe groep "Blob testgroep" bestaat nog. Daar komt geen build in zolang builds tegen dev praten (invariant 7).
+- De Dependabot-telling in de `git push`-uitvoer (15) was verouderd. Na de rescan stonden alleen de twee geaccepteerde meldingen open.
