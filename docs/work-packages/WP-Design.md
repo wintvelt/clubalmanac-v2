@@ -1,6 +1,6 @@
 # WP-Design: Designstap (navigatie, thema, icoon)
 
-> Regie-draft. Geen A→B→audit: er valt weinig te testen en het grootste risico is smaak en herkenbaarheid, en daar beslist Wouter. Zie §Werkwijze. Bewust zonder nummer (besluit Wouter 2026-10-25); de README zet hem vóór WP15.
+> ✅ Afgerond 2026-10-25 (gate deels, zie §Acceptance). Geen A→B→audit: er valt weinig te testen en het grootste risico is smaak en herkenbaarheid, en daar beslist Wouter. Zie §Werkwijze. Bewust zonder nummer (besluit Wouter 2026-10-25); de README zet hem vóór WP15.
 
 ## Productdoel
 
@@ -51,6 +51,8 @@ Elke feature-WP (15–21) bouwt zijn schermen in één herkenbare stijl en navig
 **Let op:**
 - Expo-iconen en lettertypen moeten in de build zitten. Een lettertype dat bij de start pas laadt, geeft een flits van het systeemlettertype.
 - De oude app had eenmalige hulp-modals (WP13 pariteit-checklist). Het design-doc kiest of die terugkomen, en in welke vorm.
+
+**Gate-uitslag 2026-10-25 (TestFlight build 41, iPhone):** app opent, inloggen werkt, nieuw icoon op het beginscherm. Stap 2–5 (live wisselen licht/donker, icoon in donker, grootste tekststand, liggend) heeft Wouter niet apart afgevinkt. In de simulator zijn licht, donker en de grootste tekststand wel bekeken (B-sessie). Stap 2–5 gaan mee in de WP15-gate.
 
 ## Werkwijze
 
