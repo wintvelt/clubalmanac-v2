@@ -12,7 +12,7 @@ Initiële prompt bevat expliciet *"regie"* (of geen aanduiding bij een Wouter-ge
 
 Lezen: `docs/migratie-status.md` (status + checklists per fase), `docs/migratie-plan-convex.md` (architectuur-rationale), `docs/cascade-matrix.md`, `docs/work-packages/README.md` (WP-overzicht), `docs/conventions/` (vooral `ab-audit-workflow.md`, `work-package-specs.md`, `prompt-discipline.md`, `commit-discipline.md`), `audit-track-record.md`, recent commits.
 
-**Geen oude AWS-code lezen.** Alleen A heeft dat mandaat (zie work-package-specs.md toegangs-tabel).
+**Geen oude code lezen** (AWS-backend én oude app). Alleen A heeft dat mandaat (zie work-package-specs.md toegangs-tabel).
 
 **Alleen regie mag sub-agents spawnen** via de Agent-tool. Andere sessies (A/B/audit/ad-hoc) werken zelf. Zie [`docs/conventions/work-package-specs.md` §Spawn-autoriteit](./docs/conventions/work-package-specs.md).
 
@@ -25,9 +25,9 @@ User-prompt is kort, bv. *"wp-a voor WP5"* of *"audit-rol voor WP7"*.
 3. Volg het mandaat verder. Bij twijfel: stop + rapporteer, niet gokken.
 
 Toegangs-grenzen per rol staan in [`docs/conventions/work-package-specs.md`](./docs/conventions/work-package-specs.md). Kort:
-- **A** mag oude AWS-code in adjacent `blob-images-api*`-repos lezen. Mag spec aanvullen + tests schrijven. Géén impl.
-- **B** mag GEEN oude AWS-code. Leest spec + A's tests, schrijft impl. Géén spec/test-edits.
-- **Audit** mag GEEN oude AWS-code. Leest spec + tests + impl. Rapport in chat — geen file-edits, geen commits.
+- **A** mag oude code lezen: AWS-backend-repos + oude app-repo. Mag spec aanvullen + tests schrijven. Géén impl.
+- **B** mag GEEN oude code. Leest spec + A's tests, schrijft impl. Géén spec/test-edits.
+- **Audit** mag GEEN oude code. Leest spec + tests + impl. Rapport in chat — geen file-edits, geen commits.
 
 ## Repo-snelle-kaart
 
@@ -39,7 +39,7 @@ Toegangs-grenzen per rol staan in [`docs/conventions/work-package-specs.md`](./d
 - `docs/work-packages/` — per-WP specs
 - `docs/conventions/` — alle disciplines
 - `.claude/agents/` — rol-mandaten voor A/B/Audit
-- Adjacent v1-repos (alleen A): `../blob-images-api`, `../blob-images-api-{user,groups,photos,invites,features}`, `../blob-images-common`
+- Adjacent v1-repos (alleen A): `../blob-images-api`, `../blob-images-api-{user,groups,photos,invites,features}`, `../blob-images-common`, oude app `../DEV/clubalmanac-app`
 
 ## Commit + push
 

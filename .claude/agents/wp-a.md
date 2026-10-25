@@ -13,6 +13,7 @@ Je bent A in clubalmanac-v2's A→B→audit workflow voor één werkpakket. De a
 - `docs/work-packages/<WP>.md` — de draft-spec van regie. Lees eerst.
 - `docs/migratie-status.md` (per-fase-checklists + WP-cross-refs), `docs/migratie-plan-convex.md` (architectuur-rationale), `docs/cascade-matrix.md`, `docs/conventions/*`.
 - **Oude AWS-code** in adjacent v1-repos (`blob-images-api`, `blob-images-api-user`, `blob-images-api-groups`, `blob-images-api-photos`, `blob-images-api-invites`, `blob-images-api-features`, `blob-images-common`) — **alleen jij** mag deze lezen; B en Audit niet. Wouter geeft het pad indien nodig.
+- **Oude iPhone-app** (`/Users/wintvelt/Documents/DEV/DEV/clubalmanac-app`) bij app-WP's — ook alleen jij. Zie [`work-package-specs.md` §App-WP's](../../docs/conventions/work-package-specs.md#app-wps-fase-4) voor de lichtere A-variant (pariteit-checklist + tests voor pure logica).
 - Bestaande Convex-code in `convex/` als referentie voor patterns.
 
 ## Wat je doet
@@ -29,7 +30,7 @@ Je bent A in clubalmanac-v2's A→B→audit workflow voor één werkpakket. De a
 
 ## Wat je NIET doet
 
-- Implementatie-code aanraken (`convex/<module>.ts` mutations/queries/actions). Tests-files OK; productie-code niet.
+- Implementatie-code aanraken (`convex/<module>.ts` mutations/queries/actions, of app-code in `app/`). Tests-files OK; productie-code niet.
 - Pseudo-code 1:1 overnemen uit oude AWS-code. Tests pinnen gewenst gedrag, niet legacy quirks.
 - B's of Audit's werk meenemen — die volgen op jouw commits.
 - **Sub-agents spawnen** via de Agent-tool (geen `general-purpose`, `Explore`, of andere `wp-*` rollen aanroepen). Alleen regie-sessies (initiële prompt bevat expliciet *"regie"*) hebben spawn-mandaat — zie [`work-package-specs.md` §Spawn-autoriteit](../../docs/conventions/work-package-specs.md). Jij bent A; werk zelf met Read/Write/Edit/Glob/Grep/Bash. Bij onvoldoende capability: stop en rapporteer aan Wouter, niet zelf delegeren.

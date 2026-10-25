@@ -11,14 +11,25 @@ Aanvulling op [`ab-audit-workflow.md`](./ab-audit-workflow.md). Voor elk werkpak
 
 ## Rolverdeling — toegangs- en output-tabel
 
-| Rol | Oude AWS-code | Wat doet | Output naar |
+| Rol | Oude AWS-code + oude app-repo | Wat doet | Output naar |
 |---|---|---|---|
 | Regie | ❌ | schrijft draft-spec + reviewt A/B/audit | `docs/work-packages/WP<n>.md` (eerste commit) |
 | A | ✅ | spec-criticus + RED tests | spec-edit + tests in repo (twee commits) |
-| B | ❌ | impl tot tests groen | impl in `convex/`, één commit |
+| B | ❌ | impl tot tests groen | impl in `convex/` of `app/`, één commit |
 | Audit | ❌ | beoordeelt geheel | tekst-rapport in chat, geen commits |
 
-Het toegangs-onderscheid (oude AWS) is bias-vermijding. Alleen A vertaalt oude flows; B en Audit toetsen tegen de spec, niet tegen de legacy.
+Oude code = de AWS-backend-repos (`blob-images-api*`, `blob-images-common`) én de oude iPhone-app (`/Users/wintvelt/Documents/DEV/DEV/clubalmanac-app`, besluit 2026-10-25).
+
+Het toegangs-onderscheid is bias-vermijding. Alleen A vertaalt oude flows; B en Audit toetsen tegen de spec, niet tegen de legacy.
+
+## App-WP's (fase 4)
+
+Lichtere variant voor werk in `app/`:
+
+- **A** vult de spec aan met een pariteit-checklist uit de oude app: per scherm het gedrag, geen code of layout overnemen. Tests alleen voor pure logica (rotatie, throttles, upload-ids). Geen RED UI-tests.
+- **B** bouwt tot de checklist af is en de tests groen zijn. Vóór "klaar" kijkt B zelf in de iOS-simulator of het scherm rendert.
+- **Empirische gate** door Wouter, in de simulator of op een toestel. Groene tests zijn niet het eindpunt.
+- Mist een scherm een backend-functie: stop en meld aan regie. Backend-wijzigingen lopen via een eigen A→B-cyclus.
 
 ## Spec-template
 
