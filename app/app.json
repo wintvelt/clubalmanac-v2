@@ -11,10 +11,7 @@
     "ios": {
       "bundleIdentifier": "com.wintvelt.clubalmanac-app",
       "supportsTablet": true,
-      "icon": {
-        "light": "./assets/icon/icon-light.png",
-        "dark": "./assets/icon/icon-dark.png"
-      },
+      "icon": "./assets/icon/Clubalmanac.icon",
       "config": {
         "usesNonExemptEncryption": false
       }
