@@ -30,7 +30,7 @@ export function LinkButton({ title, onPress, tone = "nav", icon, disabled = fals
         disabled && styles.disabled,
       ]}
     >
-      {icon && <Icon name={icon} size={22} color={color} strokeWidth={2.4} />}
+      {icon && <Icon name={icon} size={22} color={color} />}
       <Text
         variant="button"
         style={[{ color }, tone === "nav" && styles.underline]}

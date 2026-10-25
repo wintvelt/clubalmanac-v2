@@ -32,7 +32,7 @@ export function Notice({ kind, title, message, children }: Props) {
       accessibilityLiveRegion="polite"
       style={[styles.notice, { backgroundColor: colors.surface, borderColor: tint }]}
     >
-      <Icon name={kind === "error" ? "alert" : "check"} size={size.noticeIcon} color={tint} strokeWidth={2.2} />
+      <Icon name={kind === "error" ? "alert" : "check"} size={size.noticeIcon} color={tint} />
       <View style={styles.body}>
         {title && <Text variant="bodyStrong">{title}</Text>}
         {message && <Text variant={title ? "meta" : "body"}>{message}</Text>}

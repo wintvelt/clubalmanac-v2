@@ -22,7 +22,7 @@ export function SmallButton({ title, onPress, icon, disabled = false }: Props) {
         disabled && styles.disabled,
       ]}
     >
-      {icon && <Icon name={icon} size={18} color={colors.primary} strokeWidth={2.4} />}
+      {icon && <Icon name={icon} size={18} color={colors.primary} />}
       <Text variant="smallButton" color="primary">
         {title}
       </Text>

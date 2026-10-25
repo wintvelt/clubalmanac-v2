@@ -49,7 +49,7 @@ export function Button({
         {busy ? (
           <ActivityIndicator color={fg} />
         ) : (
-          icon && <Icon name={icon} size={22} color={fg} strokeWidth={2.4} />
+          icon && <Icon name={icon} size={22} color={fg} />
         )}
         <Text variant="button" style={{ color: fg }}>
           {busy ? (busyTitle ?? title) : title}
