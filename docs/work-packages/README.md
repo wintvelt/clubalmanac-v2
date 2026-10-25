@@ -34,7 +34,7 @@ WP1-WP4 liepen vóór de formele spec-doc-discipline (geen WP-file). Status uit 
 | TBD | Video's van S3 naar Cloudflare R2. 10 clubfilms (~19 GB) + 9 cover-PNG's in bucket `blob-videos`, zonder DynamoDB-record — de oude app heeft de verwijzing hardcoded in de front-end. Buiten WP12 gehouden (besluit 2026-08-23): ~80% van de overzettijd voor nul feature-winst, plus een bestand van 5,8 GiB door een upload-URL zonder hervatting. Blijft op S3 tot dit WP draait; `blob-videos` mag daarom niet mee in de T+30-opruiming. | — | open |
 | WP13 | App-scaffold in `app/` + Clerk-login + `users.current` op scherm (fase 4 Track A) | [`WP13-app-scaffold-auth.md`](./WP13-app-scaffold-auth.md) | draft |
 | WP14 | Spike: EAS-build van WP13 naar TestFlight (werkt TestFlight terwijl de app uit distributie is?) | — | open |
-| TBD | Designstap: UI evalueren/moderniseren, navigatiestructuur + thema vóór de feature-WP's | — | open, na WP14 |
+| TBD | Designstap: UI evalueren/moderniseren, navigatiestructuur + thema vóór de feature-WP's. Vuistregel uit de WP13-gate: een melding staat direct onder de actie die hem veroorzaakte. | — | open, na WP14 |
 | WP15 | Navigatie-skelet + subscription-discipline + profiel + `recordVisit` | — | open |
 | WP16 | Groups overzicht + detail (unread realtime) | — | open |
 | WP17 | Albums + foto's bekijken (`exifOrientation`, laadprestatie, `by_flagged`-check) | — | open |
