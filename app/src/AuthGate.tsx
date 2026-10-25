@@ -1,13 +1,12 @@
 import { useAuth, useUser } from "@clerk/expo";
 import { useConvexAuth, useQuery } from "convex/react";
-import { Text } from "react-native";
 import { SignOutButton } from "./auth/SignOutButton";
+import { Text } from "./components/Text";
 import { api } from "./convexApi";
 import { deriveAuthState } from "./lib/authState";
 import { HomeScreen } from "./screens/HomeScreen";
 import { LoginScreen } from "./screens/LoginScreen";
 import { StatusScreen } from "./screens/StatusScreen";
-import { ui } from "./ui";
 
 // De vijf toestanden van WP13 (invarianten 4, 10, 11, 12, 13).
 // Alleen lezen: geen recordVisit hier (invariant 16, dat is WP15).
@@ -28,12 +27,13 @@ export function AuthGate() {
 
   switch (state) {
     case "loading":
-      return <StatusScreen spinner />;
+      return <StatusScreen spinner spinnerLabel="Laden…" />;
     case "signedOut":
       return <LoginScreen />;
     case "convexAuthFailed":
       return (
         <StatusScreen
+          error
           title="Verbinden met de server lukt niet"
           message="Je bent ingelogd, maar de server accepteert je sessie niet. Log uit en probeer het opnieuw. Blijft dit gebeuren, meld het dan bij de beheerder."
         >
@@ -44,7 +44,11 @@ export function AuthGate() {
       return <NoUserRowScreen />;
     case "ready":
       // deriveAuthState geeft alleen "ready" met een rij.
-      return currentUser ? <HomeScreen user={currentUser} /> : <StatusScreen spinner />;
+      return currentUser ? (
+        <HomeScreen user={currentUser} />
+      ) : (
+        <StatusScreen spinner spinnerLabel="Laden…" />
+      );
   }
 }
 
@@ -57,7 +61,7 @@ function NoUserRowScreen() {
       message="Je bent ingelogd, maar we vinden je account nog niet. Meestal duurt dit een paar seconden. Gebeurt er niets, meld het dan bij de beheerder."
       spinner
     >
-      {email && <Text style={ui.muted}>Ingelogd als {email}</Text>}
+      {email && <Text color="muted">Ingelogd als {email}</Text>}
       <SignOutButton />
     </StatusScreen>
   );

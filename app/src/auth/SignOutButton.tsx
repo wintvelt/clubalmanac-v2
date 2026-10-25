@@ -1,9 +1,8 @@
 import { useClerk } from "@clerk/expo";
 import { useRef, useState } from "react";
-import { Text } from "react-native";
 import { Button } from "../components/Button";
+import { Notice } from "../components/Notice";
 import { LOGIN_MESSAGES } from "../lib/loginErrors";
-import { ui } from "../ui";
 import { wipeStoredTokens } from "./tokenCache";
 
 // WP13 invarianten 6 + 11: uitloggen kan in elke ingelogde toestand en laat
@@ -35,8 +34,14 @@ export function SignOutButton() {
 
   return (
     <>
-      <Button title="Uitloggen" onPress={onPress} busy={busy} />
-      {error && <Text style={ui.error}>{error}</Text>}
+      <Button
+        title="Uitloggen"
+        busyTitle="Uitloggen…"
+        variant="secondary"
+        onPress={onPress}
+        busy={busy}
+      />
+      {error && <Notice kind="error" message={error} />}
     </>
   );
 }

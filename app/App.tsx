@@ -29,13 +29,13 @@ const envResult = readEnv();
 export default function App() {
   return (
     <SafeAreaProvider>
-      <StatusBar style="dark" />
+      <StatusBar style="auto" />
       {"env" in envResult ? (
         <Providers env={envResult.env}>
           <AuthGate />
         </Providers>
       ) : (
-        <StatusScreen title="De app is verkeerd ingesteld" message={envResult.error} />
+        <StatusScreen error title="De app is verkeerd ingesteld" message={envResult.error} />
       )}
     </SafeAreaProvider>
   );

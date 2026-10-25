@@ -6,14 +6,31 @@
     "version": "2.0.0",
     "scheme": "clubalmanac",
     "orientation": "default",
+    "userInterfaceStyle": "automatic",
+    "icon": "./assets/icon/icon-light.png",
     "ios": {
       "bundleIdentifier": "com.wintvelt.clubalmanac-app",
       "supportsTablet": true,
+      "icon": {
+        "light": "./assets/icon/icon-light.png",
+        "dark": "./assets/icon/icon-dark.png"
+      },
       "config": {
         "usesNonExemptEncryption": false
       }
     },
-    "plugins": ["expo-status-bar", "expo-secure-store"],
+    "plugins": [
+      "expo-status-bar",
+      "expo-secure-store",
+      [
+        "expo-font",
+        {
+          "fonts": [
+            "node_modules/@expo-google-fonts/literata/600SemiBold/Literata_600SemiBold.ttf"
+          ]
+        }
+      ]
+    ],
     "extra": {
       "eas": {
         "projectId": "bd5c6c93-059d-409f-bca5-f658ec5722d5"

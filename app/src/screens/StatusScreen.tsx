@@ -1,24 +1,43 @@
 import type { ReactNode } from "react";
-import { ActivityIndicator, Text, View } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
-import { ui } from "../ui";
+import { Notice } from "../components/Notice";
+import { Screen } from "../components/Screen";
+import { LoadingState } from "../components/States";
+import { Text } from "../components/Text";
 
 type Props = {
   title?: string;
   message?: string;
+  // Toont title en message als foutmelding (design.md §6).
+  error?: boolean;
   spinner?: boolean;
+  spinnerLabel?: string;
   children?: ReactNode;
 };
 
-export function StatusScreen({ title, message, spinner = false, children }: Props) {
+export function StatusScreen({
+  title,
+  message,
+  error = false,
+  spinner = false,
+  spinnerLabel,
+  children,
+}: Props) {
   return (
-    <SafeAreaView style={ui.screen}>
-      <View style={ui.centered}>
-        {title && <Text style={ui.title}>{title}</Text>}
-        {message && <Text style={ui.text}>{message}</Text>}
-        {spinner && <ActivityIndicator />}
-        {children}
-      </View>
-    </SafeAreaView>
+    <Screen centered>
+      {error ? (
+        <Notice kind="error" title={title} message={message} />
+      ) : (
+        <>
+          {title && (
+            <Text variant="largeTitle" accessibilityRole="header">
+              {title}
+            </Text>
+          )}
+          {message && <Text>{message}</Text>}
+        </>
+      )}
+      {spinner && <LoadingState label={spinnerLabel} />}
+      {children}
+    </Screen>
   );
 }
