@@ -97,6 +97,22 @@ Na stap 4 en 6 reviewt regie of de spec nog klopt.
   5. iPad of landscape → niets valt weg
   6. Ruimte voor bevindingen buiten deze stappen
 
+## Regie-review design.md (2026-10-25)
+
+`docs/design.md` (c31223a) is de bron voor stap 7. Besluiten Wouter bij de review: lime-sky-verloop bewust, hulp-modals vervallen, icoon via Icon Composer door Wouter (B levert de lagen).
+
+**Scope stap 7 (B-sessie).** design.md beschrijft meer componenten dan deze WP bouwt.
+
+| Bouwt B nu | Bouwt het WP dat ze als eerste nodig heeft |
+|---|---|
+| Tokens licht + donker, volgen van de iOS-modus, typografie met de schaalregels, Literata laden vóór het splashscreen | Tabbalk, plusknop, terugknop-pil: WP15 |
+| Hoofdknop, tweede knop, tekstknop, kleine knop, invoerveld, lijstrij | Groepstabs, coverkop, avatar, jaartal-kop: WP16 |
+| Melding (fout en bevestiging), laden, leeg (§6) | "Nieuw"-label: WP16/17 |
+| WP13-schermen omgezet naar het thema, gedrag ongewijzigd | Router en uitgelogde tabbalk: WP15 |
+| Icoonlagen (SVG) + 1024-PNG in `app.json` | `.icon`-bestand: Wouter |
+
+**Tests (pure logica):** het contrast van elk paar uit design.md §2, met de WCAG-formule, in licht en donker. Ook de schaalregel van de tabbalk-labels (hoogstens 1,2×) als die als functie bestaat.
+
 ## Oude app visueel (A, 2026-10-25)
 
 > Bron: de oude app `clubalmanac-app` (versie 1.6.0), alleen gelezen door A. Paden hieronder zijn relatief aan die repo. De styling loopt via `twrnc` (Tailwind-klassen in React Native) met de standaard Tailwind v3-palet. Er is geen eigen kleurconfig: `tailwind.config.js` legt alleen de lettertypen vast. De hex-waarden hieronder zijn de standaard Tailwind-waarden van de gebruikte klassen. Iconen en logo zijn gesampled uit de PNG's.

@@ -6,7 +6,7 @@ Mockups: Artifact "Clubalmanac stijlrichtingen" (privé, Wouter), versie 11 en l
 
 ## 1. Richting
 
-C+ is richting C (Foto voorop) met de inc-management-kleuren en de jaartallen uit richting B. Besluit van Wouter, 2026-10-25:
+C+ is richting C (Foto voorop) met een lime-sky-verloop en de jaartallen uit richting B. Besluit van Wouter, 2026-10-25:
 
 | Onderdeel | Keuze |
 |---|---|
@@ -142,7 +142,7 @@ Eén patroon, overal hetzelfde. Kleur is nooit het enige signaal: elke toestand 
 
 Een melding is een `surface`-vlak met een rand van 2 pt en een icoon van 26 pt in `danger` (fout) of `success` (bevestiging). Daarnaast staat een vette kop die zegt wat er gebeurde, met een tweede regel die zegt wat je kunt doen. De melding blijft staan tot de volgende actie: geen toast die vanzelf verdwijnt. VoiceOver leest hem voor zodra hij verschijnt. Geen emoji.
 
-Hulp-modals uit de oude app komen niet terug. De uitleg zit in de lege schermen en in de labels. Dat is een voorstel: Wouter kan het bij de review omdraaien.
+Hulp-modals uit de oude app komen niet terug (akkoord Wouter 2026-10-25). De uitleg zit in de lege schermen en in de labels.
 
 ## 7. Navigatie
 
@@ -176,7 +176,7 @@ Hulp-modals uit de oude app komen niet terug. De uitleg zit in de lege schermen 
 
 **Subscription-discipline.** Een stack houdt onderliggende schermen gemount, en tabs ook. Vertrouw daarom niet op een unmount-optie van de navigator. WP15 laat live queries afhangen van focus: niet-gefocuste schermen krijgen `"skip"` (Convex), en de app pauzeert bij `AppState !== 'active'`.
 
-**Overstap:** de app start nu via `index.ts` en `App.tsx`, zonder router. WP15 zet het entry-punt om. Daarbij blijven de WP13-schermen en hun tests werken (invariant 9).
+**Overstap:** de app start nu via `index.ts` en `App.tsx`, zonder router. WP15 zet het entry-punt om, met de routes in `app/src/app/` (Expo Router ondersteunt `src/app`). Zo ontstaat geen verwarrende map `app/app/`. Daarbij blijven de WP13-schermen en hun tests werken (invariant 9).
 
 ## 8. App-icoon
 
@@ -196,7 +196,7 @@ Een polaroid met een eend erin, opgebouwd in lagen voor Liquid Glass (iOS 26). D
 
 - De SVG-bron staat in de mockups (`lgIcon`).
 - Controleer in Icon Composer of de eend en het kaartje ook op 29 en 40 pt los van elkaar blijven.
-- Expo ondersteunt een `.icon`-bestand in `ios.icon` (SDK 54+). Stap 7 verifieert dat voor deze SDK.
+- **Werkwijze (akkoord Wouter):** de B-sessie levert de lagen als losse SVG's plus een 1024×1024-PNG zonder transparantie als terugval in `app.json`. Wouter bouwt daarmee het `.icon`-bestand in Icon Composer en controleert 29 en 40 pt. Expo ondersteunt een `.icon`-bestand in `ios.icon` (SDK 54+); B verifieert dat voor deze SDK en zet de verwijzing klaar.
 - De klassieke Polaroid-rand (onderaan breder) is merkrechtelijk beschermd. Voor een besloten app is dat geen probleem. Bij een publieke release: maak de rand rondom even breed.
 
 ## 9. Patronen voor schermen zonder mockup
