@@ -14,6 +14,8 @@ Elke feature-WP (15–21) bouwt zijn schermen in één herkenbare stijl en navig
 | Output | Mockups én thema-code én app-icoon in `app/` |
 | Dark mode | Ja, volgt de iOS-instelling |
 | iPad / landscape | Alleen "werkt", geen eigen layout |
+| Users | Vooral 50+ (invariant 11) |
+| Huisstijl en icoon | Beide laten zien: elke richting toont een icoon in het motief van het huidige (oranje/blauw, figuur) én een nieuw icoon. Wouter kiest bij stap 4. |
 
 ## Invarianten
 
@@ -27,6 +29,7 @@ Elke feature-WP (15–21) bouwt zijn schermen in één herkenbare stijl en navig
 8. **Mockups bevatten geen echte data.** Geen namen, foto's of groepen uit de dev-seed of de oude app. Ook niet in een artifact dat privé blijft.
 9. **WP13 blijft werken.** De bestaande schermen (login, statusschermen, home) krijgen het thema. Hun gedrag verandert niet, en de WP13-tests blijven groen.
 10. **De navigatiekeuze houdt de deur open** voor wat al vastligt: schermen die bij wegnavigeren unmounten (subscription-discipline, WP15), deep links op scheme `clubalmanac` en de login-link van WP22. Het design-doc kiest de navigatiebibliotheek met reden. WP15 installeert hem.
+11. **Ontworpen voor 50+.** Tabbalk-iconen hebben altijd een tekstlabel. Een handeling zit nooit alleen achter een gebaar (vegen, lang drukken). Er is altijd ook een zichtbare knop of menu-ingang. De basis-tekstgrootte en het contrast kiest het design-doc met die doelgroep in gedachten, niet de iOS-standaard als vanzelfsprekend.
 
 ## Edge cases + scope-uitsluitingen
 
@@ -93,8 +96,3 @@ Na stap 4 en 6 reviewt regie of de spec nog klopt.
   4. App-icoon op het beginscherm, licht en donker
   5. iPad of landscape → niets valt weg
   6. Ruimte voor bevindingen buiten deze stappen
-
-## Open vragen (Wouter, vóór stap 3)
-
-1. **Wie zijn de users?** Ongeveer welke leeftijd en hoe handig met techniek? Dat bepaalt de basis-tekstgrootte en hoeveel uitleg in de app staat.
-2. **Huisstijl en icoon.** Is er een logo of kleur om aan vast te houden? Houdt het nieuwe icoon het motief van het huidige (oranje/blauw, figuur), of mag het helemaal nieuw?
