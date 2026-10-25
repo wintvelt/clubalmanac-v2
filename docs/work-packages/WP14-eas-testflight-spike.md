@@ -11,7 +11,7 @@ Het tweede deel telt even zwaar als het eerste. Een geblokkeerde upload met een 
 ## Invarianten
 
 1. **App Store-identiteit blijft die van WP13.** Bundle ID `com.wintvelt.clubalmanac-app`, EAS project `bd5c6c93-059d-409f-bca5-f658ec5722d5`, versie 2.0.0, iPad aan, scheme `clubalmanac`. Deze WP wijzigt geen van die waarden.
-2. **Het buildnummer komt van de remote EAS-teller** en ligt boven de laatst gepubliceerde build van de oude app (38, of hoger als App Store Connect iets anders toont). Niemand zet het buildnummer met de hand in `app.json`.
+2. **Het buildnummer komt van de remote EAS-teller** en ligt boven 38, de laatste build van de oude app in App Store Connect (gecheckt door Wouter 2026-10-25). Niemand zet het buildnummer met de hand in `app.json`.
 3. **Eén Node-versie: 24.** Lokaal, op EAS en in CI bouwt alles met Node 24. Wie met een andere versie werkt, krijgt een duidelijke melding vooraf, niet een vage build-fout halverwege.
 4. **EAS bouwt uit de config, niet uit de lokale `ios/`-map.** `app/ios/` is gitignored prebuild-uitvoer. Een build op EAS mag niet afhangen van wat daar lokaal toevallig staat.
 5. **De omgeving van een build volgt uit de profielnaam.** De TestFlight-build van nu praat tegen dev (`glorious-pheasant-759`, `picked-quail-97`): prod bestaat nog niet. Een profiel dat "production" heet, krijgt nooit dev-waarden. Zo hoeft fase 5 alleen prod-waarden toe te voegen, niet profielen om te dopen.
@@ -85,10 +85,7 @@ Het tweede deel telt even zwaar als het eerste. Een geblokkeerde upload met een 
 | `owner` | Het Expo-account dat EAS project `bd5c6c93-…` nu bezit. De uitvoer-sessie leest het af, niet raden. |
 | CI-Node | Gaat mee naar 24 (invariant 3). |
 | TestFlight geblokkeerd | Alleen vastleggen. Regie beslist bij de closeout over een vervolg-WP. |
-
-## Open vraag (Wouter, vóór de uitvoer-sessie start)
-
-1. Is 1.6.0 (build 38) de laatst *goedgekeurde* versie in App Store Connect? Nog niet gecheckt. Is er een hogere build, dan geldt die voor invariant 2.
+| Laatste build in App Store Connect | 1.6.0 build 38, status "Removed from Sale". De hoogste TestFlight-build is ook 38, verlopen. Invariant 2: de nieuwe build krijgt een nummer boven 38. |
 
 ## Uitkomsten npm audit
 
