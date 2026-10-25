@@ -1,10 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { loginErrorMessage } from "../src/lib/loginErrors";
 
-// WP13 invariant 17 + acceptance-gate 4: leesbare foutmelding bij inloggen.
-// - Verkeerd wachtwoord en onbekend account: dezelfde melding (geen
-//   account-enumeratie; pariteit met de oude Cognito-app).
-// - Geblokkeerd / te veel pogingen: een eigen melding.
+// WP13 invariant 17 + acceptance-gate 4: leesbare foutmelding bij code-login.
+// - Elke oorzaak een eigen melding: onbekend adres, verkeerde code, verlopen
+//   code, te veel pogingen op de code, geblokkeerd account, rate-limit.
 // - Onbekende fout: algemene melding, nooit de ruwe Clerk-tekst.
 // - De functie gooit zelf nooit.
 
@@ -17,13 +16,18 @@ function clerkError(code: string, message = `Clerk says ${code}`) {
   };
 }
 
-const WRONG_PASSWORD = clerkError(
-  "form_password_incorrect",
-  "Password is incorrect. Try again, or use another method.",
-);
 const UNKNOWN_ACCOUNT = clerkError(
   "form_identifier_not_found",
   "Couldn't find your account.",
+);
+const WRONG_CODE = clerkError("form_code_incorrect", "Incorrect code");
+const EXPIRED_CODE = clerkError(
+  "verification_expired",
+  "This verification has expired. You must create a new one.",
+);
+const TOO_MANY_ATTEMPTS = clerkError(
+  "verification_failed",
+  "Too many failed attempts. You have to try again with the same or another method.",
 );
 const LOCKED = clerkError(
   "user_locked",
@@ -31,43 +35,68 @@ const LOCKED = clerkError(
 );
 const RATE_LIMITED = clerkError("too_many_requests", "Too many requests.");
 
-describe("loginErrorMessage", () => {
-  it("geeft een niet-lege melding bij een verkeerd wachtwoord", () => {
-    expect(loginErrorMessage(WRONG_PASSWORD).trim()).not.toBe("");
-  });
+const KNOWN = {
+  UNKNOWN_ACCOUNT,
+  WRONG_CODE,
+  EXPIRED_CODE,
+  TOO_MANY_ATTEMPTS,
+  LOCKED,
+  RATE_LIMITED,
+};
 
-  it("verraadt niet of het account bestaat", () => {
-    expect(loginErrorMessage(UNKNOWN_ACCOUNT)).toBe(
-      loginErrorMessage(WRONG_PASSWORD),
+const GENERIC = clerkError("brand_new_code", "Some brand new Clerk failure");
+
+describe("loginErrorMessage — een melding per oorzaak", () => {
+  for (const [name, err] of Object.entries(KNOWN)) {
+    it(`${name}: niet-lege melding, niet de Clerk-tekst`, () => {
+      const msg = loginErrorMessage(err);
+      expect(msg.trim()).not.toBe("");
+      expect(msg).not.toContain(err.errors[0]!.message);
+      expect(msg).not.toContain(err.errors[0]!.longMessage);
+    });
+  }
+
+  it("onbekend adres wordt gemeld, anders dan een verkeerde code", () => {
+    expect(loginErrorMessage(UNKNOWN_ACCOUNT)).not.toBe(
+      loginErrorMessage(WRONG_CODE),
     );
   });
 
-  it("geblokkeerd account krijgt een eigen melding", () => {
-    const locked = loginErrorMessage(LOCKED);
-    expect(locked.trim()).not.toBe("");
-    expect(locked).not.toBe(loginErrorMessage(WRONG_PASSWORD));
+  it("verlopen code: andere melding dan verkeerde code", () => {
+    expect(loginErrorMessage(EXPIRED_CODE)).not.toBe(
+      loginErrorMessage(WRONG_CODE),
+    );
   });
 
-  it("te veel pogingen krijgt een andere melding dan verkeerde gegevens", () => {
-    const limited = loginErrorMessage(RATE_LIMITED);
-    expect(limited.trim()).not.toBe("");
-    expect(limited).not.toBe(loginErrorMessage(WRONG_PASSWORD));
+  it("te veel pogingen op de code: andere melding dan verkeerde code", () => {
+    expect(loginErrorMessage(TOO_MANY_ATTEMPTS)).not.toBe(
+      loginErrorMessage(WRONG_CODE),
+    );
   });
 
-  it("onbekende Clerk-code: algemene melding, niet de ruwe tekst", () => {
-    const raw = "Some brand new Clerk failure";
-    const msg = loginErrorMessage(clerkError("brand_new_code", raw));
-    expect(msg.trim()).not.toBe("");
-    expect(msg).not.toContain(raw);
-    expect(msg).not.toBe(loginErrorMessage(WRONG_PASSWORD));
+  it("geblokkeerd account: andere melding dan verkeerde code", () => {
+    expect(loginErrorMessage(LOCKED)).not.toBe(loginErrorMessage(WRONG_CODE));
   });
 
-  it("toont nooit de Engelse Clerk-tekst van bekende codes", () => {
-    for (const err of [WRONG_PASSWORD, UNKNOWN_ACCOUNT, LOCKED, RATE_LIMITED]) {
-      const msg = loginErrorMessage(err);
-      expect(msg).not.toContain(err.errors[0]!.message);
-      expect(msg).not.toContain(err.errors[0]!.longMessage);
+  it("rate-limit: andere melding dan verkeerde code", () => {
+    expect(loginErrorMessage(RATE_LIMITED)).not.toBe(
+      loginErrorMessage(WRONG_CODE),
+    );
+  });
+
+  it("geen bekende oorzaak valt terug op de algemene melding", () => {
+    const generic = loginErrorMessage(GENERIC);
+    for (const err of Object.values(KNOWN)) {
+      expect(loginErrorMessage(err)).not.toBe(generic);
     }
+  });
+});
+
+describe("loginErrorMessage — onbekende en rare fouten", () => {
+  it("onbekende Clerk-code: algemene melding, niet de ruwe tekst", () => {
+    const msg = loginErrorMessage(GENERIC);
+    expect(msg.trim()).not.toBe("");
+    expect(msg).not.toContain("Some brand new Clerk failure");
   });
 
   it("netwerkfout (geen Clerk-fout) geeft een melding, niet de ruwe tekst", () => {
@@ -101,10 +130,10 @@ describe("loginErrorMessage", () => {
   it("gebruikt de eerste fout als Clerk er meerdere geeft", () => {
     const multi = {
       errors: [
-        { code: "form_password_incorrect", message: "x", longMessage: "x" },
+        { code: "form_code_incorrect", message: "x", longMessage: "x" },
         { code: "user_locked", message: "y", longMessage: "y" },
       ],
     };
-    expect(loginErrorMessage(multi)).toBe(loginErrorMessage(WRONG_PASSWORD));
+    expect(loginErrorMessage(multi)).toBe(loginErrorMessage(WRONG_CODE));
   });
 });
