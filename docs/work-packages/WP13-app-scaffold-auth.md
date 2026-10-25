@@ -69,13 +69,126 @@ Een bestaande user opent de nieuwe app op een iPhone (simulator), logt in met zi
 
 ---
 
-## Spec-criticus aanvullingen (A vult in)
+## Spec-criticus aanvullingen (A, 2026-10-25)
 
-A leest de oude app (login-flow, `app.json`) + bovenstaande spec en vult hier aan:
+Bron: oude app `../DEV/clubalmanac-app` (Expo 47, Amplify/Cognito), `app.json`, `eas.json` en de meegeleverde `.ipa`. De oude login was volledig client-side Cognito; de AWS-backend speelt geen rol in deze flow.
 
-- Ontbrekende invarianten / edge cases in de login-flow
-- Versie + buildnummer van de laatst gepubliceerde oude app (voor invariant 8)
-- **Pariteit-checklist voor heel Track A**: alle schermen van de oude app, per scherm het gedrag in een paar regels, gekoppeld aan een WP uit [`README.md`](./README.md). Schermen die niet in een WP passen, apart melden. Dit wordt het afvinklijstje voor WP15-WP21.
-- Open product-vragen voor regie/Wouter
+### Invariant 8: versie en build
 
-(Leeg in draft.)
+| Gegeven | Waarde | Bron |
+|---|---|---|
+| Laatst gebouwde versie | **1.6.0**, build **38** | `build-1679776789329.ipa` (25-03-2023), `app.json` |
+| Buildnummer-beheer | `appVersionSource: "remote"`: EAS houdt de teller bij, niet `app.json` | `eas.json` |
+| App Store Connect app-ID | `1663038609` | `eas.json` §submit (nodig in WP14) |
+| iPad | `supportsTablet: true` | `app.json` |
+
+- Nieuwe app: versie **2.0.0** (hoger dan 1.6.0, en een nieuwe app). Buildnummer via dezelfde remote EAS-teller van project `bd5c6c93-…`. Die komt dan vanzelf boven 38.
+- Niet bewezen: dat 1.6.0 ook de laatst *goedgekeurde* versie is. De `.ipa` bewijst alleen dat hij gebouwd is. Wouter checkt dit in App Store Connect vóór WP14.
+- **Nieuwe invariant 8a: iPad-ondersteuning blijft aan.** Een update mag geen apparaten laten vallen die de vorige versie ondersteunde. App Store Connect weigert zo'n build. Dus `supportsTablet` blijft `true`, ook al ligt de focus op iPhone.
+- **Nieuwe invariant 8b: URL-scheme blijft `clubalmanac`.** De oude app opende links als `clubalmanac://invites/<id>`. WP13 gebruikt ze nog niet, maar het scheme ligt hiermee vast.
+
+### Aanvullende invarianten
+
+10. **Er zijn vijf toestanden, niet drie.** Naast de drie van invariant 4:
+    - *laden*: Clerk of Convex weet het nog niet. Kort, met een indicator.
+    - *Convex weigert het token*: Clerk is ingelogd, maar Convex accepteert het token niet. Oorzaken: Clerk-instance en Convex-deployment horen niet bij elkaar, of de JWT-template `convex` ontbreekt. Ook dit is een zichtbare foutmelding: geen eindeloze spinner, en niet "ingelogd zonder rij". Dit is de runtime-vangst voor een verkeerde env-combinatie (invariant 7 vangt alleen *ontbrekende* waarden).
+11. **Uitloggen kan in élke ingelogde toestand**, ook in "ingelogd zonder rij" en "Convex weigert token". Anders zit de user vast in een sessie zonder uitweg.
+12. **"Ingelogd zonder rij" lost zichzelf op.** `users.current` is live. Maakt de webhook de rij alsnog aan, dan gaat het scherm vanzelf naar "ingelogd met rij", zonder herstart of opnieuw inloggen.
+13. **Geen data van de vorige user.** Log in als A, log uit, log in als B: het scherm toont nooit, ook niet heel kort, de naam van A. Als Clerk uitgelogd is, wint dat altijd van gecachte Convex-data.
+14. **Geen geheimen in de app-bundel.** Alles met `EXPO_PUBLIC_` komt leesbaar in de app. Een Clerk *secret* key (`sk_…`) in plaats van de publishable key moet de app weigeren bij de start. De foutmelding toont de waarde niet.
+15. **Geen test-inloggegevens in de app.** De oude app had in de dev-build knoppen met hardcoded e-mail + wachtwoord. Dat nemen we niet over: ook niet achter een dev-vlag, ook niet voor de dev-accounts.
+16. **Inloggen roept alleen lees-functies aan.** WP13 roept geen `recordVisit` aan (dat is WP15). Anders schrijft inloggen `lastVisitAt` en breekt invariant 9.
+17. **Foutmeldingen verraden niet of een account bestaat.** Bij een verkeerd wachtwoord en bij een onbekend e-mailadres toont de app dezelfde melding. Zo deed de oude app het ook (Cognito: "Email of wachtwoord is niet correct"). Een geblokkeerd account (te veel pogingen) krijgt wél een eigen melding: de oude app meldde "15 minuten geblokkeerd". Een onbekende fout toont een algemene NL-melding, nooit de ruwe Engelse Clerk-tekst.
+
+### Edge cases bij inloggen
+
+- **Inloggen is niet altijd in één stap klaar.** Na een correct wachtwoord kan Clerk een extra stap eisen. Dat hangt af van de instance-instellingen (bijvoorbeeld een e-mailcode op een nieuw toestel, of MFA). Elke simulator en elke telefoon bij cutover is een nieuw toestel. Een poging die niet "klaar" is, is een eigen toestand: of de app ondersteunt de stap, of hij toont een duidelijke melding. Nooit stil blijven hangen. B checkt de instellingen van de dev-instance; zie open vraag 1.
+- **E-mailadres invoeren.** Spaties voor of achter het adres halen we weg. Geen autocorrectie of hoofdletter aan het begin (de oude app had die ook uit).
+- **Dubbel tikken op "Log in"** start geen tweede poging terwijl de eerste loopt.
+- **Geen netwerk**: een leesbare melding, geen crash.
+- **Env-vars en Expo.** Expo neemt een `EXPO_PUBLIC_`-var alleen in de build op bij letterlijke toegang (`process.env.EXPO_PUBLIC_X`). Een dynamische lookup levert `undefined` in de build. Door invariant 7 crasht de app dan bij de start. Dat is luid, maar wel verwarrend.
+- **Twee kopieën van `convex`.** De app importeert `convex/_generated` uit de root. Die bestanden lossen `convex/*` op vanuit de root-`node_modules`, terwijl de app zijn eigen `convex` heeft. Daarom bestaat invariant 2, en de test hieronder bewaakt hem via de lockfiles.
+- **Root niet als npm-workspace.** Is de root een workspace met `app/` erin, dan installeert root-`npm ci` heel Expo/React Native mee, en dat breekt invariant 3. `app/` krijgt dus een eigen `package.json` + lockfile.
+
+### Contract voor A's tests (pure logica)
+
+Tests staan in `app/tests/`. Ze draaien met vitest in Node, zonder React Native, via `npm test` in `app/`. CI draait in `app/`: typecheck + test, naast de bestaande root-stappen. De root-vitest pakt `app/tests/` niet op: de include `tests/**` geldt vanaf de root.
+
+| Module | Signatuur | Pint |
+|---|---|---|
+| `app/src/lib/env.ts` | `parseClientEnv(env: { EXPO_PUBLIC_CONVEX_URL?: string; EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY?: string }): { convexUrl: string; clerkPublishableKey: string }` | Invarianten 7 en 14. Gooit een `Error` die elke ontbrekende of ongeldige var bij naam noemt. Convex-URL: `https`, host eindigt op `.convex.cloud` (niet `.convex.site`, dat is de HTTP-actions-host). Clerk-key: begint met `pk_test_` of `pk_live_`. |
+| `app/src/lib/authState.ts` | `deriveAuthState(input: { clerkLoaded: boolean; clerkSignedIn: boolean; convexAuthLoading: boolean; convexAuthenticated: boolean; currentUser: undefined \| null \| object }): "loading" \| "signedOut" \| "convexAuthFailed" \| "noUserRow" \| "ready"` | Invarianten 4, 10 en 13. `currentUser` volgt de `useQuery`-conventie: `undefined` = laadt, `null` = geen rij. |
+| `app/src/lib/loginErrors.ts` | `loginErrorMessage(error: unknown): string` | Invariant 17. Input = wat Clerk gooit: een object met `errors: [{ code, message, longMessage }]`, of iets anders. Gooit zelf nooit. |
+| (geen module) | `app/tests/convexVersion.test.ts` | Invariant 2: de `convex`-versie in `app/package-lock.json` is gelijk aan die in de root-`package-lock.json`. |
+
+De Clerk-errorcodes in de tests: `form_password_incorrect`, `form_identifier_not_found`, `user_locked`, `too_many_requests`. B checkt ze tegen de Clerk-versie die hij vastzet.
+
+### Ops-runbook (aanvulling op B's entry in `external-services.md`)
+
+- De namen van de env-vars liggen vast: `EXPO_PUBLIC_CONVEX_URL` en `EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY`. Lokaal in `app/.env.local`, gitignored. De root-`.gitignore` dekt `.env.local` al in submappen; B checkt dat met `git check-ignore`.
+- Clerk-dashboard: de Native API moet aan staan voor Expo (Configure → Native applications). Zet ook de instellingen voor de extra stap van open vraag 1 in het runbook.
+
+### Pariteit-checklist Track A
+
+Per scherm het gedrag van de oude app, in het kort. "Backend?" = iets dat B of de A van dat WP in `convex/` moet nagaan; dit is geen vaststelling dat het ontbreekt.
+
+**Zonder login**
+
+| Scherm (oude naam) | Gedrag | WP |
+|---|---|---|
+| Inloggen | E-mail + wachtwoord. Melding bij verkeerde gegevens, geblokkeerd account en algemene fout. Links naar "wachtwoord vergeten" en "ik heb een uitnodiging". Tabbalk: inloggen / uitnodiging / info. | **WP13** |
+| Vergeten | E-mail → resetcode per mail → "Nieuw wachtwoord". Ook "ik heb al een code". | reset-WP (TBD) |
+| Nieuw wachtwoord | E-mail + code + nieuw wachtwoord (min. 8 tekens), "code opnieuw sturen". Na succes direct ingelogd. Deep link `newPassword/:email/:code`. | reset-WP (TBD) |
+| Berichten | Uitnodigingscode invoeren → uitnodiging ophalen → "Uitnodiging". Foutmodaal bij een ongeldige of verlopen code. Link naar "e-mail bevestigen". | WP19 |
+| Uitnodiging | Brief: van wie, bericht, groepscover. Accepteren → aanmelden; afwijzen. Deep link `invites/:inviteId`. | WP19 |
+| Aanmelden | Code, naam, e-mail, nieuw wachtwoord, opt-in → "E-mail bevestigen". | WP19 |
+| E-mail bevestigen | E-mail + code. Bug in de oude app: "code opnieuw sturen" riep wachtwoord-reset aan. Niet overnemen. | WP19 |
+| Account maken | Cognito-flow voor accounts die de beheerder aanmaakte (tijdelijk wachtwoord → naam + nieuw wachtwoord). | vervalt; vervangen door Clerk-activatie (fase 5, zie open vraag 2) |
+| Info / Over ons / Algemene voorwaarden / Privacy | App-naam en -versie, statische teksten. Privacy werd opgehaald van de oude API (`/info/privacy/nl`). | WP15. Backend? privacytekst |
+| Probleem | E-mail en naam (optioneel), omschrijving, opt-in. Stuurt het lokale logbestand mee. Werkt ook zonder login. | WP20. Backend? melding zonder login |
+
+**Met login**
+
+| Scherm (oude naam) | Gedrag | WP |
+|---|---|---|
+| Tabbalk | Home (laatst bezochte groep, anders "Mijn groepen"), Mijn foto's, + (nieuwe foto's met de huidige groep/album als context), Profiel, Instellingen. In landscape een inklapbaar menu. | WP15 |
+| Startscherm | Opent de laatst bezochte groep. Die voorkeur staat lokaal, per user. | WP15/16 |
+| Hulpteksten | Eenmalige uitleg-modals (fotolijst, eigen foto, gemelde foto, groep, home). Per user lokaal onthouden, aan/uit in Instellingen. | WP15 of designstap |
+| Mijn groepen | Groepen gesorteerd op datum, zonder openstaande uitnodigingen. Kaart: cover, naam, "sinds jaar", aantal leden, badge met nieuwe foto's. "Nieuwe groep". | WP16 |
+| Groep (tabs) | Albums · Films (alleen hardcoded premium-groepen) · Leden. Admin extra: Cover · Uitnodigen. Header met naam, omschrijving, opgericht, leden/albums/foto's. | WP16 |
+| Groep → Albums | Albums gesorteerd, badge met nieuwe foto's. Lege staat verschilt voor admin en gast. "Nieuw album" alleen voor admin. | WP16/17 |
+| Groep → Leden | Secties uitgenodigd / admins / gasten, op naam. Labels "Eigenaar" en "Me". Menu per lid: groep verlaten, admin/gast maken, eigenaarschap overdragen, verwijderen, uitnodiging intrekken. Telkens met bevestiging. | WP16. Backend? eigenaar overdragen |
+| Groep → Cover | Naam, omschrijving, datum, cover (uploaden of kiezen uit groepsfoto's). Knop "groep verwijderen" voor de eigenaar deed in de oude app niets. | WP16 |
+| Groep → Uitnodigen | Verzendlijst opbouwen (naam, e-mail, als admin). Weigert dubbele adressen en bestaande leden. Bericht erbij, verzenden. | WP19 |
+| Nieuwe groep / Kies cover | Naam, omschrijving, optionele cover / foto kiezen uit albums van de groep. | WP16 |
+| Foto's (album) | Raster, cover bovenaan, markering voor nieuwe en eigen foto's. Tik → detail, lang drukken → foto-modal. Meervoudige selectie → selectiemenu. Kaart-knop. "Bewerk album" alleen voor admin. Deep link `photos/:groupId/:albumId`. | WP17 |
+| Foto detail | Swipen door de lijst, zoom, eigenaar + datum, "staat in deze albums", foto-menu. | WP17. Backend? albums per foto |
+| Foto-modal / foto-menu | Delen, als album- of groepscover (admin), als profielfoto, uit album halen (eigenaar), draaien (eigenaar/admin), locatie (eigenaar/admin), melden als ongepast (niet-eigenaar), overal verwijderen (eigenaar). | WP17 (melden: WP20) |
+| Selectiemenu | Voor meerdere foto's: aan album toevoegen (alleen eigen), uit album halen (admin), verwijderen (eigen), melden (niet-eigen). Met voortgangsteller. | WP17/18/20 |
+| Foto bewerken | Draaien links/rechts en spiegelen, opslaan via `photos.rotate` (WP8-contract). | WP17 |
+| Bewerk album / Nieuw album / Kies album | Naam, datum, cover. Verwijderen alleen door de groepseigenaar, met bevestiging. Kies album: albums per groep, "nieuw album"-tegel bij admin-groepen, geselecteerde foto's toevoegen. | WP17 |
+| Nieuwe foto's | Toestemming fotobibliotheek (met link naar Instellingen bij weigering), meerdere foto's kiezen (geen video), album kiezen, upload met teller voor klaar en fouten, "ga naar album" / "meer foto's". | WP18 |
+| Mijn foto's | Eigen foto's per album plus "Ongepubliceerde foto's". Markering bij gemelde foto's. Selectie. Deep link `myphotos`. | WP17 |
+| Kaart | Foto's met GPS als geclusterde markers. Foto's zonder locatie in een aparte stapel. Adres bij een marker. | **geen WP** |
+| Foto locatie | Pin verslepen om de locatie van een foto te zetten, opslaan. | **geen WP** |
+| Film | Videospeler, geluid ook in de stille modus. Lijst en covers hardcoded; volledige films alleen voor één groep. | WP21 |
+| Profiel | Header: naam, avatar, lid sinds, aantal foto's. E-mail, "laatste bezoek". Menu: meldingen beoordelen (webmaster, als er iets openstaat), groepen, uitnodigingen, mijn gemelde foto's (met badge), profiel aanpassen, wachtwoord aanpassen, uitloggen, account verwijderen. | WP15 (+19/20) |
+| Profiel bewerken | Naam + avatar (uploaden of verwijderen). | WP15 |
+| Wachtwoord aanpassen | Huidig + nieuw wachtwoord. | reset-WP (TBD) |
+| Account verwijderen | Uitleg (definitief, lidmaatschappen en foto's weg). Wachtwoord opnieuw invoeren, verwijderen, uitloggen. | **geen WP** (backend `users.deleteSelf` bestaat) |
+| Uitnodigingen / Uitgenodigd | Lijst met openstaande uitnodigingen + code handmatig invoeren. Accepteren (groep wordt home, ga naar groep) of afwijzen. Melding "uitnodiging voor iemand anders". | WP19 |
+| Ongepast / Review ongepast | Eigen gemelde foto's: bezwaar maken of verwijderen. Webmaster: lijst met bezwaren bovenaan, goedkeuren of afwijzen. | WP20 |
+| Instellingen | Home-groep wissen, hulpteksten aan/uit, app-versie, links naar info, voorwaarden, privacy en probleem melden (naam en e-mail vooraf ingevuld). | WP15 |
+
+**Bewust niet overnemen:** de dev-knoppen met wachtwoorden (invariant 15), de hardcoded premium-groep-ID's (WP21 kiest een andere bron), de lege knop "groep verwijderen", de verkeerde "code opnieuw sturen".
+
+### Open vragen voor regie / Wouter
+
+1. **Extra stap na het wachtwoord.** Eist de Clerk-instance een e-mailcode op een nieuw toestel (of MFA)? Zo ja: ondersteunt WP13 die stap, of zet je hem uit? Bij cutover is elke telefoon een nieuw toestel, dus "uitzetten" weegt veiligheid af tegen 16 frustraties op dag 1.
+2. **Hoe komen de bestaande users aan een wachtwoord?** Cognito-wachtwoorden gaan niet mee. Fase 5 rekent op Clerk-uitnodigingen. Te verifiëren: een Clerk-*invitation* levert pas een user-ID op als de genodigde hem accepteert. Fase 5 gaat ervan uit dat de ID's vóór de data-import bekend zijn. Valt dit tegen, dan is "users vooraf aanmaken via de Users-API + wachtwoord-reset" het alternatief. Dan moet de reset-WP vóór de cutover klaar zijn.
+3. **Wachtwoord vergeten** hoort hoe dan ook vóór de cutover: het is de enige route voor wie de activatie-mail kwijt is.
+4. **Ratings hebben geen scherm in de oude app.** De backend had ze wel (en Convex ook). Is WP19 "ratings" een nieuwe feature, of vervalt hij?
+5. **"Laatste bezoek" op het profiel.** De oude backend bewaarde per dag het vorige bezoek (`visitDatePrev`) en toonde dat. Convex heeft alleen `lastVisitAt`, en `recordVisit` overschrijft die. Tonen we dit nog (WP15)?
+6. **Kaart, foto-locatie en account verwijderen** vallen in geen enkel WP.
+7. **Invite-links.** De backend mailt `https://…/invite/<token>` (`CLUBALMANAC_APP_URL`). De oude app gebruikte `clubalmanac://invites/<id>`. WP19 kiest: universal links naar de app, of eerst de webapp (Track B).
+8. **DEV-label.** Wil je in niet-prod builds een zichtbaar "DEV"-label (afgeleid van `pk_test_`), als extra vangnet bij invariant 7? Niet gepind.
