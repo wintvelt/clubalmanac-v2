@@ -110,12 +110,12 @@ Bron: oude app `../DEV/clubalmanac-app` (Expo 47, Amplify/Cognito), `app.json`, 
 14. **Geen geheimen in de app-bundel.** Alles met `EXPO_PUBLIC_` komt leesbaar in de app. Een Clerk *secret* key (`sk_…`) in plaats van de publishable key moet de app weigeren bij de start. De foutmelding toont de waarde niet.
 15. **Geen test-inloggegevens in de app.** De oude app had in de dev-build knoppen met hardcoded e-mail + wachtwoord. Dat nemen we niet over. Ook geen vooringevulde `+clerk_test`-adressen of vaste testcode, niet achter een dev-vlag en niet voor de dev-accounts.
 16. **Inloggen roept alleen lees-functies aan.** WP13 roept geen `recordVisit` aan (dat is WP15). Anders schrijft inloggen `lastVisitAt` en breekt invariant 9.
-17. **Een eigen melding per oorzaak.** Onbekend e-mailadres (bij de e-mailstap), verkeerde code, verlopen code, te veel pogingen en een geblokkeerd account krijgen elk een eigen NL-melding. Een onbekende fout toont een algemene NL-melding, nooit de ruwe Engelse Clerk-tekst. Het onbekende e-mailadres melden we wél: anders wacht iemand met een tikfout op een mail die nooit komt. Bij een besloten club van 16 leden weegt dat zwaarder dan verbergen wie lid is.
+17. **De app verraadt niet of een e-mailadres bij een account hoort.** Na de e-mailstap ziet de user bij een bekend en een onbekend adres hetzelfde: het code-scherm met een neutrale melding ("als dit adres bij ons bekend is, krijg je een code; komt er niets, controleer het adres"). Dat geldt ook als Clerk toch `form_identifier_not_found` teruggeeft. De bescherming van Clerk tegen enumeratie blijft aan; de app is het tweede slot. Verkeerde code, verlopen code, te veel pogingen en een geblokkeerd account krijgen wél elk een eigen NL-melding. Een onbekende fout toont een algemene NL-melding, nooit de ruwe Engelse Clerk-tekst.
 20. **Naar Mail en terug breekt de login niet.** De user verlaat de app om de code te lezen. Komt hij terug, dan staat het code-scherm er nog, voor hetzelfde e-mailadres. De app vraagt bij terugkomst nooit uit zichzelf een nieuwe code aan: dan klopt de code in de mail niet meer.
 
 ### Edge cases bij inloggen
 
-- **Twee stappen.** Stap 1: e-mailadres → Clerk stuurt een code. Stap 2: code invoeren. Vanaf stap 2 kan de user terug naar stap 1 om een ander adres te kiezen.
+- **Twee stappen.** Stap 1: e-mailadres → Clerk stuurt een code. Stap 2: code invoeren. Vanaf stap 2 kan de user terug naar stap 1 om een ander adres te kiezen. Het code-scherm toont het ingevoerde adres, zodat een tikfout opvalt; bij een onbekend adres komt er immers geen mail en geen foutmelding.
 - **Code opnieuw sturen.** Vanaf het code-scherm. De app meldt dat er een nieuwe code onderweg is en dat alleen de nieuwste code werkt. Clerk begrenst hoe vaak dat mag; de melding daarvan valt onder invariant 17.
 - **Code plakken of laten invullen.** iOS kan een code uit Mail zelf voorstellen boven het toetsenbord. Het invoerveld staat dat toe (veld voor eenmalige codes, cijfertoetsenbord). Geplakte tekst met spaties of een streepje ("123 456") werkt ook. Dit is ook de opstap voor invariant 19.
 - **Inloggen is na de code niet altijd klaar.** Geeft Clerk na een juiste code nog een vervolgstap terug (bv. een tweede factor als iemand die ooit aanzet), dan is dat een zichtbare melding. Nooit stil blijven hangen.
@@ -134,16 +134,16 @@ Tests staan in `app/tests/`. Ze draaien met vitest in Node, zonder React Native,
 |---|---|---|
 | `app/src/lib/env.ts` | `parseClientEnv(env: { EXPO_PUBLIC_CONVEX_URL?: string; EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY?: string }): { convexUrl: string; clerkPublishableKey: string }` | Invarianten 7 en 14. Gooit een `Error` die elke ontbrekende of ongeldige var bij naam noemt. Convex-URL: `https`, host eindigt op `.convex.cloud` (niet `.convex.site`, dat is de HTTP-actions-host). Clerk-key: begint met `pk_test_` of `pk_live_`. |
 | `app/src/lib/authState.ts` | `deriveAuthState(input: { clerkLoaded: boolean; clerkSignedIn: boolean; convexAuthLoading: boolean; convexAuthenticated: boolean; currentUser: undefined \| null \| object }): "loading" \| "signedOut" \| "convexAuthFailed" \| "noUserRow" \| "ready"` | Invarianten 4, 10 en 13. `currentUser` volgt de `useQuery`-conventie: `undefined` = laadt, `null` = geen rij. |
-| `app/src/lib/loginErrors.ts` | `loginErrorMessage(error: unknown): string` | Invariant 17. Input = wat Clerk gooit: een object met `errors: [{ code, message, longMessage }]`, of iets anders. Gooit zelf nooit. |
+| `app/src/lib/loginErrors.ts` | `loginErrorMessage(error: unknown): string` en `emailStepResult(error: unknown): { kind: "codeScreen" } \| { kind: "error"; message: string }` | Invariant 17. Input = wat Clerk gooit: een object met `errors: [{ code, message, longMessage }]`, of iets anders (`undefined` = geen fout). `emailStepResult` beslist na de e-mailstap: geen fout en een onbekend account geven allebei `codeScreen`; andere fouten geven `error` met de melding van `loginErrorMessage`. Gooien zelf nooit. |
 | `app/src/lib/loginCode.ts` | `normalizeLoginCode(input: string): string \| null` | Invariant 19 + plakken. Geeft de 6 cijfers terug als de invoer na het weghalen van spaties, streepjes en regeleinden precies 6 cijfers is; anders `null`. Raadt niet uit langere tekst. |
 | (geen module) | `app/tests/convexVersion.test.ts` | Invariant 2: de `convex`-versie in `app/package-lock.json` is gelijk aan die in de root-`package-lock.json`. |
 
-De Clerk-errorcodes in de tests: `form_identifier_not_found`, `form_code_incorrect`, `verification_expired`, `verification_failed`, `user_locked`, `too_many_requests`. B checkt ze tegen de Clerk-versie die hij vastzet. Staat in Clerk de bescherming tegen account-enumeratie aan, dan meldt Clerk een onbekend adres niet als fout; B zet die uit (invariant 17) en noemt dat in het runbook.
+De Clerk-errorcodes in de tests: `form_identifier_not_found` (mag niet zichtbaar worden), `form_code_incorrect`, `verification_expired`, `verification_failed`, `user_locked`, `too_many_requests`. B checkt ze tegen de Clerk-versie die hij vastzet.
 
 ### Ops-runbook (aanvulling op B's entry in `external-services.md`)
 
 - De namen van de env-vars liggen vast: `EXPO_PUBLIC_CONVEX_URL` en `EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY`. Lokaal in `app/.env.local`, gitignored. De root-`.gitignore` dekt `.env.local` al in submappen; B checkt dat met `git check-ignore`.
-- Clerk-dashboard: de Native API moet aan staan voor Expo (Configure → Native applications). E-mailcode als enige inlogmethode, wachtwoord uit, enumeratie-bescherming uit.
+- Clerk-dashboard: de Native API moet aan staan voor Expo (Configure → Native applications). E-mailcode als enige inlogmethode, wachtwoord uit, bescherming tegen enumeratie aan.
 
 ### Pariteit-checklist Track A
 

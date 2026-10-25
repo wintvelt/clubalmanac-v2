@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { loginErrorMessage } from "../src/lib/loginErrors";
+import { emailStepResult, loginErrorMessage } from "../src/lib/loginErrors";
 
 // WP13 invariant 17 + acceptance-gate 4: leesbare foutmelding bij code-login.
-// - Elke oorzaak een eigen melding: onbekend adres, verkeerde code, verlopen
-//   code, te veel pogingen op de code, geblokkeerd account, rate-limit.
+// - Geen account-enumeratie: na de e-mailstap is een onbekend adres niet te
+//   onderscheiden van een bekend adres (emailStepResult → codeScreen).
+// - Elke andere oorzaak een eigen melding: verkeerde code, verlopen code, te
+//   veel pogingen op de code, geblokkeerd account, rate-limit.
 // - Onbekende fout: algemene melding, nooit de ruwe Clerk-tekst.
 // - De functie gooit zelf nooit.
 
@@ -36,7 +38,6 @@ const LOCKED = clerkError(
 const RATE_LIMITED = clerkError("too_many_requests", "Too many requests.");
 
 const KNOWN = {
-  UNKNOWN_ACCOUNT,
   WRONG_CODE,
   EXPIRED_CODE,
   TOO_MANY_ATTEMPTS,
@@ -55,12 +56,6 @@ describe("loginErrorMessage — een melding per oorzaak", () => {
       expect(msg).not.toContain(err.errors[0]!.longMessage);
     });
   }
-
-  it("onbekend adres wordt gemeld, anders dan een verkeerde code", () => {
-    expect(loginErrorMessage(UNKNOWN_ACCOUNT)).not.toBe(
-      loginErrorMessage(WRONG_CODE),
-    );
-  });
 
   it("verlopen code: andere melding dan verkeerde code", () => {
     expect(loginErrorMessage(EXPIRED_CODE)).not.toBe(
@@ -135,5 +130,50 @@ describe("loginErrorMessage — onbekende en rare fouten", () => {
       ],
     };
     expect(loginErrorMessage(multi)).toBe(loginErrorMessage(WRONG_CODE));
+  });
+});
+
+describe("emailStepResult — geen account-enumeratie (invariant 17)", () => {
+  it("geen fout: door naar het code-scherm", () => {
+    expect(emailStepResult(undefined)).toEqual({ kind: "codeScreen" });
+  });
+
+  it("onbekend account: precies hetzelfde als geen fout", () => {
+    expect(emailStepResult(UNKNOWN_ACCOUNT)).toEqual(
+      emailStepResult(undefined),
+    );
+  });
+
+  it("loginErrorMessage heeft geen eigen melding voor een onbekend account", () => {
+    // Komt de fout toch ergens langs, dan alleen de algemene melding.
+    expect(loginErrorMessage(UNKNOWN_ACCOUNT)).toBe(loginErrorMessage(GENERIC));
+  });
+
+  it("onbekend account: geen melding die het verraadt", () => {
+    const result = emailStepResult(UNKNOWN_ACCOUNT);
+    expect(result).not.toHaveProperty("message");
+  });
+
+  it("andere fouten bij de e-mailstap: melding van loginErrorMessage", () => {
+    for (const err of [RATE_LIMITED, LOCKED, GENERIC]) {
+      expect(emailStepResult(err)).toEqual({
+        kind: "error",
+        message: loginErrorMessage(err),
+      });
+    }
+  });
+
+  it("netwerkfout bij de e-mailstap: melding, geen code-scherm", () => {
+    const err = new TypeError("Network request failed");
+    expect(emailStepResult(err)).toEqual({
+      kind: "error",
+      message: loginErrorMessage(err),
+    });
+  });
+
+  it("gooit nooit, ook niet bij rare input", () => {
+    for (const input of [null, "x", 42, {}, { errors: [null] }]) {
+      expect(() => emailStepResult(input)).not.toThrow();
+    }
   });
 });
