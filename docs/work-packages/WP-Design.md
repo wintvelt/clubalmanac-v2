@@ -57,7 +57,7 @@ Elke feature-WP (15–21) bouwt zijn schermen in één herkenbare stijl en navig
 | Stap | Wie | Output | Toegang |
 |---|---|---|---|
 | 1. Draft-spec | regie | dit doc | — |
-| 2. Screenshots oude app | Wouter | screenshots van de vijf kernschermen + tabbalk (1.6.0 staat nog op zijn telefoon), in `docs/design/oude-app/`. Echte namen en foto's onherkenbaar maken of weglaten. | — |
+| 2. Screenshots oude app | Wouter | screenshots van de vijf kernschermen + tabbalk (1.6.0 staat nog op zijn telefoon), in `docs/design/oude-app/`. Die map is gitignored: de repo is publiek en de screenshots tonen echte clubleden en foto's. | — |
 | 3. Twee à drie richtingen | design-sessie, fresh | mockups (artifact) + korte toelichting per richting. Elke richting houdt invariant 1 aan. | spec + screenshots, geen oude code |
 | 4. Keuze | Wouter | één richting, met aanpassingen | — |
 | 5. Toegankelijkheidscheck | fresh criticus | rapport in chat: contrast, tekstgrootte, aanraakvlakken van de gekozen richting | spec + mockups, geen code |

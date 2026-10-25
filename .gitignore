@@ -47,3 +47,6 @@ coverage/
 
 # Claude Code local settings (kan user-specifiek zijn)
 .claude/settings.local.json
+
+# WP-Design: screenshots oude app met echte data, niet committen (repo is publiek)
+docs/design/oude-app/
