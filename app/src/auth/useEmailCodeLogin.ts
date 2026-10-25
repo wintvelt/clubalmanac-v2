@@ -17,11 +17,20 @@ export type LoginStep =
   | { step: "email" }
   | { step: "code"; email: string };
 
+// Welke actie een melding opleverde. Het scherm zet de melding direct onder
+// die actie.
+export type LoginAction = "send" | "verify" | "resend" | "changeEmail";
+
+export type LoginFeedback = {
+  action: LoginAction;
+  kind: "error" | "info";
+  text: string;
+};
+
 export type EmailCodeLogin = {
   step: LoginStep;
   busy: boolean;
-  error: string | null;
-  info: string | null;
+  feedback: LoginFeedback | null;
   sendCode: (email: string) => Promise<void>;
   submitCode: (rawCode: string) => Promise<void>;
   resendCode: () => Promise<void>;
@@ -46,8 +55,7 @@ export function useEmailCodeLogin(): EmailCodeLogin {
       : { step: "email" },
   );
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [info, setInfo] = useState<string | null>(null);
+  const [feedback, setFeedback] = useState<LoginFeedback | null>(null);
 
   // Clerk kende het adres niet (alleen zichtbaar als Clerks eigen
   // enumeratie-bescherming uit staat). De user ziet hetzelfde als bij een
@@ -57,28 +65,38 @@ export function useEmailCodeLogin(): EmailCodeLogin {
   // Een tweede tik terwijl de eerste loopt doet niets. Bij "stuur code" zou
   // een tweede verzoek de eerste code ongeldig maken.
   const inFlight = useRef(false);
-  const run = useCallback(async (action: () => Promise<void>) => {
-    if (inFlight.current) return;
-    inFlight.current = true;
-    setBusy(true);
-    setError(null);
-    setInfo(null);
-    try {
-      await action();
-    } catch (e) {
-      setError(loginErrorMessage(e));
-    } finally {
-      inFlight.current = false;
-      setBusy(false);
-    }
-  }, []);
+  const run = useCallback(
+    async (
+      action: LoginAction,
+      body: (report: {
+        fail: (text: string) => void;
+        note: (text: string) => void;
+      }) => Promise<void>,
+    ) => {
+      if (inFlight.current) return;
+      inFlight.current = true;
+      setBusy(true);
+      setFeedback(null);
+      const fail = (text: string) => setFeedback({ action, kind: "error", text });
+      const note = (text: string) => setFeedback({ action, kind: "info", text });
+      try {
+        await body({ fail, note });
+      } catch (e) {
+        fail(loginErrorMessage(e));
+      } finally {
+        inFlight.current = false;
+        setBusy(false);
+      }
+    },
+    [],
+  );
 
   const sendCode = useCallback(
     (rawEmail: string) =>
-      run(async () => {
+      run("send", async ({ fail }) => {
         const email = rawEmail.trim();
         if (email === "") {
-          setError(EMPTY_EMAIL_ERROR);
+          fail(EMPTY_EMAIL_ERROR);
           return;
         }
         const { error: clerkError } = await signIn.emailCode.sendCode({
@@ -86,7 +104,7 @@ export function useEmailCodeLogin(): EmailCodeLogin {
         });
         const result = emailStepResult(clerkError ?? undefined);
         if (result.kind === "error") {
-          setError(result.message);
+          fail(result.message);
           return;
         }
         unknownAccount.current = isUnknownAccountError(clerkError);
@@ -97,51 +115,51 @@ export function useEmailCodeLogin(): EmailCodeLogin {
 
   const submitCode = useCallback(
     (rawCode: string) =>
-      run(async () => {
+      run("verify", async ({ fail }) => {
         const code = normalizeLoginCode(rawCode);
         if (code === null) {
-          setError(CODE_FORMAT_ERROR);
+          fail(CODE_FORMAT_ERROR);
           return;
         }
         if (unknownAccount.current) {
-          setError(LOGIN_MESSAGES.wrongCode);
+          fail(LOGIN_MESSAGES.wrongCode);
           return;
         }
         const verified = await signIn.emailCode.verifyCode({ code });
         if (verified.error) {
-          setError(loginErrorMessage(verified.error));
+          fail(loginErrorMessage(verified.error));
           return;
         }
         // Na een juiste code kan Clerk nog een stap vragen (bv. een tweede
         // factor). Dat is een zichtbare melding, geen stille hang.
         if (signIn.status !== "complete") {
-          setError(UNFINISHED_ERROR);
+          fail(UNFINISHED_ERROR);
           return;
         }
         const finalized = await signIn.finalize();
-        if (finalized.error) setError(loginErrorMessage(finalized.error));
+        if (finalized.error) fail(loginErrorMessage(finalized.error));
       }),
     [run, signIn],
   );
 
   const resendCode = useCallback(
     () =>
-      run(async () => {
+      run("resend", async ({ fail, note }) => {
         if (!unknownAccount.current) {
           const { error: clerkError } = await signIn.emailCode.sendCode();
           if (clerkError) {
-            setError(loginErrorMessage(clerkError));
+            fail(loginErrorMessage(clerkError));
             return;
           }
         }
-        setInfo(RESENT_INFO);
+        note(RESENT_INFO);
       }),
     [run, signIn],
   );
 
   const changeEmail = useCallback(
     () =>
-      run(async () => {
+      run("changeEmail", async () => {
         unknownAccount.current = false;
         await signIn.reset();
         setStep({ step: "email" });
@@ -149,5 +167,5 @@ export function useEmailCodeLogin(): EmailCodeLogin {
     [run, signIn],
   );
 
-  return { step, busy, error, info, sendCode, submitCode, resendCode, changeEmail };
+  return { step, busy, feedback, sendCode, submitCode, resendCode, changeEmail };
 }
