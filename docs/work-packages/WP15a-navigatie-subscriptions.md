@@ -209,3 +209,12 @@ Tests staan in `app/tests/`, net als bij WP13: vitest in Node, zonder React Nati
 2. **Nederlandse paden** (`/mijn-fotos`, `/instellingen/over`). Ze zijn niet zichtbaar voor de user, maar liggen vast zodra er links in mails staan. Akkoord?
 3. **Pauzeren bij `inactive`** volgt de spec letterlijk. Elke keer dat iemand het Bedieningspaneel opent, draait de query van het scherm daarna één keer opnieuw. Klein, maar zichtbaar in het dashboard.
 4. **Hoe lang een Clerk-sessie geldig blijft**, staat in het Clerk-dashboard, niet in de app. Dat bepaalt hoe vaak een 50+-user opnieuw moet inloggen. Graag nagaan vóór de cutover; niet in 15a.
+
+### Besluiten Wouter op A's open vragen (2026-11-02)
+
+| Vraag | Besluit |
+|---|---|
+| 1. Tab wisselen | Onthouden (iOS). Tik op de actieve tab = naar het begin. |
+| 2. Nederlandse paden | Akkoord |
+| 3. Pauzeren bij `inactive` | Ja: alles behalve `active` pauzeert |
+| 4. Duur Clerk-sessie | Naar fase 5 (T-4 weken, prod-Clerk-config), niet in 15a |
