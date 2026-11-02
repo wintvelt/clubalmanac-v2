@@ -2,7 +2,8 @@
 // altijd (besluit K1: geen escalatie naar convexAuthFailed). De tekst zegt wat
 // er echt aan de hand is: zonder netwerk geen internet, met netwerk een server
 // die niet antwoordt. Een poging die blijft hangen, eindigt na een vaste
-// time-out weer in de melding met knoppen.
+// time-out weer in de melding met knoppen. De poort meet die time-out met één
+// timer en geeft een vlag (F16), geen duur.
 
 export const RECONNECT_TIMEOUT_MS = 15_000;
 
@@ -18,9 +19,10 @@ export function reconnectView(input: {
   // null = onbekend, en dat telt als offline.
   online: boolean | null;
   retrying: boolean;
-  retryingForMs: number;
+  // De poging loopt langer dan RECONNECT_TIMEOUT_MS.
+  retryTimedOut: boolean;
 }): ReconnectView {
-  if (input.retrying && input.retryingForMs < RECONNECT_TIMEOUT_MS) {
+  if (input.retrying && !input.retryTimedOut) {
     return { kind: "busy", title: "Verbinden…", message: "", retry: "busy", signOut: "enabled" };
   }
   if (input.online !== true) {

@@ -55,8 +55,8 @@ export function Screen({
 }
 
 function ReconnectingState() {
-  const { online, retrying, retryingForMs, retry } = useReconnect();
-  const view = reconnectView({ online, retrying, retryingForMs });
+  const { online, retrying, retryTimedOut, retry } = useReconnect();
+  const view = reconnectView({ online, retrying, retryTimedOut });
   const retryButton = (
     <SmallButton title="Opnieuw" onPress={retry} disabled={view.retry === "busy"} />
   );

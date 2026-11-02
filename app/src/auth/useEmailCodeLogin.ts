@@ -1,6 +1,7 @@
 import { useSignIn } from "@clerk/expo";
 import { useCallback, useRef, useState } from "react";
 import { normalizeLoginCode } from "../lib/loginCode";
+import { resumeClerkStorage } from "./deviceClerkStorage";
 import {
   emailStepResult,
   isUnknownAccountError,
@@ -80,6 +81,10 @@ export function useEmailCodeLogin(): EmailCodeLogin {
       const fail = (text: string) => setFeedback({ action, kind: "error", text });
       const note = (text: string) => setFeedback({ action, kind: "info", text });
       try {
+        // Na een wis (uitloggen, WP15a F13) bewaart de opslag niets. Een
+        // login heft dat op vóór zijn eerste verzoek, anders raakt Clerk het
+        // nieuwe client-token en dus de poging kwijt.
+        await resumeClerkStorage();
         await body({ fail, note });
       } catch (e) {
         fail(loginErrorMessage(e));

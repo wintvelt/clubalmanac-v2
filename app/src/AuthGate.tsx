@@ -3,6 +3,7 @@ import { useConvexAuth } from "convex/react";
 import { router, usePathname } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { StyleSheet, View } from "react-native";
+import { wipeClerkStorage } from "./auth/deviceClerkStorage";
 import { SignOutButton } from "./auth/SignOutButton";
 import { Button } from "./components/Button";
 import { Text } from "./components/Text";
@@ -10,17 +11,19 @@ import { api } from "./convexApi";
 import { AuthStateContext, ReconnectContext } from "./data/authStateContext";
 import { useRestartClerk } from "./data/clerkRestart";
 import { useConvexConnection } from "./data/convexConnection";
-import { useResumeSession } from "./data/resumeSession";
 import { useAppState } from "./data/useAppState";
 import { useSessionQuery } from "./data/useLiveQuery";
 import { useOnline } from "./data/online";
 import { RECONNECT_TIMEOUT_MS } from "./lib/reconnectView";
 import { routeAccess } from "./lib/routeAccess";
 import { authRetryDue, deriveSessionState, type SessionState } from "./lib/sessionState";
+import { startupFailedView } from "./lib/startupFailedView";
 import {
+  clerkRestartDue,
   deriveStartupState,
   STARTUP_TIMEOUT_MS,
   startupRetryDue,
+  type ClerkStatus,
   type GateState,
 } from "./lib/startupState";
 import { StatusScreen } from "./screens/StatusScreen";
@@ -54,16 +57,23 @@ export function AuthGate({ children }: { children: ReactNode }) {
   const sticky = useStickyReconnecting(derived, session.clerkSignedIn);
   const { retrying } = sticky;
   // F12: "laden" duurt nooit langer dan de time-out.
-  const loading = useElapsed(sticky.state === "loading", STARTUP_TIMEOUT_MS);
+  const loading = useTimeout(sticky.state === "loading", STARTUP_TIMEOUT_MS);
+  const clerkStatus = useClerk().status;
   const state = deriveStartupState({
     session: sticky.state,
-    clerkStatus: useClerk().status,
+    clerkStatus,
     clerkSignedIn: session.clerkSignedIn,
-    loadingForMs: loading.ms,
+    loadingTimedOut: loading.timedOut,
   });
-  const { retryingForMs, retry } = useRetryTimer(retrying, retryConnection);
-  useRetryOnReturn(state, online, retry, useRestartClerk());
-  useResumeSession();
+  const { retryTimedOut, retry } = useRetryTimer(retrying, retryConnection);
+  useRetryOnReturn({
+    state,
+    online,
+    clerkStatus,
+    clerkSignedIn: session.clerkSignedIn,
+    retry,
+    restartClerk: useRestartClerk(),
+  });
 
   const pathname = usePathname();
   const access = routeAccess(pathname, state);
@@ -75,12 +85,12 @@ export function AuthGate({ children }: { children: ReactNode }) {
   }, [access, pathname]);
 
   const reconnect = useMemo(
-    () => ({ online, retrying, retryingForMs, retry }),
-    [online, retrying, retryingForMs, retry],
+    () => ({ online, retrying, retryTimedOut, retry }),
+    [online, retrying, retryTimedOut, retry],
   );
 
   // Zonder Clerk weet de app niet of er een sessie is: geen navigator.
-  if (state === "startupFailed") return <StartupFailedScreen online={online} />;
+  if (state === "startupFailed") return <StartupFailedScreen online={online} clerkStatus={clerkStatus} />;
 
   switch (access) {
     case "wait":
@@ -131,22 +141,20 @@ function useStickyReconnecting(
   return { state: retrying ? "reconnecting" : derived, retrying };
 }
 
-// Hoe lang is `active` al waar? Begint bij elke overgang naar waar opnieuw,
-// en met `restart` ook tussendoor. Bij de time-out rendert de poort opnieuw.
-function useElapsed(active: boolean, timeoutMs: number): { ms: number; restart: () => void } {
-  const [startedAt, setStartedAt] = useState<number | null>(null);
-  const [, setTimedOut] = useState(0);
-  if (active && startedAt === null) setStartedAt(Date.now());
-  if (!active && startedAt !== null) setStartedAt(null);
+// Is `active` al langer dan de time-out waar (F16)? Eén timer per periode,
+// geen klok: springt de klok, dan loopt de time-out toch één keer af. Een
+// nieuwe periode begint bij elke overgang naar waar, en met `restart`.
+function useTimeout(active: boolean, timeoutMs: number): { timedOut: boolean; restart: () => void } {
+  const [period, setPeriod] = useState(0);
+  const [expired, setExpired] = useState<number | null>(null);
+  if (!active && expired !== null) setExpired(null);
   useEffect(() => {
-    if (startedAt === null) return;
-    const left = startedAt + timeoutMs - Date.now();
-    if (left <= 0) return;
-    const timer = setTimeout(() => setTimedOut((n) => n + 1), left);
+    if (!active) return;
+    const timer = setTimeout(() => setExpired(period), timeoutMs);
     return () => clearTimeout(timer);
-  }, [startedAt, timeoutMs]);
-  const restart = useCallback(() => setStartedAt(Date.now()), []);
-  return { ms: startedAt === null ? 0 : Date.now() - startedAt, restart };
+  }, [active, period, timeoutMs]);
+  const restart = useCallback(() => setPeriod((p) => p + 1), []);
+  return { timedOut: active && expired === period, restart };
 }
 
 // Hoe lang loopt de huidige poging al (F8)? Elke nieuwe poging begint een
@@ -154,53 +162,75 @@ function useElapsed(active: boolean, timeoutMs: number): { ms: number; restart: 
 function useRetryTimer(
   retrying: boolean,
   retryConnection: () => void,
-): { retryingForMs: number; retry: () => void } {
-  const { ms, restart } = useElapsed(retrying, RECONNECT_TIMEOUT_MS);
+): { retryTimedOut: boolean; retry: () => void } {
+  const { timedOut, restart } = useTimeout(retrying, RECONNECT_TIMEOUT_MS);
   const retry = useCallback(() => {
     restart();
     retryConnection();
   }, [restart, retryConnection]);
-  return { retryingForMs: ms, retry };
+  return { retryTimedOut: timedOut, retry };
 }
 
 // Opnieuw proberen zodra de app actief en online wordt, vanuit een moment
-// waarop dat niet zo was: na "startupFailed" Clerk opnieuw starten (F12), in
-// "reconnecting" een nieuw Convex-token. Alleen bij een wissel van AppState of
-// netwerk, dus nooit in een lus. Het netwerk wordt boven Clerk gemeten
-// (src/data/online.tsx): na een herstart van Clerk is er geen nieuwe wissel.
-function useRetryOnReturn(
-  state: GateState,
-  online: boolean | null,
-  retry: () => void,
-  restartClerk: () => void,
-) {
+// waarop dat niet zo was: na "startupFailed" Clerk opnieuw starten (F12), na
+// een start uit de cache zonder sessie ook (F14), in "reconnecting" een nieuw
+// Convex-token. Alleen bij een wissel van AppState of netwerk, dus nooit in
+// een lus. Het netwerk wordt boven Clerk gemeten (src/data/online.tsx): na een
+// herstart van Clerk is er geen nieuwe wissel.
+function useRetryOnReturn(input: {
+  state: GateState;
+  online: boolean | null;
+  clerkStatus: ClerkStatus;
+  clerkSignedIn: boolean;
+  retry: () => void;
+  restartClerk: () => void;
+}) {
+  const { online, retry, restartClerk } = input;
   const appState = useAppState();
   const before = useRef({ appState, online });
-  const stateNow = useRef(state);
-  stateNow.current = state;
+  const latest = useRef(input);
+  latest.current = input;
   useEffect(() => {
     const now = { appState, online };
-    const s = stateNow.current;
-    if (startupRetryDue({ state: s, before: before.current, now })) restartClerk();
-    else if (s !== "startupFailed" && authRetryDue({ state: s, before: before.current, now })) retry();
+    const { state, clerkStatus, clerkSignedIn } = latest.current;
+    const was = before.current;
     before.current = now;
+    if (startupRetryDue({ state, before: was, now })) restartClerk();
+    else if (clerkRestartDue({ clerkStatus, clerkSignedIn, before: was, now })) restartClerk();
+    else if (state !== "startupFailed" && authRetryDue({ state, before: was, now })) retry();
   }, [appState, online, retry, restartClerk]);
 }
 
-// F12: Clerk start niet. "Opnieuw" mount Clerk opnieuw (App.tsx).
-function StartupFailedScreen({ online }: { online: boolean | null }) {
+// F12, F15: Clerk start niet. "Opnieuw" mount Clerk opnieuw (App.tsx). De
+// uitweg wist alles lokaal (F13) en start Clerk opnieuw, zonder signOut: Clerk
+// is niet geladen. Daarna volgt het inlogscherm.
+function StartupFailedScreen({
+  online,
+  clerkStatus,
+}: {
+  online: boolean | null;
+  clerkStatus: ClerkStatus;
+}) {
   const restartClerk = useRestartClerk();
+  const view = startupFailedView({ online, clerkStatus });
+  const [resetting, setResetting] = useState(false);
+  const reset = () => {
+    setResetting(true);
+    void wipeClerkStorage().finally(() => {
+      setResetting(false);
+      restartClerk();
+    });
+  };
   return (
-    <StatusScreen
-      error
-      title="De app kan nu niet starten"
-      message={
-        online === true
-          ? "De server is niet bereikbaar. Tik op \"Opnieuw\"."
-          : "Er is geen internet. De app probeert het opnieuw zodra er netwerk is."
-      }
-    >
+    <StatusScreen error title={view.title} message={view.message}>
       <Button title="Opnieuw" onPress={restartClerk} />
+      <Button
+        title="Opnieuw inloggen"
+        busyTitle="Gegevens wissen…"
+        variant="secondary"
+        onPress={reset}
+        busy={resetting}
+      />
     </StatusScreen>
   );
 }

@@ -9,19 +9,19 @@ export function useAuthState(): SessionState {
   return useContext(AuthStateContext);
 }
 
-// In "reconnecting" (F1, F8): netwerk, of er een poging loopt en hoe lang al,
-// en hoe start je er een.
+// In "reconnecting" (F1, F8, F16): netwerk, of er een poging loopt en of die
+// over zijn time-out is, en hoe start je er een.
 export type Reconnect = {
   online: boolean | null;
   retrying: boolean;
-  retryingForMs: number;
+  retryTimedOut: boolean;
   retry: () => void;
 };
 
 export const ReconnectContext = createContext<Reconnect>({
   online: null,
   retrying: false,
-  retryingForMs: 0,
+  retryTimedOut: false,
   retry: () => {},
 });
 

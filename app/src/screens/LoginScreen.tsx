@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Image, StyleSheet, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useTokenWipeFailed, wipeStoredTokens } from "../auth/tokenCache";
+import { useClerkWipeFailed, wipeClerkStorage } from "../auth/deviceClerkStorage";
 import {
   useEmailCodeLogin,
   type LoginAction,
@@ -140,11 +140,11 @@ function Feedback({
   return <Notice kind={feedback.kind === "error" ? "error" : "success"} message={feedback.text} />;
 }
 
-// Het wissen na uitloggen mislukte (zie wipeStoredTokens). De uitlog-knop is
+// Het wissen na uitloggen mislukte (zie wipeClerkStorage). De uitlog-knop is
 // dan al weg; de melding staat bovenaan, en een nieuwe poging meldt zich
 // direct onder "Opnieuw wissen".
 function TokenWipeNotice() {
-  const wipeFailed = useTokenWipeFailed();
+  const wipeFailed = useClerkWipeFailed();
   const [retryFailed, setRetryFailed] = useState(false);
   if (!wipeFailed) return null;
   return (
@@ -158,7 +158,7 @@ function TokenWipeNotice() {
         tone="action"
         onPress={() => {
           setRetryFailed(false);
-          void wipeStoredTokens().then((ok) => setRetryFailed(!ok));
+          void wipeClerkStorage().then((ok) => setRetryFailed(!ok));
         }}
       />
       {retryFailed && <Notice kind="error" message="Wissen lukt nog steeds niet." />}
