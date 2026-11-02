@@ -418,6 +418,15 @@ describe("groups.update", () => {
         createdAt: Date.now(),
       });
     });
+    // WP24 (A-keuze 2): een groep-cover staat in een album van die groep.
+    const albumId = await withUser(t, "user_admin").mutation(
+      api.albums.create,
+      { groupId, name: "A" },
+    );
+    await withUser(t, "user_admin").mutation(api.albums.addPhoto, {
+      albumId,
+      photoId,
+    });
 
     await withUser(t, "user_admin").mutation(api.groups.update, {
       groupId,

@@ -91,6 +91,15 @@ describe("P2: cover query joint photo-data fresh", () => {
       api.photos.create,
       { storageId, locationLabel: "Oud" },
     );
+    // WP24 (A-keuze 2): een groep-cover staat in een album van die groep.
+    const albumId = await withUser(t, "user_admin").mutation(
+      api.albums.create,
+      { groupId, name: "Album" },
+    );
+    await withUser(t, "user_admin").mutation(api.albums.addPhoto, {
+      albumId,
+      photoId,
+    });
     await withUser(t, "user_admin").mutation(api.groups.update, {
       groupId,
       coverPhotoId: photoId,
@@ -127,6 +136,11 @@ describe("P2: cover query joint photo-data fresh", () => {
       api.photos.create,
       { storageId, locationLabel: "Oud" },
     );
+    // WP24 (A-keuze 2): een album-cover staat in dat album.
+    await withUser(t, "user_admin").mutation(api.albums.addPhoto, {
+      albumId,
+      photoId,
+    });
     await withUser(t, "user_admin").mutation(api.albums.update, {
       albumId,
       coverPhotoId: photoId,

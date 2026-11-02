@@ -198,10 +198,17 @@ describe("M1: removeMember cascade albumPhotos in déze group", () => {
       { storageId },
     );
 
-    // Carol publiceert Bob's foto (addedBy=Carol, ownerId=Bob)
-    await withUser(t, "user_carol").mutation(api.albums.addPhoto, {
-      albumId,
-      photoId: bobPhoto,
+    // Carol publiceert Bob's foto (addedBy=Carol, ownerId=Bob). Sinds WP24
+    // (A-keuze 1) kan dat niet meer via albums.addPhoto (alleen de eigenaar);
+    // de rij wordt direct geseed om de owner-filter van M1 te blijven pinnen.
+    await t.run(async (ctx) => {
+      await ctx.db.insert("albumPhotos", {
+        albumId,
+        photoId: bobPhoto,
+        groupId,
+        addedAt: Date.now(),
+        addedBy: carolId,
+      });
     });
 
     await withUser(t, "user_alice").mutation(api.groups.removeMember, {
@@ -254,10 +261,16 @@ describe("M1: removeMember cascade albumPhotos in déze group", () => {
       { storageId },
     );
 
-    // Bob publiceert Carol's foto (addedBy=Bob, ownerId=Carol)
-    await withUser(t, "user_bob").mutation(api.albums.addPhoto, {
-      albumId,
-      photoId: carolPhoto,
+    // Bob publiceert Carol's foto (addedBy=Bob, ownerId=Carol). Sinds WP24
+    // (A-keuze 1) kan dat niet meer via albums.addPhoto; direct geseed.
+    await t.run(async (ctx) => {
+      await ctx.db.insert("albumPhotos", {
+        albumId,
+        photoId: carolPhoto,
+        groupId,
+        addedAt: Date.now(),
+        addedBy: bobId,
+      });
     });
 
     await withUser(t, "user_alice").mutation(api.groups.removeMember, {

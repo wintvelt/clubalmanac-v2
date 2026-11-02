@@ -16,6 +16,7 @@ import type { Id } from "../../convex/_generated/dataModel";
 import { api, internal } from "../../convex/_generated/api";
 import schema from "../../convex/schema";
 import { registerUserWithInvite, withUser } from "../_helpers/auth";
+import { shareInGroup } from "../_helpers/access";
 
 const INFO_SENDER = "info@clubalmanac.com";
 const WEBMASTER_EMAIL = "webmaster@x.com";
@@ -69,12 +70,19 @@ async function flaggedAppealedPhoto(
   const ownerName = "Alice Owner";
   const ownerEmail = "owner@x.com";
   await registerUserWithInvite(t, "user_owner", ownerEmail, ownerName);
-  await registerUserWithInvite(t, "user_flagger", "flagger@x.com", "Flag F");
+  const flaggerId = await registerUserWithInvite(
+    t,
+    "user_flagger",
+    "flagger@x.com",
+    "Flag F",
+  );
   const storageId = await t.run((ctx) => ctx.storage.store(new Blob(["x"])));
   const photoId = await withUser(t, "user_owner").mutation(
     api.photos.create,
     { storageId },
   );
+  // WP24: melden vereist foto-toegang.
+  await shareInGroup(t, photoId, [flaggerId]);
   await withUser(t, "user_flagger").mutation(api.photos.flag, { photoId });
   await withUser(t, "user_owner").mutation(api.photos.appeal, { photoId });
   return { photoId, ownerEmail, ownerName };

@@ -2,6 +2,7 @@ import { convexTest } from "convex-test";
 import { describe, expect, it, vi } from "vitest";
 import { api, internal } from "../../convex/_generated/api";
 import schema from "../../convex/schema";
+import { shareInGroup } from "../_helpers/access";
 
 // Cascade matrix rows P3, P4, P5, P7 — cat-3 cascade deletes (en
 // selectief patches) vanuit photos.remove. Plus storage cleanup via
@@ -189,6 +190,9 @@ describe("P4: photos.remove cascade ratings", () => {
 });
 
 describe("P5: photos.remove clear cover-refs", () => {
+  // WP24: covers worden hier direct geseed. De cover-regel (A-keuze 2) is
+  // geen onderwerp van deze cascade-tests; P5 moet ook covers wissen die
+  // niet aan die regel voldoen (v1-data).
   it("clear groups.coverPhotoId wanneer deze photo cover was", async () => {
     const t = convexTest(schema);
     await registerUser(t, "user_admin", "admin@x.com");
@@ -202,9 +206,8 @@ describe("P5: photos.remove clear cover-refs", () => {
       api.photos.create,
       { storageId },
     );
-    await withUser(t, "user_admin").mutation(api.groups.update, {
-      groupId,
-      coverPhotoId: photoId,
+    await t.run(async (ctx) => {
+      await ctx.db.patch(groupId, { coverPhotoId: photoId });
     });
 
     await withUser(t, "user_admin").mutation(api.photos.remove, { photoId });
@@ -230,9 +233,8 @@ describe("P5: photos.remove clear cover-refs", () => {
       api.photos.create,
       { storageId },
     );
-    await withUser(t, "user_admin").mutation(api.albums.update, {
-      albumId,
-      coverPhotoId: photoId,
+    await t.run(async (ctx) => {
+      await ctx.db.patch(albumId, { coverPhotoId: photoId });
     });
 
     await withUser(t, "user_admin").mutation(api.photos.remove, { photoId });
@@ -260,9 +262,8 @@ describe("P5: photos.remove clear cover-refs", () => {
       { storageId: s2 },
     );
 
-    await withUser(t, "user_admin").mutation(api.groups.update, {
-      groupId,
-      coverPhotoId: cover2,
+    await t.run(async (ctx) => {
+      await ctx.db.patch(groupId, { coverPhotoId: cover2 });
     });
 
     // delete cover1 — cover van groep moet cover2 blijven
@@ -296,17 +297,14 @@ describe("P5: photos.remove clear cover-refs", () => {
       { storageId },
     );
 
-    await withUser(t, "user_admin").mutation(api.groups.update, {
-      groupId: groupA,
-      coverPhotoId: photoId,
+    await t.run(async (ctx) => {
+      await ctx.db.patch(groupA, { coverPhotoId: photoId });
     });
-    await withUser(t, "user_admin").mutation(api.groups.update, {
-      groupId: groupB,
-      coverPhotoId: photoId,
+    await t.run(async (ctx) => {
+      await ctx.db.patch(groupB, { coverPhotoId: photoId });
     });
-    await withUser(t, "user_admin").mutation(api.albums.update, {
-      albumId: albumA,
-      coverPhotoId: photoId,
+    await t.run(async (ctx) => {
+      await ctx.db.patch(albumA, { coverPhotoId: photoId });
     });
 
     await withUser(t, "user_admin").mutation(api.photos.remove, { photoId });
@@ -351,13 +349,11 @@ describe("P5: photos.remove clear cover-refs", () => {
       { storageId: sB },
     );
 
-    await withUser(t, "user_admin").mutation(api.albums.update, {
-      albumId: albumX,
-      coverPhotoId: photoA,
+    await t.run(async (ctx) => {
+      await ctx.db.patch(albumX, { coverPhotoId: photoA });
     });
-    await withUser(t, "user_admin").mutation(api.albums.update, {
-      albumId: albumY,
-      coverPhotoId: photoB,
+    await t.run(async (ctx) => {
+      await ctx.db.patch(albumY, { coverPhotoId: photoB });
     });
 
     await withUser(t, "user_admin").mutation(api.photos.remove, {
@@ -408,13 +404,15 @@ describe("photos.remove op geflagde photo (audit-9 §8.4)", () => {
     try {
       const t = convexTest(schema);
       const aliceId = await registerUser(t, "user_alice", "a@x.com");
-      await registerUser(t, "user_bob", "b@x.com");
+      const bobId = await registerUser(t, "user_bob", "b@x.com");
 
       const storageId = await uploadStorage(t);
       const photoId = await withUser(t, "user_alice").mutation(
         api.photos.create,
         { storageId },
       );
+      // WP24: melden vereist foto-toegang.
+      await shareInGroup(t, photoId, [bobId]);
 
       // Bob flagt alice's photo — flag-state op photo gezet.
       await withUser(t, "user_bob").mutation(api.photos.flag, { photoId });

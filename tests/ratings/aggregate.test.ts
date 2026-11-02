@@ -2,9 +2,14 @@ import { convexTest } from "convex-test";
 import { describe, expect, it } from "vitest";
 import { api , internal } from "../../convex/_generated/api";
 import schema from "../../convex/schema";
+import type { Id } from "../../convex/_generated/dataModel";
+import { shareInGroup } from "../_helpers/access";
 
 // Cascade matrix row R1: rating upsert/remove herrekent transactioneel
 // photo.ratingAverage + photo.ratingCount. Cat-2 transactional aggregate.
+//
+// WP24: beoordelen vereist foto-toegang. Raters worden via registerRater
+// lid van een groep waarin de foto staat.
 
 const ISSUER = "https://picked-quail-97.clerk.accounts.dev";
 
@@ -47,11 +52,22 @@ async function setupPhotoOwnedBy(
   return photoId;
 }
 
+async function registerRater(
+  t: ReturnType<typeof convexTest>,
+  photoId: Id<"photos">,
+  subject: string,
+  email: string,
+) {
+  const userId = await registerUser(t, subject, email);
+  await shareInGroup(t, photoId, [userId]);
+  return userId;
+}
+
 describe("R1: ratings.upsert herrekent aggregate", () => {
   it("eerste rating zet ratingCount=1 en ratingAverage=value", async () => {
     const t = convexTest(schema);
     const photoId = await setupPhotoOwnedBy(t, "user_alice");
-    await registerUser(t, "user_bob", "b@x.com");
+    await registerRater(t, photoId, "user_bob", "b@x.com");
 
     await withUser(t, "user_bob").mutation(api.ratings.upsert, {
       photoId,
@@ -66,9 +82,9 @@ describe("R1: ratings.upsert herrekent aggregate", () => {
   it("meerdere ratings → gemiddelde correct", async () => {
     const t = convexTest(schema);
     const photoId = await setupPhotoOwnedBy(t, "user_alice");
-    await registerUser(t, "user_bob", "b@x.com");
-    await registerUser(t, "user_carol", "c@x.com");
-    await registerUser(t, "user_dan", "d@x.com");
+    await registerRater(t, photoId, "user_bob", "b@x.com");
+    await registerRater(t, photoId, "user_carol", "c@x.com");
+    await registerRater(t, photoId, "user_dan", "d@x.com");
 
     await withUser(t, "user_bob").mutation(api.ratings.upsert, {
       photoId,
@@ -94,9 +110,9 @@ describe("R1: ratings.upsert herrekent aggregate", () => {
     // schema-legaal. Dekt non-integer pad: 3 + 4 + 4 = 11 / 3 ≈ 3.6666...
     const t = convexTest(schema);
     const photoId = await setupPhotoOwnedBy(t, "user_alice");
-    await registerUser(t, "user_bob", "b@x.com");
-    await registerUser(t, "user_carol", "c@x.com");
-    await registerUser(t, "user_dan", "d@x.com");
+    await registerRater(t, photoId, "user_bob", "b@x.com");
+    await registerRater(t, photoId, "user_carol", "c@x.com");
+    await registerRater(t, photoId, "user_dan", "d@x.com");
 
     await withUser(t, "user_bob").mutation(api.ratings.upsert, {
       photoId,
@@ -119,7 +135,7 @@ describe("R1: ratings.upsert herrekent aggregate", () => {
   it("update bestaande rating herrekent gemiddelde", async () => {
     const t = convexTest(schema);
     const photoId = await setupPhotoOwnedBy(t, "user_alice");
-    await registerUser(t, "user_bob", "b@x.com");
+    await registerRater(t, photoId, "user_bob", "b@x.com");
 
     await withUser(t, "user_bob").mutation(api.ratings.upsert, {
       photoId,
@@ -140,8 +156,8 @@ describe("R1: ratings.remove herrekent aggregate", () => {
   it("verlaagt count en herrekent gemiddelde", async () => {
     const t = convexTest(schema);
     const photoId = await setupPhotoOwnedBy(t, "user_alice");
-    await registerUser(t, "user_bob", "b@x.com");
-    await registerUser(t, "user_carol", "c@x.com");
+    await registerRater(t, photoId, "user_bob", "b@x.com");
+    await registerRater(t, photoId, "user_carol", "c@x.com");
 
     await withUser(t, "user_bob").mutation(api.ratings.upsert, {
       photoId,
@@ -162,7 +178,7 @@ describe("R1: ratings.remove herrekent aggregate", () => {
   it("laatste rating weg → ratingCount=0, ratingAverage=undefined", async () => {
     const t = convexTest(schema);
     const photoId = await setupPhotoOwnedBy(t, "user_alice");
-    await registerUser(t, "user_bob", "b@x.com");
+    await registerRater(t, photoId, "user_bob", "b@x.com");
 
     await withUser(t, "user_bob").mutation(api.ratings.upsert, {
       photoId,

@@ -2,6 +2,7 @@ import { convexTest } from "convex-test";
 import { describe, expect, it } from "vitest";
 import { api , internal } from "../../convex/_generated/api";
 import schema from "../../convex/schema";
+import { shareInGroup } from "../_helpers/access";
 
 // FL2 — photos.flag mutation. Bron: oude AWS handler
 // blob-images-api-photos/handlersPhoto/flagPhoto.js (regel 10-29):
@@ -13,6 +14,9 @@ import schema from "../../convex/schema";
 // flaggedDeleteDate (nieuw, B implementeert via schema-uitbreiding).
 //
 // 14d countdown const: zie flagPhoto.js regel 8 (DELETE_DAYS = 14).
+//
+// WP24: melden vereist foto-toegang. De melders krijgen die via
+// shareInGroup; de gates zelf staan in tests/writeGates/flag.test.ts.
 
 const ISSUER = "https://picked-quail-97.clerk.accounts.dev";
 const DELETE_DAYS = 14;
@@ -75,12 +79,13 @@ describe("photos.flag — non-owner only", () => {
   it("foto van andere user flaggen lukt en zet alle flag-velden", async () => {
     const t = convexTest(schema);
     const aliceId = await registerUser(t, "user_alice", "a@x.com");
-    await registerUser(t, "user_bob", "b@x.com");
+    const bobId = await registerUser(t, "user_bob", "b@x.com");
     const storageId = await uploadStorage(t);
     const photoId = await withUser(t, "user_alice").mutation(
       api.photos.create,
       { storageId },
     );
+    await shareInGroup(t, photoId, [bobId]);
 
     const before = Date.now();
     await withUser(t, "user_bob").mutation(api.photos.flag, { photoId });
@@ -102,12 +107,13 @@ describe("photos.flag — non-owner only", () => {
   it("flagReason wordt opgeslagen wanneer meegegeven", async () => {
     const t = convexTest(schema);
     await registerUser(t, "user_alice", "a@x.com");
-    await registerUser(t, "user_bob", "b@x.com");
+    const bobId = await registerUser(t, "user_bob", "b@x.com");
     const storageId = await uploadStorage(t);
     const photoId = await withUser(t, "user_alice").mutation(
       api.photos.create,
       { storageId },
     );
+    await shareInGroup(t, photoId, [bobId]);
 
     await withUser(t, "user_bob").mutation(api.photos.flag, {
       photoId,
@@ -121,12 +127,13 @@ describe("photos.flag — non-owner only", () => {
   it("flagReason is optioneel", async () => {
     const t = convexTest(schema);
     await registerUser(t, "user_alice", "a@x.com");
-    await registerUser(t, "user_bob", "b@x.com");
+    const bobId = await registerUser(t, "user_bob", "b@x.com");
     const storageId = await uploadStorage(t);
     const photoId = await withUser(t, "user_alice").mutation(
       api.photos.create,
       { storageId },
     );
+    await shareInGroup(t, photoId, [bobId]);
 
     await expect(
       withUser(t, "user_bob").mutation(api.photos.flag, { photoId }),
@@ -140,13 +147,14 @@ describe("photos.flag — idempotent", () => {
     const t = convexTest(schema);
     await registerUser(t, "user_alice", "a@x.com");
     const bobId = await registerUser(t, "user_bob", "b@x.com");
-    await registerUser(t, "user_carol", "c@x.com");
+    const carolId = await registerUser(t, "user_carol", "c@x.com");
 
     const storageId = await uploadStorage(t);
     const photoId = await withUser(t, "user_alice").mutation(
       api.photos.create,
       { storageId },
     );
+    await shareInGroup(t, photoId, [bobId, carolId]);
 
     await withUser(t, "user_bob").mutation(api.photos.flag, { photoId });
     const after1 = await t.run((ctx) => ctx.db.get(photoId));
@@ -179,6 +187,7 @@ describe("photos.flag — idempotent", () => {
         api.photos.create,
         { storageId },
       );
+      await shareInGroup(t, photoId, [bobId, carolId]);
 
       // Volle flag → appeal → approve flow.
       await withUser(t, "user_bob").mutation(api.photos.flag, { photoId });

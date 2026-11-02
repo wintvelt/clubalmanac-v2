@@ -2,6 +2,7 @@ import { convexTest } from "convex-test";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { api , internal } from "../../convex/_generated/api";
 import schema from "../../convex/schema";
+import { shareInGroup } from "../_helpers/access";
 
 // FL2 — list-queries voor flag flow.
 // Bron 1: blob-images-api-photos/handlersPhoto/listFlagged.js (regel 5-10)
@@ -10,6 +11,9 @@ import schema from "../../convex/schema";
 //   - webmaster-only queue van alle geflagde photos (oude code returnde
 //     {isWebmaster:false} voor non-webmaster; v2 gooit error — gat met oude
 //     gedrag, gemarkeerd [GAP] hieronder)
+//
+// WP24: melden vereist foto-toegang; melders delen een groep met de foto
+// (shareInGroup).
 
 const ISSUER = "https://picked-quail-97.clerk.accounts.dev";
 const WEBMASTER_EMAIL = "webmaster@x.com";
@@ -52,7 +56,7 @@ describe("photos.listMyFlagged", () => {
   it("returnt alleen eigen photos die geflagged zijn", async () => {
     const t = convexTest(schema);
     await registerUser(t, "user_alice", "a@x.com");
-    await registerUser(t, "user_bob", "b@x.com");
+    const bobId = await registerUser(t, "user_bob", "b@x.com");
 
     const s1 = await uploadStorage(t);
     const s2 = await uploadStorage(t);
@@ -64,6 +68,7 @@ describe("photos.listMyFlagged", () => {
       api.photos.create,
       { storageId: s2 },
     );
+    await shareInGroup(t, flaggedPhoto, [bobId]);
 
     await withUser(t, "user_bob").mutation(api.photos.flag, {
       photoId: flaggedPhoto,
@@ -81,8 +86,8 @@ describe("photos.listMyFlagged", () => {
 
   it("returnt geen photos van andere users (zelfs als zij ook flagged zijn)", async () => {
     const t = convexTest(schema);
-    await registerUser(t, "user_alice", "a@x.com");
-    await registerUser(t, "user_bob", "b@x.com");
+    const aliceId = await registerUser(t, "user_alice", "a@x.com");
+    const bobId = await registerUser(t, "user_bob", "b@x.com");
 
     const s1 = await uploadStorage(t);
     const s2 = await uploadStorage(t);
@@ -94,6 +99,8 @@ describe("photos.listMyFlagged", () => {
       api.photos.create,
       { storageId: s2 },
     );
+    await shareInGroup(t, alicePhoto, [bobId]);
+    await shareInGroup(t, bobPhoto, [aliceId]);
 
     await withUser(t, "user_bob").mutation(api.photos.flag, {
       photoId: alicePhoto,
@@ -146,8 +153,8 @@ describe("photos.listAllFlagged — webmaster gated", () => {
 
   it("webmaster ziet alle geflagde photos van alle users", async () => {
     const t = convexTest(schema);
-    await registerUser(t, "user_alice", "a@x.com");
-    await registerUser(t, "user_bob", "b@x.com");
+    const aliceId = await registerUser(t, "user_alice", "a@x.com");
+    const bobId = await registerUser(t, "user_bob", "b@x.com");
     await registerUser(t, "user_carol", "c@x.com");
     await registerUser(t, "user_wm", WEBMASTER_EMAIL);
 
@@ -166,6 +173,8 @@ describe("photos.listAllFlagged — webmaster gated", () => {
       api.photos.create,
       { storageId: s3 },
     );
+    await shareInGroup(t, alicePhoto, [bobId]);
+    await shareInGroup(t, bobPhoto, [aliceId]);
 
     await withUser(t, "user_bob").mutation(api.photos.flag, {
       photoId: alicePhoto,

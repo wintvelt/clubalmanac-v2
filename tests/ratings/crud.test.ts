@@ -2,9 +2,12 @@ import { convexTest } from "convex-test";
 import { describe, expect, it } from "vitest";
 import { api , internal } from "../../convex/_generated/api";
 import schema from "../../convex/schema";
+import { shareInGroup } from "../_helpers/access";
 
 // Ratings basics: auth, photo bestaat, listForPhoto.
 // Aggregate-rerekening (R1) staat in aggregate.test.ts.
+// WP24: beoordelen vereist foto-toegang (gates: tests/writeGates/rating.test.ts);
+// raters delen hier een groep met de foto via shareInGroup.
 
 const ISSUER = "https://picked-quail-97.clerk.accounts.dev";
 
@@ -73,8 +76,9 @@ describe("ratings.remove", () => {
   it("verwijdert eigen rating, andere blijven", async () => {
     const t = convexTest(schema);
     const photoId = await setupPhoto(t, "user_alice");
-    await registerUser(t, "user_bob", "b@x.com");
-    await registerUser(t, "user_carol", "c@x.com");
+    const bobId = await registerUser(t, "user_bob", "b@x.com");
+    const carolId = await registerUser(t, "user_carol", "c@x.com");
+    await shareInGroup(t, photoId, [bobId, carolId]);
 
     await withUser(t, "user_bob").mutation(api.ratings.upsert, {
       photoId,
@@ -116,7 +120,8 @@ describe("ratings.listForPhoto", () => {
   it("geeft alleen de eigen rating, niet die van anderen", async () => {
     const t = convexTest(schema);
     const photoId = await setupPhoto(t, "user_alice");
-    await registerUser(t, "user_bob", "b@x.com");
+    const bobId = await registerUser(t, "user_bob", "b@x.com");
+    await shareInGroup(t, photoId, [bobId]);
 
     await withUser(t, "user_alice").mutation(api.ratings.upsert, {
       photoId,

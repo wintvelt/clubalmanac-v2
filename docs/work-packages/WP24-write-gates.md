@@ -128,7 +128,7 @@ Keuzes 1, 2, 5 en 6 zijn strenger dan de draft. Ze respecteren invariant 1, en d
    - `photos.create` is publiek (bedoeld als test-fixture) en accepteert elke `storageId`. Een ex-lid maakt een eigen foto-rij op het beeld van een ander, is daarvan eigenaar, en kan hem lezen en publiceren. Dat omzeilt ook A-keuze 1.
    - `users.updateProfile` accepteert elke `profilePhotoStorageId`. Een ex-lid zet het beeld als eigen profielfoto. Groepsgenoten zien het dan, en zodra profielfoto's een URL krijgen, ziet de caller het zelf ook.
 
-   Voorstel: geen publieke mutation koppelt een `storageId` die al bij een foto van een ander hoort aan een nieuwe foto-rij. Een profielfoto mag geen beeld zijn van een foto waar de caller geen foto-toegang toe heeft (v1-pariteit: profielfoto = foto met toegang). `photos.create` intern maken mag ook; de test werkt dan nog. Tests: `tests/writeGates/storageReuse.test.ts`. Regie kan dat bestand schrappen als dit naar een eigen WP gaat.
+   Voorstel: geen publieke mutation koppelt een `storageId` die al bij een foto van een ander hoort aan een nieuwe foto-rij. Een profielfoto mag geen beeld zijn van een foto waar de caller geen foto-toegang toe heeft (v1-pariteit: profielfoto = foto met toegang). `photos.create` intern maken zou ook dichten, maar veel bestaande tests gebruiken hem als fixture; dat vraagt dan een A-cyclus. Tests: `tests/writeGates/storageReuse.test.ts`. Regie kan dat bestand schrappen als dit naar een eigen WP gaat.
 6. **Upvote door de webmaster op andermans probleem mag** (de draft, invariant 4). Gepind als controle, geen wijziging.
 
 ### Aanvullende edge cases (gepind in RED-tests)
@@ -162,4 +162,4 @@ Keuzes 1, 2, 5 en 6 zijn strenger dan de draft. Ze respecteren invariant 1, en d
 - Orakel: zelfde caller, onbekend id (insert + delete) tegenover bestaand id zonder toegang. De uitkomst is identiek, en de test schrijft de error-tekst niet voor.
 - Aanvalstest: een vers account met een eigen groep en album probeert elk pad op een gepubliceerde foto en op een ongepubliceerde foto. Daarna leest geen enkele publieke read de foto of zijn `storageId`, en de state is ongewijzigd.
 - `isWebmaster` wordt direct getest met een identity met webmaster-email zonder users-rij.
-- Bestaande tests die een foto van een ander toevoegen of een cover buiten het album zetten, zet A om naar de eigenaar of een gepubliceerde foto. De bedoeling van zo'n test blijft gelijk.
+- Bestaande tests die als opzet een foto zonder toegang melden of beoordelen, of een cover buiten het album zetten, krijgen eerst toegang (`tests/_helpers/access.ts`, of de foto in het album). Cascade-tests waarvan de opzet niet meer via een mutation kan (M1 cross-owner, P5-covers), seeden de rij direct. De bedoeling van zo'n test blijft gelijk.

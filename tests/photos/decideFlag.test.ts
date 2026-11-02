@@ -2,6 +2,7 @@ import { convexTest } from "convex-test";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { api , internal } from "../../convex/_generated/api";
 import schema from "../../convex/schema";
+import { shareInGroup } from "../_helpers/access";
 
 // FL2 — photos.decideFlag mutation. Bron: oude AWS handler
 // blob-images-api-photos/handlersPhoto/flagPhotoDecide.js (regel 58-137):
@@ -59,11 +60,13 @@ async function uploadStorage(t: ReturnType<typeof convexTest>) {
 async function appealedPhoto(t: ReturnType<typeof convexTest>) {
   // alice (owner), bob (flagger). alice appealt.
   await registerUser(t, "user_alice", "a@x.com");
-  await registerUser(t, "user_bob", "b@x.com");
+  const bobId = await registerUser(t, "user_bob", "b@x.com");
   const storageId = await uploadStorage(t);
   const photoId = await withUser(t, "user_alice").mutation(api.photos.create, {
     storageId,
   });
+  // WP24: melden vereist foto-toegang.
+  await shareInGroup(t, photoId, [bobId]);
   await withUser(t, "user_bob").mutation(api.photos.flag, { photoId });
   await withUser(t, "user_alice").mutation(api.photos.appeal, { photoId });
   return photoId;
@@ -340,13 +343,14 @@ describe("photos.decideFlag — guards", () => {
   it("decideFlag gooit als foto wel geflagged maar niet appealed is", async () => {
     const t = convexTest(schema);
     await registerUser(t, "user_alice", "a@x.com");
-    await registerUser(t, "user_bob", "b@x.com");
+    const bobId = await registerUser(t, "user_bob", "b@x.com");
     await registerUser(t, "user_wm", WEBMASTER_EMAIL);
     const storageId = await uploadStorage(t);
     const photoId = await withUser(t, "user_alice").mutation(
       api.photos.create,
       { storageId },
     );
+    await shareInGroup(t, photoId, [bobId]);
     await withUser(t, "user_bob").mutation(api.photos.flag, { photoId });
 
     await expect(

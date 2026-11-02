@@ -231,6 +231,11 @@ describe("albums.update", () => {
       name: "A",
     });
     const photoId = await insertPhoto(t, bobId);
+    // WP24 (A-keuze 2): een album-cover staat in dat album.
+    await withUser(t, "user_bob").mutation(api.albums.addPhoto, {
+      albumId,
+      photoId,
+    });
 
     await withUser(t, "user_bob").mutation(api.albums.update, {
       albumId,

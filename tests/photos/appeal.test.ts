@@ -2,6 +2,7 @@ import { convexTest } from "convex-test";
 import { describe, expect, it } from "vitest";
 import { api , internal } from "../../convex/_generated/api";
 import schema from "../../convex/schema";
+import { shareInGroup } from "../_helpers/access";
 
 // FL2 — photos.appeal mutation. Bron: oude AWS handler
 // blob-images-api-photos/handlersPhoto/flagPhotoAppeal.js (regel 8-27):
@@ -52,6 +53,11 @@ async function flaggedPhotoBy(
   const photoId = await withUser(t, ownerSubject).mutation(api.photos.create, {
     storageId,
   });
+  // WP24: melden vereist foto-toegang; de melder deelt een groep met de foto.
+  const flagger = (
+    await t.run(async (ctx) => ctx.db.query("users").collect())
+  ).find((u) => u.subject === flaggerSubject);
+  await shareInGroup(t, photoId, [flagger!._id]);
   await withUser(t, flaggerSubject).mutation(api.photos.flag, { photoId });
   return photoId;
 }
