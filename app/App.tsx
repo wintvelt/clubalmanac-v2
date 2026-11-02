@@ -4,7 +4,6 @@ import { ConvexProviderWithClerk } from "convex/react-clerk";
 import { StatusBar } from "expo-status-bar";
 import { useState, type ReactNode } from "react";
 import { SafeAreaProvider } from "react-native-safe-area-context";
-import { AuthGate } from "./src/AuthGate";
 import { tokenCache } from "./src/auth/tokenCache";
 import { parseClientEnv, type ClientEnv } from "./src/lib/env";
 import { StatusScreen } from "./src/screens/StatusScreen";
@@ -26,14 +25,14 @@ function readEnv(): { env: ClientEnv } | { error: string } {
 
 const envResult = readEnv();
 
-export default function App() {
+// De schil om de router (src/app/_layout.tsx): env, safe area, Clerk en
+// Convex. Het entry-punt is expo-router/entry; de routes staan in src/app/.
+export default function App({ children }: { children: ReactNode }) {
   return (
     <SafeAreaProvider>
       <StatusBar style="auto" />
       {"env" in envResult ? (
-        <Providers env={envResult.env}>
-          <AuthGate />
-        </Providers>
+        <Providers env={envResult.env}>{children}</Providers>
       ) : (
         <StatusScreen error title="De app is verkeerd ingesteld" message={envResult.error} />
       )}
@@ -56,7 +55,8 @@ function Providers({ env, children }: { env: ClientEnv; children: ReactNode }) {
 // "nee" van de uitgelogde toestand staan tot Convex het nieuwe token
 // bevestigt, en flitst na inloggen kort "server weigert je sessie". Met de key
 // begint elke sessie bij "laden", en blijft er na uitloggen niets van de
-// vorige user in de boom hangen (invariant 13).
+// vorige user in de boom hangen (invariant 13): ook de navigator en zijn
+// stacks mounten opnieuw (WP15a invariant 11).
 function ConvexPerSession({
   convex,
   children,

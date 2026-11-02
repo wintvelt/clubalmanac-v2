@@ -11,16 +11,24 @@ type Props = {
   header?: ReactNode;
   // Inhoud verticaal in het midden (statusschermen).
   centered?: boolean;
+  // Onder een navigatiebalk: die regelt de bovenste safe area al.
+  underHeader?: boolean;
 };
 
 // Scrolt altijd, zodat bij de grootste tekststand en met het toetsenbord open
 // niets onbereikbaar wordt (invariant 4, bevinding 13). Op iPad en liggend
 // blijft de tekstkolom hoogstens 640 pt breed, in het midden.
-export function Screen({ children, background = "bg", header, centered = false }: Props) {
+export function Screen({
+  children,
+  background = "bg",
+  header,
+  centered = false,
+  underHeader = false,
+}: Props) {
   const { colors } = useTheme();
   return (
     <SafeAreaView
-      edges={header ? ["left", "right", "bottom"] : ["top", "left", "right", "bottom"]}
+      edges={header || underHeader ? ["left", "right", "bottom"] : ["top", "left", "right", "bottom"]}
       style={[styles.fill, { backgroundColor: colors[background] }]}
     >
       <KeyboardAvoidingView behavior="padding" style={styles.fill}>

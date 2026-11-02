@@ -98,6 +98,13 @@ export const photoLayers = {
   pill: { color: "#0F172A", opacity: 0.62, blur: 8 },
 } as const;
 
+// De + in de tabbalk (design.md §4, §5): rand alleen in licht, schaduw 0 4 14
+// zwart 26% (blur 14 = radius 7).
+export const plusButton = {
+  ringLight: "rgba(15, 23, 42, 0.4)",
+  shadow: { color: "#000000", offsetY: 4, radius: 7, opacity: 0.26 },
+} as const;
+
 export const space = { xs: 4, s: 8, m: 12, l: 16, xl: 22, xxl: 28 } as const;
 
 export const size = {
@@ -111,6 +118,9 @@ export const size = {
   plus: 58,
   plusRise: 26,
   tabbar: 66,
+  // Pil achter het icoon van de actieve tab.
+  tabPillWidth: 56,
+  tabPillHeight: 32,
   noticeIcon: 26,
   emptyIcon: 84,
   // Leesbare tekstkolom op iPad en liggend (design.md §9).

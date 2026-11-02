@@ -57,6 +57,17 @@ Alle templates leven in [`convex/lib/emailTemplates.ts`](../../convex/lib/emailT
 
 WP10-monitoring (`convex/monitoring.ts`) gebruikt dezelfde `info@`-sender en `getWebmasterEmails()`-bestemming als `problemReport`. Geen nieuwe env-vars: `WEBMASTER_EMAILS` is bestaand. Best-effort: lege `WEBMASTER_EMAILS` → no-op zonder throw (mag de daily cron niet stuk maken).
 
+## Backend: Convex
+
+### Live queries meten in het dashboard (WP15a)
+
+De app vraagt live data alleen op voor het scherm in beeld, zolang de app `active` is. Eén toegangspad: `app/src/data/useLiveQuery.ts`. Zo controleer je dat (gate WP15a, en elke latere app-WP):
+
+- Meet **functieaanroepen per functie** (Logs, of Functions per functie), niet het aantal verbindingen. Een open socket zonder queries kost geen functieaanroepen.
+- **Tab wisselen:** één nieuwe uitvoering per query van het nieuwe scherm. Het vorige scherm draait niet meer mee als de data verandert.
+- **App naar de achtergrond** (ook Bedieningspaneel of app-wisselaar): geen enkele live query meer, ook `users.current` niet. Een wijziging in de Data-tab geeft dan geen uitvoering.
+- **App terug:** één uitvoering per query van het scherm in beeld, plus één van `users.current`. Daarna niets meer, tot de data verandert.
+
 ## Auth: Clerk
 
 `picked-quail-97.clerk.accounts.dev` is de dev instance. Free tier vanaf `accounts.clerk.dev` voor signup-mails (geen custom email domain — paid feature, niet nodig voor 16 signups).

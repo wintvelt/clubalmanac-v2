@@ -1,35 +1,44 @@
 import { useAuth, useUser } from "@clerk/expo";
-import { useConvexAuth, useQuery } from "convex/react";
+import { useConvexAuth } from "convex/react";
+import { usePathname } from "expo-router";
+import type { ReactNode } from "react";
+import { StyleSheet, View } from "react-native";
 import { SignOutButton } from "./auth/SignOutButton";
 import { Text } from "./components/Text";
 import { api } from "./convexApi";
+import { AuthStateContext } from "./data/authStateContext";
+import { useSessionQuery } from "./data/useLiveQuery";
 import { deriveAuthState } from "./lib/authState";
-import { HomeScreen } from "./screens/HomeScreen";
-import { LoginScreen } from "./screens/LoginScreen";
+import { routeAccess } from "./lib/routeAccess";
 import { StatusScreen } from "./screens/StatusScreen";
 
-// De vijf toestanden van WP13 (invarianten 4, 10, 11, 12, 13).
-// Alleen lezen: geen recordVisit hier (invariant 16, dat is WP15).
-export function AuthGate() {
+// De poort vóór elke route: de vijf toestanden van WP13 (invarianten 4, 10,
+// 11, 12, 13) per pad (WP15a invarianten 4 en 10). Alleen lezen: geen
+// recordVisit hier (dat is WP15b).
+//
+// De navigator (children) rendert alleen bij "show", "login" en "home". Wie
+// welk scherm mag zien, regelen de guards in src/app/_layout.tsx met dezelfde
+// toestand. Klopt het pad nog niet bij de toestand ("login", "home"), dan
+// dekt een laadscherm de navigator af tot de guard hem heeft omgezet: zo is
+// er geen render waarin een ingelogd scherm zonder sessie te zien is.
+export function AuthGate({ children }: { children: ReactNode }) {
   const { isLoaded, isSignedIn } = useAuth();
   const { isLoading, isAuthenticated } = useConvexAuth();
-  const queryAllowed = isLoaded && isSignedIn === true && !isLoading && isAuthenticated;
-  // Live: maakt de webhook de rij alsnog aan, dan wordt dit vanzelf "ready".
-  const currentUser = useQuery(api.users.current, queryAllowed ? {} : "skip");
-
-  const state = deriveAuthState({
+  const session = {
     clerkLoaded: isLoaded,
     clerkSignedIn: isSignedIn === true,
     convexAuthLoading: isLoading,
     convexAuthenticated: isAuthenticated,
-    currentUser,
-  });
+  };
+  // Live: maakt de webhook de rij alsnog aan, dan wordt dit vanzelf "ready".
+  // Gepauzeerd in de achtergrond geldt de laatst bekende rij (invariant 12).
+  const currentUser = useSessionQuery(api.users.current, {}, session);
+  const state = deriveAuthState({ ...session, currentUser });
+  const access = routeAccess(usePathname(), state);
 
-  switch (state) {
-    case "loading":
-      return <StatusScreen spinner spinnerLabel="Laden…" />;
-    case "signedOut":
-      return <LoginScreen />;
+  switch (access) {
+    case "wait":
+      return <Loading />;
     case "convexAuthFailed":
       return (
         <StatusScreen
@@ -42,14 +51,24 @@ export function AuthGate() {
       );
     case "noUserRow":
       return <NoUserRowScreen />;
-    case "ready":
-      // deriveAuthState geeft alleen "ready" met een rij.
-      return currentUser ? (
-        <HomeScreen user={currentUser} />
-      ) : (
-        <StatusScreen spinner spinnerLabel="Laden…" />
+    case "show":
+    case "login":
+    case "home":
+      return (
+        <AuthStateContext value={state}>
+          {children}
+          {access !== "show" && (
+            <View style={StyleSheet.absoluteFill}>
+              <Loading />
+            </View>
+          )}
+        </AuthStateContext>
       );
   }
+}
+
+function Loading() {
+  return <StatusScreen spinner spinnerLabel="Laden…" />;
 }
 
 function NoUserRowScreen() {

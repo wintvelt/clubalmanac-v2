@@ -1,14 +1,6 @@
-import type { Doc } from "../../../convex/_generated/dataModel";
-import { SignOutButton } from "../auth/SignOutButton";
-import { Text } from "../components/Text";
-import { StatusScreen } from "./StatusScreen";
+import { PlaceholderScreen } from "./PlaceholderScreen";
 
-// Eén scherm achter de login: wie ben ik volgens Convex (users.current).
-export function HomeScreen({ user }: { user: Doc<"users"> }) {
-  return (
-    <StatusScreen title={user.name ? `Hoi ${user.name}` : "Hoi"}>
-      <Text color="muted">{user.email}</Text>
-      <SignOutButton />
-    </StatusScreen>
-  );
+// Home opent straks de laatst bezochte groep, anders Mijn groepen (WP16).
+export function HomeScreen() {
+  return <PlaceholderScreen icon="home" text="Hier zie je straks je groepen en albums." />;
 }
