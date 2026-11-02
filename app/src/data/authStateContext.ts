@@ -1,10 +1,19 @@
 import { createContext, useContext } from "react";
-import type { AuthState } from "../lib/authState";
+import type { SessionState } from "../lib/sessionState";
 
-// De auth-toestand van de poort (src/AuthGate.tsx), voor het toegangspad.
-// Buiten de poort is het "loading": dan loopt er niets live.
-export const AuthStateContext = createContext<AuthState>("loading");
+// De sessie-toestand van de poort (src/AuthGate.tsx), voor het toegangspad en
+// de guards. Buiten de poort is het "loading": dan loopt er niets live.
+export const AuthStateContext = createContext<SessionState>("loading");
 
-export function useAuthState(): AuthState {
+export function useAuthState(): SessionState {
   return useContext(AuthStateContext);
+}
+
+// In "reconnecting" (F1): loopt er een nieuwe poging, en hoe start je er een.
+export type Reconnect = { retrying: boolean; retry: () => void };
+
+export const ReconnectContext = createContext<Reconnect>({ retrying: false, retry: () => {} });
+
+export function useReconnect(): Reconnect {
+  return useContext(ReconnectContext);
 }

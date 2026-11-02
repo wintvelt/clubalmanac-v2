@@ -1,10 +1,10 @@
 import { ClerkProvider, useAuth } from "@clerk/expo";
 import { ConvexReactClient } from "convex/react";
-import { ConvexProviderWithClerk } from "convex/react-clerk";
 import { StatusBar } from "expo-status-bar";
 import { useState, type ReactNode } from "react";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { tokenCache } from "./src/auth/tokenCache";
+import { ConvexProviderWithClerkRetry } from "./src/data/convexConnection";
 import { parseClientEnv, type ClientEnv } from "./src/lib/env";
 import { StatusScreen } from "./src/screens/StatusScreen";
 
@@ -66,8 +66,8 @@ function ConvexPerSession({
 }) {
   const { sessionId } = useAuth();
   return (
-    <ConvexProviderWithClerk key={sessionId ?? "signed-out"} client={convex} useAuth={useAuth}>
+    <ConvexProviderWithClerkRetry key={sessionId ?? "signed-out"} client={convex}>
       {children}
-    </ConvexProviderWithClerk>
+    </ConvexProviderWithClerkRetry>
   );
 }

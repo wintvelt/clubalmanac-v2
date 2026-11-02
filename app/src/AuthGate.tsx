@@ -1,29 +1,35 @@
 import { useAuth, useUser } from "@clerk/expo";
 import { useConvexAuth } from "convex/react";
-import { usePathname } from "expo-router";
-import type { ReactNode } from "react";
+import { router, usePathname } from "expo-router";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { StyleSheet, View } from "react-native";
 import { SignOutButton } from "./auth/SignOutButton";
 import { Text } from "./components/Text";
 import { api } from "./convexApi";
-import { AuthStateContext } from "./data/authStateContext";
+import { AuthStateContext, ReconnectContext } from "./data/authStateContext";
+import { useConvexConnection } from "./data/convexConnection";
+import { useAppState } from "./data/useAppState";
 import { useSessionQuery } from "./data/useLiveQuery";
-import { deriveAuthState } from "./lib/authState";
+import { useOnline } from "./data/useOnline";
 import { routeAccess } from "./lib/routeAccess";
+import { authRetryDue, deriveSessionState, type SessionState } from "./lib/sessionState";
 import { StatusScreen } from "./screens/StatusScreen";
 
 // De poort vóór elke route: de vijf toestanden van WP13 (invarianten 4, 10,
-// 11, 12, 13) per pad (WP15a invarianten 4 en 10). Alleen lezen: geen
-// recordVisit hier (dat is WP15b).
+// 11, 12, 13) plus "reconnecting" (WP15a F1), per pad (WP15a invarianten 4
+// en 10). Alleen lezen: geen recordVisit hier (dat is WP15b).
 //
 // De navigator (children) rendert alleen bij "show", "login" en "home". Wie
 // welk scherm mag zien, regelen de guards in src/app/_layout.tsx met dezelfde
 // toestand. Klopt het pad nog niet bij de toestand ("login", "home"), dan
-// dekt een laadscherm de navigator af tot de guard hem heeft omgezet: zo is
-// er geen render waarin een ingelogd scherm zonder sessie te zien is.
+// leidt de poort zelf om, en dekt een laadscherm de navigator af tot het pad
+// klopt: zo is er geen render waarin een ingelogd scherm zonder sessie te zien
+// is.
 export function AuthGate({ children }: { children: ReactNode }) {
   const { isLoaded, isSignedIn } = useAuth();
   const { isLoading, isAuthenticated } = useConvexAuth();
+  const { tokenFetchFailed, retry } = useConvexConnection();
+  const online = useOnline();
   const session = {
     clerkLoaded: isLoaded,
     clerkSignedIn: isSignedIn === true,
@@ -33,8 +39,20 @@ export function AuthGate({ children }: { children: ReactNode }) {
   // Live: maakt de webhook de rij alsnog aan, dan wordt dit vanzelf "ready".
   // Gepauzeerd in de achtergrond geldt de laatst bekende rij (invariant 12).
   const currentUser = useSessionQuery(api.users.current, {}, session);
-  const state = deriveAuthState({ ...session, currentUser });
-  const access = routeAccess(usePathname(), state);
+  const derived = deriveSessionState({ ...session, currentUser, tokenFetchFailed, online });
+  const { state, retrying } = useStickyReconnecting(derived, session.clerkSignedIn);
+  useRetryOnReturn(state, online, retry);
+
+  const pathname = usePathname();
+  const access = routeAccess(pathname, state);
+
+  // "login" en "home": de poort leidt zelf om, en wacht niet op de guard.
+  useEffect(() => {
+    if (access === "login") router.replace("/inloggen");
+    if (access === "home") router.replace("/");
+  }, [access, pathname]);
+
+  const reconnect = useMemo(() => ({ retrying, retry }), [retrying, retry]);
 
   switch (access) {
     case "wait":
@@ -56,15 +74,48 @@ export function AuthGate({ children }: { children: ReactNode }) {
     case "home":
       return (
         <AuthStateContext value={state}>
-          {children}
-          {access !== "show" && (
-            <View style={StyleSheet.absoluteFill}>
-              <Loading />
-            </View>
-          )}
+          <ReconnectContext value={reconnect}>
+            {children}
+            {access !== "show" && (
+              <View style={StyleSheet.absoluteFill}>
+                <Loading />
+              </View>
+            )}
+          </ReconnectContext>
         </AuthStateContext>
       );
   }
+}
+
+// Een nieuwe poging laat Convex even "laden" zeggen. Kwam de app uit
+// "reconnecting", dan blijft hij daar tot de uitkomst er is: anders verdwijnt
+// de navigator, en daarmee de plek in de stacks.
+function useStickyReconnecting(
+  derived: SessionState,
+  clerkSignedIn: boolean,
+): { state: SessionState; retrying: boolean } {
+  const [wasReconnecting, setWasReconnecting] = useState(false);
+  if (derived === "reconnecting" && !wasReconnecting) setWasReconnecting(true);
+  if (derived !== "reconnecting" && derived !== "loading" && wasReconnecting) {
+    setWasReconnecting(false);
+  }
+  const retrying = derived === "loading" && wasReconnecting && clerkSignedIn;
+  return { state: retrying ? "reconnecting" : derived, retrying };
+}
+
+// Opnieuw proberen zodra de app actief en online wordt, vanuit een moment
+// waarop dat niet zo was (src/lib/sessionState.ts). Alleen bij een wissel van
+// AppState of netwerk, dus nooit in een lus.
+function useRetryOnReturn(state: SessionState, online: boolean | null, retry: () => void) {
+  const appState = useAppState();
+  const before = useRef({ appState, online });
+  const stateNow = useRef(state);
+  stateNow.current = state;
+  useEffect(() => {
+    const now = { appState, online };
+    if (authRetryDue({ state: stateNow.current, before: before.current, now })) retry();
+    before.current = now;
+  }, [appState, online, retry]);
 }
 
 function Loading() {

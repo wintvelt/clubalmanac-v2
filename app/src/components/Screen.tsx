@@ -1,7 +1,11 @@
 import type { ReactNode } from "react";
 import { KeyboardAvoidingView, ScrollView, StyleSheet, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { useAuthState, useReconnect } from "../data/authStateContext";
 import { size, space, useTheme } from "../theme";
+import { Notice } from "./Notice";
+import { SmallButton } from "./SmallButton";
+import { LoadingState } from "./States";
 
 type Props = {
   children: ReactNode;
@@ -17,7 +21,9 @@ type Props = {
 
 // Scrolt altijd, zodat bij de grootste tekststand en met het toetsenbord open
 // niets onbereikbaar wordt (invariant 4, bevinding 13). Op iPad en liggend
-// blijft de tekstkolom hoogstens 640 pt breed, in het midden.
+// blijft de tekstkolom hoogstens 640 pt breed, in het midden. In
+// "reconnecting" toont het inhoudsgebied laden of een fout met "Opnieuw"; de
+// kop en de tabbalk blijven staan (WP15a F1, design.md §6).
 export function Screen({
   children,
   background = "bg",
@@ -26,6 +32,7 @@ export function Screen({
   underHeader = false,
 }: Props) {
   const { colors } = useTheme();
+  const reconnecting = useAuthState() === "reconnecting";
   return (
     <SafeAreaView
       edges={header || underHeader ? ["left", "right", "bottom"] : ["top", "left", "right", "bottom"]}
@@ -37,10 +44,24 @@ export function Screen({
           contentContainerStyle={[styles.scroll, centered && styles.centered]}
         >
           {header}
-          <View style={styles.column}>{children}</View>
+          <View style={styles.column}>{reconnecting ? <ReconnectingState /> : children}</View>
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
+  );
+}
+
+function ReconnectingState() {
+  const { retrying, retry } = useReconnect();
+  if (retrying) return <LoadingState label="Verbinden…" />;
+  return (
+    <Notice
+      kind="error"
+      title="Geen verbinding met de server"
+      message="Controleer je internet. Zodra er weer netwerk is, probeert de app het opnieuw."
+    >
+      <SmallButton title="Opnieuw" onPress={retry} />
+    </Notice>
   );
 }
 

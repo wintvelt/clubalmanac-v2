@@ -24,14 +24,16 @@ export default function RootLayout() {
 // De guards volgen dezelfde toestand als de poort (WP15a invarianten 4, 11).
 // Een scherm achter een guard die dichtgaat, verdwijnt uit de geschiedenis:
 // na uitloggen is er geen terugknop of veeggebaar terug de app in, en na
-// inloggen begint de app op Home met lege stacks.
+// inloggen begint de app op Home met lege stacks. In "reconnecting" blijft de
+// navigator open, zonder live data (F1).
 function RootStack() {
-  const ready = useAuthState() === "ready";
+  const state = useAuthState();
+  const inApp = state === "ready" || state === "reconnecting";
   const screenOptions = useStackScreenOptions();
   return (
     <ThemeProvider value={useNavigationTheme()}>
       <Stack screenOptions={{ ...screenOptions, headerShown: false }}>
-        <Stack.Protected guard={ready}>
+        <Stack.Protected guard={inApp}>
           <Stack.Screen name="(tabs)" />
           <Stack.Screen
             name="toevoegen"
@@ -45,7 +47,7 @@ function RootStack() {
           />
           <Stack.Screen name="+not-found" options={{ headerShown: true, title: "Niet gevonden" }} />
         </Stack.Protected>
-        <Stack.Protected guard={!ready}>
+        <Stack.Protected guard={!inApp}>
           <Stack.Screen name="inloggen" />
         </Stack.Protected>
       </Stack>

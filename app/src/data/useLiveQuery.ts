@@ -36,6 +36,7 @@ export function useLiveQuery<Q extends Query>(
 
 // De ene query achter de auth-poort (users.current). Hangt niet van focus af:
 // hij staat boven de navigatie. Wel pauzeert hij buiten AppState "active".
+// Alleen de poort gebruikt dit, en elke andere query blijft "skip" (F2).
 export function useSessionQuery<Q extends Query>(
   query: Q,
   args: FunctionArgs<Q>,
@@ -47,7 +48,7 @@ export function useSessionQuery<Q extends Query>(
   },
 ): FunctionReturnType<Q> | undefined {
   const appState = useAppState();
-  const live = sessionQueryIsLive({ appState, ...session });
+  const live = sessionQueryIsLive({ query: getFunctionName(query), appState, ...session });
   return useRetainedQuery(query, args, live);
 }
 
