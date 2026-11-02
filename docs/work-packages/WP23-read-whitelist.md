@@ -210,3 +210,26 @@ Auth, aanvullend op de tabel:
 - Het orakel wordt getest als vergelijking van uitkomsten, niet als voorgeschreven error-vorm.
 - De lijst publieke queries en de return-validators worden gelezen van de geëxporteerde functies. convex-test maakt zelf geen onderscheid tussen publiek en intern.
 - Integration-test upload: JWT vóór het pollen. De test checkt `takenAt` en `locationLabel` (een label bewijst dat GPS uitgelezen en gegeocodeerd is) en dat `latitude`/`longitude` níet in de response staan.
+
+---
+
+## Audit-ronde 1 → fix-cyclus (regie, 2026-11-02)
+
+Audit vond dat een cover-join de foto-toegang overslaat. Na vertrek van een lid blijft diens foto als cover zichtbaar voor de achterblijvers. En een groep- of album-admin kan elk photo-id als cover zetten en het dan lezen. Dat valt binnen de scope: het gaat om reads.
+
+**Invariant 10.** Een geneste foto (`cover` in `groups.getWithCover` en `albums.getWithCover`) volgt dezelfde foto-toegang als `photos.getById`. Zonder foto-toegang is `cover` gelijk aan `null`, ook als `coverPhotoId` gezet is. De groep- of album-vorm zelf blijft leesbaar; `coverPhotoId` mag daarin blijven staan, want een id zonder toegang ontsluit niets.
+
+Daarnaast in deze cyclus:
+- **Tests (A)**:
+  - beide cover-paden: een vertrokken lid, en een cover met een photo-id waar de caller geen toegang toe heeft;
+  - de `null`-takken van `groups.listMembers` (users-rij ontbreekt) en `albums.listPhotos` (foto ontbreekt);
+  - geen webmaster-bypass op `albums.*` en `groups.listMembers`;
+  - `inventory.test.ts` laat geen open-key-validators toe (`v.record`, `v.any`).
+- **Impl (B)**: invariant 10. Daarnaast: koppel de veld-whitelist van `pick` aan de tabel van de rij. Een whitelist met een veld dat niet in de tabel bestaat, moet dan bij compile-time falen.
+
+**Write-gates, niet in deze cyclus.** Mutations kunnen de state zetten waar foto-toegang op leunt, en checken zelf geen foto-toegang:
+- `albums.addPhoto`
+- `coverPhotoId` in `groups.update` en `albums.update`
+- `photos.flag` en `ratings.upsert`
+
+Daarbij komen bestaans-orakels in `albums.addPhoto`, `photos.flag`, `albums.markSeen` en `features.upvote` (die laatste raakt ook verborgen problemen). Een aanvaller die ooit een photo-id zag, kan via een eigen groep weer toegang krijgen. Invariant 6 houdt mutations buiten WP23. Dit moet af vóór WP17, want dan levert `getUrl` de beeldbytes. Besluit Wouter: WP23 uitbreiden of een eigen WP.
