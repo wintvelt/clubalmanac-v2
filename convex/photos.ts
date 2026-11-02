@@ -12,7 +12,7 @@ import type { Doc, Id } from "./_generated/dataModel";
 import { internal } from "./_generated/api";
 import { requireCurrentUser } from "./users";
 import { requireWebmaster } from "./lib/auth";
-import { canAccessPhoto, isStorageOfOthers } from "./lib/photoAccess";
+import { canAccessPhoto } from "./lib/photoAccess";
 import {
   allFlagFields,
   ownFlagFields,
@@ -97,9 +97,14 @@ export const listByOwner = query({
  *
  * NB: Photo-limit gate gebruikt typed sentinel "PHOTO_LIMIT_REACHED" voor
  * consistency met createFromUploadInternal. Match exact ===, niet substring.
+ *
+ * WP24 invariant 8: intern, want een publieke variant maakte de caller
+ * eigenaar van elk beeld-id dat hij kende. Eigenaar blijft de ingelogde
+ * caller (fixtures roepen hem via withUser aan). Geen beeld-gate hier: er
+ * komt geen user-input binnen.
  */
 // P6: photo create increments user.photoCount (cat-2 transactional aggregate).
-export const create = mutation({
+export const create = internalMutation({
   args: {
     storageId: v.id("_storage"),
     filename: v.optional(v.string()),
@@ -114,11 +119,6 @@ export const create = mutation({
   returns: v.id("photos"),
   handler: async (ctx, args) => {
     const user = await requireCurrentUser(ctx);
-
-    // WP24 A-keuze 5: geen eigen foto-rij op het beeld van een ander.
-    if (await isStorageOfOthers(ctx, user._id, args.storageId)) {
-      throw new Error("Dit beeld hoort bij een foto van een ander");
-    }
 
     if (user.photoCount >= user.photoLimit) {
       throw new Error("PHOTO_LIMIT_REACHED");

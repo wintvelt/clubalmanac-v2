@@ -113,8 +113,8 @@ export default defineSchema({
     createdAt: v.number(),
   })
     .index("by_owner", ["ownerId"])
-    // WP24 A-keuze 5: welke foto's horen bij een beeld (photos.create,
-    // users.updateProfile weigeren andermans beeld).
+    // WP24 invariant 8: welke foto's horen bij een beeld
+    // (users.updateProfile accepteert alleen een beeld van de caller).
     .index("by_storage", ["storageId"])
     .index("by_takenAt", ["takenAt"])
     .index("by_flagged", ["flaggedAt"])

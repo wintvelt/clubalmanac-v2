@@ -12,7 +12,7 @@ import { internalRemovePhoto } from "./photos";
 import { internalRemoveMember } from "./groups";
 import { normalizeEmail } from "./lib/email";
 import { DEFAULT_PHOTO_LIMIT } from "./lib/constants";
-import { canUseStorageAsProfilePhoto } from "./lib/photoAccess";
+import { canUseStorage } from "./lib/photoAccess";
 import {
   ownProfile,
   ownProfileFields,
@@ -205,15 +205,10 @@ export const updateProfile = mutation({
     const patch: Partial<Doc<"users">> = {};
     if (args.name !== undefined) patch.name = args.name;
     if (args.profilePhotoStorageId !== undefined) {
-      // WP24 A-keuze 5: geen profielfoto op het beeld van een foto zonder
-      // foto-toegang. Een vers beeld (bij geen foto) mag.
-      if (
-        !(await canUseStorageAsProfilePhoto(
-          ctx,
-          user._id,
-          args.profilePhotoStorageId,
-        ))
-      ) {
+      // WP24 invariant 8: alleen een beeld van de caller (eigen of
+      // toegankelijke foto, of de eigen huidige profielfoto). Check vóór de
+      // patch, zodat een geweigerd beeld ook de naam laat staan.
+      if (!(await canUseStorage(ctx, user, args.profilePhotoStorageId))) {
         throw new Error("Geen toegang tot dit beeld");
       }
       patch.profilePhotoStorageId = args.profilePhotoStorageId;
@@ -296,7 +291,7 @@ export const deleteSelf = mutation({
   },
 });
 
-// Internal: aangeroepen vanuit photos.create / photos.delete in latere fase.
+// Internal: aangeroepen vanuit photo-create/-delete in latere fase.
 // Transactioneel met de photo-mutation, dus geen race condities.
 // Photo-limit error gebruikt typed sentinel "PHOTO_LIMIT_REACHED" voor
 // consistency met createFromUploadInternal. Match exact ===, niet substring.

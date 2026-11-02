@@ -80,40 +80,28 @@ export async function isPublishedInAlbum(
   return ap !== null;
 }
 
-// WP24 A-keuze 5: invariant 1 geldt ook voor het beeld. De foto-vorm bevat
-// `storageId`, dus wie ooit een foto zag, kent het beeld-id.
+// WP24 invariant 8: een publieke mutation koppelt een beeld (storageId)
+// alleen aan de caller als dat beeld al van de caller is of door de caller
+// gezien mag worden. Toegestaan: het beeld van minstens één foto waar de
+// caller foto-toegang toe heeft (eigen foto inbegrepen), of de eigen huidige
+// profielfoto (ook een los, gemigreerd v1-beeld). Geweigerd: al het andere,
+// ook andermans profielbeeld en een los beeld. Een onbekend beeld-id heeft
+// geen foto-rij en valt in dezelfde tak (één uitkomst, geen orakel).
 //
-// - photos.create: geen nieuwe foto-rij op een beeld dat al bij een foto van
-//   een ander hoort (anders eigenaar van andermans beeld).
-// - users.updateProfile: een profielfoto is geen beeld van een foto waar de
-//   caller geen foto-toegang toe heeft (v1: profielfoto = foto met toegang).
-//   Een vers beeld (bij geen enkele foto) mag.
-export async function photosWithStorage(
+// Het enige publieke pad met een beeld-id is users.updateProfile
+// (photos.create is intern); tests/writeGates/storageReuse.test.ts pint dat.
+export async function canUseStorage(
   ctx: QueryCtx,
+  user: Doc<"users">,
   storageId: Id<"_storage">,
-): Promise<Doc<"photos">[]> {
-  return await ctx.db
+): Promise<boolean> {
+  if (user.profilePhotoStorageId === storageId) return true;
+  const photos = await ctx.db
     .query("photos")
     .withIndex("by_storage", (q) => q.eq("storageId", storageId))
     .collect();
-}
-
-export async function isStorageOfOthers(
-  ctx: QueryCtx,
-  userId: Id<"users">,
-  storageId: Id<"_storage">,
-): Promise<boolean> {
-  const photos = await photosWithStorage(ctx, storageId);
-  return photos.some((p) => p.ownerId !== userId);
-}
-
-export async function canUseStorageAsProfilePhoto(
-  ctx: QueryCtx,
-  userId: Id<"users">,
-  storageId: Id<"_storage">,
-): Promise<boolean> {
-  for (const p of await photosWithStorage(ctx, storageId)) {
-    if (!(await canAccessPhoto(ctx, userId, p))) return false;
+  for (const p of photos) {
+    if (await canAccessPhoto(ctx, user._id, p)) return true;
   }
-  return true;
+  return false;
 }
