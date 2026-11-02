@@ -23,7 +23,7 @@ Regel (phase-kickoff-skill): **PII gaat via een backend-whitelist, niet via een 
 
 ## Invarianten
 
-1. Geen enkele publieke query geeft `users.email` of `users.subject` van een ánder dan de caller terug. Uitzonderingen alleen expliciet in de tabel hieronder.
+1. Geen enkele publieke query geeft `users.email` of `users.subject` van een ánder dan de caller terug. Uitzonderingen alleen expliciet in de tabel hieronder (enige: het adres van de genodigde op de invite-landing).
 2. Elke publieke query-response is een whitelist: de set velden ligt vast in de code, per tabel-vorm. Een nieuw schema-veld verschijnt niet in een response zonder bewuste code-wijziging. Structureel afdwingen (bv. Convex `returns`-validator, zodat een te brede response fail-loud is) heeft de voorkeur boven alleen een test op de huidige velden.
 3. Elke publieke query behalve `invites.getByToken` en `smoke.ping` vereist minstens "ingelogd". Niet-ingelogd gedrag is consistent met de bestaande queries met auth (`requireCurrentUser` throwt; queries die nu `null`/`[]` geven bij geen identity, zoals `users.current` en `groups.listMine`, houden dat gedrag — de app leunt op `current === null`).
 4. Geen bestaans-orakel: "bestaat niet" en "bestaat, maar geen toegang" zijn voor de caller niet van elkaar te onderscheiden (zelfde error of zelfde lege uitkomst).
@@ -54,7 +54,7 @@ Regie-draft. A toetst tegen de oude app (welke schermen tonen wat aan wie) en sc
 | `ratings.listForPhoto` | geen auth, volle rij | foto-toegang | alleen de eigen rating van de caller (A-keuze 1) |
 | `features.getById` / `list` | geen auth | ingelogd | feature-vorm. `problem` alleen voor indiener + webmaster (A-keuze 5) |
 | `features.hasUpvoted` | boolean | ongewijzigd | ongewijzigd |
-| `invites.getByToken` | anoniem (bewust), invite-spread + volle groep | ongewijzigd (token = toegangsbewijs) | alleen wat de landingspagina nodig heeft: status, verlopen-vlag, rol, groep-id + naam + omschrijving, inviter (naam + profielfoto). Geen invitee-email, `invitedBy`-id, `bouncedAt`, token-echo of volle groep-rij (A-keuze 6) |
+| `invites.getByToken` | anoniem (bewust), invite-spread + volle groep | ongewijzigd (token = toegangsbewijs) | alleen wat de landingspagina nodig heeft: status, verlopen-vlag, rol, groep-id + naam + omschrijving, inviter (naam + profielfoto), email van de genodigde (besluit Wouter). Geen `invitedBy`-id, `bouncedAt`, token-echo of volle groep-rij (A-keuze 6) |
 | `invites.listPendingForEmail` | **anoniem, geeft volle invites incl. token** | geen publieke query meer, intern of weg (A-keuze 7) | — |
 | `invites.hasPendingForEmail` | anoniem, boolean (email-orakel: "is dit adres uitgenodigd?") | geen publieke query meer, intern of weg (A-keuze 7) | — |
 | `invites.listMine` | eigen verstuurde invites, spread | ongewijzigd | invite-vorm, zonder token (A-keuze 8) |
@@ -145,7 +145,7 @@ Regels voor alle vormen:
 | rating | `photoId`, `value` | `userId` (is altijd de caller), tijden |
 | feature | `_id`, `type`, `title`, `description`, `status`, `upvoteCount`, `createdAt` | `submittedBy` |
 | invite (afzender) | `_id`, `email`, `groupId`, `role`, `status`, `expiresAt`, `createdAt` | `token`, `invitedBy`, `respondedAt`, `bouncedAt` |
-| invite-landing | `status`, `isExpired`, `role`, `group`, `inviter` | `email`, `token`, `invitedBy`, `bouncedAt`, `_id`, tijden |
+| invite-landing | `email`, `status`, `isExpired`, `role`, `group`, `inviter` | `token`, `invitedBy`, `bouncedAt`, `_id`, tijden |
 | `group` in landing | `_id`, `name`, `description`, of `null` | `coverPhotoId`, `createdBy`, `createdAt` |
 | `inviter` in landing | `name`, `profilePhotoStorageId`, of `null` | `_id` (precedent audit-8) |
 
@@ -181,7 +181,7 @@ Auth, aanvullend op de tabel:
 - Eigen foto die in geen enkel album staat: leesbaar voor de eigenaar, voor niemand anders.
 - Webmaster zonder lidmaatschap: geen groep-, album- of foto-reads (geen bypass). Wel `listAllFlagged` en alle features.
 - Gemelde foto als cover of in een album: leden zien de foto-vorm zonder flag-velden. De eigenaar ziet geen melder en geen reden.
-- Invite die geaccepteerd, verlopen of gebounced is: de landing-vorm, zonder `bouncedAt` en zonder email.
+- Invite die geaccepteerd, verlopen of gebounced is: de landing-vorm, zonder `bouncedAt`.
 - Geen bestaans-orakel: zelfde caller, onbekend id tegenover bestaand id zonder toegang, geeft een identieke uitkomst (zelfde error-tekst, of allebei `null`/`[]`). De test schrijft niet voor welke van de twee.
 
 ### A-keuzes ter bevestiging
@@ -191,7 +191,7 @@ Auth, aanvullend op de tabel:
 3. **Geen `filename` en `mimeType`.** Geen scherm toonde ze, en een bestandsnaam kan een naam bevatten.
 4. **De eigenaar ziet geen `flagReason`.** Dat is vrije tekst van de melder (nieuw in v2) en kan de melder herleidbaar maken. De eigenaar ziet de datums die het bezwaar-scherm in de oude app toonde.
 5. **Een `problem` alleen voor indiener en webmaster, en geen `submittedBy` in de feature-vorm.** De oude flow mailde problemen alleen, en toonde geen indiener van features.
-6. **Invite-landing zonder email van de genodigde, wel `group._id`.** De oude landing toonde naam + email en vulde die in bij aanmelden. Een token staat in URL's en doorgestuurde mails, dus zonder email is strenger. De user typt bij login zelf zijn email (raakt WP19/WP22). `group._id` blijft: "accepteren, dan naar de groep" heeft het nodig (`invites.accept` geeft niets terug), en voor een niet-lid ontsluit het niets.
+6. **Invite-landing mét email van de genodigde (besluit Wouter 2026-11-02, A koos eerst zonder), en met `group._id`.** De oude landing toonde naam + email. Met code-login mislukt de onboarding als de user een ander adres typt; het token gaat toch al naar dat adres. `group._id` blijft: "accepteren, dan naar de groep" heeft het nodig (`invites.accept` geeft niets terug), en voor een niet-lid ontsluit het niets.
 7. **`listPendingForEmail` en `hasPendingForEmail` niet publiek.** Geen client gebruikt ze: de pre-signup-gate is bewust niet gebouwd (WP6) en de app roept ze niet aan. Het Uitnodigingen-scherm (WP19) heeft wel een lijst ontvangen uitnodigingen nodig, maar voor de ingelogde caller, niet op een vrij email-argument. Dat wordt een nieuwe read in WP19.
 8. **`invites.listMine` zonder `token`, `respondedAt` en `bouncedAt`.** De oude app kende geen "link opnieuw delen" en geen bounce-weergave.
 9. **`users.getById` geeft ook voor zichzelf het publiek profiel.** Het eigen profiel loopt via `users.current`. Eén vorm per query houdt de return-validator simpel.
@@ -234,4 +234,11 @@ Daarnaast in deze cyclus:
 
 Daarbij komen bestaans-orakels in `albums.addPhoto`, `photos.flag`, `albums.markSeen` en `features.upvote` (die laatste raakt ook verborgen problemen). Een aanvaller die ooit een photo-id zag, kan via een eigen groep weer toegang krijgen. Invariant 6 houdt mutations buiten WP23. **Besluit Wouter 2026-11-02: eigen WP24, af vóór WP17** (dan levert `getUrl` de beeldbytes).
 
-**A-keuze 6 herzien (besluit Wouter 2026-11-02).** De invite-landing toont het e-mailadres van de genodigde wél. Met code-login mislukt de onboarding als de user een ander adres typt. Het token gaat toch al naar dat adres. De landing-vorm krijgt `email` erbij; de rest van A-keuze 6 blijft staan. Tests (A) en impl (B) in deze fix-cyclus.
+Ook in deze cyclus: A-keuze 6 herzien (invite-landing mét email), zie §A-keuzes.
+
+## Closeout (regie, 2026-11-02)
+
+- Audit-ronde 1: 3 blockers. B1 (cover zonder foto-toegang) is gefixt in de fix-cyclus. B2 (een WP15a-verwijdering meegecommit) bleef staan: die is van WP15a, en HEAD klopt weer na de WP15a-commit. B3 (write-gates) gaat naar WP24.
+- Heraudit: B1 dicht, geen blockers. Spec-tegenstrijdigheid over de invite-email is rechtgezet.
+- Naar WP24: write-gates en orakels in mutations. Ook daarbij: een test voor pad 2 via `groups.update`/`albums.update`. En `isWebmaster` dwingt de users-rij niet zelf af (audit-nit). `pick` accepteert een `any`-rij stil (nit, geen gat vandaag).
+- Open productvraag voor Wouter: de landing toont de email nu bij elke status, ook bij een al geaccepteerde invite.

@@ -45,8 +45,8 @@ WP1-WP4 liepen vóór de formele spec-doc-discipline (geen WP-file). Status uit 
 | WP21 | Video's + covers vanaf S3 | — | open |
 | WP22 | Link in de login-mail opent de app en rondt de login af (eis Wouter, verplicht vóór T0). Vervangt de reset-WP: er is geen wachtwoord meer. Gate test ook een verlopen code (WP13-gate 4a). Input: WP13 §Mail-links in de oude app. | — | open |
 | TBD | Account verwijderen: `deleteSelf` verwijdert ook de Clerk-user (anders maakt de volgende login een lege rij), plus een bevestiging zonder wachtwoord. Eigen A→B→audit (besluit 2026-11-02). Verplicht vóór de App Store-indiening. | — | open |
-| WP23 | Auth + veld-whitelist op publieke reads (`users.getById` lekte email/subject; alle publieke queries nagelopen). Vóór WP15-WP17 de reads gebruiken. | [`WP23-read-whitelist.md`](./WP23-read-whitelist.md) | in uitvoering |
-| WP24 | Write-gates op foto-toegang: `albums.addPhoto`, `coverPhotoId` in `groups.update`/`albums.update`, `photos.flag`, `ratings.upsert` checken foto-toegang, plus bestaans-orakels in mutations (incl. `albums.markSeen`, `features.upvote`). Uit WP23-audit. **Af vóór WP17.** | — | open |
+| WP23 | Auth + veld-whitelist op publieke reads (`users.getById` lekte email/subject; alle publieke queries nagelopen). Vóór WP15-WP17 de reads gebruiken. | [`WP23-read-whitelist.md`](./WP23-read-whitelist.md) | ✅ landed 2026-11-02 (audit + heraudit groen) |
+| WP24 | Write-gates op foto-toegang: `albums.addPhoto`, `coverPhotoId` in `groups.update`/`albums.update`, `photos.flag`, `ratings.upsert` checken foto-toegang, plus bestaans-orakels in mutations (incl. `albums.markSeen`, `features.upvote`). Uit WP23-audit, zie WP23 §Closeout. **Af vóór WP17.** | — | open |
 | Phase 4 Track B | Webapp | — | open |
 | Phase 5 | Hard cutover | — | uit fase 2-scope |
 
