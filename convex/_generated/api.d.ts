@@ -21,6 +21,7 @@ import type * as lib_email from "../lib/email.js";
 import type * as lib_emailTemplates from "../lib/emailTemplates.js";
 import type * as lib_exifOrientation from "../lib/exifOrientation.js";
 import type * as lib_mailjet from "../lib/mailjet.js";
+import type * as lib_photoAccess from "../lib/photoAccess.js";
 import type * as lib_shapes from "../lib/shapes.js";
 import type * as migration from "../migration.js";
 import type * as monitoring from "../monitoring.js";
@@ -51,6 +52,7 @@ declare const fullApi: ApiFromModules<{
   "lib/emailTemplates": typeof lib_emailTemplates;
   "lib/exifOrientation": typeof lib_exifOrientation;
   "lib/mailjet": typeof lib_mailjet;
+  "lib/photoAccess": typeof lib_photoAccess;
   "lib/shapes": typeof lib_shapes;
   migration: typeof migration;
   monitoring: typeof monitoring;

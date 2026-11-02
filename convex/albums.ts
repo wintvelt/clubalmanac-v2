@@ -8,6 +8,7 @@ import {
 import type { Doc, Id } from "./_generated/dataModel";
 import { getMembership, requireMember } from "./groups";
 import { requireCurrentUser } from "./users";
+import { getAccessiblePhoto } from "./lib/photoAccess";
 import {
   album,
   albumFields,
@@ -86,13 +87,14 @@ export const getWithGroup = query({
 });
 
 // Cat-1 join-on-read: album + cover photo. Cascade matrix row P2.
-// Cover als foto-vorm (geen GPS, filename of flag-velden).
+// Cover als foto-vorm (geen GPS, filename of flag-velden), en alleen met
+// foto-toegang, anders `null` (invariant 10).
 export const getWithCover = query({
   args: { albumId: v.id("albums") },
   returns: v.object({ ...albumFields, cover: v.union(photo, v.null()) }),
   handler: async (ctx, { albumId }) => {
-    const { album: row } = await requireAlbumAccess(ctx, albumId);
-    const cover = row.coverPhotoId ? await ctx.db.get(row.coverPhotoId) : null;
+    const { user, album: row } = await requireAlbumAccess(ctx, albumId);
+    const cover = await getAccessiblePhoto(ctx, user._id, row.coverPhotoId);
     return {
       ...pick(row, albumFields),
       cover: cover ? pick(cover, photoFields) : null,

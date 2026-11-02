@@ -12,6 +12,7 @@ import type { Doc, Id } from "./_generated/dataModel";
 import { internal } from "./_generated/api";
 import { requireCurrentUser } from "./users";
 import { requireWebmaster } from "./lib/auth";
+import { canAccessPhoto } from "./lib/photoAccess";
 import {
   allFlagFields,
   ownFlagFields,
@@ -30,9 +31,8 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 const FLAG_DELETE_DAYS = 14;
 const DENY_DELETE_DAYS = 7;
 
-// WP23: foto-toegang = eigenaar, óf lid van een groep waarin de foto in een
-// album staat (albumPhotos draagt groupId). Geen webmaster-bypass. Eén error
-// voor "foto bestaat niet" en "geen toegang" (invariant 4).
+// WP23: foto-toegang (definitie in lib/photoAccess). Eén error voor "foto
+// bestaat niet" en "geen toegang" (invariant 4).
 const NO_PHOTO_ACCESS = "Geen toegang tot deze foto";
 
 export async function requirePhotoAccess(
@@ -41,32 +41,10 @@ export async function requirePhotoAccess(
 ): Promise<{ user: Doc<"users">; photo: Doc<"photos"> }> {
   const user = await requireCurrentUser(ctx);
   const photo = await ctx.db.get(photoId);
-  if (!photo) throw new Error(NO_PHOTO_ACCESS);
-  if (photo.ownerId === user._id) return { user, photo };
-  if (await sharesPublication(ctx, user._id, photoId)) return { user, photo };
-  throw new Error(NO_PHOTO_ACCESS);
-}
-
-async function sharesPublication(
-  ctx: QueryCtx,
-  userId: Id<"users">,
-  photoId: Id<"photos">,
-): Promise<boolean> {
-  const aps = await ctx.db
-    .query("albumPhotos")
-    .withIndex("by_photo", (q) => q.eq("photoId", photoId))
-    .collect();
-  const groupIds = [...new Set(aps.map((ap) => ap.groupId))];
-  for (const groupId of groupIds) {
-    const m = await ctx.db
-      .query("memberships")
-      .withIndex("by_user_and_group", (q) =>
-        q.eq("userId", userId).eq("groupId", groupId),
-      )
-      .unique();
-    if (m) return true;
+  if (!photo || !(await canAccessPhoto(ctx, user._id, photo))) {
+    throw new Error(NO_PHOTO_ACCESS);
   }
-  return false;
+  return { user, photo };
 }
 
 // Cat-1 join-on-read: photo + owner data, vervangt denormalized

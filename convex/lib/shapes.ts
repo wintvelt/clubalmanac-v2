@@ -1,5 +1,6 @@
 import {
   v,
+  type Infer,
   type ObjectType,
   type PropertyValidators,
 } from "convex/values";
@@ -15,10 +16,27 @@ import {
 
 const ROLE = v.union(v.literal("admin"), v.literal("member"));
 
-/** Kopieert alleen de velden uit `fields` die in de rij een waarde hebben. */
-export function pick<F extends PropertyValidators>(
-  row: object,
-  fields: F,
+/**
+ * Per whitelist-veld: het veld moet in de rij bestaan, en het kolomtype moet
+ * passen in het validator-type. Anders wordt het veld-type `never` en faalt
+ * de aanroep van `pick` bij compile-time (bv. een tikfout in een veldnaam, of
+ * een vorm die op de verkeerde tabel wordt toegepast).
+ */
+type FieldsOf<Row, F extends PropertyValidators> = {
+  [K in keyof F]: K extends keyof Row
+    ? [Row[K]] extends [Infer<F[K]>]
+      ? F[K]
+      : never
+    : never;
+};
+
+/**
+ * Kopieert alleen de velden uit `fields` die in de rij een waarde hebben.
+ * Gekoppeld aan het rij-type (`Doc<tabel>` op de aanroep-plek) via FieldsOf.
+ */
+export function pick<Row extends object, F extends PropertyValidators>(
+  row: Row,
+  fields: F & FieldsOf<Row, F>,
 ): ObjectType<F> {
   const src = row as Record<string, unknown>;
   const out: Record<string, unknown> = {};
@@ -194,13 +212,14 @@ export const landingInviterFields = {
 };
 
 /**
- * Invite-landing (anoniem, token = toegangsbewijs). Geen invitee-email,
- * token, invitedBy, bouncedAt, `_id` of tijden (A-keuze 6).
+ * Invite-landing (anoniem, token = toegangsbewijs). Mét invitee-email (A-keuze
+ * 6, herzien 47b65bc); geen token, invitedBy, bouncedAt, `_id` of tijden.
  */
 export const inviteLanding = v.object({
   status: INVITE_STATUS,
   isExpired: v.boolean(),
   role: v.optional(ROLE),
+  email: v.string(),
   group: v.union(v.object(landingGroupFields), v.null()),
   inviter: v.union(v.object(landingInviterFields), v.null()),
 });

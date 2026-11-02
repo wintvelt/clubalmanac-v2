@@ -7,6 +7,7 @@ import {
 } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import { getBySubject, requireCurrentUser } from "./users";
+import { getAccessiblePhoto } from "./lib/photoAccess";
 import {
   group,
   groupFields,
@@ -120,7 +121,9 @@ export const getById = query({
 });
 
 // Cat-1 join-on-read: group + cover photo. Cascade matrix row P2.
-// Member-only (groep-data is sowieso member-only). Cover als foto-vorm.
+// Member-only (groep-data is sowieso member-only). Cover als foto-vorm, en
+// alleen met foto-toegang, anders `null` (invariant 10). `coverPhotoId` blijft
+// in de groep-vorm: een id zonder toegang ontsluit niets.
 export const getWithCover = query({
   args: { groupId: v.id("groups") },
   returns: v.union(
@@ -128,10 +131,10 @@ export const getWithCover = query({
     v.null(),
   ),
   handler: async (ctx, { groupId }) => {
-    await requireMember(ctx, groupId);
+    const { user } = await requireMember(ctx, groupId);
     const row = await ctx.db.get(groupId);
     if (!row) return null;
-    const cover = row.coverPhotoId ? await ctx.db.get(row.coverPhotoId) : null;
+    const cover = await getAccessiblePhoto(ctx, user._id, row.coverPhotoId);
     return {
       ...pick(row, groupFields),
       cover: cover ? pick(cover, photoFields) : null,

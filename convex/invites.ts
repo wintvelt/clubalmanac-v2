@@ -139,8 +139,10 @@ export const create = mutation({
 // het token is het toegangsbewijs. Frontend bepaalt wat te tonen op basis van
 // status + isExpired.
 //
-// Audit-8 + WP23 (A-keuze 6): alleen wat de landing nodig heeft. Geen
-// invitee-email, token-echo, invitedBy-id, bouncedAt, `_id` of tijden.
+// Audit-8 + WP23 (A-keuze 6, herzien 47b65bc): alleen wat de landing nodig
+// heeft. Wél de invitee-email: met code-login moet de user precies dat adres
+// gebruiken, en het token ging al naar dat adres. Geen token-echo,
+// invitedBy-id, bouncedAt, `_id` of tijden.
 // Inviter = {name, profilePhotoStorageId}; groep = {_id, name, description}
 // (`_id` voor "accepteren, dan naar de groep"; ontsluit niets voor een
 // niet-lid).
@@ -156,6 +158,7 @@ export const getByToken = query({
       status: invite.status,
       isExpired: invite.expiresAt <= Date.now(),
       ...(invite.role !== undefined ? { role: invite.role } : {}),
+      email: invite.email,
       group: groupDoc ? pick(groupDoc, landingGroupFields) : null,
       inviter: inviterDoc ? pick(inviterDoc, landingInviterFields) : null,
     };
