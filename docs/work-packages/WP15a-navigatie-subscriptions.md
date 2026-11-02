@@ -90,3 +90,122 @@ Een ingelogde user gaat met de tabbalk naar Home, Mijn foto's, Toevoegen, Profie
   5. Dashboard: wissel van tab → de query van het vorige scherm stopt. App naar de achtergrond → geen live queries meer. App terug → het scherm heeft verse data.
   6. Uit WP-Design: licht/donker wisselen terwijl de app open is, icoon in donker, grootste tekststand, liggend
   7. Ruimte voor bevindingen buiten deze stappen
+
+## Spec-criticus aanvullingen (A, 2026-11-02)
+
+Bronnen: oude app `clubalmanac-app` (`screens/NAVIGATOR.jsx`, `components/nav/TabBar.jsx`, `App.js`), de huidige `app/` (WP13, WP-Design) en de Convex-client `convex@1.45.0` in `app/node_modules/convex/dist/esm/browser/sync/`.
+
+### Hoe de oude app navigeerde
+
+- **Eén platte stack** voor alle ingelogde schermen, geen echte tabs. De tabbalk was een component dat bijna elk scherm zelf onderaan zette, ook diepe schermen (Foto's, Foto-detail).
+- **Een tik op een tab** deed `navigate(<naam>)`. Je ging dus altijd naar het begin van die bestemming. Er was geen eigen stack per tab.
+- **Ingelogd en uitgelogd** hadden elk een eigen navigatie-container, met de user-id als scherm-id. Commentaar in de code: anders gaf in- en uitloggen "funny issues". Er bleef dus niets van de vorige user in de navigatie hangen.
+- **Geen AppState, geen focus.** De oude app pauzeerde niets bij achtergrond of een ander scherm.
+
+### Beslissingen op "Te beslissen door A"
+
+**1. Tik op de tab die al actief is: terug naar het begin van die stack.**
+
+| Situatie | Gedrag |
+|---|---|
+| Tik op een andere tab | Die tab opent zoals je hem verliet (iOS-gewoonte, design.md §7: eigen stack per tab) |
+| Tik op de actieve tab, dieper in de stack | Terug naar het begin van die tab, in één stap |
+| Tik op de actieve tab, al aan het begin | Er gebeurt niets. Naar boven scrollen is voor de WP die een lijst bouwt. |
+
+Waarom: voor 50+ is "tik op Home en je bent thuis" de nooduitgang als je verdwaald bent. Dat deed de oude app ook. Afwijking van de oude app: een andere tab onthoudt nu waar je was. Zie open vraag 1.
+
+**2. De verbinding van de Convex-client in de achtergrond.**
+
+Wat de client doet (gelezen in `convex@1.45.0`):
+- De client kent geen AppState. De WebSocket blijft open zolang het OS dat toelaat, ook als er geen enkele query loopt.
+- Zonder queries draait de server geen query-functies. Dus geen functieaanroepen en geen databandbreedte voor queries. Wel blijft er een klein verkeer: pings van de server, en het verversen van het Clerk-token vlak voor het verloopt (een aanroep naar Clerk plus een `Authenticate`-bericht naar Convex). Dat zijn geen Convex-functieaanroepen.
+- In de achtergrond zet iOS de JS na korte tijd stil. Timers lopen dan niet, en het OS sluit de socket vroeg of laat. Komt de app terug, dan maakt de client zelf weer verbinding.
+- `ConvexReactClient.close()` is definitief. Daarna moet er een nieuwe client komen, en zakt de auth-toestand terug naar "laden".
+
+Beslissing: **"geen live query" is genoeg** voor invariant 5. De app sluit de verbinding niet bij achtergrond. Een nieuwe client per terugkeer zou de auth-poort laten flitsen en de navigatie-stack kosten (zie invariant 12 hieronder). De gate meet functieaanroepen in het dashboard, niet sockets.
+
+**3. Terug na lange tijd, met een verlopen token.**
+
+| Wat is verlopen | Gedrag |
+|---|---|
+| Alleen het korte Clerk-token (JWT) | Normaal; dat gebeurt bij elke terugkeer. De client haalt een nieuw token. De user ziet hetzelfde scherm met dezelfde stack. Geen inlogscherm, geen melding "server weigert je sessie". |
+| De Clerk-sessie zelf (lange inactiviteit, ingetrokken in het dashboard, account weg) | Inlogscherm. De stack vervalt. Na opnieuw inloggen begint de app op Home. Kort "Laden…" ervoor mag. |
+| Geen netwerk bij terugkeer | Geen uitlog. Kop en tabbalk blijven staan; het inhoudsgebied toont laden of een fout met "Opnieuw" (design.md §6). |
+
+Risico voor B en red-team: bij een verlopen sessie merkt Convex het mogelijk eerder dan Clerk. Dan valt `useConvexAuth` op "niet geauthenticeerd" terwijl Clerk nog "ingelogd" zegt. Dat is de toestand `convexAuthFailed` van WP13, met de tekst "server weigert je sessie". Die tekst is voor een blijvende weigering bij een geldige sessie, niet voor een sessie die net verliep. De user mag hem in dit geval niet blijvend zien.
+
+**4. Pariteit tabbalk.**
+
+| Oude app | Nieuw (15a) |
+|---|---|
+| Alleen iconen, geen labels | Icoon plus label (design.md §5) |
+| Actief: gevuld icoon in indigo | Gevuld icoon op de `tabPill`-pil, vet label |
+| Tabbalk op bijna elk scherm, ook diepe | Tabbalk op elk scherm in een tab-stack. Niet in de modaal. |
+| + werd chevron-omlaag op het toevoeg-scherm; nog een tik = terug | + opent een modaal met "Sluiten". De tabbalk is dan niet te zien, dus geen wisselend icoon. |
+| + gaf de huidige groep en het album mee | Vervalt in 15a. Context meegeven is WP18; de route laat ruimte voor optionele parameters. |
+| Home = laatst bezochte groep, anders Mijn groepen | WP16. In 15a is Home een leeg scherm. |
+| Liggend: inklapbaar rondmenu rechtsonder | Vervalt. De tabbalk blijft, ook liggend en op iPad (WP-Design invariant 6). |
+| Hulp-modal bij de tabbalk (al uitgezet in de oude app) | Vervalt (design.md §6) |
+
+### Routes (deep links liggen hiermee vast)
+
+| Scherm | Pad op `clubalmanac://` | Toegang |
+|---|---|---|
+| Inloggen | `/inloggen` | alleen uitgelogd |
+| Home | `/` | ingelogd |
+| Mijn foto's | `/mijn-fotos` | ingelogd |
+| Profiel | `/profiel` | ingelogd |
+| Instellingen | `/instellingen` | ingelogd |
+| Over de app | `/instellingen/over` | ingelogd |
+| Foto's toevoegen (modaal) | `/toevoegen` | ingelogd |
+| Elk ander pad | — | ingelogd. Ingelogd toont het een scherm "Niet gevonden" met een knop naar Home. |
+
+Een pad is pas publiek als een WP het expliciet publiek maakt. Een nieuw of onbekend pad is dus standaard afgeschermd. Zo kan WP19 of WP22 een publieke route toevoegen zonder iets aan bestaande routes te veranderen (invariant 7).
+
+### Aanvullende invarianten
+
+10. **De auth-poort per route kent vier uitkomsten buiten "tonen"**: wachten, inloggen, naar Home, of het WP13-statusscherm.
+    - *Laden*: een laadscherm. Geen ingelogd scherm, geen tabbalk, en ook geen inlogscherm. Een deep link bij een koude start gaat zo niet verloren aan een tussentijdse doorverwijzing.
+    - *Uitgelogd* op een afgeschermd pad: het inlogscherm.
+    - *Ingelogd* op `/inloggen`: naar Home.
+    - *Convex weigert het token* of *geen rij*: de bestaande WP13-schermen, op elk pad. Geen tabbalk.
+11. **Geen navigatie van de vorige user.** Log in als A, ga naar Instellingen → Over de app, log uit, log in als B: B begint op Home, met lege stacks. Geen tab onthoudt iets van A.
+12. **Terug uit de achtergrond met een geldige sessie: hetzelfde scherm, dezelfde stack.** Ook de query achter de auth-poort (`users.current`) pauzeert in de achtergrond (invariant 5). Dat pauzeren mag de poort niet naar "laden" laten vallen: dan zou de router de stack weggooien of kort het inlogscherm tonen. De laatst bekende rij geldt tot de verse er is. Dit geldt ook voor schermen: een scherm dat weer focus krijgt, toont zijn laatste data tot de verse er is, in plaats van een laadflits. Dat oude data mag blijven staan, geldt alleen binnen één Clerk-sessie (WP13 invariant 13).
+13. **Een modaal neemt de focus.** Staat "Foto's toevoegen" open, dan heeft het scherm eronder geen focus en vraagt het niets live op, ook als het half zichtbaar is. Na "Sluiten" (of omlaag vegen) sta je weer op hetzelfde scherm, en dat krijgt verse data.
+14. **Elke AppState behalve `active` pauzeert.** Dat geldt ook voor `inactive`: Bedieningspaneel, app-wisselaar, een binnenkomend gesprek. Een onbekende of nieuwe waarde telt ook als niet-actief. Prijs: na elke korte onderbreking draait elke query van het scherm in beeld één keer opnieuw. Zie open vraag 3.
+15. **Een deep link naar een dieper scherm heeft een terugknop.** `clubalmanac://instellingen/over` opent, ook bij een koude start, met Instellingen eronder. "‹ Instellingen" werkt dus direct (invariant 3).
+16. **De tabbalk is toegankelijk.** VoiceOver leest per tab het label en of hij gekozen is. De + heet "Foto's toevoegen" en is een knop, geen tab.
+
+### Edge cases
+
+- **Uitgelogd een deep link openen** (bv. `clubalmanac://instellingen/over`): het inlogscherm. Na inloggen gaat de app naar Home. Het doel van de link onthouden is voor WP19 en WP22.
+- **Dubbel tikken op +**: één modaal, niet twee op elkaar.
+- **Tab wisselen terwijl een scherm nog laadt**: de query van dat scherm stopt toch. Er blijft geen abonnement hangen omdat het antwoord nog niet binnen was.
+- **Snel heen en weer tussen tabs**: elke wissel stopt de oude query en start de nieuwe. Er stapelen zich geen abonnementen op.
+- **Uitloggen terwijl een modaal open is**: kan in 15a niet (uitloggen zit op Instellingen), maar de poort vangt het toch: geen ingelogd scherm meer, ook de modaal niet.
+- **Liggend draaien met een modaal open**: de modaal blijft, "Sluiten" blijft zichtbaar.
+
+### Contract voor A's tests (pure logica)
+
+Tests staan in `app/tests/`, net als bij WP13: vitest in Node, zonder React Native. De bestandsnamen hieronder liggen vast omdat de tests ze importeren of lezen.
+
+| Module | Signatuur | Pint |
+|---|---|---|
+| `app/src/lib/liveQuery.ts` | `screenQueryIsLive(input: { focused: boolean; appState: string; authState: AuthState }): boolean` | Invarianten 5, 13, 14. Live alleen bij focus, AppState `active` en auth `ready`. `appState` is de waarde van React Native `AppState`; elke andere of onbekende waarde betekent niet live. |
+| `app/src/lib/liveQuery.ts` | `sessionQueryIsLive(input: { appState: string; clerkLoaded: boolean; clerkSignedIn: boolean; convexAuthLoading: boolean; convexAuthenticated: boolean }): boolean` | Invarianten 5 en 12, voor de ene query achter de auth-poort (`users.current`). Die hangt niet van focus af: hij staat boven de navigatie. Live alleen bij AppState `active`, Clerk geladen en ingelogd, en Convex klaar en akkoord. |
+| `app/src/lib/routeAccess.ts` | `routeAccess(pathname: string, authState: AuthState): "show" \| "wait" \| "login" \| "home" \| "convexAuthFailed" \| "noUserRow"` | Invarianten 4 en 10 en de routetabel. `pathname` zoals Expo Router hem geeft (zonder scheme en query). Een slash aan het eind telt niet mee. Publiek is alleen een exacte match, geen voorvoegsel: `/inloggen-x` is afgeschermd. |
+| (geen module) | `app/tests/liveQueryAccess.test.ts` | Invariant 6. Leest de broncode van `app/`. Alleen `app/src/data/useLiveQuery.ts` mag live Convex-hooks importeren (`useQuery`, `useQueries`, `usePaginatedQuery`, `usePreloadedQuery`) of `watchQuery` / `onUpdate` gebruiken. Dat bestand gebruikt de beslissing uit `src/lib/liveQuery.ts`. Dit geldt ook voor de auth-poort: die gebruikt nu nog `useQuery` direct. |
+
+`AuthState` is het type uit `app/src/lib/authState.ts` (WP13). De tests pinnen de beslissing, niet hoe de hook focus of AppState uitleest. Of de hook die beslissing echt volgt, zien audit, red-team en de gate in het dashboard.
+
+### Ops-runbook (aanvulling op B's regel in `external-services.md`)
+
+- Meet in het Convex-dashboard **functieaanroepen per functie** (Logs / Functions), niet het aantal verbindingen. Een open socket zonder queries kost geen functieaanroepen.
+- Verwacht bij elke tabwissel en elke terugkeer uit de achtergrond één nieuwe uitvoering per query van het scherm in beeld, plus één van `users.current`. Daarna niets meer, tot de data verandert.
+
+### Open vragen voor regie / Wouter
+
+1. **Tab wisselen onthoudt de stack** (iOS), waar de oude app elke tab-tik naar het begin bracht. Een tik op de actieve tab brengt je wel altijd naar het begin. Goed zo voor 50+, of altijd naar het begin? Te zien bij gate-stap 1.
+2. **Nederlandse paden** (`/mijn-fotos`, `/instellingen/over`). Ze zijn niet zichtbaar voor de user, maar liggen vast zodra er links in mails staan. Akkoord?
+3. **Pauzeren bij `inactive`** volgt de spec letterlijk. Elke keer dat iemand het Bedieningspaneel opent, draait de query van het scherm daarna één keer opnieuw. Klein, maar zichtbaar in het dashboard.
+4. **Hoe lang een Clerk-sessie geldig blijft**, staat in het Clerk-dashboard, niet in de app. Dat bepaalt hoe vaak een 50+-user opnieuw moet inloggen. Graag nagaan vóór de cutover; niet in 15a.
