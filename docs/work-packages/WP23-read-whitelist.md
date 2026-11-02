@@ -241,4 +241,4 @@ Ook in deze cyclus: A-keuze 6 herzien (invite-landing mét email), zie §A-keuze
 - Audit-ronde 1: 3 blockers. B1 (cover zonder foto-toegang) is gefixt in de fix-cyclus. B2 (een WP15a-verwijdering meegecommit) bleef staan: die is van WP15a, en HEAD klopt weer na de WP15a-commit. B3 (write-gates) gaat naar WP24.
 - Heraudit: B1 dicht, geen blockers. Spec-tegenstrijdigheid over de invite-email is rechtgezet.
 - Naar WP24: write-gates en orakels in mutations. Ook daarbij: een test voor pad 2 via `groups.update`/`albums.update`. En `isWebmaster` dwingt de users-rij niet zelf af (audit-nit). `pick` accepteert een `any`-rij stil (nit, geen gat vandaag).
-- Open productvraag voor Wouter: de landing toont de email nu bij elke status, ook bij een al geaccepteerde invite.
+- De landing toont de email bij elke status, ook bij een al geaccepteerde of verlopen invite (besluit Wouter 2026-11-02).
