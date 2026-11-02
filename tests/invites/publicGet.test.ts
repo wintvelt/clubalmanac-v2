@@ -13,8 +13,8 @@
 // retourneert alleen non-sensitive velden. Tests gemarkeerd [GAP] dekken
 // edge cases die in oude code ontbraken.
 //
-// WP23: de landing-vorm bevat geen invitee-email meer (A-keuze 6); de exacte
-// vorm staat in tests/readWhitelist/invites.test.ts. listPendingForEmail en
+// WP23: de landing-vorm is een whitelist (mét invitee-email, A-keuze 6 zoals
+// herzien in 47b65bc); de exacte vorm staat in tests/readWhitelist/invites.test.ts. listPendingForEmail en
 // hasPendingForEmail zijn geen publieke query meer (A-keuze 7, gepind in
 // tests/readWhitelist/inventory.test.ts). Hun semantiek (alleen pending,
 // niet verlopen, case-insensitive) leeft voort in de onboarding:
@@ -87,6 +87,7 @@ describe("invites.getByToken — landingspagina lookup", () => {
     );
     const got = await t.query(api.invites.getByToken, { token });
     expect(got?.status).toBe("pending");
+    expect((got as Record<string, unknown> | null)?.email).toBe("new@x.com");
     expect(got?.group).toBeNull();
   });
 

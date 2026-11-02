@@ -92,7 +92,8 @@ export const SHAPE = {
     "expiresAt",
     "createdAt",
   ],
-  inviteLanding: ["status", "isExpired", "role", "group", "inviter"],
+  // A-keuze 6 herzien (Wouter, 47b65bc): email van de genodigde wél.
+  inviteLanding: ["status", "isExpired", "role", "email", "group", "inviter"],
   landingGroup: ["_id", "name", "description"],
   landingInviter: ["name", "profilePhotoStorageId"],
 } as const;

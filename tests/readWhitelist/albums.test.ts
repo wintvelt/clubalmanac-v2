@@ -90,6 +90,34 @@ describe("albums — auth per query", () => {
   }
 });
 
+describe("albums — geen webmaster-bypass (audit-ronde 1)", () => {
+  for (const [name, q] of BY_ALBUM) {
+    it(`${name}: webmaster zonder lidmaatschap = onbekend album`, async () => {
+      const t = newT();
+      const w = await seedWorld(t);
+      const gone = await staleId(t, w, "albums");
+      const wm = asUser(t, w, "wm");
+      await expectNoOracle(
+        () => byAlbum(wm, q, gone),
+        () => byAlbum(wm, q, w.albums.A1),
+      );
+    });
+  }
+
+  for (const [name, q] of BY_GROUP) {
+    it(`${name}: webmaster zonder lidmaatschap = onbekende groep`, async () => {
+      const t = newT();
+      const w = await seedWorld(t);
+      const gone = await staleId(t, w, "groups");
+      const wm = asUser(t, w, "wm");
+      await expectNoOracle(
+        () => byGroup(wm, q, gone),
+        () => byGroup(wm, q, w.groups.G1),
+      );
+    });
+  }
+});
+
 describe("albums — vormen voor een lid", () => {
   it("getById: precies de album-velden", async () => {
     const t = newT();
@@ -164,5 +192,21 @@ describe("albums — vormen voor een lid", () => {
       expect(item.albumPhoto.photoId).toBe(item.photo._id);
     }
     expectNoUserSecrets(list, w);
+  });
+});
+
+describe("albums.listPhotos — null-tak (audit-ronde 1)", () => {
+  it("foto-rij ontbreekt maar de publicatie staat er nog: photo is null, albumPhoto blijft in de vorm", async () => {
+    const t = newT();
+    const w = await seedWorld(t);
+    await t.run((ctx) => ctx.db.delete(w.photos.pAlice));
+    const list = (await asUser(t, w, "bob").query(api.albums.listPhotos, {
+      albumId: w.albums.A1,
+    })) as R[];
+    const orphan = list.find((i) => i.albumPhoto.photoId === w.photos.pAlice);
+    expect(orphan, "publicatie van de verdwenen foto ontbreekt").toBeDefined();
+    expectShape(orphan, ["albumPhoto", "photo"]);
+    expectShape(orphan!.albumPhoto, SHAPE.albumPhoto);
+    expect(orphan!.photo).toBeNull();
   });
 });

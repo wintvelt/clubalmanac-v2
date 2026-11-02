@@ -168,3 +168,35 @@ describe("groups.listMembers — bron voor de WP16-ledenlijst", () => {
     );
   });
 });
+
+describe("groups.listMembers — webmaster en null-tak (audit-ronde 1)", () => {
+  it("webmaster zonder lidmaatschap: geen bypass, niet te onderscheiden van een onbekende groep", async () => {
+    const t = newT();
+    const w = await seedWorld(t);
+    const gone = await staleId(t, w, "groups");
+    await expectNoOracle(
+      () => asUser(t, w, "wm").query(api.groups.listMembers, { groupId: gone }),
+      () =>
+        asUser(t, w, "wm").query(api.groups.listMembers, {
+          groupId: w.groups.G1,
+        }),
+    );
+  });
+
+  it("users-rij ontbreekt maar membership staat er nog: user is null, membership blijft in de vorm", async () => {
+    const t = newT();
+    const w = await seedWorld(t);
+    await t.run((ctx) => ctx.db.delete(w.users.bob.id));
+    const members = (await asUser(t, w, "alice").query(
+      api.groups.listMembers,
+      { groupId: w.groups.G1 },
+    )) as R[];
+    expect(members).toHaveLength(2);
+    const orphan = members.find((m) => m.membership.userId === w.users.bob.id);
+    expect(orphan, "membership van de verdwenen user ontbreekt").toBeDefined();
+    expectShape(orphan, ["membership", "user"]);
+    expectShape(orphan!.membership, SHAPE.membership);
+    expect(orphan!.user).toBeNull();
+    expectNoUserSecrets(members, w);
+  });
+});

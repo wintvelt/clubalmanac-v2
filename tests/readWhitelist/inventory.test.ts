@@ -87,7 +87,7 @@ describe("WP23 inventaris publieke queries (invariant 7)", () => {
 
 describe("WP23 return-validator per publieke query (invariant 8, A-keuze 11)", () => {
   for (const name of EXPECTED_PUBLIC_QUERIES) {
-    it(`${name} declareert een return-validator zonder any`, () => {
+    it(`${name} declareert een return-validator zonder any of record`, () => {
       const fn = publicQueries().get(name);
       expect(fn, `${name} is geen publieke query`).toBeDefined();
       const raw = fn!.exportReturns?.() ?? "null";
@@ -95,6 +95,11 @@ describe("WP23 return-validator per publieke query (invariant 8, A-keuze 11)", (
       expect(returns, `${name} heeft geen returns-validator`).not.toBeNull();
       expect(raw, `${name} gebruikt v.any() in returns`).not.toMatch(
         /"type":\s*"any"/,
+      );
+      // Audit-ronde 1: geen open-key-validators. Een v.record laat elke key
+      // door en ondergraaft de whitelist net zo goed als v.any.
+      expect(raw, `${name} gebruikt v.record() in returns`).not.toMatch(
+        /"type":\s*"record"/,
       );
     });
   }

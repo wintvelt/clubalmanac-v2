@@ -14,7 +14,8 @@ import {
 } from "./_world";
 
 // WP23 — invites-reads. Spec §Vormen (invite-landing, invite afzender),
-// A-keuzes 6 (landing zonder invitee-email, wel group._id) en 8 (listMine
+// A-keuzes 6 (landing mét invitee-email sinds herziening 47b65bc, wel
+// group._id; geen token/invitedBy/bouncedAt/_id/tijden) en 8 (listMine
 // zonder token/respondedAt/bouncedAt). Niet-publiek-zijn van
 // listPendingForEmail/hasPendingForEmail staat in inventory.test.ts.
 
@@ -28,7 +29,7 @@ function expectNoInviteSecrets(value: unknown, w: World) {
 }
 
 describe("invites.getByToken — anonieme landingspagina", () => {
-  it("precies status, isExpired, rol, groep (id, naam, omschrijving) en inviter (naam, profielfoto)", async () => {
+  it("precies status, isExpired, rol, email van de genodigde, groep (id, naam, omschrijving) en inviter (naam, profielfoto)", async () => {
     const t = newT();
     const w = await seedWorld(t);
     const got = (await t.query(api.invites.getByToken, {
@@ -40,12 +41,12 @@ describe("invites.getByToken — anonieme landingspagina", () => {
     expect(got.status).toBe("pending");
     expect(got.isExpired).toBe(false);
     expect(got.role).toBe("member");
+    expect(got.email).toBe("new@x.com");
     expect(got.group._id).toBe(w.groups.G1);
     expect(got.group.name).toBe("Club");
     expect(got.inviter.name).toBe("Alice");
 
     const json = JSON.stringify(got);
-    expect(json, "invitee-email op de landing").not.toContain("new@x.com");
     expect(json, "invitedBy-id op de landing").not.toContain(
       w.users.alice.id,
     );
@@ -53,7 +54,7 @@ describe("invites.getByToken — anonieme landingspagina", () => {
     expectNoUserSecrets(got, w);
   });
 
-  it("gebouncede, verlopen invite: landing-vorm met status, zonder bouncedAt", async () => {
+  it("gebouncede, verlopen invite: landing-vorm met status en email, zonder bouncedAt", async () => {
     const t = newT();
     const w = await seedWorld(t);
     const got = (await t.query(api.invites.getByToken, {
@@ -62,7 +63,7 @@ describe("invites.getByToken — anonieme landingspagina", () => {
     expectShape(got, SHAPE.inviteLanding);
     expect(got.status).toBe("expired");
     expect(got.isExpired).toBe(true);
-    expect(JSON.stringify(got)).not.toContain("bounce@x.com");
+    expect(got.email).toBe("bounce@x.com");
   });
 
   it("algemene invite zonder groep en zonder rol: group is null, rol ontbreekt", async () => {
