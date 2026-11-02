@@ -417,3 +417,5 @@ Werkwijze: A zoekt eerst uit hoe Clerk offline laadt en pint F12 met tests waar 
   - koude start met het netwerk van de Mac uit, nadat de app één keer online is gestart: kop, tabbalk en de melding "geen internet". Netwerk aan: vanzelf live.
   - Hetzelfde zonder eerdere online start: het inlogscherm, en na netwerk aan vanzelf door.
 - **gate ronde 4:** de koude start in vliegtuigmodus. Binnen de time-out kop, tabbalk en de melding. Vliegtuigmodus uit: vanzelf weer in de app, zonder afsluiten.
+
+**Afwijking B bij F12 (`35e5d69`), regie-besluit: voorlopig aangenomen, de red-team valt het aan.** Clerk 6.40.1 haalt na een offline start zonder cache de echte client wel op, maar maakt de sessie daarin niet actief. Daarom zet `app/src/data/resumeSession.ts` de sessie alsnog actief. Dat gebeurt alleen als Clerk op `degraded` staat, als de user niet ingelogd is, en voor de `lastActiveSessionId` uit de client, mits die in `signedInSessions` staat. Na uitloggen staat daar geen sessie meer (WP13 invariant 6). Komt de red-team met een pad waarop deze hook een sessie activeert die de user niet meer had, dan gaat de hook eruit.
