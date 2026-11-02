@@ -234,3 +234,45 @@ Tests staan in `app/tests/`, net als bij WP13: vitest in Node, zonder React Nati
 | F5 | audit | `react-native-gesture-handler` 3.4.0, `react-native-reanimated` en `react-native-worklets` staan alleen als peer in de lockfile | Ze staan vast in `package.json` op de SDK 58-versie, via `npx expo install`. `npx expo-doctor` is schoon voor deze pakketten. |
 
 Werkwijze: A schrijft RED tests voor F1–F4, waar dat met pure logica of een scanner kan. Daarna fixt B F1–F5. Dan volgen een frisse heraudit en een hercheck door de red-team op F1–F4.
+
+### Fix-cyclus: aanvulling A (2026-11-02)
+
+**F1: tijdelijk geen token is geen weigering.** Er komt een zesde toestand, `reconnecting` ("opnieuw verbinden"), boven op de vijf van WP13. `deriveAuthState` en de WP13-tests blijven ongewijzigd. Een nieuwe functie bouwt erop voort en kent twee extra signalen:
+- *tokenophaal mislukt*: de laatste poging om een Clerk-token voor Convex te halen gaf een fout of geen token;
+- *online*: het toestel heeft netwerk. Onbekend telt als niet online.
+
+| WP13 zegt | Signalen | Toestand |
+|---|---|---|
+| `convexAuthFailed` | tokenophaal mislukt, of niet online | `reconnecting` |
+| `convexAuthFailed` | token wel opgehaald, en online | `convexAuthFailed` (WP13-foutscherm) |
+| iets anders | — | ongewijzigd |
+
+- **Invariant 4 verruimd.** In `reconnecting` rendert de navigator wel: kop, tabbalk en wat er van deze sessie nog staat. Er loopt geen live query, ook niet `users.current` (Convex heeft dan geen identiteit, en `users.current` zou `null` geven en "geen rij" tonen). Het inhoudsgebied toont laden of een fout met "Opnieuw".
+- **Opnieuw proberen.** In `reconnecting` doet de app een nieuwe poging zodra de app actief én online wordt, vanuit een moment waarop dat niet zo was. Een eenmalige Clerk-fout terwijl de app actief en online blijft, geeft dus geen automatische poging: de user tikt dan op "Opnieuw".
+- `routeAccess` in `reconnecting`: afgeschermd pad → tonen, `/inloggen` → naar Home.
+
+**F2: alleen `users.current` loopt buiten focus.** De beslissing voor de sessie-query krijgt de functienaam van de query mee (zoals `getFunctionName` hem geeft). Alleen `users:current` kan live zijn. Daarnaast mag alleen `src/AuthGate.tsx` iets anders dan `useLiveQuery` uit het toegangspad importeren.
+
+**F3: de scanner leest de syntaxboom, niet de tekst.** De test gebruikt de TypeScript-parser. Daardoor maken spaties, commentaar en puntkomma's niet meer uit. Hij vangt:
+- live hooks uit `convex`, `convex-helpers` en `@convex-dev`;
+- elke import uit `convex-helpers/react…` en `@convex-dev/react-query`;
+- de client-leden `watchQuery`, `watchPaginatedQuery`, `prewarmQuery`, `paginatedQueryClient`, `sync` en `onUpdate`, ook via `x["…"]`;
+- mappen `tests` en `dist` op elke diepte.
+
+Alleen `tests/` en de andere mappen in de wortel van `app/` vallen buiten de scan. Eenmalig lezen (`useConvex().query`) en `connectionState` / `subscribeToConnectionState` blijven toegestaan.
+
+**F4: elk routebestand is gedekt.** `PUBLIC_PATHS` wordt geëxporteerd uit `src/lib/routeAccess.ts`. Een routebestand in `src/app/` is gedekt als hijzelf, of een map erboven, in de `_layout` van zijn ouder als `*.Screen` binnen een `*.Protected` staat. Is hij niet gedekt, dan moet zijn pad in `PUBLIC_PATHS` staan. Elk pad in `PUBLIC_PATHS` en `/` heeft een routebestand.
+
+| Module | Signatuur | Pint |
+|---|---|---|
+| `app/src/lib/sessionState.ts` | `deriveSessionState(input: AuthStateInput & { tokenFetchFailed: boolean; online: boolean \| null }): SessionState`, met `SessionState = AuthState \| "reconnecting"` | F1, de tabel hierboven |
+| `app/src/lib/sessionState.ts` | `authRetryDue(input: { state: SessionState; before: { appState: string; online: boolean \| null }; now: { appState: string; online: boolean \| null } }): boolean` | F1, opnieuw proberen |
+| `app/src/lib/liveQuery.ts` | `sessionQueryIsLive` krijgt `query: string` erbij; `screenQueryIsLive` neemt `SessionState` | F2; `reconnecting` is niet live |
+| `app/src/lib/routeAccess.ts` | `routeAccess(pathname, state: SessionState)` en `export PUBLIC_PATHS: Iterable<string>` | F1, F4 |
+| (geen module) | `app/tests/liveQueryAccess.test.ts`, `app/tests/routeFiles.test.ts`, met de parser in `app/tests/support/sourceScan.ts` | F2, F3, F4 |
+
+**Niet als test te pinnen (naar audit, red-team en gate):**
+- dat de poort `tokenFetchFailed` en `online` echt meet en bij `authRetryDue` echt een nieuwe poging doet;
+- dat de poort bij "login" en "home" zelf omleidt, en niet op de guard wacht;
+- dat de guard in `_layout` dezelfde toestand volgt als de poort;
+- **gate-aanvulling:** vliegtuigmodus aan, app langer dan 60 s in de achtergrond, terug: kop en tabbalk blijven, geen "server weigert". Vliegtuigmodus uit: binnen enkele seconden weer live. Hetzelfde bij een koude start in vliegtuigmodus.
