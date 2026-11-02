@@ -362,3 +362,49 @@ Besluit Wouter: "Valt die stap om, dan volgt een gerichte fix".
 | F12 | Een koude start zonder netwerk blijft eindeloos op "Laden…" staan. Ook als het netwerk terugkomt, blijft het zo, tot de app geforceerd wordt afgesloten. | Er komt nooit eindeloos "Laden…". Na een vaste time-out volgt een melding met "Opnieuw" (design.md §6). Komt het netwerk terug, dan herstelt de app zich vanzelf, zonder afsluiten. Had de user een sessie, dan komt hij weer in de app; zo niet, dan ziet hij het inlogscherm. Mag het met een bestaande Clerk-sessie, dan liever kop en tabbalk met de melding uit F6–F8, in plaats van een leeg laadscherm. |
 
 Werkwijze: A zoekt eerst uit hoe Clerk offline laadt en pint F12 met tests waar dat kan. B fixt daarna en checkt het in de simulator met een gesimuleerde offline-start. Dan volgt een korte hercheck door de red-team, en daarna een nieuwe build. Op die build herhaalt de gate alleen ronde 4.
+
+### Fix-cyclus 3: aanvulling A (2026-11-02)
+
+**Waarom de app offline op "Laden…" blijft** (gelezen in `@clerk/expo` 4.14.1, `@clerk/clerk-js` 6.40.1 `dist/clerk.native.js`, `@clerk/react` 6.18.1):
+1. Clerk kijkt met `navigator.onLine` of hij online is. In React Native is dat `undefined`, en dan telt het als online. Een netwerkfout wordt dus niet als "offline" herkend.
+2. Op native laadt `load()` de omgeving en de client van Clerk. Zonder resource-cache gooit een netwerkfout daar door. `load()` faalt, de status wordt `"error"`, en `loaded` blijft `false`. In de app is `isLoaded` dan `false`, dus de app toont "laden".
+3. `@clerk/react` vangt die fout op, zet de status op `"error"`, en doet verder niets. Er komt geen nieuwe poging, ook niet als het netwerk terugkomt. Daarom blijft "Laden…" staan tot de app wordt afgesloten.
+
+**Gekozen route: de resource-cache van Clerk, met een vangnet in de poort.**
+- `ClerkProvider` krijgt `__experimental_resourceCache={resourceCache}` uit `@clerk/expo/resource-cache`. Die cache staat in de veilige opslag (`AFTER_FIRST_UNLOCK`).
+  - Bij een netwerkfout of 5xx laadt Clerk dan de opgeslagen client en omgeving, en wordt de status `"degraded"`. Dat telt als geladen.
+  - Had de user een sessie, dan is hij "ingelogd". Het Convex-token lukt offline niet, dus wordt het `reconnecting`: kop, tabbalk en de melding uit F6–F8. Komt het netwerk terug, dan probeert `authRetryDue` het opnieuw.
+  - Mist de cache (de eerste start van deze build, offline), dan toont Clerk een lege client. De user ziet dan het inlogscherm. Clerk probeert het zelf opnieuw met backoff (2 s, oplopend tot 30 s). Komt de echte client binnen, dan gaat de app vanzelf door naar de app.
+  - Bijwerking: met de cache aan gooit Clerk een netwerkfout ook bij andere aanvragen, zoals de inlogstap. De inlogfout valt dan onder de algemene NL-melding van WP13 (invariant 17).
+- **Het vangnet: "laden" duurt nooit eindeloos.** Een pure beslissing kijkt hoe lang de sessie al op "laden" staat, en naar de status van Clerk:
+
+| Sessie | Clerk | Hoe lang "laden" | Toestand |
+|---|---|---|---|
+| niet "laden" | — | — | ongewijzigd |
+| "laden" | `error` | — | `startupFailed` (direct) |
+| "laden" | `loading` | korter dan de time-out | "laden" |
+| "laden" | `loading` | time-out voorbij | `startupFailed` |
+| "laden" | geladen (`ready`/`degraded`), ingelogd | korter dan de time-out | "laden" |
+| "laden" | geladen, ingelogd | time-out voorbij | `reconnecting` (Convex bevestigt niet: kop, tabbalk, melding) |
+| "laden" | geladen, uitgelogd | time-out voorbij | `startupFailed` |
+
+  - De time-out (`STARTUP_TIMEOUT_MS`) is een vaste waarde van 5 tot 30 s.
+  - `startupFailed` blijft niet hangen. Laadt Clerk alsnog, dan volgt de app de nieuwe toestand.
+  - `startupFailed` toont op elk pad een statusscherm: "De app kan nu niet starten", een uitleg die past bij offline of online, en "Opnieuw". Er is geen navigator, want zonder Clerk weet de app niet of er een sessie is.
+  - "Opnieuw", en vanzelf zodra de app actief en online wordt (`startupRetryDue`, dezelfde regel als `authRetryDue`), start Clerk opnieuw. Clerk biedt geen `load()` om opnieuw te proberen. De route is dus de `ClerkProvider` opnieuw mounten (een nieuwe `key`), waarna `load()` opnieuw loopt. B checkt in de simulator dat dat werkt.
+
+| Module | Signatuur | Pint |
+|---|---|---|
+| `app/src/lib/startupState.ts` | `deriveStartupState(input: { session: SessionState; clerkStatus: "loading" \| "ready" \| "degraded" \| "error"; clerkSignedIn: boolean; loadingForMs: number }): GateState`, met `GateState = SessionState \| "startupFailed"`, en `export STARTUP_TIMEOUT_MS: number` | de tabel hierboven |
+| `app/src/lib/startupState.ts` | `startupRetryDue(input: { state: GateState; before: { appState: string; online: boolean \| null }; now: { appState: string; online: boolean \| null } }): boolean` | opnieuw proberen na `startupFailed` |
+| `app/src/lib/routeAccess.ts` | `routeAccess(pathname, state: GateState)` geeft `"startupFailed"` op elk pad | het statusscherm, geen navigator |
+| (geen module) | `app/tests/clerkOffline.test.ts`: `ClerkProvider` in `App.tsx` krijgt `__experimental_resourceCache` met `resourceCache` uit `@clerk/expo/resource-cache` | de gekozen route |
+
+**Niet als test te pinnen (naar de simulator-check van B en de gate):**
+- dat de poort `loadingForMs` echt meet, en bij `startupFailed` de `ClerkProvider` echt opnieuw mount en dat `load()` dan opnieuw loopt;
+- dat Clerk met de cache offline echt op `"degraded"` komt en de sessie uit de cache haalt;
+- dat uitloggen de cache leegmaakt: na uitloggen en een koude start offline, geen ingelogde schil (WP13 invariant 6);
+- **simulator (B):**
+  - koude start met het netwerk van de Mac uit, nadat de app één keer online is gestart: kop, tabbalk en de melding "geen internet". Netwerk aan: vanzelf live.
+  - Hetzelfde zonder eerdere online start: het inlogscherm, en na netwerk aan vanzelf door.
+- **gate ronde 4:** de koude start in vliegtuigmodus. Binnen de time-out kop, tabbalk en de melding. Vliegtuigmodus uit: vanzelf weer in de app, zonder afsluiten.
