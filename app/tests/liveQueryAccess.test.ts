@@ -12,7 +12,7 @@ import {
   parse,
 } from "./support/sourceScan";
 
-// WP15a invariant 6, F2 + F3: één toegangspad voor live Convex-data. Alleen het
+// WP15a invariant 6, F2, F3, F6 + F10: één toegangspad voor live Convex-data. Alleen het
 // toegangspad mag een live hook of een watch van Convex gebruiken; elk ander
 // bestand gaat erdoorheen. Buiten focus om loopt alleen de query van de poort,
 // en alleen de poort mag die route gebruiken. Een feature-WP die dit omzeilt,
@@ -124,6 +124,32 @@ describe("detectie van omwegen (F3)", () => {
     `import { ConvexQueryClient } from "@convex-dev/react-query";`,
     `import x = require("convex/react");`,
     `export { useQuery as useLive } from "convex/react";`,
+    // F10, red-team R2: wat een denylist mist
+    `import { useQuery_experimental } from "convex/react";`,
+    `import { usePaginatedQuery_experimental } from "convex/react";`,
+    `import { BaseConvexClient } from "convex/browser";\nnew BaseConvexClient(url, cb).subscribe("users:current", {});`,
+    `import { ConvexClient } from "convex/browser";\nnew ConvexClient(url).onPaginatedUpdate_experimental(q, {}, cb);`,
+    `require("convex/dist/cjs/react/index.js").useQuery(api.users.current, {});`,
+    // F10: alles buiten de allowlist
+    `import { useConvex } from "convex/react";`,
+    `import { ConvexProvider } from "convex/react";`,
+    `import { anyApi as a, makeFunctionReference } from "convex/server";`,
+    `import * as v from "convex/values";`,
+    `import { v } from "convex/values";`,
+    `import convex from "convex";`,
+    `import { something } from "convex";`,
+    `import { ConvexHttpClient } from "convex/browser";`,
+    `import { useQuery } from "convex/dist/esm/react/index.js";`,
+    `import { x } from "convex-helpers";`,
+    `import { x } from "@convex-dev/anything";`,
+    `import "convex/react";`,
+    `const m = require("convex/server");`,
+    `const m = await import("convex/values");`,
+    `export * from "convex/server";`,
+    `import { useQuery } from "../../node_modules/convex/dist/esm/react/index.js";`,
+    `import { useQuery } from "node_modules/convex/react";`,
+    `client.onPaginatedUpdate(q, {}, cb);`,
+    `client.watchQuery_experimental(q, {});`,
   ])("vangt: %s", (text) => {
     expect(detect(text)).toBe(true);
   });
@@ -135,8 +161,17 @@ describe("detectie van omwegen (F3)", () => {
     `import type { FunctionReference } from "convex/server";`,
     `import type { OptionalRestArgsOrSkip } from "convex/react";`,
     `import { type OptionalRestArgsOrSkip, useMutation } from "convex/react";`,
-    `import * as v from "convex/values";`,
     `import { api } from "../convexApi";`,
+    // F10: de allowlist
+    `import { ConvexProviderWithAuth, type ConvexReactClient } from "convex/react";`,
+    `import { useConvexAuth, useMutation, useAction, ConvexReactClient } from "convex/react";`,
+    `import { anyApi } from "convex/server";`,
+    `import { getFunctionName, type FunctionReference } from "convex/server";`,
+    `import { ConvexError } from "convex/values";`,
+    `import type { BaseConvexClient } from "convex/browser";`,
+    `import { type ConvexClient } from "convex/browser";`,
+    `import type { Doc } from "../../../convex/_generated/dataModel";`,
+    `import { api } from "../../convex/_generated/api";`,
     `import { useQuery } from "@tanstack/react-query";`,
     `const user = await useConvex().query(api.users.current, {});`,
     `const s = useConvex().connectionState();`,
@@ -145,6 +180,31 @@ describe("detectie van omwegen (F3)", () => {
     `const label = "useQuery";`,
   ])("laat toe: %s", (text) => {
     expect(detect(text)).toBe(false);
+  });
+});
+
+// F6: wie de melding van "reconnecting" toont, toont ook Uitloggen. Anders zit
+// de user vast bij een blijvende tokenfout met netwerk.
+describe("reconnecting heeft altijd Uitloggen (F6)", () => {
+  const users = files.filter((f) =>
+    moduleUses(parse(read(f), f)).some(
+      (u) => /(^|\/)lib\/reconnectView$/.test(u.module) && (u.whole || u.names.includes("reconnectView")),
+    ),
+  );
+
+  it("de melding komt uit src/lib/reconnectView", () => {
+    expect(users.length).toBeGreaterThan(0);
+  });
+
+  it("elk bestand dat reconnectView gebruikt, rendert SignOutButton", () => {
+    const missing = users.filter((f) => {
+      const sf = parse(read(f), f);
+      const imported = moduleUses(sf).some(
+        (u) => /(^|\/)auth\/SignOutButton$/.test(u.module) && u.names.includes("SignOutButton"),
+      );
+      return !imported || !/<SignOutButton\b/.test(read(f));
+    });
+    expect(missing).toEqual([]);
   });
 });
 

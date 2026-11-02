@@ -2,7 +2,7 @@ import { readdirSync, statSync } from "node:fs";
 import { join, posix, relative, sep } from "node:path";
 import ts from "typescript";
 
-// Hulp voor de scanners van WP15a (invariant 6, F2–F4). Leest broncode via de
+// Hulp voor de scanners van WP15a (invariant 6, F2–F4, F10, F11). Leest broncode via de
 // TypeScript-parser, niet met regexes: spaties, commentaar en puntkomma's maken
 // dan niet uit (F3).
 
@@ -23,13 +23,19 @@ export function isScanned(relPath: string): boolean {
   return SOURCE_EXT.test(relPath) && !relPath.endsWith(".d.ts");
 }
 
-export function listFiles(root: string, dir = root): string[] {
+// Alle bestanden onder `root`, als pad vanaf `root`. `skipAtRoot` geldt alleen
+// voor mappen direct in `root`; de routetest leest src/app volledig (F11).
+export function listFiles(
+  root: string,
+  skipAtRoot: ReadonlySet<string> = ROOT_SKIP,
+  dir = root,
+): string[] {
   const out: string[] = [];
   for (const name of readdirSync(dir)) {
     const full = join(dir, name);
     const rel = relative(root, full).split(sep).join("/");
     if (statSync(full).isDirectory()) {
-      if (!ROOT_SKIP.has(rel)) out.push(...listFiles(root, full));
+      if (!skipAtRoot.has(rel)) out.push(...listFiles(root, skipAtRoot, full));
     } else {
       out.push(rel);
     }
@@ -135,19 +141,34 @@ export function memberNames(sf: ts.SourceFile): Set<string> {
   return out;
 }
 
-// --- Invariant 6 + F3: live Convex-data buiten het toegangspad -----------------
+// --- Invariant 6, F3 + F10: live Convex-data buiten het toegangspad ----------
 
-const LIVE_HOOKS = new Set(["useQuery", "useQueries", "usePaginatedQuery", "usePreloadedQuery"]);
-// Pakketten waar live hooks uit kunnen komen.
-const CONVEX_FAMILY = /^(convex(\/.*)?|convex-helpers(\/.*)?|@convex-dev\/.+)$/;
-// Pakketten die bij `* as x` of `require` alsnog een live hook geven.
-const CONVEX_HOOK_MODULE = /^convex\/react(-clerk)?$/;
-// Pakketten die alleen bestaan om live Convex-data in React te krijgen: elke
-// import is een omweg (F3: useSessionQuery uit convex-helpers, convexQuery
-// voor TanStack Query).
-const BANNED_MODULE = /^(convex-helpers\/react(\/.*)?|@convex-dev\/react-query)$/;
+// F10: een allowlist voor de convex-familie. Buiten het toegangspad mag code
+// alleen deze waarden importeren; type-imports mogen altijd. Al het andere uit
+// convex, convex-helpers of @convex-dev is verboden: andere namen, andere
+// modules (convex/browser, convex/dist/…), namespace, require, import(…).
+// Iets nieuws nodig? Zet het hier bewust bij.
+export const CONVEX_ALLOWLIST: Record<string, readonly string[]> = {
+  "convex/react": [
+    "ConvexReactClient",
+    "ConvexProviderWithAuth",
+    "useConvexAuth",
+    "useMutation",
+    "useAction",
+  ],
+  "convex/react-clerk": ["ConvexProviderWithClerk"],
+  "convex/server": ["anyApi", "getFunctionName"],
+  "convex/values": ["ConvexError"],
+};
+const CONVEX_FAMILY = /^(convex(\/.*)?|convex-helpers(\/.*)?|@convex-dev(\/.*)?)$/;
+// Een pakket rechtstreeks uit node_modules halen omzeilt elke lijst.
+const VIA_NODE_MODULES = /(^|\/)node_modules\//;
+
 // Leden van de Convex-client die een abonnement openen of de sync-laag geven.
-// Eenmalig lezen (`query`) en `connectionState` blijven toegestaan.
+// Een denylist: zonder typecheck weet de scan niet welk object het is. De
+// allowlist hierboven houdt de client zelf al grotendeels buiten bereik
+// (useConvex staat er niet op). Eenmalig lezen (`query`) en
+// `connectionState` / `subscribeToConnectionState` blijven toegestaan.
 export const CLIENT_WATCH_MEMBERS = [
   "watchQuery",
   "watchPaginatedQuery",
@@ -155,22 +176,33 @@ export const CLIENT_WATCH_MEMBERS = [
   "paginatedQueryClient",
   "sync",
   "onUpdate",
+  "subscribe",
 ];
+const CLIENT_WATCH_PATTERN = /^onPaginatedUpdate|_experimental$/;
 
 export function liveDataViolations(text: string, fileName?: string): string[] {
   const sf = parse(text, fileName);
   const found: string[] = [];
   for (const use of moduleUses(sf)) {
-    if (BANNED_MODULE.test(use.module)) {
-      found.push(`import uit ${use.module}`);
-    } else if (CONVEX_FAMILY.test(use.module)) {
-      const hooks = use.names.filter((n) => LIVE_HOOKS.has(n));
-      if (hooks.length > 0) found.push(`${hooks.join(", ")} uit ${use.module}`);
-      else if (use.whole && CONVEX_HOOK_MODULE.test(use.module)) found.push(`hele module ${use.module}`);
+    if (VIA_NODE_MODULES.test(use.module)) {
+      found.push(`pad via node_modules: ${use.module}`);
+      continue;
+    }
+    if (!CONVEX_FAMILY.test(use.module)) continue;
+    const allowed = CONVEX_ALLOWLIST[use.module];
+    if (!allowed) {
+      found.push(`module ${use.module} staat niet op de allowlist`);
+    } else if (use.whole || use.bare || use.kind === "require") {
+      found.push(`hele module ${use.module}`);
+    } else {
+      const extra = use.names.filter((n) => !allowed.includes(n));
+      if (extra.length > 0) found.push(`${extra.join(", ")} uit ${use.module}`);
     }
   }
   const members = memberNames(sf);
-  for (const m of CLIENT_WATCH_MEMBERS) if (members.has(m)) found.push(`client-lid ${m}`);
+  for (const m of members) {
+    if (CLIENT_WATCH_MEMBERS.includes(m) || CLIENT_WATCH_PATTERN.test(m)) found.push(`client-lid ${m}`);
+  }
   return found;
 }
 

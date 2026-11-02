@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join, posix } from "node:path";
 import { fileURLToPath } from "node:url";
 import ts from "typescript";
@@ -11,7 +11,10 @@ import { listFiles, parse } from "./support/sourceScan";
 // door een `*.Protected` in een _layout boven hem, of zijn pad staat in
 // PUBLIC_PATHS. Een nieuwe route die niemand afschermt, laat deze test falen.
 //
-// Of de guard dezelfde toestand volgt als de poort, ziet de audit.
+// F11: een Protected dekt alleen als zijn guard de sessie-toestand volgt:
+// `useAuthState()` zelf, of een variabele die daarvan is afgeleid, in dezelfde
+// _layout. `guard={true}` dekt niet. Of de guard de júiste toestanden opent,
+// ziet de audit. Elk bestand onder src/app telt mee, ook in `dist/` of `tests/`.
 
 const APP_DIR = fileURLToPath(new URL("../src/app", import.meta.url));
 
@@ -23,13 +26,85 @@ function routeFiles(all: string[]): string[] {
   return all.filter((f) => ROUTE_EXT.test(f) && !f.endsWith(".d.ts") && !NOT_A_ROUTE.test(f));
 }
 
-// De namen die een _layout binnen een `*.Protected` als `*.Screen` noemt.
+// Komt `node` (of iets erin) aan useAuthState() of een afgeleide variabele?
+function refersToSession(node: ts.Node, derived: Set<string>): boolean {
+  let found = false;
+  const visit = (n: ts.Node) => {
+    if (found) return;
+    if (ts.isCallExpression(n) && ts.isIdentifier(n.expression) && n.expression.text === "useAuthState") {
+      found = true;
+    } else if (ts.isIdentifier(n) && derived.has(n.text)) {
+      found = true;
+    }
+    ts.forEachChild(n, visit);
+  };
+  visit(node);
+  return found;
+}
+
+// Variabelen in deze _layout die van useAuthState() zijn afgeleid, ook via
+// tussenstappen (`const state = useAuthState(); const inApp = state === …`).
+function sessionDerivedNames(sf: ts.SourceFile): Set<string> {
+  const decls: ts.VariableDeclaration[] = [];
+  const collect = (n: ts.Node) => {
+    if (ts.isVariableDeclaration(n) && n.initializer) decls.push(n);
+    ts.forEachChild(n, collect);
+  };
+  collect(sf);
+  const derived = new Set<string>();
+  let grew = true;
+  while (grew) {
+    grew = false;
+    for (const d of decls) {
+      if (!d.initializer || !refersToSession(d.initializer, derived)) continue;
+      const names: string[] = [];
+      const bind = (b: ts.BindingName) => {
+        if (ts.isIdentifier(b)) names.push(b.text);
+        else for (const el of b.elements) if (!ts.isOmittedExpression(el)) bind(el.name);
+      };
+      bind(d.name);
+      for (const n of names) {
+        if (!derived.has(n)) {
+          derived.add(n);
+          grew = true;
+        }
+      }
+    }
+  }
+  return derived;
+}
+
+// Volgt deze guard de sessie-toestand? Geen vaste waarde erin (true/false).
+function guardFollowsSession(opening: ts.JsxOpeningElement, derived: Set<string>): boolean {
+  for (const attr of opening.attributes.properties) {
+    if (!ts.isJsxAttribute(attr) || attr.name.getText() !== "guard") continue;
+    const init = attr.initializer;
+    if (!init || !ts.isJsxExpression(init) || !init.expression) return false;
+    let literal = false;
+    const visit = (n: ts.Node) => {
+      if (n.kind === ts.SyntaxKind.TrueKeyword || n.kind === ts.SyntaxKind.FalseKeyword) literal = true;
+      ts.forEachChild(n, visit);
+    };
+    visit(init.expression);
+    return !literal && refersToSession(init.expression, derived);
+  }
+  return false;
+}
+
+// De namen die een _layout als `*.Screen` noemt binnen een `*.Protected`
+// waarvan de guard de sessie-toestand volgt.
 function protectedScreenNames(layoutSource: string): Set<string> {
   const names = new Set<string>();
+  const sf = parse(layoutSource, "_layout.tsx");
+  const derived = sessionDerivedNames(sf);
   const tagName = (n: ts.JsxOpeningLikeElement) => n.tagName.getText();
   const visit = (node: ts.Node, inProtected: boolean) => {
     let inside = inProtected;
-    if (ts.isJsxElement(node) && /(^|\.)Protected$/.test(tagName(node.openingElement))) {
+    if (
+      ts.isJsxElement(node) &&
+      /(^|\.)Protected$/.test(tagName(node.openingElement)) &&
+      guardFollowsSession(node.openingElement, derived)
+    ) {
       inside = true;
     }
     const opening = ts.isJsxElement(node)
@@ -51,7 +126,7 @@ function protectedScreenNames(layoutSource: string): Set<string> {
     }
     ts.forEachChild(node, (child) => visit(child, inside));
   };
-  visit(parse(layoutSource, "_layout.tsx"), false);
+  visit(sf, false);
   return names;
 }
 
@@ -98,7 +173,8 @@ function uncoveredRoutes(
   return out;
 }
 
-const realFiles = existsSync(APP_DIR) ? listFiles(APP_DIR) : [];
+// Niets overslaan: ook src/app/dist/ en src/app/tests/ zijn routes (F11).
+const realFiles = existsSync(APP_DIR) ? listFiles(APP_DIR, new Set()) : [];
 const realLayout = (dir: string) => {
   for (const ext of ["tsx", "ts", "jsx", "js"]) {
     const file = join(APP_DIR, dir, `_layout.${ext}`);
@@ -119,6 +195,20 @@ describe("elk routebestand is afgeschermd of publiek (F4)", () => {
     expect(uncoveredRoutes(realFiles, realLayout, PUBLIC_PATHS)).toEqual([]);
   });
 
+  it("ook bestanden in dist/ en tests/ onder src/app tellen mee (F11)", () => {
+    // Een nagemaakte src/app in .tsbuild/ (gitignored), zelfde lijstfunctie.
+    const dir = fileURLToPath(new URL(`../.tsbuild/route-fixture-${process.pid}`, import.meta.url));
+    try {
+      for (const f of ["dist/x.tsx", "tests/y.tsx", "a/dist/z.tsx"]) {
+        mkdirSync(join(dir, posix.dirname(f)), { recursive: true });
+        writeFileSync(join(dir, f), "export default function X() { return null; }\n");
+      }
+      expect(listFiles(dir, new Set()).sort()).toEqual(["a/dist/z.tsx", "dist/x.tsx", "tests/y.tsx"]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it("elk pad in PUBLIC_PATHS heeft een routebestand", () => {
     const urls = new Set(routeFiles(realFiles).map(urlOf));
     for (const path of PUBLIC_PATHS) expect(urls.has(path)).toBe(true);
@@ -129,6 +219,8 @@ describe("elk routebestand is afgeschermd of publiek (F4)", () => {
 describe("detectie van onbeschermde routes", () => {
   const ROOT = `
     export default function L() {
+      const state = useAuthState();
+      const ready = state === "ready" || state === "reconnecting";
       return (
         <Stack>
           <Stack.Protected guard={ready}>
@@ -198,6 +290,45 @@ describe("detectie van onbeschermde routes", () => {
   it("+not-found buiten Protected: onbeschermd (heeft geen eigen pad)", () => {
     const open = ROOT.replace(`<Stack.Screen name="+not-found" />`, "");
     expect(uncoveredRoutes(BASE, layouts(open), ["/inloggen"])).toEqual(["+not-found.tsx"]);
+  });
+
+  // F11: een guard die de sessie-toestand niet volgt, dekt niets.
+  it.each([
+    [`guard={true}`, `<Stack.Protected guard={true}>`],
+    [`guard={false}`, `<Stack.Protected guard={false}>`],
+    [`guard={ready || true}`, `<Stack.Protected guard={ready || true}>`],
+    [`een losse vlag`, `<Stack.Protected guard={open}>`],
+    [`zonder guard`, `<Stack.Protected>`],
+  ])("%s dekt niet", (_label, tag) => {
+    const open = ROOT.replace(`<Stack.Protected guard={ready}>`, tag).replace(
+      "const ready",
+      "const open = true;\n      const ready",
+    );
+    expect([...uncoveredRoutes(BASE, layouts(open), ["/inloggen"])].sort()).toEqual([
+      "(tabs)/(home)/index.tsx",
+      "(tabs)/instellingen/index.tsx",
+      "(tabs)/instellingen/over.tsx",
+      "+not-found.tsx",
+      "toevoegen.tsx",
+    ].sort());
+  });
+
+  it.each([
+    [`guard={useAuthState() === "ready"}`],
+    [`guard={state === "ready"}`],
+    [`guard={!ready}`],
+  ])("%s dekt wel", (attr) => {
+    const tag = `<Stack.Protected ${attr}>`;
+    const open = ROOT.replace(`<Stack.Protected guard={ready}>`, tag);
+    expect(uncoveredRoutes(BASE, layouts(open), ["/inloggen"])).toEqual([]);
+  });
+
+  it("afgeleid via destructuring telt ook", () => {
+    const open = ROOT.replace(
+      "const ready = state",
+      "const { ok: ready } = { ok: state",
+    ).replace(`=== "reconnecting";`, `=== "reconnecting" };`);
+    expect(uncoveredRoutes(BASE, layouts(open), ["/inloggen"])).toEqual([]);
   });
 
   it("urlOf: groepen en index tellen niet mee", () => {
