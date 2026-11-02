@@ -12,7 +12,7 @@ import type { Doc, Id } from "./_generated/dataModel";
 import { internal } from "./_generated/api";
 import { requireCurrentUser } from "./users";
 import { requireWebmaster } from "./lib/auth";
-import { canAccessPhoto } from "./lib/photoAccess";
+import { canAccessPhoto, isStorageOfOthers } from "./lib/photoAccess";
 import {
   allFlagFields,
   ownFlagFields,
@@ -114,6 +114,11 @@ export const create = mutation({
   returns: v.id("photos"),
   handler: async (ctx, args) => {
     const user = await requireCurrentUser(ctx);
+
+    // WP24 A-keuze 5: geen eigen foto-rij op het beeld van een ander.
+    if (await isStorageOfOthers(ctx, user._id, args.storageId)) {
+      throw new Error("Dit beeld hoort bij een foto van een ander");
+    }
 
     if (user.photoCount >= user.photoLimit) {
       throw new Error("PHOTO_LIMIT_REACHED");
@@ -524,9 +529,10 @@ export const flag = mutation({
     reason: v.optional(v.string()),
   },
   handler: async (ctx, { photoId, reason }) => {
-    const user = await requireCurrentUser(ctx);
-    const photo = await ctx.db.get(photoId);
-    if (!photo) throw new Error("Foto bestaat niet");
+    // WP24 invariant 2: foto-toegang. Onbekend id en geen toegang geven
+    // dezelfde error (invariant 3); het stille "al gemeld" komt pas daarna,
+    // zodat de meld-status niet lekt (A-keuze 4).
+    const { user, photo } = await requirePhotoAccess(ctx, photoId);
     if (photo.ownerId === user._id) {
       throw new Error("Eigen foto kan niet geflagd worden");
     }

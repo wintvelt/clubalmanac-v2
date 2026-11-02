@@ -6,7 +6,9 @@ import type { Doc, Id } from "../_generated/dataModel";
 //
 // Eén definitie voor alle reads: photos.getById/getWithOwner,
 // ratings.listForPhoto (via requirePhotoAccess) en de geneste covers in
-// groups.getWithCover en albums.getWithCover (invariant 10). Apart in lib/
+// groups.getWithCover en albums.getWithCover (invariant 10). WP24: ook de
+// write-gates (photos.flag en ratings.upsert via requirePhotoAccess; covers,
+// addPhoto en het beeld via de strengere regels hieronder). Apart in lib/
 // zodat groups.ts en albums.ts het kunnen gebruiken zonder photos.ts te
 // importeren.
 export async function canAccessPhoto(
@@ -45,4 +47,73 @@ export async function getAccessiblePhoto(
   const photo = await ctx.db.get(photoId);
   if (!photo) return null;
   return (await canAccessPhoto(ctx, userId, photo)) ? photo : null;
+}
+
+// WP24 A-keuze 2: een cover is een publicatie. Een groep-cover staat in een
+// album van díe groep, een album-cover in dát album. Wie de cover zet, is lid
+// van die groep (rol-check in de mutation), dus foto-toegang volgt eruit:
+// dit is een strengere regel bovenop canAccessPhoto, geen tweede definitie.
+// Een onbekend photo-id heeft geen publicatie en valt in dezelfde tak.
+export async function isPublishedInGroup(
+  ctx: QueryCtx,
+  photoId: Id<"photos">,
+  groupId: Id<"groups">,
+): Promise<boolean> {
+  const ap = await ctx.db
+    .query("albumPhotos")
+    .withIndex("by_photo", (q) => q.eq("photoId", photoId))
+    .filter((q) => q.eq(q.field("groupId"), groupId))
+    .first();
+  return ap !== null;
+}
+
+export async function isPublishedInAlbum(
+  ctx: QueryCtx,
+  photoId: Id<"photos">,
+  albumId: Id<"albums">,
+): Promise<boolean> {
+  const ap = await ctx.db
+    .query("albumPhotos")
+    .withIndex("by_photo", (q) => q.eq("photoId", photoId))
+    .filter((q) => q.eq(q.field("albumId"), albumId))
+    .first();
+  return ap !== null;
+}
+
+// WP24 A-keuze 5: invariant 1 geldt ook voor het beeld. De foto-vorm bevat
+// `storageId`, dus wie ooit een foto zag, kent het beeld-id.
+//
+// - photos.create: geen nieuwe foto-rij op een beeld dat al bij een foto van
+//   een ander hoort (anders eigenaar van andermans beeld).
+// - users.updateProfile: een profielfoto is geen beeld van een foto waar de
+//   caller geen foto-toegang toe heeft (v1: profielfoto = foto met toegang).
+//   Een vers beeld (bij geen enkele foto) mag.
+export async function photosWithStorage(
+  ctx: QueryCtx,
+  storageId: Id<"_storage">,
+): Promise<Doc<"photos">[]> {
+  return await ctx.db
+    .query("photos")
+    .withIndex("by_storage", (q) => q.eq("storageId", storageId))
+    .collect();
+}
+
+export async function isStorageOfOthers(
+  ctx: QueryCtx,
+  userId: Id<"users">,
+  storageId: Id<"_storage">,
+): Promise<boolean> {
+  const photos = await photosWithStorage(ctx, storageId);
+  return photos.some((p) => p.ownerId !== userId);
+}
+
+export async function canUseStorageAsProfilePhoto(
+  ctx: QueryCtx,
+  userId: Id<"users">,
+  storageId: Id<"_storage">,
+): Promise<boolean> {
+  for (const p of await photosWithStorage(ctx, storageId)) {
+    if (!(await canAccessPhoto(ctx, userId, p))) return false;
+  }
+  return true;
 }

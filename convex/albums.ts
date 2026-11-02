@@ -8,7 +8,10 @@ import {
 import type { Doc, Id } from "./_generated/dataModel";
 import { getMembership, requireMember } from "./groups";
 import { requireCurrentUser } from "./users";
-import { getAccessiblePhoto } from "./lib/photoAccess";
+import {
+  getAccessiblePhoto,
+  isPublishedInAlbum,
+} from "./lib/photoAccess";
 import {
   album,
   albumFields,
@@ -32,11 +35,22 @@ async function requireAlbum(
 }
 
 // WP23: toegang voor album-reads. Eén error voor "album bestaat niet" en
-// "geen lid van de groep" (invariant 4: geen bestaans-orakel). Mutations
-// houden requireAlbum + requireMember (invariant 6).
+// "geen lid van de groep" (invariant 4: geen bestaans-orakel).
+// WP24 invariant 3 + A-keuze 3: ook markSeen, update en addPhoto. remove en
+// removePhoto houden requireAlbum + requireMember (orakel-backlog).
 const NO_ALBUM_ACCESS = "Geen toegang tot dit album";
 
-async function requireAlbumAccess(ctx: QueryCtx, albumId: Id<"albums">) {
+// WP24 A-keuze 1: alleen de eigenaar zet een foto in een album. Eén error voor
+// onbekend id, geen toegang en wel toegang maar niet eigenaar (invariant 3).
+const NOT_PHOTO_OWNER = "Alleen de eigenaar kan deze foto in een album zetten";
+
+// WP24 A-keuze 2: een album-cover staat in dát album. Ook voor een onbekend id.
+const COVER_NOT_IN_ALBUM = "Cover moet een foto uit dit album zijn";
+
+async function requireAlbumAccess(
+  ctx: QueryCtx | MutationCtx,
+  albumId: Id<"albums">,
+) {
   const user = await requireCurrentUser(ctx);
   const album = await ctx.db.get(albumId);
   const membership = album
@@ -170,8 +184,7 @@ export const listByGroupWithUnread = query({
 export const markSeen = mutation({
   args: { albumId: v.id("albums") },
   handler: async (ctx, { albumId }) => {
-    const album = await requireAlbum(ctx, albumId);
-    const { user } = await requireMember(ctx, album.groupId);
+    const { user } = await requireAlbumAccess(ctx, albumId);
     await upsertAlbumLastSeen(ctx, user._id, albumId, Date.now());
   },
 });
@@ -260,12 +273,23 @@ export const update = mutation({
     coverPhotoId: v.optional(v.id("photos")),
   },
   handler: async (ctx, { albumId, ...rest }) => {
-    const album = await requireAlbum(ctx, albumId);
-    const { user, membership } = await requireMember(ctx, album.groupId);
+    const { user, album, membership } = await requireAlbumAccess(
+      ctx,
+      albumId,
+    );
     const isCreator = album.createdBy === user._id;
     const isAdmin = membership.role === "admin";
     if (!isCreator && !isAdmin) {
       throw new Error("Alleen creator of groep-admin kan album wijzigen");
+    }
+    // WP24 invariant 2 + A-keuze 2. Alleen als de cover wordt gezet: een
+    // bestaande cover die niet meer in het album staat, blokkeert geen
+    // naamswijziging.
+    if (
+      rest.coverPhotoId !== undefined &&
+      !(await isPublishedInAlbum(ctx, rest.coverPhotoId, albumId))
+    ) {
+      throw new Error(COVER_NOT_IN_ALBUM);
     }
 
     const patch: Partial<Doc<"albums">> = {};
@@ -306,11 +330,14 @@ export const addPhoto = mutation({
     photoId: v.id("photos"),
   },
   handler: async (ctx, { albumId, photoId }) => {
-    const album = await requireAlbum(ctx, albumId);
-    const { user } = await requireMember(ctx, album.groupId);
+    const { user, album } = await requireAlbumAccess(ctx, albumId);
 
+    // WP24 invariant 2 + A-keuze 1: eigenaar (dus foto-toegang). Vóór de
+    // "zit al in album"-check, zodat die niets lekt aan een niet-eigenaar.
     const photo = await ctx.db.get(photoId);
-    if (!photo) throw new Error("Foto bestaat niet");
+    if (!photo || photo.ownerId !== user._id) {
+      throw new Error(NOT_PHOTO_OWNER);
+    }
 
     const existing = await ctx.db
       .query("albumPhotos")

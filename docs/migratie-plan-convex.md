@@ -246,6 +246,8 @@ Webmaster-gated operations (uit oude AWS code):
 
 Reads (WP23): elke publieke query vereist inloggen (behalve `invites.getByToken` en `smoke.ping`) en geeft een vaste veld-whitelist terug via een return-validator (`convex/lib/shapes.ts`). Webmaster ziet daarbovenop alleen melder-velden in `listAllFlagged` en problemen van anderen in `features.*`; geen bypass op groep-, album- of foto-reads. Zie [`work-packages/WP23-read-whitelist.md`](./work-packages/WP23-read-whitelist.md).
 
+Writes (WP24): writes die foto-toegang bepalen, checken foto-toegang, zonder webmaster-bypass. `photos.flag` en `ratings.upsert` vereisen foto-toegang; `albums.addPhoto` alleen de eigenaar; een cover (`groups.update`/`albums.update`) moet in een album van die groep of in dat album staan; `photos.create` en `users.updateProfile` hergebruiken geen beeld van een foto van een ander of zonder toegang. Onbekend id en geen toegang geven dezelfde error. Zie [`work-packages/WP24-write-gates.md`](./work-packages/WP24-write-gates.md).
+
 Bootstrap: jouw email handmatig in Clerk dashboard aanmaken pre-cutover, env-var `WEBMASTER_EMAILS=wintvelt@me.com` zetten in Convex prod deployment. Dev-deployment krijgt z'n eigen test-email-set bij WP4-setup (zie WP4-sectie hieronder): `WEBMASTER_EMAILS` op dev bevat de webmaster-test-user (`clubalmanac-integration-webmaster@example.com`), zodat de JWT-roundtrip-pin op een echte webmaster-flow draait zonder met Wouter's prod-email te overlappen.
 
 **YAGNI keuze:** Clerk publicMetadata-rol of Convex DB-flag zou flexibeler zijn (multi-webmaster zonder redeploy), maar bij 20 users + 1 webmaster levert het niks op. Bij behoefte aan tweede webmaster ooit: ~30 min werk om over te zetten. Probleem-report email-bestemming gebruikt dezelfde env-var.

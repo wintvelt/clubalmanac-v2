@@ -148,7 +148,11 @@ export const upvote = mutation({
   handler: async (ctx, { featureId }) => {
     const user = await requireCurrentUser(ctx);
     const feature = await ctx.db.get(featureId);
-    if (!feature) throw new Error("Feature bestaat niet");
+    // WP24 invariant 3 + 4: een verborgen probleem gedraagt zich als een
+    // onbekend id (zelfde zichtbaarheidsregel als de reads).
+    if (!feature || !canSee(feature, user._id, await isWebmaster(ctx))) {
+      throw new Error("Feature bestaat niet");
+    }
 
     const existing = await ctx.db
       .query("featureUpvotes")
@@ -174,7 +178,11 @@ export const removeUpvote = mutation({
   handler: async (ctx, { featureId }) => {
     const user = await requireCurrentUser(ctx);
     const feature = await ctx.db.get(featureId);
-    if (!feature) throw new Error("Feature bestaat niet");
+    // WP24 invariant 3 + 4: een verborgen probleem gedraagt zich als een
+    // onbekend id (zelfde zichtbaarheidsregel als de reads).
+    if (!feature || !canSee(feature, user._id, await isWebmaster(ctx))) {
+      throw new Error("Feature bestaat niet");
+    }
 
     const existing = await ctx.db
       .query("featureUpvotes")

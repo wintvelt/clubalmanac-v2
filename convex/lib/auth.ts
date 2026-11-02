@@ -48,10 +48,19 @@ export async function requireWebmaster(
 }
 
 // WP23: niet-throwende variant voor reads die de webmaster méér laten zien
-// (features.list/getById: problemen van anderen). Alleen de email-match; de
-// aanroeper heeft de users-rij al via requireCurrentUser afgedwongen.
+// (features.list/getById: problemen van anderen).
+// WP24 invariant 5: dwingt de users-rij zelf af, zoals requireWebmaster.
+// Een identity met webmaster-email zonder users-rij is geen webmaster, ook
+// als de aanroeper dat niet vooraf checkt.
 export async function isWebmaster(ctx: QueryCtx | MutationCtx): Promise<boolean> {
   const identity = await ctx.auth.getUserIdentity();
   const email = identity?.email?.toLowerCase();
-  return !!email && getWebmasterEmails().includes(email);
+  if (!identity || !email || !getWebmasterEmails().includes(email)) {
+    return false;
+  }
+  const user = await ctx.db
+    .query("users")
+    .withIndex("by_subject", (q) => q.eq("subject", identity.subject))
+    .unique();
+  return user !== null;
 }

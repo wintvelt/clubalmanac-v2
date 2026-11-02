@@ -12,6 +12,7 @@ import { internalRemovePhoto } from "./photos";
 import { internalRemoveMember } from "./groups";
 import { normalizeEmail } from "./lib/email";
 import { DEFAULT_PHOTO_LIMIT } from "./lib/constants";
+import { canUseStorageAsProfilePhoto } from "./lib/photoAccess";
 import {
   ownProfile,
   ownProfileFields,
@@ -204,6 +205,17 @@ export const updateProfile = mutation({
     const patch: Partial<Doc<"users">> = {};
     if (args.name !== undefined) patch.name = args.name;
     if (args.profilePhotoStorageId !== undefined) {
+      // WP24 A-keuze 5: geen profielfoto op het beeld van een foto zonder
+      // foto-toegang. Een vers beeld (bij geen foto) mag.
+      if (
+        !(await canUseStorageAsProfilePhoto(
+          ctx,
+          user._id,
+          args.profilePhotoStorageId,
+        ))
+      ) {
+        throw new Error("Geen toegang tot dit beeld");
+      }
       patch.profilePhotoStorageId = args.profilePhotoStorageId;
     }
     if (Object.keys(patch).length > 0) {

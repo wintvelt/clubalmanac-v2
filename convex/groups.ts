@@ -7,7 +7,7 @@ import {
 } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import { getBySubject, requireCurrentUser } from "./users";
-import { getAccessiblePhoto } from "./lib/photoAccess";
+import { getAccessiblePhoto, isPublishedInGroup } from "./lib/photoAccess";
 import {
   group,
   groupFields,
@@ -206,6 +206,16 @@ export const update = mutation({
   },
   handler: async (ctx, { groupId, ...rest }) => {
     await requireAdmin(ctx, groupId);
+    // WP24 invariant 2 + A-keuze 2: een groep-cover staat in een album van
+    // déze groep. Eén error, ook voor een onbekend photo-id (invariant 3).
+    // Alleen als de cover wordt gezet: een bestaande cover die niet meer in
+    // de groep staat, blokkeert geen naamswijziging.
+    if (
+      rest.coverPhotoId !== undefined &&
+      !(await isPublishedInGroup(ctx, rest.coverPhotoId, groupId))
+    ) {
+      throw new Error("Cover moet een foto uit een album van deze groep zijn");
+    }
     const patch: Partial<Doc<"groups">> = {};
     if (rest.name !== undefined) patch.name = rest.name;
     if (rest.description !== undefined) patch.description = rest.description;

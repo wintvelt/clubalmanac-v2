@@ -43,10 +43,9 @@ export const upsert = mutation({
     value: v.number(),
   },
   handler: async (ctx, { photoId, value }) => {
-    const user = await requireCurrentUser(ctx);
-
-    const photo = await ctx.db.get(photoId);
-    if (!photo) throw new Error("Foto bestaat niet");
+    // WP24 invariant 2: foto-toegang (eigenaar mag de eigen foto beoordelen).
+    // Onbekend id en geen toegang geven dezelfde error (invariant 3).
+    const { user } = await requirePhotoAccess(ctx, photoId);
 
     const existing = await ctx.db
       .query("ratings")
