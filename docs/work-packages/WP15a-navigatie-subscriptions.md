@@ -219,3 +219,4 @@ Tests staan in `app/tests/`, net als bij WP13: vitest in Node, zonder React Nati
 | 3. Pauzeren bij `inactive` | Ja: alles behalve `active` pauzeert |
 | 4. Duur Clerk-sessie | Naar fase 5 (T-4 weken, prod-Clerk-config), niet in 15a |
 | 5. Gate-stap 5, tabwissel | Naar WP15b: de tabschermen in 15a hebben nog geen query. WP15b meet het bij de eerste schermquery. |
+| 6. Offline terug uit de achtergrond (audit) | Fixen in 15a. De rij "Geen netwerk bij terugkeer" in §3 geldt. |
