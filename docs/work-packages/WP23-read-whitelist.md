@@ -36,7 +36,7 @@ Regie-draft. A toetst tegen de oude app (welke schermen tonen wat aan wie) en sc
 
 | Query | Huidig | Auth (doel) | Output (doel) |
 |---|---|---|---|
-| `users.getById` | geen auth, volle rij | ingelogd én (zichzelf óf deelt minstens één groep met target) | publiek profiel (zichzelf: eigen profiel) |
+| `users.getById` | geen auth, volle rij | ingelogd én (zichzelf óf deelt minstens één groep met target) | publiek profiel, ook voor zichzelf (A-keuze 9) |
 | `users.current` | eigen volle rij incl. `subject` | ongewijzigd (`null` zonder identity/rij) | eigen profiel |
 | `groups.getById` | geen auth, volle rij | lid | groep-vorm |
 | `groups.getWithCover` | lid, groep-spread + volle foto | lid | groep-vorm + cover als foto-vorm |
@@ -48,16 +48,16 @@ Regie-draft. A toetst tegen de oude app (welke schermen tonen wat aan wie) en sc
 | `albums.listPhotos` | lid, albumPhoto + volle foto | lid | albumPhoto-velden + foto-vorm |
 | `photos.getById` | geen auth, volle rij | foto-toegang | foto-vorm |
 | `photos.getWithOwner` | geen auth, foto + **volle owner-rij** | foto-toegang | foto-vorm + owner als publiek profiel |
-| `photos.listByOwner` | geen auth | ingelogd; alleen eigen foto's (A toetst of een scherm foto's van een ander per owner toont) | foto-vorm |
+| `photos.listByOwner` | geen auth | ingelogd; alleen eigen foto's, andere `ownerId` geeft geen data | foto-vorm |
 | `photos.listMyFlagged` | eigen, volle rij | ongewijzigd | foto-vorm + flag-velden die de eigenaar nodig heeft voor bezwaar |
 | `photos.listAllFlagged` | webmaster, volle rij | ongewijzigd | foto-vorm + alle flag-velden (incl. melder) |
-| `ratings.listForPhoto` | geen auth, volle rij | foto-toegang | rating-vorm (wie, waarde) |
-| `features.getById` / `list` | geen auth | ingelogd | feature-vorm. Open vraag: zijn `problem`-meldingen zichtbaar voor iedereen of alleen voor melder + webmaster? |
+| `ratings.listForPhoto` | geen auth, volle rij | foto-toegang | alleen de eigen rating van de caller (A-keuze 1) |
+| `features.getById` / `list` | geen auth | ingelogd | feature-vorm. `problem` alleen voor indiener + webmaster (A-keuze 5) |
 | `features.hasUpvoted` | boolean | ongewijzigd | ongewijzigd |
-| `invites.getByToken` | anoniem (bewust), invite-spread + volle groep | ongewijzigd (token = toegangsbewijs) | alleen wat de landingspagina nodig heeft: status, verlopen-vlag, rol, groepsnaam (+ omschrijving), inviter als publiek profiel. Geen `invitedBy`-id, `bouncedAt`, token-echo of volle groep-rij |
-| `invites.listPendingForEmail` | **anoniem, geeft volle invites incl. token** | geen publieke query meer (intern of weg) tenzij A een client-gebruik vindt | — |
-| `invites.hasPendingForEmail` | anoniem, boolean (email-orakel: "is dit adres uitgenodigd?") | A toetst tegen WP13-login en oude signup-flow; zonder client-behoefte: niet publiek | — |
-| `invites.listMine` | eigen verstuurde invites, spread | ongewijzigd | invite-vorm (eigen data; token mag erin als de afzender de link opnieuw moet kunnen delen) |
+| `invites.getByToken` | anoniem (bewust), invite-spread + volle groep | ongewijzigd (token = toegangsbewijs) | alleen wat de landingspagina nodig heeft: status, verlopen-vlag, rol, groep-id + naam + omschrijving, inviter (naam + profielfoto). Geen invitee-email, `invitedBy`-id, `bouncedAt`, token-echo of volle groep-rij (A-keuze 6) |
+| `invites.listPendingForEmail` | **anoniem, geeft volle invites incl. token** | geen publieke query meer, intern of weg (A-keuze 7) | — |
+| `invites.hasPendingForEmail` | anoniem, boolean (email-orakel: "is dit adres uitgenodigd?") | geen publieke query meer, intern of weg (A-keuze 7) | — |
+| `invites.listMine` | eigen verstuurde invites, spread | ongewijzigd | invite-vorm, zonder token (A-keuze 8) |
 
 Vormen (groep, album, foto, rating, feature, invite) legt A vast in §Spec-criticus. Uitgangspunt per vorm: alleen velden die een scherm in de oude app toont of die de app voor gedrag nodig heeft. Aandachtspunten:
 - **foto-vorm**: `flaggedBy` (wie meldde) is melder-identiteit — niet voor gewone leden en niet voor de eigenaar. Precieze `latitude`/`longitude` toetsen: toont de oude app een kaart, of alleen `locationLabel`? `filename` toetsen.
@@ -110,6 +110,103 @@ Vormen (groep, album, foto, rating, feature, invite) legt A vast in §Spec-criti
 
 ---
 
-## Spec-criticus aanvullingen (A vult in)
+## Spec-criticus aanvullingen (A)
 
-(Leeg in draft.)
+Bronnen (alleen A): oude app `clubalmanac-app` (Profile + PersonalHeader, GroupMembersSub, PhotoDetail, AlbumPhotos, MyPhotos, AlbumMap, Inappropriate(Admin), LoginInvite + Invited), oude API `blob-images-api-{user,groups,photos,invites}` (getUser, listMembers, getPhoto + `getPhotoById`, getRating, listFlagged, listAllFlagged, publicGetInvite), `blob-images-features`, `blob-common/core/dbClean.js`, plus de pariteit-tabel in WP13.
+
+### Wat de oude code deed
+
+- De oude API haalde alleen vier interne keys weg (`cleanRecord`) en gaf de rest terug. Foto's, de ledenlijst en features droegen een **gedenormaliseerde volle user-rij mee, inclusief email**. Het lek bestond in v1 al. Er is dus geen pariteit om te bewaren.
+- Foto-toegang was eigenaar, of lid van een groep met een publicatie van de foto. Dat is gelijk aan de definitie hierboven.
+- Ratings: de oude API gaf alleen de **eigen** rating van de caller terug. De oude app had geen rating-scherm.
+- Probleemmeldingen werden alleen gemaild en nooit gelijst. De feature-lijst gaf een `userIsOwner`-vlag (en daarnaast toch de volle user-rij).
+- Het album-scherm toonde gemelde foto's bewust niet als gemeld. Alleen Mijn foto's en Ongepast toonden de flag-status, en dan alleen datums: geen reden, geen melder.
+- Het kaart-scherm gebruikte GPS van alle foto's in een album. Kaart en foto-locatie hebben in v2 geen WP (WP13).
+- De invite-landing toonde groepsnaam, inviter-naam, het bericht, en naam + email van de genodigde. Accepteren navigeerde naar de groep, dus de app had de groep-id nodig.
+
+### Vormen (veldlijsten)
+
+Regels voor alle vormen:
+- `_creationTime` zit in geen enkele vorm.
+- Een optioneel veld mag ontbreken als het in de rij ontbreekt. Een veld dat niet in de lijst staat, is fout.
+- Een geneste user is altijd een publiek profiel, een geneste foto altijd de foto-vorm.
+
+| Vorm | Velden | Bewust niet |
+|---|---|---|
+| publiek profiel | `_id`, `name`, `profilePhotoStorageId` | `email`, `subject`, `photoCount`, `photoLimit`, `lastVisitAt`, `createdAt` |
+| eigen profiel | `_id`, `email`, `name`, `profilePhotoStorageId`, `photoCount`, `createdAt`, `lastVisitAt` | `subject`, `photoLimit` (A-keuze 10) |
+| groep | `_id`, `name`, `description`, `coverPhotoId`, `createdBy`, `createdAt` | — |
+| membership | `_id`, `userId`, `groupId`, `role`, `joinedAt` | — |
+| album | `_id`, `groupId`, `name`, `description`, `coverPhotoId`, `createdBy`, `createdAt` | — |
+| albumPhoto | `_id`, `albumId`, `photoId`, `groupId`, `addedAt`, `addedBy` | — |
+| foto | `_id`, `ownerId`, `storageId`, `width`, `height`, `takenAt`, `locationLabel`, `exifOrientation`, `ratingAverage`, `ratingCount`, `createdAt` | `filename`, `mimeType`, `latitude`, `longitude`, alle flag-velden |
+| eigen flag-velden | `flaggedAt`, `flaggedDeleteDate`, `flaggedAppealDate`, `flaggedAppealDenyDate` | `flaggedBy`, `flagReason` |
+| alle flag-velden | eigen flag-velden + `flaggedBy`, `flagReason` | — |
+| rating | `photoId`, `value` | `userId` (is altijd de caller), tijden |
+| feature | `_id`, `type`, `title`, `description`, `status`, `upvoteCount`, `createdAt` | `submittedBy` |
+| invite (afzender) | `_id`, `email`, `groupId`, `role`, `status`, `expiresAt`, `createdAt` | `token`, `invitedBy`, `respondedAt`, `bouncedAt` |
+| invite-landing | `status`, `isExpired`, `role`, `group`, `inviter` | `email`, `token`, `invitedBy`, `bouncedAt`, `_id`, tijden |
+| `group` in landing | `_id`, `name`, `description`, of `null` | `coverPhotoId`, `createdBy`, `createdAt` |
+| `inviter` in landing | `name`, `profilePhotoStorageId`, of `null` | `_id` (precedent audit-8) |
+
+### Response per query
+
+- `users.getById`: publiek profiel, ook voor zichzelf. `users.current`: eigen profiel of `null`.
+- `groups.getById`: groep. `groups.getWithCover`: groep + `cover` (foto of `null`). `groups.listMine`: per item groep + `role`.
+- `groups.listMembers`: per item `{ membership, user }`, met membership-vorm en publiek profiel (`null` als de users-rij ontbreekt).
+- `albums.getById` en `listByGroup`: album. `listByGroupWithUnread`: album + `unreadCount`. `getWithGroup`: album + `group` (groep). `getWithCover`: album + `cover` (foto of `null`).
+- `albums.listPhotos`: per item `{ albumPhoto, photo }`, met albumPhoto-vorm en foto (`null` als de foto ontbreekt).
+- `photos.getById` en `listByOwner`: foto. `getWithOwner`: foto + `owner` (publiek profiel of `null`).
+- `photos.listMyFlagged`: foto + eigen flag-velden. `listAllFlagged`: foto + alle flag-velden.
+- `ratings.listForPhoto`: lijst met hooguit één rating, die van de caller.
+- `features.getById`: feature of `null`. `features.list`: features. Een `problem` alleen voor de indiener en de webmaster.
+- `invites.getByToken`: invite-landing of `null`. `invites.listMine`: invite (afzender).
+- `features.hasUpvoted` en `smoke.ping`: ongewijzigd.
+
+Auth, aanvullend op de tabel:
+- Een identity zonder users-rij telt als niet-ingelogd: throw bij de gegate queries, `null`/`[]` bij `users.current`, `groups.listMine` en `invites.listMine`.
+- `photos.listByOwner` met een andere `ownerId` dan de caller geeft geen data (throw of lege lijst). Geen scherm toont foto's van een ander per eigenaar.
+- `features.getById` op een probleem van een ander geeft hetzelfde als een onbekend id.
+
+### Aanvullende invarianten
+
+7. **De lijst publieke queries ligt vast.** Een test somt alle publieke queries in `convex/` op en vergelijkt met de tabel. Een nieuwe publieke query faalt tot iemand die lijst bewust bijwerkt. `convex/_test.ts` valt erbuiten.
+8. **Elke publieke query heeft een return-validator zonder `any`** (A-keuze 11). Convex weigert dan een response met een veld buiten de validator. Een spread of een nieuw schema-veld faalt luid in plaats van stil te lekken. Zo is invariant 2 structureel.
+9. **Melder-identiteit** (`flaggedBy`, `flagReason`) gaat alleen naar de webmaster.
+
+### Edge cases (gepind in RED-tests)
+
+- Foto in albums van twee groepen, caller is lid van één van de twee: toegang.
+- Lid verlaat een groep: direct geen groep-, album- en foto-reads meer. `users.getById` op leden van die groep faalt ook, tenzij er nog een andere gedeelde groep is. Eigen foto's blijven leesbaar.
+- Eigen foto die in geen enkel album staat: leesbaar voor de eigenaar, voor niemand anders.
+- Webmaster zonder lidmaatschap: geen groep-, album- of foto-reads (geen bypass). Wel `listAllFlagged` en alle features.
+- Gemelde foto als cover of in een album: leden zien de foto-vorm zonder flag-velden. De eigenaar ziet geen melder en geen reden.
+- Invite die geaccepteerd, verlopen of gebounced is: de landing-vorm, zonder `bouncedAt` en zonder email.
+- Geen bestaans-orakel: zelfde caller, onbekend id tegenover bestaand id zonder toegang, geeft een identieke uitkomst (zelfde error-tekst, of allebei `null`/`[]`). De test schrijft niet voor welke van de twee.
+
+### A-keuzes ter bevestiging
+
+1. **Ratings: alleen de eigen rating.** De oude API gaf alleen de eigen rating terug en de oude app toonde geen ratings (WP13 open vraag 1). Wie wat gaf, is sociaal gevoelig. Het aggregaat (`ratingAverage`, `ratingCount`) zit in de foto-vorm. Een scherm dat raters wil tonen, voegt dat bewust toe, met publiek profiel.
+2. **Geen GPS (`latitude`, `longitude`) in de foto-vorm.** De oude app had een kaart, maar kaart en foto-locatie hebben in v2 geen WP. `locationLabel` blijft, want fotodetail toont het. Komt de kaart terug, dan voegt die WP de coördinaten toe.
+3. **Geen `filename` en `mimeType`.** Geen scherm toonde ze, en een bestandsnaam kan een naam bevatten.
+4. **De eigenaar ziet geen `flagReason`.** Dat is vrije tekst van de melder (nieuw in v2) en kan de melder herleidbaar maken. De eigenaar ziet de datums die het bezwaar-scherm in de oude app toonde.
+5. **Een `problem` alleen voor indiener en webmaster, en geen `submittedBy` in de feature-vorm.** De oude flow mailde problemen alleen, en toonde geen indiener van features.
+6. **Invite-landing zonder email van de genodigde, wel `group._id`.** De oude landing toonde naam + email en vulde die in bij aanmelden. Een token staat in URL's en doorgestuurde mails, dus zonder email is strenger. De user typt bij login zelf zijn email (raakt WP19/WP22). `group._id` blijft: "accepteren, dan naar de groep" heeft het nodig (`invites.accept` geeft niets terug), en voor een niet-lid ontsluit het niets.
+7. **`listPendingForEmail` en `hasPendingForEmail` niet publiek.** Geen client gebruikt ze: de pre-signup-gate is bewust niet gebouwd (WP6) en de app roept ze niet aan. Het Uitnodigingen-scherm (WP19) heeft wel een lijst ontvangen uitnodigingen nodig, maar voor de ingelogde caller, niet op een vrij email-argument. Dat wordt een nieuwe read in WP19.
+8. **`invites.listMine` zonder `token`, `respondedAt` en `bouncedAt`.** De oude app kende geen "link opnieuw delen" en geen bounce-weergave.
+9. **`users.getById` geeft ook voor zichzelf het publiek profiel.** Het eigen profiel loopt via `users.current`. Eén vorm per query houdt de return-validator simpel.
+10. **Eigen profiel zonder `photoLimit`.** Geen scherm toonde de limiet; de server bewaakt hem. WP18 kan hem toevoegen als de upload-teller hem nodig heeft.
+11. **Return-validator verplicht** (invariant 8). De voorkeur uit invariant 2 wordt hiermee een eis, met een test per publieke query.
+
+### Buiten scope, wel gezien (voor regie)
+
+- **Mutations zonder foto-toegang.** `photos.flag` en `ratings.upsert` checken alleen "ingelogd" en "foto bestaat". Elk account met een photo-id kan melden of raten, en "Foto bestaat niet" is een bestaans-orakel. Invariant 6 houdt dit buiten WP23; kandidaat voor WP17/WP20 of een mini-WP.
+- **Reads die latere WP's nodig hebben**, elk met een eigen whitelist: openstaande uitnodigingen van een groep, met email, in de ledenlijst (WP16, de oude app toonde dit); ledenaantal en "sinds" per groep (WP16); "staat in deze albums" (WP17); ontvangen uitnodigingen van de caller (WP19); een webmaster-vlag voor het profielmenu (WP15/WP20).
+
+### Test-strategie
+
+- Eén seed-wereld met alle optionele velden gevuld, zodat "precies deze velden" deterministisch is. De test vergelijkt de set gedefinieerde keys.
+- Elke response wordt geserialiseerd en gescand: geen `email` of `subject` van enige user erin, behalve de eigen email in het eigen profiel.
+- Het orakel wordt getest als vergelijking van uitkomsten, niet als voorgeschreven error-vorm.
+- De lijst publieke queries en de return-validators worden gelezen van de geëxporteerde functies. convex-test maakt zelf geen onderscheid tussen publiek en intern.
+- Integration-test upload: JWT vóór het pollen. De test checkt `takenAt` en `locationLabel` (een label bewijst dat GPS uitgelezen en gegeocodeerd is) en dat `latitude`/`longitude` níet in de response staan.
