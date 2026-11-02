@@ -43,6 +43,7 @@ WP1-WP4 liepen vóór de formele spec-doc-discipline (geen WP-file). Status uit 
 | WP20 | Features/probleem melden + flagging | — | open |
 | WP21 | Video's + covers vanaf S3 | — | open |
 | WP22 | Link in de login-mail opent de app en rondt de login af (eis Wouter, verplicht vóór T0). Vervangt de reset-WP: er is geen wachtwoord meer. Gate test ook een verlopen code (WP13-gate 4a). Input: WP13 §Mail-links in de oude app. | — | open |
+| WP23 | Auth + veld-whitelist op publieke reads (`users.getById` lekte email/subject; alle publieke queries nagelopen). Vóór WP15-WP17 de reads gebruiken. | [`WP23-read-whitelist.md`](./WP23-read-whitelist.md) | in uitvoering |
 | Phase 4 Track B | Webapp | — | open |
 | Phase 5 | Hard cutover | — | uit fase 2-scope |
 
