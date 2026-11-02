@@ -213,7 +213,7 @@ describe("invites.handleBounce — guards & filtering", () => {
     expect(result.matched).toBe(0);
   });
 
-  it("case-insensitive email match (consistent met hasPendingForEmail)", async () => {
+  it("case-insensitive email match (consistent met normalizeEmail)", async () => {
     const t = convexTest(schema);
     await registerUser(t, "user_alice", "a@x.com");
     const { inviteId } = await withUser(t, "user_alice").mutation(
@@ -232,6 +232,126 @@ describe("invites.handleBounce — guards & filtering", () => {
     expect(typeof invite?.bouncedAt).toBe("number");
     expect(invite?.bouncedAt).toBeGreaterThanOrEqual(before);
     expect(invite?.bouncedAt).toBeLessThanOrEqual(after);
+  });
+});
+
+describe("invites.handleBounce — idempotency (dedup op providerEventId)", () => {
+  it("tweede call met zelfde providerEventId is no-op", async () => {
+    // Email-providers retry'en webhooks bij non-2xx. Dedup voorkomt dubbele
+    // notify-mails en dubbele state-transitions.
+    const t = convexTest(schema);
+    await registerUser(t, "user_alice", "a@x.com");
+    const { inviteId } = await withUser(t, "user_alice").mutation(
+      api.invites.create,
+      { email: "bouncer@x.com" },
+    );
+
+    const before = Date.now();
+    const first = await t.mutation(internal.invites.handleBounce, {
+      email: "bouncer@x.com",
+      providerEventId: "evt_dup",
+    });
+    const after = Date.now();
+    const firstInvite = await t.run((ctx) => ctx.db.get(inviteId));
+    const firstBouncedAt = firstInvite?.bouncedAt;
+    expect(typeof firstBouncedAt).toBe("number");
+    expect(firstBouncedAt).toBeGreaterThanOrEqual(before);
+    expect(firstBouncedAt).toBeLessThanOrEqual(after);
+    const scheduledAfterFirst = await t.run(
+      async (ctx) =>
+        (await ctx.db.system.query("_scheduled_functions").collect()).length,
+    );
+
+    const second = await t.mutation(internal.invites.handleBounce, {
+      email: "bouncer@x.com",
+      providerEventId: "evt_dup",
+    });
+
+    expect(first.matched).toBe(1);
+    expect(second.matched).toBe(0);
+    expect((await t.run((ctx) => ctx.db.get(inviteId)))?.bouncedAt).toBe(
+      firstBouncedAt,
+    );
+    const scheduledAfterSecond = await t.run(
+      async (ctx) =>
+        (await ctx.db.system.query("_scheduled_functions").collect()).length,
+    );
+    expect(scheduledAfterSecond).toBe(scheduledAfterFirst);
+  });
+
+  it("nieuwe bounce-event op zelfde email (andere providerEventId, latere invite) gaat wel door", async () => {
+    const t = convexTest(schema);
+    await registerUser(t, "user_alice", "a@x.com");
+    await withUser(t, "user_alice").mutation(api.invites.create, {
+      email: "bouncer@x.com",
+    });
+
+    // Eerste bounce
+    await t.mutation(internal.invites.handleBounce, {
+      email: "bouncer@x.com",
+      providerEventId: "evt_a",
+    });
+    // Inviter probeert opnieuw
+    const { inviteId: i2 } = await withUser(t, "user_alice").mutation(
+      api.invites.create,
+      { email: "bouncer@x.com" },
+    );
+    // Bounce komt opnieuw
+    const before = Date.now();
+    const result = await t.mutation(internal.invites.handleBounce, {
+      email: "bouncer@x.com",
+      providerEventId: "evt_b",
+    });
+    const after = Date.now();
+    expect(result.matched).toBe(1);
+    const invite = await t.run((ctx) => ctx.db.get(i2));
+    expect(invite?.status).toBe("expired");
+    expect(typeof invite?.bouncedAt).toBe("number");
+    expect(invite?.bouncedAt).toBeGreaterThanOrEqual(before);
+    expect(invite?.bouncedAt).toBeLessThanOrEqual(after);
+  });
+});
+
+describe("invites.handleBounce — interactie met onboarding", () => {
+  it("na bounce: onboarding met dat adres accepteert de invite niet meer", async () => {
+    // Verwijst naar preSignup.js regel 34-39: invite-presence was de
+    // signup-gate. In v2 is de gate de onboarding (registerFromSession), die
+    // alleen pending, niet-verlopen invites accepteert. Bounce moet die gate
+    // sluiten zodat een typo'd email niet alsnog lid wordt.
+    // WP23: voorheen via de publieke hasPendingForEmail, die niet meer
+    // publiek is.
+    const t = convexTest(schema);
+    await registerUser(t, "user_alice", "a@x.com");
+    const groupId = await withUser(t, "user_alice").mutation(
+      api.groups.create,
+      { name: "Groep" },
+    );
+    const { inviteId } = await withUser(t, "user_alice").mutation(
+      api.invites.create,
+      { email: "bouncer@x.com", groupId },
+    );
+
+    await t.mutation(internal.invites.handleBounce, {
+      email: "bouncer@x.com",
+      providerEventId: "evt_signupgate",
+    });
+
+    const newUserId = await t.mutation(internal.users.registerFromSession, {
+      subject: "user_bouncer",
+      email: "bouncer@x.com",
+    });
+
+    const invite = await t.run((ctx) => ctx.db.get(inviteId));
+    expect(invite?.status).toBe("expired");
+    const membership = await t.run((ctx) =>
+      ctx.db
+        .query("memberships")
+        .withIndex("by_user_and_group", (q) =>
+          q.eq("userId", newUserId).eq("groupId", groupId),
+        )
+        .unique(),
+    );
+    expect(membership).toBeNull();
   });
 });
 

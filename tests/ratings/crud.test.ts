@@ -87,7 +87,14 @@ describe("ratings.remove", () => {
 
     await withUser(t, "user_bob").mutation(api.ratings.remove, { photoId });
 
-    const list = await t.query(api.ratings.listForPhoto, { photoId });
+    // Direct uit de tabel: listForPhoto geeft sinds WP23 alleen de eigen
+    // rating van de caller.
+    const list = await t.run((ctx) =>
+      ctx.db
+        .query("ratings")
+        .withIndex("by_photo", (q) => q.eq("photoId", photoId))
+        .collect(),
+    );
     expect(list).toHaveLength(1);
     expect(list[0]?.value).toBe(3);
   });
@@ -103,23 +110,28 @@ describe("ratings.remove", () => {
   });
 });
 
+// WP23 (A-keuze 1): listForPhoto geeft alleen de eigen rating van de caller.
+// Volledige auth- en vorm-matrix: tests/readWhitelist/ratings.test.ts.
 describe("ratings.listForPhoto", () => {
-  it("geeft alle ratings van die photo", async () => {
+  it("geeft alleen de eigen rating, niet die van anderen", async () => {
     const t = convexTest(schema);
     const photoId = await setupPhoto(t, "user_alice");
     await registerUser(t, "user_bob", "b@x.com");
-    await registerUser(t, "user_carol", "c@x.com");
 
+    await withUser(t, "user_alice").mutation(api.ratings.upsert, {
+      photoId,
+      value: 3,
+    });
     await withUser(t, "user_bob").mutation(api.ratings.upsert, {
       photoId,
       value: 4,
     });
-    await withUser(t, "user_carol").mutation(api.ratings.upsert, {
-      photoId,
-      value: 5,
-    });
 
-    const list = await t.query(api.ratings.listForPhoto, { photoId });
-    expect(list).toHaveLength(2);
+    const list = await withUser(t, "user_alice").query(
+      api.ratings.listForPhoto,
+      { photoId },
+    );
+    expect(list).toHaveLength(1);
+    expect(list[0]?.value).toBe(3);
   });
 });

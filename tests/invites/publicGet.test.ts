@@ -1,7 +1,5 @@
-// TDD red phase voor publieke / lookup queries op invites:
-//   api.invites.getByToken      — invite + inviter + group voor invite-pagina
-//   api.invites.listPendingForEmail
-//   api.invites.hasPendingForEmail
+// Publieke / lookup queries op invites:
+//   api.invites.getByToken      — landingspagina (anoniem, token = toegangsbewijs)
 //   api.invites.listMine        — eigen verstuurde invites (sender view)
 //
 // Bron:
@@ -9,17 +7,21 @@
 //     (regel 4-11: ophalen via inviteId path-param + getInvite-validatie)
 //   - blob-images-api-invites/handlersInvite/inviteHelpers.js
 //     (regel 14-16: access-check; regel 28: status-check; regel 31-32: expiry)
-//   - blob-images-api/handlersCognito/preSignup.js
-//     (regel 7-39: pre-signup haalt invite op om te checken of email mag
-//     signuppen; equivalent in v2 via hasPendingForEmail)
 //
 // Belangrijke v2-keuze: getByToken is een PUBLIC query (geen auth nodig)
 // zodat de invite-landingspagina werkt voor anonymous bezoeker, maar het
 // retourneert alleen non-sensitive velden. Tests gemarkeerd [GAP] dekken
 // edge cases die in oude code ontbraken.
+//
+// WP23: de landing-vorm bevat geen invitee-email meer (A-keuze 6); de exacte
+// vorm staat in tests/readWhitelist/invites.test.ts. listPendingForEmail en
+// hasPendingForEmail zijn geen publieke query meer (A-keuze 7, gepind in
+// tests/readWhitelist/inventory.test.ts). Hun semantiek (alleen pending,
+// niet verlopen, case-insensitive) leeft voort in de onboarding:
+// tests/users/registerFromSession.test.ts.
 
 import { convexTest } from "convex-test";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import { api, internal } from "../../convex/_generated/api";
 import schema from "../../convex/schema";
 
@@ -67,7 +69,7 @@ describe("invites.getByToken — landingspagina lookup", () => {
 
     // Geen withUser → anonymous query
     const got = await t.query(api.invites.getByToken, { token });
-    expect(got?.email).toBe("new@x.com");
+    expect(got?.status).toBe("pending");
     // Audit-8: inviter is gesluisd tot {name, profilePhotoStorageId}; check
     // alleen op aanwezigheid hier. Field-shape wordt gepind in de [audit-8]
     // sluis-test verderop.
@@ -84,7 +86,7 @@ describe("invites.getByToken — landingspagina lookup", () => {
       { email: "new@x.com" },
     );
     const got = await t.query(api.invites.getByToken, { token });
-    expect(got?.email).toBe("new@x.com");
+    expect(got?.status).toBe("pending");
     expect(got?.group).toBeNull();
   });
 
@@ -164,120 +166,6 @@ describe("invites.getByToken — landingspagina lookup", () => {
     //   (b) computed isExpired flag op response
     // Voor TDD-red: kies (b) zodat we niet afhankelijk zijn van cron-timing.
     expect(got?.isExpired).toBe(true);
-  });
-});
-
-describe("invites.listPendingForEmail / hasPendingForEmail — pre-signup check", () => {
-  // Verwijst naar preSignup.js regel 14-39: checkt of email een open invite
-  // heeft. v2-equivalent gaat via hasPendingForEmail (anonymous query, want
-  // signup-flow heeft nog geen authed user).
-  it("vindt pending invite voor email (anonymous query)", async () => {
-    const t = convexTest(schema);
-    await registerUser(t, "user_alice", "a@x.com");
-    await withUser(t, "user_alice").mutation(api.invites.create, {
-      email: "new@x.com",
-    });
-
-    const list = await t.query(api.invites.listPendingForEmail, {
-      email: "new@x.com",
-    });
-    expect(list).toHaveLength(1);
-
-    expect(
-      await t.query(api.invites.hasPendingForEmail, { email: "new@x.com" }),
-    ).toBe(true);
-    expect(
-      await t.query(api.invites.hasPendingForEmail, { email: "ander@x.com" }),
-    ).toBe(false);
-  });
-
-  it("filtert verlopen invites uit", async () => {
-    // [GAP] oude preSignup.js (regel 34-39) checkte enkel `Item` bestaan,
-    // niet expiry — een verlopen invite zou nog steeds signup toestaan.
-    const t = convexTest(schema);
-    await registerUser(t, "user_alice", "a@x.com");
-    const { inviteId } = await withUser(t, "user_alice").mutation(
-      api.invites.create,
-      { email: "new@x.com" },
-    );
-    await t.run((ctx) =>
-      ctx.db.patch(inviteId, { expiresAt: Date.now() - 1000 }),
-    );
-    expect(
-      await t.query(api.invites.hasPendingForEmail, { email: "new@x.com" }),
-    ).toBe(false);
-    expect(
-      await t.query(api.invites.listPendingForEmail, { email: "new@x.com" }),
-    ).toHaveLength(0);
-  });
-
-  it("filtert accepted en declined uit", async () => {
-    const t = convexTest(schema);
-    await registerUser(t, "user_alice", "a@x.com");
-    const { token: t1 } = await withUser(t, "user_alice").mutation(
-      api.invites.create,
-      { email: "bob@x.com" },
-    );
-    const { token: t2 } = await withUser(t, "user_alice").mutation(
-      api.invites.create,
-      { email: "carol@x.com" },
-    );
-    await registerUser(t, "user_bob", "bob@x.com");
-    await registerUser(t, "user_carol", "carol@x.com");
-    await withUser(t, "user_bob").mutation(api.invites.accept, { token: t1 });
-    await withUser(t, "user_carol").mutation(api.invites.decline, { token: t2 });
-
-    expect(
-      await t.query(api.invites.hasPendingForEmail, { email: "bob@x.com" }),
-    ).toBe(false);
-    expect(
-      await t.query(api.invites.hasPendingForEmail, { email: "carol@x.com" }),
-    ).toBe(false);
-  });
-
-  it("[audit-8 bevinding 9] hasPendingForEmail: expiresAt === now telt als verlopen", async () => {
-    // Spec: ≤ now is verlopen. hasPendingForEmail moet false geven bij
-    // exacte gelijkheid van expiresAt en now. Pinnen samen met de accept-
-    // boundary-test (zie tests/invites/accept.test.ts).
-    vi.useFakeTimers();
-    try {
-      const fixedNow = new Date("2026-04-30T12:00:00Z").getTime();
-      vi.setSystemTime(fixedNow);
-
-      const t = convexTest(schema);
-      const aliceId = await registerUser(t, "user_alice", "a@x.com");
-      await t.run((ctx) =>
-        ctx.db.insert("invites", {
-          email: "boundary@x.com",
-          invitedBy: aliceId,
-          token: "tk-boundary-pending",
-          status: "pending",
-          expiresAt: fixedNow,
-          createdAt: fixedNow - 1000,
-        }),
-      );
-      expect(
-        await t.query(api.invites.hasPendingForEmail, {
-          email: "boundary@x.com",
-        }),
-      ).toBe(false);
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
-  it("[GAP] case-insensitive email match", async () => {
-    // Oude DynamoDB lookup matchte op exact PK ("UME"+email letterlijk).
-    // v2: signup-emails kunnen casing-verschillen hebben (Clerk normaliseert
-    // niet altijd). Borg dat invite voor "Bob@X.com" matcht "bob@x.com".
-    const t = convexTest(schema);
-    await registerUser(t, "user_alice", "a@x.com");
-    await withUser(t, "user_alice").mutation(api.invites.create, {
-      email: "Bob@X.com",
-    });
-    expect(
-      await t.query(api.invites.hasPendingForEmail, { email: "bob@x.com" }),
-    ).toBe(true);
   });
 });
 

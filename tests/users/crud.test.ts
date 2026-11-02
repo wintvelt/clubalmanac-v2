@@ -49,28 +49,35 @@ describe("users.current", () => {
     expect(got).toBeNull();
   });
 
-  it("geeft user wanneer auth + record bestaat", async () => {
+  it("geeft eigen profiel wanneer auth + record bestaat (WP23: zonder Clerk-subject)", async () => {
     const t = convexTest(schema);
     await seedUser(t, "user_alice", "alice@x.com", "Alice");
     const got = await withUser(t, "user_alice").query(api.users.current, {});
     expect(got?.email).toBe("alice@x.com");
-    expect(got?.subject).toBe("user_alice");
+    expect((got as Record<string, unknown> | null)?.subject).toBeUndefined();
   });
 });
 
+// WP23: getById vereist inloggen + gedeelde groep (of zichzelf). Volledige
+// auth- en vorm-matrix: tests/readWhitelist/users.test.ts.
 describe("users.getById", () => {
-  it("geeft user op id", async () => {
+  it("geeft eigen user op id", async () => {
     const t = convexTest(schema);
     const id = await seedUser(t, "user_alice", "alice@x.com");
-    const got = await t.query(api.users.getById, { userId: id });
+    const got = await withUser(t, "user_alice").query(api.users.getById, {
+      userId: id,
+    });
     expect(got?._id).toBe(id);
   });
 
-  it("geeft null voor niet-bestaande id", async () => {
+  it("geeft geen data voor niet-bestaande id", async () => {
     const t = convexTest(schema);
-    const id = await seedUser(t, "user_alice", "alice@x.com");
+    await seedUser(t, "user_alice", "alice@x.com");
+    const id = await seedUser(t, "user_bob", "bob@x.com");
     await t.run((ctx) => ctx.db.delete(id));
-    const got = await t.query(api.users.getById, { userId: id });
+    const got = await withUser(t, "user_alice")
+      .query(api.users.getById, { userId: id })
+      .catch(() => null);
     expect(got).toBeNull();
   });
 });

@@ -85,15 +85,19 @@ describe("groups.create", () => {
   });
 });
 
+// WP23: getById vereist lidmaatschap. Volledige auth- en vorm-matrix:
+// tests/readWhitelist/groups.test.ts.
 describe("groups.getById", () => {
-  it("geeft group terug", async () => {
+  it("geeft group terug aan een lid", async () => {
     const t = convexTest(schema);
     const { groupId } = await setupGroup(t);
-    const got = await t.query(api.groups.getById, { groupId });
+    const got = await withUser(t, "user_admin").query(api.groups.getById, {
+      groupId,
+    });
     expect(got?._id).toBe(groupId);
   });
 
-  it("geeft null voor onbekende id", async () => {
+  it("geeft geen data voor onbekende id", async () => {
     const t = convexTest(schema);
     const { groupId } = await setupGroup(t);
     await t.run(async (ctx) => {
@@ -105,7 +109,9 @@ describe("groups.getById", () => {
       for (const m of memberships) await ctx.db.delete(m._id);
       await ctx.db.delete(groupId);
     });
-    const got = await t.query(api.groups.getById, { groupId });
+    const got = await withUser(t, "user_admin")
+      .query(api.groups.getById, { groupId })
+      .catch(() => null);
     expect(got).toBeNull();
   });
 });

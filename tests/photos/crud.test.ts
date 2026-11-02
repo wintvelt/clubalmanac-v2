@@ -73,8 +73,10 @@ describe("photos.create basic", () => {
   });
 });
 
+// WP23: getById vereist foto-toegang, listByOwner geeft alleen eigen foto's.
+// Volledige auth- en vorm-matrix: tests/readWhitelist/photos.test.ts.
 describe("photos.getById / listByOwner", () => {
-  it("getById geeft photo terug", async () => {
+  it("getById geeft photo terug aan de eigenaar", async () => {
     const t = convexTest(schema);
     await registerUser(t, "user_alice", "a@x.com");
     const storageId = await uploadStorage(t);
@@ -82,7 +84,9 @@ describe("photos.getById / listByOwner", () => {
       api.photos.create,
       { storageId },
     );
-    const got = await t.query(api.photos.getById, { photoId });
+    const got = await withUser(t, "user_alice").query(api.photos.getById, {
+      photoId,
+    });
     expect(got?._id).toBe(photoId);
   });
 
@@ -103,13 +107,15 @@ describe("photos.getById / listByOwner", () => {
       storageId: s3,
     });
 
-    const alicePhotos = await t.query(api.photos.listByOwner, {
-      ownerId: aliceId,
-    });
+    const alicePhotos = await withUser(t, "user_alice").query(
+      api.photos.listByOwner,
+      { ownerId: aliceId },
+    );
     expect(alicePhotos).toHaveLength(2);
-    const bobPhotos = await t.query(api.photos.listByOwner, {
-      ownerId: bobId,
-    });
+    const bobPhotos = await withUser(t, "user_bob").query(
+      api.photos.listByOwner,
+      { ownerId: bobId },
+    );
     expect(bobPhotos).toHaveLength(1);
   });
 });

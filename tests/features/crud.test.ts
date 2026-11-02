@@ -301,8 +301,11 @@ describe("features.remove — webmaster-only (audit-7 §4)", () => {
   });
 });
 
+// WP23: list vereist inloggen; een `problem` is alleen zichtbaar voor de
+// indiener en de webmaster. Hier is alice de indiener van beide.
+// Volledige matrix: tests/readWhitelist/features.test.ts.
 describe("features.list", () => {
-  it("default: alle features", async () => {
+  it("default: alle features (incl. eigen problemen)", async () => {
     const t = convexTest(schema);
     await registerUser(t, "user_alice", "a@x.com");
 
@@ -317,7 +320,7 @@ describe("features.list", () => {
       description: "x",
     });
 
-    const list = await t.query(api.features.list, {});
+    const list = await withUser(t, "user_alice").query(api.features.list, {});
     expect(list).toHaveLength(2);
   });
 
@@ -336,11 +339,15 @@ describe("features.list", () => {
       description: "x",
     });
 
-    const features = await t.query(api.features.list, { type: "feature" });
+    const features = await withUser(t, "user_alice").query(api.features.list, {
+      type: "feature",
+    });
     expect(features).toHaveLength(1);
     expect(features[0]?.title).toBe("F1");
 
-    const problems = await t.query(api.features.list, { type: "problem" });
+    const problems = await withUser(t, "user_alice").query(api.features.list, {
+      type: "problem",
+    });
     expect(problems).toHaveLength(1);
     expect(problems[0]?.title).toBe("P1");
   });

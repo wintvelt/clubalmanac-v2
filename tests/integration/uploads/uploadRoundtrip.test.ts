@@ -28,6 +28,9 @@ import { getConvexSiteBase, requireEnv } from "../_helpers/convexSite";
 //     (cross-ref: tests/integration/clerk/jwtRoundtrip.test.ts).
 //   - Binary fetch naar `<deployment>.<region>.convex.site/upload`.
 //   - Poll `api.photos.getById` tot `takenAt` gevuld is (scheduler-async).
+//     WP23: getById vereist foto-toegang, dus de client draagt dezelfde JWT.
+//     De foto-vorm bevat geen GPS meer (A-keuze 2); `locationLabel` bewijst
+//     dat de coördinaten uitgelezen én gegeocodeerd zijn.
 //   - Cleanup: photos.remove via dezelfde JWT (best-effort).
 //
 // Niet in CI. Lokaal: `npm run test:integration`.
@@ -114,14 +117,14 @@ describe("WP7 — upload-pipeline empirische gate", () => {
       // In praktijk binnen 1-3s klaar; poll max 15s.
       type PhotoRow = {
         takenAt?: number;
-        latitude?: number;
-        longitude?: number;
         locationLabel?: string;
         exifOrientation?: number;
         storageId: string;
         ownerId: string;
-      };
+      } & Record<string, unknown>;
       let photo: PhotoRow | null = null;
+      // WP23: zonder auth geeft getById niets meer terug.
+      client.setAuth(jwt);
       const deadline = Date.now() + 15_000;
       while (Date.now() < deadline) {
         await new Promise((r) => setTimeout(r, 1000));
@@ -139,10 +142,11 @@ describe("WP7 — upload-pipeline empirische gate", () => {
       expect(photo!.takenAt).toBeDefined();
       expect(typeof photo!.takenAt).toBe("number");
       expect(photo!.takenAt!).toBeGreaterThan(0);
-      // GPS coords uit EXIF
-      expect(photo!.latitude).toBeDefined();
-      expect(photo!.longitude).toBeDefined();
-      // Photon reverse-geocode-roundtrip levert iets bruikbaars
+      // WP23: GPS staat niet in de foto-vorm (whitelist).
+      expect(photo!.latitude).toBeUndefined();
+      expect(photo!.longitude).toBeUndefined();
+      // Photon reverse-geocode-roundtrip levert iets bruikbaars. Een label
+      // kan alleen bestaan als extractMetadata GPS uit de EXIF las.
       expect(photo!.locationLabel).toBeDefined();
       expect(typeof photo!.locationLabel).toBe("string");
       expect(photo!.locationLabel!.length).toBeGreaterThan(0);

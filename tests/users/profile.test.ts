@@ -52,7 +52,8 @@ describe("U3: photo query joint owner-data fresh", () => {
     });
 
     const { before, after } = await assertReactive(
-      () => t.query(api.photos.getWithOwner, { photoId }),
+      // WP23: getWithOwner vereist foto-toegang; alice is de eigenaar.
+      () => withUser(t, "user_alice").query(api.photos.getWithOwner, { photoId }),
       () =>
         withUser(t, "user_alice").mutation(api.users.updateProfile, {
           name: "Alice 2",
