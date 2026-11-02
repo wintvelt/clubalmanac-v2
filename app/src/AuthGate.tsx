@@ -9,7 +9,7 @@ import { Button } from "./components/Button";
 import { Text } from "./components/Text";
 import { api } from "./convexApi";
 import { AuthStateContext, ReconnectContext } from "./data/authStateContext";
-import { useRestartClerk } from "./data/clerkRestart";
+import { restartClerk } from "./data/clerkRestart";
 import { useConvexConnection } from "./data/convexConnection";
 import { useAppState } from "./data/useAppState";
 import { useSessionQuery } from "./data/useLiveQuery";
@@ -72,7 +72,6 @@ export function AuthGate({ children }: { children: ReactNode }) {
     clerkStatus,
     clerkSignedIn: session.clerkSignedIn,
     retry,
-    restartClerk: useRestartClerk(),
   });
 
   const pathname = usePathname();
@@ -174,18 +173,18 @@ function useRetryTimer(
 // Opnieuw proberen zodra de app actief en online wordt, vanuit een moment
 // waarop dat niet zo was: na "startupFailed" Clerk opnieuw starten (F12), na
 // een start uit de cache zonder sessie ook (F14), in "reconnecting" een nieuw
-// Convex-token. Alleen bij een wissel van AppState of netwerk, dus nooit in
-// een lus. Het netwerk wordt boven Clerk gemeten (src/data/online.tsx): na een
-// herstart van Clerk is er geen nieuwe wissel.
+// Convex-token. Alleen bij een wissel van AppState of netwerk. Een herstart
+// van Clerk herlaadt de app; een nieuwe start begint zonder "netwerk kwam
+// terug": de eerste meting van het netwerk (null → bekend) telt niet als
+// wissel. Zo geeft herladen geen lus.
 function useRetryOnReturn(input: {
   state: GateState;
   online: boolean | null;
   clerkStatus: ClerkStatus;
   clerkSignedIn: boolean;
   retry: () => void;
-  restartClerk: () => void;
 }) {
-  const { online, retry, restartClerk } = input;
+  const { online, retry } = input;
   const appState = useAppState();
   const before = useRef({ appState, online });
   const latest = useRef(input);
@@ -195,13 +194,14 @@ function useRetryOnReturn(input: {
     const { state, clerkStatus, clerkSignedIn } = latest.current;
     const was = before.current;
     before.current = now;
-    if (startupRetryDue({ state, before: was, now })) restartClerk();
-    else if (clerkRestartDue({ clerkStatus, clerkSignedIn, before: was, now })) restartClerk();
+    if (was.online === null) return;
+    if (startupRetryDue({ state, before: was, now })) void restartClerk();
+    else if (clerkRestartDue({ clerkStatus, clerkSignedIn, before: was, now })) void restartClerk();
     else if (state !== "startupFailed" && authRetryDue({ state, before: was, now })) retry();
-  }, [appState, online, retry, restartClerk]);
+  }, [appState, online, retry]);
 }
 
-// F12, F15: Clerk start niet. "Opnieuw" mount Clerk opnieuw (App.tsx). De
+// F12, F15: Clerk start niet. "Opnieuw" start Clerk opnieuw (herladen). De
 // uitweg wist alles lokaal (F13) en start Clerk opnieuw, zonder signOut: Clerk
 // is niet geladen. Daarna volgt het inlogscherm.
 function StartupFailedScreen({
@@ -211,19 +211,17 @@ function StartupFailedScreen({
   online: boolean | null;
   clerkStatus: ClerkStatus;
 }) {
-  const restartClerk = useRestartClerk();
   const view = startupFailedView({ online, clerkStatus });
   const [resetting, setResetting] = useState(false);
   const reset = () => {
     setResetting(true);
-    void wipeClerkStorage().finally(() => {
-      setResetting(false);
-      restartClerk();
-    });
+    void wipeClerkStorage()
+      .then(() => restartClerk())
+      .finally(() => setResetting(false));
   };
   return (
     <StatusScreen error title={view.title} message={view.message}>
-      <Button title="Opnieuw" onPress={restartClerk} />
+      <Button title="Opnieuw" onPress={() => void restartClerk()} />
       <Button
         title="Opnieuw inloggen"
         busyTitle="Gegevens wissen…"

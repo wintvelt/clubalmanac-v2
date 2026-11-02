@@ -1,10 +1,9 @@
 import { ClerkProvider, useAuth } from "@clerk/expo";
 import { ConvexReactClient } from "convex/react";
 import { StatusBar } from "expo-status-bar";
-import { useCallback, useState, type ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { deviceClerkStorage } from "./src/auth/deviceClerkStorage";
-import { ClerkRestartContext } from "./src/data/clerkRestart";
 import { ConvexProviderWithClerkRetry } from "./src/data/convexConnection";
 import { OnlineProvider } from "./src/data/online";
 import { parseClientEnv, type ClientEnv } from "./src/lib/env";
@@ -46,25 +45,19 @@ function Providers({ env, children }: { env: ClientEnv; children: ReactNode }) {
   const [convex] = useState(
     () => new ConvexReactClient(env.convexUrl, { unsavedChangesWarning: false }),
   );
-  // F12: "Opnieuw" na startupFailed mount Clerk opnieuw, zodat load() weer
-  // loopt. De resource-cache laat Clerk offline starten met de laatst bekende
+  // De resource-cache laat Clerk offline starten met de laatst bekende
   // client en omgeving (status "degraded"). F13: cache en client-token staan
   // in één eigen opslag, die uitloggen helemaal wist.
   const storage = deviceClerkStorage(env.clerkPublishableKey);
-  const [clerkMount, setClerkMount] = useState(0);
-  const restartClerk = useCallback(() => setClerkMount((n) => n + 1), []);
   return (
     <OnlineProvider>
-      <ClerkRestartContext value={restartClerk}>
-        <ClerkProvider
-          key={clerkMount}
-          publishableKey={env.clerkPublishableKey}
-          tokenCache={storage.tokenCache}
-          __experimental_resourceCache={storage.resourceCache}
-        >
-          <ConvexPerSession convex={convex}>{children}</ConvexPerSession>
-        </ClerkProvider>
-      </ClerkRestartContext>
+      <ClerkProvider
+        publishableKey={env.clerkPublishableKey}
+        tokenCache={storage.tokenCache}
+        __experimental_resourceCache={storage.resourceCache}
+      >
+        <ConvexPerSession convex={convex}>{children}</ConvexPerSession>
+      </ClerkProvider>
     </OnlineProvider>
   );
 }

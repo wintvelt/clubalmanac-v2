@@ -2,6 +2,7 @@ import { useClerk } from "@clerk/expo";
 import { useRef, useState } from "react";
 import { Button } from "../components/Button";
 import { Notice } from "../components/Notice";
+import { restartClerk } from "../data/clerkRestart";
 import { LOGIN_MESSAGES } from "../lib/loginErrors";
 import { wipeClerkStorage } from "./deviceClerkStorage";
 
@@ -9,7 +10,9 @@ import { wipeClerkStorage } from "./deviceClerkStorage";
 // geen token achter. Clerk beëindigt de sessie; daarna wissen we alles wat
 // Clerk op het toestel bewaart (WP15a F13). Dat wissen gebeurt altijd, ook
 // als signOut faalt. Offline logt Clerk lokaal uit; de sessie op de server
-// verloopt vanzelf (besluit R4-1). De Convex-client volgt Clerk en stopt met
+// verloopt vanzelf (besluit R4-1). Faalt signOut toch, dan zit Clerk vast
+// zonder sessie: na de wis herstart de app Clerk (herladen), en volgt het
+// inlogscherm. De Convex-client volgt Clerk en stopt met
 // identiteit meesturen. Een mislukte wis toont het inlogscherm (zie
 // wipeClerkStorage).
 export function SignOutButton() {
@@ -23,15 +26,16 @@ export function SignOutButton() {
     inFlight.current = true;
     setBusy(true);
     setError(null);
+    let failed = false;
     try {
       await signOut();
     } catch {
-      setError(LOGIN_MESSAGES.generic);
-    } finally {
-      await wipeClerkStorage();
-      inFlight.current = false;
-      setBusy(false);
+      failed = true;
     }
+    await wipeClerkStorage();
+    if (failed) await restartClerk().catch(() => setError(LOGIN_MESSAGES.generic));
+    inFlight.current = false;
+    setBusy(false);
   }
 
   return (

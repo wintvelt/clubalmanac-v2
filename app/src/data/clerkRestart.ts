@@ -1,10 +1,8 @@
-import { createContext, useContext } from "react";
+import { reloadAppAsync } from "expo";
 
-// WP15a F12: Clerk opnieuw starten. Clerk biedt geen load() om opnieuw te
-// proberen; App.tsx mount de ClerkProvider opnieuw (nieuwe key), waarna
-// load() opnieuw loopt.
-export const ClerkRestartContext = createContext<() => void>(() => {});
-
-export function useRestartClerk(): () => void {
-  return useContext(ClerkRestartContext);
+// WP15a: Clerk opnieuw starten = de app herladen. Clerk is een singleton: een
+// nieuwe ClerkProvider (nieuwe key) laadt niets opnieuw. Na het herladen leest
+// Clerk de opslag opnieuw: na een wis is dat het inlogscherm.
+export function restartClerk(): Promise<void> {
+  return reloadAppAsync("Clerk opnieuw starten");
 }
