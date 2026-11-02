@@ -15,7 +15,7 @@ import { expectNoData, outcome } from "../readWhitelist/_world";
 
 // WP24 invariant 1, end-to-end: een account dat een photo-id kent maar geen
 // foto-toegang heeft, maakt een eigen groep + album en probeert elk
-// schrijfpad uit invariant 2. Elk pad faalt zonder state-wijziging, en
+// schrijfpad uit invariant 2 en 8. Elk pad faalt zonder state-wijziging, en
 // daarna levert geen enkele publieke read de foto of zijn storageId.
 //
 // Doelen: pAlice (gepubliceerd, niet gemeld), pBob (gepubliceerd, gemeld),
@@ -41,6 +41,23 @@ async function attackAndRead(
     ["albums.update cover", () => attacker.mutation(api.albums.update, { albumId, coverPhotoId: photoId })],
     ["photos.flag", () => attacker.mutation(api.photos.flag, { photoId, reason: "x" })],
     ["ratings.upsert", () => attacker.mutation(api.ratings.upsert, { photoId, value: 5 })],
+    // Invariant 8: het beeld van de foto, en het profielbeeld van de eigenaar.
+    [
+      "users.updateProfile beeld van de foto",
+      async () =>
+        attacker.mutation(api.users.updateProfile, {
+          profilePhotoStorageId: await t.run(async (ctx) => (await ctx.db.get(photoId))!.storageId),
+        }),
+    ],
+    [
+      "users.updateProfile profielbeeld van de eigenaar",
+      async () =>
+        attacker.mutation(api.users.updateProfile, {
+          profilePhotoStorageId: await t.run(
+            async (ctx) => (await ctx.db.get(target.ownerId))!.profilePhotoStorageId!,
+          ),
+        }),
+    ],
   ];
   for (const [label, run] of paths) {
     await expectRejectedNoChange(t, run, label);
