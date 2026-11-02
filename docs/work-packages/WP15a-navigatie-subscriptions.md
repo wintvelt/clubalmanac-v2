@@ -541,3 +541,10 @@ De uitweg ("Opnieuw inloggen") roept `wipe()` aan en herstart Clerk. Hij roept g
 | De herstart van F14 laadt de echte client. De Clerk-instantie is een singleton (`createClerkInstance`). Een nieuwe `key` draait `load()` opnieuw, zoals in F12 bleek. | B |
 | Een time-out loopt af na een klok-sprong (Instellingen > Datum en tijd). | B |
 | Een upgrade vanaf build 42: uitloggen ruimt ook de oude sleutels op. | Gate |
+
+**Regie-besluit na B's fix 4 (`070160c`): een herstart van Clerk = de app herladen.** Een nieuwe `key` op `ClerkProvider` start Clerk niet opnieuw. Clerk houdt één instantie, en `load()` slaat zichzelf over als die al geladen is (dat zag B in de simulator en staat in de broncode). Het uitgangspunt van F12 klopte dus niet. De route wordt `reloadAppAsync()` uit `expo` (`expo-modules-core`). Daar is geen nieuwe native module voor nodig. Dit geldt bij:
+- `clerkRestartDue` (F14);
+- de uitweg van F15, na `wipe()`;
+- uitloggen waarbij `signOut()` faalt, na `wipe()`. Zo blijft de user niet in de app hangen terwijl Clerk in het geheugen nog ingelogd is.
+
+Een herladen mag geen lus geven. Een nieuwe start begint zonder "netwerk kwam terug". De gate checkt dat de app na het herladen op het inlogscherm staat, of in de app als er een sessie was.
