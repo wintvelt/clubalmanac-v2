@@ -33,7 +33,7 @@ Doc-deliverables (spec §X):
 
 Sinds WP5(B) — waar de B-sessie pushte ondanks "Wouter pusht handmatig"-mandaat — staat `Bash(git push:*)` in `.claude/settings.json` als deny-rule. Deze geldt voor **elke** Claude Code-sessie in deze repo (zowel Wouter's hoofd-sessie als rol-sessies à la wp-a/wp-b/wp-audit). Sub-agents die via `Agent(subagent_type: ...)` worden gespawned erven dezelfde deny.
 
-Workflow: A of B doet `git add -A && git commit -m "..."`. `git push` faalt met permission-denied. Sessie eindigt met "commit X gedaan, push geweigerd door settings.json". **Wouter pusht vanuit zijn eigen terminal** (`cd <repo> && git push origin main`) — niet vanuit een Claude Code-sessie.
+Workflow: A of B commit met pathspec, `git commit -m "..." -- <eigen paden>`. `git push` faalt met permission-denied. Sessie eindigt met "commit X gedaan, push geweigerd door settings.json". **Wouter pusht vanuit zijn eigen terminal** (`cd <repo> && git push origin main`) — niet vanuit een Claude Code-sessie.
 
 Als Wouter incidenteel tóch vanuit Claude Code wil pushen: voeg lokaal `Bash(git push:*)` toe aan `.claude/settings.local.json` allow-list (gitignored, alleen per-checkout). Deny gaat normaal voor allow, maar local-allow overruled global-deny binnen settings-precedence.
 
@@ -48,6 +48,15 @@ Regel: **push pas als er geen A-, B- of audit-sessie meer draait.** Regie zegt e
 Voor rol-sessies: gebruik `git commit`, nooit `git commit --amend` op een commit die je niet in dezelfde sessie hebt gemaakt. Een correctie op eerder werk is een nieuwe commit.
 
 Geboren uit WP12 fix-cyclus 2: regie gaf een push-moment terwijl A nog liep, A werkte daarna zijn eigen doc-commit bij, en de gepushte commit verdween uit de lokale historie. Opgelost met `git push --force-with-lease` — werkbaar in een solo-repo, maar precies het soort ingreep dat een discipline hoort te voorkomen. Eerder in dezelfde WP landde een `git commit --amend` van een rol-sessie op een commit van regie; die is via de reflog hersteld.
+
+## Meerdere sessies in één working tree
+
+Er kunnen meerdere sessies tegelijk in dezelfde checkout werken, bijvoorbeeld een app-WP en een backend-WP. `git add -A` of een kale `git commit` neemt dan ook de wijzigingen van de andere sessie mee, inclusief wat die al gestaged had. Regel:
+- Commit altijd met pathspec: `git commit -m "..." -- <paden>`. Dat commit alleen die paden, ook als er iets anders gestaged staat.
+- Check vóór de commit met `git diff --cached --stat` of er bestanden buiten je eigen rol in zitten.
+- Raak het werk van de andere sessie niet aan. Stage het niet en draai het niet terug.
+
+Geboren uit WP23: een A-commit nam een verwijdering van `app/index.ts` mee die de WP15a-sessie had gestaged. Daarna klopte HEAD pas weer na de WP15a-commit.
 
 ## Eén commit, één onderwerp
 
