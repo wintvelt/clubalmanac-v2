@@ -8,11 +8,13 @@ import { RECONNECT_TIMEOUT_MS, reconnectView } from "../src/lib/reconnectView";
 //   je internet", en geen belofte van een automatische poging.
 // - F8: een poging die blijft hangen, eindigt na een vaste time-out in een
 //   melding met knoppen. Geen eindeloos "Verbinden…".
+// - F16: de poort geeft een vlag "time-out afgelopen", geen duur. Zo hangt de
+//   beslissing niet van de klok af.
 
 type Input = Parameters<typeof reconnectView>[0];
 
-const IDLE_OFFLINE: Input = { online: false, retrying: false, retryingForMs: 0 };
-const IDLE_ONLINE: Input = { online: true, retrying: false, retryingForMs: 0 };
+const IDLE_OFFLINE: Input = { online: false, retrying: false, retryTimedOut: false };
+const IDLE_ONLINE: Input = { online: true, retrying: false, retryTimedOut: false };
 
 const INTERNET = /internet|netwerk|wifi|wi-fi/i;
 const AUTO_RETRY = /zodra|vanzelf|automatisch|straks weer/i;
@@ -23,8 +25,8 @@ describe("reconnectView — Uitloggen is er altijd (F6)", () => {
   it("in elke combinatie van online, poging en duur", () => {
     for (const online of [true, false, null])
       for (const retrying of [true, false])
-        for (const retryingForMs of [0, 1_000, RECONNECT_TIMEOUT_MS - 1, RECONNECT_TIMEOUT_MS, 600_000])
-          expect(reconnectView({ online, retrying, retryingForMs }).signOut).toBe("enabled");
+        for (const retryTimedOut of [false, true])
+          expect(reconnectView({ online, retrying, retryTimedOut }).signOut).toBe("enabled");
   });
 });
 
@@ -72,27 +74,24 @@ describe("reconnectView — online, server niet bereikbaar (F7)", () => {
 
 describe("reconnectView — een poging loopt (F8)", () => {
   it("binnen de time-out: bezig, Opnieuw zichtbaar maar niet te tikken", () => {
-    for (const online of [true, false, null])
-      for (const retryingForMs of [0, 1, RECONNECT_TIMEOUT_MS - 1]) {
-        const v = reconnectView({ online, retrying: true, retryingForMs });
-        expect(v.kind).toBe("busy");
-        expect(v.retry).toBe("busy");
-      }
-  });
-
-  it("na de time-out: de melding en de knoppen keren terug", () => {
-    for (const retryingForMs of [RECONNECT_TIMEOUT_MS, RECONNECT_TIMEOUT_MS + 1, 3_600_000]) {
-      const online = reconnectView({ online: true, retrying: true, retryingForMs });
-      expect(online.kind).toBe("serverUnreachable");
-      expect(online.retry).toBe("enabled");
-      const offline = reconnectView({ online: false, retrying: true, retryingForMs });
-      expect(offline.kind).toBe("offline");
-      expect(offline.retry).toBe("enabled");
+    for (const online of [true, false, null]) {
+      const v = reconnectView({ online, retrying: true, retryTimedOut: false });
+      expect(v.kind).toBe("busy");
+      expect(v.retry).toBe("busy");
     }
   });
 
+  it("na de time-out: de melding en de knoppen keren terug", () => {
+    const online = reconnectView({ online: true, retrying: true, retryTimedOut: true });
+    expect(online.kind).toBe("serverUnreachable");
+    expect(online.retry).toBe("enabled");
+    const offline = reconnectView({ online: false, retrying: true, retryTimedOut: true });
+    expect(offline.kind).toBe("offline");
+    expect(offline.retry).toBe("enabled");
+  });
+
   it("na de time-out dezelfde tekst als zonder poging", () => {
-    const late = { retrying: true, retryingForMs: RECONNECT_TIMEOUT_MS };
+    const late = { retrying: true, retryTimedOut: true };
     expect(reconnectView({ online: true, ...late })).toEqual(reconnectView(IDLE_ONLINE));
     expect(reconnectView({ online: false, ...late })).toEqual(reconnectView(IDLE_OFFLINE));
   });
@@ -108,8 +107,8 @@ describe("reconnectView — elke melding heeft tekst", () => {
   it("titel en uitleg zijn nooit leeg", () => {
     for (const online of [true, false, null])
       for (const retrying of [true, false])
-        for (const retryingForMs of [0, RECONNECT_TIMEOUT_MS]) {
-          const v = reconnectView({ online, retrying, retryingForMs });
+        for (const retryTimedOut of [false, true]) {
+          const v = reconnectView({ online, retrying, retryTimedOut });
           expect(v.title.trim()).not.toBe("");
           if (v.kind !== "busy") expect(v.message.trim()).not.toBe("");
         }

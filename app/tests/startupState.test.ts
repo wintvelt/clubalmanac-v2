@@ -1,6 +1,11 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
+import ts from "typescript";
 import { describe, expect, it } from "vitest";
 import type { SessionState } from "../src/lib/sessionState";
 import { deriveStartupState, STARTUP_TIMEOUT_MS, startupRetryDue } from "../src/lib/startupState";
+import { isScanned, listFiles, moduleUses, parse } from "./support/sourceScan";
 
 // WP15a F12: een koude start zonder netwerk blijft nooit eindeloos op "Laden…".
 // Clerk faalt offline zonder resource-cache in load(), zet zijn status op
@@ -9,6 +14,8 @@ import { deriveStartupState, STARTUP_TIMEOUT_MS, startupRetryDue } from "../src/
 // - met een sessie: reconnecting (kop, tabbalk, de melding uit F6–F8);
 // - zonder bekende sessie: startupFailed (statusscherm met "Opnieuw").
 // Komt de app actief en online terug, dan start de app Clerk opnieuw.
+// F16: de poort geeft een vlag "time-out afgelopen", geen duur. Zo hangt de
+// beslissing niet van de klok af.
 
 type Input = Parameters<typeof deriveStartupState>[0];
 
@@ -20,38 +27,33 @@ const NOT_LOADING: SessionState[] = [
   "ready",
 ];
 const CLERK = ["loading", "ready", "degraded", "error"] as const;
-const LATE = STARTUP_TIMEOUT_MS;
-const EARLY = STARTUP_TIMEOUT_MS - 1;
-
-const base: Input = { session: "loading", clerkStatus: "loading", clerkSignedIn: false, loadingForMs: 0 };
+const base: Input = { session: "loading", clerkStatus: "loading", clerkSignedIn: false, loadingTimedOut: false };
 
 describe("deriveStartupState — buiten laden verandert niets", () => {
   it("elke andere toestand blijft zoals hij is, hoe lang ook en wat Clerk ook zegt", () => {
     for (const session of NOT_LOADING)
       for (const clerkStatus of CLERK)
         for (const clerkSignedIn of [true, false])
-          for (const loadingForMs of [0, LATE, 3_600_000])
-            expect(deriveStartupState({ session, clerkStatus, clerkSignedIn, loadingForMs })).toBe(session);
+          for (const loadingTimedOut of [false, true])
+            expect(deriveStartupState({ session, clerkStatus, clerkSignedIn, loadingTimedOut })).toBe(session);
   });
 });
 
 describe("deriveStartupState — Clerk start niet", () => {
   it("Clerk in error: direct startupFailed, niet eerst wachten", () => {
-    for (const loadingForMs of [0, 1, EARLY, LATE])
+    for (const loadingTimedOut of [false, true])
       for (const clerkSignedIn of [true, false])
-        expect(deriveStartupState({ ...base, clerkStatus: "error", clerkSignedIn, loadingForMs })).toBe(
+        expect(deriveStartupState({ ...base, clerkStatus: "error", clerkSignedIn, loadingTimedOut })).toBe(
           "startupFailed",
         );
   });
 
   it("Clerk laadt nog, binnen de time-out: laden", () => {
-    for (const loadingForMs of [0, 1, EARLY])
-      expect(deriveStartupState({ ...base, loadingForMs })).toBe("loading");
+    expect(deriveStartupState({ ...base, loadingTimedOut: false })).toBe("loading");
   });
 
   it("Clerk laadt nog, time-out voorbij: startupFailed", () => {
-    for (const loadingForMs of [LATE, LATE + 1, 3_600_000])
-      expect(deriveStartupState({ ...base, loadingForMs })).toBe("startupFailed");
+    expect(deriveStartupState({ ...base, loadingTimedOut: true })).toBe("startupFailed");
   });
 });
 
@@ -60,7 +62,7 @@ describe("deriveStartupState — Clerk geladen, Convex bevestigt niet", () => {
     "Clerk %s en ingelogd, binnen de time-out: laden",
     (clerkStatus) => {
       expect(
-        deriveStartupState({ ...base, clerkStatus, clerkSignedIn: true, loadingForMs: EARLY }),
+        deriveStartupState({ ...base, clerkStatus, clerkSignedIn: true, loadingTimedOut: false }),
       ).toBe("loading");
     },
   );
@@ -69,7 +71,7 @@ describe("deriveStartupState — Clerk geladen, Convex bevestigt niet", () => {
     "Clerk %s en ingelogd, time-out voorbij: reconnecting (kop, tabbalk, melding)",
     (clerkStatus) => {
       expect(
-        deriveStartupState({ ...base, clerkStatus, clerkSignedIn: true, loadingForMs: LATE }),
+        deriveStartupState({ ...base, clerkStatus, clerkSignedIn: true, loadingTimedOut: true }),
       ).toBe("reconnecting");
     },
   );
@@ -78,7 +80,7 @@ describe("deriveStartupState — Clerk geladen, Convex bevestigt niet", () => {
     "Clerk %s maar uitgelogd, time-out voorbij: startupFailed (geen ingelogde schil zonder sessie)",
     (clerkStatus) => {
       expect(
-        deriveStartupState({ ...base, clerkStatus, clerkSignedIn: false, loadingForMs: LATE }),
+        deriveStartupState({ ...base, clerkStatus, clerkSignedIn: false, loadingTimedOut: true }),
       ).toBe("startupFailed");
     },
   );
@@ -89,15 +91,15 @@ describe("deriveStartupState — volledig", () => {
     for (const clerkStatus of CLERK)
       for (const clerkSignedIn of [true, false])
         expect(
-          deriveStartupState({ session: "loading", clerkStatus, clerkSignedIn, loadingForMs: LATE }),
+          deriveStartupState({ session: "loading", clerkStatus, clerkSignedIn, loadingTimedOut: true }),
         ).not.toBe("loading");
   });
 
   it("reconnecting alleen met een geladen Clerk die ingelogd zegt", () => {
     for (const clerkStatus of CLERK)
       for (const clerkSignedIn of [true, false])
-        for (const loadingForMs of [0, EARLY, LATE]) {
-          const s = deriveStartupState({ session: "loading", clerkStatus, clerkSignedIn, loadingForMs });
+        for (const loadingTimedOut of [false, true]) {
+          const s = deriveStartupState({ session: "loading", clerkStatus, clerkSignedIn, loadingTimedOut });
           if (s === "reconnecting") {
             expect(["ready", "degraded"]).toContain(clerkStatus);
             expect(clerkSignedIn).toBe(true);
@@ -147,5 +149,65 @@ describe("startupRetryDue — Clerk opnieuw starten", () => {
     expect(
       startupRetryDue({ state, before: { appState: "background", online: false }, now: ON }),
     ).toBe(false);
+  });
+});
+
+// F16 (R4-4): een time-out loopt altijd één keer af, ook als de klok
+// verspringt. Wie met een time-out werkt, rekent dus niet met de klok.
+describe("time-outs rekenen niet met de klok (F16)", () => {
+  const APP_ROOT = fileURLToPath(new URL("..", import.meta.url));
+  const TIMEOUTS = ["STARTUP_TIMEOUT_MS", "RECONNECT_TIMEOUT_MS"];
+  const DEFINED_IN = ["src/lib/startupState.ts", "src/lib/reconnectView.ts"];
+  const read = (rel: string) => readFileSync(join(APP_ROOT, rel), "utf8");
+
+  const clockCalls = (sf: ts.SourceFile): string[] => {
+    const found: string[] = [];
+    const visit = (n: ts.Node) => {
+      if (
+        ts.isPropertyAccessExpression(n) &&
+        ts.isIdentifier(n.expression) &&
+        ["Date", "performance"].includes(n.expression.text) &&
+        n.name.text === "now"
+      )
+        found.push(`${n.expression.text}.now`);
+      if ((ts.isNewExpression(n) || ts.isCallExpression(n)) && ts.isIdentifier(n.expression) && n.expression.text === "Date")
+        found.push("Date()");
+      ts.forEachChild(n, visit);
+    };
+    visit(sf);
+    return found;
+  };
+
+  const users = listFiles(APP_ROOT)
+    .filter(isScanned)
+    .filter(
+      (f) =>
+        DEFINED_IN.includes(f) ||
+        moduleUses(parse(read(f), f)).some((u) => u.names.some((n) => TIMEOUTS.includes(n))),
+    );
+
+  it("de scan vindt de poort en het scherm", () => {
+    expect(users).toContain("src/AuthGate.tsx");
+    expect(users.length).toBeGreaterThan(DEFINED_IN.length);
+  });
+
+  it("geen Date.now, performance.now of new Date in die bestanden", () => {
+    const offenders: Record<string, string[]> = {};
+    for (const f of users) {
+      const calls = clockCalls(parse(read(f), f));
+      if (calls.length > 0) offenders[f] = calls;
+    }
+    expect(offenders).toEqual({});
+  });
+
+  it.each([`Date.now()`, `performance.now()`, `new Date()`, `new Date(x).getTime()`, `const t = Date.now;`])(
+    "vangt: %s",
+    (text) => {
+      expect(clockCalls(parse(text)).length).toBeGreaterThan(0);
+    },
+  );
+
+  it.each([`setTimeout(cb, STARTUP_TIMEOUT_MS);`, `const now = useNow();`, `x.now()`])("laat toe: %s", (text) => {
+    expect(clockCalls(parse(text))).toEqual([]);
   });
 });
