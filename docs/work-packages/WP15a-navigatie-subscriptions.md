@@ -294,3 +294,52 @@ Besluiten Wouter (2026-11-02):
 | F11 | red-team R5 | `routeFiles.test.ts` blijft groen bij `guard={true}` en bij een map `dist/` of `tests/` onder `src/app`. | Een guard moet de sessie-toestand volgen. Elk bestand onder `src/app` telt mee. |
 
 Werkwijze: A schrijft RED tests voor F6–F11, waar dat kan met pure logica of een scanner. Daarna fixt B. Dan volgt een korte hercheck door de heraudit en de red-team. Daarna komt de gate.
+
+### Fix-cyclus 2: aanvulling A (2026-11-02)
+
+**F6, F7, F8: wat het inhoudsgebied toont in `reconnecting`.** Eén pure beslissing bepaalt soort, tekst en knoppen. Invoer: online (onbekend telt als offline), of er een poging loopt, en hoe lang die al loopt.
+
+| Situatie | Soort | Tekst | Opnieuw | Uitloggen |
+|---|---|---|---|---|
+| Poging loopt, korter dan de time-out | bezig | "Verbinden…" | bezig (zichtbaar, niet te tikken) | ja |
+| Geen poging (of time-out voorbij), offline | geen internet | Geen internet. De app probeert het opnieuw zodra er netwerk is. | ja | ja |
+| Geen poging (of time-out voorbij), online | server niet bereikbaar | De server is niet bereikbaar. Tik op "Opnieuw". Geen woord over internet, en geen belofte van een automatische poging. | ja | ja |
+
+- **Time-out (F8):** een vaste waarde van 5 tot 30 s. Daarna keren de melding en de knoppen terug, ook als Convex het token nog niet bevestigt. Na de time-out mag een poging nog doorlopen. Tikt de user op "Opnieuw", dan begint een nieuwe poging met een nieuwe time-out.
+- **Uitloggen (F6)** staat in elke soort, op elk scherm waar `reconnecting` het inhoudsgebied vervangt. Besluit K1 geldt: er komt geen escalatie naar `convexAuthFailed`.
+- `authRetryDue` blijft zoals hij is. F7 is een tekstfout, geen fout in de logica.
+
+**F9: alleen de laatst gestarte tokenophaal telt.** Elke aanroep van de tokenophaal krijgt een volgnummer. Een uitkomst van een eerdere aanroep verandert `tokenFetchFailed` niet, ook niet als hij later binnenkomt. Een nieuwe aanroep die nog loopt, verandert `tokenFetchFailed` ook niet: dan blijft de vorige uitkomst gelden.
+
+**F10: een allowlist voor de `convex`-familie.** Buiten het toegangspad mag code uit `convex`, `convex-helpers` en `@convex-dev` alleen deze waarden importeren:
+
+| Module | Toegestaan |
+|---|---|
+| `convex/react` | `ConvexReactClient`, `ConvexProviderWithAuth`, `useConvexAuth`, `useMutation`, `useAction` |
+| `convex/react-clerk` | `ConvexProviderWithClerk` |
+| `convex/server` | `anyApi`, `getFunctionName` |
+| `convex/values` | `ConvexError` |
+
+- Type-imports mogen altijd.
+- De rest is verboden: andere namen, andere modules (`convex/browser`, `convex/dist/…`, `convex` zelf), een namespace-import, `require`, `import(…)`, een kale import en elke import uit `convex-helpers` of `@convex-dev`.
+- Een pad met `node_modules/` erin is ook verboden.
+- `useConvex` staat bewust niet op de lijst. Wie de client nodig heeft, voegt dat bewust toe.
+- Voor leden van de client blijft een denylist: `watchQuery`, `watchPaginatedQuery`, `prewarmQuery`, `paginatedQueryClient`, `sync`, `onUpdate`, `subscribe`, elk lid dat met `onPaginatedUpdate` begint, en elk lid dat op `_experimental` eindigt.
+
+**F11: de routetest leest elk bestand en controleert de guard.**
+- De routetest leest alle bestanden onder `src/app`, ook in mappen `dist` of `tests`.
+- Een `*.Protected` dekt alleen als zijn `guard` de sessie-toestand volgt. De expressie moet `useAuthState()` aanroepen, of een variabele gebruiken die daarvan is afgeleid (in dezelfde `_layout`). `guard={true}` en een vlag die daar los van staat, dekken niet.
+
+| Module | Signatuur | Pint |
+|---|---|---|
+| `app/src/lib/reconnectView.ts` | `reconnectView(input: { online: boolean \| null; retrying: boolean; retryingForMs: number }): { kind: "busy" \| "offline" \| "serverUnreachable"; title: string; message: string; retry: "enabled" \| "busy"; signOut: "enabled" }` en `export RECONNECT_TIMEOUT_MS: number` | F6, F7, F8 |
+| `app/src/lib/tokenFetch.ts` | `initialTokenFetch: TokenFetchState`; `startTokenFetch(state): { state: TokenFetchState; id: number }`; `finishTokenFetch(state, id: number, ok: boolean): TokenFetchState`; `tokenFetchFailed(state): boolean` | F9 |
+| (geen module) | `app/tests/liveQueryAccess.test.ts` (allowlist, F10) en `app/tests/routeFiles.test.ts` (guard, alle bestanden, F11). Elk bestand dat `reconnectView` gebruikt, rendert ook `SignOutButton` (F6). | F6, F10, F11 |
+
+**Niet als test te pinnen (naar de hercheck en de gate):**
+- dat de poort de time-out echt laat aflopen en de knoppen terugbrengt;
+- dat `startTokenFetch` / `finishTokenFetch` om elke echte aanroep van `fetchAccessToken` heen staan;
+- dat "Uitloggen" in `reconnecting` op elk scherm echt zichtbaar is. Dat geldt ook bij de grootste tekststand.
+- **Gate:** het JWT-template `convex` tijdelijk hernoemen in het Clerk-dashboard (dev). Met netwerk staat er dan "server niet bereikbaar", en "Opnieuw" en "Uitloggen" werken. Daarna het template terugzetten.
+- **Gate:** het Convex-adres blokkeren (bv. een verkeerde `EXPO_PUBLIC_CONVEX_URL` in een dev-build). Binnen de time-out komt de melding met beide knoppen terug.
+- **Gate, R3:** koude start in vliegtuigmodus. `loading` zonder sessie valt buiten deze beslissing.
