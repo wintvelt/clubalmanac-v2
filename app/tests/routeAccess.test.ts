@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { PUBLIC_PATHS, routeAccess } from "../src/lib/routeAccess";
-import type { SessionState } from "../src/lib/sessionState";
+import type { GateState } from "../src/lib/startupState";
 
 // WP15a invarianten 4, 7 + 10 en de routetabel: wat toont de app op dit pad,
 // in deze auth-toestand? Alleen "ready" toont een ingelogd scherm, en
@@ -52,6 +52,14 @@ describe("routeAccess — reconnecting (F1)", () => {
 
   it("onbekend pad: tonen (Niet gevonden)", () => {
     expect(routeAccess("/bestaat-niet", "reconnecting")).toBe("show");
+  });
+});
+
+// F12: Clerk start niet. Zonder Clerk weet de app niet of er een sessie is:
+// op elk pad het statusscherm met "Opnieuw", geen navigator en geen inlogscherm.
+describe("routeAccess — startupFailed (F12)", () => {
+  it.each([...PROTECTED, LOGIN, "/bestaat-niet"])("%s: startupFailed", (path) => {
+    expect(routeAccess(path, "startupFailed")).toBe("startupFailed");
   });
 });
 
@@ -113,7 +121,8 @@ describe("routeAccess — publiek is een exacte match", () => {
 });
 
 describe("routeAccess — volledig", () => {
-  const STATES: SessionState[] = [
+  const STATES: GateState[] = [
+    "startupFailed",
     "loading",
     "signedOut",
     "convexAuthFailed",
@@ -133,7 +142,7 @@ describe("routeAccess — volledig", () => {
   });
 
   it("buiten ready en uitgelogd hangt de uitkomst niet van het pad af", () => {
-    for (const state of ["loading", "convexAuthFailed", "noUserRow"] as const) {
+    for (const state of ["loading", "convexAuthFailed", "noUserRow", "startupFailed"] as const) {
       const decisions = new Set(PATHS.map((p) => routeAccess(p, state)));
       expect(decisions.size).toBe(1);
     }
