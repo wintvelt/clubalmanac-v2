@@ -89,9 +89,18 @@ describe("users.updateProfile", () => {
     const id = await seedUser(t, "user_alice", "alice@x.com");
     const as = withUser(t, "user_alice");
 
-    const storageId = await t.run(
-      async (ctx) => await ctx.storage.store(new Blob(["x"])),
-    );
+    // WP24 invariant 8: een profielfoto is het beeld van een eigen foto (of
+    // een foto met toegang), geen los beeld.
+    const storageId = await t.run(async (ctx) => {
+      const s = await ctx.storage.store(new Blob(["x"]));
+      await ctx.db.insert("photos", {
+        ownerId: id,
+        storageId: s,
+        ratingCount: 0,
+        createdAt: Date.now(),
+      });
+      return s;
+    });
 
     await as.mutation(api.users.updateProfile, {
       name: "Alice 2",
