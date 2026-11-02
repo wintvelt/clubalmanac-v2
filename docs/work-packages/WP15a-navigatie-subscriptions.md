@@ -353,6 +353,15 @@ Werkwijze: A schrijft RED tests voor F6–F11, waar dat kan met pure logica of e
   - Vliegtuigmodus uit: ✅, zonder melding.
   - Koude start in vliegtuigmodus: ❌. De app blijft op "Laden…" staan, **ook nadat het netwerk terug is**. Dit is R3.
 
+- Ronde 5, overige checks:
+  - Herstart met netwerk: ✅, je blijft ingelogd.
+  - Inloggen als dev2: ✅, de app begint op Home met lege stacks.
+  - Live wisselen tussen licht en donker: ✅.
+  - App-icoon in donker: ✅.
+  - Grootste tekststand: ✅. "Uitloggen" past en is te bereiken. De tabbalk-labels groeien bewust maar tot 1,2×.
+  - Liggend: ✅, redelijk. De tabbalk is liggend vrij hoog (kan-punt, naar de backlog).
+  - Deep link via Safari naar `clubalmanac://instellingen/over`: ✅.
+
 ## Fix-cyclus 3: koude start offline (R3)
 
 Besluit Wouter: "Valt die stap om, dan volgt een gerichte fix".
