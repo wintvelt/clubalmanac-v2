@@ -276,3 +276,21 @@ Alleen `tests/` en de andere mappen in de wortel van `app/` vallen buiten de sca
 - dat de poort bij "login" en "home" zelf omleidt, en niet op de guard wacht;
 - dat de guard in `_layout` dezelfde toestand volgt als de poort;
 - **gate-aanvulling:** vliegtuigmodus aan, app langer dan 60 s in de achtergrond, terug: kop en tabbalk blijven, geen "server weigert". Vliegtuigmodus uit: binnen enkele seconden weer live. Hetzelfde bij een koude start in vliegtuigmodus.
+
+## Fix-cyclus 2 na heraudit en hercheck red-team
+
+Besluiten Wouter (2026-11-02):
+- Alle punten hieronder gaan vóór de gate.
+- K1: er komt geen escalatie naar `convexAuthFailed`. Uitloggen en een eerlijke tekst zijn genoeg.
+- R3, de koude start in vliegtuigmodus: de gate beslist. Valt die stap om, dan volgt een gerichte fix.
+
+| # | Bron | Probleem | Wat er waar moet zijn |
+|---|---|---|---|
+| F6 | red-team R1, heraudit M1 | In `reconnecting` verdwijnt Uitloggen. Bij een blijvende tokenfout met netwerk zit de user vast. | In `reconnecting` zijn "Opnieuw" en "Uitloggen" allebei bereikbaar, op elk scherm. |
+| F7 | red-team R7, heraudit K2 | De melding zegt "Controleer je internet" en belooft een automatische poging, ook als er wel netwerk is. | Zonder netwerk: geen internet, en de app probeert het opnieuw zodra er netwerk is. Met netwerk: de server is niet bereikbaar, tik op "Opnieuw". |
+| F8 | red-team R6 | "Verbinden…" blijft eindeloos staan als Clerk een token geeft maar Convex niet bevestigt. "Opnieuw" is dan weg. | Na een vaste time-out keren de melding en de knoppen terug. |
+| F9 | red-team R4 | Een late `report()` van een oude poging overschrijft `tokenFetchFailed`. | Alleen een rapport van de huidige poging telt. |
+| F10 | red-team R2 | De scanner mist `useQuery_experimental`, `usePaginatedQuery_experimental`, `convex/browser`-subscribe, `onPaginatedUpdate_experimental` en `require` van een `convex/dist`-pad. | Voor de `convex`-familie geldt een allowlist: alles wat niet expliciet is toegestaan, is verboden. |
+| F11 | red-team R5 | `routeFiles.test.ts` blijft groen bij `guard={true}` en bij een map `dist/` of `tests/` onder `src/app`. | Een guard moet de sessie-toestand volgen. Elk bestand onder `src/app` telt mee. |
+
+Werkwijze: A schrijft RED tests voor F6–F11, waar dat kan met pure logica of een scanner. Daarna fixt B. Dan volgt een korte hercheck door de heraudit en de red-team. Daarna komt de gate.
