@@ -37,9 +37,10 @@ Zoals in WP23 §Begrippen. Kort:
 - **In scope**:
   - De mutations uit invariant 2-4, plus `isWebmaster`.
   - Cover-pad via de mutation (WP23-closeout): een admin probeert een photo-id zonder toegang als cover te zetten via `groups.update` en `albums.update`. De cover-read blijft dan dicht, en de mutation weigert.
-  - Een foto in albums van twee groepen; caller is lid van één: toegang, dus toevoegen aan een album van een andere eigen groep mag (zie open vraag 1).
+  - Een foto in een album zetten mag alleen de eigenaar (A-keuze 1). Een cover staat in dát album of in een album van díe groep (A-keuze 2).
   - Lid verlaat een groep: mag daarna die foto's niet meer toevoegen, als cover zetten, melden of beoordelen (behalve eigen foto's).
-  - Een eigen foto die in geen album staat: de eigenaar mag hem toevoegen, als cover zetten en beoordelen (zie open vraag 3).
+  - Een eigen foto die in geen album staat: de eigenaar mag hem toevoegen en beoordelen, niet als cover zetten (A-keuze 2).
+  - Het beeld (`storageId`) valt ook onder invariant 1 (A-keuze 5).
 - **Open vragen voor A (toetsen tegen oude code, rapporteren aan regie)**:
   1. Mocht in de oude app iedereen met toegang een foto in een album zetten, of alleen de eigenaar? Was het strenger, rapporteer dan; regie legt het voor aan Wouter.
   2. Moet een cover een foto zijn die in dát album (album-cover) of in een album van díe groep (groep-cover) staat? De cascades AP4 (cover wissen als de publicatie verdwijnt) gaan daar al van uit. Zo ja, dan is dat strenger dan foto-toegang en volgt foto-toegang eruit.
@@ -154,6 +155,13 @@ Keuzes 1, 2, 5 en 6 zijn strenger dan de draft. Ze respecteren invariant 1, en d
 - **`storageId` in de foto-vorm.** Als WP17 de URL via het photo-id levert, kan `storageId` uit de foto-vorm. Dan valt A-keuze 5 grotendeels weg.
 - **Validatie**: `ratings.upsert` accepteert elk getal (v1: 0 of 1). `photos.flag` accepteert een reden van elke lengte.
 - **Rol bij `addPhoto`**: v1 eiste admin voor een bestaande foto, v2 eist lid. Invariant 7 laat het zo. Melden, niet wijzigen.
+
+### Regie-besluiten na A (2026-11-02)
+
+- **A-keuzes 1-4 en 6: aangenomen.** Ze zijn v1-pariteit en respecteren invariant 1. Draft-edge-cases hierboven zijn erop aangepast.
+- **A-keuze 5 (beeld via `storageId`): aangenomen, in deze WP.** Zonder deze gate omzeilt een ex-lid A-keuze 1 en invariant 1 via het beeld, en dat is precies wat WP17 met `getUrl` blootlegt. `tests/writeGates/storageReuse.test.ts` blijft staan. B kiest de vorm zolang de bestaande fixtures blijven werken.
+- **Orakel-inventaris (vraag 4): niet in deze WP.** Ze lekken alleen bestaan, geen toegang. Gaan naar de backlog in `audit-track-record.md`: `photos.update`/`remove`/`rotate`/`appeal`, `albums.remove`/`removePhoto`, `groups.addMember`, `invites.remove`, `invites.create`.
+- **Buiten scope (A): naar de closeout als vervolg.** `groups.addMember` zonder instemming (kandidaat WP16/WP19), M1 wist geen covers en laat ratings in het aggregaat (cascade-matrix), `storageId` uit de foto-vorm (WP17), rating-validatie.
 
 ### Test-strategie
 
