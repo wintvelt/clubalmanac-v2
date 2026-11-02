@@ -232,4 +232,6 @@ Daarnaast in deze cyclus:
 - `coverPhotoId` in `groups.update` en `albums.update`
 - `photos.flag` en `ratings.upsert`
 
-Daarbij komen bestaans-orakels in `albums.addPhoto`, `photos.flag`, `albums.markSeen` en `features.upvote` (die laatste raakt ook verborgen problemen). Een aanvaller die ooit een photo-id zag, kan via een eigen groep weer toegang krijgen. Invariant 6 houdt mutations buiten WP23. Dit moet af vóór WP17, want dan levert `getUrl` de beeldbytes. Besluit Wouter: WP23 uitbreiden of een eigen WP.
+Daarbij komen bestaans-orakels in `albums.addPhoto`, `photos.flag`, `albums.markSeen` en `features.upvote` (die laatste raakt ook verborgen problemen). Een aanvaller die ooit een photo-id zag, kan via een eigen groep weer toegang krijgen. Invariant 6 houdt mutations buiten WP23. **Besluit Wouter 2026-11-02: eigen WP24, af vóór WP17** (dan levert `getUrl` de beeldbytes).
+
+**A-keuze 6 herzien (besluit Wouter 2026-11-02).** De invite-landing toont het e-mailadres van de genodigde wél. Met code-login mislukt de onboarding als de user een ander adres typt. Het token gaat toch al naar dat adres. De landing-vorm krijgt `email` erbij; de rest van A-keuze 6 blijft staan. Tests (A) en impl (B) in deze fix-cyclus.
