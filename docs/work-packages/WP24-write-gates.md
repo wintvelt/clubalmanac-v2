@@ -31,6 +31,7 @@ Zoals in WP23 §Begrippen. Kort:
 5. **Webmaster-check dwingt de users-rij zelf af.** `isWebmaster` geeft `false` voor een identity met een webmaster-email maar zonder users-rij, ook als de aanroeper dat niet vooraf checkt.
 6. **Geen webmaster-bypass.** Ook de webmaster heeft voor de mutations uit invariant 2 gewone foto-toegang nodig (lijn van WP23).
 7. **Bestaand gedrag met toegang verandert niet.** Wie toegang heeft, kan wat die nu kan. Bestaande rol-checks (admin, creator, eigenaar-kan-eigen-foto-niet-melden) blijven.
+8. **Een beeld koppelen alleen als de caller het al mag zien** (audit-ronde 1). Een publieke mutation koppelt een `storageId` alleen aan de caller als het het beeld is van een eigen foto of van een foto met foto-toegang, of de eigen huidige profielfoto. Al het andere wordt geweigerd, met één uitkomst: andermans profielbeeld, een los beeld, een onbekend beeld. Een toestemmingslijst, geen verbodslijst. `users.updateProfile` is het enige publieke pad met een beeld-id; `photos.create` is intern.
 
 ## Edge cases + scope-uitsluitingen
 
@@ -40,7 +41,7 @@ Zoals in WP23 §Begrippen. Kort:
   - Een foto in een album zetten mag alleen de eigenaar (A-keuze 1). Een cover staat in dát album of in een album van díe groep (A-keuze 2).
   - Lid verlaat een groep: mag daarna die foto's niet meer toevoegen, als cover zetten, melden of beoordelen (behalve eigen foto's).
   - Een eigen foto die in geen album staat: de eigenaar mag hem toevoegen en beoordelen, niet als cover zetten (A-keuze 2).
-  - Het beeld (`storageId`) valt ook onder invariant 1 (A-keuze 5).
+  - Het beeld (`storageId`) valt onder invariant 8.
 - **Open vragen voor A (toetsen tegen oude code, rapporteren aan regie)**:
   1. Mocht in de oude app iedereen met toegang een foto in een album zetten, of alleen de eigenaar? Was het strenger, rapporteer dan; regie legt het voor aan Wouter.
   2. Moet een cover een foto zijn die in dát album (album-cover) of in een album van díe groep (groep-cover) staat? De cascades AP4 (cover wissen als de publicatie verdwijnt) gaan daar al van uit. Zo ja, dan is dat strenger dan foto-toegang en volgt foto-toegang eruit.
@@ -59,7 +60,7 @@ Zoals in WP23 §Begrippen. Kort:
 - **ops**: laag — geen externe calls, geen nieuwe failure-modes. Te streng = knop faalt (zichtbaar), te ruim = lek (in tests zichtbaar).
 - **external deps**: laag — geen.
 - **multi-user/concurrency**: laag — Convex-mutations zijn transactioneel; check en schrijf in één transactie.
-- **data/schema-evolutie**: laag — geen schema-wijziging. Wel: bestaande data kan albumPhotos of covers bevatten die de nieuwe gate niet zou toelaten (migratie uit v1). Geen backfill; de read-gate van WP23 houdt die dicht. A noteert of v1-data dit kan bevatten.
+- **data/schema-evolutie**: laag — alleen een extra index `photos.by_storage` (geen backfill). Wel: bestaande data kan albumPhotos of covers bevatten die de nieuwe gate niet zou toelaten (migratie uit v1). Geen backfill; de read-gate van WP23 houdt die dicht. A noteert of v1-data dit kan bevatten.
 - **ops-runbook-impact**: geen nieuwe env-vars of deploy-config. Doc-deliverable: `docs/migratie-plan-convex.md` §RBAC krijgt een regel "writes die foto-toegang bepalen, checken foto-toegang, zie WP24" (B co-commit).
 
 ## Cross-refs
@@ -125,11 +126,7 @@ Keuzes 1, 2, 5 en 6 zijn strenger dan de draft. Ze respecteren invariant 1, en d
 2. **Cover: album-cover staat in dát album, groep-cover in een album van díe groep.** Dat is v1-UI-pariteit en sluit aan op AP4 (cover wissen bij de laatste publicatie). Alleen zo ziet elk lid de cover: met WP23 invariant 10 ziet een lid zonder foto-toegang `cover: null`. Foto-toegang van de caller volgt eruit. Dit vervangt de draft-edge-case "eigen foto in geen album: als cover zetten". Dat kan nu niet. Een groep-cover via "nieuwe foto uploaden" vereist dus eerst een publicatie in die groep (WP16/WP18). Bestaande covers blijven staan: een update zonder `coverPhotoId` slaagt, ook als de huidige cover niet meer aan de regel voldoet.
 3. **Album-id-orakel ook in `albums.addPhoto` en `albums.update`.** Dat zijn de mutations uit invariant 2 met een album-id. Een onbekend album en een album van een groep waar de caller geen lid van is, geven dezelfde uitkomst, zoals `markSeen` (invariant 3) en de album-reads (WP23).
 4. **Al gemelde foto zonder toegang.** `photos.flag` op een al gemelde foto geeft zonder toegang dezelfde uitkomst als een onbekend id. Het stille "al gemeld" blijft alleen voor wie toegang heeft. Anders lekt de meld-status.
-5. **Invariant 1 geldt ook voor het beeld (storage-blob), niet alleen voor de foto-rij.** De foto-vorm bevat `storageId`, dus een ex-lid kent de `storageId` van foto's die hij ooit zag. Twee paden geven het beeld terug:
-   - `photos.create` is publiek (bedoeld als test-fixture) en accepteert elke `storageId`. Een ex-lid maakt een eigen foto-rij op het beeld van een ander, is daarvan eigenaar, en kan hem lezen en publiceren. Dat omzeilt ook A-keuze 1.
-   - `users.updateProfile` accepteert elke `profilePhotoStorageId`. Een ex-lid zet het beeld als eigen profielfoto. Groepsgenoten zien het dan, en zodra profielfoto's een URL krijgen, ziet de caller het zelf ook.
-
-   Voorstel: geen publieke mutation koppelt een `storageId` die al bij een foto van een ander hoort aan een nieuwe foto-rij. Een profielfoto mag geen beeld zijn van een foto waar de caller geen foto-toegang toe heeft (v1-pariteit: profielfoto = foto met toegang). `photos.create` intern maken zou ook dichten, maar veel bestaande tests gebruiken hem als fixture; dat vraagt dan een A-cyclus. Tests: `tests/writeGates/storageReuse.test.ts`. Regie kan dat bestand schrappen als dit naar een eigen WP gaat.
+5. **Het beeld (storage-blob) valt ook onder invariant 1.** De foto-vorm bevat `storageId`, dus een ex-lid kent beeld-ids van foto's die hij ooit zag. A stelde een verbodslijst voor; na audit-ronde 1 vervangen door invariant 8.
 6. **Upvote door de webmaster op andermans probleem mag** (de draft, invariant 4). Gepind als controle, geen wijziging.
 
 ### Aanvullende edge cases (gepind in RED-tests)
@@ -152,14 +149,14 @@ Keuzes 1, 2, 5 en 6 zijn strenger dan de draft. Ze respecteren invariant 1, en d
 - **`groups.addMember` voegt een bestaand account toe zonder uitnodiging of instemming.** Iedereen kan een groep maken en daarin een willekeurig user-id zetten. Het slachtoffer zit dan in een groep van de aanvaller: de aanvaller ziet het publiek profiel (`users.getById`), het slachtoffer krijgt ongevraagd een groep met albums in de app. Het geeft de aanvaller geen foto-toegang tot foto's van het slachtoffer. v1 kende alleen uitnodigingen. Kandidaat voor WP16/WP19.
 - **M1 wist geen covers.** `internalRemoveMember` haalt de publicaties weg maar laat `coverPhotoId` staan; v1 wiste ze via de stream. De WP23-read-gate verbergt het, maar de rij is inconsistent met AP4. Kandidaat voor de cascade-matrix.
 - **Ratings van een vertrokken lid blijven in het aggregaat.** AP3 draait alleen bij `albums.removePhoto`, niet bij vertrek (M1). v1 telde ze via de stream als 0.
-- **`storageId` in de foto-vorm.** Als WP17 de URL via het photo-id levert, kan `storageId` uit de foto-vorm. Dan valt A-keuze 5 grotendeels weg.
+- **`storageId` in de foto-vorm.** Als WP17 de URL via het photo-id levert, kan `storageId` uit de foto-vorm. Dan is invariant 8 minder vaak nodig.
 - **Validatie**: `ratings.upsert` accepteert elk getal (v1: 0 of 1). `photos.flag` accepteert een reden van elke lengte.
 - **Rol bij `addPhoto`**: v1 eiste admin voor een bestaande foto, v2 eist lid. Invariant 7 laat het zo. Melden, niet wijzigen.
 
 ### Regie-besluiten na A (2026-11-02)
 
 - **A-keuzes 1-4 en 6: aangenomen.** Ze zijn v1-pariteit en respecteren invariant 1. Draft-edge-cases hierboven zijn erop aangepast.
-- **A-keuze 5 (beeld via `storageId`): aangenomen, in deze WP.** Zonder deze gate omzeilt een ex-lid A-keuze 1 en invariant 1 via het beeld, en dat is precies wat WP17 met `getUrl` blootlegt. `tests/writeGates/storageReuse.test.ts` blijft staan. B kiest de vorm zolang de bestaande fixtures blijven werken.
+- **A-keuze 5 (beeld via `storageId`): in deze WP.** Zonder een gate op het beeld omzeilt een ex-lid A-keuze 1 en invariant 1, en dat legt WP17 met `getUrl` bloot. Vorm: invariant 8.
 - **Orakel-inventaris (vraag 4): niet in deze WP.** Ze lekken alleen bestaan, geen toegang. Gaan naar de backlog in `audit-track-record.md`: `photos.update`/`remove`/`rotate`/`appeal`, `albums.remove`/`removePhoto`, `groups.addMember`, `invites.remove`, `invites.create`.
 - **Buiten scope (A): naar de closeout als vervolg.** `groups.addMember` zonder instemming (kandidaat WP16/WP19), M1 wist geen covers en laat ratings in het aggregaat (cascade-matrix), `storageId` uit de foto-vorm (WP17), rating-validatie.
 
@@ -182,7 +179,7 @@ Audit: geen blockers, 18 van 20 mutanten gevangen. Eén should-fix, S1, verbatim
 
 Profielbeeld-ids staan in het publiek profiel (`groups.listMembers`, `users.getById`) en in de invite-landing. Gemigreerde v1-profielfoto's hebben geen foto-rij. Een ex-lid kan zo met `photos.create` eigenaar worden van andermans profielbeeld, of het als eigen profielfoto zetten. Dat valt onder het productdoel, dus het gaat mee in deze WP.
 
-**Invariant 8 (vervangt A-keuze 5).** Een publieke mutation koppelt een beeld (`storageId`) alleen aan de caller als dat beeld al van de caller is of door de caller gezien mag worden: het beeld van een eigen foto of van een foto met foto-toegang, of de eigen huidige profielfoto. Elk ander beeld wordt geweigerd: dat van een foto zonder toegang, andermans profielbeeld, en een los beeld dat nergens aan hangt. Onbekend en verboden beeld geven dezelfde uitkomst.
+**Invariant 8** toegevoegd (zie §Invarianten): een toestemmingslijst voor beelden in plaats van A's verbodslijst.
 - Gevolg: een vers beeld als profielfoto kan pas via een upload-pad dat de herkomst vastlegt. Dat ontwerpt WP18 (profielfoto uploaden). Tot dan kiest een user een eigen of toegankelijke foto (v1-pariteit). De app gebruikt dit pad nog niet.
 - `photos.create` wordt geen publieke mutation meer. In productie loopt een upload via `POST /upload` en `createFromUploadInternal`; `photos.create` is alleen een test-fixture. De fixtures gaan over op een interne variant (A).
 
@@ -211,3 +208,12 @@ Profielbeeld-ids staan in het publiek profiel (`groups.listMembers`, `users.getB
 - **Inventaris.** De publieke mutations en actions die een beeld-id als argument aannemen, liggen vast: alleen `users.updateProfile`. Een nieuw pad faalt in de test, tot iemand de lijst bewust bijwerkt (zelfde vorm als de WP23-inventaris). `convex/_test.ts` valt erbuiten. Zo pint de test ook dat `photos.create` niet publiek is.
 - **Fixture.** `internal.photos.create`: dezelfde argumenten en hetzelfde gedrag als nu, en de eigenaar is de ingelogde caller. Of de interne variant de beeld-gate houdt, kiest B; er komt geen user-input binnen.
 - **R1.** Alle tests geven de `convex/`-modules expliciet mee via één helper. Een test faalt als een testbestand `convexTest` zonder modules aanroept.
+
+## Closeout (regie, 2026-11-02)
+
+- **Rondes**: audit-ronde 1 zonder blockers, één should-fix (S1, beeld-gate als verbodslijst), gefixt in één A→B-cyclus. Heraudit: geen blockers, geen should-fixes; 11 van 11 mutanten op de nieuwe gate en 6 van 6 uit ronde 1 opnieuw gevangen. Suite 968 groen, root-`tsc` schoon.
+- **Productkeuzes ter kennisname (Wouter)**: alleen de eigenaar zet een foto in een album (A-keuze 1); een cover staat in dat album of in die groep (A-keuze 2); een profielfoto is tot WP18 een eigen of toegankelijke foto (invariant 8). Alle drie v1-pariteit.
+- **Naar WP17**: profielbeelden krijgen daar een URL. Dan geldt: `groups.addMember` zonder instemming geeft een aanvaller het profielbeeld-id van het slachtoffer, en dat kan het beeld zijn van een foto zonder toegang (heraudit N2). Daarbij ook N4 (profielfoto blijft na vertrek) en `storageId` uit de foto-vorm.
+- **Naar WP18**: een upload-pad voor een vers profielbeeld dat de herkomst vastlegt; een losse v1-profielfoto is na wisselen niet terug te kiezen. Hergebruikt WP18 `internal.photos.create`, dan opnieuw de herkomst toetsen.
+- **Naar WP16/WP19**: `groups.addMember` zonder uitnodiging of instemming.
+- **Backlog** (`audit-track-record.md`): orakel-inventaris, `convex/_test.ts` beeld-lezen en -wissen zonder auth op dev, M1-cascade (covers en ratings), rating-validatie, mogelijk flaky `tests/http/upload.test.ts`, inventaristest ziet geen httpAction-routes.

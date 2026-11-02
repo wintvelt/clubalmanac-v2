@@ -2,7 +2,7 @@
 
 Tussen 2026-04 en 2026-06 hebben 18 audit-cycli op clubalmanac-v2 backend de volgende productie-bugs ontdekt en gefixt vóór cutover.
 
-## 12 productie-bugs gevonden
+## 14 productie-bugs gevonden
 
 1. **U8** (audit-2): user-delete miste M2-cascade (founder/admin succession + group cleanup) — pure record-delete zonder downstream effect
 2. **AP4** (audit-4): album-photo delete miste group-cover cleanup — dangling cover-refs mogelijk
@@ -17,6 +17,8 @@ Tussen 2026-04 en 2026-06 hebben 18 audit-cycli op clubalmanac-v2 backend de vol
 
 11. **Publieke reads zonder auth en zonder whitelist** (WP23, gezien door regie bij de WP15-kickoff): `users.getById` gaf iedereen met de deployment-URL de volle users-rij, inclusief email en Clerk-subject. Ook `photos.getWithOwner`, `groups.listMembers` en andere reads gaven volle rijen door. Fix: auth per query, met één bron per vorm die zowel validator als whitelist is.
 12. **Cover-join zonder foto-toegang** (WP23-audit B1): na vertrek van een lid bleef diens foto als groep- of album-cover leesbaar. Een admin kon elk photo-id als cover zetten en het dan lezen.
+13. **Write-gates ontbraken** (WP23-audit B3, gefixt in WP24): `albums.addPhoto`, covers, `photos.flag` en `ratings.upsert` checkten geen foto-toegang. Wie ooit een photo-id zag, kon via een eigen groep weer toegang krijgen.
+14. **Beeld-gate als verbodslijst** (WP24-audit S1): elk beeld zonder foto-rij was over te nemen, ook andermans profielbeeld (het id staat in het publiek profiel). Fix: toestemmingslijst, `photos.create` intern.
 ## Plus
 
 - Dead code geëlimineerd (U9)
@@ -46,12 +48,13 @@ Tussen 2026-04 en 2026-06 hebben 18 audit-cycli op clubalmanac-v2 backend de vol
 - **WP13 (App-scaffold + Clerk-login) afgesloten 2026-10-25**: eerste app-WP, lichtere A-variant (pariteit-checklist + tests voor pure logica, 70 tests). Expo SDK 58 in `app/`, code-login zonder wachtwoord (besluit Wouter na A's vondst dat Clerk-uitnodigingen pas bij acceptatie een user maken; fase 5 bijgesteld naar de Users-API). Audit: geen blockers, 4 should-fixes; S-2 (stray `app/app/` = Expo Router-map) vond regie ook onafhankelijk. Gate in de simulator vond twee dingen: meldingen stonden onder de verkeerde actie (vuistregel voor de designstap), en "Ander e-mailadres" + herstart bracht het oude code-scherm terug. Dat laatste had de audit als N-2 voorspeld; `signIn.reset()` wist alleen lokale state. Gate-stap 4a (verlopen code) niet te testen met Clerk-testadressen, schuift naar WP22. **Les:** een audit-"nice-to-have" met een concreet gate-scenario hoort in de gate, niet in de backlog.
 - **WP14 (Spike EAS-build → TestFlight) afgesloten 2026-10-25**: Setup 1, geen A en geen audit; regie reviewde de diff. Spike-vraag beantwoord: TestFlight werkt terwijl de app "Removed from Sale" is. Enige blokkade was een niet-geaccepteerde Apple-overeenkomst. Bijvangst: Node 24 vastgezet (lokaal via fnm, EAS, CI, `engine-strict`), `npm audit` per melding beslist (node-forge en zod geaccepteerd). **Les:** een placeholder in een runbook-commando wordt letterlijk overgenomen (`PK_TEST_HIER` belandde in EAS). Commando's die een waarde uit een bestand nodig hebben, lezen die zelf uit het bestand. De startcheck van WP13 had het luid gevangen, maar pas op het toestel.
 - **WP-Design (designstap) afgesloten 2026-10-25**: geen A→B→audit maar een eigen flow: drie stijlrichtingen als mockup-artifact, keuze door Wouter (C+), verse toegankelijkheidscriticus, design-doc, B voor thema-code. A deed alleen een visuele inventaris van de oude app, omdat screenshots drie schermen misten. De criticus vond 3 blockers die in de mockups niet opvielen: geen zichtbare terugknop, geen toestanden (laden/leeg/fout), en overloop bij grote tekst. Alle tekstparen haalden wel AA. Regie-mutatiecheck op de contrasttest: één token te licht gaf 2 rode tests. Gate op build 41 deels: stap 2–5 schuiven naar WP15. **Les:** een knop met een ingevuld sjabloon ("1. … 2. …") komt leeg terug. Vraag meerdere antwoorden via een formulier, niet via een knop.
+- **WP24 (write-gates op foto-toegang) afgesloten 2026-11-02**: rollen als sub-agents vanuit een regie-sessie. A vond in v1 strengere regels dan de draft (alleen de eigenaar zet een foto in een album; cover uit dat album of die groep) en een omweg via het beeld (`storageId`). Audit-ronde 1: geen blockers, één should-fix (S1: beeld-gate als verbodslijst). Fix-cyclus: toestemmingslijst, `photos.create` intern, en alle `convexTest`-aanroepen krijgen de modules expliciet mee. De auditor vond dat een kopie met gesymlinkte `node_modules` de tests de echte repo liet laden: 19 van 20 mutanten "overleefden" vals. Heraudit groen, alle mutanten gevangen. **Les:** een gate op een id is een toestemmingslijst, geen verbodslijst.
 - **WP23 (auth + veld-whitelist op publieke reads) afgesloten 2026-11-02**: rollen als sub-agents vanuit een regie-sessie die door de WP15-regie was gestart. A vond dat v1 hetzelfde lek al had (volle user-rij met email in foto's en ledenlijst), dus er was geen pariteit om te bewaren. Elke publieke query heeft nu een return-validator, en een inventaristest legt de lijst vast. Audit-ronde 1: B1 gefixt in een fix-cyclus, B2 was meegeveegd WP15a-werk, B3 (write-gates) ging naar WP24, af vóór WP17. Heraudit groen. Wouter herzag één A-keuze: de invite-landing toont de email van de genodigde.
 
 ## Recurring-pattern-kandidaten (WP23)
 
 - **Werk van een andere sessie meegecommit.** Twee sessies in één working tree, en een kale `git commit` nam een door de andere sessie gestagede verwijdering mee. De conventie is meteen aangepast: commit met pathspec, zie [`commit-discipline.md`](./commit-discipline.md) §Meerdere sessies.
-- **Read-gate zonder write-gate.** Een read-autorisatie leunt op state die een mutation vrij kan zetten (albumPhotos, `coverPhotoId`), terwijl die mutation zelf geen gelijkwaardige check heeft. Promoveren als het in WP24 of later terugkomt: een WP die een toegangsdefinitie invoert, noemt dan ook de mutations die de onderliggende state schrijven.
+- **Read-gate zonder write-gate.** Kwam terug in WP24 (S1, beeld-ids). Gepromoveerd naar [`work-package-specs.md`](./work-package-specs.md) §Toegangsdefinities.
 
 ## Recurring-pattern: doc-deliverable-drift bij codecomplete-WPs
 
@@ -68,6 +71,12 @@ Twee audits op rij (WP4 `INTEGRATION_TEST_ENABLED`, WP5 vijf nieuwe env-vars) we
 ## Backlog (uit audits, niet meegelopen in eigen WP)
 
 - **WP5 N-2**: `invite.email` lowercase doorgegeven aan bounce-notify-template (origineel "Bob@X.com" wordt "bob@x.com"). UX-detail. Past in future "email-template polish" mini-WP indien ooit gewenst.
+- **Bestaans-orakels in mutations** (WP24-inventaris, lekken alleen bestaan): `photos.update`/`remove`/`rotate`/`appeal`, `albums.remove`/`removePhoto`, `groups.addMember` (user-id), `invites.remove` (status vóór rechten), `invites.create` (email van een lid), plus het beeld-id in `users.updateProfile` alleen voor wie het id al kent.
+- **`convex/_test.ts` op dev** (WP24-heraudit): `storageDownloadUrl` en `storageDelete` lezen en wissen elk beeld zonder auth zolang `INTEGRATION_TEST_ENABLED` aan staat. Dev bevat echte foto's van 3 users. Intern maken of achter de webmaster-check.
+- **M1-cascade** (WP24-A): lid vertrekt, maar covers worden niet gewist en ratings blijven in het aggregaat. De read-gate verbergt het.
+- **Rating-validatie** (WP24-A): `ratings.upsert` accepteert elk getal (v1: 0 of 1); meld-reden heeft geen maximum.
+- **Mogelijk flaky `tests/http/upload.test.ts`** (WP24-audit N5): één keer rood in een volle run, los groen.
+- **Inventaristest beeld-ids ziet geen httpAction-routes** en geen `v.string()` die later als `Id<"_storage">` wordt gebruikt (WP24-heraudit).
 - **WP5 N-3**: `console.log` free-form structurering in graceful-skip-paths. Niet grep-baar. Past in cross-cutting observability/logging-werkpakket (zie [`migratie-plan-convex.md` §Monitoring & backup](../migratie-plan-convex.md)).
 
 ## Wanneer twijfel: doe de audit

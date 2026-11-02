@@ -61,6 +61,8 @@ Audit moet dit checken met een geïnjecteerde regressie: haal één blok uit de 
 
 **Vaste auditstap:** elke nieuw toegevoegde bescherming krijgt één mutatie-check vóór de merge — zet hem uit en kijk of er iets omvalt. In WP12 werden vier bevindingen op rij zo gevonden, en geen ervan was uit lezen alleen zichtbaar: de code klopte telkens, alleen hield niets hem vast.
 
+Draai de mutatie-check in een wegwerpkopie buiten de repo (de working tree is gedeeld). Kopieer `node_modules`, symlink hem niet. In WP24 laadden de tests via een symlink de echte `convex/`-map, en "overleefden" 19 van 20 mutanten vals. Sindsdien geeft elke `convexTest` de modules expliciet mee (`tests/_helpers/modules.ts`).
+
 Geboren uit WP12-audit, twee instanties binnen één werkpakket. Cyclus 1: `verify` leidde zijn verwachting af met dezelfde `applyStorageMap` die `load-records` gebruikte, waardoor stil verlies van álle foto's een groene uitslag gaf. Cyclus 2: na die fix deelden de dekkings-gate én de fixture die hem testte `referencedStorageKeys`, waardoor het weglaten van het profielfoto-blok twee foto's liet verdwijnen met 103 tests groen.
 
 ## Waarom

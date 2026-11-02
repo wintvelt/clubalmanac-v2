@@ -43,6 +43,14 @@ Standing rule: in elke WP-spec onder §Risico-assessment een expliciete `ops-run
 
 Default-fallbacks op env-vars worden actief afgewezen tenzij ze óf hard gedocumenteerd óf fail-loud zijn. Stille prod-defaults (à la WP5-S3: `CLUBALMANAC_APP_URL` fell back naar prod-host op dev) verbergen gedragsfouten die pas in productie opduiken.
 
+## Toegangsdefinities (verplicht bij WP's die er een invoeren)
+
+Recurring pattern WP23 + WP24: een read-gate leunde op state die een mutation vrij kon zetten, en een write-gate op een id werkte met een verbodslijst. Standing rule voor een WP die een toegangsdefinitie invoert of aanscherpt:
+- Noem alle plekken waar het id van het beschermde object zichtbaar wordt (responses, geneste vormen, landing-pagina's).
+- Noem alle publieke mutations, actions en httpActions die dat id accepteren of de state schrijven waar de toegang op leunt. Elk krijgt een gate, of een expliciete reden waarom niet.
+- Een gate op een id is een toestemmingslijst ("alleen als het aantoonbaar van de caller is of door hem gezien mag worden"), nooit een verbodslijst ("niet als het van een ander is").
+- Een inventaristest legt de publieke paden vast die zo'n id aannemen.
+
 ## Subagent-configs
 
 In [`.claude/agents/`](../../.claude/agents/) staan drie rol-definities: `wp-a.md`, `wp-b.md`, `wp-audit.md`. Twee gebruiks-vormen:
