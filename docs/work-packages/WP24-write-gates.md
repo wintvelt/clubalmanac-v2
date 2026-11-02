@@ -171,3 +171,31 @@ Keuzes 1, 2, 5 en 6 zijn strenger dan de draft. Ze respecteren invariant 1, en d
 - Aanvalstest: een vers account met een eigen groep en album probeert elk pad op een gepubliceerde foto en op een ongepubliceerde foto. Daarna leest geen enkele publieke read de foto of zijn `storageId`, en de state is ongewijzigd.
 - `isWebmaster` wordt direct getest met een identity met webmaster-email zonder users-rij.
 - Bestaande tests die als opzet een foto zonder toegang melden of beoordelen, of een cover buiten het album zetten, krijgen eerst toegang (`tests/_helpers/access.ts`, of de foto in het album). Cascade-tests waarvan de opzet niet meer via een mutation kan (M1 cross-owner, P5-covers), seeden de rij direct. De bedoeling van zo'n test blijft gelijk.
+
+---
+
+## Audit-ronde 1 → fix-cyclus (regie, 2026-11-02)
+
+Audit: geen blockers, 18 van 20 mutanten gevangen. Eén should-fix, S1, verbatim:
+
+> "De beeld-gate werkt met een verbodslijst. Elk beeld zonder foto-rij is vrij over te nemen, ook andermans profielbeeld."
+
+Profielbeeld-ids staan in het publiek profiel (`groups.listMembers`, `users.getById`) en in de invite-landing. Gemigreerde v1-profielfoto's hebben geen foto-rij. Een ex-lid kan zo met `photos.create` eigenaar worden van andermans profielbeeld, of het als eigen profielfoto zetten. Dat valt onder het productdoel, dus het gaat mee in deze WP.
+
+**Invariant 8 (vervangt A-keuze 5).** Een publieke mutation koppelt een beeld (`storageId`) alleen aan de caller als dat beeld al van de caller is of door de caller gezien mag worden: het beeld van een eigen foto of van een foto met foto-toegang, of de eigen huidige profielfoto. Elk ander beeld wordt geweigerd: dat van een foto zonder toegang, andermans profielbeeld, en een los beeld dat nergens aan hangt. Onbekend en verboden beeld geven dezelfde uitkomst.
+- Gevolg: een vers beeld als profielfoto kan pas via een upload-pad dat de herkomst vastlegt. Dat ontwerpt WP18 (profielfoto uploaden). Tot dan kiest een user een eigen of toegankelijke foto (v1-pariteit). De app gebruikt dit pad nog niet.
+- `photos.create` wordt geen publieke mutation meer. In productie loopt een upload via `POST /upload` en `createFromUploadInternal`; `photos.create` is alleen een test-fixture. De fixtures gaan over op een interne variant (A).
+
+**Verder in deze cyclus:**
+- **Tests (A)**:
+  - invariant 8, inclusief andermans profielbeeld en een los beeld; de test "een nieuw geüpload beeld als profielfoto mag" draait om;
+  - een beeld dat aan foto's van twee eigenaren hangt (audit N1);
+  - fixtures van `api.photos.create` naar de interne variant;
+  - `convexTest` krijgt de modules expliciet mee, zodat tests altijd de `convex/`-map naast zichzelf gebruiken (audit R1: een kopie met gesymlinkte `node_modules` gaf een vals-groene mutatie-check).
+- **Impl (B)**: invariant 8 en `photos.create` intern.
+
+**Besluiten op de overige audit-punten:**
+- **N2 `ratings.remove` zonder toegangscheck: zo laten.** Een ex-lid mag zijn eigen rating intrekken; dat geeft geen toegang en geen orakel. A's edge case "niet meer te wijzigen" geldt voor `upsert`.
+- **N3 orakel op het beeld-id**: valt onder invariant 8 (één uitkomst).
+- **N4 profielfoto blijft na vertrek staan**: naar WP17, samen met `storageId` uit de foto-vorm.
+- **N5 mogelijk flaky `tests/http/upload.test.ts`**: naar de backlog.
