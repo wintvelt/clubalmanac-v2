@@ -343,3 +343,22 @@ Werkwijze: A schrijft RED tests voor F6–F11, waar dat kan met pure logica of e
 - **Gate:** het JWT-template `convex` tijdelijk hernoemen in het Clerk-dashboard (dev). Met netwerk staat er dan "server niet bereikbaar", en "Opnieuw" en "Uitloggen" werken. Daarna het template terugzetten.
 - **Gate:** het Convex-adres blokkeren (bv. een verkeerde `EXPO_PUBLIC_CONVEX_URL` in een dev-build). Binnen de time-out komt de melding met beide knoppen terug.
 - **Gate, R3:** koude start in vliegtuigmodus. `loading` zonder sessie valt buiten deze beslissing.
+
+## Gate-uitslag build 42 (2026-11-02), deel 1
+
+- Ronde 2, navigatie: alle stappen ✅. Dat zijn de tabbalk, "‹ Instellingen", vegen, de stack per tab, een tik op de actieve tab, de + met "Sluiten", en uitloggen gevolgd door terugvegen.
+- Ronde 3, dashboard: ✅. Op de achtergrond loopt na een wijziging in `users` geen enkele `users:current`. Bij terugkeer volgt één uitvoering met verse data, en daarna steeds één uit de cache.
+- Ronde 4, offline:
+  - Vliegtuigmodus aan, langer dan 60 s op de achtergrond, dan terug: ✅. Kop en tabbalk blijven staan, er komt geen melding en geen "server weigert".
+  - Vliegtuigmodus uit: ✅, zonder melding.
+  - Koude start in vliegtuigmodus: ❌. De app blijft op "Laden…" staan, **ook nadat het netwerk terug is**. Dit is R3.
+
+## Fix-cyclus 3: koude start offline (R3)
+
+Besluit Wouter: "Valt die stap om, dan volgt een gerichte fix".
+
+| # | Probleem | Wat er waar moet zijn |
+|---|---|---|
+| F12 | Een koude start zonder netwerk blijft eindeloos op "Laden…" staan. Ook als het netwerk terugkomt, blijft het zo, tot de app geforceerd wordt afgesloten. | Er komt nooit eindeloos "Laden…". Na een vaste time-out volgt een melding met "Opnieuw" (design.md §6). Komt het netwerk terug, dan herstelt de app zich vanzelf, zonder afsluiten. Had de user een sessie, dan komt hij weer in de app; zo niet, dan ziet hij het inlogscherm. Mag het met een bestaande Clerk-sessie, dan liever kop en tabbalk met de melding uit F6–F8, in plaats van een leeg laadscherm. |
+
+Werkwijze: A zoekt eerst uit hoe Clerk offline laadt en pint F12 met tests waar dat kan. B fixt daarna en checkt het in de simulator met een gesimuleerde offline-start. Dan volgt een korte hercheck door de red-team, en daarna een nieuwe build. Op die build herhaalt de gate alleen ronde 4.
