@@ -90,4 +90,76 @@ Zoals in WP23 §Begrippen. Kort:
 
 ## Spec-criticus aanvullingen (A)
 
-(Leeg in draft. A vult hier aan.)
+Bronnen (alleen A): `blob-images-api-groups` (createAlbumPhoto, createAlbum, updateAlbum, updateGroup, `libs/dynamodb-lib-single`), `blob-images-api-photos` (createPhoto met upload-acties, flagPhoto, updateRating, getRating), `blob-images-api-user` (updateUser), `blob-images-api` (streams groupPhotoDelToCover, memberDelToAlbumPhoto, ratingChangeToPhoto), oude app `clubalmanac-app` (PhotoSelectionMenu, SelectAlbum, PhotoMenu, SelectGroupPhoto, EditGroup/EditAlbum), `scripts/migrate/transform.ts`.
+
+### Wat de oude code deed
+
+- **Foto in een album zetten**: alleen de eigenaar. De API zocht de foto op (photo-id, caller) en die sleutel bestaat alleen voor de eigenaar. Het menu "Toevoegen aan album" stond alleen aan als alle geselecteerde foto's van de caller waren. Uploaden naar een album kon elk lid, met een eigen nieuwe foto. Een bestaande foto toevoegen eiste in de API daarnaast groep-admin.
+- **Covers**: de API eiste groep-admin en foto-toegang (eigenaar, of lid van een groep met een publicatie van de foto, in welke groep dan ook). Zonder toegang negeerde de API de cover stil. De app bood alleen foto's uit dát album (album-cover) of uit de albums van díe groep (groep-cover), plus "nieuwe foto uploaden als cover". Die upload maakte bij een groep-cover géén publicatie aan.
+- **Melden**: foto-toegang vereist, eigen foto niet. Een al gemelde foto gaf stil de foto terug.
+- **Beoordelen**: bedoeld als foto-toegang, maar de check miste een `await` en liet dus alles door. Een stream telde een rating zonder toegang als 0 mee. Niets hield de eigenaar tegen. Een rating was 0 of 1 (like).
+- **Profielfoto**: elke foto met foto-toegang.
+- **Lid vertrekt**: de publicaties van zijn foto's in die groep verdwenen, en een stream wiste daarbij de covers (album-cover altijd, groep-cover bij de laatste publicatie in de groep).
+
+### Antwoorden op de open vragen
+
+1. **Strenger.** Alleen de eigenaar kon een foto in een album zetten (API en UI). Zie A-keuze 1.
+2. **In de API niet, in de app wel.** De API accepteerde elke foto met foto-toegang, ook uit een andere groep. De app bood alleen foto's uit dat album of uit die groep, plus een upload als groep-cover zonder publicatie. Zie A-keuze 2.
+3. **Ja.** Niets in de oude code hield de eigenaar tegen. De draft klopt.
+4. **Inventaris bestaans-orakels in andere publieke mutations.** Regie beslist:
+   - `photos.update`, `remove`, `rotate`, `appeal`: "Foto bestaat niet" tegenover "Alleen eigenaar ..." op het photo-id. Lekt alleen bestaan, geeft geen toegang.
+   - `albums.update`, `remove`, `addPhoto`, `removePhoto`, `markSeen`: "Album bestaat niet" tegenover "Geen lid van deze groep" op het album-id. `markSeen` staat al in invariant 3; voor `addPhoto` en `update` zie A-keuze 3. `remove` en `removePhoto` blijven over.
+   - `groups.*`: geen orakel op het groep-id (eerst de lid- of admin-check, één error).
+   - `groups.addMember`: "User bestaat niet" tegenover "User is al lid" op het user-id. Iedereen kan een groep maken en is daar admin, dus voor iedereen bruikbaar. Zie ook §Buiten scope.
+   - `invites.remove`: "Invite bestaat niet" tegenover "Geaccepteerde invite ..." tegenover "Geen rechten" op het invite-id. De status lekt vóór de rechten-check.
+   - `invites.create`: "Deze gebruiker is al lid van de groep" laat een lid testen of een email-adres bij een groepslid hoort. De ledenlijst toont geen email (WP23).
+   - `invites.accept`/`decline`: de token is het geheim, geen orakel van belang.
+   - `ratings.remove`, `features.update`/`remove`, `photos.decideFlag`: geen orakel van belang (stil, of webmaster-only).
+
+### A-keuzes ter bevestiging
+
+Keuzes 1, 2, 5 en 6 zijn strenger dan de draft. Ze respecteren invariant 1, en de tests pinnen ze. De tests staan in een eigen `describe` met "A-keuze n" in de naam, zodat regie ze makkelijk kan terugdraaien.
+
+1. **`albums.addPhoto`: alleen de eigenaar van de foto.** Dat is v1-pariteit. Wie een foto publiceert, bepaalt de eigenaar: een ander lid kan andermans foto niet in een groep zetten waar de eigenaar geen lid van is. Dit vervangt de draft-edge-case "foto in twee groepen, caller lid van één: toevoegen aan een andere eigen groep mag". Dat mag nu alleen de eigenaar. Een niet-eigenaar met toegang en een onbekend of ontoegankelijk id geven dezelfde uitkomst. De rol-check (lid) blijft (invariant 7). v1 eiste admin voor een bestaande foto, maar liet elk lid uploaden naar een album; v2 heeft die twee paden samengevoegd.
+2. **Cover: album-cover staat in dát album, groep-cover in een album van díe groep.** Dat is v1-UI-pariteit en sluit aan op AP4 (cover wissen bij de laatste publicatie). Alleen zo ziet elk lid de cover: met WP23 invariant 10 ziet een lid zonder foto-toegang `cover: null`. Foto-toegang van de caller volgt eruit. Dit vervangt de draft-edge-case "eigen foto in geen album: als cover zetten". Dat kan nu niet. Een groep-cover via "nieuwe foto uploaden" vereist dus eerst een publicatie in die groep (WP16/WP18). Bestaande covers blijven staan: een update zonder `coverPhotoId` slaagt, ook als de huidige cover niet meer aan de regel voldoet.
+3. **Album-id-orakel ook in `albums.addPhoto` en `albums.update`.** Dat zijn de mutations uit invariant 2 met een album-id. Een onbekend album en een album van een groep waar de caller geen lid van is, geven dezelfde uitkomst, zoals `markSeen` (invariant 3) en de album-reads (WP23).
+4. **Al gemelde foto zonder toegang.** `photos.flag` op een al gemelde foto geeft zonder toegang dezelfde uitkomst als een onbekend id. Het stille "al gemeld" blijft alleen voor wie toegang heeft. Anders lekt de meld-status.
+5. **Invariant 1 geldt ook voor het beeld (storage-blob), niet alleen voor de foto-rij.** De foto-vorm bevat `storageId`, dus een ex-lid kent de `storageId` van foto's die hij ooit zag. Twee paden geven het beeld terug:
+   - `photos.create` is publiek (bedoeld als test-fixture) en accepteert elke `storageId`. Een ex-lid maakt een eigen foto-rij op het beeld van een ander, is daarvan eigenaar, en kan hem lezen en publiceren. Dat omzeilt ook A-keuze 1.
+   - `users.updateProfile` accepteert elke `profilePhotoStorageId`. Een ex-lid zet het beeld als eigen profielfoto. Groepsgenoten zien het dan, en zodra profielfoto's een URL krijgen, ziet de caller het zelf ook.
+
+   Voorstel: geen publieke mutation koppelt een `storageId` die al bij een foto van een ander hoort aan een nieuwe foto-rij. Een profielfoto mag geen beeld zijn van een foto waar de caller geen foto-toegang toe heeft (v1-pariteit: profielfoto = foto met toegang). `photos.create` intern maken mag ook; de test werkt dan nog. Tests: `tests/writeGates/storageReuse.test.ts`. Regie kan dat bestand schrappen als dit naar een eigen WP gaat.
+6. **Upvote door de webmaster op andermans probleem mag** (de draft, invariant 4). Gepind als controle, geen wijziging.
+
+### Aanvullende edge cases (gepind in RED-tests)
+
+- Een mislukte mutation laat álle state ongewijzigd, ook velden die op zich mochten. Voorbeeld: `groups.update` met een geldige nieuwe naam en een verboden cover. De naam blijft dan ook oud.
+- `groups.update`/`albums.update` zonder `coverPhotoId` slagen, ook als de huidige cover niet meer aan A-keuze 2 voldoet (bv. na vertrek van de eigenaar). Een stale cover blokkeert geen naamswijziging.
+- Lid vertrekt: daarna zijn melden en beoordelen van die foto's dicht. Een rating van vóór het vertrek blijft staan (zie §Buiten scope), maar is niet meer te wijzigen.
+- Eigen foto in geen album: de eigenaar mag hem in een album zetten en beoordelen (vraag 3). Cover zetten kan niet (A-keuze 2).
+- Webmaster zonder lidmaatschap, met een eigen groep: weigering op elk pad uit invariant 2, net als bij elk ander account.
+- `features.removeUpvote` op een verborgen probleem waar de caller tóch een upvote-rij op heeft (legacy of migratie): gedraagt zich als onbekend id, `upvoteCount` en de rij blijven.
+- Het bestaans-orakel geldt ook ten opzichte van het "al gedaan"-pad: een al gemelde foto (A-keuze 4), en een foto die al in het album staat, als de caller geen eigenaar is.
+
+### v1-data (risico data/schema-evolutie)
+
+- **Covers**: ja. Covers via "upload als groep-cover" staan in geen album van die groep. Covers via foto-toegang kunnen uit een andere groep komen. De migratie checkt alleen of de foto bestaat. Geen backfill: de WP23-read-gate geeft `cover: null` aan wie geen toegang heeft. Bestaande covers blokkeren geen update (edge case hierboven).
+- **albumPhotos**: nee. In v1 voegde alleen de eigenaar toe, dus `addedBy` = eigenaar (transform) klopt, en alle v1-publicaties voldoen aan A-keuze 1.
+
+### Buiten scope, wel gezien (voor regie)
+
+- **`groups.addMember` voegt een bestaand account toe zonder uitnodiging of instemming.** Iedereen kan een groep maken en daarin een willekeurig user-id zetten. Het slachtoffer zit dan in een groep van de aanvaller: de aanvaller ziet het publiek profiel (`users.getById`), het slachtoffer krijgt ongevraagd een groep met albums in de app. Het geeft de aanvaller geen foto-toegang tot foto's van het slachtoffer. v1 kende alleen uitnodigingen. Kandidaat voor WP16/WP19.
+- **M1 wist geen covers.** `internalRemoveMember` haalt de publicaties weg maar laat `coverPhotoId` staan; v1 wiste ze via de stream. De WP23-read-gate verbergt het, maar de rij is inconsistent met AP4. Kandidaat voor de cascade-matrix.
+- **Ratings van een vertrokken lid blijven in het aggregaat.** AP3 draait alleen bij `albums.removePhoto`, niet bij vertrek (M1). v1 telde ze via de stream als 0.
+- **`storageId` in de foto-vorm.** Als WP17 de URL via het photo-id levert, kan `storageId` uit de foto-vorm. Dan valt A-keuze 5 grotendeels weg.
+- **Validatie**: `ratings.upsert` accepteert elk getal (v1: 0 of 1). `photos.flag` accepteert een reden van elke lengte.
+- **Rol bij `addPhoto`**: v1 eiste admin voor een bestaande foto, v2 eist lid. Invariant 7 laat het zo. Melden, niet wijzigen.
+
+### Test-strategie
+
+- Nieuwe map `tests/writeGates/`. Die hergebruikt de seed-wereld van `tests/readWhitelist/_world.ts`.
+- Per gate: niet-ingelogd, identity zonder users-rij, ingelogd zonder toegang, met toegang. Zonder toegang: de mutation faalt én een snapshot van de geraakte rijen (albumPhotos, cover, flag-velden, ratings, aggregaat, upvotes) is gelijk aan vóór de call.
+- Orakel: zelfde caller, onbekend id (insert + delete) tegenover bestaand id zonder toegang. De uitkomst is identiek, en de test schrijft de error-tekst niet voor.
+- Aanvalstest: een vers account met een eigen groep en album probeert elk pad op een gepubliceerde foto en op een ongepubliceerde foto. Daarna leest geen enkele publieke read de foto of zijn `storageId`, en de state is ongewijzigd.
+- `isWebmaster` wordt direct getest met een identity met webmaster-email zonder users-rij.
+- Bestaande tests die een foto van een ander toevoegen of een cover buiten het album zetten, zet A om naar de eigenaar of een gepubliceerde foto. De bedoeling van zo'n test blijft gelijk.
