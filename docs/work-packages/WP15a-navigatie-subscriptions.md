@@ -87,7 +87,7 @@ Een ingelogde user gaat met de tabbalk naar Home, Mijn foto's, Toevoegen, Profie
   2. Instellingen → Over de app → terugknop "‹ Instellingen" brengt je terug; vegen werkt ook
   3. + opent "Foto's toevoegen", "Sluiten" sluit het
   4. Uitloggen → inlogscherm. Terugvegen brengt je niet terug in de app.
-  5. Dashboard: wissel van tab → de query van het vorige scherm stopt. App naar de achtergrond → geen live queries meer. App terug → het scherm heeft verse data.
+  5. Dashboard: app naar de achtergrond → geen live queries meer. App terug → één uitvoering, verse data. (Tabwissel → naar WP15b, zie besluit 5.)
   6. Uit WP-Design: licht/donker wisselen terwijl de app open is, icoon in donker, grootste tekststand, liggend
   7. Ruimte voor bevindingen buiten deze stappen
 
@@ -218,3 +218,4 @@ Tests staan in `app/tests/`, net als bij WP13: vitest in Node, zonder React Nati
 | 2. Nederlandse paden | Akkoord |
 | 3. Pauzeren bij `inactive` | Ja: alles behalve `active` pauzeert |
 | 4. Duur Clerk-sessie | Naar fase 5 (T-4 weken, prod-Clerk-config), niet in 15a |
+| 5. Gate-stap 5, tabwissel | Naar WP15b: de tabschermen in 15a hebben nog geen query. WP15b meet het bij de eerste schermquery. |
