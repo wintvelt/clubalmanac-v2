@@ -2,6 +2,7 @@ import { convexTest } from "convex-test";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { api , internal } from "../../convex/_generated/api";
 import schema from "../../convex/schema";
+import { modules } from "../_helpers/modules";
 
 // Features (feature requests + problem reports) + upvoting.
 // Niet in cascade-matrix (geen denormalization naar andere tables);
@@ -46,7 +47,7 @@ async function registerUser(
 
 describe("features.create", () => {
   it("weigert zonder auth", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await expect(
       t.mutation(api.features.create, {
         type: "feature",
@@ -57,7 +58,7 @@ describe("features.create", () => {
   });
 
   it("weigert wanneer geen user record", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await expect(
       withUser(t, "user_ghost").mutation(api.features.create, {
         type: "feature",
@@ -68,7 +69,7 @@ describe("features.create", () => {
   });
 
   it("maakt feature met defaults (status=open, upvoteCount=0)", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const aliceId = await registerUser(t, "user_alice", "a@x.com");
 
     const id = await withUser(t, "user_alice").mutation(api.features.create, {
@@ -87,7 +88,7 @@ describe("features.create", () => {
   });
 
   it("type 'problem' werkt ook", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await registerUser(t, "user_alice", "a@x.com");
 
     const id = await withUser(t, "user_alice").mutation(api.features.create, {
@@ -112,7 +113,7 @@ describe("features.update — webmaster-only (audit-7 §4)", () => {
   });
 
   it("webmaster kan andermans feature aanpassen", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await registerUser(t, "user_alice", "a@x.com");
     await registerUser(t, "user_wm", WEBMASTER_EMAIL);
     const id = await withUser(t, "user_alice", "a@x.com").mutation(
@@ -141,7 +142,7 @@ describe("features.update — webmaster-only (audit-7 §4)", () => {
   // Onder webmaster-only RBAC vervalt het submitter-recht. Een gewone
   // user — ook al is het de submitter — heeft géén edit-rechten meer.
   it("submitter (niet webmaster) kan eigen feature NIET aanpassen", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await registerUser(t, "user_alice", "a@x.com");
     const id = await withUser(t, "user_alice", "a@x.com").mutation(
       api.features.create,
@@ -161,7 +162,7 @@ describe("features.update — webmaster-only (audit-7 §4)", () => {
   });
 
   it("non-webmaster wordt geweigerd (zelfs submitter)", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await registerUser(t, "user_alice", "a@x.com");
     await registerUser(t, "user_bob", "b@x.com");
     const id = await withUser(t, "user_alice", "a@x.com").mutation(
@@ -202,7 +203,7 @@ describe("features.remove — webmaster-only (audit-7 §4)", () => {
   });
 
   it("webmaster kan andermans feature deleten", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await registerUser(t, "user_alice", "a@x.com");
     await registerUser(t, "user_wm", WEBMASTER_EMAIL);
     const id = await withUser(t, "user_alice", "a@x.com").mutation(
@@ -222,7 +223,7 @@ describe("features.remove — webmaster-only (audit-7 §4)", () => {
   });
 
   it("submitter (niet webmaster) kan eigen feature NIET deleten", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await registerUser(t, "user_alice", "a@x.com");
     const id = await withUser(t, "user_alice", "a@x.com").mutation(
       api.features.create,
@@ -242,7 +243,7 @@ describe("features.remove — webmaster-only (audit-7 §4)", () => {
 
   // Cascade-gedrag blijft hetzelfde, alleen caller is nu webmaster.
   it("cascade featureUpvotes (door webmaster getriggerd)", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await registerUser(t, "user_alice", "a@x.com");
     await registerUser(t, "user_bob", "b@x.com");
     await registerUser(t, "user_wm", WEBMASTER_EMAIL);
@@ -273,7 +274,7 @@ describe("features.remove — webmaster-only (audit-7 §4)", () => {
   });
 
   it("non-webmaster wordt geweigerd (zelfs submitter)", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await registerUser(t, "user_alice", "a@x.com");
     await registerUser(t, "user_bob", "b@x.com");
     const id = await withUser(t, "user_alice", "a@x.com").mutation(
@@ -306,7 +307,7 @@ describe("features.remove — webmaster-only (audit-7 §4)", () => {
 // Volledige matrix: tests/readWhitelist/features.test.ts.
 describe("features.list", () => {
   it("default: alle features (incl. eigen problemen)", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await registerUser(t, "user_alice", "a@x.com");
 
     await withUser(t, "user_alice").mutation(api.features.create, {
@@ -325,7 +326,7 @@ describe("features.list", () => {
   });
 
   it("filter op type", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await registerUser(t, "user_alice", "a@x.com");
 
     await withUser(t, "user_alice").mutation(api.features.create, {

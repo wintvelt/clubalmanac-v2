@@ -17,6 +17,7 @@ import { convexTest } from "convex-test";
 import { describe, expect, it, vi } from "vitest";
 import { api , internal } from "../../convex/_generated/api";
 import schema from "../../convex/schema";
+import { modules } from "../_helpers/modules";
 
 const ISSUER = "https://picked-quail-97.clerk.accounts.dev";
 
@@ -48,7 +49,7 @@ describe("invites.accept — auth & token validatie", () => {
   // Verwijst naar inviteHelpers.js regel 11 (ongeldige inviteId) en
   // regel 25 (invite niet gevonden).
   it("weigert onbekende token", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await registerUser(t, "user_bob", "bob@x.com");
     await expect(
       withUser(t, "user_bob").mutation(api.invites.accept, { token: "bogus" }),
@@ -58,7 +59,7 @@ describe("invites.accept — auth & token validatie", () => {
   it("weigert zonder auth (anonymous accept niet toegestaan)", async () => {
     // Verwijst naar acceptInvite.js regel 13: getUserFromEvent throwt indien
     // geen sub. Bovendien hangt heel de membership-create van userId af.
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await registerUser(t, "user_alice", "a@x.com");
     const { token } = await withUser(t, "user_alice").mutation(
       api.invites.create,
@@ -71,7 +72,7 @@ describe("invites.accept — auth & token validatie", () => {
 
   it("weigert wanneer caller-email niet matcht invite-email", async () => {
     // Verwijst naar inviteHelpers.js regel 16: "invite not for you".
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await registerUser(t, "user_alice", "a@x.com");
     const { token } = await withUser(t, "user_alice").mutation(
       api.invites.create,
@@ -88,7 +89,7 @@ describe("invites.accept — status transitions", () => {
   // Verwijst naar inviteHelpers.js regel 28: status moet "invite" zijn,
   // anders "invite already accepted".
   it("weigert reeds geaccepteerde invite", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await registerUser(t, "user_alice", "a@x.com");
     const { token } = await withUser(t, "user_alice").mutation(
       api.invites.create,
@@ -104,7 +105,7 @@ describe("invites.accept — status transitions", () => {
   it("weigert reeds gedeclined invite", async () => {
     // [GAP] oude code checkte alleen `status !== 'invite'` zonder onderscheid.
     // In v2 met expliciete declined-status moet dit ook geweigerd worden.
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await registerUser(t, "user_alice", "a@x.com");
     const { token } = await withUser(t, "user_alice").mutation(
       api.invites.create,
@@ -122,7 +123,7 @@ describe("invites.accept — status transitions", () => {
     // raken. De expiry-guard (`expiresAt < now`) zou dan níet vuren — daarom
     // is de aparte status-guard (`status !== "pending"`) ook nodig.
     // Bestaande tests dekken expiresAt < now; deze pint het status-pad apart.
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const aliceId = await registerUser(t, "user_alice", "a@x.com");
     const inviteId = await t.run((ctx) =>
       ctx.db.insert("invites", {
@@ -149,7 +150,7 @@ describe("invites.accept — status transitions", () => {
     // Verwijst naar inviteHelpers.js regel 31-32. Convex-mutations zijn
     // atomisch, dus een throw rolt eventueel patch terug. Cleanup naar
     // "expired" status hoort in de cron (zie publicGet.test.ts + bouncedHandler).
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await registerUser(t, "user_alice", "a@x.com");
     const { inviteId, token } = await withUser(t, "user_alice").mutation(
       api.invites.create,
@@ -180,7 +181,7 @@ describe("invites.accept — expiresAt boundary (audit-8 bevinding 9)", () => {
       const fixedNow = new Date("2026-04-30T12:00:00Z").getTime();
       vi.setSystemTime(fixedNow);
 
-      const t = convexTest(schema);
+      const t = convexTest(schema, modules);
       const aliceId = await registerUser(t, "user_alice", "a@x.com");
       await t.run((ctx) =>
         ctx.db.insert("invites", {
@@ -207,7 +208,7 @@ describe("invites.accept — expiresAt boundary (audit-8 bevinding 9)", () => {
 describe("invites.accept — group-scoped invite (membership create)", () => {
   // Verwijst naar acceptInvite.js regel 26-58: TransactItems Put membership.
   it("zet status accepted + maakt membership met juiste role", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await registerUser(t, "user_alice", "a@x.com");
     const groupId = await withUser(t, "user_alice").mutation(
       api.groups.create,
@@ -237,7 +238,7 @@ describe("invites.accept — group-scoped invite (membership create)", () => {
   });
 
   it("respondedAt wordt gezet op accept-tijdstip", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await registerUser(t, "user_alice", "a@x.com");
     const groupId = await withUser(t, "user_alice").mutation(
       api.groups.create,
@@ -257,7 +258,7 @@ describe("invites.accept — group-scoped invite (membership create)", () => {
   it("upgrade: bestaand member-membership wordt admin als invite role=admin", async () => {
     // Verwijst naar acceptInvite.js regel 37-45: hasBetterRoleForMember.
     // Schema-mapping: oude "guest"→nieuwe "member", oude "admin"→"admin".
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await registerUser(t, "user_alice", "a@x.com");
     const groupId = await withUser(t, "user_alice").mutation(
       api.groups.create,
@@ -309,7 +310,7 @@ describe("invites.accept — group-scoped invite (membership create)", () => {
   it("[GAP] geen downgrade: bestaand admin blijft admin bij member-invite accept", async () => {
     // Oude code: hasBetterRoleForMember was alleen guest→admin upgrade,
     // niet andersom. Maar er was geen expliciete test of guard. Borg het.
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await registerUser(t, "user_alice", "a@x.com");
     const groupId = await withUser(t, "user_alice").mutation(
       api.groups.create,
@@ -360,7 +361,7 @@ describe("invites.accept — multi-group scenarios (audit-8)", () => {
   // onafhankelijk in invites table met verschillende tokens. Pinnen huidige
   // (correcte) gedrag voordat code-paden refactoren.
   it("user met pending invites in 2 groepen kan beide accepteren", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await registerUser(t, "user_alice", "a@x.com");
     const groupG = await withUser(t, "user_alice").mutation(
       api.groups.create,
@@ -398,7 +399,7 @@ describe("invites.accept — multi-group scenarios (audit-8)", () => {
   });
 
   it("accept van invite voor groep G laat invite voor groep H ongemoeid", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await registerUser(t, "user_alice", "a@x.com");
     const groupG = await withUser(t, "user_alice").mutation(
       api.groups.create,
@@ -433,7 +434,7 @@ describe("invites.accept — general invite (geen groupId)", () => {
   // in oude code (alle invites hadden een group). [GAP-ish] in v2 kan
   // signup-only invite bestaan voor enkel platform-toegang.
   it("accept zonder groupId: status accepted, geen membership aangemaakt", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await registerUser(t, "user_alice", "a@x.com");
     const { inviteId, token } = await withUser(t, "user_alice").mutation(
       api.invites.create,
@@ -461,7 +462,7 @@ describe("invites.accept — side effects", () => {
   // In Convex: scheduler.runAfter(0, internal.email.send, { ... }) of
   // vergelijkbaar — zichtbaar in _scheduled_functions system table.
   it("plant notificatie-email naar inviter na succesvolle accept", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await registerUser(t, "user_alice", "a@x.com");
     const groupId = await withUser(t, "user_alice").mutation(
       api.groups.create,
@@ -486,7 +487,7 @@ describe("invites.accept — side effects", () => {
     // In Convex: email als gequeue'de action zodat mutation-success ontkoppeld
     // is van email-delivery. Test: accept slaagt zelfs als scheduler-target
     // bestaat niet (proxy: succes is voldoende).
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await registerUser(t, "user_alice", "a@x.com");
     const groupId = await withUser(t, "user_alice").mutation(
       api.groups.create,

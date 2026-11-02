@@ -19,6 +19,7 @@ import { convexTest } from "convex-test";
 import { describe, expect, it } from "vitest";
 import { api , internal } from "../../convex/_generated/api";
 import schema from "../../convex/schema";
+import { modules } from "../_helpers/modules";
 
 const ISSUER = "https://picked-quail-97.clerk.accounts.dev";
 
@@ -51,7 +52,7 @@ describe("invites.create — auth", () => {
   // users invites kunnen aanmaken (de DynamoDB Put gebeurde via een andere
   // service met aws_iam authorizer).
   it("weigert zonder auth", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await expect(
       t.mutation(api.invites.create, { email: "new@x.com" }),
     ).rejects.toThrow();
@@ -63,7 +64,7 @@ describe("invites.create — general invite (geen groupId)", () => {
   // membership. In oude code was dit "UME"+email zonder group-scope, maar
   // werd in praktijk niet zo gebruikt. Hier expliciet gemodelleerd.
   it("authed user kan general invite sturen", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const aliceId = await registerUser(t, "user_alice", "a@x.com");
 
     const { inviteId, token } = await withUser(t, "user_alice").mutation(
@@ -85,7 +86,7 @@ describe("invites.create — general invite (geen groupId)", () => {
   it("zet expiresAt in de toekomst (default ~14 dagen, conform expireDate uit blob-common)", async () => {
     // Verwijst naar: blob-common/core/date expireDate() — gebruikt in
     // inviteHelpers.js regel 31 voor expiry-check.
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await registerUser(t, "user_alice", "a@x.com");
     const before = Date.now();
     const { inviteId } = await withUser(t, "user_alice").mutation(
@@ -98,7 +99,7 @@ describe("invites.create — general invite (geen groupId)", () => {
   });
 
   it("genereert unieke token per invite", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await registerUser(t, "user_alice", "a@x.com");
     const a = await withUser(t, "user_alice").mutation(api.invites.create, {
       email: "x@x.com",
@@ -115,7 +116,7 @@ describe("invites.create — group-scoped invite", () => {
   // tot membership met `role` (admin/member). Sender moet member van die
   // group zijn (in oude code impliciet via aws_iam + frontend-flow).
   it("group-member kan invite sturen met role", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await registerUser(t, "user_alice", "a@x.com");
     const groupId = await withUser(t, "user_alice").mutation(
       api.groups.create,
@@ -133,7 +134,7 @@ describe("invites.create — group-scoped invite", () => {
   it("default role is 'member' wanneer niet opgegeven", async () => {
     // [GAP] oude AWS code had geen default — frontend gaf altijd role mee.
     // Verdedigbaar default in v2.
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await registerUser(t, "user_alice", "a@x.com");
     const groupId = await withUser(t, "user_alice").mutation(
       api.groups.create,
@@ -148,7 +149,7 @@ describe("invites.create — group-scoped invite", () => {
   });
 
   it("non-member van de group wordt geweigerd", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await registerUser(t, "user_alice", "a@x.com");
     await registerUser(t, "user_outsider", "out@x.com");
     const groupId = await withUser(t, "user_alice").mutation(
@@ -166,7 +167,7 @@ describe("invites.create — group-scoped invite", () => {
   it("[GAP] weigert dubbele pending invite voor zelfde email + group", async () => {
     // Oude AWS code voorkwam dit niet — DynamoDB Put kon meerdere PK/SK
     // varianten aanmaken. In v2: deduplicate op (email, groupId, pending).
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await registerUser(t, "user_alice", "a@x.com");
     const groupId = await withUser(t, "user_alice").mutation(
       api.groups.create,
@@ -193,7 +194,7 @@ describe("invites.create — group-scoped invite", () => {
     // normalizedEmail = "bob@x.com") niets → invite glipt door zonder "al
     // lid"-check. Na users.register-fix is users.email altijd lowercase en
     // werkt deze guard ook bij mixed-case input. RED tot B's fix.
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await registerUser(t, "user_alice", "a@x.com");
     const bobId = await registerUser(t, "user_bob", "Bob@x.com");
     const groupId = await withUser(t, "user_alice").mutation(
@@ -221,7 +222,7 @@ describe("invites.create — group-scoped invite", () => {
     // Oude AWS handler `getMemberAndInvite` ving dit pas in acceptInvite op
     // (regel 35). Beter: hier al weigeren zodat gebruiker geen verwarrende
     // invite-mail krijgt.
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await registerUser(t, "user_alice", "a@x.com");
     const bobId = await registerUser(t, "user_bob", "bob@x.com");
     const groupId = await withUser(t, "user_alice").mutation(
@@ -253,7 +254,7 @@ describe("invites.remove", () => {
   // regel 27-31) of decline (publicDeclineInvite.js regel 14-16).
   // [GAP] Sender-initiated cancel was er niet; tests beschrijven gewenst gedrag.
   it("sender kan eigen pending invite intrekken", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await registerUser(t, "user_alice", "a@x.com");
     const { inviteId } = await withUser(t, "user_alice").mutation(
       api.invites.create,
@@ -266,7 +267,7 @@ describe("invites.remove", () => {
   it("andere user (geen sender, geen group-admin) kan invite niet intrekken", async () => {
     // Bob is bewust géén admin van de invite-group — anders zou de
     // group-admin remove-regel hem alsnog toegang geven.
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await registerUser(t, "user_alice", "a@x.com");
     await registerUser(t, "user_bob", "b@x.com");
     const groupId = await withUser(t, "user_alice").mutation(
@@ -286,7 +287,7 @@ describe("invites.remove", () => {
     // Wouter design call: group-admins mogen stale pending invites opruimen,
     // ook al hebben ze 'm niet zelf verstuurd. Gap t.o.v. oude code (had geen
     // remove-handler).
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await registerUser(t, "user_alice", "a@x.com");
     const bobId = await registerUser(t, "user_bob", "b@x.com");
     const groupId = await withUser(t, "user_alice").mutation(
@@ -312,7 +313,7 @@ describe("invites.remove", () => {
   });
 
   it("zonder auth: throw", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await registerUser(t, "user_alice", "a@x.com");
     const { inviteId } = await withUser(t, "user_alice").mutation(
       api.invites.create,
@@ -326,7 +327,7 @@ describe("invites.remove", () => {
   it("[GAP] reeds accepted invite kan niet meer ingetrokken worden", async () => {
     // Verdedigbaar: na accept is er een membership; intrekken zou dat
     // membership impliciet maken zonder cascade. Beter: blokkeer.
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await registerUser(t, "user_alice", "a@x.com");
     const groupId = await withUser(t, "user_alice").mutation(
       api.groups.create,

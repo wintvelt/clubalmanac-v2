@@ -2,6 +2,7 @@ import { convexTest } from "convex-test";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { api, internal } from "../../convex/_generated/api";
 import schema from "../../convex/schema";
+import { modules } from "../_helpers/modules";
 
 // Audit-7 §2 + §3 — requireWebmaster edge-case dekking.
 // Helper-tests via een al-bestaande webmaster-gated query: photos.listAllFlagged
@@ -51,7 +52,7 @@ describe("requireWebmaster — env-var presence", () => {
   // GREEN nu en na fix: helper is fail-closed.
   it("throwt wanneer WEBMASTER_EMAILS unset is", async () => {
     delete process.env.WEBMASTER_EMAILS;
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await registerUser(t, "user_wm", "wouter@me.com");
     await expect(
       withUser(t, "user_wm", "wouter@me.com").query(
@@ -64,7 +65,7 @@ describe("requireWebmaster — env-var presence", () => {
   // GREEN nu en na fix: lege string → lege lijst → fail-closed.
   it('throwt wanneer WEBMASTER_EMAILS leeg is ("")', async () => {
     process.env.WEBMASTER_EMAILS = "";
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await registerUser(t, "user_wm", "wouter@me.com");
     await expect(
       withUser(t, "user_wm", "wouter@me.com").query(
@@ -85,7 +86,7 @@ describe("requireWebmaster — identity-claim", () => {
 
   // GREEN nu en na fix: zonder email-claim faalt `!email` check.
   it("throwt wanneer identity geen email-claim heeft", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     // Identity zonder email — registreer toch via t.run zodat users-record
     // bestaat (anders zou na fix óók requireCurrentUser falen, dat is een
     // andere check; we testen hier specifiek email-ontbreken).
@@ -114,7 +115,7 @@ describe("requireWebmaster — case-insensitive match (RED tot B's fix)", () => 
   // Helper moet aan beide kanten toLowerCase doen. RED tot B's fix.
   it("env mixed-case + identity lowercase → passeert", async () => {
     process.env.WEBMASTER_EMAILS = "Wouter@me.com";
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await registerUser(t, "user_wm", "wouter@me.com");
     await expect(
       withUser(t, "user_wm", "wouter@me.com").query(
@@ -128,7 +129,7 @@ describe("requireWebmaster — case-insensitive match (RED tot B's fix)", () => 
   // claim ongenormaliseerd). RED tot B's fix.
   it("env lowercase + identity mixed-case → passeert", async () => {
     process.env.WEBMASTER_EMAILS = "wouter@me.com";
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await registerUser(t, "user_wm", "Wouter@me.com");
     await expect(
       withUser(t, "user_wm", "Wouter@me.com").query(
@@ -147,7 +148,7 @@ describe("requireWebmaster — multi-email comma-separated", () => {
   // GREEN nu en na fix: comma-split + trim werkt al.
   it("tweede email in lijst passeert", async () => {
     process.env.WEBMASTER_EMAILS = "a@x.com, b@x.com";
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await registerUser(t, "user_b", "b@x.com");
     await expect(
       withUser(t, "user_b", "b@x.com").query(api.photos.listAllFlagged, {}),
@@ -168,7 +169,7 @@ describe("requireWebmaster — interactie met requireCurrentUser (RED tot B's fi
   // zodat beide gates samen passeren. RED tot B's fix (huidig: helper
   // checkt enkel identity.email, geen users-record nodig).
   it("Clerk-identity met webmaster-email maar zonder users-record throwt", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     // Bewust GEEN registerUser — alleen Clerk identity simuleren.
     await expect(
       withUser(t, "user_wm_noregister", "wouter@me.com").query(

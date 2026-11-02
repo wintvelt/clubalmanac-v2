@@ -2,6 +2,7 @@ import { convexTest } from "convex-test";
 import { describe, expect, it } from "vitest";
 import { api , internal } from "../../convex/_generated/api";
 import schema from "../../convex/schema";
+import { modules } from "../_helpers/modules";
 
 // Fase 2 — Groups domein: create, update, remove, list, members.
 
@@ -46,21 +47,21 @@ async function setupGroup(
 
 describe("groups.create", () => {
   it("weigert zonder auth", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await expect(
       t.mutation(api.groups.create, { name: "X" }),
     ).rejects.toThrow();
   });
 
   it("weigert wanneer geen user record", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await expect(
       withUser(t, "user_ghost").mutation(api.groups.create, { name: "X" }),
     ).rejects.toThrow();
   });
 
   it("maakt group + admin membership voor caller", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const adminId = await registerUser(t, "user_a", "a@x.com");
     const groupId = await withUser(t, "user_a").mutation(api.groups.create, {
       name: "Mijn groep",
@@ -89,7 +90,7 @@ describe("groups.create", () => {
 // tests/readWhitelist/groups.test.ts.
 describe("groups.getById", () => {
   it("geeft group terug aan een lid", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const { groupId } = await setupGroup(t);
     const got = await withUser(t, "user_admin").query(api.groups.getById, {
       groupId,
@@ -98,7 +99,7 @@ describe("groups.getById", () => {
   });
 
   it("geeft geen data voor onbekende id", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const { groupId } = await setupGroup(t);
     await t.run(async (ctx) => {
       // cascade: maak een geldige stale id
@@ -118,7 +119,7 @@ describe("groups.getById", () => {
 
 describe("groups.listMine", () => {
   it("toont groepen waar caller lid is, met role", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const { groupId } = await setupGroup(t);
 
     // tweede groep, caller is daar geen lid
@@ -137,7 +138,7 @@ describe("groups.listMine", () => {
   });
 
   it("geeft lege lijst zonder auth", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await setupGroup(t);
     const mine = await t.query(api.groups.listMine, {});
     expect(mine).toEqual([]);
@@ -146,7 +147,7 @@ describe("groups.listMine", () => {
 
 describe("groups.listMembers", () => {
   it("member kan members opvragen", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const { adminId, groupId } = await setupGroup(t);
 
     // voeg tweede member toe
@@ -167,7 +168,7 @@ describe("groups.listMembers", () => {
   });
 
   it("niet-lid wordt geweigerd", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const { groupId } = await setupGroup(t);
     await registerUser(t, "user_outsider", "out@x.com");
     await expect(
@@ -178,7 +179,7 @@ describe("groups.listMembers", () => {
 
 describe("groups.addMember", () => {
   it("admin kan member toevoegen, default role 'member'", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const { groupId } = await setupGroup(t);
     const bobId = await registerUser(t, "user_b", "b@x.com");
 
@@ -200,7 +201,7 @@ describe("groups.addMember", () => {
   });
 
   it("admin kan met role 'admin' toevoegen", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const { groupId } = await setupGroup(t);
     const bobId = await registerUser(t, "user_b", "b@x.com");
 
@@ -222,7 +223,7 @@ describe("groups.addMember", () => {
   });
 
   it("niet-admin (member) wordt geweigerd", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const { groupId } = await setupGroup(t);
     const bobId = await registerUser(t, "user_b", "b@x.com");
     await withUser(t, "user_admin").mutation(api.groups.addMember, {
@@ -240,7 +241,7 @@ describe("groups.addMember", () => {
   });
 
   it("weigert dubbel lidmaatschap", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const { groupId } = await setupGroup(t);
     const bobId = await registerUser(t, "user_b", "b@x.com");
     await withUser(t, "user_admin").mutation(api.groups.addMember, {
@@ -258,7 +259,7 @@ describe("groups.addMember", () => {
 
 describe("groups.removeMember", () => {
   it("admin kan ander member verwijderen", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const { groupId } = await setupGroup(t);
     const bobId = await registerUser(t, "user_b", "b@x.com");
     await withUser(t, "user_admin").mutation(api.groups.addMember, {
@@ -283,7 +284,7 @@ describe("groups.removeMember", () => {
   });
 
   it("self-remove werkt (leave)", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const { groupId } = await setupGroup(t);
     const bobId = await registerUser(t, "user_b", "b@x.com");
     await withUser(t, "user_admin").mutation(api.groups.addMember, {
@@ -306,7 +307,7 @@ describe("groups.removeMember", () => {
   });
 
   it("member kan ander niet verwijderen", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const { groupId } = await setupGroup(t);
     const bobId = await registerUser(t, "user_b", "b@x.com");
     const carolId = await registerUser(t, "user_c", "c@x.com");
@@ -333,7 +334,7 @@ describe("groups.removeMember", () => {
 
 describe("groups.updateMemberRole", () => {
   it("admin kan member promoten naar admin", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const { groupId } = await setupGroup(t);
     const bobId = await registerUser(t, "user_b", "b@x.com");
     await withUser(t, "user_admin").mutation(api.groups.addMember, {
@@ -359,7 +360,7 @@ describe("groups.updateMemberRole", () => {
   });
 
   it("niet-admin kan niet rollen wijzigen", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const { groupId } = await setupGroup(t);
     const bobId = await registerUser(t, "user_b", "b@x.com");
     await withUser(t, "user_admin").mutation(api.groups.addMember, {
@@ -377,7 +378,7 @@ describe("groups.updateMemberRole", () => {
   });
 
   it("laatste admin kan niet gedemoted worden", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const { adminId, groupId } = await setupGroup(t);
     await expect(
       withUser(t, "user_admin").mutation(api.groups.updateMemberRole, {
@@ -391,7 +392,7 @@ describe("groups.updateMemberRole", () => {
 
 describe("groups.update", () => {
   it("admin kan name/description aanpassen", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const { groupId } = await setupGroup(t);
 
     await withUser(t, "user_admin").mutation(api.groups.update, {
@@ -406,7 +407,7 @@ describe("groups.update", () => {
   });
 
   it("admin kan coverPhotoId zetten", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const { adminId, groupId } = await setupGroup(t);
 
     const photoId = await t.run(async (ctx) => {
@@ -438,7 +439,7 @@ describe("groups.update", () => {
   });
 
   it("niet-admin kan niet updaten", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const { groupId } = await setupGroup(t);
     const bobId = await registerUser(t, "user_b", "b@x.com");
     await withUser(t, "user_admin").mutation(api.groups.addMember, {
@@ -457,7 +458,7 @@ describe("groups.update", () => {
 
 describe("groups.remove", () => {
   it("admin kan group deleten + cascade memberships", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const { groupId } = await setupGroup(t);
     const bobId = await registerUser(t, "user_b", "b@x.com");
     await withUser(t, "user_admin").mutation(api.groups.addMember, {
@@ -480,7 +481,7 @@ describe("groups.remove", () => {
   });
 
   it("cascade albums + albumPhotos", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const { adminId, groupId } = await setupGroup(t);
 
     const { albumId, photoId } = await t.run(async (ctx) => {
@@ -540,7 +541,7 @@ describe("groups.remove", () => {
     // deleteAlbumLastSeenByAlbum helper in convex/albums.ts, aangeroepen per
     // album in groups.remove. Pinnt dat G4 → A1 → A2 keten volledig doorloopt
     // via direct groups.remove pad (niet via M2-e last-member route).
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const { adminId, groupId } = await setupGroup(t);
     const bobId = await registerUser(t, "user_bob", "b@x.com");
     await withUser(t, "user_admin").mutation(api.groups.addMember, {
@@ -579,7 +580,7 @@ describe("groups.remove", () => {
   });
 
   it("niet-admin kan niet deleten", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const { groupId } = await setupGroup(t);
     const bobId = await registerUser(t, "user_b", "b@x.com");
     await withUser(t, "user_admin").mutation(api.groups.addMember, {

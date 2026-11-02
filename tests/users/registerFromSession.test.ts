@@ -31,6 +31,7 @@ import { api, internal } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
 import schema from "../../convex/schema";
 import { registerUserWithInvite, withUser } from "../_helpers/auth";
+import { modules } from "../_helpers/modules";
 
 // RED-phase: function-reference bestaat nog niet in _generated/api tot B
 // 'm toevoegt + codegen draait. Cast houdt deze file compileerbaar zodat
@@ -105,7 +106,7 @@ async function seedGroup(
 
 describe("registerFromSession — happy path", () => {
   it("één pending invite → users-row + invite.accepted + membership in één run", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const { groupId } = await seedGroup(t);
     const { inviteId } = await seedInvite(t, {
       email: "alice@x.com",
@@ -140,7 +141,7 @@ describe("registerFromSession — happy path", () => {
   });
 
   it("name uit two velden samengevoegd (first + last)", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await seedInvite(t, { email: "alice@x.com" });
     const userId = await t.mutation(registerFromSession, {
       subject: "user_alice",
@@ -152,7 +153,7 @@ describe("registerFromSession — happy path", () => {
   });
 
   it("name optional: undefined gestopt → users-row.name is undefined", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await seedInvite(t, { email: "alice@x.com" });
     const userId = await t.mutation(registerFromSession, {
       subject: "user_alice",
@@ -165,7 +166,7 @@ describe("registerFromSession — happy path", () => {
 
 describe("registerFromSession — multi-invite atomic", () => {
   it("twee pending invites zelfde email → twee memberships + twee accepted-invites in één run", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const { groupId: groupA } = await seedGroup(t, "user_founderA", "Group A");
     const { groupId: groupB } = await seedGroup(t, "user_founderB", "Group B");
     const { inviteId: inviteA } = await seedInvite(t, {
@@ -207,7 +208,7 @@ describe("registerFromSession — multi-invite atomic", () => {
 
 describe("registerFromSession — idempotent op subject", () => {
   it("tweede call zelfde subject → returned id is bestaande row, geen extra inserts", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await seedInvite(t, { email: "alice@x.com" });
 
     const firstId = await t.mutation(registerFromSession, {
@@ -233,7 +234,7 @@ describe("registerFromSession — idempotent op subject", () => {
     // Pin't dat idempotent-on-subject = no-op bail-out, niet "re-run de
     // hele onboarding-flow". Anders zou re-login stille membership-changes
     // triggeren bij invites die ná eerste signup gemaakt zijn.
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const { groupId } = await seedGroup(t);
     await seedInvite(t, {
       email: "alice@x.com",
@@ -286,7 +287,7 @@ describe("registerFromSession — zero-invite fallback", () => {
   it("signup zonder enige invite (en geen webmaster) → users-row aangemaakt, geen membership", async () => {
     // Spec §invarianten: "Zero-invite fallback acceptabel" — terminal state
     // "registered-no-membership". Pin't dat dit géén throw is.
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const userId = await t.mutation(registerFromSession, {
       subject: "user_orphan",
       email: "orphan@x.com",
@@ -304,7 +305,7 @@ describe("registerFromSession — zero-invite fallback", () => {
   });
 
   it("expired invite → behandeld als zero-invite (geen accept, geen membership)", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const { groupId } = await seedGroup(t);
     const { inviteId } = await seedInvite(t, {
       email: "alice@x.com",
@@ -332,7 +333,7 @@ describe("registerFromSession — zero-invite fallback", () => {
   });
 
   it("pending-maar-verlopen invite (expiresAt in verleden) → zero-invite pad", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const { groupId } = await seedGroup(t);
     await seedInvite(t, {
       email: "alice@x.com",
@@ -365,7 +366,7 @@ describe("registerFromSession — webmaster bootstrap", () => {
   });
 
   it("webmaster-email zonder invite → users-row created (cold-start bypass), geen membership", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const userId = await t.mutation(registerFromSession, {
       subject: "user_webmaster",
       email: WEBMASTER_EMAIL,
@@ -384,7 +385,7 @@ describe("registerFromSession — webmaster bootstrap", () => {
 
 describe("registerFromSession — email-normalization", () => {
   it("mixed-case email argument matcht lowercase pending invite", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const { groupId } = await seedGroup(t);
     const { inviteId } = await seedInvite(t, {
       email: "bouncer@x.com",
@@ -417,7 +418,7 @@ describe("registerFromSession — email-uniqueness clash", () => {
     // Scenario: Clerk-dashboard user-delete + re-signup met zelfde email
     // levert nieuwe subject + email-collision. Spec-aanvulling §open-vraag-4
     // koos voor fail-loud throw → webhook 500 → Clerk-retry → ops-zichtbaar.
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await t.run(async (ctx) => {
       await ctx.db.insert("users", {
         subject: "user_old_subject",
@@ -452,7 +453,7 @@ describe("registerFromSession — group-less invite", () => {
     // `invites.accept` patcht status maar slaat membership-insert over als
     // `invite.groupId === undefined`. Pin't dat registerFromSession dezelfde
     // discipline volgt; geen mystery-membership-insert.
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const { inviteId } = await seedInvite(t, {
       email: "alice@x.com",
       // groupId weggelaten → invite zonder groep

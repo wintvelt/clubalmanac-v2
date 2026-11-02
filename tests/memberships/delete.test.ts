@@ -2,6 +2,7 @@ import { convexTest } from "convex-test";
 import { describe, expect, it } from "vitest";
 import { api , internal } from "../../convex/_generated/api";
 import schema from "../../convex/schema";
+import { modules } from "../_helpers/modules";
 
 // Cascade matrix rows M1, M2, M3: cascades + admin/founder-successie
 // vanuit groups.removeMember (UM delete trigger).
@@ -46,7 +47,7 @@ async function registerUser(
 
 describe("M1: removeMember cascade albumPhotos in déze group", () => {
   it("verwijdert albumPhotos die vertrekkende user toevoegde", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const aliceId = await registerUser(t, "user_alice", "a@x.com");
     const bobId = await registerUser(t, "user_bob", "b@x.com");
 
@@ -67,7 +68,7 @@ describe("M1: removeMember cascade albumPhotos in déze group", () => {
       async (ctx) => await ctx.storage.store(new Blob(["x"])),
     );
     const bobPhoto = await withUser(t, "user_bob").mutation(
-      api.photos.create,
+      internal.photos.create,
       { storageId },
     );
     await withUser(t, "user_bob").mutation(api.albums.addPhoto, {
@@ -95,7 +96,7 @@ describe("M1: removeMember cascade albumPhotos in déze group", () => {
   });
 
   it("laat albumPhotos in andere groups intact", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await registerUser(t, "user_alice", "a@x.com");
     const bobId = await registerUser(t, "user_bob", "b@x.com");
 
@@ -127,7 +128,7 @@ describe("M1: removeMember cascade albumPhotos in déze group", () => {
       async (ctx) => await ctx.storage.store(new Blob(["x"])),
     );
     const bobPhoto = await withUser(t, "user_bob").mutation(
-      api.photos.create,
+      internal.photos.create,
       { storageId },
     );
     await withUser(t, "user_bob").mutation(api.albums.addPhoto, {
@@ -167,7 +168,7 @@ describe("M1: removeMember cascade albumPhotos in déze group", () => {
     // memberDelToAlbumPhoto.js:51 filtert op photo-OWNER (userPhotoKeys.includes).
     // Convex (groups.ts internalRemoveMember) filtert óók op photo.ownerId →
     // geen divergentie. Test pinnt dat de filter op owner is, niet op addedBy.
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await registerUser(t, "user_alice", "a@x.com");
     const bobId = await registerUser(t, "user_bob", "b@x.com");
     const carolId = await registerUser(t, "user_carol", "c@x.com");
@@ -194,7 +195,7 @@ describe("M1: removeMember cascade albumPhotos in déze group", () => {
       async (ctx) => await ctx.storage.store(new Blob(["x"])),
     );
     const bobPhoto = await withUser(t, "user_bob").mutation(
-      api.photos.create,
+      internal.photos.create,
       { storageId },
     );
 
@@ -230,7 +231,7 @@ describe("M1: removeMember cascade albumPhotos in déze group", () => {
     // niet de owner; Carol blijft in de groep en bezit de photo. Publicatie
     // moet dus blijven staan. Pinnt dat de filter NIET op addedBy is —
     // anders zou deze AP onterecht verwijderd worden.
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await registerUser(t, "user_alice", "a@x.com");
     const bobId = await registerUser(t, "user_bob", "b@x.com");
     const carolId = await registerUser(t, "user_carol", "c@x.com");
@@ -257,7 +258,7 @@ describe("M1: removeMember cascade albumPhotos in déze group", () => {
       async (ctx) => await ctx.storage.store(new Blob(["x"])),
     );
     const carolPhoto = await withUser(t, "user_carol").mutation(
-      api.photos.create,
+      internal.photos.create,
       { storageId },
     );
 
@@ -297,7 +298,7 @@ describe("M2 (a): member vertrekt, geen succession", () => {
   it("admin en founder blijven onveranderd; vertrekkend lid is weg", async () => {
     // memberDelToGroup.js:17-18 — hasOtherAdmin=truthy, noFounderleft=false
     //   → noch :19-32 noch :33-37 raakt; geen role-/founder-changes.
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const aliceId = await registerUser(t, "user_alice", "a@x.com");
     const bobId = await registerUser(t, "user_bob", "b@x.com");
 
@@ -344,7 +345,7 @@ describe("M2 (b): admin vertrekt met andere admin aanwezig", () => {
   it("geen role-changes onder de overgeblevenen; vertrekkend admin is weg", async () => {
     // memberDelToGroup.js:17-18 — hasOtherAdmin=truthy (Alice), noFounderleft=false
     //   → :19-32 niet, :33-37 niet; rollen + founder ongewijzigd.
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const aliceId = await registerUser(t, "user_alice", "a@x.com");
     const bobId = await registerUser(t, "user_bob", "b@x.com");
     const carolId = await registerUser(t, "user_carol", "c@x.com");
@@ -411,7 +412,7 @@ describe("M2 (c): laatste admin vertrekt met members nog over", () => {
     //   (regel 29). Eerste in iteratie-volgorde wordt founder (regel 22-27).
     //   In Convex sorteren we expliciet op joinedAt asc → Bob (eerst toegevoegd)
     //   wint deterministisch.
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const aliceId = await registerUser(t, "user_alice", "a@x.com");
     const bobId = await registerUser(t, "user_bob", "b@x.com");
     const carolId = await registerUser(t, "user_carol", "c@x.com");
@@ -456,7 +457,7 @@ describe("M2 (c-extended): 3+ overgebleven members, willekeurige joinedAt-volgor
   it("kiest deterministisch member met laagste joinedAt als founder", async () => {
     // memberDelToGroup.js:22-27 — patcht joinedAt zodat insertie-volgorde !=
     //   sortering. Convex moet expliciet op joinedAt asc sorteren.
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const aliceId = await registerUser(t, "user_alice", "a@x.com");
     const bobId = await registerUser(t, "user_bob", "b@x.com");
     const carolId = await registerUser(t, "user_carol", "c@x.com");
@@ -510,7 +511,7 @@ describe("M2 (d): founder vertrekt met andere admin aanwezig", () => {
     // memberDelToGroup.js:33-37 — hasOtherAdmin=truthy (Bob), noFounderleft=true
     //   → die admin krijgt isFounder=true. Carol (member) blijft member,
     //   Bob blijft admin (mag niet gedemoteerd worden).
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const aliceId = await registerUser(t, "user_alice", "a@x.com");
     const bobId = await registerUser(t, "user_bob", "b@x.com");
     const carolId = await registerUser(t, "user_carol", "c@x.com");
@@ -566,7 +567,7 @@ describe("M2 (d-extended): founder vertrekt met meerdere admins, oudste wint", (
     // memberDelToGroup.js:33-37 — bij meerdere admins kiest oude handler de
     //   eerst-gevonden via members.find() (insertie-volgorde). Convex moet
     //   deterministisch op joinedAt asc selecteren.
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const aliceId = await registerUser(t, "user_alice", "a@x.com");
     const bobId = await registerUser(t, "user_bob", "b@x.com");
     const carolId = await registerUser(t, "user_carol", "c@x.com");
@@ -610,7 +611,7 @@ describe("M2 (d-extended): founder vertrekt met meerdere admins, oudste wint", (
 
 describe("M3: removeMember cascade albumLastSeen voor déze group", () => {
   it("verwijdert albumLastSeen voor (user × albums in déze group), laat andere groups intact", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await registerUser(t, "user_alice", "a@x.com");
     const bobId = await registerUser(t, "user_bob", "b@x.com");
 
@@ -677,7 +678,7 @@ describe("M2 (e): laatste lid vertrekt → group + albums + albumPhotos cascade"
   it("solo founder vertrekt → group volledig opgeruimd", async () => {
     // memberDelToGroup.js:39-43 — geen members meer → dynamoDb.delete(groupKey).
     //   Convex breidt dit uit met albums + albumPhotos in dezelfde transactie.
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const aliceId = await registerUser(t, "user_alice", "a@x.com");
 
     const groupId = await withUser(t, "user_alice").mutation(
@@ -693,7 +694,7 @@ describe("M2 (e): laatste lid vertrekt → group + albums + albumPhotos cascade"
       async (ctx) => await ctx.storage.store(new Blob(["x"])),
     );
     const photoId = await withUser(t, "user_alice").mutation(
-      api.photos.create,
+      internal.photos.create,
       { storageId },
     );
     await withUser(t, "user_alice").mutation(api.albums.addPhoto, {
@@ -728,7 +729,7 @@ describe("M2 (e-dangling): geen residu albumLastSeen na laatste vertrek", () => 
     //   Convex moet bij (e) ook eerder achtergebleven albumLastSeen records
     //   van álbum-deletions opruimen, niet alleen de eigen records van de
     //   vertrekkende user (die via M3 al weggaan).
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const aliceId = await registerUser(t, "user_alice", "a@x.com");
     const bobId = await registerUser(t, "user_bob", "b@x.com");
 
@@ -775,7 +776,7 @@ describe("M2 (e-dangling): geen residu albumLastSeen na laatste vertrek", () => 
 
 describe("removeMember rejection paths", () => {
   it("non-admin die ander lid probeert te verwijderen → throws", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await registerUser(t, "user_alice", "a@x.com");
     const bobId = await registerUser(t, "user_bob", "b@x.com");
     const carolId = await registerUser(t, "user_carol", "c@x.com");
@@ -803,7 +804,7 @@ describe("removeMember rejection paths", () => {
   });
 
   it("removeMember van niet-bestaand lid → throws", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await registerUser(t, "user_alice", "a@x.com");
     const bobId = await registerUser(t, "user_bob", "b@x.com");
 
@@ -821,7 +822,7 @@ describe("removeMember rejection paths", () => {
   });
 
   it("caller is geen lid van de groep → throws", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await registerUser(t, "user_alice", "a@x.com");
     await registerUser(t, "user_bob", "b@x.com");
     const carolId = await registerUser(t, "user_carol", "c@x.com");

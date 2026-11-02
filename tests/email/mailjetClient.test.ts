@@ -24,6 +24,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { api, internal } from "../../convex/_generated/api";
 import schema from "../../convex/schema";
 import { registerUserWithInvite, withUser } from "../_helpers/auth";
+import { modules } from "../_helpers/modules";
 
 // Vaste verified-sender voor de happy-path tests. Spec-aanvulling pin't
 // invite/accepted/declined/bounced → `invites@clubalmanac.com`.
@@ -91,7 +92,7 @@ describe("mailjet client — verified-sender hard gate (fail-closed)", () => {
 
   it("env-var MAILJET_VERIFIED_SENDERS ontbreekt → action throwt, geen Mailjet-call", async () => {
     delete process.env.MAILJET_VERIFIED_SENDERS;
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const { inviteId } = await seedInvite(t);
     const fetchSpy = mockMailjet2xx();
 
@@ -106,7 +107,7 @@ describe("mailjet client — verified-sender hard gate (fail-closed)", () => {
 
   it("env-var leeg (lege string) → action throwt, geen Mailjet-call", async () => {
     process.env.MAILJET_VERIFIED_SENDERS = "";
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const { inviteId } = await seedInvite(t);
     const fetchSpy = mockMailjet2xx();
 
@@ -123,7 +124,7 @@ describe("mailjet client — verified-sender hard gate (fail-closed)", () => {
     // invites@-sender wordt door de action gebruikt voor kind=invite, maar
     // staat NIET in deze verified-set → moet falen.
     process.env.MAILJET_VERIFIED_SENDERS = "info@clubalmanac.com,dpo@clubalmanac.com";
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const { inviteId } = await seedInvite(t);
     const fetchSpy = mockMailjet2xx();
 
@@ -141,7 +142,7 @@ describe("mailjet client — verified-sender hard gate (fail-closed)", () => {
     // mixed-case items resolveren naar dezelfde verified-set als netjes
     // geformatteerd. Spiegelt audit-7 webmaster-match-discipline.
     process.env.MAILJET_VERIFIED_SENDERS = "  Invites@ClubAlmanac.com , INFO@clubalmanac.com  ";
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const { inviteId } = await seedInvite(t);
     const fetchSpy = mockMailjet2xx();
 
@@ -163,7 +164,7 @@ describe("mailjet client — send-call shape (Mailjet Send v3.1 contract)", () =
   });
 
   it("verified sender → exactly 1 POST naar api.mailjet.com met basic-auth", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const { inviteId } = await seedInvite(t);
     const fetchSpy = mockMailjet2xx();
 
@@ -189,7 +190,7 @@ describe("mailjet client — send-call shape (Mailjet Send v3.1 contract)", () =
   });
 
   it("payload bevat From/To/Subject/HTML+Text en is JSON-parsebaar", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const { inviteId } = await seedInvite(t);
     const fetchSpy = mockMailjet2xx();
 
@@ -223,7 +224,7 @@ describe("mailjet client — send-call shape (Mailjet Send v3.1 contract)", () =
   });
 
   it("Mailjet non-2xx response → action throwt (geen silent succes)", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const { inviteId } = await seedInvite(t);
     const fetchSpy = vi.fn().mockResolvedValue(
       new Response(
@@ -243,7 +244,7 @@ describe("mailjet client — send-call shape (Mailjet Send v3.1 contract)", () =
   });
 
   it("Mailjet 5xx response → action throwt (laat scheduler retry'en)", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const { inviteId } = await seedInvite(t);
     const fetchSpy = vi.fn().mockResolvedValue(
       new Response("", { status: 502 }),

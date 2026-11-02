@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import { api , internal } from "../../convex/_generated/api";
 import schema from "../../convex/schema";
 import type { Id } from "../../convex/_generated/dataModel";
+import { modules } from "../_helpers/modules";
 
 // Cascade matrix rows U6, U7, U8: cat-3 cascade deletes vanuit users.deleteSelf.
 // U6 = ratings, U7 = photos + queued storage cleanup action, U8 = memberships.
@@ -51,7 +52,7 @@ async function insertPhoto(
 
 describe("U6: deleteSelf cascade ratings", () => {
   it("verwijdert alle ratings van de user", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const aliceId = await registerUser(t, "user_alice", "a@x.com");
     const bobId = await registerUser(t, "user_bob", "b@x.com");
 
@@ -78,7 +79,7 @@ describe("U6: deleteSelf cascade ratings", () => {
   });
 
   it("ratings van andere users blijven", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const aliceId = await registerUser(t, "user_alice", "a@x.com");
     const bobId = await registerUser(t, "user_bob", "b@x.com");
     const carolId = await registerUser(t, "user_carol", "c@x.com");
@@ -117,7 +118,7 @@ describe("U7: deleteSelf cascade photos + queued storage cleanup", () => {
   it("verwijdert photo records én cleant storage via scheduled action", async () => {
     vi.useFakeTimers();
     try {
-      const t = convexTest(schema);
+      const t = convexTest(schema, modules);
       const aliceId = await registerUser(t, "user_alice", "a@x.com");
       const { photoId, storageId } = await insertPhoto(t, aliceId);
 
@@ -140,7 +141,7 @@ describe("U7: deleteSelf cascade photos + queued storage cleanup", () => {
   it("queue scheduled action per photo met juiste storage IDs", async () => {
     vi.useFakeTimers();
     try {
-      const t = convexTest(schema);
+      const t = convexTest(schema, modules);
       const aliceId = await registerUser(t, "user_alice", "a@x.com");
       const { storageId: s1 } = await insertPhoto(t, aliceId);
       const { storageId: s2 } = await insertPhoto(t, aliceId);
@@ -167,7 +168,7 @@ describe("U7: deleteSelf cascade photos + queued storage cleanup", () => {
   });
 
   it("photos van andere users blijven", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const aliceId = await registerUser(t, "user_alice", "a@x.com");
     const bobId = await registerUser(t, "user_bob", "b@x.com");
     const { photoId: alicePhoto } = await insertPhoto(t, aliceId);
@@ -180,7 +181,7 @@ describe("U7: deleteSelf cascade photos + queued storage cleanup", () => {
   });
 
   it("geen scheduled action wanneer user geen photos heeft", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await registerUser(t, "user_alice", "a@x.com");
 
     await withUser(t, "user_alice").mutation(api.users.deleteSelf, {});
@@ -204,7 +205,7 @@ describe("U9 (eliminated) — albumLastSeen cleanup gedekt door M3 via U8", () =
   // U9-specifieke unit-test. M3-zelf wordt geünit-test in
   // tests/memberships/delete.test.ts (describe "M3").
   it("geen albumLastSeen records meer voor gedeleted user (transitief via M3)", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await registerUser(t, "user_alice", "a@x.com");
     await registerUser(t, "user_bob", "b@x.com");
 
@@ -260,7 +261,7 @@ describe("U10: deleteSelf clear flaggedBy refs", () => {
   // blijft op photo, alleen flaggedBy wordt undefined zodat we geen orphan
   // ref hebben. Owner van photo en deletion countdown ongewijzigd.
   it("clear flaggedBy op photos die deze user heeft geflagd, laat flag-state intact", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const aliceId = await registerUser(t, "user_alice", "a@x.com");
     const bobId = await registerUser(t, "user_bob", "b@x.com");
 
@@ -295,7 +296,7 @@ describe("U10: deleteSelf clear flaggedBy refs", () => {
   });
 
   it("photos die alice niet heeft geflagged blijven onaangeroerd", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const aliceId = await registerUser(t, "user_alice", "a@x.com");
     const bobId = await registerUser(t, "user_bob", "b@x.com");
     const carolId = await registerUser(t, "user_carol", "c@x.com");
@@ -325,7 +326,7 @@ describe("U10: deleteSelf clear flaggedBy refs", () => {
 
 describe("U8: deleteSelf cascade memberships", () => {
   it("verwijdert alle memberships van de user", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const adminId = await registerUser(t, "user_admin", "admin@x.com");
     const aliceId = await registerUser(t, "user_alice", "a@x.com");
 
@@ -376,7 +377,7 @@ describe("U8 — M2 cascade (transitief vanuit deleteSelf)", () => {
   it("M2-c: enige admin deletet zichzelf met members nog over → resterende members worden admin", async () => {
     // cascade-matrix.md M2 (c) — !hasOtherAdmin pad.
     // memberDelToGroup.js:19-32 → alle members krijgen role admin.
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const aliceId = await registerUser(t, "user_alice", "a@x.com");
     const bobId = await registerUser(t, "user_bob", "b@x.com");
 
@@ -417,7 +418,7 @@ describe("U8 — M2 cascade (transitief vanuit deleteSelf)", () => {
     // cascade-matrix.md M2 (d) — hasOtherAdmin && noFounderleft pad.
     // memberDelToGroup.js:33-37 → die admin krijgt isFounder. Convex sorteert
     // op joinedAt asc voor determinisme.
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const aliceId = await registerUser(t, "user_alice", "a@x.com");
     const bobId = await registerUser(t, "user_bob", "b@x.com");
     const charlieId = await registerUser(t, "user_charlie", "c@x.com");
@@ -472,7 +473,7 @@ describe("U8 — M2 cascade (transitief vanuit deleteSelf)", () => {
     // cascade-matrix.md M2 (e) — laatste lid weg.
     // memberDelToGroup.js:39-43 → groupKey delete. Convex breidt uit met
     // albums + albumPhotos in dezelfde transactie (zie groups.removeMember).
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const aliceId = await registerUser(t, "user_alice", "a@x.com");
 
     const groupId = await withUser(t, "user_alice").mutation(
@@ -488,7 +489,7 @@ describe("U8 — M2 cascade (transitief vanuit deleteSelf)", () => {
       async (ctx) => await ctx.storage.store(new Blob(["x"])),
     );
     const photoId = await withUser(t, "user_alice").mutation(
-      api.photos.create,
+      internal.photos.create,
       { storageId },
     );
     await withUser(t, "user_alice").mutation(api.albums.addPhoto, {

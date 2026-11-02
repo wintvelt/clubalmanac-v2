@@ -14,6 +14,7 @@ import { convexTest } from "convex-test";
 import { describe, expect, it } from "vitest";
 import { api , internal } from "../../convex/_generated/api";
 import schema from "../../convex/schema";
+import { modules } from "../_helpers/modules";
 
 const ISSUER = "https://picked-quail-97.clerk.accounts.dev";
 
@@ -45,7 +46,7 @@ describe("invites.decline — happy path", () => {
   // Verwijst naar publicDeclineInvite.js regel 14-17 — invite wordt
   // weggehaald. Hier: status patch i.p.v. delete (audit trail).
   it("zet status declined + respondedAt", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await registerUser(t, "user_alice", "a@x.com");
     const { inviteId, token } = await withUser(t, "user_alice").mutation(
       api.invites.create,
@@ -64,7 +65,7 @@ describe("invites.decline — happy path", () => {
   it("group-scoped decline: geen membership wordt aangemaakt", async () => {
     // Verwijst naar publicDeclineInvite.js: er wordt geen membership-Put
     // gedaan, alleen invite-Delete. v2 spiegelt dat: decline ≠ accept.
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await registerUser(t, "user_alice", "a@x.com");
     const groupId = await withUser(t, "user_alice").mutation(
       api.groups.create,
@@ -93,7 +94,7 @@ describe("invites.decline — auth & access checks", () => {
   // Verwijst naar inviteHelpers.js regel 16 (`invite not for you`)
   // gebruikt door zowel accept als decline.
   it("weigert wanneer caller-email niet matcht invite-email", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await registerUser(t, "user_alice", "a@x.com");
     const { token } = await withUser(t, "user_alice").mutation(
       api.invites.create,
@@ -107,7 +108,7 @@ describe("invites.decline — auth & access checks", () => {
 
   it("weigert onbekende token", async () => {
     // Verwijst naar inviteHelpers.js regel 25 (`invite not found`).
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await registerUser(t, "user_bob", "bob@x.com");
     await expect(
       withUser(t, "user_bob").mutation(api.invites.decline, { token: "bogus" }),
@@ -118,7 +119,7 @@ describe("invites.decline — auth & access checks", () => {
     // Oude AWS-handler heette `publicDeclineInvite` maar had aws_iam
     // authorizer (zie serverless.yml regel 81). "Public" sloeg op de URL,
     // niet op anonymous toegang. v2 vereist eveneens auth.
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await registerUser(t, "user_alice", "a@x.com");
     const { token } = await withUser(t, "user_alice").mutation(
       api.invites.create,
@@ -144,7 +145,7 @@ describe("invites.decline — idempotency & state guards", () => {
     // caller is gezet.
     //
     // RED tot B's reorder-fix in convex/invites.ts decline-handler.
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await registerUser(t, "user_alice", "a@x.com");
     const { inviteId, token } = await withUser(t, "user_alice").mutation(
       api.invites.create,
@@ -172,7 +173,7 @@ describe("invites.decline — idempotency & state guards", () => {
     // recoverable wanneer een nieuwe invite wordt verstuurd; behandelen als
     // throw zodat frontend een nette error-pagina kan tonen i.p.v. de UI
     // op "succes" te zetten.
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const aliceId = await registerUser(t, "user_alice", "a@x.com");
     await t.run((ctx) =>
       ctx.db.insert("invites", {
@@ -196,7 +197,7 @@ describe("invites.decline — idempotency & state guards", () => {
   it("idempotent: tweede decline doet niets (geen throw)", async () => {
     // [GAP] oude code zou throwen op tweede call (invite was al gedeleted →
     // "invite not found"). v2: idempotent voor betere UX (refresh-safe).
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await registerUser(t, "user_alice", "a@x.com");
     const { inviteId, token } = await withUser(t, "user_alice").mutation(
       api.invites.create,
@@ -219,7 +220,7 @@ describe("invites.decline — idempotency & state guards", () => {
   it("weigert decline van reeds geaccepteerde invite", async () => {
     // [GAP] oude code: invite was na accept verwijderd, dus tweede actie
     // throwde "invite not found". v2 met audit-trail: expliciete guard.
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await registerUser(t, "user_alice", "a@x.com");
     const { token } = await withUser(t, "user_alice").mutation(
       api.invites.create,
@@ -235,7 +236,7 @@ describe("invites.decline — idempotency & state guards", () => {
   it("[audit-8] weigert invite met status='expired' (door bounce gemarkeerd, expiresAt nog in toekomst)", async () => {
     // Bounce-pad zet status="expired" + bouncedAt zonder aan expiresAt te
     // raken. Aparte status-guard nodig naast expiresAt-guard.
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const aliceId = await registerUser(t, "user_alice", "a@x.com");
     await t.run((ctx) =>
       ctx.db.insert("invites", {
@@ -259,7 +260,7 @@ describe("invites.decline — idempotency & state guards", () => {
   it("weigert decline van verlopen invite", async () => {
     // Verwijst naar inviteHelpers.js regel 31-32: getInvite throwt op expiry,
     // dus oude decline-flow throwde ook al voor expired.
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await registerUser(t, "user_alice", "a@x.com");
     const { inviteId, token } = await withUser(t, "user_alice").mutation(
       api.invites.create,
@@ -279,7 +280,7 @@ describe("invites.decline — side effects", () => {
   // Verwijst naar publicDeclineInvite.js regel 30-36: notify-mail naar
   // inviter via SES. v2: gequeue'de action via scheduler.
   it("plant notificatie-email naar inviter na decline", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await registerUser(t, "user_alice", "a@x.com");
     const { token } = await withUser(t, "user_alice").mutation(
       api.invites.create,
@@ -297,7 +298,7 @@ describe("invites.decline — side effects", () => {
   it("[GAP] idempotente decline plant geen tweede email", async () => {
     // Oude code: tweede call throwde sowieso, dus dit was n.v.t.
     // v2 met idempotente decline: voorkom dubbele notify-spam.
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await registerUser(t, "user_alice", "a@x.com");
     const { token } = await withUser(t, "user_alice").mutation(
       api.invites.create,

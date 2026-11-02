@@ -33,6 +33,7 @@ import type { FunctionReference } from "convex/server";
 import { internal } from "../../convex/_generated/api";
 import schema from "../../convex/schema";
 import type { Id } from "../../convex/_generated/dataModel";
+import { modules } from "../_helpers/modules";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const FIXED_NOW = new Date("2026-06-01T04:30:00.000Z").getTime();
@@ -155,7 +156,7 @@ async function seedUser(
 
 describe("integrityCheck — storage-orphans (inv 2a)", () => {
   it("0 orphans (elke blob referenced door een photo) → OK-run, geen email", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const ownerId = await seedUser(t, { photoCount: 1 });
     const storageId = await storeBlob(t);
     await t.run((ctx) =>
@@ -171,7 +172,7 @@ describe("integrityCheck — storage-orphans (inv 2a)", () => {
   });
 
   it("1 ongerefereerde blob → drift, email gequeue'd", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await seedUser(t, { photoCount: 0 });
     await storeBlob(t); // orphan: geen photo verwijst ernaar
 
@@ -183,7 +184,7 @@ describe("integrityCheck — storage-orphans (inv 2a)", () => {
     // referentie naast photos.storageId. Een monitor die alléén photos.storageId
     // checkt zou élke profielfoto als vals-positief orphan flaggen. Deze test
     // faalt bij die onvolledige impl en is daarmee het anker voor de fix.
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const profileBlob = await storeBlob(t);
     await t.run(async (ctx) => {
       await ctx.db.insert("users", {
@@ -206,7 +207,7 @@ describe("integrityCheck — storage-orphans (inv 2a)", () => {
 
 describe("integrityCheck — aggregate-drift: users.photoCount", () => {
   it("photoCount klopt met aantal eigen photos → OK", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const ownerId = await seedUser(t, { photoCount: 2 });
     for (let i = 0; i < 2; i++) {
       const storageId = await storeBlob(t);
@@ -223,7 +224,7 @@ describe("integrityCheck — aggregate-drift: users.photoCount", () => {
   });
 
   it("photoCount=5 maar 0 photos → drift", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await seedUser(t, { photoCount: 5 });
     expect(await runMonitorDelta(t)).toBe(1);
   });
@@ -234,7 +235,7 @@ describe("integrityCheck — aggregate-drift: photos.ratingAverage/ratingCount",
     // Oracle-anker (ab-audit-workflow §anti-pattern): 4.5 is handberekend, niet
     // recompute-vs-recompute. Pint de aggregate-formule tegen een onafhankelijk
     // getal zodat een wrong-but-self-consistent recompute niet stilletjes slaagt.
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const ownerId = await seedUser(t, { photoCount: 1 });
     const storageId = await storeBlob(t);
     const photoId = await t.run((ctx) =>
@@ -261,7 +262,7 @@ describe("integrityCheck — aggregate-drift: photos.ratingAverage/ratingCount",
   });
 
   it("ratingCount=3 maar slechts 2 ratings → drift", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const ownerId = await seedUser(t, { photoCount: 1 });
     const storageId = await storeBlob(t);
     const photoId = await t.run((ctx) =>
@@ -292,7 +293,7 @@ describe("integrityCheck — aggregate-drift: photos.ratingAverage/ratingCount",
     // deze Δ0.5-drift missen. Werkelijke avg van [4,5] = 4.5 (handberekend);
     // stored 4.0 ⇒ |Δ| = 0.5 > 1e-9 ⇒ drift. ratingCount=2 klopt hier wél, dus
     // dit isoleert de ratingAverage-tak.
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const ownerId = await seedUser(t, { photoCount: 1 });
     const storageId = await storeBlob(t);
     const photoId = await t.run((ctx) =>
@@ -319,7 +320,7 @@ describe("integrityCheck — aggregate-drift: photos.ratingAverage/ratingCount",
   });
 
   it("ratingAverage undefined + ratingCount=0 + geen ratings → OK", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const ownerId = await seedUser(t, { photoCount: 1 });
     const storageId = await storeBlob(t);
     await t.run((ctx) =>
@@ -334,7 +335,7 @@ describe("integrityCheck — aggregate-drift: photos.ratingAverage/ratingCount",
   });
 
   it("ratingAverage gezet (3.0) terwijl 0 ratings (count 0) → drift (undefined-grens)", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const ownerId = await seedUser(t, { photoCount: 1 });
     const storageId = await storeBlob(t);
     await t.run((ctx) =>
@@ -352,7 +353,7 @@ describe("integrityCheck — aggregate-drift: photos.ratingAverage/ratingCount",
 
 describe("integrityCheck — aggregate-drift: features.upvoteCount", () => {
   it("upvoteCount klopt met aantal featureUpvotes → OK", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const userId = await seedUser(t, { photoCount: 0 });
     const featureId = await t.run((ctx) =>
       ctx.db.insert("features", {
@@ -376,7 +377,7 @@ describe("integrityCheck — aggregate-drift: features.upvoteCount", () => {
   });
 
   it("upvoteCount=4 maar 0 upvotes → drift", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const userId = await seedUser(t, { photoCount: 0 });
     await t.run((ctx) =>
       ctx.db.insert("features", {
@@ -399,7 +400,7 @@ describe("integrityCheck — aggregate-drift: features.upvoteCount", () => {
 
 describe("integrityCheck — FK-integriteit (inv 2c)", () => {
   it("alle FKs resolven → OK", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const userId = await seedUser(t, { photoCount: 0 });
     const groupId = await t.run((ctx) =>
       ctx.db.insert("groups", {
@@ -429,7 +430,7 @@ describe("integrityCheck — FK-integriteit (inv 2c)", () => {
   it("verplichte FK dangling (albumLastSeen.albumId → verwijderd album) → drift", async () => {
     // Geen storage/aggregate-confound: albums/albumLastSeen zitten in geen enkel
     // aggregaat. Na delete dangelt uitsluitend albumLastSeen.albumId.
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const userId = await seedUser(t, { photoCount: 0 });
     const albumId = await t.run(async (ctx) => {
       const groupId = await ctx.db.insert("groups", {
@@ -457,7 +458,7 @@ describe("integrityCheck — FK-integriteit (inv 2c)", () => {
   });
 
   it("optionele FK ongezet (photos.flaggedBy undefined) → GEEN drift", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const ownerId = await seedUser(t, { photoCount: 1 });
     const storageId = await storeBlob(t);
     await t.run((ctx) =>
@@ -473,7 +474,7 @@ describe("integrityCheck — FK-integriteit (inv 2c)", () => {
   });
 
   it("optionele FK gezet maar dangling (groups.coverPhotoId → verwijderde photo) → drift", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const userId = await seedUser(t, { photoCount: 0 });
     const storageId = await storeBlob(t);
     const photoId = await t.run((ctx) =>
@@ -509,13 +510,13 @@ describe("integrityCheck — FK-integriteit (inv 2c)", () => {
 
 describe("integrityCheck — tolerantie + lege DB", () => {
   it("exact 1 verschil (photoCount=1, 0 photos) → drift", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await seedUser(t, { photoCount: 1 });
     expect(await runMonitorDelta(t)).toBe(1);
   });
 
   it("lege DB → OK-run, geen email, geen throw", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     expect(await runMonitorDelta(t)).toBe(0);
   });
 });
@@ -526,7 +527,7 @@ describe("integrityCheck — tolerantie + lege DB", () => {
 
 describe("integrityCheck — dedup via drift-signature (inv 4)", () => {
   it("identieke persistente drift → één email; gewijzigde drift → nieuwe email", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await seedUser(t, { photoCount: 0 });
 
     // Run A: 1 orphan-blob ⇒ drift-signature X ⇒ email.
@@ -553,7 +554,7 @@ describe("integrityCheck — maandelijkse heartbeat (inv 6)", () => {
     // Lege DB blijft alle runs OK. Contrast d1 (=0) vs d2 (=1) pint de 30d-regel
     // ongeacht of de allereerste run zelf al mailt: een impl die lastHeartbeatAt
     // nooit bijwerkt zou bij d1 al mailen en faalt hier.
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
 
     // T0: baseline-run.
     await runMonitorDelta(t);
@@ -571,7 +572,7 @@ describe("integrityCheck — maandelijkse heartbeat (inv 6)", () => {
   });
 
   it("drift-email reset de heartbeat-klok (geen heartbeat 10d na een drift-mail)", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await seedUser(t, { photoCount: 3 }); // persistente photoCount-drift
 
     // T0: drift ⇒ email (reset heartbeat-klok).
@@ -590,7 +591,7 @@ describe("integrityCheck — maandelijkse heartbeat (inv 6)", () => {
 
 describe("integrityCheck — één samenvattende email per run (inv 8)", () => {
   it("5 drift-rijen in één scan → exact 1 alert-action gequeue'd, 1 Mailjet-send", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await seedUser(t, { photoCount: 0 });
     for (let i = 0; i < 5; i++) await storeBlob(t); // 5 orphan-blobs
 
@@ -609,7 +610,7 @@ describe("integrityCheck — één samenvattende email per run (inv 8)", () => {
 
 describe("integrityCheck — email-bestemming + PII-grens (inv 7 + 9)", () => {
   it("drift-email gaat van INFO_SENDER naar WEBMASTER_EMAILS", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await seedUser(t, { photoCount: 2 }); // drift
 
     const fetchSpy = mockMailjet2xx();
@@ -629,7 +630,7 @@ describe("integrityCheck — email-bestemming + PII-grens (inv 7 + 9)", () => {
     // Inv 9: alleen IDs + counts + table-namen. Seed een user met herkenbare PII
     // die in een drift-rij betrokken is (photoCount-drift). De mail mag de naam/
     // email NIET bevatten, maar wél de record-id (IDs zijn toegestaan).
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const userId = await seedUser(t, {
       photoCount: 3,
       name: "PIISECRETNAME",
@@ -659,7 +660,7 @@ describe("integrityCheck — email-bestemming + PII-grens (inv 7 + 9)", () => {
 
 describe("integrityCheck — read-only + geen self-healing (inv 10 + 2d)", () => {
   it("gedrifte photoCount blijft ná de run ongewijzigd (monitor fixt niet)", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const userId = await seedUser(t, { photoCount: 7 }); // 0 photos → drift
 
     await t.mutation(integrityCheckRef, {});
@@ -669,7 +670,7 @@ describe("integrityCheck — read-only + geen self-healing (inv 10 + 2d)", () =>
   });
 
   it("muteert geen rijen in bron-tabellen (photos/users/ratings counts onveranderd)", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const ownerId = await seedUser(t, { photoCount: 9 }); // drift
     const storageId = await storeBlob(t);
     const photoId = await t.run((ctx) =>
@@ -716,7 +717,7 @@ describe("integrityCheck — recurrence-na-clean re-alert (audit S-1, inv 4)", (
     // De terugkerende identieke drift is conceptueel een nieuw event en moet
     // opnieuw alarmeren. Tegen de OUDE "laatst-gealerte-run"-regel zou run 3
     // gededupt worden (X === X) en delta 0 geven — vandaar RED tot B de fix landt.
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const userId = await seedUser(t, { photoCount: 5 }); // drift X: photoCount 5 vs 0 photos
 
     // Run 1: drift X → alert.
@@ -735,7 +736,7 @@ describe("integrityCheck — recurrence-na-clean re-alert (audit S-1, inv 4)", (
 
   it("persistente identieke drift over opeenvolgende runs blijft één email (strict-consecutive dedupt nog steeds)", async () => {
     // Regressie-guard: de S-1-fix mag de normale storm-onderdrukking niet breken.
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await seedUser(t, { photoCount: 5 });
 
     expect(await runMonitorDelta(t)).toBe(1); // run 1: alert
@@ -752,7 +753,7 @@ describe("integrityCheck — heartbeat-tekst conditioneel op gededupte drift (au
     // door dedup géén drift-mail maar vuurt de heartbeat. Die heartbeat mag NIET
     // "geen nieuwe drift" suggereren — er ís openstaande drift. RED tot B de
     // template conditioneel maakt (driftPresent-tak met marker-zinsnede).
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await seedUser(t, { photoCount: 4 }); // persistente drift
 
     const fetchSpy = mockMailjet2xx();
@@ -780,7 +781,7 @@ describe("integrityCheck — heartbeat-tekst conditioneel op gededupte drift (au
   it("heartbeat op een schone run waarschuwt NIET voor openstaande drift", async () => {
     // Contrast-guard: bij een echt schone run mag de marker-zinsnede er niet zijn
     // (anders wordt elke heartbeat een vals alarm).
-    const t = convexTest(schema); // lege DB → altijd schoon
+    const t = convexTest(schema, modules); // lege DB → altijd schoon
 
     const fetchSpy = mockMailjet2xx();
 

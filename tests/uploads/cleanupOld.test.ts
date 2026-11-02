@@ -9,6 +9,7 @@ import {
 } from "vitest";
 import { internal } from "../../convex/_generated/api";
 import schema from "../../convex/schema";
+import { modules } from "../_helpers/modules";
 
 // File upload werkpakket — Cyclus 1 (audit-cyclus-1 hardening), cleanup-cron RED-phase spec.
 //
@@ -72,7 +73,7 @@ afterEach(() => {
 
 describe("internal.uploads.cleanupOld — completed-status retention (7d)", () => {
   it("verwijdert completed records met createdAt > 7 dagen oud", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
 
     const oldId = await t.run(async (ctx) => {
       const userId = await ctx.db.insert("users", {
@@ -106,7 +107,7 @@ describe("internal.uploads.cleanupOld — completed-status retention (7d)", () =
   });
 
   it("laat completed records jonger dan 7 dagen ongemoeid", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
 
     const youngId = await t.run(async (ctx) => {
       const userId = await ctx.db.insert("users", {
@@ -144,7 +145,7 @@ describe("internal.uploads.cleanupOld — completed-status retention (7d)", () =
     // `now = Date.now()` in zowel seed als impl, met theoretische slop
     // tussen aanroepen. Door vi.setSystemTime is Date.now() in beide
     // gefixeerd op FIXED_NOW — boundary-assertion is exact.
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
 
     const { onBoundaryId, justInsideId } = await t.run(async (ctx) => {
       const userId = await ctx.db.insert("users", {
@@ -198,7 +199,7 @@ describe("internal.uploads.cleanupOld — in_progress retention (30min, audit-12
     // createFromUploadInternal. Stale-cleanup ruimt die op zodat een retry
     // met dezelfde clientUploadId niet geblokkeerd blijft door een phantom
     // in_progress die nooit completed.
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
 
     const staleId = await t.run(async (ctx) => {
       const userId = await ctx.db.insert("users", {
@@ -225,7 +226,7 @@ describe("internal.uploads.cleanupOld — in_progress retention (30min, audit-12
   it("laat in_progress records jonger dan 30 minuten ongemoeid (lopende upload)", async () => {
     // 30s oud is plausibel een lopende HEIC-upload op flaky netwerk; mag
     // niet door de cron worden weggetrokken onder een actieve handler.
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
 
     const liveId = await t.run(async (ctx) => {
       const userId = await ctx.db.insert("users", {
@@ -249,7 +250,7 @@ describe("internal.uploads.cleanupOld — in_progress retention (30min, audit-12
   });
 
   it("boundary in_progress: createdAt === now - 30min wordt opgeruimd (<=), now - 30min + 1 blijft", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
 
     const { onBoundaryId, justInsideId } = await t.run(async (ctx) => {
       const userId = await ctx.db.insert("users", {
@@ -287,7 +288,7 @@ describe("internal.uploads.cleanupOld — mixed status + edge cases", () => {
   it("twee thresholds tegelijk: ruimt stale in_progress + oude completed, behoudt jonge varianten", async () => {
     // Audit-cyclus-1 §5: deze test bewijst dat de cleanupOld-implementatie
     // beide threshold-paden in één run draait (geen tweeDaily-cron-truc).
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
 
     const ids = await t.run(async (ctx) => {
       const userId = await ctx.db.insert("users", {
@@ -359,7 +360,7 @@ describe("internal.uploads.cleanupOld — mixed status + edge cases", () => {
     // Defensieve regression: een naïeve implementatie die `createdAt <= now - 30min`
     // zonder status-filter doet, zou completed records van >30min ten onrechte
     // verwijderen. Status-filtering is essentieel.
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
 
     const sixHourCompletedId = await t.run(async (ctx) => {
       const userId = await ctx.db.insert("users", {
@@ -394,7 +395,7 @@ describe("internal.uploads.cleanupOld — mixed status + edge cases", () => {
   });
 
   it("geen records: no-op (geen throw)", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await expect(
       t.mutation(internal.uploads.cleanupOld, {}),
     ).resolves.not.toThrow();
@@ -410,7 +411,7 @@ describe("internal.uploads.cleanupOld — mixed status + edge cases", () => {
     // van idempotency-mappings. Photos zelf hebben hun eigen lifecycle
     // (FL1, photos.remove, users.deleteSelf cascade). Een idempotency
     // record ouder dan 7d betekent NIET dat de bijbehorende photo weg moet.
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
 
     const photoId = await t.run(async (ctx) => {
       const userId = await ctx.db.insert("users", {

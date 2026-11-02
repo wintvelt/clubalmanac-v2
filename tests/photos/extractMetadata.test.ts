@@ -11,6 +11,7 @@ import { api, internal } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
 import schema from "../../convex/schema";
 import { registerUserWithInvite, withUser } from "../_helpers/auth";
+import { modules } from "../_helpers/modules";
 
 // ---------------------------------------------------------------------------
 // File upload werkpakket — Sessie A test-spec, KERN.
@@ -179,7 +180,7 @@ afterEach(() => {
 
 describe("photos.extractMetadata — guard paths", () => {
   it("photoId verwijst naar verwijderde photo → no-op, geen error", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const aliceId = await registerUserWithInvite(t, "user_alice", "a@x.com");
     const storageId = await t.run(async (ctx) =>
       ctx.storage.store(new Blob(["x"])),
@@ -193,7 +194,7 @@ describe("photos.extractMetadata — guard paths", () => {
   });
 
   it("storage object weg (cleanup-race) → no-op, geen error", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const aliceId = await registerUserWithInvite(t, "user_alice", "a@x.com");
     const storageId = await t.run(async (ctx) =>
       ctx.storage.store(new Blob(["x"])),
@@ -213,7 +214,7 @@ describe("photos.extractMetadata — guard paths", () => {
 
 describe("photos.extractMetadata — no-EXIF graceful", () => {
   it("non-image blob (geen EXIF tags) → record blijft op defaults, geen error", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const aliceId = await registerUserWithInvite(t, "user_alice", "a@x.com");
     const storageId = await t.run(async (ctx) =>
       ctx.storage.store(new Blob(["niet een echte JPEG"])),
@@ -243,7 +244,7 @@ describe("photos.extractMetadata — EXIF parsing (mocked)", () => {
   // Audit-10 §1: DateTimeOriginal heeft prioriteit, val terug op CreateDate.
   // exif-parser geeft beide in Unix-seconds; v2 slaat ms op.
   it("DateTimeOriginal aanwezig → takenAt = DateTimeOriginal * 1000", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const aliceId = await registerUserWithInvite(t, "user_alice", "a@x.com");
     const storageId = await t.run(async (ctx) =>
       ctx.storage.store(new Blob(["x"])),
@@ -262,7 +263,7 @@ describe("photos.extractMetadata — EXIF parsing (mocked)", () => {
   });
 
   it("alleen CreateDate (geen DateTimeOriginal) → takenAt = CreateDate * 1000", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const aliceId = await registerUserWithInvite(t, "user_alice", "a@x.com");
     const storageId = await t.run(async (ctx) =>
       ctx.storage.store(new Blob(["x"])),
@@ -281,7 +282,7 @@ describe("photos.extractMetadata — EXIF parsing (mocked)", () => {
   });
 
   it("beide DateTimeOriginal én CreateDate → DateTimeOriginal wint", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const aliceId = await registerUserWithInvite(t, "user_alice", "a@x.com");
     const storageId = await t.run(async (ctx) =>
       ctx.storage.store(new Blob(["x"])),
@@ -303,7 +304,7 @@ describe("photos.extractMetadata — EXIF parsing (mocked)", () => {
   });
 
   it("noch DateTimeOriginal noch CreateDate → takenAt blijft undefined (geen createdAt fallback)", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const aliceId = await registerUserWithInvite(t, "user_alice", "a@x.com");
     const storageId = await t.run(async (ctx) =>
       ctx.storage.store(new Blob(["x"])),
@@ -319,7 +320,7 @@ describe("photos.extractMetadata — EXIF parsing (mocked)", () => {
   });
 
   it("GPSLatitude + GPSLongitude → latitude+longitude gezet", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const aliceId = await registerUserWithInvite(t, "user_alice", "a@x.com");
     const storageId = await t.run(async (ctx) =>
       ctx.storage.store(new Blob(["x"])),
@@ -354,7 +355,7 @@ describe("photos.extractMetadata — EXIF parsing (mocked)", () => {
   // tags.Orientation (1..8). v2 schema: exifOrientation. Test rondetript
   // alle 8 valide waarden + invalid (0, 9) → undefined.
   it("Orientation tag 1..8 → exifOrientation gezet", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const aliceId = await registerUserWithInvite(t, "user_alice", "a@x.com");
 
     for (const o of [1, 2, 3, 4, 5, 6, 7, 8]) {
@@ -370,7 +371,7 @@ describe("photos.extractMetadata — EXIF parsing (mocked)", () => {
   });
 
   it("Orientation = 0 of >8 (invalid) → exifOrientation blijft undefined", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const aliceId = await registerUserWithInvite(t, "user_alice", "a@x.com");
 
     for (const o of [0, 9, 42, -1]) {
@@ -386,7 +387,7 @@ describe("photos.extractMetadata — EXIF parsing (mocked)", () => {
   });
 
   it("imageSize.width/height → width + height velden gepatched", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const aliceId = await registerUserWithInvite(t, "user_alice", "a@x.com");
     const storageId = await t.run(async (ctx) =>
       ctx.storage.store(new Blob(["x"])),
@@ -413,7 +414,7 @@ describe("photos.extractMetadata — EXIF parsing (mocked)", () => {
 
 describe("photos.extractMetadata — granulaire foutpaden + logging", () => {
   it("exif-parser create() throwt → log + photo blijft op defaults, geen rethrow", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const aliceId = await registerUserWithInvite(t, "user_alice", "a@x.com");
     const storageId = await t.run(async (ctx) =>
       ctx.storage.store(new Blob(["corrupt"])),
@@ -439,7 +440,7 @@ describe("photos.extractMetadata — granulaire foutpaden + logging", () => {
   });
 
   it("exif-parser parse() throwt → log + photo blijft op defaults, geen rethrow", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const aliceId = await registerUserWithInvite(t, "user_alice", "a@x.com");
     const storageId = await t.run(async (ctx) =>
       ctx.storage.store(new Blob(["corrupt"])),
@@ -461,7 +462,7 @@ describe("photos.extractMetadata — granulaire foutpaden + logging", () => {
   });
 
   it("Photon down (fetch throws) → log + photo behoudt lat/lon, locationLabel undefined", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const aliceId = await registerUserWithInvite(t, "user_alice", "a@x.com");
     const storageId = await t.run(async (ctx) =>
       ctx.storage.store(new Blob(["x"])),
@@ -516,7 +517,7 @@ describe("photos.extractMetadata — HEIC/HEIF unsupported brands", () => {
   it.each(HEIF_BRANDS)(
     "brand=%s → graceful no-op + log unsupported, geen EXIF-parse",
     async (brand) => {
-      const t = convexTest(schema);
+      const t = convexTest(schema, modules);
       const aliceId = await registerUserWithInvite(t, "user_alice", "a@x.com");
       const header = new Uint8Array([
         0x00,
@@ -577,7 +578,7 @@ describe("photos.extractMetadata — HEIC/HEIF unsupported brands", () => {
 
 describe("photos.extractMetadata — Photon geocoding (graceful)", () => {
   it("geen GPS coords → action skipt geocoding (geen Photon-call)", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const aliceId = await registerUserWithInvite(t, "user_alice", "a@x.com");
     const storageId = await t.run(async (ctx) =>
       ctx.storage.store(new Blob(["x"])),
@@ -600,7 +601,7 @@ describe("photos.extractMetadata — Photon geocoding (graceful)", () => {
   });
 
   it("Photon 200 OK → locationLabel multi-deel `${street}, ${city}, ${country}`", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const aliceId = await registerUserWithInvite(t, "user_alice", "a@x.com");
     const storageId = await t.run(async (ctx) =>
       ctx.storage.store(new Blob(["x"])),
@@ -650,7 +651,7 @@ describe("photos.extractMetadata — Photon geocoding (graceful)", () => {
     // OSM-data heeft soms `name` (POI: museum, kerk, gebouw) waar `street`
     // ontbreekt. Voor Clubalmanac context (foto's bij bezienswaardigheden)
     // is name een waardevolle fallback.
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const aliceId = await registerUserWithInvite(t, "user_alice", "a@x.com");
     const storageId = await t.run(async (ctx) =>
       ctx.storage.store(new Blob(["x"])),
@@ -689,7 +690,7 @@ describe("photos.extractMetadata — Photon geocoding (graceful)", () => {
   // zonder waarde) — Rijksmuseum-pad faalt dan stilletjes naar "Amsterdam,
   // Nederland". RED tot B fixt het bias-gat.
   it("Photon partial (street: '' lege string, wel name) → label valt terug op name (POI-fallback ook bij empty)", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const aliceId = await registerUserWithInvite(t, "user_alice", "a@x.com");
     const storageId = await t.run(async (ctx) =>
       ctx.storage.store(new Blob(["x"])),
@@ -723,7 +724,7 @@ describe("photos.extractMetadata — Photon geocoding (graceful)", () => {
   });
 
   it("Photon partial (geen street, geen name) → label valt terug op `${city}, ${country}`", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const aliceId = await registerUserWithInvite(t, "user_alice", "a@x.com");
     const storageId = await t.run(async (ctx) =>
       ctx.storage.store(new Blob(["x"])),
@@ -755,7 +756,7 @@ describe("photos.extractMetadata — Photon geocoding (graceful)", () => {
   });
 
   it("Photon partial (alleen country) → label = country", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const aliceId = await registerUserWithInvite(t, "user_alice", "a@x.com");
     const storageId = await t.run(async (ctx) =>
       ctx.storage.store(new Blob(["x"])),
@@ -782,7 +783,7 @@ describe("photos.extractMetadata — Photon geocoding (graceful)", () => {
   });
 
   it("Photon empty features array → locationLabel undefined", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const aliceId = await registerUserWithInvite(t, "user_alice", "a@x.com");
     const storageId = await t.run(async (ctx) =>
       ctx.storage.store(new Blob(["x"])),
@@ -809,7 +810,7 @@ describe("photos.extractMetadata — Photon geocoding (graceful)", () => {
   });
 
   it("Photon timeout (AbortController) → graceful, lat/lon blijven, locationLabel undefined", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const aliceId = await registerUserWithInvite(t, "user_alice", "a@x.com");
     const storageId = await t.run(async (ctx) =>
       ctx.storage.store(new Blob(["x"])),
@@ -839,7 +840,7 @@ describe("photos.extractMetadata — Photon geocoding (graceful)", () => {
   });
 
   it("Photon 5xx → graceful, locationLabel undefined", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const aliceId = await registerUserWithInvite(t, "user_alice", "a@x.com");
     const storageId = await t.run(async (ctx) =>
       ctx.storage.store(new Blob(["x"])),
@@ -876,7 +877,7 @@ describe("photos.reverseGeocode (action helper)", () => {
   // cyclus 1 — alleen interne URL/parsing wijzigt.
 
   it("happy path → multi-deel string label", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue(
@@ -905,7 +906,7 @@ describe("photos.reverseGeocode (action helper)", () => {
     // (Georgisch schrift), Nepal (Devanagari), etc. krijgen we Latijns schrift
     // ipv onleesbare native script. NL-photos: minor cosmetisch verschil
     // ("Netherlands" ipv "Nederland", street/city-namen blijven gelijk).
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const fetchSpy = vi.fn().mockResolvedValue(
       new Response(
         JSON.stringify(fakePhotonResponse({ city: "Amsterdam" })),
@@ -934,7 +935,7 @@ describe("photos.reverseGeocode (action helper)", () => {
   });
 
   it("empty features → null", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue(
@@ -953,7 +954,7 @@ describe("photos.reverseGeocode (action helper)", () => {
   });
 
   it("timeout → null (geen throw)", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     vi.stubGlobal(
       "fetch",
       vi.fn().mockImplementation(() =>
@@ -971,7 +972,7 @@ describe("photos.reverseGeocode (action helper)", () => {
   });
 
   it("4xx → null (geen throw)", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue(new Response("nope", { status: 400 })),
@@ -985,7 +986,7 @@ describe("photos.reverseGeocode (action helper)", () => {
   });
 
   it("5xx → null (geen throw)", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue(new Response("down", { status: 503 })),

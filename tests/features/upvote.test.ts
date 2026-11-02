@@ -2,6 +2,7 @@ import { convexTest } from "convex-test";
 import { describe, expect, it } from "vitest";
 import { api , internal } from "../../convex/_generated/api";
 import schema from "../../convex/schema";
+import { modules } from "../_helpers/modules";
 
 const ISSUER = "https://picked-quail-97.clerk.accounts.dev";
 
@@ -40,7 +41,7 @@ async function setupFeature(t: ReturnType<typeof convexTest>) {
 
 describe("features.upvote", () => {
   it("verhoogt upvoteCount en maakt upvote-record", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const id = await setupFeature(t);
     await registerUser(t, "user_bob", "b@x.com");
 
@@ -61,7 +62,7 @@ describe("features.upvote", () => {
   });
 
   it("is idempotent: dubbel upvoten verandert niets", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const id = await setupFeature(t);
     await registerUser(t, "user_bob", "b@x.com");
 
@@ -77,7 +78,7 @@ describe("features.upvote", () => {
   });
 
   it("meerdere users dragen elk 1 upvote bij", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const id = await setupFeature(t);
     await registerUser(t, "user_bob", "b@x.com");
     await registerUser(t, "user_carol", "c@x.com");
@@ -94,7 +95,7 @@ describe("features.upvote", () => {
   });
 
   it("weigert zonder auth", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const id = await setupFeature(t);
     await expect(
       t.mutation(api.features.upvote, { featureId: id }),
@@ -102,7 +103,7 @@ describe("features.upvote", () => {
   });
 
   it("weigert wanneer feature niet bestaat", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const id = await setupFeature(t);
     await registerUser(t, "user_bob", "b@x.com");
     await t.run((ctx) => ctx.db.delete(id));
@@ -115,7 +116,7 @@ describe("features.upvote", () => {
 
 describe("features.removeUpvote", () => {
   it("verlaagt upvoteCount en verwijdert upvote-record", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const id = await setupFeature(t);
     await registerUser(t, "user_bob", "b@x.com");
 
@@ -139,7 +140,7 @@ describe("features.removeUpvote", () => {
   });
 
   it("idempotent: removeUpvote zonder eerdere upvote doet niets", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const id = await setupFeature(t);
     await registerUser(t, "user_bob", "b@x.com");
 

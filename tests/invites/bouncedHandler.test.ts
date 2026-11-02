@@ -26,6 +26,7 @@ import { convexTest } from "convex-test";
 import { describe, expect, it } from "vitest";
 import { api, internal } from "../../convex/_generated/api";
 import schema from "../../convex/schema";
+import { modules } from "../_helpers/modules";
 
 const ISSUER = "https://picked-quail-97.clerk.accounts.dev";
 
@@ -55,7 +56,7 @@ async function registerUser(
 
 describe("invites.handleBounce — happy path", () => {
   it("markeert pending invite voor email als expired + zet bouncedAt", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await registerUser(t, "user_alice", "a@x.com");
     const { inviteId } = await withUser(t, "user_alice").mutation(
       api.invites.create,
@@ -78,7 +79,7 @@ describe("invites.handleBounce — happy path", () => {
   });
 
   it("markeert ALLE pending invites voor zelfde email (multi-inviter scenario)", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await registerUser(t, "user_alice", "a@x.com");
     await registerUser(t, "user_dan", "d@x.com");
     const groupA = await withUser(t, "user_alice").mutation(api.groups.create, {
@@ -113,7 +114,7 @@ describe("invites.handleBounce — happy path", () => {
   });
 
   it("plant notify-email naar inviter per gebouncde invite", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await registerUser(t, "user_alice", "a@x.com");
     await withUser(t, "user_alice").mutation(api.invites.create, {
       email: "bouncer@x.com",
@@ -137,7 +138,7 @@ describe("invites.handleBounce — happy path", () => {
 
 describe("invites.handleBounce — guards & filtering", () => {
   it("laat reeds accepted invite ongewijzigd", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await registerUser(t, "user_alice", "a@x.com");
     const { inviteId, token } = await withUser(t, "user_alice").mutation(
       api.invites.create,
@@ -157,7 +158,7 @@ describe("invites.handleBounce — guards & filtering", () => {
   });
 
   it("laat reeds declined invite ongewijzigd", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await registerUser(t, "user_alice", "a@x.com");
     const { inviteId, token } = await withUser(t, "user_alice").mutation(
       api.invites.create,
@@ -182,7 +183,7 @@ describe("invites.handleBounce — guards & filtering", () => {
     // we 'm via findInvitesByEmail + status==="pending" filter, wordt
     // status gepatcht naar "expired" en bouncedAt gezet. Pinnen huidige
     // gedrag: handleBounce kijkt niet naar expiresAt, alleen naar status.
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const aliceId = await registerUser(t, "user_alice", "a@x.com");
     const inviteId = await t.run((ctx) =>
       ctx.db.insert("invites", {
@@ -205,7 +206,7 @@ describe("invites.handleBounce — guards & filtering", () => {
   });
 
   it("onbekende email: no-op (geen throw, matched=0)", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const result = await t.mutation(internal.invites.handleBounce, {
       email: "nobody@x.com",
       providerEventId: "evt_nobody",
@@ -214,7 +215,7 @@ describe("invites.handleBounce — guards & filtering", () => {
   });
 
   it("case-insensitive email match (consistent met normalizeEmail)", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await registerUser(t, "user_alice", "a@x.com");
     const { inviteId } = await withUser(t, "user_alice").mutation(
       api.invites.create,
@@ -239,7 +240,7 @@ describe("invites.handleBounce — idempotency (dedup op providerEventId)", () =
   it("tweede call met zelfde providerEventId is no-op", async () => {
     // Email-providers retry'en webhooks bij non-2xx. Dedup voorkomt dubbele
     // notify-mails en dubbele state-transitions.
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await registerUser(t, "user_alice", "a@x.com");
     const { inviteId } = await withUser(t, "user_alice").mutation(
       api.invites.create,
@@ -280,7 +281,7 @@ describe("invites.handleBounce — idempotency (dedup op providerEventId)", () =
   });
 
   it("nieuwe bounce-event op zelfde email (andere providerEventId, latere invite) gaat wel door", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await registerUser(t, "user_alice", "a@x.com");
     await withUser(t, "user_alice").mutation(api.invites.create, {
       email: "bouncer@x.com",
@@ -320,7 +321,7 @@ describe("invites.handleBounce — interactie met onboarding", () => {
     // sluiten zodat een typo'd email niet alsnog lid wordt.
     // WP23: voorheen via de publieke hasPendingForEmail, die niet meer
     // publiek is.
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await registerUser(t, "user_alice", "a@x.com");
     const groupId = await withUser(t, "user_alice").mutation(
       api.groups.create,

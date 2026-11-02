@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { api , internal } from "../../convex/_generated/api";
 import schema from "../../convex/schema";
 import type { Id } from "../../convex/_generated/dataModel";
+import { modules } from "../_helpers/modules";
 
 // Fase 2 — Albums domein: CRUD + album-photo relaties.
 
@@ -73,7 +74,7 @@ async function insertPhoto(
 
 describe("albums.create", () => {
   it("weigert zonder auth", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const { groupId } = await setupGroupWithMembers(t);
     await expect(
       t.mutation(api.albums.create, { groupId, name: "X" }),
@@ -81,7 +82,7 @@ describe("albums.create", () => {
   });
 
   it("weigert wanneer caller geen lid van groep is", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const { groupId } = await setupGroupWithMembers(t);
     await registerUser(t, "user_outsider", "out@x.com");
     await expect(
@@ -93,7 +94,7 @@ describe("albums.create", () => {
   });
 
   it("lid kan album maken; createdBy = caller", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const { bobId, groupId } = await setupGroupWithMembers(t);
 
     const albumId = await withUser(t, "user_bob").mutation(api.albums.create, {
@@ -113,7 +114,7 @@ describe("albums.create", () => {
 
 describe("albums.getById", () => {
   it("lid kan album opvragen", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const { groupId } = await setupGroupWithMembers(t);
     const albumId = await withUser(t, "user_bob").mutation(api.albums.create, {
       groupId,
@@ -126,7 +127,7 @@ describe("albums.getById", () => {
   });
 
   it("niet-lid wordt geweigerd", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const { groupId } = await setupGroupWithMembers(t);
     const albumId = await withUser(t, "user_bob").mutation(api.albums.create, {
       groupId,
@@ -141,7 +142,7 @@ describe("albums.getById", () => {
 
 describe("albums.listByGroup", () => {
   it("lid ziet alle albums in groep", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const { groupId } = await setupGroupWithMembers(t);
     await withUser(t, "user_bob").mutation(api.albums.create, {
       groupId,
@@ -161,7 +162,7 @@ describe("albums.listByGroup", () => {
   });
 
   it("niet-lid wordt geweigerd", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const { groupId } = await setupGroupWithMembers(t);
     await registerUser(t, "user_outsider", "out@x.com");
     await expect(
@@ -172,7 +173,7 @@ describe("albums.listByGroup", () => {
 
 describe("albums.update", () => {
   it("creator (member) kan zijn album updaten", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const { groupId } = await setupGroupWithMembers(t);
     const albumId = await withUser(t, "user_bob").mutation(api.albums.create, {
       groupId,
@@ -191,7 +192,7 @@ describe("albums.update", () => {
   });
 
   it("groep-admin kan album updaten ook al is hij niet creator", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const { groupId } = await setupGroupWithMembers(t);
     const albumId = await withUser(t, "user_bob").mutation(api.albums.create, {
       groupId,
@@ -208,7 +209,7 @@ describe("albums.update", () => {
   });
 
   it("ander member (niet creator, niet admin) kan niet updaten", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const { groupId } = await setupGroupWithMembers(t);
     const albumId = await withUser(t, "user_bob").mutation(api.albums.create, {
       groupId,
@@ -224,7 +225,7 @@ describe("albums.update", () => {
   });
 
   it("coverPhotoId kan gezet worden", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const { bobId, groupId } = await setupGroupWithMembers(t);
     const albumId = await withUser(t, "user_bob").mutation(api.albums.create, {
       groupId,
@@ -249,7 +250,7 @@ describe("albums.update", () => {
 
 describe("albums.remove", () => {
   it("creator kan album deleten", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const { groupId } = await setupGroupWithMembers(t);
     const albumId = await withUser(t, "user_bob").mutation(api.albums.create, {
       groupId,
@@ -263,7 +264,7 @@ describe("albums.remove", () => {
   });
 
   it("group-admin kan elk album in zijn groep deleten", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const { groupId } = await setupGroupWithMembers(t);
     const albumId = await withUser(t, "user_bob").mutation(api.albums.create, {
       groupId,
@@ -277,7 +278,7 @@ describe("albums.remove", () => {
   });
 
   it("ander member kan niet deleten", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const { groupId } = await setupGroupWithMembers(t);
     const albumId = await withUser(t, "user_bob").mutation(api.albums.create, {
       groupId,
@@ -290,7 +291,7 @@ describe("albums.remove", () => {
   });
 
   it("cascade albumPhotos", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const { bobId, groupId } = await setupGroupWithMembers(t);
     const albumId = await withUser(t, "user_bob").mutation(api.albums.create, {
       groupId,
@@ -320,7 +321,7 @@ describe("albums.remove", () => {
 
 describe("albums.addPhoto", () => {
   it("lid kan photo aan album toevoegen", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const { bobId, groupId } = await setupGroupWithMembers(t);
     const albumId = await withUser(t, "user_bob").mutation(api.albums.create, {
       groupId,
@@ -346,7 +347,7 @@ describe("albums.addPhoto", () => {
   });
 
   it("niet-lid wordt geweigerd", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const { bobId, groupId } = await setupGroupWithMembers(t);
     const albumId = await withUser(t, "user_bob").mutation(api.albums.create, {
       groupId,
@@ -364,7 +365,7 @@ describe("albums.addPhoto", () => {
   });
 
   it("weigert dubbel toevoegen (zelfde photo)", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const { bobId, groupId } = await setupGroupWithMembers(t);
     const albumId = await withUser(t, "user_bob").mutation(api.albums.create, {
       groupId,
@@ -385,7 +386,7 @@ describe("albums.addPhoto", () => {
   });
 
   it("weigert photo dat niet bestaat", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const { bobId, groupId } = await setupGroupWithMembers(t);
     const albumId = await withUser(t, "user_bob").mutation(api.albums.create, {
       groupId,
@@ -406,7 +407,7 @@ describe("albums.addPhoto", () => {
 
 describe("albums.removePhoto", () => {
   it("addedBy kan zijn eigen toevoeging verwijderen", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const { bobId, groupId } = await setupGroupWithMembers(t);
     const albumId = await withUser(t, "user_bob").mutation(api.albums.create, {
       groupId,
@@ -433,7 +434,7 @@ describe("albums.removePhoto", () => {
   });
 
   it("group-admin kan elke albumPhoto verwijderen", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const { bobId, groupId } = await setupGroupWithMembers(t);
     const albumId = await withUser(t, "user_bob").mutation(api.albums.create, {
       groupId,
@@ -460,7 +461,7 @@ describe("albums.removePhoto", () => {
   });
 
   it("ander member (niet addedBy, niet admin) kan niet verwijderen", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const { bobId, groupId } = await setupGroupWithMembers(t);
     const albumId = await withUser(t, "user_bob").mutation(api.albums.create, {
       groupId,
@@ -483,7 +484,7 @@ describe("albums.removePhoto", () => {
 
 describe("albums.listPhotos", () => {
   it("lid ziet album photos met photo data", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const { bobId, groupId } = await setupGroupWithMembers(t);
     const albumId = await withUser(t, "user_bob").mutation(api.albums.create, {
       groupId,
@@ -504,7 +505,7 @@ describe("albums.listPhotos", () => {
   });
 
   it("niet-lid wordt geweigerd", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const { bobId, groupId } = await setupGroupWithMembers(t);
     const albumId = await withUser(t, "user_bob").mutation(api.albums.create, {
       groupId,

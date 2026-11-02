@@ -26,6 +26,7 @@ import {
   signSvixHeaders,
   TEST_WEBHOOK_SECRET,
 } from "../_helpers/svix";
+import { modules } from "../_helpers/modules";
 
 beforeEach(() => {
   process.env.CLERK_WEBHOOK_SECRET = TEST_WEBHOOK_SECRET;
@@ -46,7 +47,7 @@ async function post(t: ReturnType<typeof convexTest>, body: string) {
 
 describe("/clerk-webhook — event-type filter", () => {
   it("session.created met valid user + pending invite → users-row + accept + membership", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     // Inviter-user voor de invite-creator.
     await registerUserWithInvite(t, "user_inviter", "inviter@x.com", "Inviter");
     const groupId = await withUser(t, "user_inviter").mutation(
@@ -92,7 +93,7 @@ describe("/clerk-webhook — event-type filter", () => {
   });
 
   it("user.created event → 200 no-op (geen users-row)", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const body = eventPayload({
       type: "user.created",
       subject: "user_alice",
@@ -106,7 +107,7 @@ describe("/clerk-webhook — event-type filter", () => {
   });
 
   it("user.updated event → 200 no-op", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const body = eventPayload({
       type: "user.updated",
       subject: "user_alice",
@@ -119,7 +120,7 @@ describe("/clerk-webhook — event-type filter", () => {
   });
 
   it("user.deleted event → 200 no-op (bewust uit scope per spec)", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const body = eventPayload({
       type: "user.deleted",
       subject: "user_alice",
@@ -132,7 +133,7 @@ describe("/clerk-webhook — event-type filter", () => {
   });
 
   it("session.ended event → 200 no-op", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const body = eventPayload({
       type: "session.ended",
       subject: "user_alice",
@@ -147,7 +148,7 @@ describe("/clerk-webhook — event-type filter", () => {
 
 describe("/clerk-webhook — graceful no-op cases (200)", () => {
   it("data.user === null → 200 no-op, geen users-row", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const body = sessionCreatedNullUserPayload("user_alice");
     const res = await post(t, body);
     expect(res.status).toBe(200);
@@ -156,7 +157,7 @@ describe("/clerk-webhook — graceful no-op cases (200)", () => {
   });
 
   it("onverified primary email → 200 no-op (geen ownership-bewijs)", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const body = sessionCreatedPayload({
       subject: "user_alice",
       email: "alice@x.com",
@@ -169,7 +170,7 @@ describe("/clerk-webhook — graceful no-op cases (200)", () => {
   });
 
   it("lege email_addresses array → 200 no-op", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const body = sessionCreatedPayload({
       subject: "user_alice",
       email: "alice@x.com",
@@ -182,7 +183,7 @@ describe("/clerk-webhook — graceful no-op cases (200)", () => {
   });
 
   it("primary_email_address_id wijst niet naar bestaand address → 200 no-op", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const body = sessionCreatedPayload({
       subject: "user_alice",
       email: "alice@x.com",
@@ -205,7 +206,7 @@ describe("/clerk-webhook — email-resolutie discipline", () => {
     // beide in de payload; alleen de primary (per Clerk-user-instelling)
     // mag geclaim'd worden. Anders zou backup-email een invite kunnen
     // accepteren die niet voor 'm bedoeld is.
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await registerUserWithInvite(t, "user_inviter", "inviter@x.com");
     const groupId = await withUser(t, "user_inviter").mutation(
       api.groups.create,
@@ -249,7 +250,7 @@ describe("/clerk-webhook — email-resolutie discipline", () => {
   });
 
   it("mixed-case email in payload → matcht lowercase pending invite", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await registerUserWithInvite(t, "user_inviter", "inviter@x.com");
     const groupId = await withUser(t, "user_inviter").mutation(
       api.groups.create,

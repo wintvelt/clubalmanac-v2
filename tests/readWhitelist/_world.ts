@@ -2,6 +2,7 @@ import { convexTest } from "convex-test";
 import { afterEach, beforeEach, expect } from "vitest";
 import schema from "../../convex/schema";
 import type { Id, TableNames } from "../../convex/_generated/dataModel";
+import { modules } from "../_helpers/modules";
 
 // WP23 — gedeelde seed-wereld + helpers voor de read-whitelist-tests.
 //
@@ -507,5 +508,5 @@ export function expectNoUserSecrets(
 }
 
 export function newT(): T {
-  return convexTest(schema);
+  return convexTest(schema, modules);
 }

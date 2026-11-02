@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { api , internal } from "../../convex/_generated/api";
 import schema from "../../convex/schema";
 import { shareInGroup } from "../_helpers/access";
+import { modules } from "../_helpers/modules";
 
 // FL2 — photos.appeal mutation. Bron: oude AWS handler
 // blob-images-api-photos/handlersPhoto/flagPhotoAppeal.js (regel 8-27):
@@ -50,7 +51,7 @@ async function flaggedPhotoBy(
   flaggerSubject: string,
 ) {
   const storageId = await uploadStorage(t);
-  const photoId = await withUser(t, ownerSubject).mutation(api.photos.create, {
+  const photoId = await withUser(t, ownerSubject).mutation(internal.photos.create, {
     storageId,
   });
   // WP24: melden vereist foto-toegang; de melder deelt een groep met de foto.
@@ -65,7 +66,7 @@ async function flaggedPhotoBy(
 describe("photos.appeal — owner only", () => {
   // flagPhotoAppeal.js regel 14: throw 'photo is not yours'
   it("non-owner kan niet appealen", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await registerUser(t, "user_alice", "a@x.com");
     await registerUser(t, "user_bob", "b@x.com");
     await registerUser(t, "user_carol", "c@x.com");
@@ -78,7 +79,7 @@ describe("photos.appeal — owner only", () => {
   });
 
   it("owner kan appealen, zet flaggedAppealDate en clear flaggedDeleteDate", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await registerUser(t, "user_alice", "a@x.com");
     await registerUser(t, "user_bob", "b@x.com");
 
@@ -102,11 +103,11 @@ describe("photos.appeal — owner only", () => {
 describe("photos.appeal — guards", () => {
   // flagPhotoAppeal.js regel 15: throw 'photo not flagged'
   it("appeal op niet-geflagde foto gooit error", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await registerUser(t, "user_alice", "a@x.com");
     const storageId = await uploadStorage(t);
     const photoId = await withUser(t, "user_alice").mutation(
-      api.photos.create,
+      internal.photos.create,
       { storageId },
     );
 
@@ -120,7 +121,7 @@ describe("photos.appeal — guards", () => {
   // owner countdown oneindig pauzeren). Implementeer als guard op
   // flaggedAppealDenyDate.
   it("[GAP] appeal niet mogelijk als al gedecided (denied)", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await registerUser(t, "user_alice", "a@x.com");
     await registerUser(t, "user_bob", "b@x.com");
     const photoId = await flaggedPhotoBy(t, "user_alice", "user_bob");
@@ -143,7 +144,7 @@ describe("photos.appeal — guards", () => {
 describe("photos.appeal — idempotent", () => {
   // flagPhotoAppeal.js regel 18: if (photo.flaggedAppealDate) return cleanRecord(photo)
   it("tweede appeal-call wijzigt flaggedAppealDate niet", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await registerUser(t, "user_alice", "a@x.com");
     await registerUser(t, "user_bob", "b@x.com");
 

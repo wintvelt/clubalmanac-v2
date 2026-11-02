@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { api } from "../../convex/_generated/api";
 import schema from "../../convex/schema";
 import { registerUser } from "../_helpers/auth";
+import { modules } from "../_helpers/modules";
 
 // Visit tracking: client roept users.recordVisit() bij AppState=active.
 // Server doet GEEN throttling — dat is client-side (max 1x/min). Server
@@ -21,7 +22,7 @@ function withUser(t: ReturnType<typeof convexTest>, subject: string) {
 
 describe("users.recordVisit", () => {
   it("patcht lastVisitAt naar Date.now() voor authenticated user", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const as = withUser(t, "user_alice");
     const id = await registerUser(t, "user_alice", "alice@x.com");
 
@@ -35,14 +36,14 @@ describe("users.recordVisit", () => {
   });
 
   it("weigert zonder auth", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await expect(t.mutation(api.users.recordVisit, {})).rejects.toThrow();
   });
 
   it("accepteert elke call — server throttled niet", async () => {
     // Throttling is client-side verantwoordelijkheid. Server moet elke call
     // accepteren en lastVisitAt overschrijven, ook als ze snel na elkaar komen.
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const as = withUser(t, "user_alice");
     const id = await registerUser(t, "user_alice", "alice@x.com");
 

@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { api , internal } from "../../convex/_generated/api";
 import schema from "../../convex/schema";
 import { shareInGroup } from "../_helpers/access";
+import { modules } from "../_helpers/modules";
 
 // FL2 — photos.flag mutation. Bron: oude AWS handler
 // blob-images-api-photos/handlersPhoto/flagPhoto.js (regel 10-29):
@@ -59,11 +60,11 @@ async function uploadStorage(t: ReturnType<typeof convexTest>) {
 describe("photos.flag — non-owner only", () => {
   // flagPhoto.js regel 16: throw 'cannot flag your own photos'
   it("eigen foto flaggen gooit error", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await registerUser(t, "user_alice", "a@x.com");
     const storageId = await uploadStorage(t);
     const photoId = await withUser(t, "user_alice").mutation(
-      api.photos.create,
+      internal.photos.create,
       { storageId },
     );
 
@@ -77,12 +78,12 @@ describe("photos.flag — non-owner only", () => {
   });
 
   it("foto van andere user flaggen lukt en zet alle flag-velden", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const aliceId = await registerUser(t, "user_alice", "a@x.com");
     const bobId = await registerUser(t, "user_bob", "b@x.com");
     const storageId = await uploadStorage(t);
     const photoId = await withUser(t, "user_alice").mutation(
-      api.photos.create,
+      internal.photos.create,
       { storageId },
     );
     await shareInGroup(t, photoId, [bobId]);
@@ -105,12 +106,12 @@ describe("photos.flag — non-owner only", () => {
   });
 
   it("flagReason wordt opgeslagen wanneer meegegeven", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await registerUser(t, "user_alice", "a@x.com");
     const bobId = await registerUser(t, "user_bob", "b@x.com");
     const storageId = await uploadStorage(t);
     const photoId = await withUser(t, "user_alice").mutation(
-      api.photos.create,
+      internal.photos.create,
       { storageId },
     );
     await shareInGroup(t, photoId, [bobId]);
@@ -125,12 +126,12 @@ describe("photos.flag — non-owner only", () => {
   });
 
   it("flagReason is optioneel", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await registerUser(t, "user_alice", "a@x.com");
     const bobId = await registerUser(t, "user_bob", "b@x.com");
     const storageId = await uploadStorage(t);
     const photoId = await withUser(t, "user_alice").mutation(
-      api.photos.create,
+      internal.photos.create,
       { storageId },
     );
     await shareInGroup(t, photoId, [bobId]);
@@ -144,14 +145,14 @@ describe("photos.flag — non-owner only", () => {
 describe("photos.flag — idempotent", () => {
   // flagPhoto.js regel 19: if (photo.flaggedDate) return cleanRecord(photo)
   it("tweede flag-call vervangt eerste flagger of timestamps niet", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await registerUser(t, "user_alice", "a@x.com");
     const bobId = await registerUser(t, "user_bob", "b@x.com");
     const carolId = await registerUser(t, "user_carol", "c@x.com");
 
     const storageId = await uploadStorage(t);
     const photoId = await withUser(t, "user_alice").mutation(
-      api.photos.create,
+      internal.photos.create,
       { storageId },
     );
     await shareInGroup(t, photoId, [bobId, carolId]);
@@ -176,7 +177,7 @@ describe("photos.flag — idempotent", () => {
   it("flag na webmaster approve werkt — alle velden cleared, opnieuw flagbaar", async () => {
     process.env.WEBMASTER_EMAILS = WEBMASTER_EMAIL;
     try {
-      const t = convexTest(schema);
+      const t = convexTest(schema, modules);
       await registerUser(t, "user_alice", "a@x.com");
       const bobId = await registerUser(t, "user_bob", "b@x.com");
       const carolId = await registerUser(t, "user_carol", "c@x.com");
@@ -184,7 +185,7 @@ describe("photos.flag — idempotent", () => {
 
       const storageId = await uploadStorage(t);
       const photoId = await withUser(t, "user_alice").mutation(
-        api.photos.create,
+        internal.photos.create,
         { storageId },
       );
       await shareInGroup(t, photoId, [bobId, carolId]);
@@ -228,7 +229,7 @@ describe("photos.flag — idempotent", () => {
   });
 
   it("photo niet gevonden gooit error", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await registerUser(t, "user_bob", "b@x.com");
 
     // [GAP] oude code throwde 'photo not found'; we testen alleen dat het throwt.
@@ -238,7 +239,7 @@ describe("photos.flag — idempotent", () => {
     void aliceId;
     const storageId = await uploadStorage(t);
     const photoId = await withUser(t, "user_alice").mutation(
-      api.photos.create,
+      internal.photos.create,
       { storageId },
     );
     await withUser(t, "user_alice").mutation(api.photos.remove, { photoId });

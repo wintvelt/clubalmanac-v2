@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import { api, internal } from "../../convex/_generated/api";
 import schema from "../../convex/schema";
 import { shareInGroup } from "../_helpers/access";
+import { modules } from "../_helpers/modules";
 
 // Cascade matrix rows P3, P4, P5, P7 — cat-3 cascade deletes (en
 // selectief patches) vanuit photos.remove. Plus storage cleanup via
@@ -40,7 +41,7 @@ async function uploadStorage(t: ReturnType<typeof convexTest>) {
 
 describe("P3: photos.remove cascade albumPhotos", () => {
   it("verwijdert albumPhotos die naar deze photo verwijzen", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await registerUser(t, "user_admin", "admin@x.com");
     const groupId = await withUser(t, "user_admin").mutation(
       api.groups.create,
@@ -53,7 +54,7 @@ describe("P3: photos.remove cascade albumPhotos", () => {
 
     const storageId = await uploadStorage(t);
     const photoId = await withUser(t, "user_admin").mutation(
-      api.photos.create,
+      internal.photos.create,
       { storageId },
     );
     await withUser(t, "user_admin").mutation(api.albums.addPhoto, {
@@ -73,7 +74,7 @@ describe("P3: photos.remove cascade albumPhotos", () => {
   });
 
   it("cascadet over meerdere albums in meerdere groepen", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await registerUser(t, "user_admin", "admin@x.com");
     const groupA = await withUser(t, "user_admin").mutation(
       api.groups.create,
@@ -98,7 +99,7 @@ describe("P3: photos.remove cascade albumPhotos", () => {
 
     const storageId = await uploadStorage(t);
     const photoId = await withUser(t, "user_admin").mutation(
-      api.photos.create,
+      internal.photos.create,
       { storageId },
     );
 
@@ -124,7 +125,7 @@ describe("P3: photos.remove cascade albumPhotos", () => {
     // Andere photo in dezelfde groepen om te bewijzen dat we niet te veel cascadet.
     const otherStorage = await uploadStorage(t);
     const otherPhoto = await withUser(t, "user_admin").mutation(
-      api.photos.create,
+      internal.photos.create,
       { storageId: otherStorage },
     );
     await withUser(t, "user_admin").mutation(api.albums.addPhoto, {
@@ -147,13 +148,13 @@ describe("P3: photos.remove cascade albumPhotos", () => {
 
 describe("P4: photos.remove cascade ratings", () => {
   it("verwijdert ratings op deze photo", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const aliceId = await registerUser(t, "user_alice", "a@x.com");
     const bobId = await registerUser(t, "user_bob", "b@x.com");
 
     const storageId = await uploadStorage(t);
     const photoId = await withUser(t, "user_alice").mutation(
-      api.photos.create,
+      internal.photos.create,
       { storageId },
     );
 
@@ -194,7 +195,7 @@ describe("P5: photos.remove clear cover-refs", () => {
   // geen onderwerp van deze cascade-tests; P5 moet ook covers wissen die
   // niet aan die regel voldoen (v1-data).
   it("clear groups.coverPhotoId wanneer deze photo cover was", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await registerUser(t, "user_admin", "admin@x.com");
     const groupId = await withUser(t, "user_admin").mutation(
       api.groups.create,
@@ -203,7 +204,7 @@ describe("P5: photos.remove clear cover-refs", () => {
 
     const storageId = await uploadStorage(t);
     const photoId = await withUser(t, "user_admin").mutation(
-      api.photos.create,
+      internal.photos.create,
       { storageId },
     );
     await t.run(async (ctx) => {
@@ -217,7 +218,7 @@ describe("P5: photos.remove clear cover-refs", () => {
   });
 
   it("clear albums.coverPhotoId wanneer deze photo cover was", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await registerUser(t, "user_admin", "admin@x.com");
     const groupId = await withUser(t, "user_admin").mutation(
       api.groups.create,
@@ -230,7 +231,7 @@ describe("P5: photos.remove clear cover-refs", () => {
 
     const storageId = await uploadStorage(t);
     const photoId = await withUser(t, "user_admin").mutation(
-      api.photos.create,
+      internal.photos.create,
       { storageId },
     );
     await t.run(async (ctx) => {
@@ -244,7 +245,7 @@ describe("P5: photos.remove clear cover-refs", () => {
   });
 
   it("laat covers van andere photos ongemoeid", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await registerUser(t, "user_admin", "admin@x.com");
     const groupId = await withUser(t, "user_admin").mutation(
       api.groups.create,
@@ -254,11 +255,11 @@ describe("P5: photos.remove clear cover-refs", () => {
     const s1 = await uploadStorage(t);
     const s2 = await uploadStorage(t);
     const cover1 = await withUser(t, "user_admin").mutation(
-      api.photos.create,
+      internal.photos.create,
       { storageId: s1 },
     );
     const cover2 = await withUser(t, "user_admin").mutation(
-      api.photos.create,
+      internal.photos.create,
       { storageId: s2 },
     );
 
@@ -276,7 +277,7 @@ describe("P5: photos.remove clear cover-refs", () => {
   });
 
   it("clear covers van 2 groepen + 1 album tegelijk", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await registerUser(t, "user_admin", "admin@x.com");
     const groupA = await withUser(t, "user_admin").mutation(
       api.groups.create,
@@ -293,7 +294,7 @@ describe("P5: photos.remove clear cover-refs", () => {
 
     const storageId = await uploadStorage(t);
     const photoId = await withUser(t, "user_admin").mutation(
-      api.photos.create,
+      internal.photos.create,
       { storageId },
     );
 
@@ -323,7 +324,7 @@ describe("P5: photos.remove clear cover-refs", () => {
   });
 
   it("album-asymmetrie: alleen matching album cover cleared", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await registerUser(t, "user_admin", "admin@x.com");
     const groupId = await withUser(t, "user_admin").mutation(
       api.groups.create,
@@ -341,11 +342,11 @@ describe("P5: photos.remove clear cover-refs", () => {
     const sA = await uploadStorage(t);
     const sB = await uploadStorage(t);
     const photoA = await withUser(t, "user_admin").mutation(
-      api.photos.create,
+      internal.photos.create,
       { storageId: sA },
     );
     const photoB = await withUser(t, "user_admin").mutation(
-      api.photos.create,
+      internal.photos.create,
       { storageId: sB },
     );
 
@@ -371,15 +372,15 @@ describe("P5: photos.remove clear cover-refs", () => {
 
 describe("P7: photos.remove decrement user.photoCount", () => {
   it("verlaagt photoCount na elke delete", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const aliceId = await registerUser(t, "user_alice", "a@x.com");
 
     const s1 = await uploadStorage(t);
     const s2 = await uploadStorage(t);
-    const p1 = await withUser(t, "user_alice").mutation(api.photos.create, {
+    const p1 = await withUser(t, "user_alice").mutation(internal.photos.create, {
       storageId: s1,
     });
-    await withUser(t, "user_alice").mutation(api.photos.create, {
+    await withUser(t, "user_alice").mutation(internal.photos.create, {
       storageId: s2,
     });
 
@@ -402,13 +403,13 @@ describe("photos.remove op geflagde photo (audit-9 §8.4)", () => {
   it("owner kan eigen geflagde photo verwijderen, cascade + flag-state vervallen", async () => {
     vi.useFakeTimers();
     try {
-      const t = convexTest(schema);
+      const t = convexTest(schema, modules);
       const aliceId = await registerUser(t, "user_alice", "a@x.com");
       const bobId = await registerUser(t, "user_bob", "b@x.com");
 
       const storageId = await uploadStorage(t);
       const photoId = await withUser(t, "user_alice").mutation(
-        api.photos.create,
+        internal.photos.create,
         { storageId },
       );
       // WP24: melden vereist foto-toegang.
@@ -459,11 +460,11 @@ describe("photos.remove + storage cleanup", () => {
   it("storage wordt opgeruimd via scheduled cleanupStorage action", async () => {
     vi.useFakeTimers();
     try {
-      const t = convexTest(schema);
+      const t = convexTest(schema, modules);
       await registerUser(t, "user_alice", "a@x.com");
       const storageId = await uploadStorage(t);
       const photoId = await withUser(t, "user_alice").mutation(
-        api.photos.create,
+        internal.photos.create,
         { storageId },
       );
 

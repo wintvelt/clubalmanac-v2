@@ -24,6 +24,7 @@ import { convexTest } from "convex-test";
 import { describe, expect, it } from "vitest";
 import { api, internal } from "../../convex/_generated/api";
 import schema from "../../convex/schema";
+import { modules } from "../_helpers/modules";
 
 const ISSUER = "https://picked-quail-97.clerk.accounts.dev";
 
@@ -56,7 +57,7 @@ async function registerUser(
 describe("invites.getByToken — landingspagina lookup", () => {
   // Verwijst naar publicGetInvite.js: returnt invite + inviter + group.
   it("returnt invite + inviter + group voor geldige token (anonymous toegang)", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await registerUser(t, "user_alice", "a@x.com");
     const groupId = await withUser(t, "user_alice").mutation(
       api.groups.create,
@@ -79,7 +80,7 @@ describe("invites.getByToken — landingspagina lookup", () => {
   });
 
   it("general invite (geen groupId): group is null", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await registerUser(t, "user_alice", "a@x.com");
     const { token } = await withUser(t, "user_alice").mutation(
       api.invites.create,
@@ -97,7 +98,7 @@ describe("invites.getByToken — landingspagina lookup", () => {
     // wat een info-leak is: email + Clerk subject + activity-data zijn niet
     // nodig voor de invite-pagina. Sluis tot {name, profilePhotoStorageId}.
     // RED tot B's fix in convex/invites.ts getByToken.
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await registerUser(t, "user_alice", "alice@x.com", "Alice");
     const { token } = await withUser(t, "user_alice").mutation(
       api.invites.create,
@@ -129,7 +130,7 @@ describe("invites.getByToken — landingspagina lookup", () => {
     // [GAP] oude code throwde "invite not found" (inviteHelpers.js regel 25).
     // v2: query returnt null zodat frontend een nette 404-pagina kan tonen
     // i.p.v. error-boundary.
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const got = await t.query(api.invites.getByToken, { token: "bogus" });
     expect(got).toBeNull();
   });
@@ -138,7 +139,7 @@ describe("invites.getByToken — landingspagina lookup", () => {
     // [GAP] oude code throwde "invite already accepted" (regel 28). v2:
     // landingspagina kan zelf bepalen wat te tonen ("Deze invite is al
     // gebruikt"). Filtering is een frontend-zorg, niet API-zorg.
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await registerUser(t, "user_alice", "a@x.com");
     const { token } = await withUser(t, "user_alice").mutation(
       api.invites.create,
@@ -152,7 +153,7 @@ describe("invites.getByToken — landingspagina lookup", () => {
 
   it("returnt invite met status='expired' wanneer expiresAt < now", async () => {
     // Spiegelt oude regel 31-32 maar als data, niet als throw.
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await registerUser(t, "user_alice", "a@x.com");
     const { inviteId, token } = await withUser(t, "user_alice").mutation(
       api.invites.create,
@@ -174,7 +175,7 @@ describe("invites.listMine — sender view", () => {
   // [GAP] oude code had geen sender-view; alle zicht op pending invites was
   // via DynamoDB scan in admin tools. v2: eigen UI voor "verstuurde invites".
   it("returnt alleen invites die caller stuurde", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await registerUser(t, "user_alice", "a@x.com");
     await registerUser(t, "user_bob", "b@x.com");
     await withUser(t, "user_alice").mutation(api.invites.create, {
@@ -193,13 +194,13 @@ describe("invites.listMine — sender view", () => {
   });
 
   it("returnt empty array zonder auth (geen throw)", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     expect(await t.query(api.invites.listMine, {})).toEqual([]);
   });
 
   it("includeert alle statussen (pending + accepted + declined + expired)", async () => {
     // listMine is een audit/history view, niet een actie-lijst — toon alles.
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await registerUser(t, "user_alice", "a@x.com");
     const { token } = await withUser(t, "user_alice").mutation(
       api.invites.create,

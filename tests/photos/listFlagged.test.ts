@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { api , internal } from "../../convex/_generated/api";
 import schema from "../../convex/schema";
 import { shareInGroup } from "../_helpers/access";
+import { modules } from "../_helpers/modules";
 
 // FL2 — list-queries voor flag flow.
 // Bron 1: blob-images-api-photos/handlersPhoto/listFlagged.js (regel 5-10)
@@ -54,18 +55,18 @@ async function uploadStorage(t: ReturnType<typeof convexTest>) {
 describe("photos.listMyFlagged", () => {
   // listFlagged.js regel 8-9: photos.filter(p => !!p.flaggedDate)
   it("returnt alleen eigen photos die geflagged zijn", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await registerUser(t, "user_alice", "a@x.com");
     const bobId = await registerUser(t, "user_bob", "b@x.com");
 
     const s1 = await uploadStorage(t);
     const s2 = await uploadStorage(t);
     const flaggedPhoto = await withUser(t, "user_alice").mutation(
-      api.photos.create,
+      internal.photos.create,
       { storageId: s1 },
     );
     const cleanPhoto = await withUser(t, "user_alice").mutation(
-      api.photos.create,
+      internal.photos.create,
       { storageId: s2 },
     );
     await shareInGroup(t, flaggedPhoto, [bobId]);
@@ -85,18 +86,18 @@ describe("photos.listMyFlagged", () => {
   });
 
   it("returnt geen photos van andere users (zelfs als zij ook flagged zijn)", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const aliceId = await registerUser(t, "user_alice", "a@x.com");
     const bobId = await registerUser(t, "user_bob", "b@x.com");
 
     const s1 = await uploadStorage(t);
     const s2 = await uploadStorage(t);
     const alicePhoto = await withUser(t, "user_alice").mutation(
-      api.photos.create,
+      internal.photos.create,
       { storageId: s1 },
     );
     const bobPhoto = await withUser(t, "user_bob").mutation(
-      api.photos.create,
+      internal.photos.create,
       { storageId: s2 },
     );
     await shareInGroup(t, alicePhoto, [bobId]);
@@ -119,7 +120,7 @@ describe("photos.listMyFlagged", () => {
   });
 
   it("returnt lege array als user geen geflagde photos heeft", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await registerUser(t, "user_alice", "a@x.com");
     const result = await withUser(t, "user_alice").query(
       api.photos.listMyFlagged,
@@ -140,7 +141,7 @@ describe("photos.listAllFlagged — webmaster gated", () => {
   // listAllFlagged.js regel 7-8: webmaster check
   // [GAP] oude code returned {isWebmaster:false}; v2 throwt
   it("non-webmaster krijgt error", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await registerUser(t, "user_alice", "a@x.com");
 
     await expect(
@@ -152,7 +153,7 @@ describe("photos.listAllFlagged — webmaster gated", () => {
   });
 
   it("webmaster ziet alle geflagde photos van alle users", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const aliceId = await registerUser(t, "user_alice", "a@x.com");
     const bobId = await registerUser(t, "user_bob", "b@x.com");
     await registerUser(t, "user_carol", "c@x.com");
@@ -162,15 +163,15 @@ describe("photos.listAllFlagged — webmaster gated", () => {
     const s2 = await uploadStorage(t);
     const s3 = await uploadStorage(t);
     const alicePhoto = await withUser(t, "user_alice").mutation(
-      api.photos.create,
+      internal.photos.create,
       { storageId: s1 },
     );
     const bobPhoto = await withUser(t, "user_bob").mutation(
-      api.photos.create,
+      internal.photos.create,
       { storageId: s2 },
     );
     const carolPhotoUnflagged = await withUser(t, "user_carol").mutation(
-      api.photos.create,
+      internal.photos.create,
       { storageId: s3 },
     );
     await shareInGroup(t, alicePhoto, [bobId]);

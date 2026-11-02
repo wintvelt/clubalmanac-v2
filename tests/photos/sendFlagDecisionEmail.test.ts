@@ -17,6 +17,7 @@ import { api, internal } from "../../convex/_generated/api";
 import schema from "../../convex/schema";
 import { registerUserWithInvite, withUser } from "../_helpers/auth";
 import { shareInGroup } from "../_helpers/access";
+import { modules } from "../_helpers/modules";
 
 const INFO_SENDER = "info@clubalmanac.com";
 const WEBMASTER_EMAIL = "webmaster@x.com";
@@ -78,7 +79,7 @@ async function flaggedAppealedPhoto(
   );
   const storageId = await t.run((ctx) => ctx.storage.store(new Blob(["x"])));
   const photoId = await withUser(t, "user_owner").mutation(
-    api.photos.create,
+    internal.photos.create,
     { storageId },
   );
   // WP24: melden vereist foto-toegang.
@@ -90,7 +91,7 @@ async function flaggedAppealedPhoto(
 
 describe("sendFlagDecisionEmail — approve = no-op (cascade-matrix FL2)", () => {
   it("approve=true → geen Mailjet-call", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const { photoId } = await flaggedAppealedPhoto(t);
     const fetchSpy = mockMailjet2xx();
 
@@ -105,7 +106,7 @@ describe("sendFlagDecisionEmail — approve = no-op (cascade-matrix FL2)", () =>
 
 describe("sendFlagDecisionEmail — deny = mail naar photo-owner", () => {
   it("recipient = owner-email, from = info-sender", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const { photoId, ownerEmail } = await flaggedAppealedPhoto(t);
     const fetchSpy = mockMailjet2xx();
 
@@ -121,7 +122,7 @@ describe("sendFlagDecisionEmail — deny = mail naar photo-owner", () => {
   });
 
   it("subject + body 1:1 NL tone-of-voice (afgewezen-strekking), bevat owner-name", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const { photoId, ownerName } = await flaggedAppealedPhoto(t);
     const fetchSpy = mockMailjet2xx();
 
@@ -145,7 +146,7 @@ describe("sendFlagDecisionEmail — deny = mail naar photo-owner", () => {
 
 describe("sendFlagDecisionEmail — graceful skip", () => {
   it("photo bestaat niet meer (cascade gedraaid) → no-op, geen Mailjet-call, geen throw", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const { photoId } = await flaggedAppealedPhoto(t);
     await t.run((ctx) => ctx.db.delete(photoId));
     const fetchSpy = mockMailjet2xx();
@@ -160,7 +161,7 @@ describe("sendFlagDecisionEmail — graceful skip", () => {
   });
 
   it("owner inmiddels verwijderd → no-op, geen throw", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const { photoId } = await flaggedAppealedPhoto(t);
     // Direct DB-delete van de owner-user om de race te simuleren (zonder
     // de hele users.deleteSelf cascade die de photo ook zou wissen).
@@ -181,7 +182,7 @@ describe("sendFlagDecisionEmail — graceful skip", () => {
 describe("sendFlagDecisionEmail — verified-sender gate", () => {
   it("info-sender niet in MAILJET_VERIFIED_SENDERS → throwt UNVERIFIED_SENDER, geen call", async () => {
     process.env.MAILJET_VERIFIED_SENDERS = "invites@clubalmanac.com"; // niet info@
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const { photoId } = await flaggedAppealedPhoto(t);
     const fetchSpy = mockMailjet2xx();
 

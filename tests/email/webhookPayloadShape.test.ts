@@ -20,6 +20,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { api } from "../../convex/_generated/api";
 import schema from "../../convex/schema";
 import { registerUserWithInvite, withUser } from "../_helpers/auth";
+import { modules } from "../_helpers/modules";
 
 const SECRET = "wp5-webhook-secret";
 
@@ -50,7 +51,7 @@ async function seedPendingInviteForBounce(
 
 describe("/email-event — payload-shape variaties", () => {
   it("array van events met één bounce → 200, 1 dedup-record + invite expired", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await seedPendingInviteForBounce(t, "bouncer@x.com");
 
     const res = await t.fetch("/email-event", {
@@ -69,7 +70,7 @@ describe("/email-event — payload-shape variaties", () => {
   });
 
   it("single-event object (geen array — dashboard 'Test event' shape) → 200, handleBounce gecalled", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await seedPendingInviteForBounce(t, "bouncer@x.com");
 
     const res = await t.fetch("/email-event", {
@@ -90,7 +91,7 @@ describe("/email-event — payload-shape variaties", () => {
   });
 
   it("array met meerdere bounces voor verschillende emails → meerdere handleBounce-calls", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await registerUserWithInvite(t, "user_alice", "alice@x.com", "Alice");
     await withUser(t, "user_alice").mutation(api.invites.create, {
       email: "one@x.com",
@@ -116,7 +117,7 @@ describe("/email-event — payload-shape variaties", () => {
   });
 
   it("event zonder MessageID/event_id → skip dat event, andere events in batch slagen", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await registerUserWithInvite(t, "user_alice", "alice@x.com", "Alice");
     await withUser(t, "user_alice").mutation(api.invites.create, {
       email: "ok@x.com",
@@ -154,7 +155,7 @@ describe("/email-event — payload-shape variaties", () => {
   });
 
   it("event zonder email-veld → skip, andere events in batch slagen", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await seedPendingInviteForBounce(t, "ok@x.com");
 
     const res = await t.fetch("/email-event", {
@@ -178,7 +179,7 @@ describe("/email-event — payload-shape variaties", () => {
     // Mailjet retry't bij non-2xx. We willen verwachte non-bounce events
     // niet 4xx maken (anders ban't Mailjet de webhook). Maar ze mogen óók
     // geen state muteren.
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await seedPendingInviteForBounce(t, "ok@x.com");
 
     for (const eventType of ["open", "click", "sent", "spam", "unsub"]) {
@@ -211,7 +212,7 @@ describe("/email-event — payload-shape variaties", () => {
   it("'blocked' event-type → behandeld als bounce (Mailjet block = onleverbaar)", async () => {
     // http.ts r.43: "bounce" || "blocked" beide doorgegeven. Pin't dat
     // contract — blocked-route is qua semantiek hetzelfde als bounce.
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await seedPendingInviteForBounce(t, "blocked@x.com");
 
     const res = await t.fetch("/email-event", {
@@ -240,7 +241,7 @@ describe("/email-event — payload-shape variaties", () => {
   });
 
   it("mixed-case email in payload → resolveert tegen invite (normalizeEmail)", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await registerUserWithInvite(t, "user_alice", "alice@x.com", "Alice");
     await withUser(t, "user_alice").mutation(api.invites.create, {
       email: "Bouncer@X.com",
@@ -273,7 +274,7 @@ describe("/email-event — payload-shape variaties", () => {
     // http.ts r.45-47 pin't fallback-volgorde. Sommige Mailjet event-types
     // sturen alleen event_id, geen MessageID — getest met geldige bounce
     // die geen MessageID heeft maar wel event_id.
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await seedPendingInviteForBounce(t, "eb@x.com");
 
     const res = await t.fetch("/email-event", {
@@ -303,7 +304,7 @@ describe("/email-event — payload-shape variaties", () => {
   // -------------------------------------------------------------------------
 
   it("end-to-end replay: tweede identieke POST is no-op (geen extra dedup-rij, geen extra schedule)", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await seedPendingInviteForBounce(t, "replay@x.com");
 
     const init: RequestInit = {

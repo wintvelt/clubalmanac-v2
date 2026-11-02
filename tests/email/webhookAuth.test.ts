@@ -25,6 +25,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { api } from "../../convex/_generated/api";
 import schema from "../../convex/schema";
 import { registerUserWithInvite, withUser } from "../_helpers/auth";
+import { modules } from "../_helpers/modules";
 
 const SECRET = "test-webhook-secret-abc123";
 const BASIC_VALID = `Basic ${btoa(`mailjet:${SECRET}`)}`;
@@ -59,7 +60,7 @@ async function seedPendingInviteForBounce(
 describe("/email-event — env-var fail-closed", () => {
   it("MAILJET_WEBHOOK_SECRET ontbreekt op deployment → 503, geen state-mutatie", async () => {
     delete process.env.MAILJET_WEBHOOK_SECRET;
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await seedPendingInviteForBounce(t, "bouncer@x.com");
 
     const res = await t.fetch("/email-event", {
@@ -92,7 +93,7 @@ describe("/email-event — env-var fail-closed", () => {
 describe("/email-event — Authorization header validation", () => {
   it("zonder Authorization header → 401, geen mutation-call, geen state-mutatie", async () => {
     process.env.MAILJET_WEBHOOK_SECRET = SECRET;
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await seedPendingInviteForBounce(t, "bouncer@x.com");
 
     const res = await t.fetch("/email-event", {
@@ -110,7 +111,7 @@ describe("/email-event — Authorization header validation", () => {
 
   it("Authorization met verkeerd secret → 401, geen state-mutatie", async () => {
     process.env.MAILJET_WEBHOOK_SECRET = SECRET;
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await seedPendingInviteForBounce(t, "bouncer@x.com");
 
     const res = await t.fetch("/email-event", {
@@ -132,7 +133,7 @@ describe("/email-event — Authorization header validation", () => {
   it("Authorization zonder Bearer-prefix (alleen het secret) → 401", async () => {
     // Spec pin't `Bearer <secret>` schema exact — kale secret = malformed.
     process.env.MAILJET_WEBHOOK_SECRET = SECRET;
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await seedPendingInviteForBounce(t, "bouncer@x.com");
 
     const res = await t.fetch("/email-event", {
@@ -150,7 +151,7 @@ describe("/email-event — Authorization header validation", () => {
   it("Authorization 'Basic <base64(mailjet:correct-secret)>' → 200, delegeert naar handleBounce", async () => {
     // Webhook-auth correctie 2026-05-18: valid header = Basic mailjet:SECRET.
     process.env.MAILJET_WEBHOOK_SECRET = SECRET;
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await seedPendingInviteForBounce(t, "bouncer@x.com");
 
     const res = await t.fetch("/email-event", {
@@ -191,7 +192,7 @@ describe("/email-event — Authorization header validation", () => {
     // Pin't dat B daadwerkelijk over is op de Basic-string-check en geen
     // beide vormen accepteert.
     process.env.MAILJET_WEBHOOK_SECRET = SECRET;
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await seedPendingInviteForBounce(t, "bouncer@x.com");
 
     const res = await t.fetch("/email-event", {
@@ -226,7 +227,7 @@ describe("/email-event — Authorization header validation", () => {
     // het secret-deel (zou anders weglek-pad zijn: aanvaller die alleen
     // SECRET kent kan ook met andere username spoofen).
     process.env.MAILJET_WEBHOOK_SECRET = SECRET;
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await seedPendingInviteForBounce(t, "bouncer@x.com");
 
     const res = await t.fetch("/email-event", {
@@ -258,7 +259,7 @@ describe("/email-event — Authorization header validation", () => {
 describe("/email-event — strict-equality regression-guards (S-1)", () => {
   it("lowercase prefix 'bearer <secret>' → 401, geen handleBounce-call", async () => {
     process.env.MAILJET_WEBHOOK_SECRET = SECRET;
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await seedPendingInviteForBounce(t, "bouncer@x.com");
 
     const res = await t.fetch("/email-event", {
@@ -279,7 +280,7 @@ describe("/email-event — strict-equality regression-guards (S-1)", () => {
 
   it("dubbele spatie 'Bearer  <secret>' → 401, geen handleBounce-call", async () => {
     process.env.MAILJET_WEBHOOK_SECRET = SECRET;
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await seedPendingInviteForBounce(t, "bouncer@x.com");
 
     const res = await t.fetch("/email-event", {
@@ -300,7 +301,7 @@ describe("/email-event — strict-equality regression-guards (S-1)", () => {
 
   it("geen spatie 'Bearer<secret>' → 401, geen handleBounce-call", async () => {
     process.env.MAILJET_WEBHOOK_SECRET = SECRET;
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await seedPendingInviteForBounce(t, "bouncer@x.com");
 
     const res = await t.fetch("/email-event", {
@@ -331,7 +332,7 @@ describe("/email-event — strict-equality regression-guards (S-1)", () => {
   // een input die wél meaningful door de strict-eq-check rolt.
   it("trailing junk na secret 'Bearer <secret>x' → 401 (pin't strict-eq vs startsWith)", async () => {
     process.env.MAILJET_WEBHOOK_SECRET = SECRET;
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await seedPendingInviteForBounce(t, "bouncer@x.com");
 
     const res = await t.fetch("/email-event", {

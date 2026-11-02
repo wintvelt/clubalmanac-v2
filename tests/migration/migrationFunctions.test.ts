@@ -17,6 +17,7 @@ import { internal } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
 import schema from "../../convex/schema";
 import { MONITORED_TABLE_ORACLE } from "./fkOracle";
+import { modules } from "../_helpers/modules";
 
 const NOW = Date.parse("2026-08-23T00:00:00.000Z");
 
@@ -52,7 +53,7 @@ async function seedUploadLeftovers(t: ReturnType<typeof convexTest>) {
 
 describe("migratie-tabellen = de tabellen die WP10 bewaakt", () => {
   test("de leeg-telling ziet achtergebleven uploadIdempotency-rijen", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await seedUploadLeftovers(t);
 
     const counts = await t.query(internal.migration.tableCounts, {});
@@ -62,7 +63,7 @@ describe("migratie-tabellen = de tabellen die WP10 bewaakt", () => {
   });
 
   test("reset kan uploadIdempotency leegmaken", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await seedUploadLeftovers(t);
 
     const result = await t.mutation(internal.migration.clearTable, {
@@ -80,7 +81,7 @@ describe("migratie-tabellen = de tabellen die WP10 bewaakt", () => {
     // — en die sleutels kómen uit de lijst die de test moest controleren.
     // Verdween daar een tabel, dan kromp de vraag mee met het antwoord. De
     // verwachting komt nu uit de handmatige oracle.
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const counts = await t.query(internal.migration.tableCounts, {});
     for (const table of MONITORED_TABLE_ORACLE) {
       expect(counts.tables[table], `${table} wordt bewaakt maar niet geteld`).toBeDefined();
@@ -90,7 +91,7 @@ describe("migratie-tabellen = de tabellen die WP10 bewaakt", () => {
   test("elke tabel die WP10 bewaakt is ook leeg te maken", async () => {
     // Wat je kunt tellen moet je kunnen resetten, anders is een schone start
     // niet met de tool te bereiken.
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     for (const table of MONITORED_TABLE_ORACLE) {
       await expect(
         t.mutation(internal.migration.clearTable, { table, limit: 1 }),
@@ -100,7 +101,7 @@ describe("migratie-tabellen = de tabellen die WP10 bewaakt", () => {
   });
 
   test("een tabel buiten de migratie-set wordt geweigerd", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await expect(
       t.mutation(internal.migration.clearTable, { table: "monitoringRuns", limit: 1 }),
     ).rejects.toThrow();
@@ -109,7 +110,7 @@ describe("migratie-tabellen = de tabellen die WP10 bewaakt", () => {
 
 describe("de bouwstenen van load-records", () => {
   test("insertRows schrijft de rij en geeft het gemunte _id terug", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const inserted = await t.mutation(internal.migration.insertRows, {
       table: "users",
       rows: [
@@ -136,7 +137,7 @@ describe("de bouwstenen van load-records", () => {
   test("patchRefs vult een vooruit-verwijzing in", async () => {
     // groups.coverPhotoId wijst vooruit naar photos, terwijl photos via ownerId
     // terugwijst naar users. Die cirkel is niet in één pass te schrijven.
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const { userId, photoId } = await seedUploadLeftovers(t);
     const groupId = await t.run(async (ctx) =>
       ctx.db.insert("groups", { name: "Groep", createdBy: userId, createdAt: NOW }),
@@ -152,7 +153,7 @@ describe("de bouwstenen van load-records", () => {
   });
 
   test("storageInventory ziet een object dat aan geen enkel record hangt", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await seedUploadLeftovers(t);
     await t.run(async (ctx) => {
       await ctx.storage.store(new Blob(["wees"], { type: "image/jpeg" }));
@@ -170,7 +171,7 @@ describe("de bouwstenen van load-records", () => {
     // objecten, geen "alles". Zonder deze knop is de enige route naar "geen
     // storage-orphans" een reset van de complete storage — en dat kost op T-0
     // de uren upload die het gefaseerde ontwerp juist moest sparen.
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const { storageId } = await seedUploadLeftovers(t);
     const wees = await t.run(async (ctx) =>
       ctx.storage.store(new Blob(["wees"], { type: "image/jpeg" })),
@@ -189,7 +190,7 @@ describe("de bouwstenen van load-records", () => {
 
   test("storageInventory kan de volledige orphan-lijst geven, niet alleen een greep", async () => {
     // De operator moet vóór het opruimen kunnen zien wat er weggaat.
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await t.run(async (ctx) => {
       for (let i = 0; i < 12; i++) {
         await ctx.storage.store(new Blob([`wees-${i}`], { type: "image/jpeg" }));
@@ -201,7 +202,7 @@ describe("de bouwstenen van load-records", () => {
   });
 
   test("integrityReport meldt dezelfde drift die WP10 zou mailen", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const { userId } = await seedUploadLeftovers(t);
     await t.run(async (ctx) => {
       await ctx.db.patch(userId, { photoCount: 7 });

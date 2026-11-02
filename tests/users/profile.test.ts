@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { api , internal } from "../../convex/_generated/api";
 import schema from "../../convex/schema";
 import { assertReactive } from "../_helpers/reactive";
+import { modules } from "../_helpers/modules";
 
 // Cascade matrix rows U3, U4: cat-1 (eliminated) + cat-4 (reactive coverage).
 // Verifieert dat join-on-read queries fresh user-data returneren na een
@@ -39,7 +40,7 @@ async function registerUser(
 
 describe("U3: photo query joint owner-data fresh", () => {
   it("getWithOwner toont nieuwe naam direct na updateProfile", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const aliceId = await registerUser(t, "user_alice", "a@x.com", "Alice");
     const photoId = await t.run(async (ctx) => {
       const storageId = await ctx.storage.store(new Blob(["x"]));
@@ -69,7 +70,7 @@ describe("U3: photo query joint owner-data fresh", () => {
 
 describe("U4: membership query joint user-data fresh", () => {
   it("groups.listMembers toont nieuwe naam direct na updateProfile", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const adminId = await registerUser(t, "user_admin", "admin@x.com", "Admin");
     const aliceId = await registerUser(t, "user_alice", "a@x.com", "Alice");
 

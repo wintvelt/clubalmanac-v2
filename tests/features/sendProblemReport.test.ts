@@ -22,6 +22,7 @@ import { api, internal } from "../../convex/_generated/api";
 import schema from "../../convex/schema";
 import type { Id } from "../../convex/_generated/dataModel";
 import { registerUserWithInvite, withUser } from "../_helpers/auth";
+import { modules } from "../_helpers/modules";
 
 // Forward-declared action-reference voor B's nog-niet-bestaande
 // `internal.features.sendProblemReport`. Bij codegen na B's impl wordt
@@ -91,7 +92,7 @@ function lastMessage(fetchSpy: ReturnType<typeof vi.fn>): MailjetMessage {
 
 describe("features.create — schedules problem-report only for type=problem", () => {
   it("type='problem' schedule't precies 1 problem-report action", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await registerUserWithInvite(t, "user_alice", "alice@x.com", "Alice");
 
     const before = await t.run(
@@ -114,7 +115,7 @@ describe("features.create — schedules problem-report only for type=problem", (
   });
 
   it("type='feature' schedule't GEEN email (alleen problem-reports gaan naar webmaster)", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await registerUserWithInvite(t, "user_alice", "alice@x.com", "Alice");
 
     const before = await t.run(
@@ -143,7 +144,7 @@ describe("features.create — schedules problem-report only for type=problem", (
 
 describe("internal.features.sendProblemReport — Mailjet wiring", () => {
   it("verstuurt naar webmaster (uit WEBMASTER_EMAILS), from = info-sender", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const submitterId = await registerUserWithInvite(
       t,
       "user_alice",
@@ -172,7 +173,7 @@ describe("internal.features.sendProblemReport — Mailjet wiring", () => {
   });
 
   it("body bevat submitter-name, submitter-email en description (1:1 oude problemMail-tone)", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await registerUserWithInvite(t, "user_alice", "alice@x.com", "Alice Adams");
     const featureId = await withUser(t, "user_alice").mutation(
       api.features.create,
@@ -198,7 +199,7 @@ describe("internal.features.sendProblemReport — Mailjet wiring", () => {
     // Twee webmasters geconfigureerd; problem-report fan-out (TO-list of
     // meerdere Messages) zodat geen webmaster wordt overgeslagen.
     process.env.WEBMASTER_EMAILS = "a@webmaster.test,b@webmaster.test";
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await registerUserWithInvite(t, "user_alice", "alice@x.com", "Alice");
     const featureId = await withUser(t, "user_alice").mutation(
       api.features.create,
@@ -228,7 +229,7 @@ describe("internal.features.sendProblemReport — Mailjet wiring", () => {
 
   it("WEBMASTER_EMAILS leeg/ontbreekt → no-op, geen Mailjet-call, geen throw (action mag scheduler niet stuk maken)", async () => {
     delete process.env.WEBMASTER_EMAILS;
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await registerUserWithInvite(t, "user_alice", "alice@x.com", "Alice");
     const featureId = await withUser(t, "user_alice").mutation(
       api.features.create,
@@ -243,7 +244,7 @@ describe("internal.features.sendProblemReport — Mailjet wiring", () => {
   });
 
   it("feature-record bestaat niet → no-op, geen throw", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await registerUserWithInvite(t, "user_alice", "alice@x.com", "Alice");
     const featureId = await withUser(t, "user_alice").mutation(
       api.features.create,

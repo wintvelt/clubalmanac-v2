@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { api , internal } from "../../convex/_generated/api";
 import schema from "../../convex/schema";
 import { shareInGroup } from "../_helpers/access";
+import { modules } from "../_helpers/modules";
 
 // FL2 — photos.decideFlag mutation. Bron: oude AWS handler
 // blob-images-api-photos/handlersPhoto/flagPhotoDecide.js (regel 58-137):
@@ -62,7 +63,7 @@ async function appealedPhoto(t: ReturnType<typeof convexTest>) {
   await registerUser(t, "user_alice", "a@x.com");
   const bobId = await registerUser(t, "user_bob", "b@x.com");
   const storageId = await uploadStorage(t);
-  const photoId = await withUser(t, "user_alice").mutation(api.photos.create, {
+  const photoId = await withUser(t, "user_alice").mutation(internal.photos.create, {
     storageId,
   });
   // WP24: melden vereist foto-toegang.
@@ -82,7 +83,7 @@ describe("photos.decideFlag — webmaster only", () => {
 
   // flagPhotoDecide.js regel 60-61: only webmaster
   it("non-webmaster kan niet beslissen", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const photoId = await appealedPhoto(t);
 
     await expect(
@@ -94,7 +95,7 @@ describe("photos.decideFlag — webmaster only", () => {
   });
 
   it("webmaster kan beslissen", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const photoId = await appealedPhoto(t);
     await registerUser(t, "user_wm", WEBMASTER_EMAIL);
 
@@ -117,7 +118,7 @@ describe("photos.decideFlag — approve", () => {
 
   // flagPhotoDecide.js regel 84-90: clear alle flag-velden
   it("approve clear alle flag-velden", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const photoId = await appealedPhoto(t);
     await registerUser(t, "user_wm", WEBMASTER_EMAIL);
 
@@ -138,7 +139,7 @@ describe("photos.decideFlag — approve", () => {
 
   // FL2 cascade-matrix: alleen bij deny email — afwijking van oude code
   it("approve queue't GEEN sendFlagDecisionEmail action", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const photoId = await appealedPhoto(t);
     await registerUser(t, "user_wm", WEBMASTER_EMAIL);
 
@@ -171,7 +172,7 @@ describe("photos.decideFlag — deny", () => {
 
   // flagPhotoDecide.js regel 113-117: deny → flaggedAppealDenyDate + flaggedDeleteDate=now+7d
   it("deny zet flaggedAppealDenyDate en herstart 7d countdown", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const photoId = await appealedPhoto(t);
     await registerUser(t, "user_wm", WEBMASTER_EMAIL);
 
@@ -200,7 +201,7 @@ describe("photos.decideFlag — deny", () => {
   });
 
   it("deny queue't sendFlagDecisionEmail action", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const photoId = await appealedPhoto(t);
     await registerUser(t, "user_wm", WEBMASTER_EMAIL);
 
@@ -233,7 +234,7 @@ describe("photos.decideFlag — re-decision na deny (audit-9 §2)", () => {
   // huidige staat (behalve dat er een appeal moet zijn — die blijft gezet
   // ook na deny, dus de guard op flaggedAppealDate passeert).
   it("decideFlag(approve) na deny: webmaster overrulet eigen deny, alle velden gewist", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const photoId = await appealedPhoto(t);
     await registerUser(t, "user_wm", WEBMASTER_EMAIL);
 
@@ -267,7 +268,7 @@ describe("photos.decideFlag — re-decision na deny (audit-9 §2)", () => {
   // is no-op — flaggedDeleteDate ongewijzigd, geen extra email-action.
   // RED tot B's idempotency-fix in decideFlag landt.
   it("decideFlag(deny) na deny: idempotent (geen extra email, geen countdown reset)", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const photoId = await appealedPhoto(t);
     await registerUser(t, "user_wm", WEBMASTER_EMAIL);
 
@@ -323,12 +324,12 @@ describe("photos.decideFlag — guards", () => {
 
   // flagPhotoDecide.js regel 76-77
   it("decideFlag gooit als foto niet geflagged is", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await registerUser(t, "user_alice", "a@x.com");
     await registerUser(t, "user_wm", WEBMASTER_EMAIL);
     const storageId = await uploadStorage(t);
     const photoId = await withUser(t, "user_alice").mutation(
-      api.photos.create,
+      internal.photos.create,
       { storageId },
     );
 
@@ -341,13 +342,13 @@ describe("photos.decideFlag — guards", () => {
   });
 
   it("decideFlag gooit als foto wel geflagged maar niet appealed is", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await registerUser(t, "user_alice", "a@x.com");
     const bobId = await registerUser(t, "user_bob", "b@x.com");
     await registerUser(t, "user_wm", WEBMASTER_EMAIL);
     const storageId = await uploadStorage(t);
     const photoId = await withUser(t, "user_alice").mutation(
-      api.photos.create,
+      internal.photos.create,
       { storageId },
     );
     await shareInGroup(t, photoId, [bobId]);

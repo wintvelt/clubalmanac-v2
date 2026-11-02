@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { api , internal } from "../../convex/_generated/api";
 import schema from "../../convex/schema";
 import type { Id } from "../../convex/_generated/dataModel";
+import { modules } from "../_helpers/modules";
 
 // Cascade matrix rows AP1 (eliminated, vervangen door live count) en
 // AP2 (eliminated, count corrigeert vanzelf bij delete).
@@ -75,7 +76,7 @@ async function uploadAndPublish(
     async (ctx) => await ctx.storage.store(new Blob(["x"])),
   );
   const photoId = await withUser(t, uploaderSubject).mutation(
-    api.photos.create,
+    internal.photos.create,
     { storageId },
   );
   await withUser(t, uploaderSubject).mutation(api.albums.addPhoto, {
@@ -120,7 +121,7 @@ async function insertPhotoAndPublish(
 
 describe("albums.listByGroupWithUnread fallback", () => {
   it("zonder lastSeen record: foto's geüpload na membership tellen mee", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const { groupId, albumId } = await setup(t);
 
     // Bob (member) heeft nog niks geopend. Admin upload 2 foto's.
@@ -137,7 +138,7 @@ describe("albums.listByGroupWithUnread fallback", () => {
   });
 
   it("eigen uploads tellen niet mee als unread", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const { adminId, bobId, groupId, albumId } = await setup(t);
 
     // addedAt expliciet > album.createdAt om ms-collision met setup() te
@@ -177,7 +178,7 @@ describe("albums.listByGroupWithUnread fallback", () => {
   // rollen expliciet uit en pinnen het filter op photo.ownerId vast (zoals
   // design-doc voorschrijft) — niet per ongeluk op albumPhoto.addedBy.
   it("AP1 filter discrimineert tussen photo-owner en albumPhoto.addedBy", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const aliceId = await registerUser(t, "user_admin", "alice@x.com");
     const bobId = await registerUser(t, "user_bob", "bob@x.com");
     const carolId = await registerUser(t, "user_carol", "carol@x.com");
@@ -241,7 +242,7 @@ describe("albums.listByGroupWithUnread fallback", () => {
   // Direct insert van membership om joinedAt op een gekozen ms te pinnen
   // (addMember mutation gebruikt Date.now()).
   it("fallback joinedAt-tak: foto's van vóór join tellen niet als unread", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await registerUser(t, "user_admin", "admin@x.com");
     const bobId = await registerUser(t, "user_bob", "bob@x.com");
 
@@ -285,7 +286,7 @@ describe("albums.listByGroupWithUnread fallback", () => {
   });
 
   it("fallback joinedAt-tak: alleen foto's na join tellen als unread", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const adminId = await registerUser(t, "user_admin", "admin@x.com");
     const bobId = await registerUser(t, "user_bob", "bob@x.com");
 
@@ -340,7 +341,7 @@ describe("albums.listByGroupWithUnread fallback", () => {
   });
 
   it("fallback joinedAt-tak: foto na join met leeg album telt als unread", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const adminId = await registerUser(t, "user_admin", "admin@x.com");
     const bobId = await registerUser(t, "user_bob", "bob@x.com");
 
@@ -391,7 +392,7 @@ describe("albums.listByGroupWithUnread strict > boundary", () => {
   // Zie design-doc sectie "Unread-count per album per user (albumLastSeen)".
 
   it("lastSeen-pad: foto met addedAt === lastSeenAt is niet unread", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const { adminId, bobId, groupId, albumId } = await setup(t);
 
     // Eerst markSeen om een lastSeen record te krijgen.
@@ -432,7 +433,7 @@ describe("albums.listByGroupWithUnread strict > boundary", () => {
   // Strict > eist dat dezelfde boundary in fallback-pad óók niet als
   // unread telt (count = 0).
   it("fallback-pad (album.createdAt-tak): addedAt === album.createdAt is niet unread", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const { adminId, groupId, albumId } = await setup(t);
 
     const album = await t.run(async (ctx) => await ctx.db.get(albumId));
@@ -459,7 +460,7 @@ describe("albums.listByGroupWithUnread strict > boundary", () => {
   // van max(). Met -1ms hack zou addedAt === membership.joinedAt nog
   // tellen (foute count = 1). Strict > → count = 0.
   it("fallback-pad (joinedAt-tak): addedAt === membership.joinedAt is niet unread", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const adminId = await registerUser(t, "user_admin", "admin@x.com");
     const bobId = await registerUser(t, "user_bob", "bob@x.com");
 
@@ -502,7 +503,7 @@ describe("albums.listByGroupWithUnread strict > boundary", () => {
 
 describe("albums.markSeen + count", () => {
   it("count daalt naar 0 na markSeen", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const { adminId, bobId, groupId, albumId } = await setup(t);
 
     // addedAt expliciet > album.createdAt om ms-collision met setup() te
@@ -553,7 +554,7 @@ describe("albums.markSeen + count", () => {
   });
 
   it("nieuwe foto's na markSeen tellen weer als unread", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const { adminId, bobId, groupId, albumId } = await setup(t);
 
     await uploadAndPublish(t, "user_admin", albumId);
@@ -594,7 +595,7 @@ describe("albums.markSeen + count", () => {
   });
 
   it("AP2: count daalt vanzelf wanneer photo uit album wordt verwijderd", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const { adminId, groupId, albumId } = await setup(t);
 
     // addedAt expliciet > album.createdAt om ms-collision met setup() te
@@ -634,7 +635,7 @@ describe("albums.markSeen + count", () => {
   });
 
   it("markSeen weigert voor niet-leden van de groep", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const { albumId } = await setup(t);
     await registerUser(t, "user_outsider", "out@x.com");
 
@@ -646,7 +647,7 @@ describe("albums.markSeen + count", () => {
 
 describe("groups.markAllAlbumsSeen", () => {
   it("zet alle albums in groep op seen voor caller", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const { adminId, bobId, groupId, albumId } = await setup(t);
     const album2 = await withUser(t, "user_admin").mutation(api.albums.create, {
       groupId,

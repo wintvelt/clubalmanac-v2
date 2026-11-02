@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { api , internal } from "../../convex/_generated/api";
 import schema from "../../convex/schema";
 import type { Id } from "../../convex/_generated/dataModel";
+import { modules } from "../_helpers/modules";
 
 // Photos CRUD basis. Cascade-rows P1, P2 (reactive) staan in update.test.ts,
 // P3-P5, P7 in delete.test.ts, P6 (photoCount increment) in create.test.ts.
@@ -39,28 +40,28 @@ async function uploadStorage(t: ReturnType<typeof convexTest>) {
 
 describe("photos.create basic", () => {
   it("weigert zonder auth", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const storageId = await uploadStorage(t);
     await expect(
-      t.mutation(api.photos.create, { storageId }),
+      t.mutation(internal.photos.create, { storageId }),
     ).rejects.toThrow();
   });
 
   it("weigert wanneer geen user record", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const storageId = await uploadStorage(t);
     await expect(
-      withUser(t, "user_ghost").mutation(api.photos.create, { storageId }),
+      withUser(t, "user_ghost").mutation(internal.photos.create, { storageId }),
     ).rejects.toThrow();
   });
 
   it("maakt photo met ownerId = caller en defaults", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const aliceId = await registerUser(t, "user_alice", "a@x.com");
     const storageId = await uploadStorage(t);
 
     const photoId = await withUser(t, "user_alice").mutation(
-      api.photos.create,
+      internal.photos.create,
       { storageId, locationLabel: "Amsterdam" },
     );
 
@@ -77,11 +78,11 @@ describe("photos.create basic", () => {
 // Volledige auth- en vorm-matrix: tests/readWhitelist/photos.test.ts.
 describe("photos.getById / listByOwner", () => {
   it("getById geeft photo terug aan de eigenaar", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await registerUser(t, "user_alice", "a@x.com");
     const storageId = await uploadStorage(t);
     const photoId = await withUser(t, "user_alice").mutation(
-      api.photos.create,
+      internal.photos.create,
       { storageId },
     );
     const got = await withUser(t, "user_alice").query(api.photos.getById, {
@@ -91,19 +92,19 @@ describe("photos.getById / listByOwner", () => {
   });
 
   it("listByOwner geeft alleen eigen foto's", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const aliceId = await registerUser(t, "user_alice", "a@x.com");
     const bobId = await registerUser(t, "user_bob", "b@x.com");
     const s1 = await uploadStorage(t);
     const s2 = await uploadStorage(t);
     const s3 = await uploadStorage(t);
-    await withUser(t, "user_alice").mutation(api.photos.create, {
+    await withUser(t, "user_alice").mutation(internal.photos.create, {
       storageId: s1,
     });
-    await withUser(t, "user_alice").mutation(api.photos.create, {
+    await withUser(t, "user_alice").mutation(internal.photos.create, {
       storageId: s2,
     });
-    await withUser(t, "user_bob").mutation(api.photos.create, {
+    await withUser(t, "user_bob").mutation(internal.photos.create, {
       storageId: s3,
     });
 
@@ -122,11 +123,11 @@ describe("photos.getById / listByOwner", () => {
 
 describe("photos.update", () => {
   it("eigenaar kan locationLabel wijzigen", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await registerUser(t, "user_alice", "a@x.com");
     const storageId = await uploadStorage(t);
     const photoId = await withUser(t, "user_alice").mutation(
-      api.photos.create,
+      internal.photos.create,
       { storageId, locationLabel: "Oud" },
     );
 
@@ -140,12 +141,12 @@ describe("photos.update", () => {
   });
 
   it("niet-eigenaar wordt geweigerd", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await registerUser(t, "user_alice", "a@x.com");
     await registerUser(t, "user_bob", "b@x.com");
     const storageId = await uploadStorage(t);
     const photoId = await withUser(t, "user_alice").mutation(
-      api.photos.create,
+      internal.photos.create,
       { storageId },
     );
 
@@ -160,11 +161,11 @@ describe("photos.update", () => {
 
 describe("photos.remove auth", () => {
   it("eigenaar kan eigen foto deleten", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await registerUser(t, "user_alice", "a@x.com");
     const storageId = await uploadStorage(t);
     const photoId = await withUser(t, "user_alice").mutation(
-      api.photos.create,
+      internal.photos.create,
       { storageId },
     );
 
@@ -173,12 +174,12 @@ describe("photos.remove auth", () => {
   });
 
   it("niet-eigenaar wordt geweigerd", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await registerUser(t, "user_alice", "a@x.com");
     await registerUser(t, "user_bob", "b@x.com");
     const storageId = await uploadStorage(t);
     const photoId = await withUser(t, "user_alice").mutation(
-      api.photos.create,
+      internal.photos.create,
       { storageId },
     );
 

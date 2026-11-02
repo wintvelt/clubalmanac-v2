@@ -4,6 +4,7 @@ import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
 import schema from "../../convex/schema";
 import { registerUser, withUser } from "../_helpers/auth";
+import { modules } from "../_helpers/modules";
 
 // ---------------------------------------------------------------------------
 // WP8 (EXIF-only) — photos.rotate MUTATION. Sessie A cyclus-2, RED-phase.
@@ -303,7 +304,7 @@ describe("photos.rotate × pixel-oracle (gespiegelde starts, audit #10)", () => 
   it.each(MIRRORED)(
     "rotate(90) vanaf gespiegelde orientation %i = oracle-uitkomst",
     async (start) => {
-      const t = convexTest(schema);
+      const t = convexTest(schema, modules);
       const aliceId = await registerUser(t, "user_alice", "a@x.com");
       const { photoId } = await seedPhoto(t, aliceId, {
         exifOrientation: start,
@@ -324,7 +325,7 @@ describe("photos.rotate × pixel-oracle (gespiegelde starts, audit #10)", () => 
   it("flipY + rotate(90) vanaf 1 = oracle (flipY-feature trap uit audit)", async () => {
     // 1 → flipH → 2 → rotate 90 CW. Canoniek = 7 (transverse). De buggy impl
     // gaf 5 (transpose). Tegen de oracle, niet de tabel.
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const aliceId = await registerUser(t, "user_alice", "a@x.com");
     const { photoId } = await seedPhoto(t, aliceId, { exifOrientation: 1 });
 
@@ -341,7 +342,7 @@ describe("photos.rotate × pixel-oracle (gespiegelde starts, audit #10)", () => 
     // Audit: extractMetadata leest tags.Orientation 1:1; gespiegelde/front-camera
     // bestanden komen als 2 binnen. Twee rotate(90)-calls = 180-equivalent en
     // moeten via de oracle kloppen, niet via een self-consistente foute tabel.
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const aliceId = await registerUser(t, "user_alice", "a@x.com");
     const { photoId } = await seedPhoto(t, aliceId, { exifOrientation: 2 });
 
@@ -369,7 +370,7 @@ describe("photos.rotate — EXIF-arithmetiek tabel", () => {
   it.each(STARTS)(
     "rotate(90) vanaf orientation %i → tabelwaarde",
     async (start) => {
-      const t = convexTest(schema);
+      const t = convexTest(schema, modules);
       const aliceId = await registerUser(t, "user_alice", "a@x.com");
       const { photoId } = await seedPhoto(t, aliceId, {
         exifOrientation: start,
@@ -388,7 +389,7 @@ describe("photos.rotate — EXIF-arithmetiek tabel", () => {
   it.each(STARTS)(
     "rotate(180) vanaf orientation %i → tabelwaarde",
     async (start) => {
-      const t = convexTest(schema);
+      const t = convexTest(schema, modules);
       const aliceId = await registerUser(t, "user_alice", "a@x.com");
       const { photoId } = await seedPhoto(t, aliceId, {
         exifOrientation: start,
@@ -407,7 +408,7 @@ describe("photos.rotate — EXIF-arithmetiek tabel", () => {
   it.each(STARTS)(
     "rotate(270) vanaf orientation %i → tabelwaarde",
     async (start) => {
-      const t = convexTest(schema);
+      const t = convexTest(schema, modules);
       const aliceId = await registerUser(t, "user_alice", "a@x.com");
       const { photoId } = await seedPhoto(t, aliceId, {
         exifOrientation: start,
@@ -426,7 +427,7 @@ describe("photos.rotate — EXIF-arithmetiek tabel", () => {
   it.each(STARTS)(
     "rotate(0) vanaf orientation %i → ongewijzigd (no-op rotatie)",
     async (start) => {
-      const t = convexTest(schema);
+      const t = convexTest(schema, modules);
       const aliceId = await registerUser(t, "user_alice", "a@x.com");
       const { photoId } = await seedPhoto(t, aliceId, {
         exifOrientation: start,
@@ -445,7 +446,7 @@ describe("photos.rotate — EXIF-arithmetiek tabel", () => {
   it.each(STARTS)(
     "flip-only (rotation 0, flipY) vanaf orientation %i → mirror-tabelwaarde",
     async (start) => {
-      const t = convexTest(schema);
+      const t = convexTest(schema, modules);
       const aliceId = await registerUser(t, "user_alice", "a@x.com");
       const { photoId } = await seedPhoto(t, aliceId, {
         exifOrientation: start,
@@ -464,7 +465,7 @@ describe("photos.rotate — EXIF-arithmetiek tabel", () => {
   it.each(STARTS)(
     "combinatie flipY + rotate(90) vanaf orientation %i → flip-dan-rotatie (volgorde-pin)",
     async (start) => {
-      const t = convexTest(schema);
+      const t = convexTest(schema, modules);
       const aliceId = await registerUser(t, "user_alice", "a@x.com");
       const { photoId } = await seedPhoto(t, aliceId, {
         exifOrientation: start,
@@ -489,7 +490,7 @@ describe("photos.rotate — EXIF-arithmetiek tabel", () => {
 
 describe("photos.rotate — undefined orientation default = 1", () => {
   it("undefined + rotate(90) → 6 (= tabel vanaf 1)", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const aliceId = await registerUser(t, "user_alice", "a@x.com");
     const { photoId } = await seedPhoto(t, aliceId); // exifOrientation undefined
 
@@ -503,7 +504,7 @@ describe("photos.rotate — undefined orientation default = 1", () => {
   });
 
   it("undefined + rotate(270) → 8", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const aliceId = await registerUser(t, "user_alice", "a@x.com");
     const { photoId } = await seedPhoto(t, aliceId);
 
@@ -517,7 +518,7 @@ describe("photos.rotate — undefined orientation default = 1", () => {
   });
 
   it("undefined + flip-only → 2", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const aliceId = await registerUser(t, "user_alice", "a@x.com");
     const { photoId } = await seedPhoto(t, aliceId);
 
@@ -539,7 +540,7 @@ describe("photos.rotate — delta + inverse", () => {
   it.each(STARTS)(
     "rotate(90) tweemaal = rotate(180) vanaf orientation %i",
     async (start) => {
-      const t = convexTest(schema);
+      const t = convexTest(schema, modules);
       const aliceId = await registerUser(t, "user_alice", "a@x.com");
       const { photoId } = await seedPhoto(t, aliceId, {
         exifOrientation: start,
@@ -563,7 +564,7 @@ describe("photos.rotate — delta + inverse", () => {
   it.each(STARTS)(
     "rotate(90) daarna rotate(270) → terug bij orientation %i (inverse)",
     async (start) => {
-      const t = convexTest(schema);
+      const t = convexTest(schema, modules);
       const aliceId = await registerUser(t, "user_alice", "a@x.com");
       const { photoId } = await seedPhoto(t, aliceId, {
         exifOrientation: start,
@@ -585,7 +586,7 @@ describe("photos.rotate — delta + inverse", () => {
   );
 
   it("flip-only tweemaal → terug bij start (mirror is eigen inverse)", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const aliceId = await registerUser(t, "user_alice", "a@x.com");
     const { photoId } = await seedPhoto(t, aliceId, { exifOrientation: 6 });
 
@@ -610,7 +611,7 @@ describe("photos.rotate — delta + inverse", () => {
 
 describe("photos.rotate — width/height swap", () => {
   it("rotate(90) → dims geswapt in DB", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const aliceId = await registerUser(t, "user_alice", "a@x.com");
     const { photoId } = await seedPhoto(t, aliceId, {
       exifOrientation: 1,
@@ -630,7 +631,7 @@ describe("photos.rotate — width/height swap", () => {
   });
 
   it("rotate(270) → dims geswapt", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const aliceId = await registerUser(t, "user_alice", "a@x.com");
     const { photoId } = await seedPhoto(t, aliceId, {
       exifOrientation: 1,
@@ -650,7 +651,7 @@ describe("photos.rotate — width/height swap", () => {
   });
 
   it("rotate(180) → dims ongewijzigd", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const aliceId = await registerUser(t, "user_alice", "a@x.com");
     const { photoId } = await seedPhoto(t, aliceId, {
       exifOrientation: 1,
@@ -670,7 +671,7 @@ describe("photos.rotate — width/height swap", () => {
   });
 
   it("rotate(0) → dims ongewijzigd", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const aliceId = await registerUser(t, "user_alice", "a@x.com");
     const { photoId } = await seedPhoto(t, aliceId, {
       exifOrientation: 1,
@@ -690,7 +691,7 @@ describe("photos.rotate — width/height swap", () => {
   });
 
   it("flip-only (rotation 0, flipY) → dims ongewijzigd (mirror swapt niet)", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const aliceId = await registerUser(t, "user_alice", "a@x.com");
     const { photoId } = await seedPhoto(t, aliceId, {
       exifOrientation: 1,
@@ -710,7 +711,7 @@ describe("photos.rotate — width/height swap", () => {
   });
 
   it("flipY + rotate(90) → dims geswapt (rotatie bepaalt swap, niet de flip)", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const aliceId = await registerUser(t, "user_alice", "a@x.com");
     const { photoId } = await seedPhoto(t, aliceId, {
       exifOrientation: 1,
@@ -730,7 +731,7 @@ describe("photos.rotate — width/height swap", () => {
   });
 
   it("dims undefined + rotate(90) → blijven undefined (geen verzonnen waarden)", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const aliceId = await registerUser(t, "user_alice", "a@x.com");
     const { photoId } = await seedPhoto(t, aliceId, { exifOrientation: 1 });
 
@@ -754,7 +755,7 @@ describe("photos.rotate — width/height swap", () => {
 
 describe("photos.rotate — auth-boundary", () => {
   it("owner mag eigen foto roteren", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const aliceId = await registerUser(t, "user_alice", "a@x.com");
     const { photoId } = await seedPhoto(t, aliceId, { exifOrientation: 1 });
 
@@ -768,7 +769,7 @@ describe("photos.rotate — auth-boundary", () => {
   });
 
   it("group-admin van publicatie-group mag andermans foto roteren", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const aliceId = await registerUser(t, "user_alice", "a@x.com");
     const bobId = await registerUser(t, "user_bob", "b@x.com");
     const { photoId } = await seedPhoto(t, aliceId, { exifOrientation: 1 });
@@ -784,7 +785,7 @@ describe("photos.rotate — auth-boundary", () => {
   });
 
   it("member-zonder-admin → geweigerd, orientation ongewijzigd (A3)", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const aliceId = await registerUser(t, "user_alice", "a@x.com");
     const bobId = await registerUser(t, "user_bob", "b@x.com");
     const carolId = await registerUser(t, "user_carol", "c@x.com");
@@ -816,7 +817,7 @@ describe("photos.rotate — auth-boundary", () => {
   });
 
   it("admin van een group waar de foto NIET gepubliceerd staat → geweigerd", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const aliceId = await registerUser(t, "user_alice", "a@x.com");
     const daveId = await registerUser(t, "user_dave", "d@x.com");
     const { photoId } = await seedPhoto(t, aliceId, { exifOrientation: 1 });
@@ -846,7 +847,7 @@ describe("photos.rotate — auth-boundary", () => {
   });
 
   it("webmaster (geen owner/admin) → geweigerd (geen backdoor)", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const aliceId = await registerUser(t, "user_alice", "a@x.com");
     await registerUser(t, "user_wm", "wm@x.com");
     const { photoId } = await seedPhoto(t, aliceId, { exifOrientation: 1 });
@@ -862,7 +863,7 @@ describe("photos.rotate — auth-boundary", () => {
   });
 
   it("niet-ingelogd → geweigerd", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const aliceId = await registerUser(t, "user_alice", "a@x.com");
     const { photoId } = await seedPhoto(t, aliceId, { exifOrientation: 1 });
 
@@ -883,7 +884,7 @@ describe("photos.rotate — auth-boundary", () => {
 
 describe("photos.rotate — guards", () => {
   it("onbekende photoId → throw", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const aliceId = await registerUser(t, "user_alice", "a@x.com");
     const { photoId } = await seedPhoto(t, aliceId);
     await t.run((ctx) => ctx.db.delete(photoId));
@@ -898,7 +899,7 @@ describe("photos.rotate — guards", () => {
   });
 
   it("rotation buiten {0,90,180,270} (45) → afgewezen door validator", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const aliceId = await registerUser(t, "user_alice", "a@x.com");
     const { photoId } = await seedPhoto(t, aliceId, { exifOrientation: 1 });
 
@@ -920,7 +921,7 @@ describe("photos.rotate — guards", () => {
 
 describe("photos.rotate — cascade-safe", () => {
   it("storageId + alle niet-oriëntatie-velden ongemoeid na rotate", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const aliceId = await registerUser(t, "user_alice", "a@x.com");
     const bobId = await registerUser(t, "user_bob", "b@x.com");
 

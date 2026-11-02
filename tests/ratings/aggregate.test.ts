@@ -4,6 +4,7 @@ import { api , internal } from "../../convex/_generated/api";
 import schema from "../../convex/schema";
 import type { Id } from "../../convex/_generated/dataModel";
 import { shareInGroup } from "../_helpers/access";
+import { modules } from "../_helpers/modules";
 
 // Cascade matrix row R1: rating upsert/remove herrekent transactioneel
 // photo.ratingAverage + photo.ratingCount. Cat-2 transactional aggregate.
@@ -46,7 +47,7 @@ async function setupPhotoOwnedBy(
     async (ctx) => await ctx.storage.store(new Blob(["x"])),
   );
   const photoId = await withUser(t, ownerSubject).mutation(
-    api.photos.create,
+    internal.photos.create,
     { storageId },
   );
   return photoId;
@@ -65,7 +66,7 @@ async function registerRater(
 
 describe("R1: ratings.upsert herrekent aggregate", () => {
   it("eerste rating zet ratingCount=1 en ratingAverage=value", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const photoId = await setupPhotoOwnedBy(t, "user_alice");
     await registerRater(t, photoId, "user_bob", "b@x.com");
 
@@ -80,7 +81,7 @@ describe("R1: ratings.upsert herrekent aggregate", () => {
   });
 
   it("meerdere ratings → gemiddelde correct", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const photoId = await setupPhotoOwnedBy(t, "user_alice");
     await registerRater(t, photoId, "user_bob", "b@x.com");
     await registerRater(t, photoId, "user_carol", "c@x.com");
@@ -108,7 +109,7 @@ describe("R1: ratings.upsert herrekent aggregate", () => {
     // AWS ratingChangeToPhoto.js gebruikte parseInt → integer-only sums.
     // Convex schema staat v.number() toe, dus fractionele gemiddeldes zijn
     // schema-legaal. Dekt non-integer pad: 3 + 4 + 4 = 11 / 3 ≈ 3.6666...
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const photoId = await setupPhotoOwnedBy(t, "user_alice");
     await registerRater(t, photoId, "user_bob", "b@x.com");
     await registerRater(t, photoId, "user_carol", "c@x.com");
@@ -133,7 +134,7 @@ describe("R1: ratings.upsert herrekent aggregate", () => {
   });
 
   it("update bestaande rating herrekent gemiddelde", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const photoId = await setupPhotoOwnedBy(t, "user_alice");
     await registerRater(t, photoId, "user_bob", "b@x.com");
 
@@ -154,7 +155,7 @@ describe("R1: ratings.upsert herrekent aggregate", () => {
 
 describe("R1: ratings.remove herrekent aggregate", () => {
   it("verlaagt count en herrekent gemiddelde", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const photoId = await setupPhotoOwnedBy(t, "user_alice");
     await registerRater(t, photoId, "user_bob", "b@x.com");
     await registerRater(t, photoId, "user_carol", "c@x.com");
@@ -176,7 +177,7 @@ describe("R1: ratings.remove herrekent aggregate", () => {
   });
 
   it("laatste rating weg → ratingCount=0, ratingAverage=undefined", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const photoId = await setupPhotoOwnedBy(t, "user_alice");
     await registerRater(t, photoId, "user_bob", "b@x.com");
 

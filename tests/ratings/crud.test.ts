@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { api , internal } from "../../convex/_generated/api";
 import schema from "../../convex/schema";
 import { shareInGroup } from "../_helpers/access";
+import { modules } from "../_helpers/modules";
 
 // Ratings basics: auth, photo bestaat, listForPhoto.
 // Aggregate-rerekening (R1) staat in aggregate.test.ts.
@@ -43,14 +44,14 @@ async function setupPhoto(
   const storageId = await t.run(
     async (ctx) => await ctx.storage.store(new Blob(["x"])),
   );
-  return await withUser(t, ownerSubject).mutation(api.photos.create, {
+  return await withUser(t, ownerSubject).mutation(internal.photos.create, {
     storageId,
   });
 }
 
 describe("ratings.upsert auth", () => {
   it("weigert zonder auth", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const photoId = await setupPhoto(t, "user_alice");
     await expect(
       t.mutation(api.ratings.upsert, { photoId, value: 4 }),
@@ -58,7 +59,7 @@ describe("ratings.upsert auth", () => {
   });
 
   it("weigert wanneer photo niet bestaat", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const photoId = await setupPhoto(t, "user_alice");
     await registerUser(t, "user_bob", "b@x.com");
     await t.run((ctx) => ctx.db.delete(photoId));
@@ -74,7 +75,7 @@ describe("ratings.upsert auth", () => {
 
 describe("ratings.remove", () => {
   it("verwijdert eigen rating, andere blijven", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const photoId = await setupPhoto(t, "user_alice");
     const bobId = await registerUser(t, "user_bob", "b@x.com");
     const carolId = await registerUser(t, "user_carol", "c@x.com");
@@ -104,7 +105,7 @@ describe("ratings.remove", () => {
   });
 
   it("idempotent — verwijderen wanneer geen rating bestaat doet niets", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const photoId = await setupPhoto(t, "user_alice");
     await registerUser(t, "user_bob", "b@x.com");
 
@@ -118,7 +119,7 @@ describe("ratings.remove", () => {
 // Volledige auth- en vorm-matrix: tests/readWhitelist/ratings.test.ts.
 describe("ratings.listForPhoto", () => {
   it("geeft alleen de eigen rating, niet die van anderen", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const photoId = await setupPhoto(t, "user_alice");
     const bobId = await registerUser(t, "user_bob", "b@x.com");
     await shareInGroup(t, photoId, [bobId]);

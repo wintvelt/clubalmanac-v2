@@ -23,6 +23,7 @@ import {
   sessionCreatedPayload,
   TEST_WEBHOOK_SECRET,
 } from "../_helpers/svix";
+import { modules } from "../_helpers/modules";
 
 beforeEach(() => {
   process.env.CLERK_WEBHOOK_SECRET = TEST_WEBHOOK_SECRET;
@@ -35,7 +36,7 @@ afterEach(() => {
 describe("/clerk-webhook — env-var fail-closed", () => {
   it("CLERK_WEBHOOK_SECRET ontbreekt → 503, geen state-mutatie", async () => {
     delete process.env.CLERK_WEBHOOK_SECRET;
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const body = sessionCreatedPayload({
       subject: "user_alice",
       email: "alice@x.com",
@@ -56,7 +57,7 @@ describe("/clerk-webhook — env-var fail-closed", () => {
 
 describe("/clerk-webhook — Svix-headers validation", () => {
   it("geen svix-headers → 401, geen state-mutatie", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const body = sessionCreatedPayload({
       subject: "user_alice",
       email: "alice@x.com",
@@ -74,7 +75,7 @@ describe("/clerk-webhook — Svix-headers validation", () => {
   });
 
   it("svix-id ontbreekt → 401", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const body = sessionCreatedPayload({
       subject: "user_alice",
       email: "alice@x.com",
@@ -92,7 +93,7 @@ describe("/clerk-webhook — Svix-headers validation", () => {
   });
 
   it("svix-timestamp ontbreekt → 401", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const body = sessionCreatedPayload({
       subject: "user_alice",
       email: "alice@x.com",
@@ -110,7 +111,7 @@ describe("/clerk-webhook — Svix-headers validation", () => {
   });
 
   it("svix-signature ontbreekt → 401", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const body = sessionCreatedPayload({
       subject: "user_alice",
       email: "alice@x.com",
@@ -128,7 +129,7 @@ describe("/clerk-webhook — Svix-headers validation", () => {
   });
 
   it("signature met verkeerd secret → 401, geen state-mutatie", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const body = sessionCreatedPayload({
       subject: "user_alice",
       email: "alice@x.com",
@@ -153,7 +154,7 @@ describe("/clerk-webhook — Svix-headers validation", () => {
     // Pin't dat het hele body-bytes-veld in de signature mee gaat. Aanvaller
     // die een geldige signature van vorige delivery kopieert maar de body
     // muteert (andere email, andere subject) wordt afgevangen.
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const goodBody = sessionCreatedPayload({
       subject: "user_alice",
       email: "alice@x.com",
@@ -176,7 +177,7 @@ describe("/clerk-webhook — Svix-headers validation", () => {
   });
 
   it("geldige Svix-headers + session.created → 200, users-row aangemaakt", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const body = sessionCreatedPayload({
       subject: "user_alice",
       email: "alice@x.com",

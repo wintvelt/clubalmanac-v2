@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import { api, internal } from "../../convex/_generated/api";
 import schema from "../../convex/schema";
 import type { Id } from "../../convex/_generated/dataModel";
+import { modules } from "../_helpers/modules";
 
 // FL1 — daily cron cleanupFlaggedPhotos.
 // Bron: niet uit oude AWS code (was handmatig). Cascade-matrix FL1:
@@ -73,7 +74,7 @@ describe("FL1: cleanupFlaggedPhotos cron", () => {
       const baseNow = new Date("2026-01-01T00:00:00Z").getTime();
       vi.setSystemTime(baseNow);
 
-      const t = convexTest(schema);
+      const t = convexTest(schema, modules);
       const aliceId = await registerUser(t, "user_alice", "a@x.com");
       const bobId = await registerUser(t, "user_bob", "b@x.com");
 
@@ -106,7 +107,7 @@ describe("FL1: cleanupFlaggedPhotos cron", () => {
       const baseNow = new Date("2026-01-01T00:00:00Z").getTime();
       vi.setSystemTime(baseNow);
 
-      const t = convexTest(schema);
+      const t = convexTest(schema, modules);
       const aliceId = await registerUser(t, "user_alice", "a@x.com");
       const bobId = await registerUser(t, "user_bob", "b@x.com");
 
@@ -132,7 +133,7 @@ describe("FL1: cleanupFlaggedPhotos cron", () => {
       const baseNow = new Date("2026-01-01T00:00:00Z").getTime();
       vi.setSystemTime(baseNow);
 
-      const t = convexTest(schema);
+      const t = convexTest(schema, modules);
       const aliceId = await registerUser(t, "user_alice", "a@x.com");
       const bobId = await registerUser(t, "user_bob", "b@x.com");
 
@@ -169,7 +170,7 @@ describe("FL1: cleanupFlaggedPhotos cron", () => {
       const baseNow = new Date("2026-01-01T00:00:00Z").getTime();
       vi.setSystemTime(baseNow);
 
-      const t = convexTest(schema);
+      const t = convexTest(schema, modules);
       const aliceId = await registerUser(t, "user_alice", "a@x.com");
       const bobId = await registerUser(t, "user_bob", "b@x.com");
 
@@ -229,7 +230,7 @@ describe("FL1: cleanupFlaggedPhotos cron", () => {
       const baseNow = new Date("2026-01-01T00:00:00Z").getTime();
       vi.setSystemTime(baseNow);
 
-      const t = convexTest(schema);
+      const t = convexTest(schema, modules);
       const aliceId = await registerUser(t, "user_alice", "a@x.com");
       const bobId = await registerUser(t, "user_bob", "b@x.com");
 
@@ -253,7 +254,7 @@ describe("FL1: cleanupFlaggedPhotos cron", () => {
       const baseNow = new Date("2026-01-01T00:00:00Z").getTime();
       vi.setSystemTime(baseNow);
 
-      const t = convexTest(schema);
+      const t = convexTest(schema, modules);
       const aliceId = await registerUser(t, "user_alice", "a@x.com");
       const bobId = await registerUser(t, "user_bob", "b@x.com");
 
@@ -272,7 +273,7 @@ describe("FL1: cleanupFlaggedPhotos cron", () => {
   });
 
   it("doet niets als er geen photos met flaggedDeleteDate zijn", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const aliceId = await registerUser(t, "user_alice", "a@x.com");
     // ongewone photo zonder flag
     await insertPhotoWithFlag(t, aliceId, {});

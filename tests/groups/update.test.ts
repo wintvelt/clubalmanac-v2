@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { api , internal } from "../../convex/_generated/api";
 import schema from "../../convex/schema";
 import { assertReactive } from "../_helpers/reactive";
+import { modules } from "../_helpers/modules";
 
 // Cascade matrix rows G1, G2: cat-1 (eliminated) + cat-4 (reactive coverage).
 // Verifieert dat join-on-read queries fresh group-data returneren na een
@@ -37,7 +38,7 @@ async function registerUser(
 
 describe("G1: membership query joint group-data fresh", () => {
   it("groups.listMine toont nieuwe naam direct na groups.update", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await registerUser(t, "user_admin", "admin@x.com");
 
     const groupId = await withUser(t, "user_admin").mutation(
@@ -65,7 +66,7 @@ describe("G1: membership query joint group-data fresh", () => {
 
 describe("G2: album query joint group-data fresh", () => {
   it("albums.getWithGroup toont nieuwe group-naam direct na update", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await registerUser(t, "user_admin", "admin@x.com");
 
     const groupId = await withUser(t, "user_admin").mutation(

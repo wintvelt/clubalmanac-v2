@@ -2,6 +2,7 @@ import { convexTest } from "convex-test";
 import { describe, expect, it } from "vitest";
 import { api } from "../convex/_generated/api";
 import schema from "../convex/schema";
+import { modules } from "./_helpers/modules";
 
 // Fase 1 smoke tests: bewijzen dat de toolchain werkt.
 // Geen feature tests — die komen in fase 2.
@@ -10,12 +11,12 @@ describe("convex-test harness", () => {
   it("schema is valid", () => {
     // defineSchema gooit bij ongeldig schema. Als import slaagt en
     // convexTest het accepteert, is de schema basaal correct.
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     expect(t).toBeDefined();
   });
 
   it("write → read → delete via ctx.db", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
 
     const userId = await t.run(async (ctx) => {
       return await ctx.db.insert("users", {
@@ -38,7 +39,7 @@ describe("convex-test harness", () => {
   });
 
   it("by_subject index lookup werkt", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await t.run(async (ctx) => {
       await ctx.db.insert("users", {
         subject: "user_indexed",
@@ -61,7 +62,7 @@ describe("convex-test harness", () => {
 
 describe("type-flow end-to-end", () => {
   it("smoke.ping query returns typed result", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const result = await t.query(api.smoke.ping, {});
 
     // Compile-time: TS weet dat result.ok === true en message: string.
@@ -77,13 +78,13 @@ describe("type-flow end-to-end", () => {
 
 describe("Clerk auth wiring", () => {
   it("ctx.auth.getUserIdentity is null without token", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const identity = await t.run(async (ctx) => ctx.auth.getUserIdentity());
     expect(identity).toBeNull();
   });
 
   it("ctx.auth.getUserIdentity returns identity when impersonating", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const asUser = t.withIdentity({
       subject: "user_test",
       issuer: "https://picked-quail-97.clerk.accounts.dev",

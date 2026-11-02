@@ -2,6 +2,7 @@ import { convexTest } from "convex-test";
 import { describe, expect, it } from "vitest";
 import { api , internal } from "../../convex/_generated/api";
 import schema from "../../convex/schema";
+import { modules } from "../_helpers/modules";
 
 // Cascade matrix row A2: albums.remove cascadet albumLastSeen records
 // voor dat album. Test leeft bij de trigger (album delete).
@@ -34,7 +35,7 @@ async function registerUser(
 
 describe("A2: albums.remove cascade albumLastSeen", () => {
   it("verwijdert albumLastSeen records voor dit album", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await registerUser(t, "user_alice", "a@x.com");
     const bobId = await registerUser(t, "user_bob", "b@x.com");
 
@@ -75,7 +76,7 @@ describe("A2: albums.remove cascade albumLastSeen", () => {
   });
 
   it("laat albumLastSeen voor andere albums intact", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await registerUser(t, "user_alice", "a@x.com");
 
     const groupId = await withUser(t, "user_alice").mutation(

@@ -31,6 +31,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { internal } from "../../convex/_generated/api";
 import schema from "../../convex/schema";
 import type { Id } from "../../convex/_generated/dataModel";
+import { modules } from "../_helpers/modules";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -97,7 +98,7 @@ async function scheduledCount(
 
 describe("internal.invites.expirePendingInvites — boundary (<=, fake clock)", () => {
   it("pending met expiresAt === now + 1ms blijft pending", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const id = await seedInvite(t, {
       status: "pending",
       expiresAt: FIXED_NOW + 1,
@@ -109,7 +110,7 @@ describe("internal.invites.expirePendingInvites — boundary (<=, fake clock)", 
   });
 
   it("pending met expiresAt === now wordt expired (boundary inclusief)", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const id = await seedInvite(t, {
       status: "pending",
       expiresAt: FIXED_NOW,
@@ -121,7 +122,7 @@ describe("internal.invites.expirePendingInvites — boundary (<=, fake clock)", 
   });
 
   it("pending met expiresAt === now - 1ms wordt expired", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const id = await seedInvite(t, {
       status: "pending",
       expiresAt: FIXED_NOW - 1,
@@ -135,7 +136,7 @@ describe("internal.invites.expirePendingInvites — boundary (<=, fake clock)", 
 
 describe("internal.invites.expirePendingInvites — status-filter exclusiviteit", () => {
   it("raakt accepted / declined / reeds-expired niet, ook bij expiresAt < now", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const acceptedId = await seedInvite(t, {
       status: "accepted",
       expiresAt: FIXED_NOW - DAY_MS,
@@ -170,7 +171,7 @@ describe("internal.invites.expirePendingInvites — status-filter exclusiviteit"
   it("bounce-expired rij (status=expired, bouncedAt gezet) blijft onaangeraakt — bouncedAt hands-off", async () => {
     // Invariant 3: IB2 mag bouncedAt nooit clearen/overschrijven. Een rij die
     // al via IB1 als bounce-expired gemarkeerd is, is terminal.
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const bouncedExpiredId = await seedInvite(t, {
       status: "expired",
       expiresAt: FIXED_NOW - DAY_MS,
@@ -188,7 +189,7 @@ describe("internal.invites.expirePendingInvites — status-filter exclusiviteit"
 
 describe("internal.invites.expirePendingInvites — fingerprint (bouncedAt + respondedAt ongezet)", () => {
   it("natural-expired rij heeft géén bouncedAt en géén respondedAt na patch (inv. 3 + 8)", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const id = await seedInvite(t, {
       status: "pending",
       expiresAt: FIXED_NOW - DAY_MS,
@@ -207,7 +208,7 @@ describe("internal.invites.expirePendingInvites — stille expiry (geen email)",
   it("queue't geen email-action, ook bij meerdere verlopen pending invites", async () => {
     // Invariant 4: inviter krijgt GEEN notify bij natural expiry (alleen IB1
     // bounce-pad verstuurt). Eerste-run op stale dataset → geen email-storm.
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await seedInvite(t, {
       status: "pending",
       expiresAt: FIXED_NOW - DAY_MS,
@@ -234,7 +235,7 @@ describe("internal.invites.expirePendingInvites — idempotency over runs", () =
     // geen nieuwe bouncedAt/respondedAt) én voegt geen scheduled functions toe.
     // Garanderend mechanisme = de status-filter (al-expired matcht niet meer),
     // óók gepind door de exclusiviteits-test hierboven.
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const id = await seedInvite(t, {
       status: "pending",
       expiresAt: FIXED_NOW - DAY_MS,
@@ -260,7 +261,7 @@ describe("internal.invites.expirePendingInvites — cascade-vrijheid", () => {
   it("schrijft geen inviteBounceEvents en raakt memberships niet aan", async () => {
     // Invariant 7: single-row-patch op invites. Geen membership-touch, geen
     // inviteBounceEvents-write (dat is IB1's dedup-store, niet IB2's).
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
 
     const membershipId = await t.run(async (ctx) => {
       const userId = await ctx.db.insert("users", {
@@ -301,7 +302,7 @@ describe("internal.invites.expirePendingInvites — cascade-vrijheid", () => {
 
 describe("internal.invites.expirePendingInvites — mixed dataset + no-op", () => {
   it("één run patcht uitsluitend de verlopen pending rijen, laat de rest staan", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const expiredPending = await seedInvite(t, {
       status: "pending",
       expiresAt: FIXED_NOW - DAY_MS,
@@ -333,7 +334,7 @@ describe("internal.invites.expirePendingInvites — mixed dataset + no-op", () =
   });
 
   it("lege dataset: no-op (geen throw)", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await expect(
       t.mutation(internal.invites.expirePendingInvites, {}),
     ).resolves.not.toThrow();

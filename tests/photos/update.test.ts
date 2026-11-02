@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { api , internal } from "../../convex/_generated/api";
 import schema from "../../convex/schema";
 import { assertReactive } from "../_helpers/reactive";
+import { modules } from "../_helpers/modules";
 
 // Cascade matrix rows P1, P2: cat-1 (eliminated) + cat-4 (reactive coverage).
 // Verifieert dat join-on-read queries fresh photo-data returneren na een
@@ -41,7 +42,7 @@ async function uploadStorage(t: ReturnType<typeof convexTest>) {
 
 describe("P1: albumPhoto query joint photo-data fresh", () => {
   it("albums.listPhotos toont nieuwe locationLabel direct na update", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await registerUser(t, "user_admin", "admin@x.com");
     const groupId = await withUser(t, "user_admin").mutation(
       api.groups.create,
@@ -54,7 +55,7 @@ describe("P1: albumPhoto query joint photo-data fresh", () => {
 
     const storageId = await uploadStorage(t);
     const photoId = await withUser(t, "user_admin").mutation(
-      api.photos.create,
+      internal.photos.create,
       { storageId, locationLabel: "Oud" },
     );
     await withUser(t, "user_admin").mutation(api.albums.addPhoto, {
@@ -79,7 +80,7 @@ describe("P1: albumPhoto query joint photo-data fresh", () => {
 
 describe("P2: cover query joint photo-data fresh", () => {
   it("groups.getWithCover toont nieuwe locationLabel direct na update", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await registerUser(t, "user_admin", "admin@x.com");
     const groupId = await withUser(t, "user_admin").mutation(
       api.groups.create,
@@ -88,7 +89,7 @@ describe("P2: cover query joint photo-data fresh", () => {
 
     const storageId = await uploadStorage(t);
     const photoId = await withUser(t, "user_admin").mutation(
-      api.photos.create,
+      internal.photos.create,
       { storageId, locationLabel: "Oud" },
     );
     // WP24 (A-keuze 2): een groep-cover staat in een album van die groep.
@@ -120,7 +121,7 @@ describe("P2: cover query joint photo-data fresh", () => {
   });
 
   it("albums.getWithCover toont nieuwe locationLabel direct na update", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await registerUser(t, "user_admin", "admin@x.com");
     const groupId = await withUser(t, "user_admin").mutation(
       api.groups.create,
@@ -133,7 +134,7 @@ describe("P2: cover query joint photo-data fresh", () => {
 
     const storageId = await uploadStorage(t);
     const photoId = await withUser(t, "user_admin").mutation(
-      api.photos.create,
+      internal.photos.create,
       { storageId, locationLabel: "Oud" },
     );
     // WP24 (A-keuze 2): een album-cover staat in dat album.

@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import type { Id } from "../../convex/_generated/dataModel";
 import schema from "../../convex/schema";
 import { registerUserWithInvite, withUser } from "../_helpers/auth";
+import { modules } from "../_helpers/modules";
 
 // File upload werkpakket — Cyclus 1, audit-cyclus-1 hardening (RED-phase spec).
 //
@@ -138,7 +139,7 @@ describe("POST /upload — auth", () => {
     // Convex draait geen JWT-validatie in convex-test; deze test pint dat
     // de handler zelf bij ontbreken van identity een 401 returnt en geen
     // photo record creëert. Reservation pattern: ook geen reservation insert.
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
 
     const res = await t.fetch(
       "/upload",
@@ -159,7 +160,7 @@ describe("POST /upload — auth", () => {
     // vindt geen users-record bij subject. Niet-401-status (bv. 500) zou
     // ook acceptabel zijn — pinnen alleen dat het een error is en geen
     // photo wordt gecreëerd. B kiest definitieve status; default = 401.
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
 
     const res = await withUser(t, "user_ghost").fetch(
       "/upload",
@@ -174,7 +175,7 @@ describe("POST /upload — auth", () => {
 
 describe("POST /upload — header validation", () => {
   it("ontbrekende X-Upload-Id returnt 400", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await registerUserWithInvite(t, "user_alice", "a@x.com");
 
     const res = await withUser(t, "user_alice").fetch(
@@ -188,7 +189,7 @@ describe("POST /upload — header validation", () => {
   });
 
   it("lege X-Upload-Id (string '') returnt 400", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await registerUserWithInvite(t, "user_alice", "a@x.com");
 
     const res = await withUser(t, "user_alice").fetch(
@@ -204,7 +205,7 @@ describe("POST /upload — header validation", () => {
     // met leading/trailing whitespace sturen (proxy-rewrites, manual paste).
     // Server moet trim() doen vóór de empty-check, anders glipt "   " door
     // als legitieme idempotency-key.
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await registerUserWithInvite(t, "user_alice", "a@x.com");
 
     for (const uploadId of ["   ", "\t", "\n", "\t\n  "]) {
@@ -228,7 +229,7 @@ describe("POST /upload — happy path (reservation flow)", () => {
   it("returnt 200 met photoId, creëert photo + completed reservation, increment photoCount, queue't extractMetadata", async () => {
     // Audit-cyclus-1: reservation eindigt in status="completed" met photoId
     // gevuld + completedAt set + ownerId scoped. Geen post-fact log meer.
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const aliceId = await registerUserWithInvite(t, "user_alice", "a@x.com");
 
     const before = Date.now();
@@ -288,7 +289,7 @@ describe("POST /upload — happy path (reservation flow)", () => {
     // Crucial regression-guard: één van de doelen van de rewrite is dat
     // server controleert wat in storage komt. Pin dat de bytes 1:1 in
     // storage landen (geen multipart-parsing, geen base64-roundtrip-bug).
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await registerUserWithInvite(t, "user_alice", "a@x.com");
 
     const res = await withUser(t, "user_alice").fetch(
@@ -320,7 +321,7 @@ describe("POST /upload — happy path (reservation flow)", () => {
     // Open implementatie-keuze (B beslist): client kan filename meegeven
     // via een header. Voorstel: X-Filename header (eenvoudiger dan parsing
     // van Content-Disposition). MimeType komt uit Content-Type.
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await registerUserWithInvite(t, "user_alice", "a@x.com");
 
     const res = await withUser(t, "user_alice").fetch(
@@ -344,7 +345,7 @@ describe("POST /upload — happy path (reservation flow)", () => {
   it("X-Upload-Id met whitespace rondom de UUID wordt getrimd en idempotent gematcht", async () => {
     // Audit-cyclus-1 §3: dezelfde UUID met en zonder padding moet als één
     // reservation gelden (anders ondermijnt whitespace-noise de retry-safety).
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await registerUserWithInvite(t, "user_alice", "a@x.com");
 
     const res1 = await withUser(t, "user_alice").fetch(
@@ -382,7 +383,7 @@ describe("POST /upload — photo-limit gate (audit-cyclus-1: 403 + typed sentine
     // Limit-check vóór reservation-insert + storage.store. Dat voorkomt:
     //   - orphan storage blobs bij quota-fail
     //   - phantom reservations (in_progress die nooit completen)
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const aliceId = await registerUserWithInvite(t, "user_alice", "a@x.com");
     await t.run(async (ctx) => {
       const u = await ctx.db.get(aliceId);
@@ -421,7 +422,7 @@ describe("POST /upload — photo-limit gate (audit-cyclus-1: 403 + typed sentine
 
 describe("POST /upload — idempotency (reservation completed → return existing)", () => {
   it("tweede POST met zelfde X-Upload-Id returnt zelfde photoId, geen tweede photo, geen tweede photoCount++, geen tweede extractMetadata", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const aliceId = await registerUserWithInvite(t, "user_alice", "a@x.com");
 
     const res1 = await withUser(t, "user_alice").fetch(
@@ -479,7 +480,7 @@ describe("POST /upload — idempotency (reservation completed → return existin
     //
     // Nieuwe gedrag: Alice met "shared" en Bob met "shared" zijn twee
     // onafhankelijke reservation-keys, elk in eigen completed-staat.
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const aliceId = await registerUserWithInvite(t, "user_alice", "a@x.com");
     const bobId = await registerUserWithInvite(t, "user_bob", "b@x.com");
 
@@ -524,7 +525,7 @@ describe("POST /upload — idempotency (reservation completed → return existin
 
 describe("POST /upload — concurrent uploads", () => {
   it("verschillende users met verschillende X-Upload-Ids: elk eigen photoId", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const aliceId = await registerUserWithInvite(t, "user_alice", "a@x.com");
     const bobId = await registerUserWithInvite(t, "user_bob", "b@x.com");
 
@@ -559,7 +560,7 @@ describe("POST /upload — concurrent uploads", () => {
     // Pieterpad-scenario: één user maakt op zijn telefoon snel 2 foto's,
     // beide uploads vuren parallel. Elke heeft eigen client-UUID; beide
     // moeten slagen met eigen photoId, photoCount=2.
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const aliceId = await registerUserWithInvite(t, "user_alice", "a@x.com");
 
     const [res1, res2] = await Promise.all([
@@ -633,7 +634,7 @@ describe("POST /upload — concurrent uploads", () => {
     // optimistic-concurrency conflict afhandelt en de loser explicit naar
     // 409 stuurt). Test mag dan geel/skip met expliciete TODO; niet stilletjes
     // groen-laten.
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const aliceId = await registerUserWithInvite(t, "user_alice", "a@x.com");
 
     const [res1, res2] = await Promise.all([

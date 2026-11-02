@@ -2,6 +2,7 @@ import { convexTest } from "convex-test";
 import { describe, expect, it } from "vitest";
 import { api , internal } from "../../convex/_generated/api";
 import schema from "../../convex/schema";
+import { modules } from "../_helpers/modules";
 
 // Cascade matrix rows AP3, AP4 — cat-3 selectief vanuit albums.removePhoto
 // (= GP delete trigger). AP1 + AP2 (seenPics) zijn deferred, zie matrix
@@ -35,7 +36,7 @@ async function registerUser(
 
 describe("AP3: removePhoto cascade ratings van group members", () => {
   it("verwijdert ratings van group members op deze photo", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const aliceId = await registerUser(t, "user_alice", "a@x.com");
     const bobId = await registerUser(t, "user_bob", "b@x.com");
 
@@ -56,7 +57,7 @@ describe("AP3: removePhoto cascade ratings van group members", () => {
       async (ctx) => await ctx.storage.store(new Blob(["x"])),
     );
     const photoId = await withUser(t, "user_alice").mutation(
-      api.photos.create,
+      internal.photos.create,
       { storageId },
     );
     await withUser(t, "user_alice").mutation(api.albums.addPhoto, {
@@ -85,7 +86,7 @@ describe("AP3: removePhoto cascade ratings van group members", () => {
   });
 
   it("herrekent photo.rating aggregate na cascade", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const aliceId = await registerUser(t, "user_alice", "a@x.com");
     const bobId = await registerUser(t, "user_bob", "b@x.com");
 
@@ -106,7 +107,7 @@ describe("AP3: removePhoto cascade ratings van group members", () => {
       async (ctx) => await ctx.storage.store(new Blob(["x"])),
     );
     const photoId = await withUser(t, "user_alice").mutation(
-      api.photos.create,
+      internal.photos.create,
       { storageId },
     );
     await withUser(t, "user_alice").mutation(api.albums.addPhoto, {
@@ -135,7 +136,7 @@ describe("AP3: removePhoto cascade ratings van group members", () => {
     // Alice owner. Photo gepubliceerd in album_g1 (group G1, members alice+bob)
     // en album_g2 (group G2, members alice+bob). Bob rate. Verwijder publicatie
     // uit G1 → Bob heeft nog access via G2, dus rating moet blijven.
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await registerUser(t, "user_alice", "a@x.com");
     const bobId = await registerUser(t, "user_bob", "b@x.com");
 
@@ -167,7 +168,7 @@ describe("AP3: removePhoto cascade ratings van group members", () => {
       async (ctx) => await ctx.storage.store(new Blob(["x"])),
     );
     const photoId = await withUser(t, "user_alice").mutation(
-      api.photos.create,
+      internal.photos.create,
       { storageId },
     );
     await withUser(t, "user_alice").mutation(api.albums.addPhoto, {
@@ -208,7 +209,7 @@ describe("AP3: removePhoto cascade ratings van group members", () => {
     // Edge case: theoretisch kan een owner zijn eigen photo raten. Even
     // als de laatste publicatie weggaat, owner houdt eigen rating —
     // hij heeft direct access als owner.
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     const aliceId = await registerUser(t, "user_alice", "a@x.com");
 
     const groupId = await withUser(t, "user_alice").mutation(
@@ -224,7 +225,7 @@ describe("AP3: removePhoto cascade ratings van group members", () => {
       async (ctx) => await ctx.storage.store(new Blob(["x"])),
     );
     const photoId = await withUser(t, "user_alice").mutation(
-      api.photos.create,
+      internal.photos.create,
       { storageId },
     );
     await withUser(t, "user_alice").mutation(api.albums.addPhoto, {
@@ -256,7 +257,7 @@ describe("AP3: removePhoto cascade ratings van group members", () => {
 
 describe("AP4: removePhoto clear album cover", () => {
   it("clear album.coverPhotoId wanneer deze publicatie cover was", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await registerUser(t, "user_alice", "a@x.com");
 
     const groupId = await withUser(t, "user_alice").mutation(
@@ -272,7 +273,7 @@ describe("AP4: removePhoto clear album cover", () => {
       async (ctx) => await ctx.storage.store(new Blob(["x"])),
     );
     const photoId = await withUser(t, "user_alice").mutation(
-      api.photos.create,
+      internal.photos.create,
       { storageId },
     );
     await withUser(t, "user_alice").mutation(api.albums.addPhoto, {
@@ -294,7 +295,7 @@ describe("AP4: removePhoto clear album cover", () => {
   });
 
   it("laat cover ongemoeid wanneer een andere photo verwijderd wordt", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await registerUser(t, "user_alice", "a@x.com");
 
     const groupId = await withUser(t, "user_alice").mutation(
@@ -312,10 +313,10 @@ describe("AP4: removePhoto clear album cover", () => {
     const s2 = await t.run(
       async (ctx) => await ctx.storage.store(new Blob(["b"])),
     );
-    const cover = await withUser(t, "user_alice").mutation(api.photos.create, {
+    const cover = await withUser(t, "user_alice").mutation(internal.photos.create, {
       storageId: s1,
     });
-    const other = await withUser(t, "user_alice").mutation(api.photos.create, {
+    const other = await withUser(t, "user_alice").mutation(internal.photos.create, {
       storageId: s2,
     });
     await withUser(t, "user_alice").mutation(api.albums.addPhoto, {
@@ -348,7 +349,7 @@ describe("AP3 ruimt ook orphan rating op van ex-member (Convex strikter dan AWS)
   // itereert via by_photo en pakt orphan-rating wel mee. Cascade-matrix
   // row AP3 [GAP].
   it("verwijdert orphan rating + recompute aggregate", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await registerUser(t, "user_alice", "a@x.com");
     const bobId = await registerUser(t, "user_bob", "b@x.com");
 
@@ -369,7 +370,7 @@ describe("AP3 ruimt ook orphan rating op van ex-member (Convex strikter dan AWS)
       async (ctx) => await ctx.storage.store(new Blob(["x"])),
     );
     const photoId = await withUser(t, "user_alice").mutation(
-      api.photos.create,
+      internal.photos.create,
       { storageId },
     );
     await withUser(t, "user_alice").mutation(api.albums.addPhoto, {
@@ -412,7 +413,7 @@ describe("AP4 group-cover cleanup", () => {
   // heeft in déze group. Cascade-matrix row AP4 moet uitgebreid worden om
   // dit gedrag te coveren. Tests zijn rood tot implementatie volgt.
   it("a: laatste publicatie weg → group.coverPhotoId cleared + album.coverPhotoId cleared", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await registerUser(t, "user_alice", "a@x.com");
 
     const groupId = await withUser(t, "user_alice").mutation(
@@ -428,7 +429,7 @@ describe("AP4 group-cover cleanup", () => {
       async (ctx) => await ctx.storage.store(new Blob(["x"])),
     );
     const photoId = await withUser(t, "user_alice").mutation(
-      api.photos.create,
+      internal.photos.create,
       { storageId },
     );
     await withUser(t, "user_alice").mutation(api.albums.addPhoto, {
@@ -457,7 +458,7 @@ describe("AP4 group-cover cleanup", () => {
   });
 
   it("b: photo nog in ander album in dezelfde groep → group.coverPhotoId ongewijzigd", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await registerUser(t, "user_alice", "a@x.com");
 
     const groupId = await withUser(t, "user_alice").mutation(
@@ -477,7 +478,7 @@ describe("AP4 group-cover cleanup", () => {
       async (ctx) => await ctx.storage.store(new Blob(["x"])),
     );
     const photoId = await withUser(t, "user_alice").mutation(
-      api.photos.create,
+      internal.photos.create,
       { storageId },
     );
     await withUser(t, "user_alice").mutation(api.albums.addPhoto, {
@@ -503,7 +504,7 @@ describe("AP4 group-cover cleanup", () => {
   });
 
   it("c: multi-group — clear in de groep waar laatste publicatie weg is, andere groep ongemoeid", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     await registerUser(t, "user_alice", "a@x.com");
 
     const gG = await withUser(t, "user_alice").mutation(api.groups.create, {
@@ -525,7 +526,7 @@ describe("AP4 group-cover cleanup", () => {
       async (ctx) => await ctx.storage.store(new Blob(["x"])),
     );
     const photoId = await withUser(t, "user_alice").mutation(
-      api.photos.create,
+      internal.photos.create,
       { storageId },
     );
     await withUser(t, "user_alice").mutation(api.albums.addPhoto, {
