@@ -1,7 +1,7 @@
 import { useAuth, useUser } from "@clerk/expo";
 import { useConvexAuth } from "convex/react";
 import { router, usePathname } from "expo-router";
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { StyleSheet, View } from "react-native";
 import { SignOutButton } from "./auth/SignOutButton";
 import { Text } from "./components/Text";
@@ -11,6 +11,7 @@ import { useConvexConnection } from "./data/convexConnection";
 import { useAppState } from "./data/useAppState";
 import { useSessionQuery } from "./data/useLiveQuery";
 import { useOnline } from "./data/useOnline";
+import { RECONNECT_TIMEOUT_MS } from "./lib/reconnectView";
 import { routeAccess } from "./lib/routeAccess";
 import { authRetryDue, deriveSessionState, type SessionState } from "./lib/sessionState";
 import { StatusScreen } from "./screens/StatusScreen";
@@ -28,7 +29,7 @@ import { StatusScreen } from "./screens/StatusScreen";
 export function AuthGate({ children }: { children: ReactNode }) {
   const { isLoaded, isSignedIn } = useAuth();
   const { isLoading, isAuthenticated } = useConvexAuth();
-  const { tokenFetchFailed, retry } = useConvexConnection();
+  const { tokenFetchFailed, retry: retryConnection } = useConvexConnection();
   const online = useOnline();
   const session = {
     clerkLoaded: isLoaded,
@@ -41,6 +42,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
   const currentUser = useSessionQuery(api.users.current, {}, session);
   const derived = deriveSessionState({ ...session, currentUser, tokenFetchFailed, online });
   const { state, retrying } = useStickyReconnecting(derived, session.clerkSignedIn);
+  const { retryingForMs, retry } = useRetryTimer(retrying, retryConnection);
   useRetryOnReturn(state, online, retry);
 
   const pathname = usePathname();
@@ -52,7 +54,10 @@ export function AuthGate({ children }: { children: ReactNode }) {
     if (access === "home") router.replace("/");
   }, [access, pathname]);
 
-  const reconnect = useMemo(() => ({ retrying, retry }), [retrying, retry]);
+  const reconnect = useMemo(
+    () => ({ online, retrying, retryingForMs, retry }),
+    [online, retrying, retryingForMs, retry],
+  );
 
   switch (access) {
     case "wait":
@@ -101,6 +106,31 @@ function useStickyReconnecting(
   }
   const retrying = derived === "loading" && wasReconnecting && clerkSignedIn;
   return { state: retrying ? "reconnecting" : derived, retrying };
+}
+
+// Hoe lang loopt de huidige poging al (F8)? Elke nieuwe poging begint een
+// nieuwe time-out, ook als de vorige nog doorloopt. Bij de time-out rendert de
+// poort opnieuw, zodat de melding en de knoppen terugkeren.
+function useRetryTimer(
+  retrying: boolean,
+  retryConnection: () => void,
+): { retryingForMs: number; retry: () => void } {
+  const [startedAt, setStartedAt] = useState<number | null>(null);
+  const [, setTimedOut] = useState(0);
+  if (retrying && startedAt === null) setStartedAt(Date.now());
+  if (!retrying && startedAt !== null) setStartedAt(null);
+  useEffect(() => {
+    if (startedAt === null) return;
+    const left = startedAt + RECONNECT_TIMEOUT_MS - Date.now();
+    if (left <= 0) return;
+    const timer = setTimeout(() => setTimedOut((n) => n + 1), left);
+    return () => clearTimeout(timer);
+  }, [startedAt]);
+  const retry = useCallback(() => {
+    setStartedAt(Date.now());
+    retryConnection();
+  }, [retryConnection]);
+  return { retryingForMs: startedAt === null ? 0 : Date.now() - startedAt, retry };
 }
 
 // Opnieuw proberen zodra de app actief en online wordt, vanuit een moment

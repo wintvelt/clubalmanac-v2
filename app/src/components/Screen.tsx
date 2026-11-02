@@ -1,7 +1,9 @@
 import type { ReactNode } from "react";
 import { KeyboardAvoidingView, ScrollView, StyleSheet, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { SignOutButton } from "../auth/SignOutButton";
 import { useAuthState, useReconnect } from "../data/authStateContext";
+import { reconnectView } from "../lib/reconnectView";
 import { size, space, useTheme } from "../theme";
 import { Notice } from "./Notice";
 import { SmallButton } from "./SmallButton";
@@ -22,8 +24,9 @@ type Props = {
 // Scrolt altijd, zodat bij de grootste tekststand en met het toetsenbord open
 // niets onbereikbaar wordt (invariant 4, bevinding 13). Op iPad en liggend
 // blijft de tekstkolom hoogstens 640 pt breed, in het midden. In
-// "reconnecting" toont het inhoudsgebied laden of een fout met "Opnieuw"; de
-// kop en de tabbalk blijven staan (WP15a F1, design.md §6).
+// "reconnecting" toont het inhoudsgebied laden of een fout, altijd met
+// "Opnieuw" en "Uitloggen"; de kop en de tabbalk blijven staan (WP15a F1, F6,
+// design.md §6).
 export function Screen({
   children,
   background = "bg",
@@ -52,16 +55,25 @@ export function Screen({
 }
 
 function ReconnectingState() {
-  const { retrying, retry } = useReconnect();
-  if (retrying) return <LoadingState label="Verbinden…" />;
+  const { online, retrying, retryingForMs, retry } = useReconnect();
+  const view = reconnectView({ online, retrying, retryingForMs });
+  const retryButton = (
+    <SmallButton title="Opnieuw" onPress={retry} disabled={view.retry === "busy"} />
+  );
   return (
-    <Notice
-      kind="error"
-      title="Geen verbinding met de server"
-      message="Controleer je internet. Zodra er weer netwerk is, probeert de app het opnieuw."
-    >
-      <SmallButton title="Opnieuw" onPress={retry} />
-    </Notice>
+    <>
+      {view.kind === "busy" ? (
+        <>
+          <LoadingState label={view.title} />
+          {retryButton}
+        </>
+      ) : (
+        <Notice kind="error" title={view.title} message={view.message}>
+          {retryButton}
+        </Notice>
+      )}
+      <SignOutButton />
+    </>
   );
 }
 

@@ -9,10 +9,21 @@ export function useAuthState(): SessionState {
   return useContext(AuthStateContext);
 }
 
-// In "reconnecting" (F1): loopt er een nieuwe poging, en hoe start je er een.
-export type Reconnect = { retrying: boolean; retry: () => void };
+// In "reconnecting" (F1, F8): netwerk, of er een poging loopt en hoe lang al,
+// en hoe start je er een.
+export type Reconnect = {
+  online: boolean | null;
+  retrying: boolean;
+  retryingForMs: number;
+  retry: () => void;
+};
 
-export const ReconnectContext = createContext<Reconnect>({ retrying: false, retry: () => {} });
+export const ReconnectContext = createContext<Reconnect>({
+  online: null,
+  retrying: false,
+  retryingForMs: 0,
+  retry: () => {},
+});
 
 export function useReconnect(): Reconnect {
   return useContext(ReconnectContext);
