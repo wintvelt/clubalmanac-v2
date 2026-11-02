@@ -1,9 +1,10 @@
 import { describe, expect, it } from "vitest";
-import type { AuthState } from "../src/lib/authState";
-import { routeAccess } from "../src/lib/routeAccess";
+import { PUBLIC_PATHS, routeAccess } from "../src/lib/routeAccess";
+import type { SessionState } from "../src/lib/sessionState";
 
 // WP15a invarianten 4, 7 + 10 en de routetabel: wat toont de app op dit pad,
-// in deze auth-toestand? Alleen "ready" toont een ingelogd scherm. Een pad is
+// in deze auth-toestand? Alleen "ready" toont een ingelogd scherm, en
+// "reconnecting" de navigator zonder live data (F1). Een pad is
 // afgeschermd, tenzij het expliciet publiek is (in 15a alleen /inloggen).
 
 const PROTECTED = [
@@ -35,6 +36,32 @@ describe("routeAccess — afgeschermde routes", () => {
 
   it.each(PROTECTED)("%s: geen rij → WP13-statusscherm", (path) => {
     expect(routeAccess(path, "noUserRow")).toBe("noUserRow");
+  });
+});
+
+// F1: tijdelijk geen token. De navigator blijft (kop, tabbalk); de schermen
+// vragen dan niets live op (tests/liveQuery.test.ts).
+describe("routeAccess — reconnecting (F1)", () => {
+  it.each(PROTECTED)("%s: tonen, geen foutscherm en geen inlogscherm", (path) => {
+    expect(routeAccess(path, "reconnecting")).toBe("show");
+  });
+
+  it("/inloggen: naar Home, want Clerk is ingelogd", () => {
+    expect(routeAccess(LOGIN, "reconnecting")).toBe("home");
+  });
+
+  it("onbekend pad: tonen (Niet gevonden)", () => {
+    expect(routeAccess("/bestaat-niet", "reconnecting")).toBe("show");
+  });
+});
+
+describe("routeAccess — PUBLIC_PATHS (F4)", () => {
+  it("is geëxporteerd en bevat in 15a alleen /inloggen", () => {
+    expect([...PUBLIC_PATHS].sort()).toEqual([LOGIN]);
+  });
+
+  it("elk pad in PUBLIC_PATHS toont uitgelogd zijn scherm", () => {
+    for (const path of PUBLIC_PATHS) expect(routeAccess(path, "signedOut")).toBe("show");
   });
 });
 
@@ -86,15 +113,22 @@ describe("routeAccess — publiek is een exacte match", () => {
 });
 
 describe("routeAccess — volledig", () => {
-  const STATES: AuthState[] = ["loading", "signedOut", "convexAuthFailed", "noUserRow", "ready"];
+  const STATES: SessionState[] = [
+    "loading",
+    "signedOut",
+    "convexAuthFailed",
+    "noUserRow",
+    "reconnecting",
+    "ready",
+  ];
   const PATHS = [...PROTECTED, LOGIN, "/bestaat-niet", "/inloggen-x"];
 
-  it("een ingelogd scherm verschijnt alleen bij ready", () => {
+  it("een ingelogd scherm verschijnt alleen bij ready of reconnecting (F1)", () => {
     for (const path of PATHS)
       for (const state of STATES) {
         const decision = routeAccess(path, state);
-        if (path !== LOGIN && decision === "show") expect(state).toBe("ready");
-        if (decision === "home") expect(state).toBe("ready");
+        if (path !== LOGIN && decision === "show") expect(["ready", "reconnecting"]).toContain(state);
+        if (decision === "home") expect(["ready", "reconnecting"]).toContain(state);
       }
   });
 

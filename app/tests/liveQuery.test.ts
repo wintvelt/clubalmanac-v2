@@ -1,16 +1,17 @@
 import { describe, expect, it } from "vitest";
-import type { AuthState } from "../src/lib/authState";
 import { screenQueryIsLive, sessionQueryIsLive } from "../src/lib/liveQuery";
+import type { SessionState } from "../src/lib/sessionState";
 
-// WP15a invarianten 5, 12, 13 + 14: loopt een live query, ja of nee?
+// WP15a invarianten 5, 12, 13 + 14, en F1 + F2: loopt een live query, ja of nee?
 // Live alleen voor het scherm in beeld, zolang de app actief is, en alleen
 // met een geldige sessie. Alles wat niet expliciet "ja" is, is "nee".
 
-const AUTH_STATES: AuthState[] = [
+const AUTH_STATES: SessionState[] = [
   "loading",
   "signedOut",
   "convexAuthFailed",
   "noUserRow",
+  "reconnecting",
   "ready",
 ];
 
@@ -42,6 +43,12 @@ describe("screenQueryIsLive — het scherm in beeld", () => {
     },
   );
 
+  it("reconnecting (F1): niet live, Convex heeft dan geen identiteit", () => {
+    expect(
+      screenQueryIsLive({ focused: true, appState: "active", authState: "reconnecting" }),
+    ).toBe(false);
+  });
+
   it("terug uit de achtergrond: weer live zonder iets anders te veranderen", () => {
     const base = { focused: true, authState: "ready" as const };
     expect(screenQueryIsLive({ ...base, appState: "background" })).toBe(false);
@@ -61,7 +68,9 @@ describe("screenQueryIsLive — het scherm in beeld", () => {
 describe("sessionQueryIsLive — de query achter de auth-poort (users.current)", () => {
   type Input = Parameters<typeof sessionQueryIsLive>[0];
 
+  // De functienaam zoals getFunctionName(api.users.current) hem geeft.
   const LIVE: Input = {
+    query: "users:current",
     appState: "active",
     clerkLoaded: true,
     clerkSignedIn: true,
@@ -93,28 +102,44 @@ describe("sessionQueryIsLive — de query achter de auth-poort (users.current)",
     expect(sessionQueryIsLive({ ...LIVE, convexAuthenticated: false })).toBe(false);
   });
 
+  // F2: buiten focus om mag alleen users.current lopen. Een scherm dat de
+  // sessie-route gebruikt met een andere query, krijgt nooit live data.
+  it.each([
+    "groups:list",
+    "users:currentX",
+    "xusers:current",
+    "users/current",
+    "users:current:extra",
+    "",
+  ])("andere query %j: nooit live, ook als de rest klopt", (query) => {
+    expect(sessionQueryIsLive({ ...LIVE, query })).toBe(false);
+  });
+
   it("volledig: live precies als alles klopt", () => {
     const bools = [true, false];
-    for (const appState of APP_STATES)
-      for (const clerkLoaded of bools)
-        for (const clerkSignedIn of bools)
-          for (const convexAuthLoading of bools)
-            for (const convexAuthenticated of bools) {
-              const expected =
-                appState === "active" &&
-                clerkLoaded &&
-                clerkSignedIn &&
-                !convexAuthLoading &&
-                convexAuthenticated;
-              expect(
-                sessionQueryIsLive({
-                  appState,
-                  clerkLoaded,
-                  clerkSignedIn,
-                  convexAuthLoading,
-                  convexAuthenticated,
-                }),
-              ).toBe(expected);
-            }
+    for (const query of ["users:current", "groups:list"])
+      for (const appState of APP_STATES)
+        for (const clerkLoaded of bools)
+          for (const clerkSignedIn of bools)
+            for (const convexAuthLoading of bools)
+              for (const convexAuthenticated of bools) {
+                const expected =
+                  query === "users:current" &&
+                  appState === "active" &&
+                  clerkLoaded &&
+                  clerkSignedIn &&
+                  !convexAuthLoading &&
+                  convexAuthenticated;
+                expect(
+                  sessionQueryIsLive({
+                    query,
+                    appState,
+                    clerkLoaded,
+                    clerkSignedIn,
+                    convexAuthLoading,
+                    convexAuthenticated,
+                  }),
+                ).toBe(expected);
+              }
   });
 });
