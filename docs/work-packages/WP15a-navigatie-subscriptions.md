@@ -419,3 +419,19 @@ Werkwijze: A zoekt eerst uit hoe Clerk offline laadt en pint F12 met tests waar 
 - **gate ronde 4:** de koude start in vliegtuigmodus. Binnen de time-out kop, tabbalk en de melding. Vliegtuigmodus uit: vanzelf weer in de app, zonder afsluiten.
 
 **Afwijking B bij F12 (`35e5d69`), regie-besluit: voorlopig aangenomen, de red-team valt het aan.** Clerk 6.40.1 haalt na een offline start zonder cache de echte client wel op, maar maakt de sessie daarin niet actief. Daarom zet `app/src/data/resumeSession.ts` de sessie alsnog actief. Dat gebeurt alleen als Clerk op `degraded` staat, als de user niet ingelogd is, en voor de `lastActiveSessionId` uit de client, mits die in `signedInSessions` staat. Na uitloggen staat daar geen sessie meer (WP13 invariant 6). Komt de red-team met een pad waarop deze hook een sessie activeert die de user niet meer had, dan gaat de hook eruit.
+
+## Fix-cyclus 4 na hercheck F12 (red-team R4-1 t/m R4-4)
+
+Besluiten Wouter (2026-11-02):
+- R4-1: uitloggen werkt altijd, ook offline, en wist alles lokaal. Wouter accepteert dat de sessie op de server dan actief blijft tot hij verloopt.
+- R4-2: de hook `resumeSession` gaat eruit. Clerk start in plaats daarvan opnieuw zodra er netwerk is.
+- R4-3 en R4-4 gaan ook mee.
+
+| # | Bron | Probleem | Wat er waar moet zijn |
+|---|---|---|---|
+| F13 | R4-1 (blocker) | Na uitloggen offline staan de sessie, de user-gegevens en de JWT nog in de resource-cache van Clerk in de keychain. Een koude start offline toont dan weer een ingelogde schil. | Uitloggen werkt ook offline, en wist alle Clerk-gegevens op het toestel, ook de sleutels van de resource-cache. Na uitloggen volgt bij een koude start nooit een ingelogde schil, met of zonder netwerk. Er blijven geen persoonsgegevens of tokens in de keychain staan. |
+| F14 | R4-2 | `resumeSession` kan direct na uitloggen de sessie weer activeren. | Er is geen `setActive` buiten een inlogactie van de user. Startte Clerk uit de cache en is de user uitgelogd, dan start Clerk opnieuw zodra het netwerk terugkomt. Dat gaat via het bestaande herstartmechanisme, en Clerk volgt daarna de echte client. Na een echte uitlog blijft de user uitgelogd. |
+| F15 | R4-3 | Een blijvende Clerk-fout (geen netwerkfout) geeft `startupFailed` met een verkeerde tekst. "Opnieuw" geeft dan steeds dezelfde fout, en een uitweg ontbreekt. | De tekst past bij de oorzaak: offline of niet. `startupFailed` biedt naast "Opnieuw" ook een uitweg die alles lokaal wist (zoals F13) en naar het inlogscherm gaat. |
+| F16 | R4-4, K-c | De time-outs van `startup` en van `retrying` rekenen met `Date.now()` bij elke render. Springt de klok terug, dan blijft de time-out hangen. | Een time-out loopt altijd één keer af, ook als de klok verspringt. |
+
+Werkwijze: A pint F13–F16 waar dat kan. B fixt en checkt het in de simulator, met nagebootst offline. De red-team doet een korte hercheck. Daarna volgt een nieuwe build, en op die build herhaalt de gate ronde 4, plus uitloggen in vliegtuigmodus en daarna een koude start in vliegtuigmodus.
