@@ -1,10 +1,13 @@
 import { ClerkProvider, useAuth } from "@clerk/expo";
+import { resourceCache } from "@clerk/expo/resource-cache";
 import { ConvexReactClient } from "convex/react";
 import { StatusBar } from "expo-status-bar";
-import { useState, type ReactNode } from "react";
+import { useCallback, useState, type ReactNode } from "react";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { tokenCache } from "./src/auth/tokenCache";
+import { ClerkRestartContext } from "./src/data/clerkRestart";
 import { ConvexProviderWithClerkRetry } from "./src/data/convexConnection";
+import { OnlineProvider } from "./src/data/online";
 import { parseClientEnv, type ClientEnv } from "./src/lib/env";
 import { StatusScreen } from "./src/screens/StatusScreen";
 
@@ -44,10 +47,24 @@ function Providers({ env, children }: { env: ClientEnv; children: ReactNode }) {
   const [convex] = useState(
     () => new ConvexReactClient(env.convexUrl, { unsavedChangesWarning: false }),
   );
+  // F12: "Opnieuw" na startupFailed mount Clerk opnieuw, zodat load() weer
+  // loopt. De resource-cache laat Clerk offline starten met de laatst bekende
+  // client en omgeving (status "degraded").
+  const [clerkMount, setClerkMount] = useState(0);
+  const restartClerk = useCallback(() => setClerkMount((n) => n + 1), []);
   return (
-    <ClerkProvider publishableKey={env.clerkPublishableKey} tokenCache={tokenCache}>
-      <ConvexPerSession convex={convex}>{children}</ConvexPerSession>
-    </ClerkProvider>
+    <OnlineProvider>
+      <ClerkRestartContext value={restartClerk}>
+        <ClerkProvider
+          key={clerkMount}
+          publishableKey={env.clerkPublishableKey}
+          tokenCache={tokenCache}
+          __experimental_resourceCache={resourceCache}
+        >
+          <ConvexPerSession convex={convex}>{children}</ConvexPerSession>
+        </ClerkProvider>
+      </ClerkRestartContext>
+    </OnlineProvider>
   );
 }
 

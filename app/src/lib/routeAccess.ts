@@ -1,4 +1,4 @@
-import type { SessionState } from "./sessionState";
+import type { GateState } from "./startupState";
 
 // WP15a invarianten 4, 7 + 10: wat toont de app op dit pad, in deze
 // auth-toestand? Alleen "ready" toont een ingelogd scherm, en "reconnecting"
@@ -6,7 +6,14 @@ import type { SessionState } from "./sessionState";
 // afgeschermd, tenzij het hier expliciet publiek is. Een nieuwe publieke route
 // (WP19, WP22) komt in PUBLIC_PATHS, zonder iets aan de rest te veranderen.
 
-export type RouteAccess = "show" | "wait" | "login" | "home" | "convexAuthFailed" | "noUserRow";
+export type RouteAccess =
+  | "show"
+  | "wait"
+  | "login"
+  | "home"
+  | "convexAuthFailed"
+  | "noUserRow"
+  | "startupFailed";
 
 // Alleen voor wie uitgelogd is. Exacte match, geen voorvoegsel. Elk
 // routebestand buiten een Protected moet hier staan (tests/routeFiles.test.ts).
@@ -19,8 +26,9 @@ function normalize(pathname: string): string {
   return trimmed === "" ? "/" : trimmed;
 }
 
-export function routeAccess(pathname: string, authState: SessionState): RouteAccess {
+export function routeAccess(pathname: string, authState: GateState): RouteAccess {
   // Buiten ready, reconnecting en uitgelogd hangt de uitkomst niet van het pad af.
+  if (authState === "startupFailed") return "startupFailed";
   if (authState === "loading") return "wait";
   if (authState === "convexAuthFailed") return "convexAuthFailed";
   if (authState === "noUserRow") return "noUserRow";

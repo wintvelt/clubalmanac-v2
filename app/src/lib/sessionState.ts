@@ -22,7 +22,7 @@ export function deriveSessionState(input: SessionStateInput): SessionState {
   return input.tokenFetchFailed || input.online !== true ? "reconnecting" : "convexAuthFailed";
 }
 
-type Conditions = { appState: string; online: boolean | null };
+export type Conditions = { appState: string; online: boolean | null };
 
 // Opnieuw proberen in "reconnecting": zodra de app actief en online wordt,
 // vanuit een moment waarop dat niet zo was. Bleef hij actief en online, dan
@@ -33,7 +33,12 @@ export function authRetryDue(input: {
   now: Conditions;
 }): boolean {
   if (input.state !== "reconnecting") return false;
-  return isUp(input.now) && !isUp(input.before);
+  return cameUp(input.before, input.now);
+}
+
+// Werd de app actief en online, vanuit een moment waarop dat niet zo was?
+export function cameUp(before: Conditions, now: Conditions): boolean {
+  return isUp(now) && !isUp(before);
 }
 
 function isUp(c: Conditions): boolean {

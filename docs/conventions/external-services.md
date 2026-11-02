@@ -108,6 +108,8 @@ Clerk-dashboard voor de app-login (per instance, dev al gedaan, prod in fase 5):
 - **Configure → Native applications**: Native API aan.
 - **JWT-template `convex`**: bestaat al (WP4); zonder template weigert Convex het token.
 
+**Offline starten (WP15a F12).** `App.tsx` geeft `ClerkProvider` de prop `__experimental_resourceCache={resourceCache}` (uit `@clerk/expo/resource-cache`). Clerk bewaart dan de laatste client en omgeving in de keychain. Zonder netwerk start hij daaruit (status `degraded`), en haalt hij later zelf de echte data op. Was de cache nog leeg, dan maakt Clerk de sessie uit die echte data niet zelf actief; dat doet `src/data/resumeSession.ts` (alleen in status `degraded`). Zonder die cache blijft de app bij een koude start offline op "Laden…". Het is een **experimentele API**: check bij elke Clerk-upgrade of de prop nog bestaat en hetzelfde doet. Test dat met een koude start in vliegtuigmodus, ook na uitloggen (dan moet het inlogscherm komen).
+
 ### EAS-build en TestFlight (WP14)
 
 Config: [`app/eas.json`](../../app/eas.json). EAS project `@wintvelt/clubalmanac-app` (`bd5c6c93-…`), owner `wintvelt` in `app/app.json`. ASC-app-ID `1663038609` staat in `eas.json` §submit.
