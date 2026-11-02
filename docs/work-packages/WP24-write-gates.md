@@ -199,3 +199,15 @@ Profielbeeld-ids staan in het publiek profiel (`groups.listMembers`, `users.getB
 - **N3 orakel op het beeld-id**: valt onder invariant 8 (één uitkomst).
 - **N4 profielfoto blijft na vertrek staan**: naar WP17, samen met `storageId` uit de foto-vorm.
 - **N5 mogelijk flaky `tests/http/upload.test.ts`**: naar de backlog.
+
+### A na audit-ronde 1 (2026-11-02)
+
+**v1-check invariant 8: klopt.** v1 zette een profielfoto op een photo-id met foto-toegang, of op een eigen upload. Zo'n upload kwam binnen als eigen foto-rij. Een los beeld als profielfoto kende v1 niet.
+
+**Preciseringen (gepind in tests):**
+- **Beeld aan foto's van twee eigenaren (N1).** Eén eigen foto of één foto met toegang met dat beeld is genoeg. Hangt hetzelfde beeld ook aan een foto zonder toegang, dan mag het toch: de caller ziet het beeld al. Geen toegang tot een van beide: geweigerd.
+- **Eigen huidige profielfoto.** Die opnieuw meesturen mag, ook als het een los beeld is (gemigreerd uit v1). Samen met een nieuwe naam ook.
+- **Onbekend beeld** is een beeld-id dat niet (meer) bestaat. Het geeft dezelfde uitkomst als andermans profielbeeld en als het beeld van een foto zonder toegang.
+- **Inventaris.** De publieke mutations en actions die een beeld-id als argument aannemen, liggen vast: alleen `users.updateProfile`. Een nieuw pad faalt in de test, tot iemand de lijst bewust bijwerkt (zelfde vorm als de WP23-inventaris). `convex/_test.ts` valt erbuiten. Zo pint de test ook dat `photos.create` niet publiek is.
+- **Fixture.** `internal.photos.create`: dezelfde argumenten en hetzelfde gedrag als nu, en de eigenaar is de ingelogde caller. Of de interne variant de beeld-gate houdt, kiest B; er komt geen user-input binnen.
+- **R1.** Alle tests geven de `convex/`-modules expliciet mee via één helper. Een test faalt als een testbestand `convexTest` zonder modules aanroept.
