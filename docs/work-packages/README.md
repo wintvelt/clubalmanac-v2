@@ -35,14 +35,16 @@ WP1-WP4 liepen vóór de formele spec-doc-discipline (geen WP-file). Status uit 
 | WP13 | App-scaffold in `app/` + code-login via Clerk + `users.current` op scherm (fase 4 Track A) | [`WP13-app-scaffold-auth.md`](./WP13-app-scaffold-auth.md) | ✅ landed 2026-10-25 (gate dev, 4a → WP22) |
 | WP14 | Spike EAS-build → TestFlight: werkt, ook terwijl de app "Removed from Sale" is. Build 2.0.0 (40) via EAS op Wouters iPhone, login groen. Plus Node 24 overal, `owner`, `npm audit` beoordeeld. | [`WP14-eas-testflight-spike.md`](./WP14-eas-testflight-spike.md) | ✅ landed 2026-10-25 (gate iPhone) |
 | WP-Design | Designstap: richting C+ (iOS-eigen, lime-sky-verloop, oranje actie), licht + donker volgen iOS, ontworpen voor 50+, toegankelijkheidscheck (13 punten) verwerkt. Bron: [`docs/design.md`](../design.md). Thema-code + basiscomponenten in `app/src/theme` en `app/src/components`, iconen via Ionicons, Liquid Glass-app-icoon. | [`WP-Design.md`](./WP-Design.md) | ✅ landed 2026-10-25 (gate build 41, deels → WP15) |
-| WP15 | Navigatie-skelet + subscription-discipline + profiel + `recordVisit` | — | open |
+| WP15a | Navigatie-skelet (Expo Router, tabbalk, terugknop) + subscription-discipline. App-WP + adversarial pass (ops hoog). | [`WP15a-navigatie-subscriptions.md`](./WP15a-navigatie-subscriptions.md) | draft-spec 2026-11-02 |
+| WP15b | Profiel (naam bewerken, geen "laatste bezoek"), Instellingen, Info-pagina's, uitgelogde tabbalk, `recordVisit` (throttled). Na WP15a. | — | open |
 | WP16 | Groups overzicht + detail (unread realtime) | — | open |
 | WP17 | Albums + foto's bekijken (`exifOrientation`, laadprestatie, `by_flagged`-check) | — | open |
-| WP18 | Foto-upload (HEIC→JPEG, retry/idempotency) — Setup 2 + adversarial pass | — | open |
+| WP18 | Foto-upload (HEIC→JPEG, retry/idempotency) + profielfoto uploaden/verwijderen (besluit 2026-11-02) — Setup 2 + adversarial pass | — | open |
 | WP19 | Ratings + invites (incl. signup) | — | open |
 | WP20 | Features/probleem melden + flagging | — | open |
 | WP21 | Video's + covers vanaf S3 | — | open |
 | WP22 | Link in de login-mail opent de app en rondt de login af (eis Wouter, verplicht vóór T0). Vervangt de reset-WP: er is geen wachtwoord meer. Gate test ook een verlopen code (WP13-gate 4a). Input: WP13 §Mail-links in de oude app. | — | open |
+| TBD | Account verwijderen: `deleteSelf` verwijdert ook de Clerk-user (anders maakt de volgende login een lege rij), plus een bevestiging zonder wachtwoord. Eigen A→B→audit (besluit 2026-11-02). Verplicht vóór de App Store-indiening. | — | open |
 | WP23 | Auth + veld-whitelist op publieke reads (`users.getById` lekte email/subject; alle publieke queries nagelopen). Vóór WP15-WP17 de reads gebruiken. | [`WP23-read-whitelist.md`](./WP23-read-whitelist.md) | in uitvoering |
 | Phase 4 Track B | Webapp | — | open |
 | Phase 5 | Hard cutover | — | uit fase 2-scope |
