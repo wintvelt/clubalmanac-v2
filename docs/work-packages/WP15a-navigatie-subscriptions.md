@@ -435,3 +435,109 @@ Besluiten Wouter (2026-11-02):
 | F16 | R4-4, K-c | De time-outs van `startup` en van `retrying` rekenen met `Date.now()` bij elke render. Springt de klok terug, dan blijft de time-out hangen. | Een time-out loopt altijd één keer af, ook als de klok verspringt. |
 
 Werkwijze: A pint F13–F16 waar dat kan. B fixt en checkt het in de simulator, met nagebootst offline. De red-team doet een korte hercheck. Daarna volgt een nieuwe build, en op die build herhaalt de gate ronde 4, plus uitloggen in vliegtuigmodus en daarna een koude start in vliegtuigmodus.
+
+## Fix-cyclus 4: aanvulling A
+
+Wat A in `@clerk/expo` 4.14.1 zag:
+
+| Feit | Gevolg |
+|---|---|
+| De prop `__experimental_resourceCache` is een fabriek `() => { get, set }`. Clerk roept hem één keer per cache aan (omgeving, client, sessie-JWT). Itemsleutels: `__clerk_cache_{environment,client,session_jwt}_<pk zonder '='>`. | Een eigen opslag past op de prop. Clerk hoeft niets te merken. |
+| De opslag van `@clerk/expo/resource-cache` heeft geen wis-functie. `set()` zet het item in een wachtrij en geeft direct terug. "Verwijderen" is een `set(key, "")` op één slot. In de keychain blijven `<item>-latest`, `<item>-{A,B}-complete`, `<item>-{A,B}-metadata` (`{"totalChunks":n}`) en `<item>-{A,B}-chunk-<i>` staan. | Wissen kan alleen met een eigen opslag. Build 42 schreef deze sleutels al: de wis ruimt ze ook op. |
+| De listener van Clerk slaat bij elke wijziging van de client een snapshot op, ook tijdens `signOut`. | Na de wis mag de opslag niets meer schrijven, tot een nieuwe login begint. |
+| De tokenCache bewaart het client-token onder `__clerk_client_jwt`. Clerk leest het bij elk verzoek. De sessie op de server blijft actief (R4-1). | Blijft dit token staan, dan logt een koude start online weer in. De wis neemt het mee. |
+| Er zit geen native Clerk-module in de app (`@clerk/expo-native-components` staat niet in `package.json`). | Er is geen tweede kopie van het token in de keychain. |
+| `src/auth/useEmailCodeLogin.ts` gebruikt `signIn.finalize()`. `setActive` staat alleen in `src/data/resumeSession.ts`. | De scanner voor F14 staat `setActive` nergens toe. |
+
+### Grens en contract
+
+**F13: één opslag voor alles wat Clerk bewaart.** De module is puur. De backend (expo-secure-store) komt als argument binnen.
+
+```ts
+// src/auth/clerkStorage.ts
+export type SecureBackend = {
+  getItem(key: string): Promise<string | null>;
+  setItem(key: string, value: string): Promise<void>;
+  deleteItem(key: string): Promise<void>;
+};
+export function createClerkStorage(backend: SecureBackend, publishableKey: string): {
+  resourceCache: () => { get(key: string): Promise<string | null>; set(key: string, value: string): Promise<void> };
+  tokenCache: {
+    getToken(key: string): Promise<string | null | undefined>;
+    saveToken(key: string, token: string): Promise<void>;
+    clearToken(key: string): Promise<void>;
+  };
+  wipe(): Promise<boolean>;
+  resume(): Promise<void>;
+};
+```
+
+| Regel | Waarom |
+|---|---|
+| Een waarde van elke lengte komt via `get` heel terug, ook met é of emoji. Elke waarde in de backend is hooguit 2048 bytes (UTF-8). Elke sleutel past op `/^[\w.-]+$/`. | Grenzen van expo-secure-store. |
+| `wipe()` laat in de backend hooguit 2 sleutels achter, met waarden van samen hooguit 64 tekens. Geen opgeslagen waarde komt erin terug, en geen sleutel begint nog met `__clerk_`. Dat geldt ook voor data van een eerdere instantie op dezelfde backend, en voor de sleutels die build 42 schreef (de opslag van Clerk en `__clerk_client_jwt`). | R4-1: geen PII of token in de keychain. Een vlag mag blijven. |
+| Na `wipe()` schrijven `set` en `saveToken` niets. `get` en `getToken` geven `null`. Dat blijft zo in een nieuwe instantie op dezelfde backend, tot `resume()`. | De listener van Clerk schrijft na de wis nog snapshots. Een koude start leest niets. |
+| Een `set` die al liep toen `wipe()` begon, laat niets achter. | De wachtrij van Clerk deed dat wel. |
+| Faalt het verwijderen, dan geeft `wipe()` `false`. Een nieuwe instantie geeft dan toch `null`. | De vlag staat er vóór het verwijderen. `false` toont de bestaande melding "wissen mislukt" (WP13). |
+| Na `resume()` werken `set`, `get`, `saveToken` en `getToken` weer gewoon. | De volgende login. |
+
+Aansluiting (B): `App.tsx` geeft `resourceCache` en `tokenCache` uit deze opslag aan `ClerkProvider`, niet die uit `@clerk/expo/resource-cache` of `@clerk/expo/token-cache`. Uitloggen roept `wipe()` aan, ook als `signOut()` faalt. Een loginpoging roept `resume()` aan vóór haar eerste verzoek: anders stuurt Clerk geen client-token mee en raakt hij de poging kwijt. `wipeStoredTokens` en `touchedKeys` vervallen.
+
+**F14: geen `setActive`, wel een herstart.** `resumeSession.ts` en zijn aanroep gaan eruit. Geen bestand in de app gebruikt `setActive`.
+
+```ts
+// src/lib/startupState.ts
+export function clerkRestartDue(input: {
+  clerkStatus: ClerkStatus;
+  clerkSignedIn: boolean;
+  before: Conditions;
+  now: Conditions;
+}): boolean;
+```
+
+Waar alleen als Clerk `degraded` en uitgelogd is, de app nu actief en online is, en er vlak daarvoor geen netwerk was (`before.online !== true`). De app herstart Clerk dan via `useRestartClerk`. Terugkomen uit de achtergrond telt niet: de user haalt de code uit de Mail-app, en een herstart zou de codestap wissen. Bijwerking: een half getypt e-mailadres op het inlogscherm gaat bij die ene herstart verloren.
+
+**F15: de tekst volgt de oorzaak, plus een uitweg.**
+
+```ts
+// src/lib/startupFailedView.ts
+export function startupFailedView(input: { online: boolean | null; clerkStatus: ClerkStatus }): {
+  kind: "offline" | "serverSlow" | "startupError";
+  title: string;
+  message: string;
+  retry: "enabled";
+  reset: "enabled";
+};
+```
+
+| Soort | Wanneer | Tekst |
+|---|---|---|
+| `offline` | `online !== true` | Noemt internet. Belooft een nieuwe poging zodra er netwerk is. |
+| `startupError` | online, Clerk `error` | Noemt geen internet en zegt niet "niet bereikbaar". Wijst op de uitweg. |
+| `serverSlow` | online, Clerk niet `error` (de time-out liep af) | Noemt geen internet. |
+
+De uitweg ("Opnieuw inloggen") roept `wipe()` aan en herstart Clerk. Hij roept geen `signOut` aan, want Clerk is niet geladen. Daarna volgt het inlogscherm.
+
+**F16: een vlag in plaats van een duur.** `deriveStartupState` krijgt `loadingTimedOut: boolean` (geen `loadingForMs`). `reconnectView` krijgt `retryTimedOut: boolean` (geen `retryingForMs`). De poort zet de vlag met één `setTimeout` per periode. Een bestand dat `STARTUP_TIMEOUT_MS` of `RECONNECT_TIMEOUT_MS` gebruikt, rekent niet met `Date.now`, `performance.now` of `new Date`.
+
+### Tests
+
+| Bestand | Pint |
+|---|---|
+| `tests/clerkStorage.test.ts` | F13: het contract hierboven, op een nep-backend met de grenzen van expo-secure-store en met vertraagde calls. |
+| `tests/clerkOffline.test.ts` | F12 en F13: elke `ClerkProvider` krijgt `__experimental_resourceCache` en `tokenCache`. Geen bestand importeert `@clerk/expo/resource-cache` of `@clerk/expo/token-cache`. |
+| `tests/clerkRestart.test.ts` | F14: geen `setActive` in de app, en `clerkRestartDue`. |
+| `tests/startupFailedView.test.ts` | F15. |
+| `tests/startupState.test.ts`, `tests/reconnectView.test.ts` | F16: de vlaggen. Plus de scan op klok-calls. |
+
+### Niet als test te pinnen (B's simulator-check en de gate)
+
+| Wat | Waar |
+|---|---|
+| Uitloggen in vliegtuigmodus, daarna een koude start in vliegtuigmodus: het inlogscherm, geen ingelogde schil. Daarna netwerk aan: nog steeds uitgelogd. | Gate |
+| Na uitloggen staat er in de keychain niets meer onder `__clerk_`. Check met een dev-knop of log, niet in de build van de gate. | B |
+| Uitloggen roept `wipe()` aan, ook als `signOut()` faalt. De uitweg van F15 roept `wipe()` aan en herstart Clerk. | B, hercheck |
+| Inloggen werkt na een offline uitlog: `resume()` staat vóór het eerste verzoek. Een code uit de Mail-app halen breekt de codestap niet. | Gate |
+| De herstart van F14 laadt de echte client. De Clerk-instantie is een singleton (`createClerkInstance`). Een nieuwe `key` draait `load()` opnieuw, zoals in F12 bleek. | B |
+| Een time-out loopt af na een klok-sprong (Instellingen > Datum en tijd). | B |
+| Een upgrade vanaf build 42: uitloggen ruimt ook de oude sleutels op. | Gate |
