@@ -178,7 +178,7 @@ Hulp-modals uit de oude app komen niet terug (akkoord Wouter 2026-10-25). De uit
 - **React Navigation los:** dezelfde motor, maar de deep links moeten met de hand worden bijgehouden.
 - **Native tabs (UITabBar, met Liquid Glass):** geen middenknop als actie, en geen grip op hoe labels schalen.
 
-**Subscription-discipline.** Een stack houdt onderliggende schermen gemount, en tabs ook. Vertrouw daarom niet op een unmount-optie van de navigator. WP15 laat live queries afhangen van focus: niet-gefocuste schermen krijgen `"skip"` (Convex), en de app pauzeert bij `AppState !== 'active'`.
+**Subscription-discipline.** Een stack houdt onderliggende schermen gemount, en tabs ook. Vertrouw daarom niet op een unmount-optie van de navigator. WP15 laat live queries afhangen van focus: niet-gefocuste schermen krijgen `"skip"` (Convex), en de app pauzeert bij `AppState !== 'active'`. Een live query hoort in een scherm. In de tabbalk of in een kop ziet `useLiveQuery` de focus van de ouder, en loopt dan op elke tab door. Dat mag alleen bewust, voor een badge.
 
 **Overstap:** de app start nu via `index.ts` en `App.tsx`, zonder router. WP15 zet het entry-punt om, met de routes in `app/src/app/` (Expo Router ondersteunt `src/app`). Zo ontstaat geen verwarrende map `app/app/`. Daarbij blijven de WP13-schermen en hun tests werken (invariant 9).
 

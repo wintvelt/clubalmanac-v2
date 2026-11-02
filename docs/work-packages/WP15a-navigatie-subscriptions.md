@@ -220,3 +220,17 @@ Tests staan in `app/tests/`, net als bij WP13: vitest in Node, zonder React Nati
 | 4. Duur Clerk-sessie | Naar fase 5 (T-4 weken, prod-Clerk-config), niet in 15a |
 | 5. Gate-stap 5, tabwissel | Naar WP15b: de tabschermen in 15a hebben nog geen query. WP15b meet het bij de eerste schermquery. |
 | 6. Offline terug uit de achtergrond (audit) | Fixen in 15a. De rij "Geen netwerk bij terugkeer" in §3 geldt. |
+| 7. Red-team punt 4 (routebestand buiten de poort) | Fixen in 15a |
+| 8. Red-team punt 5 (live query in tabbalk of kop) | Alleen een regel in design.md §7 |
+
+## Fix-cyclus na audit en red-team
+
+| # | Bron | Probleem | Wat er waar moet zijn |
+|---|---|---|---|
+| F1 | red-team 1 (blocker), audit | Eén mislukte tokenophaal (offline, terug uit de achtergrond of bij een koude start) zet de app blijvend op "server weigert je sessie" | Er komt geen uitlog. Bij een tijdelijke fout blijven kop en tabbalk staan, en het inhoudsgebied toont laden of een fout met "Opnieuw". Na terugkeer van het netwerk of naar `active` probeert de app het token opnieuw. Alleen een weigering terwijl er wel netwerk is, toont het WP13-foutscherm. |
+| F2 | red-team 2, audit | `useSessionQuery` is een generieke omweg langs focus | Alleen de poort kan een query buiten focus om draaien, en alleen `users.current` |
+| F3 | red-team 3 | `liveQueryAccess.test.ts` mist 9 realistische omwegen | De test vangt alle 9 omwegen uit de tabel van de red-team |
+| F4 | red-team 4, audit (kan) | Een route buiten `Stack.Protected` is onbeschermd. Bij "login" blijft dan "Laden…" staan | Elk routebestand is afgeschermd of staat in `PUBLIC_PATHS`, gepind met een test. Bij "login" en "home" leidt de poort zelf om. |
+| F5 | audit | `react-native-gesture-handler` 3.4.0, `react-native-reanimated` en `react-native-worklets` staan alleen als peer in de lockfile | Ze staan vast in `package.json` op de SDK 58-versie, via `npx expo install`. `npx expo-doctor` is schoon voor deze pakketten. |
+
+Werkwijze: A schrijft RED tests voor F1–F4, waar dat met pure logica of een scanner kan. Daarna fixt B F1–F5. Dan volgen een frisse heraudit en een hercheck door de red-team op F1–F4.
