@@ -6,6 +6,8 @@ import {
 } from "./_generated/server";
 import type { Id } from "./_generated/dataModel";
 import { requireCurrentUser } from "./users";
+import { requirePhotoAccess } from "./photos";
+import { pick, rating, ratingFields } from "./lib/shapes";
 
 // Cascade matrix row R1: na elke rating insert/update/delete moeten
 // photo.ratingAverage en photo.ratingCount transactioneel herrekend
@@ -88,12 +90,19 @@ export const remove = mutation({
   },
 });
 
+// WP23 (A-keuze 1): alleen de eigen rating van de caller — wie wat gaf is
+// sociaal gevoelig; het aggregaat staat in de foto-vorm. Auth = foto-toegang.
 export const listForPhoto = query({
   args: { photoId: v.id("photos") },
+  returns: v.array(rating),
   handler: async (ctx, { photoId }) => {
-    return await ctx.db
+    const { user } = await requirePhotoAccess(ctx, photoId);
+    const own = await ctx.db
       .query("ratings")
-      .withIndex("by_photo", (q) => q.eq("photoId", photoId))
-      .collect();
+      .withIndex("by_photo_and_user", (q) =>
+        q.eq("photoId", photoId).eq("userId", user._id),
+      )
+      .unique();
+    return own ? [pick(own, ratingFields)] : [];
   },
 });

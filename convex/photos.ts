@@ -6,11 +6,21 @@ import {
   mutation,
   query,
   type MutationCtx,
+  type QueryCtx,
 } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import { internal } from "./_generated/api";
 import { requireCurrentUser } from "./users";
 import { requireWebmaster } from "./lib/auth";
+import {
+  allFlagFields,
+  ownFlagFields,
+  photo as photoShape,
+  photoFields,
+  pick,
+  publicProfile,
+  publicProfileFields,
+} from "./lib/shapes";
 import {
   applyOrientation,
   rotationSwapsDimensions,
@@ -20,32 +30,83 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 const FLAG_DELETE_DAYS = 14;
 const DENY_DELETE_DAYS = 7;
 
+// WP23: foto-toegang = eigenaar, óf lid van een groep waarin de foto in een
+// album staat (albumPhotos draagt groupId). Geen webmaster-bypass. Eén error
+// voor "foto bestaat niet" en "geen toegang" (invariant 4).
+const NO_PHOTO_ACCESS = "Geen toegang tot deze foto";
+
+export async function requirePhotoAccess(
+  ctx: QueryCtx,
+  photoId: Id<"photos">,
+): Promise<{ user: Doc<"users">; photo: Doc<"photos"> }> {
+  const user = await requireCurrentUser(ctx);
+  const photo = await ctx.db.get(photoId);
+  if (!photo) throw new Error(NO_PHOTO_ACCESS);
+  if (photo.ownerId === user._id) return { user, photo };
+  if (await sharesPublication(ctx, user._id, photoId)) return { user, photo };
+  throw new Error(NO_PHOTO_ACCESS);
+}
+
+async function sharesPublication(
+  ctx: QueryCtx,
+  userId: Id<"users">,
+  photoId: Id<"photos">,
+): Promise<boolean> {
+  const aps = await ctx.db
+    .query("albumPhotos")
+    .withIndex("by_photo", (q) => q.eq("photoId", photoId))
+    .collect();
+  const groupIds = [...new Set(aps.map((ap) => ap.groupId))];
+  for (const groupId of groupIds) {
+    const m = await ctx.db
+      .query("memberships")
+      .withIndex("by_user_and_group", (q) =>
+        q.eq("userId", userId).eq("groupId", groupId),
+      )
+      .unique();
+    if (m) return true;
+  }
+  return false;
+}
+
 // Cat-1 join-on-read: photo + owner data, vervangt denormalized
 // user-velden op photos uit DynamoDB. Cascade matrix row U3.
+// WP23: owner als publiek profiel (geen email/subject).
 export const getWithOwner = query({
   args: { photoId: v.id("photos") },
+  returns: v.object({ ...photoFields, owner: v.union(publicProfile, v.null()) }),
   handler: async (ctx, { photoId }) => {
-    const photo = await ctx.db.get(photoId);
-    if (!photo) return null;
+    const { photo } = await requirePhotoAccess(ctx, photoId);
     const owner = await ctx.db.get(photo.ownerId);
-    return { ...photo, owner };
+    return {
+      ...pick(photo, photoFields),
+      owner: owner ? pick(owner, publicProfileFields) : null,
+    };
   },
 });
 
 export const getById = query({
   args: { photoId: v.id("photos") },
+  returns: photoShape,
   handler: async (ctx, { photoId }) => {
-    return await ctx.db.get(photoId);
+    const { photo } = await requirePhotoAccess(ctx, photoId);
+    return pick(photo, photoFields);
   },
 });
 
+// WP23: alleen eigen foto's. Een andere ownerId geeft een lege lijst; geen
+// scherm toont foto's van een ander per eigenaar.
 export const listByOwner = query({
   args: { ownerId: v.id("users") },
+  returns: v.array(photoShape),
   handler: async (ctx, { ownerId }) => {
-    return await ctx.db
+    const user = await requireCurrentUser(ctx);
+    if (ownerId !== user._id) return [];
+    const rows = await ctx.db
       .query("photos")
       .withIndex("by_owner", (q) => q.eq("ownerId", ownerId))
       .collect();
+    return rows.map((p) => pick(p, photoFields));
   },
 });
 
@@ -587,26 +648,37 @@ export const decideFlag = mutation({
 });
 
 // Eigen photos die door anderen geflagd zijn (Inappropriate.jsx).
+// WP23: foto-vorm + flag-datums voor het bezwaar; geen melder of reden.
+const MY_FLAGGED_FIELDS = { ...photoFields, ...ownFlagFields };
 export const listMyFlagged = query({
   args: {},
+  returns: v.array(v.object(MY_FLAGGED_FIELDS)),
   handler: async (ctx) => {
     const user = await requireCurrentUser(ctx);
     const owned = await ctx.db
       .query("photos")
       .withIndex("by_owner", (q) => q.eq("ownerId", user._id))
       .collect();
-    return owned.filter((p) => p.flaggedAt !== undefined);
+    return owned
+      .filter((p) => p.flaggedAt !== undefined)
+      .map((p) => pick(p, MY_FLAGGED_FIELDS));
   },
 });
 
 // Webmaster queue: alle photos waar flaggedAt gezet is
 // (InappropriateAdmin.jsx).
+// WP23: foto-vorm + alle flag-velden, incl. melder en reden (invariant 9:
+// melder-identiteit alleen voor de webmaster).
+const ALL_FLAGGED_FIELDS = { ...photoFields, ...allFlagFields };
 export const listAllFlagged = query({
   args: {},
+  returns: v.array(v.object(ALL_FLAGGED_FIELDS)),
   handler: async (ctx) => {
     await requireWebmaster(ctx);
     const all = await ctx.db.query("photos").withIndex("by_flagged").collect();
-    return all.filter((p) => p.flaggedAt !== undefined);
+    return all
+      .filter((p) => p.flaggedAt !== undefined)
+      .map((p) => pick(p, ALL_FLAGGED_FIELDS));
   },
 });
 

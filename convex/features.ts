@@ -5,10 +5,15 @@ import {
   mutation,
   query,
 } from "./_generated/server";
-import type { Doc } from "./_generated/dataModel";
+import type { Doc, Id } from "./_generated/dataModel";
 import { internal } from "./_generated/api";
 import { requireCurrentUser } from "./users";
-import { getWebmasterEmails, requireWebmaster } from "./lib/auth";
+import {
+  getWebmasterEmails,
+  isWebmaster,
+  requireWebmaster,
+} from "./lib/auth";
+import { feature, featureFields, pick } from "./lib/shapes";
 import { INFO_SENDER, sendMailjetMessage } from "./lib/mailjet";
 import {
   getStageLabel,
@@ -94,10 +99,25 @@ export const remove = mutation({
   },
 });
 
+// WP23: ingelogd vereist. Een `problem` is alleen zichtbaar voor de indiener
+// en de webmaster (A-keuze 5); een probleem van een ander geeft hetzelfde als
+// een onbekend id (`null`). Feature-vorm zonder `submittedBy`.
+function canSee(
+  f: Doc<"features">,
+  userId: Id<"users">,
+  webmaster: boolean,
+): boolean {
+  return f.type === "feature" || f.submittedBy === userId || webmaster;
+}
+
 export const getById = query({
   args: { featureId: v.id("features") },
+  returns: v.union(feature, v.null()),
   handler: async (ctx, { featureId }) => {
-    return await ctx.db.get(featureId);
+    const user = await requireCurrentUser(ctx);
+    const f = await ctx.db.get(featureId);
+    if (!f || !canSee(f, user._id, await isWebmaster(ctx))) return null;
+    return pick(f, featureFields);
   },
 });
 
@@ -106,16 +126,20 @@ export const list = query({
     type: v.optional(TYPE),
     status: v.optional(STATUS),
   },
+  returns: v.array(feature),
   handler: async (ctx, { type, status }) => {
-    if (status) {
-      const all = await ctx.db
-        .query("features")
-        .withIndex("by_status", (q) => q.eq("status", status))
-        .collect();
-      return type ? all.filter((f) => f.type === type) : all;
-    }
-    const all = await ctx.db.query("features").collect();
-    return type ? all.filter((f) => f.type === type) : all;
+    const user = await requireCurrentUser(ctx);
+    const webmaster = await isWebmaster(ctx);
+    const all = status
+      ? await ctx.db
+          .query("features")
+          .withIndex("by_status", (q) => q.eq("status", status))
+          .collect()
+      : await ctx.db.query("features").collect();
+    return all
+      .filter((f) => (type ? f.type === type : true))
+      .filter((f) => canSee(f, user._id, webmaster))
+      .map((f) => pick(f, featureFields));
   },
 });
 
@@ -169,6 +193,7 @@ export const removeUpvote = mutation({
 
 export const hasUpvoted = query({
   args: { featureId: v.id("features") },
+  returns: v.boolean(),
   handler: async (ctx, { featureId }) => {
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) return false;

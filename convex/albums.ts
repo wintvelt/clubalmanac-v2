@@ -3,9 +3,22 @@ import {
   mutation,
   query,
   type MutationCtx,
+  type QueryCtx,
 } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
-import { requireMember } from "./groups";
+import { getMembership, requireMember } from "./groups";
+import { requireCurrentUser } from "./users";
+import {
+  album,
+  albumFields,
+  albumPhoto,
+  albumPhotoFields,
+  group,
+  groupFields,
+  photo,
+  photoFields,
+  pick,
+} from "./lib/shapes";
 import { recomputeRatingAggregate } from "./ratings";
 
 async function requireAlbum(
@@ -15,6 +28,21 @@ async function requireAlbum(
   const album = await ctx.db.get(albumId);
   if (!album) throw new Error("Album bestaat niet");
   return album;
+}
+
+// WP23: toegang voor album-reads. Eén error voor "album bestaat niet" en
+// "geen lid van de groep" (invariant 4: geen bestaans-orakel). Mutations
+// houden requireAlbum + requireMember (invariant 6).
+const NO_ALBUM_ACCESS = "Geen toegang tot dit album";
+
+async function requireAlbumAccess(ctx: QueryCtx, albumId: Id<"albums">) {
+  const user = await requireCurrentUser(ctx);
+  const album = await ctx.db.get(albumId);
+  const membership = album
+    ? await getMembership(ctx, user._id, album.groupId)
+    : null;
+  if (!album || !membership) throw new Error(NO_ALBUM_ACCESS);
+  return { user, album, membership };
 }
 
 export const create = mutation({
@@ -38,10 +66,10 @@ export const create = mutation({
 
 export const getById = query({
   args: { albumId: v.id("albums") },
+  returns: album,
   handler: async (ctx, { albumId }) => {
-    const album = await requireAlbum(ctx, albumId);
-    await requireMember(ctx, album.groupId);
-    return album;
+    const { album: row } = await requireAlbumAccess(ctx, albumId);
+    return pick(row, albumFields);
   },
 });
 
@@ -49,35 +77,39 @@ export const getById = query({
 // group-velden op albums uit DynamoDB. Cascade matrix row G2.
 export const getWithGroup = query({
   args: { albumId: v.id("albums") },
+  returns: v.object({ ...albumFields, group: v.union(group, v.null()) }),
   handler: async (ctx, { albumId }) => {
-    const album = await requireAlbum(ctx, albumId);
-    await requireMember(ctx, album.groupId);
-    const group = await ctx.db.get(album.groupId);
-    return { ...album, group };
+    const { album: row } = await requireAlbumAccess(ctx, albumId);
+    const g = await ctx.db.get(row.groupId);
+    return { ...pick(row, albumFields), group: g ? pick(g, groupFields) : null };
   },
 });
 
 // Cat-1 join-on-read: album + cover photo. Cascade matrix row P2.
+// Cover als foto-vorm (geen GPS, filename of flag-velden).
 export const getWithCover = query({
   args: { albumId: v.id("albums") },
+  returns: v.object({ ...albumFields, cover: v.union(photo, v.null()) }),
   handler: async (ctx, { albumId }) => {
-    const album = await requireAlbum(ctx, albumId);
-    await requireMember(ctx, album.groupId);
-    const cover = album.coverPhotoId
-      ? await ctx.db.get(album.coverPhotoId)
-      : null;
-    return { ...album, cover };
+    const { album: row } = await requireAlbumAccess(ctx, albumId);
+    const cover = row.coverPhotoId ? await ctx.db.get(row.coverPhotoId) : null;
+    return {
+      ...pick(row, albumFields),
+      cover: cover ? pick(cover, photoFields) : null,
+    };
   },
 });
 
 export const listByGroup = query({
   args: { groupId: v.id("groups") },
+  returns: v.array(album),
   handler: async (ctx, { groupId }) => {
     await requireMember(ctx, groupId);
-    return await ctx.db
+    const rows = await ctx.db
       .query("albums")
       .withIndex("by_group", (q) => q.eq("groupId", groupId))
       .collect();
+    return rows.map((a) => pick(a, albumFields));
   },
 });
 
@@ -89,6 +121,7 @@ export const listByGroup = query({
 //                  waarvan photo.ownerId != currentUserId
 export const listByGroupWithUnread = query({
   args: { groupId: v.id("groups") },
+  returns: v.array(v.object({ ...albumFields, unreadCount: v.number() })),
   handler: async (ctx, { groupId }) => {
     const { user, membership } = await requireMember(ctx, groupId);
     const albums = await ctx.db
@@ -125,7 +158,7 @@ export const listByGroupWithUnread = query({
           if (photo && photo.ownerId !== user._id) unreadCount++;
         }
 
-        return { ...album, unreadCount };
+        return { ...pick(album, albumFields), unreadCount };
       }),
     );
   },
@@ -194,9 +227,11 @@ export async function deleteAlbumLastSeenForUserInGroup(
 
 export const listPhotos = query({
   args: { albumId: v.id("albums") },
+  returns: v.array(
+    v.object({ albumPhoto, photo: v.union(photo, v.null()) }),
+  ),
   handler: async (ctx, { albumId }) => {
-    const album = await requireAlbum(ctx, albumId);
-    await requireMember(ctx, album.groupId);
+    await requireAlbumAccess(ctx, albumId);
 
     const albumPhotos = await ctx.db
       .query("albumPhotos")
@@ -204,10 +239,13 @@ export const listPhotos = query({
       .collect();
 
     return await Promise.all(
-      albumPhotos.map(async (ap) => ({
-        albumPhoto: ap,
-        photo: await ctx.db.get(ap.photoId),
-      })),
+      albumPhotos.map(async (ap) => {
+        const p = await ctx.db.get(ap.photoId);
+        return {
+          albumPhoto: pick(ap, albumPhotoFields),
+          photo: p ? pick(p, photoFields) : null,
+        };
+      }),
     );
   },
 });

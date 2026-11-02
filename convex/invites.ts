@@ -13,6 +13,14 @@ import { internal } from "./_generated/api";
 import { requireCurrentUser } from "./users";
 import { getMembership } from "./groups";
 import { normalizeEmail } from "./lib/email";
+import {
+  inviteLanding,
+  inviteSender,
+  inviteSenderFields,
+  landingGroupFields,
+  landingInviterFields,
+  pick,
+} from "./lib/shapes";
 import { INVITES_SENDER, sendMailjetMessage } from "./lib/mailjet";
 import {
   acceptedTemplate,
@@ -127,28 +135,30 @@ export const create = mutation({
   },
 });
 
-// Public: gebruikt door invite-landingpagina vóór login. Geen auth-check.
-// Frontend bepaalt wat te tonen op basis van status + isExpired.
+// Public: gebruikt door invite-landingpagina vóór login. Geen auth-check:
+// het token is het toegangsbewijs. Frontend bepaalt wat te tonen op basis van
+// status + isExpired.
 //
-// Audit-8: defense-in-depth tegen info-leak op anonymous endpoint. Inviter
-// wordt gesluisd tot {name, profilePhotoStorageId} — geen email, Clerk
-// subject, photoCount/photoLimit, lastVisitAt, createdAt of interne
-// Convex-velden lekken naar de publieke landingspagina.
+// Audit-8 + WP23 (A-keuze 6): alleen wat de landing nodig heeft. Geen
+// invitee-email, token-echo, invitedBy-id, bouncedAt, `_id` of tijden.
+// Inviter = {name, profilePhotoStorageId}; groep = {_id, name, description}
+// (`_id` voor "accepteren, dan naar de groep"; ontsluit niets voor een
+// niet-lid).
 export const getByToken = query({
   args: { token: v.string() },
+  returns: v.union(inviteLanding, v.null()),
   handler: async (ctx, { token }) => {
     const invite = await findByToken(ctx, token);
     if (!invite) return null;
     const inviterDoc = await ctx.db.get(invite.invitedBy);
-    const inviter = inviterDoc
-      ? {
-          name: inviterDoc.name,
-          profilePhotoStorageId: inviterDoc.profilePhotoStorageId,
-        }
-      : null;
-    const group = invite.groupId ? await ctx.db.get(invite.groupId) : null;
-    const isExpired = invite.expiresAt <= Date.now();
-    return { ...invite, inviter, group, isExpired };
+    const groupDoc = invite.groupId ? await ctx.db.get(invite.groupId) : null;
+    return {
+      status: invite.status,
+      isExpired: invite.expiresAt <= Date.now(),
+      ...(invite.role !== undefined ? { role: invite.role } : {}),
+      group: groupDoc ? pick(groupDoc, landingGroupFields) : null,
+      inviter: inviterDoc ? pick(inviterDoc, landingInviterFields) : null,
+    };
   },
 });
 
@@ -165,7 +175,7 @@ export const accept = mutation({
       throw new Error("Invite is niet meer pending");
     }
     // Audit-8 §9: expiresAt <= now is verlopen (boundary-moment telt al als
-    // verlopen). Harmoniseert met hasPendingForEmail (`> now` als geldig).
+    // verlopen). Harmoniseert met create en registerFromSession (`> now` als geldig).
     // Status-patch zou worden teruggedraaid door de throw (Convex mutations
     // zijn atomair). Markeren als expired gebeurt door cron of bounce-handler.
     if (invite.expiresAt <= Date.now()) {
@@ -242,31 +252,20 @@ export const decline = mutation({
   },
 });
 
-// Pre-signup gate (Clerk webhook in fase 4): alleen emails met een
-// pending, niet-verlopen invite mogen registreren. Anonymous query.
-export const listPendingForEmail = query({
-  args: { email: v.string() },
-  handler: async (ctx, { email }) => {
-    const now = Date.now();
-    const all = await findInvitesByEmail(ctx, email);
-    return all.filter((i) => i.status === "pending" && i.expiresAt > now);
-  },
-});
-
-export const hasPendingForEmail = query({
-  args: { email: v.string() },
-  handler: async (ctx, { email }) => {
-    const now = Date.now();
-    const all = await findInvitesByEmail(ctx, email);
-    return all.some((i) => i.status === "pending" && i.expiresAt > now);
-  },
-});
+// WP23 (A-keuze 7): `listPendingForEmail` en `hasPendingForEmail` zijn
+// verwijderd. Ze waren anoniem (email-orakel, en de lijst gaf tokens terug)
+// en geen client gebruikte ze: de pre-signup-gate is bewust niet gebouwd
+// (WP6); de onboarding (users.registerFromSession) filtert zelf op pending +
+// niet verlopen. Ontvangen uitnodigingen van de caller worden een nieuwe read
+// in WP19.
 
 // Sender-view: eigen verstuurde invites (alle statussen, audit/history).
 // Audit-8: gebruikt by_invitedBy index ipv full-table scan — schaalt bij
 // groei van invites-table (was O(n) over alle invites).
+// WP23 (A-keuze 8): invite-vorm zonder token, invitedBy, respondedAt, bouncedAt.
 export const listMine = query({
   args: {},
+  returns: v.array(inviteSender),
   handler: async (ctx) => {
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) return [];
@@ -275,10 +274,11 @@ export const listMine = query({
       .withIndex("by_subject", (q) => q.eq("subject", identity.subject))
       .unique();
     if (!user) return [];
-    return await ctx.db
+    const rows = await ctx.db
       .query("invites")
       .withIndex("by_invitedBy", (q) => q.eq("invitedBy", user._id))
       .collect();
+    return rows.map((i) => pick(i, inviteSenderFields));
   },
 });
 
@@ -376,7 +376,7 @@ export const handleBounce = internalMutation({
 // range-query mogelijk: eq("status","pending") via index, daarna in-memory
 // expiresAt <= now-filter. Zelfde patroon als handleBounce (by_email collect
 // + in-memory status-filter). Boundary <= consistent met FL1, accept en
-// hasPendingForEmail (gespiegeld: expiresAt > now = nog geldig).
+// registerFromSession (gespiegeld: expiresAt > now = nog geldig).
 export const expirePendingInvites = internalMutation({
   args: {},
   returns: v.object({ expired: v.number() }),

@@ -8,6 +8,17 @@ import {
 import type { Doc, Id } from "./_generated/dataModel";
 import { getBySubject, requireCurrentUser } from "./users";
 import {
+  group,
+  groupFields,
+  membership,
+  membershipFields,
+  photo,
+  photoFields,
+  pick,
+  publicProfile,
+  publicProfileFields,
+} from "./lib/shapes";
+import {
   deleteAlbumLastSeenByAlbum,
   deleteAlbumLastSeenForUserInGroup,
   upsertAlbumLastSeen,
@@ -94,30 +105,43 @@ export const create = mutation({
   },
 });
 
+// WP23: groep-reads alleen voor leden (geen webmaster-bypass). requireMember
+// geeft voor een onbekende groep dezelfde error als voor een niet-lid
+// ("Geen lid van deze groep"): geen bestaans-orakel. Responses zijn
+// whitelists uit lib/shapes, geen spreads van rijen.
 export const getById = query({
   args: { groupId: v.id("groups") },
+  returns: v.union(group, v.null()),
   handler: async (ctx, { groupId }) => {
-    return await ctx.db.get(groupId);
+    await requireMember(ctx, groupId);
+    const row = await ctx.db.get(groupId);
+    return row ? pick(row, groupFields) : null;
   },
 });
 
 // Cat-1 join-on-read: group + cover photo. Cascade matrix row P2.
-// Member-only (groep-data is sowieso member-only).
+// Member-only (groep-data is sowieso member-only). Cover als foto-vorm.
 export const getWithCover = query({
   args: { groupId: v.id("groups") },
+  returns: v.union(
+    v.object({ ...groupFields, cover: v.union(photo, v.null()) }),
+    v.null(),
+  ),
   handler: async (ctx, { groupId }) => {
     await requireMember(ctx, groupId);
-    const group = await ctx.db.get(groupId);
-    if (!group) return null;
-    const cover = group.coverPhotoId
-      ? await ctx.db.get(group.coverPhotoId)
-      : null;
-    return { ...group, cover };
+    const row = await ctx.db.get(groupId);
+    if (!row) return null;
+    const cover = row.coverPhotoId ? await ctx.db.get(row.coverPhotoId) : null;
+    return {
+      ...pick(row, groupFields),
+      cover: cover ? pick(cover, photoFields) : null,
+    };
   },
 });
 
 export const listMine = query({
   args: {},
+  returns: v.array(v.object({ ...groupFields, role: ROLE })),
   handler: async (ctx) => {
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) return [];
@@ -131,17 +155,25 @@ export const listMine = query({
 
     const groups = await Promise.all(
       memberships.map(async (m) => {
-        const group = await ctx.db.get(m.groupId);
-        if (!group) return null;
-        return { ...group, role: m.role };
+        const row = await ctx.db.get(m.groupId);
+        if (!row) return null;
+        return { ...pick(row, groupFields), role: m.role };
       }),
     );
     return groups.filter((g): g is NonNullable<typeof g> => g !== null);
   },
 });
 
+// Bron voor de WP16-ledenlijst: per lid membership-velden + publiek profiel.
+// Nooit email of Clerk-subject van medeleden.
 export const listMembers = query({
   args: { groupId: v.id("groups") },
+  returns: v.array(
+    v.object({
+      membership,
+      user: v.union(publicProfile, v.null()),
+    }),
+  ),
   handler: async (ctx, { groupId }) => {
     await requireMember(ctx, groupId);
 
@@ -151,10 +183,13 @@ export const listMembers = query({
       .collect();
 
     return await Promise.all(
-      memberships.map(async (m) => ({
-        membership: m,
-        user: await ctx.db.get(m.userId),
-      })),
+      memberships.map(async (m) => {
+        const user = await ctx.db.get(m.userId);
+        return {
+          membership: pick(m, membershipFields),
+          user: user ? pick(user, publicProfileFields) : null,
+        };
+      }),
     );
   },
 });

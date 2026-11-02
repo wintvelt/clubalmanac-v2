@@ -244,6 +244,8 @@ Webmaster-gated operations (uit oude AWS code):
 - `features.remove(featureId)` — feature requests verwijderen
 - `features.update(featureId, ...)` — feature status updaten (bv. "accepted")
 
+Reads (WP23): elke publieke query vereist inloggen (behalve `invites.getByToken` en `smoke.ping`) en geeft een vaste veld-whitelist terug via een return-validator (`convex/lib/shapes.ts`). Webmaster ziet daarbovenop alleen melder-velden in `listAllFlagged` en problemen van anderen in `features.*`; geen bypass op groep-, album- of foto-reads. Zie [`work-packages/WP23-read-whitelist.md`](./work-packages/WP23-read-whitelist.md).
+
 Bootstrap: jouw email handmatig in Clerk dashboard aanmaken pre-cutover, env-var `WEBMASTER_EMAILS=wintvelt@me.com` zetten in Convex prod deployment. Dev-deployment krijgt z'n eigen test-email-set bij WP4-setup (zie WP4-sectie hieronder): `WEBMASTER_EMAILS` op dev bevat de webmaster-test-user (`clubalmanac-integration-webmaster@example.com`), zodat de JWT-roundtrip-pin op een echte webmaster-flow draait zonder met Wouter's prod-email te overlappen.
 
 **YAGNI keuze:** Clerk publicMetadata-rol of Convex DB-flag zou flexibeler zijn (multi-webmaster zonder redeploy), maar bij 20 users + 1 webmaster levert het niks op. Bij behoefte aan tweede webmaster ooit: ~30 min werk om over te zetten. Probleem-report email-bestemming gebruikt dezelfde env-var.

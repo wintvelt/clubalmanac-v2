@@ -46,3 +46,12 @@ export async function requireWebmaster(
   if (!user) throw new Error("User record bestaat niet");
   return user;
 }
+
+// WP23: niet-throwende variant voor reads die de webmaster méér laten zien
+// (features.list/getById: problemen van anderen). Alleen de email-match; de
+// aanroeper heeft de users-rij al via requireCurrentUser afgedwongen.
+export async function isWebmaster(ctx: QueryCtx | MutationCtx): Promise<boolean> {
+  const identity = await ctx.auth.getUserIdentity();
+  const email = identity?.email?.toLowerCase();
+  return !!email && getWebmasterEmails().includes(email);
+}

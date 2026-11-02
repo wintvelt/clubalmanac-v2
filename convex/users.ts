@@ -7,11 +7,18 @@ import {
   type MutationCtx,
   type QueryCtx,
 } from "./_generated/server";
-import type { Doc } from "./_generated/dataModel";
+import type { Doc, Id } from "./_generated/dataModel";
 import { internalRemovePhoto } from "./photos";
 import { internalRemoveMember } from "./groups";
 import { normalizeEmail } from "./lib/email";
 import { DEFAULT_PHOTO_LIMIT } from "./lib/constants";
+import {
+  ownProfile,
+  ownProfileFields,
+  pick,
+  publicProfile,
+  publicProfileFields,
+} from "./lib/shapes";
 
 // Default upload-limiet voor nieuwe users. Mocht een admin een hogere limiet
 // willen geven, dan kan dat via directe DB patch (geen public mutation in
@@ -48,21 +55,59 @@ export async function requireCurrentUser(
   return user;
 }
 
+// WP23: eigen profiel (whitelist, zie lib/shapes). `null` zonder identity of
+// users-rij: de app leunt op `current === null` (WP13/WP15a).
 export const current = query({
   args: {},
+  returns: v.union(ownProfile, v.null()),
   handler: async (ctx) => {
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) return null;
-    return await getBySubject(ctx, identity.subject);
+    const user = await getBySubject(ctx, identity.subject);
+    return user ? pick(user, ownProfileFields) : null;
   },
 });
 
+const NO_USER_ACCESS = "Geen toegang tot deze gebruiker";
+
+// WP23: publiek profiel, ook voor zichzelf (A-keuze 9). Toegang: zichzelf of
+// minstens één gedeelde groep. Geen webmaster-bypass. "Bestaat niet" en
+// "geen gedeelde groep" geven dezelfde error (invariant 4): de target-rij
+// wordt pas gelezen na de groep-check.
 export const getById = query({
   args: { userId: v.id("users") },
+  returns: publicProfile,
   handler: async (ctx, { userId }) => {
-    return await ctx.db.get(userId);
+    const me = await requireCurrentUser(ctx);
+    if (userId !== me._id && !(await sharesGroup(ctx, me._id, userId))) {
+      throw new Error(NO_USER_ACCESS);
+    }
+    const target = await ctx.db.get(userId);
+    if (!target) throw new Error(NO_USER_ACCESS);
+    return pick(target, publicProfileFields);
   },
 });
+
+async function sharesGroup(
+  ctx: QueryCtx,
+  a: Id<"users">,
+  b: Id<"users">,
+): Promise<boolean> {
+  const mine = await ctx.db
+    .query("memberships")
+    .withIndex("by_user", (q) => q.eq("userId", a))
+    .collect();
+  for (const m of mine) {
+    const other = await ctx.db
+      .query("memberships")
+      .withIndex("by_user_and_group", (q) =>
+        q.eq("userId", b).eq("groupId", m.groupId),
+      )
+      .unique();
+    if (other) return true;
+  }
+  return false;
+}
 
 // WP6: Clerk session-webhook → atomic onboarding. Vervangt de publieke
 // `api.users.register` mutation. Webhook-laag (convex/http.ts /clerk-webhook)
