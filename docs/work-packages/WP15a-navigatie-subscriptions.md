@@ -548,3 +548,17 @@ De uitweg ("Opnieuw inloggen") roept `wipe()` aan en herstart Clerk. Hij roept g
 - uitloggen waarbij `signOut()` faalt, na `wipe()`. Zo blijft de user niet in de app hangen terwijl Clerk in het geheugen nog ingelogd is.
 
 Een herladen mag geen lus geven. Een nieuwe start begint zonder "netwerk kwam terug". De gate checkt dat de app na het herladen op het inlogscherm staat, of in de app als er een sessie was.
+
+## Fix-cyclus 5 na hercheck fix-cyclus 4
+
+Besluit Wouter: eerst deze kleine fix, daarna één build voor de hele gate. R5-4 gaat naar het cutover-runbook (fase 5), K4 en K6 naar de backlog.
+
+| # | Bron | Probleem | Wat er waar moet zijn |
+|---|---|---|---|
+| F17 | red-team R5-1 | `degraded` blijft de hele run staan. Wankelt het netwerk in de codestap (bijvoorbeeld een wissel van wifi naar mobiel), dan herlaadt de app en is de codestap weg. | Een herstart van Clerk, of een herlading, gebeurt nooit terwijl er een inlogpoging loopt (de codestap). |
+| F18 | heraudit K8 | In `startupFailed` met netwerk telt elke overgang van `inactive` naar `active` als "kwam terug". Dan herlaadt de app bij elk Bedieningspaneel. | Herladen gebeurt alleen als het netwerk echt terugkomt, of als de app echt terugkomt uit de achtergrond. Een `inactive` telt niet. |
+| F19 | red-team R5-2 | `wipe()` tijdens de eerste lees-actie: de lees-actie overschrijft `wiped = true` in het geheugen. | Een wis wint altijd van een lees-actie die nog liep. |
+| F20 | red-team R5-3 | "Opnieuw wissen" in de codestap wist het client-token van de lopende login. | In de codestap kan de user geen wis starten. |
+| F21 | heraudit K7 | `online.tsx:7-9` beschrijft nog de remount via `key`. | Commentaar klopt met het herladen. |
+
+Werkwijze: A pint F17–F20. B fixt F17–F21. Daarna een korte hercheck door de red-team, dan de build.
