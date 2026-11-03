@@ -36,6 +36,24 @@ export function authRetryDue(input: {
   return cameUp(input.before, input.now);
 }
 
+// WP15a F22: wat er gebeurde sinds de app voor het laatst actief en online
+// was. De poort vergelijkt daarmee, niet met de vorige render: anders mist hij
+// een netwerk dat terugkwam terwijl de app "inactive" was (vliegtuigmodus uit
+// via het Bedieningspaneel).
+// - Actief en online: een nieuwe periode begint.
+// - Was het netwerk weg, dan blijft het weg tot de app weer actief en online
+//   is. Na een bekende meting telt "onbekend" als weg; de allereerste meting
+//   neemt het geheugen over.
+// - Was de app op de achtergrond, dan blijft dat staan; anders volgt appState
+//   de laatste meting.
+export function rememberSinceUp(memo: Conditions, now: Conditions): Conditions {
+  if (isUp(now)) return now;
+  const online = memo.online === null ? now.online : memo.online && now.online === true;
+  const appState =
+    memo.appState === "background" || now.appState === "background" ? "background" : now.appState;
+  return { appState, online };
+}
+
 // Werd de app actief en online, vanuit een moment waarop dat niet zo was?
 export function cameUp(before: Conditions, now: Conditions): boolean {
   return isUp(now) && !isUp(before);

@@ -4,6 +4,7 @@ import { router, usePathname } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { StyleSheet, View } from "react-native";
 import { wipeClerkStorage } from "./auth/deviceClerkStorage";
+import { useLoginRequestRunning } from "./auth/loginRequest";
 import { SignOutButton } from "./auth/SignOutButton";
 import { Button } from "./components/Button";
 import { Text } from "./components/Text";
@@ -16,11 +17,18 @@ import { useSessionQuery } from "./data/useLiveQuery";
 import { useOnline } from "./data/online";
 import { RECONNECT_TIMEOUT_MS } from "./lib/reconnectView";
 import { routeAccess } from "./lib/routeAccess";
-import { authRetryDue, deriveSessionState, type SessionState } from "./lib/sessionState";
+import {
+  authRetryDue,
+  deriveSessionState,
+  rememberSinceUp,
+  type Conditions,
+  type SessionState,
+} from "./lib/sessionState";
 import { startupFailedView } from "./lib/startupFailedView";
 import {
   clerkRestartDue,
   deriveStartupState,
+  loginInProgress,
   STARTUP_TIMEOUT_MS,
   startupRetryDue,
   type ClerkStatus,
@@ -71,9 +79,12 @@ export function AuthGate({ children }: { children: ReactNode }) {
     online,
     clerkStatus,
     clerkSignedIn: session.clerkSignedIn,
-    // F17: in de codestap herstart de app Clerk nooit. Dezelfde bron als de
-    // codestap in useEmailCodeLogin, dus ook na een tweede start.
-    loginInProgress: useSignIn().signIn.status === "needs_first_factor",
+    // F17, F23: tijdens een login herstart de app Clerk nooit: vanaf de tik op
+    // "Stuur code", en in de codestap (ook na een tweede start).
+    loginInProgress: loginInProgress({
+      signInStatus: useSignIn().signIn.status,
+      requestRunning: useLoginRequestRunning(),
+    }),
     retry,
   });
 
@@ -176,10 +187,12 @@ function useRetryTimer(
 // Opnieuw proberen zodra de app actief en online wordt, vanuit een moment
 // waarop dat niet zo was: na "startupFailed" Clerk opnieuw starten (F12), na
 // een start uit de cache zonder sessie ook (F14), in "reconnecting" een nieuw
-// Convex-token. Alleen bij een wissel van AppState of netwerk. Een herstart
-// van Clerk herlaadt de app; een nieuwe start begint zonder "netwerk kwam
-// terug": de eerste meting van het netwerk (null → bekend) telt niet als
-// wissel. Zo geeft herladen geen lus.
+// Convex-token. De regels vergelijken met wat er gebeurde sinds de app voor
+// het laatst actief en online was (rememberSinceUp, F22), dus ook een netwerk
+// dat terugkwam terwijl de app "inactive" was. Een herstart van Clerk
+// herlaadt de app; een nieuwe start begint zonder "netwerk kwam terug": de
+// eerste meting van het netwerk (null → bekend) telt niet als wissel. Zo
+// geeft herladen geen lus.
 function useRetryOnReturn(input: {
   state: GateState;
   online: boolean | null;
@@ -190,14 +203,14 @@ function useRetryOnReturn(input: {
 }) {
   const { online, retry } = input;
   const appState = useAppState();
-  const before = useRef({ appState, online });
+  const memo = useRef<Conditions>({ appState, online });
   const latest = useRef(input);
   latest.current = input;
   useEffect(() => {
     const now = { appState, online };
     const { state, clerkStatus, clerkSignedIn, loginInProgress } = latest.current;
-    const was = before.current;
-    before.current = now;
+    const was = memo.current;
+    memo.current = rememberSinceUp(was, now);
     if (was.online === null) return;
     if (startupRetryDue({ state, before: was, now })) void restartClerk();
     else if (clerkRestartDue({ clerkStatus, clerkSignedIn, loginInProgress, before: was, now })) void restartClerk();

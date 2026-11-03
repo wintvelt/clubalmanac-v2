@@ -55,6 +55,16 @@ export function startupRetryDue(input: {
 // Mail-app, en een herstart zou de codestap wissen. Loopt er een login (de
 // codestap), dan nooit (F17): degraded blijft de hele run staan, en een
 // wissel van wifi naar mobiel zou de codestap ook wissen.
+// F23: een login loopt vanaf de tik op "Stuur code", ook terwijl dat verzoek
+// nog loopt (signIn.status is dan nog needs_identifier), en zolang Clerk op de
+// code wacht.
+export function loginInProgress(input: {
+  signInStatus: string | null;
+  requestRunning: boolean;
+}): boolean {
+  return input.requestRunning || input.signInStatus === "needs_first_factor";
+}
+
 export function clerkRestartDue(input: {
   clerkStatus: ClerkStatus;
   clerkSignedIn: boolean;

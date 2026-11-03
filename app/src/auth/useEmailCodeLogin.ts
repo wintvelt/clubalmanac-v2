@@ -2,6 +2,7 @@ import { useSignIn } from "@clerk/expo";
 import { useCallback, useRef, useState } from "react";
 import { normalizeLoginCode } from "../lib/loginCode";
 import { resumeClerkStorage } from "./deviceClerkStorage";
+import { setLoginRequestRunning } from "./loginRequest";
 import {
   emailStepResult,
   isUnknownAccountError,
@@ -76,6 +77,7 @@ export function useEmailCodeLogin(): EmailCodeLogin {
     ) => {
       if (inFlight.current) return;
       inFlight.current = true;
+      setLoginRequestRunning(true);
       setBusy(true);
       setFeedback(null);
       const fail = (text: string) => setFeedback({ action, kind: "error", text });
@@ -90,6 +92,7 @@ export function useEmailCodeLogin(): EmailCodeLogin {
         fail(loginErrorMessage(e));
       } finally {
         inFlight.current = false;
+        setLoginRequestRunning(false);
         setBusy(false);
       }
     },
