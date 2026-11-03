@@ -562,3 +562,55 @@ Besluit Wouter: eerst deze kleine fix, daarna één build voor de hele gate. R5-
 | F21 | heraudit K7 | `online.tsx:7-9` beschrijft nog de remount via `key`. | Commentaar klopt met het herladen. |
 
 Werkwijze: A pint F17–F20. B fixt F17–F21. Daarna een korte hercheck door de red-team, dan de build.
+
+## Fix-cyclus 5: aanvulling A
+
+### Grens en contract
+
+**F17: geen herstart tijdens een login.** `clerkRestartDue` krijgt een extra veld:
+
+```ts
+export function clerkRestartDue(input: {
+  clerkStatus: ClerkStatus;
+  clerkSignedIn: boolean;
+  loginInProgress: boolean;
+  before: Conditions;
+  now: Conditions;
+}): boolean;
+```
+
+Met `loginInProgress: true` is de uitkomst altijd `false`, wat het netwerk of de app ook doet. De poort leest dit uit Clerk, niet uit het scherm: `signIn.status === "needs_first_factor"` (dezelfde bron als de codestap in `useEmailCodeLogin`). Dat dekt ook een herladen of een tweede start in de codestap.
+
+**F18: alleen echt terugkomen telt.** `startupRetryDue` is alleen waar in `startupFailed`, met de app nu actief en online, en als een van deze dingen gold:
+- er was vlak daarvoor geen netwerk (`before.online !== true`);
+- de app kwam uit de achtergrond (`before.appState === "background"`).
+
+Van `inactive` of `unknown` naar `active`, met het netwerk al aan, telt niet. `inactive` is het Bedieningspaneel, een melding of de app-wisselaar. `cameUp` en `authRetryDue` blijven zoals ze zijn: een nieuw Convex-token vragen is goedkoop, en herlaadt de app niet.
+
+**F19: een wis wint van een lees-actie die nog liep.** Begint `wipe()` terwijl de eerste lees-actie van de vlag nog loopt, dan blijft de opslag gewist. Wat daarna komt (`set`, `saveToken`, `get`, `getToken`), schrijft en leest niets, tot `resume()`. Dat geldt voor elke eerste bewerking.
+
+**F20: geen wis tijdens een login.** Een pure beslissing bepaalt of de melding "wissen mislukt" met de knop "Opnieuw wissen" er staat:
+
+```ts
+// src/lib/wipeRetry.ts
+export function wipeRetryShown(input: { wipeFailed: boolean; step: "email" | "code"; busy: boolean }): boolean;
+```
+
+Alleen waar met `wipeFailed`, in de e-mailstap, en als er geen verzoek loopt. Een verzoek in de e-mailstap heeft `resume()` al gedaan, dus een wis zou de nieuwe poging raken. Melding en knop staan er samen, of geen van beide.
+
+### Tests
+
+| Bestand | Pint |
+|---|---|
+| `tests/clerkRestart.test.ts` | F17: `loginInProgress` blokkeert elke herstart. |
+| `tests/startupState.test.ts` | F18: `inactive` en `unknown` tellen niet, `background` en een netwerk dat terugkomt wel. |
+| `tests/clerkStorage.test.ts` | F19: een wis tijdens de eerste lees-actie, voor elke soort eerste bewerking. |
+| `tests/wipeRetry.test.ts` | F20. |
+
+### Niet als test te pinnen (B's simulator-check en de gate)
+
+| Wat | Waar |
+|---|---|
+| De poort geeft `loginInProgress` uit `signIn.status` door. In de codestap blijft de app staan bij een wissel van wifi naar mobiel, en bij terugkomen uit Mail. | Gate |
+| Het Bedieningspaneel openen in `startupFailed` herlaadt de app niet. | B |
+| `LoginScreen` toont de melding en de knop alleen als `wipeRetryShown` waar is. | B, hercheck |
