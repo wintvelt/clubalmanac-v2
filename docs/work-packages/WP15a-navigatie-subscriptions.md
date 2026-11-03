@@ -614,3 +614,12 @@ Alleen waar met `wipeFailed`, in de e-mailstap, en als er geen verzoek loopt. Ee
 | De poort geeft `loginInProgress` uit `signIn.status` door. In de codestap blijft de app staan bij een wissel van wifi naar mobiel, en bij terugkomen uit Mail. | Gate |
 | Het Bedieningspaneel openen in `startupFailed` herlaadt de app niet. | B |
 | `LoginScreen` toont de melding en de knop alleen als `wipeRetryShown` waar is. | B, hercheck |
+
+## Fix-cyclus 6 na hercheck fix-cyclus 5
+
+| # | Bron | Probleem | Wat er waar moet zijn |
+|---|---|---|---|
+| F22 | red-team R6-1 (moet, regressie door F18) | Zet de user het netwerk aan via het Bedieningspaneel (`inactive`), dan volgt er na sluiten geen automatische poging. Dit geldt voor `startupRetryDue` en voor `clerkRestartDue`. | Was het netwerk weg op enig moment sinds de app voor het laatst `active` en online was, dan volgt er één poging zodra de app weer `active` én online is. Dat geldt ook als de wissel gebeurde terwijl de app `inactive` was. Een `inactive` zonder netwerkwissel geeft geen poging (F18). |
+| F23 | red-team R6-2 (kan) | Tijdens "Stuur code", vóór het antwoord, staat `signIn.status` nog op `needs_identifier`. Een netwerkwissel kan dan nog een herlading geven. | Een inlogpoging loopt vanaf de tik op "Stuur code", ook terwijl het verzoek nog loopt. |
+
+Werkwijze: A pint F22 en F23, B fixt, de red-team kijkt kort. Daarna volgt de build.
