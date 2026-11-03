@@ -236,6 +236,7 @@ Deze schermen zijn niet getoetst in stap 5. Feature-WP's volgen deze regels en l
 | 11 | Halo bij bijna-wit op bijna-zwart | Donkere tekst `#E2E8F0` (16,4:1) |
 | 12 | Rand van de + te zwak in licht | Rand van 1,5 pt en een sterkere schaduw |
 | 13 | Lange albumnaam, inloggen met toetsenbord | Albumnamen over meerdere regels. Inloggen scrolt en ontwijkt het toetsenbord; de knop blijft boven het toetsenbord zichtbaar. |
+| 14 | De titel van `Notice` breekt bij xxxLarge midden in een woord ("bereikbaa / r"). Gevonden in de WP15a-gate. | Open, voor WP15b |
 
 **Niet volledig verwerkt.**
 - Large Content Viewer (bevinding 3) zit niet in React Native zelf. In de plaats daarvan: de cap op ×1,2 en de bredere kolommen, en volgens de schatting passen alle labels daarmee. Komt er een bibliotheek voor, dan kan WP15 hem alsnog toevoegen.
