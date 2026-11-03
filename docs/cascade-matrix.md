@@ -40,7 +40,7 @@ Uitzondering: queries zonder trigger (puur read-tests) leven bij de query-owner.
 
 | Domain | Rules | Status |
 |---|---|---|
-| Users | 10 | ✅ U3-U8, U10; ❌ U1, U2, U5, U9 eliminated |
+| Users | 11 | ✅ U3-U8, U10, U11; ❌ U1, U2, U5, U9 eliminated |
 | Groups | 4 | ✅ G1-G4 |
 | Albums | 2 | ✅ A1, A2 |
 | Photos | 8 | ✅ P1-P8 |
@@ -68,6 +68,7 @@ Uitzondering: queries zonder trigger (puur read-tests) leven bij de query-owner.
 | U8 | `userDelToMemberships` | US delete | Delete user's memberships **inclusief M2 admin/founder-successie en M2-e group-cascade bij laatste lid** | 3 | Cascade in `users.deleteSelf` roept per membership `internalRemoveMember` aan (helper in `convex/groups.ts`, geëxtraheerd uit `groups.removeMember`). M1 + M2 (a-e) + M3 keten draait transitief per membership. Audit-bevinding 2026-04-30 opgelost | `tests/users/delete.test.ts` (describe `U8 — M2 cascade`) | ✅ |
 | U9 | (nieuw, niet uit AWS) | US delete | ~~Delete user's `albumLastSeen` records~~ Eliminated. M3 (binnen `internalRemoveMember`, transitief vanuit U8) cleant albumLastSeen per membership-delete. Aparte cascade overbodig na U8-refactor (audit-bevinding 2026-04-30) | 1 | n.v.t. — geen cascade-code meer in `users.deleteSelf`, geen `deleteAlbumLastSeenByUser` helper meer | `tests/users/delete.test.ts` (describe `U9 (eliminated)` — integration-check dat M3 transitief de cleanup doet) | ❌ |
 | U10 | (nieuw, niet uit AWS) | US delete | Clear `flaggedBy` ref op photos die deze user heeft geflagd (default: photo en flag-state blijven, alleen `flaggedBy` op `undefined` om orphan ref te voorkomen). Alternatief: hele flag clearen — open beslissing | 3 (selectief) | In `users.deleteSelf`: scan `photos.by_flagged` (op flaggedAt aanwezig), filter op `flaggedBy === userId`, patch `flaggedBy = undefined`. Owner van photo en deletion countdown ongewijzigd | `tests/users/delete.test.ts` (describe `U10`: photo door deleted user geflagd → flaggedBy weg, flaggedAt + flaggedDeleteDate intact) | ✅ |
+| U11 | (nieuw, WP15b) | US delete | Delete de bezoekrij van de user in `userVisits` | 3 | In `users.deleteSelf`: `userVisits.by_user` op userId, delete. Het bezoek staat sinds WP15b buiten de users-rij, zodat `recordVisit` geen live query laat herdraaien (dat draait U2 deels terug: de splitsing heeft in Convex een reden, de reactiviteit) | `tests/users/recordVisit.test.ts` (describe `users.deleteSelf ruimt het bezoek op (cascade U11)`) | ✅ |
 
 ### Trigger: Groups
 

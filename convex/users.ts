@@ -1,4 +1,4 @@
-import { v } from "convex/values";
+import { ConvexError, v } from "convex/values";
 import {
   internalMutation,
   internalQuery,
@@ -11,7 +11,11 @@ import type { Doc, Id } from "./_generated/dataModel";
 import { internalRemovePhoto } from "./photos";
 import { internalRemoveMember } from "./groups";
 import { normalizeEmail } from "./lib/email";
-import { DEFAULT_PHOTO_LIMIT } from "./lib/constants";
+import {
+  DEFAULT_PHOTO_LIMIT,
+  NAME_MAX_LENGTH,
+  VISIT_PERIOD_MS,
+} from "./lib/constants";
 import { canUseStorage } from "./lib/photoAccess";
 import {
   ownProfile,
@@ -56,17 +60,28 @@ export async function requireCurrentUser(
   return user;
 }
 
+async function ownProfileOrNull(ctx: QueryCtx) {
+  const identity = await ctx.auth.getUserIdentity();
+  if (!identity) return null;
+  const user = await getBySubject(ctx, identity.subject);
+  return user ? pick(user, ownProfileFields) : null;
+}
+
 // WP23: eigen profiel (whitelist, zie lib/shapes). `null` zonder identity of
 // users-rij: de app leunt op `current === null` (WP13/WP15a).
 export const current = query({
   args: {},
   returns: v.union(ownProfile, v.null()),
-  handler: async (ctx) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) return null;
-    const user = await getBySubject(ctx, identity.subject);
-    return user ? pick(user, ownProfileFields) : null;
-  },
+  handler: ownProfileOrNull,
+});
+
+// WP15b invariant 7: zelfde vorm als `current`, maar een eigen functie. Alleen
+// Profiel abonneert erop (via useLiveQuery), zodat Convex dit abonnement niet
+// samenvoegt met dat van de poort en de tabwissel in het dashboard te zien is.
+export const profile = query({
+  args: {},
+  returns: v.union(ownProfile, v.null()),
+  handler: ownProfileOrNull,
 });
 
 const NO_USER_ACCESS = "Geen toegang tot deze gebruiker";
@@ -195,6 +210,30 @@ export const registerFromSession = internalMutation({
   },
 });
 
+// WP15b A-punt 3: tekens die een naam onleesbaar of misleidend maken.
+// Controletekens (C0, DEL, C1), regel- en alineascheiding, tekens die de
+// leesrichting omdraaien, en onzichtbare spaties. U+200C/U+200D (ZWNJ/ZWJ)
+// mogen: die zitten in emoji en in sommige schriften.
+const FORBIDDEN_NAME_CHARS =
+  /[\u0000-\u001f\u007f-\u009f\u2028\u2029\u200e\u200f\u202a-\u202e\u2066-\u2069\u200b\ufeff]/;
+
+type NameErrorCode = "NAME_EMPTY" | "NAME_TOO_LONG" | "NAME_INVALID";
+
+// Geeft de naam zoals hij bewaard wordt, of gooit een ConvexError met een
+// code: een gewone Error komt in productie aan als "Server Error" en de app
+// moet een melding onder het veld kunnen tonen (WP15b invariant 10).
+// `trim` haalt ook vaste spaties (U+00A0, U+3000) en een BOM aan de rand weg.
+function validName(raw: string): string {
+  const name = raw.trim();
+  const fail = (code: NameErrorCode) => {
+    throw new ConvexError({ code });
+  };
+  if (name.length === 0) fail("NAME_EMPTY");
+  if ([...name].length > NAME_MAX_LENGTH) fail("NAME_TOO_LONG");
+  if (FORBIDDEN_NAME_CHARS.test(name)) fail("NAME_INVALID");
+  return name;
+}
+
 export const updateProfile = mutation({
   args: {
     name: v.optional(v.string()),
@@ -203,7 +242,10 @@ export const updateProfile = mutation({
   handler: async (ctx, args) => {
     const user = await requireCurrentUser(ctx);
     const patch: Partial<Doc<"users">> = {};
-    if (args.name !== undefined) patch.name = args.name;
+    // WP15b: alleen een meegegeven naam wordt gecheckt; een gemigreerde naam
+    // blijft staan tot de user hem zelf wijzigt. Check vóór de patch, zodat
+    // een geweigerde naam ook de profielfoto laat staan (invariant 9).
+    if (args.name !== undefined) patch.name = validName(args.name);
     if (args.profilePhotoStorageId !== undefined) {
       // WP24 invariant 8: alleen een beeld van de caller (eigen of
       // toegankelijke foto, of de eigen huidige profielfoto). Check vóór de
@@ -219,11 +261,37 @@ export const updateProfile = mutation({
   },
 });
 
+async function visitRow(ctx: QueryCtx, userId: Id<"users">) {
+  return await ctx.db
+    .query("userVisits")
+    .withIndex("by_user", (q) => q.eq("userId", userId))
+    .unique();
+}
+
+// WP15b invarianten 5 en 6. De backend is de garantie voor de throttle:
+// hoogstens één schrijfactie per VISIT_PERIOD_MS per user, ook als de client
+// vaker vraagt. Binnen de periode: niets, en geen fout. Het bezoek staat in
+// `userVisits`, niet in de users-rij, zodat geen live query opnieuw draait.
 export const recordVisit = mutation({
   args: {},
   handler: async (ctx) => {
     const user = await requireCurrentUser(ctx);
-    await ctx.db.patch(user._id, { lastVisitAt: Date.now() });
+    const now = Date.now();
+    const visit = await visitRow(ctx, user._id);
+    if (!visit) {
+      await ctx.db.insert("userVisits", { userId: user._id, lastVisitAt: now });
+    } else if (now - visit.lastVisitAt >= VISIT_PERIOD_MS) {
+      await ctx.db.patch(visit._id, { lastVisitAt: now });
+    }
+  },
+});
+
+// WP15b: het bezoek is alleen intern te lezen (tests, dashboard).
+export const getLastVisit = internalQuery({
+  args: { userId: v.id("users") },
+  returns: v.union(v.number(), v.null()),
+  handler: async (ctx, { userId }) => {
+    return (await visitRow(ctx, userId))?.lastVisitAt ?? null;
   },
 });
 
@@ -286,6 +354,10 @@ export const deleteSelf = mutation({
         await ctx.db.patch(p._id, { flaggedBy: undefined });
       }
     }
+
+    // U11 (WP15b): het bezoek van deze user.
+    const visit = await visitRow(ctx, user._id);
+    if (visit) await ctx.db.delete(visit._id);
 
     await ctx.db.delete(user._id);
   },

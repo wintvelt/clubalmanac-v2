@@ -9,8 +9,8 @@ import {
 } from "../navigation/stackOptions";
 
 // Wortel van de router: providers (App.tsx), dan de auth-poort, dan één
-// stack met de tabs, de modaal en het inlogscherm. Routes en deep links:
-// WP15a §Routes.
+// stack met de tabs, de modaal en de uitgelogde tabs (Inloggen · Info). Routes
+// en deep links: WP15a §Routes, WP15b §Routes.
 export default function RootLayout() {
   return (
     <App>
@@ -48,7 +48,7 @@ function RootStack() {
           <Stack.Screen name="+not-found" options={{ headerShown: true, title: "Niet gevonden" }} />
         </Stack.Protected>
         <Stack.Protected guard={!inApp}>
-          <Stack.Screen name="inloggen" />
+          <Stack.Screen name="(uitgelogd)" />
         </Stack.Protected>
       </Stack>
     </ThemeProvider>

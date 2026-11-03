@@ -15,6 +15,7 @@ import { useConvexConnection } from "./data/convexConnection";
 import { useAppState } from "./data/useAppState";
 import { useSessionQuery } from "./data/useLiveQuery";
 import { useOnline } from "./data/online";
+import { useRecordVisit } from "./data/useRecordVisit";
 import { RECONNECT_TIMEOUT_MS } from "./lib/reconnectView";
 import { routeAccess } from "./lib/routeAccess";
 import {
@@ -38,8 +39,8 @@ import { StatusScreen } from "./screens/StatusScreen";
 
 // De poort vóór elke route: de vijf toestanden van WP13 (invarianten 4, 10,
 // 11, 12, 13) plus "reconnecting" (WP15a F1) en "startupFailed" (F12), per pad
-// (WP15a invarianten 4 en 10). Alleen lezen: geen recordVisit hier (dat is
-// WP15b).
+// (WP15a invarianten 4 en 10). Daarnaast registreert de poort een bezoek bij
+// elke terugkeer naar "actief en ingelogd" (WP15b, useRecordVisit).
 //
 // De navigator (children) rendert alleen bij "show", "login" en "home". Wie
 // welk scherm mag zien, regelen de guards in src/app/_layout.tsx met dezelfde
@@ -64,6 +65,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
   const derived = deriveSessionState({ ...session, currentUser, tokenFetchFailed, online });
   const sticky = useStickyReconnecting(derived, session.clerkSignedIn);
   const { retrying } = sticky;
+  useRecordVisit(sticky.state, currentUser?._id ?? null);
   // F12: "laden" duurt nooit langer dan de time-out.
   const loading = useTimeout(sticky.state === "loading", STARTUP_TIMEOUT_MS);
   const clerkStatus = useClerk().status;

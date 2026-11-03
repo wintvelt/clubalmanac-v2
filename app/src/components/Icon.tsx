@@ -21,6 +21,8 @@ const IONICONS = {
   alert: "alert-circle",
   check: "checkmark-circle",
   refresh: "refresh",
+  privacy: "shield-checkmark",
+  document: "document-text",
 } as const;
 
 export type IconName = keyof typeof IONICONS;

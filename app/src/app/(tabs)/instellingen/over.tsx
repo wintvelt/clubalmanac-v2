@@ -1,3 +1,5 @@
-import { AboutScreen } from "../../../screens/AboutScreen";
+import { InfoPageScreen } from "../../../screens/InfoPageScreen";
 
-export default AboutScreen;
+export default function Route() {
+  return <InfoPageScreen slug="over" />;
+}

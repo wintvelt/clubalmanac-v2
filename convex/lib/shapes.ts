@@ -56,7 +56,10 @@ export const publicProfileFields = {
 };
 export const publicProfile = v.object(publicProfileFields);
 
-/** Wat de user van zichzelf ziet. Geen subject, geen photoLimit (A-keuze 10). */
+/**
+ * Wat de user van zichzelf ziet. Geen subject, geen photoLimit (A-keuze 10),
+ * geen lastVisitAt (WP15b: het bezoek is niet zichtbaar).
+ */
 export const ownProfileFields = {
   _id: v.id("users"),
   email: v.string(),
@@ -64,7 +67,6 @@ export const ownProfileFields = {
   profilePhotoStorageId: v.optional(v.id("_storage")),
   photoCount: v.number(),
   createdAt: v.number(),
-  lastVisitAt: v.optional(v.number()),
 };
 export const ownProfile = v.object(ownProfileFields);
 

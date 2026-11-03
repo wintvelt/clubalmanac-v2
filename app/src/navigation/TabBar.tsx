@@ -8,7 +8,8 @@ import { border, plusButton, radius, size, space, useTheme } from "../theme";
 
 // De ingelogde tabbalk (design.md §5, §7; WP15a invarianten 2, 9, 16): Home ·
 // Mijn foto's · + · Profiel · Instellingen, elk met icoon en label. De + is
-// een actie, geen tab: hij opent de modaal "Foto's toevoegen".
+// een actie, geen tab: hij opent de modaal "Foto's toevoegen". Uitgelogd
+// (WP15b): Inloggen · Info, zonder +.
 
 type TabMeta = { label: string; icon: IconName; weight: number };
 
@@ -19,10 +20,18 @@ const TABS: Record<string, TabMeta> = {
   "mijn-fotos": { label: "Mijn foto's", icon: "photos", weight: 1.25 },
   profiel: { label: "Profiel", icon: "user", weight: 1 },
   instellingen: { label: "Instellingen", icon: "gear", weight: 1.3 },
+  inloggen: { label: "Inloggen", icon: "login", weight: 1 },
+  info: { label: "Info", icon: "info", weight: 1 },
 };
 const PLUS_WEIGHT = 1.15;
 
-export function TabBar({ state, emitter, navigateToTab, insets }: BottomTabBarProps) {
+export function TabBar({
+  state,
+  emitter,
+  navigateToTab,
+  insets,
+  plus = true,
+}: BottomTabBarProps & { plus?: boolean }) {
   const { colors } = useTheme();
 
   const tabs = state.routes.map((route, index) => {
@@ -53,9 +62,15 @@ export function TabBar({ state, emitter, navigateToTab, insets }: BottomTabBarPr
       ]}
     >
       <View accessibilityRole="tablist" style={styles.row}>
-        {tabs.slice(0, half)}
-        <PlusButton />
-        {tabs.slice(half)}
+        {plus ? (
+          <>
+            {tabs.slice(0, half)}
+            <PlusButton />
+            {tabs.slice(half)}
+          </>
+        ) : (
+          tabs
+        )}
       </View>
     </View>
   );

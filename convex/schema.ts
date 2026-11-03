@@ -23,7 +23,8 @@ export default defineSchema({
     photoCount: v.number(),
     // Limiet voor uploads. Default in createUser mutation.
     photoLimit: v.number(),
-    // Laatste activiteit (voor visit-tracking, was UV record).
+    // Ongebruikt sinds WP15b: het bezoek staat in `userVisits`. Alleen de
+    // migratie vult dit veld nog; opruimen staat op de backlog.
     lastVisitAt: v.optional(v.number()),
     createdAt: v.number(),
   })
@@ -234,6 +235,18 @@ export default defineSchema({
     .index("by_user_album", ["userId", "albumId"])
     .index("by_user", ["userId"]) // U9 cascade
     .index("by_album", ["albumId"]), // A2 cascade
+
+  // ──────────────────────────────────────────────────────────────────
+  // User visits (WP15b)
+  // ──────────────────────────────────────────────────────────────────
+  // Eén rij per user met het laatste bezoek (was UV record). Buiten de
+  // users-rij: Convex draait elke query opnieuw die een gewijzigd document
+  // las, dus een bezoek in `users` zou de poort en elke ledenlijst laten
+  // herdraaien. Geen publieke query leest deze tabel. Cascade U11.
+  userVisits: defineTable({
+    userId: v.id("users"),
+    lastVisitAt: v.number(),
+  }).index("by_user", ["userId"]),
 
   // ──────────────────────────────────────────────────────────────────
   // Monitoring runs (WP10: integrity-check / monitoring)

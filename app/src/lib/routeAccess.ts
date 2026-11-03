@@ -17,7 +17,15 @@ export type RouteAccess =
 
 // Alleen voor wie uitgelogd is. Exacte match, geen voorvoegsel. Elk
 // routebestand buiten een Protected moet hier staan (tests/routeFiles.test.ts).
-export const PUBLIC_PATHS: ReadonlySet<string> = new Set(["/inloggen"]);
+// WP15b: de Info-paden voor wie uitgelogd is. Ingelogd staat Info onder
+// /instellingen, en een /info-pad gaat naar Home, zoals /inloggen.
+export const PUBLIC_PATHS: ReadonlySet<string> = new Set([
+  "/inloggen",
+  "/info",
+  "/info/over",
+  "/info/privacy",
+  "/info/voorwaarden",
+]);
 
 // `pathname` zoals Expo Router hem geeft: zonder scheme en query. Een slash
 // aan het eind telt niet mee.

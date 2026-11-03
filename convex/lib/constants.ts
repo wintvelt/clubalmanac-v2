@@ -6,3 +6,13 @@
 
 /** Uploadlimiet per user. In AWS stond dit als env-var, niet per user. */
 export const DEFAULT_PHOTO_LIMIT = 1000;
+
+/**
+ * WP15b: hoogstens één bezoek per user per periode. `users.recordVisit`
+ * schrijft alleen als het laatste bezoek minstens zo lang geleden is. De app
+ * gebruikt dezelfde periode om aanroepen te besparen.
+ */
+export const VISIT_PERIOD_MS = 3_600_000;
+
+/** WP15b: maximale lengte van een naam, in tekens (code points), na trim. */
+export const NAME_MAX_LENGTH = 50;

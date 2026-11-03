@@ -68,6 +68,11 @@ De app vraagt live data alleen op voor het scherm in beeld, zolang de app `activ
 - **App naar de achtergrond** (ook Bedieningspaneel of app-wisselaar): geen enkele live query meer, ook `users.current` niet. Een wijziging in de Data-tab geeft dan geen uitvoering.
 - **App terug:** één uitvoering per query van het scherm in beeld, plus één van `users.current`. Daarna niets meer, tot de data verandert.
 
+### Bezoek en tabwissel (WP15b)
+
+- **`recordVisit`** staat onder Functions als `users:recordVisit`. Verwacht één aanroep per terugkeer naar de app, hoogstens één per uur per user (de app throttlet zelf ook). In de tabel `userVisits` verandert hoogstens één keer per uur per user iets. Na een `recordVisit` volgt geen `users:current` en geen `users:profile`: het bezoek staat buiten de users-rij. Uitlezen kan alleen intern (`users:getLastVisit`).
+- **Tabwissel:** `users:profile` is de eigen query van Profiel. Hij draait bij het openen van Profiel, en daarna alleen als je eigen rij wijzigt. Na een wissel naar een andere tab: geen `users:profile` meer, ook niet als je naam op een ander toestel wijzigt. Terug op Profiel: één uitvoering.
+
 ## Auth: Clerk
 
 `picked-quail-97.clerk.accounts.dev` is de dev instance. Free tier vanaf `accounts.clerk.dev` voor signup-mails (geen custom email domain — paid feature, niet nodig voor 16 signups).
