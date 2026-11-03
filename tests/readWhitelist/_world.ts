@@ -33,7 +33,8 @@ export const SHAPE = {
     "profilePhotoStorageId",
     "photoCount",
     "createdAt",
-    "lastVisitAt",
+    // WP15b: lastVisitAt is geen deel meer van het eigen profiel. De seed
+    // vult hem nog wel, zodat zijn afwezigheid in de response iets bewijst.
   ],
   group: ["_id", "name", "description", "coverPhotoId", "createdBy", "createdAt"],
   membership: ["_id", "userId", "groupId", "role", "joinedAt"],

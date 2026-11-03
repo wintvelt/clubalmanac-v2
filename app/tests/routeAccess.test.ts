@@ -64,8 +64,12 @@ describe("routeAccess — startupFailed (F12)", () => {
 });
 
 describe("routeAccess — PUBLIC_PATHS (F4)", () => {
-  it("is geëxporteerd en bevat in 15a alleen /inloggen", () => {
-    expect([...PUBLIC_PATHS].sort()).toEqual([LOGIN]);
+  // WP15b: de Info-paden voor wie uitgelogd is komen erbij
+  // (tests/infoRoutes.test.ts).
+  it("is geëxporteerd en bevat /inloggen en de Info-paden (15b)", () => {
+    expect([...PUBLIC_PATHS].sort()).toEqual(
+      [LOGIN, "/info", "/info/over", "/info/privacy", "/info/voorwaarden"].sort(),
+    );
   });
 
   it("elk pad in PUBLIC_PATHS toont uitgelogd zijn scherm", () => {

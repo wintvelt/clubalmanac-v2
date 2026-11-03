@@ -52,6 +52,8 @@ const EXPECTED_PUBLIC_QUERIES = [
   "smoke:ping",
   "users:current",
   "users:getById",
+  // WP15b: eigen live query voor Profiel (invariant 7), vorm ownProfile.
+  "users:profile",
 ].sort();
 
 function publicQueries(): Map<string, Registered> {

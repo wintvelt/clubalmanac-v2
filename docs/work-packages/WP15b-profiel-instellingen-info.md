@@ -266,6 +266,8 @@ Aangepaste bestaande tests (bewust):
 
 Dit botst met de zin "WP23-tests blijven ongewijzigd groen" in de Acceptance. Regie bevestigt (open vraag 2).
 
+Doc-deliverables voor B: cascade-rij U11 (`deleteSelf` ruimt het bezoek op) in `cascade-matrix.md`; de runbook-regels hieronder in `external-services.md` §Convex; design.md §10 nr. 14 op "opgelost".
+
 ### Ops-runbook (aanvulling op B's regel in `external-services.md`)
 
 - `recordVisit` staat in het dashboard onder Functions. Verwacht één aanroep per terugkeer naar de app, hoogstens één per uur per user. In de bezoektabel verandert hoogstens één keer per uur iets. Na een `recordVisit` volgt geen `users:current` en geen `users:profile`.
