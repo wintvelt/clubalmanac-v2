@@ -281,3 +281,12 @@ Doc-deliverables voor B: cascade-rij U11 (`deleteSelf` ruimt het bezoek op) in `
 | 3 | Eigen bezoektabel? | Ja (Wouter). Invariant 6 en gate-stap 4 blijven zoals ze zijn. |
 | 4 | Teksten | Ingevuld in `WP15b-info-teksten.md` (Wouter): contact `wouter@clubalmanac.com`, alleen het adres (geen telefoon), de website blijft met de foto's. Clerk valt onder het EU-VS Data Privacy Framework ([Clerk DPF-notice](https://clerk.com/legal/dpf)). De back-upbelofte vervalt: het Starter-plan van Convex heeft geen automatische back-ups ([Convex docs](https://docs.convex.dev/database/backup-restore)). |
 | 5 | Probleem melden | Naar een feature-WP (regie). In 15b alleen Contact via `mailto:`. |
+
+## Gate build 45 (2026-11-03) en fix-cyclus 1
+
+Gate-stappen 1 tot en met 7 zijn groen, met het dashboard als bewijs. De tabwissel stopt `users:profile`, en een terugkeer naar de app geeft geen `recordVisit` binnen het uur. Er zijn twee bevindingen. Fix-cyclus 1 doet alleen B, want het gaat om schermgedrag zonder pure logica. B checkt de fixes in de simulator bij de grootste AX-stand.
+
+| # | Bevinding | Gewenst gedrag |
+|---|---|---|
+| F1 | De bevestiging "Je naam is opgeslagen." blijft op Profiel staan, ook na een wissel naar een andere tab en terug. | De bevestiging en de foutmelding verdwijnen ook zodra je Profiel verlaat (besluit Wouter). Typen en opnieuw opslaan wissen ze al. Een antwoord dat binnenkomt terwijl je weg bent, staat er bij terugkomst niet meer. |
+| F2 | Bij grote tekst wordt de kop "Over deze app" op Over de app afgekapt tot "Over deze a". | Elke kop en elke tekst op de Info-pagina's, op Profiel en op Instellingen loopt door op een volgende regel. Nergens valt tekst weg, ook niet bij de grootste AX-stand. |
