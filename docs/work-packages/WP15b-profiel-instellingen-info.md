@@ -15,7 +15,7 @@ Een ingelogde user ziet zijn naam en e-mailadres op Profiel en kan zijn naam wij
 5. **Een bezoek registreren gebeurt hoogstens één keer per vaste periode per user, ook als de client vaker vraagt.** Een bezoek is een terugkeer naar `active` terwijl de user ingelogd is. Een mislukte registratie merkt de user niet, en die levert geen poging-lus op.
 6. **Een bezoek registreren laat geen live query opnieuw draaien.** Wat een scherm of de poort live toont, verandert niet door `lastVisitAt`.
 7. **De tabwissel is meetbaar.** Minstens één scherm in deze WP heeft een eigen live query, via `useLiveQuery`. Die query mag niet identiek zijn aan `users.current` van de poort, want Convex voegt identieke abonnementen samen. Wissel je van tab, dan stopt die query.
-8. **WP15a en WP13 blijven werken.** De bestaande tests in `app/tests/` en root-`tests/` blijven ongewijzigd groen. Schermen gebruiken alleen tokens en componenten uit `app/src/theme` en `app/src/components`, en `Screen` voor `reconnecting`.
+8. **WP15a en WP13 blijven werken.** De bestaande tests in `app/tests/` en root-`tests/` blijven groen. Alleen A past ze bewust aan (zie regie-besluiten). Schermen gebruiken alleen tokens en componenten uit `app/src/theme` en `app/src/components`, en `Screen` voor `reconnecting`.
 
 ## Edge cases + scope-uitsluitingen
 
@@ -86,7 +86,7 @@ Er is geen red-team: geen enkele dimensie is hoog. Vindt de audit iets in de aut
 
 ## Acceptance
 
-- Root en app: typecheck en tests groen op Node 24, ook in CI. WP13-, WP15a- en WP23-tests blijven ongewijzigd groen.
+- Root en app: typecheck en tests groen op Node 24, ook in CI. WP13-, WP15a- en WP23-tests blijven groen, met alleen A's bewuste aanpassingen.
 - Audit: geen open blockers.
 - **Empirische gate (Wouter, TestFlight-build, met het Convex-dashboard open):**
   1. Profiel toont je naam en e-mailadres. Wijzig je naam: er verschijnt een bevestiging onder de knop. Log in als dev2: die user ziet de nieuwe naam (zodra er een scherm met leden is, anders in het dashboard).
@@ -264,7 +264,6 @@ Aangepaste bestaande tests (bewust):
 - `app/tests/routeAccess.test.ts`: de test "bevat in 15a alleen /inloggen" kijkt nu naar de set van 15b.
 - `tests/users/recordVisit.test.ts`: "server throttled niet" vervalt (punt 2).
 
-Dit botst met de zin "WP23-tests blijven ongewijzigd groen" in de Acceptance. Regie bevestigt (open vraag 2).
 
 Doc-deliverables voor B: cascade-rij U11 (`deleteSelf` ruimt het bezoek op) in `cascade-matrix.md`; de runbook-regels hieronder in `external-services.md` §Convex; design.md §10 nr. 14 op "opgelost".
 
@@ -273,12 +272,12 @@ Doc-deliverables voor B: cascade-rij U11 (`deleteSelf` ruimt het bezoek op) in `
 - `recordVisit` staat in het dashboard onder Functions. Verwacht één aanroep per terugkeer naar de app, hoogstens één per uur per user. In de bezoektabel verandert hoogstens één keer per uur iets. Na een `recordVisit` volgt geen `users:current` en geen `users:profile`.
 - De tabwissel: `users:profile` draait bij het openen van Profiel, en daarna alleen als je eigen rij wijzigt. Na een wissel naar een andere tab: geen `users:profile` meer, ook niet als je naam op een ander toestel wijzigt.
 
-### Open vragen voor regie en Wouter
+### Regie-besluiten (2026-11-03)
 
-| # | Vraag | Voorstel A |
+| # | Vraag van A | Besluit |
 |---|---|---|
-| 1 | Migratie: zet WP12 het AWS-bezoek (`visitDateLast`) in de nieuwe bezoektabel, en gaat `users.lastVisitAt` uit het schema? Dat raakt `scripts/migrate/transform.ts` en `tests/migration/transform.test.ts` (WP12-terrein). | Ja, in een mini-stap na WP15b, met A→B. Tot dan blijft het veld, ongebruikt. Alternatief: het AWS-bezoek niet meenemen. Het werd nergens getoond. |
-| 2 | Mag A de WP23-tests `_world.ts` (de vorm) en `inventory.test.ts` aanpassen, ondanks "ongewijzigd groen"? | Ja. Precies dit vraagt de inventaristest: een nieuwe publieke query vraagt een bewuste wijziging. |
-| 3 | Is een eigen tabel voor het bezoek (punt 1) de moeite waard, voor 16 users? Het alternatief: `lastVisitAt` blijft in de rij, met dezelfde throttle. Dan draaien de queries op die rij hoogstens één keer per uur per user opnieuw, met hetzelfde resultaat. Invariant 6 en gate-stap 4 worden dan "hoogstens één keer per uur". | Eigen tabel. Anders is invariant 6 niet waar, en leest de gate "er volgt geen extra `users:current`" fout. |
-| 4 | De teksten in `WP15b-info-teksten.md`: het contactadres (`wouter@clubalmanac.com`?), het adres en telefoonnummer van Inc Management, de website clubalmanac.com na de overstap, en of Convex back-ups maakt. Die laatste belofte staat in de voorwaarden. | Wouter vult in of streept door, vóór B begint. |
-| 5 | Het formulier "Probleem melden" uit de oude app | Naar een feature-WP. In 15b alleen Contact via `mailto:`. |
+| 1 | AWS-bezoek migreren? | Nee (Wouter). Het eerste bezoek na T0 vult de bezoektabel. `users.lastVisitAt` blijft voorlopig in het schema, ongebruikt. Opruimen staat op de backlog in `migratie-status.md`. |
+| 2 | WP23-tests aanpassen? | Ja (regie). De inventaristest vraagt precies om zo'n bewuste wijziging. |
+| 3 | Eigen bezoektabel? | Ja (Wouter). Invariant 6 en gate-stap 4 blijven zoals ze zijn. |
+| 4 | Teksten | Ingevuld in `WP15b-info-teksten.md` (Wouter): contact `wouter@clubalmanac.com`, alleen het adres (geen telefoon), de website blijft met de foto's. Clerk valt onder het EU-VS Data Privacy Framework ([Clerk DPF-notice](https://clerk.com/legal/dpf)). De back-upbelofte vervalt: het Starter-plan van Convex heeft geen automatische back-ups ([Convex docs](https://docs.convex.dev/database/backup-restore)). |
+| 5 | Probleem melden | Naar een feature-WP (regie). In 15b alleen Contact via `mailto:`. |

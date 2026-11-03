@@ -1,6 +1,6 @@
 # WP15b: teksten voor de Info-pagina's
 
-> Concept van A (2026-11-03), op basis van de oude app en de oude privacyverklaring. B neemt de teksten letterlijk over. Wouter keurt ze goed vóór B begint. Plekken met **[Wouter]** vult hij in of streept hij door.
+> Concept van A (2026-11-03), op basis van de oude app en de oude privacyverklaring. Open plekken ingevuld door regie na besluit van Wouter (2026-11-03). B neemt de teksten letterlijk over. Wouter keurt ze definitief goed bij de gate.
 
 ## Over de app (`over`)
 
@@ -10,7 +10,7 @@ Bovenaan: de naam en de versie van de app (bestaat al).
 
 Deze app is voor de jaarclub. Voor alle foto's die we in de loop der jaren hebben gemaakt. Een deel is gedigitaliseerd en online gedeeld. Een deel ligt nog op zolders.
 
-De app blijft bestaan zolang Apple hem in de App Store toelaat. **[Wouter: de zin over de website clubalmanac.com. Bestaat die na de overstap nog, en staan de foto's daar ook?]**
+De app blijft bestaan zolang Apple hem in de App Store toelaat. Je kunt de foto's ook bekijken op de website clubalmanac.com.
 
 De bedoeling is dat de app gratis blijft, maar zonder garanties (zoals in het leven).
 
@@ -36,7 +36,7 @@ Zeg je je lidmaatschap op, dan worden al je gegevens verwijderd.
 
 **De officiële versie**
 
-*Verantwoordelijke.* Inc Management is verantwoordelijk voor de verwerking van persoonsgegevens zoals beschreven in deze verklaring. **[Wouter: adres en telefoonnummer, zoals in de oude verklaring (Pelikaanweg 6, 3762 VB Soest; +31 622973760), of weglaten?]** Wouter In 't Velt is de functionaris gegevensbescherming. Hij is te bereiken via **[Wouter: wouter@clubalmanac.com?]**.
+*Verantwoordelijke.* Inc Management (Pelikaanweg 6, 3762 VB Soest) is verantwoordelijk voor de verwerking van persoonsgegevens zoals beschreven in deze verklaring. Wouter In 't Velt is de functionaris gegevensbescherming. Hij is te bereiken via wouter@clubalmanac.com.
 
 *Welke gegevens.*
 - Naam: zoals je hem opgeeft, zodat andere leden je herkennen.
@@ -53,13 +53,13 @@ Zeg je je lidmaatschap op, dan worden al je gegevens verwijderd.
 
 *Wie verwerkt je gegevens voor ons.* Met deze bedrijven is er een verwerkersovereenkomst of gelden hun standaardvoorwaarden voor verwerkers:
 - Convex: opslag van alle gegevens en foto's, op servers in Dublin (Ierland, EU).
-- Clerk: inloggen. Clerk bewaart je e-mailadres en je inlogsessies. Clerk is een Amerikaans bedrijf. De doorgifte buiten de EU valt onder het EU-VS Data Privacy Framework. **[Wouter: klopt dit voor het gekozen Clerk-abonnement?]**
+- Clerk: inloggen. Clerk bewaart je e-mailadres en je inlogsessies. Clerk is een Amerikaans bedrijf. De doorgifte buiten de EU valt onder het EU-VS Data Privacy Framework.
 - Mailjet: het versturen van e-mail, vanuit Frankrijk (EU).
 - Photon (Komoot): zet de GPS-gegevens van een foto om in een plaatsnaam. Alleen de coördinaten gaan erheen, niet je naam of e-mailadres. Komoot zit in Duitsland (EU).
 
 *Cookies.* De app gebruikt geen cookies en geen trackers.
 
-*Inzien, aanpassen of verwijderen.* Je hebt het recht je gegevens in te zien, te laten aanpassen of te laten verwijderen. Je naam pas je zelf aan op Profiel. Voor de rest, en voor bezwaar of het overdragen van je gegevens, mail je **[Wouter: adres]**. We reageren binnen vier weken.
+*Inzien, aanpassen of verwijderen.* Je hebt het recht je gegevens in te zien, te laten aanpassen of te laten verwijderen. Je naam pas je zelf aan op Profiel. Voor de rest, en voor bezwaar of het overdragen van je gegevens, mail je wouter@clubalmanac.com. We reageren binnen vier weken.
 
 Je kunt ook een klacht indienen bij de Autoriteit Persoonsgegevens (autoriteitpersoonsgegevens.nl).
 
@@ -83,7 +83,7 @@ Je bent zelf verantwoordelijk voor de foto's die je deelt. Dat betekent:
 
 Clubalmanac belooft:
 - De app zo veel mogelijk in de lucht te houden, en te zorgen dat hij fatsoenlijk werkt.
-- Je foto's en gegevens veilig op te slaan. **[Wouter: "en geregeld back-ups te maken": maakt Convex back-ups op het gekozen abonnement?]**
+- Je foto's en gegevens veilig op te slaan.
 - Je foto's en gegevens alleen toegankelijk te maken voor jou en de leden van je groepen.
 - Dat je op elk moment je account kunt opheffen, en dat dan al je gegevens worden verwijderd.
 - Dat de app gratis is.
@@ -97,4 +97,4 @@ Clubalmanac houdt het recht om:
 
 ## Contact (regel, geen pagina)
 
-Label "Contact". Opent een e-mail naar **[Wouter: adres]**, met als onderwerp "Clubalmanac-app". Geen naam of e-mailadres van de user in de link.
+Label "Contact". Opent een e-mail naar wouter@clubalmanac.com, met als onderwerp "Clubalmanac-app". Geen naam of e-mailadres van de user in de link.

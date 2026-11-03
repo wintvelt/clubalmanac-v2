@@ -215,7 +215,7 @@ Dus: communicatie en blokkade gaan **buiten de oude app om**.
 
 ## Monitoring & backup (ongoing) — open
 
-- [ ] **Backup:** Convex backup/restore beschikbaar op alle plans. Periodiek instellen.
+- [ ] **Backup:** Starter-plan heeft alleen handmatige back-ups (max. 2 per deployment); automatisch vraagt Pro ([docs](https://docs.convex.dev/database/backup-restore)). Vóór T0 beslissen: vaste export-routine of Pro. De app-voorwaarden beloven geen back-ups (WP15b).
 - [ ] **Integriteits-checks:** scheduled function voor data validatie (zie teststrategie punt 3 in migratie-plan-convex.md)
 - [ ] **Monitoring:** Convex Health & Insights dashboard (gratis), function errors in dashboard
 - [ ] **Alerting:** integriteits-checks sturen email bij inconsistentie
@@ -232,6 +232,7 @@ WP5/WP6 deferred items zijn nu verdeeld over fase 2 en fase 5:
 
 - **Backend-code** (fase 2, [ ]-bullet bovenaan §Fase 2): WP5/WP6 integration-tests `tests/integration/mailjet/sendRoundtrip.test.ts` + `tests/integration/clerk/onboardingWebhook.test.ts`
 - **Prod-env activatie + Gates herhalen** (fase 5 T-4 weken, zie §Cutover stappenplan): prod env-vars, Mailjet prod webhook-config, Clerk prod webhook-config, WP5 Gates 1+2 herhalen, WP6 Gates 1+2+3 herhalen
+- **`users.lastVisitAt` opruimen** (na WP15b): het bezoek staat nu in een eigen tabel. De transform (WP12) neemt `visitDateLast` niet meer mee, en het veld gaat uit het schema. Eerst de dev-rijen leegmaken, anders faalt de schema-check.
 
 Reden voor split: integration-tests zijn écht backend-code (env-var-gated, in CI-uitsluitingslijst per `integration-tests.md`) — past in fase 2. Prod-env-activatie heeft pas zin in T-4 weken (idle prod-deployment eerder = cost + drift-risico, plus Gates moeten toch herhaald worden vlak vóór T-0).
 
