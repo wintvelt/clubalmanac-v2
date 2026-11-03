@@ -1,5 +1,6 @@
 import { useMutation } from "convex/react";
-import { useRef, useState } from "react";
+import { useIsFocused } from "expo-router";
+import { useEffect, useRef, useState } from "react";
 import { StyleSheet, View } from "react-native";
 import { Button } from "../components/Button";
 import { Notice } from "../components/Notice";
@@ -28,6 +29,17 @@ export function ProfileScreen() {
   const [busy, setBusy] = useState(false);
   const [feedback, setFeedback] = useState<Feedback>(null);
   const inFlight = useRef(false);
+  // Fix-cyclus 1 (F1): de bevestiging en de foutmelding horen bij één bezoek
+  // aan Profiel. Verlaat de user Profiel, dan verdwijnen ze. Elk vertrek
+  // verhoogt `visit`; een antwoord van een eerder bezoek toont niets meer.
+  const focused = useIsFocused();
+  const visit = useRef(0);
+  useEffect(() => {
+    if (!focused) {
+      visit.current += 1;
+      setFeedback(null);
+    }
+  }, [focused]);
 
   if (!me) {
     return (
@@ -43,13 +55,16 @@ export function ProfileScreen() {
     // Eén aanroep tegelijk, ook bij dubbel tikken.
     if (inFlight.current) return;
     inFlight.current = true;
+    const startedIn = visit.current;
     setBusy(true);
     setFeedback(null);
     try {
       await updateProfile({ name: value });
+      if (visit.current !== startedIn) return;
       setDraft(null);
       setFeedback({ kind: "saved" });
     } catch (error) {
+      if (visit.current !== startedIn) return;
       setFeedback({ kind: "error", text: nameErrorText(error) });
     } finally {
       inFlight.current = false;
