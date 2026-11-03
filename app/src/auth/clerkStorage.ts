@@ -41,8 +41,13 @@ export function createClerkStorage(backend: SecureBackend, publishableKey: strin
     queue = next.catch(() => {});
     return next;
   };
+  // Een wis tijdens de eerste lees-actie wint (F19): de lees-actie zet de
+  // vlag alleen als er intussen niets anders gezet is.
   const isWiped = async () => {
-    if (wiped === null) wiped = (await backend.getItem(WIPED_KEY)) !== null;
+    if (wiped === null) {
+      const stored = (await backend.getItem(WIPED_KEY)) !== null;
+      wiped ??= stored;
+    }
     return wiped;
   };
 

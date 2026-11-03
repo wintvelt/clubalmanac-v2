@@ -14,6 +14,7 @@ import { Notice } from "../components/Notice";
 import { Screen } from "../components/Screen";
 import { Text } from "../components/Text";
 import { TextField } from "../components/TextField";
+import { wipeRetryShown } from "../lib/wipeRetry";
 import { size, space, useTheme } from "../theme";
 
 // Twee stappen: e-mailadres → code uit de mail. Geen wachtwoord (invariant 18)
@@ -32,7 +33,7 @@ export function LoginScreen() {
         Clubalmanac
       </Text>
 
-      <TokenWipeNotice />
+      <TokenWipeNotice step={login.step.step} busy={login.busy} />
 
       {login.step.step === "email" ? (
         <>
@@ -142,11 +143,11 @@ function Feedback({
 
 // Het wissen na uitloggen mislukte (zie wipeClerkStorage). De uitlog-knop is
 // dan al weg; de melding staat bovenaan, en een nieuwe poging meldt zich
-// direct onder "Opnieuw wissen".
-function TokenWipeNotice() {
+// direct onder "Opnieuw wissen". Niet tijdens een login (F20).
+function TokenWipeNotice({ step, busy }: { step: "email" | "code"; busy: boolean }) {
   const wipeFailed = useClerkWipeFailed();
   const [retryFailed, setRetryFailed] = useState(false);
-  if (!wipeFailed) return null;
+  if (!wipeRetryShown({ wipeFailed, step, busy })) return null;
   return (
     <>
       <Notice

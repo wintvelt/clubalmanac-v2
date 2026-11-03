@@ -4,9 +4,10 @@ import { createContext, useContext, type ReactNode } from "react";
 // Heeft het toestel netwerk (WP15a F1)? null = nog onbekend, en dat telt als
 // niet online. Verbonden zonder internet telt als offline.
 //
-// Gemeten boven Clerk (App.tsx). Mount de app Clerk opnieuw (F12), dan blijft
-// de laatste meting staan: geen sprong van "onbekend" naar "online" die als
-// terugkeer van het netwerk telt, en dus geen lus.
+// Een herstart van Clerk herlaadt de app (src/data/clerkRestart.ts), en dan
+// begint ook deze meting opnieuw bij "onbekend". De poort telt die eerste
+// meting niet als terugkeer van het netwerk (AuthGate, useRetryOnReturn), dus
+// geen lus.
 const OnlineContext = createContext<boolean | null>(null);
 
 export function OnlineProvider({ children }: { children: ReactNode }) {

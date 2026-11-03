@@ -1,4 +1,4 @@
-import { cameUp, type Conditions, type SessionState } from "./sessionState";
+import type { Conditions, SessionState } from "./sessionState";
 
 // WP15a F12: een koude start blijft nooit eindeloos op "laden". Zonder netwerk
 // faalt Clerk's load() (of hangt hij), en Clerk probeert het dan niet zelf
@@ -30,28 +30,40 @@ export function deriveStartupState(input: {
   return input.clerkSignedIn ? "reconnecting" : "startupFailed";
 }
 
-// Na "startupFailed" start de app Clerk opnieuw zodra hij actief en online
-// wordt, vanuit een moment waarop dat niet zo was. Dezelfde regel als
-// authRetryDue: bleef hij actief en online, dan tikt de user op "Opnieuw".
+// Na "startupFailed" start de app Clerk opnieuw zodra het netwerk terugkomt,
+// of zodra de app terugkomt uit de achtergrond, en hij nu actief en online
+// is. Van "inactive" (Bedieningspaneel, melding, app-wisselaar) naar actief
+// telt niet (F18): dan zou elke blik op het Bedieningspaneel de app herladen.
+// Bleef hij actief en online, dan tikt de user op "Opnieuw".
 export function startupRetryDue(input: {
   state: GateState;
   before: Conditions;
   now: Conditions;
 }): boolean {
-  return input.state === "startupFailed" && cameUp(input.before, input.now);
+  const { before, now } = input;
+  return (
+    input.state === "startupFailed" &&
+    now.appState === "active" &&
+    now.online === true &&
+    (before.online !== true || before.appState === "background")
+  );
 }
 
 // F14: startte Clerk uit de cache en is de user uitgelogd, dan start de app
 // Clerk opnieuw zodra het netwerk terugkomt terwijl de app actief is. Alleen
 // terugkomen uit de achtergrond telt niet: de user haalt de code uit de
-// Mail-app, en een herstart zou de codestap wissen.
+// Mail-app, en een herstart zou de codestap wissen. Loopt er een login (de
+// codestap), dan nooit (F17): degraded blijft de hele run staan, en een
+// wissel van wifi naar mobiel zou de codestap ook wissen.
 export function clerkRestartDue(input: {
   clerkStatus: ClerkStatus;
   clerkSignedIn: boolean;
+  loginInProgress: boolean;
   before: Conditions;
   now: Conditions;
 }): boolean {
   return (
+    !input.loginInProgress &&
     input.clerkStatus === "degraded" &&
     !input.clerkSignedIn &&
     input.now.appState === "active" &&

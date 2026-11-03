@@ -1,4 +1,4 @@
-import { useAuth, useClerk, useUser } from "@clerk/expo";
+import { useAuth, useClerk, useSignIn, useUser } from "@clerk/expo";
 import { useConvexAuth } from "convex/react";
 import { router, usePathname } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
@@ -71,6 +71,9 @@ export function AuthGate({ children }: { children: ReactNode }) {
     online,
     clerkStatus,
     clerkSignedIn: session.clerkSignedIn,
+    // F17: in de codestap herstart de app Clerk nooit. Dezelfde bron als de
+    // codestap in useEmailCodeLogin, dus ook na een tweede start.
+    loginInProgress: useSignIn().signIn.status === "needs_first_factor",
     retry,
   });
 
@@ -182,6 +185,7 @@ function useRetryOnReturn(input: {
   online: boolean | null;
   clerkStatus: ClerkStatus;
   clerkSignedIn: boolean;
+  loginInProgress: boolean;
   retry: () => void;
 }) {
   const { online, retry } = input;
@@ -191,12 +195,12 @@ function useRetryOnReturn(input: {
   latest.current = input;
   useEffect(() => {
     const now = { appState, online };
-    const { state, clerkStatus, clerkSignedIn } = latest.current;
+    const { state, clerkStatus, clerkSignedIn, loginInProgress } = latest.current;
     const was = before.current;
     before.current = now;
     if (was.online === null) return;
     if (startupRetryDue({ state, before: was, now })) void restartClerk();
-    else if (clerkRestartDue({ clerkStatus, clerkSignedIn, before: was, now })) void restartClerk();
+    else if (clerkRestartDue({ clerkStatus, clerkSignedIn, loginInProgress, before: was, now })) void restartClerk();
     else if (state !== "startupFailed" && authRetryDue({ state, before: was, now })) retry();
   }, [appState, online, retry]);
 }
