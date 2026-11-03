@@ -623,3 +623,37 @@ Alleen waar met `wipeFailed`, in de e-mailstap, en als er geen verzoek loopt. Ee
 | F23 | red-team R6-2 (kan) | Tijdens "Stuur code", vóór het antwoord, staat `signIn.status` nog op `needs_identifier`. Een netwerkwissel kan dan nog een herlading geven. | Een inlogpoging loopt vanaf de tik op "Stuur code", ook terwijl het verzoek nog loopt. |
 
 Werkwijze: A pint F22 en F23, B fixt, de red-team kijkt kort. Daarna volgt de build.
+
+## Fix-cyclus 6: aanvulling A
+
+**F22: een geheugen in plaats van de vorige render.** De poort vergelijkt niet meer met de vorige render, maar met wat er gebeurde sinds de app voor het laatst actief én online was:
+
+```ts
+// src/lib/sessionState.ts
+export function rememberSinceUp(memo: Conditions, now: Conditions): Conditions;
+```
+
+| Regel | Waarom |
+|---|---|
+| Is de app nu actief en online, dan is het geheugen `now`. | Vanaf hier begint een nieuwe periode. |
+| Anders blijft `online` op `false` staan zodra het netwerk ergens weg was, ook als het daarna terugkwam terwijl de app `inactive` was. | F22: netwerk aan via het Bedieningspaneel. |
+| Na een eerste bekende meting wordt `online` niet meer `null`. Een onbekend netwerk telt dan als weg. | De poort slaat alleen de allereerste meting over (de anti-lus van het herladen). |
+| Was de app in deze periode op `background`, dan blijft `appState` op `"background"` staan. Anders volgt `appState` de laatste meting. | Een `inactive` op weg naar `active` maakt een terugkeer uit de achtergrond niet ongedaan. |
+
+De poort roept `startupRetryDue`, `clerkRestartDue` en `authRetryDue` aan met `before = memo`. Ze slaat over zolang `memo.online === null`. Daarna zet ze `memo = rememberSinceUp(memo, now)`. De regels zelf veranderen niet. F18 blijft groen: een `inactive` zonder netwerkwissel geeft geen poging.
+
+**F23: een login loopt vanaf de tik.**
+
+```ts
+// src/lib/startupState.ts
+export function loginInProgress(input: { signInStatus: string | null; requestRunning: boolean }): boolean;
+```
+
+Waar zodra een verzoek van de login loopt, of als Clerk op de code wacht (`needs_first_factor`). `useEmailCodeLogin` meldt "verzoek loopt" vanaf de tik op "Stuur code". De poort leest dat, en geeft de uitkomst als `loginInProgress` aan `clerkRestartDue`.
+
+| Test | Pint |
+|---|---|
+| `tests/returnMemory.test.ts` | F22: `rememberSinceUp`, plus reeksen van metingen door de poort-regel (Bedieningspaneel met en zonder netwerkwissel, Mail, herladen). |
+| `tests/clerkRestart.test.ts` | F23: `loginInProgress`, en de poort gebruikt hem. |
+
+Niet als test te pinnen: dat `useEmailCodeLogin` het lopende verzoek doorgeeft aan de poort (B, hercheck). En in `startupFailed` offline: Bedieningspaneel open, vliegtuigmodus uit, paneel dicht. Dan volgt één herlading (gate).
