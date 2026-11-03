@@ -2,8 +2,8 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { clerkRestartDue } from "../src/lib/startupState";
-import { isScanned, listFiles, memberNames, parse } from "./support/sourceScan";
+import { clerkRestartDue, loginInProgress } from "../src/lib/startupState";
+import { isScanned, listFiles, memberNames, moduleUses, parse } from "./support/sourceScan";
 
 // WP15a F14 (R4-2): geen setActive buiten een inlogactie van de user. De hook
 // resumeSession kon na uitloggen de sessie weer activeren. Startte Clerk uit
@@ -98,5 +98,32 @@ describe("clerkRestartDue — Clerk opnieuw starten na een start uit de cache (F
         expect(
           clerkRestartDue({ ...base, loginInProgress: true, before: { appState, online } }),
         ).toBe(false);
+  });
+});
+
+// F23 (R6-2): een login loopt vanaf de tik op "Stuur code". Tot het antwoord
+// binnen is, staat signIn.status nog op needs_identifier.
+describe("loginInProgress (F23)", () => {
+  it.each([null, "needs_identifier", "needs_first_factor", "complete"])(
+    "een verzoek loopt (status %s): ja",
+    (signInStatus) => {
+      expect(loginInProgress({ signInStatus, requestRunning: true })).toBe(true);
+    },
+  );
+
+  it("Clerk wacht op de code, geen verzoek: ja", () => {
+    expect(loginInProgress({ signInStatus: "needs_first_factor", requestRunning: false })).toBe(true);
+  });
+
+  it.each([null, "needs_identifier", "complete"])("geen verzoek, status %s: nee", (signInStatus) => {
+    expect(loginInProgress({ signInStatus, requestRunning: false })).toBe(false);
+  });
+
+  it("de poort gebruikt loginInProgress uit src/lib/startupState", () => {
+    const sf = parse(read("src/AuthGate.tsx"), "src/AuthGate.tsx");
+    const imported = moduleUses(sf).some(
+      (u) => /(^|\/)lib\/startupState$/.test(u.module) && u.names.includes("loginInProgress"),
+    );
+    expect(imported).toBe(true);
   });
 });
