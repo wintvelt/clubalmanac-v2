@@ -43,7 +43,7 @@ describe("geen setActive in de app (F14)", () => {
 
 describe("clerkRestartDue — Clerk opnieuw starten na een start uit de cache (F14)", () => {
   const ON = { appState: "active", online: true };
-  const base = { clerkStatus: "degraded" as const, clerkSignedIn: false, now: ON };
+  const base = { clerkStatus: "degraded" as const, clerkSignedIn: false, loginInProgress: false, now: ON };
 
   it("degraded, uitgelogd, netwerk terug terwijl de app actief is: ja", () => {
     for (const online of [false, null])
@@ -87,5 +87,16 @@ describe("clerkRestartDue — Clerk opnieuw starten na een start uit de cache (F
       expect(
         clerkRestartDue({ ...base, clerkStatus, clerkSignedIn, before: { appState: "active", online: false } }),
       ).toBe(false);
+  });
+
+  // F17 (R5-1): degraded blijft de hele run staan. Een wissel van wifi naar
+  // mobiel in de codestap, of terugkomen uit Mail met het netwerk in een
+  // aparte render, mag de codestap niet wissen.
+  it("een login loopt (codestap): nooit, wat het netwerk of de app ook doet", () => {
+    for (const appState of ["active", "background", "inactive", "unknown"])
+      for (const online of [false, null, true])
+        expect(
+          clerkRestartDue({ ...base, loginInProgress: true, before: { appState, online } }),
+        ).toBe(false);
   });
 });

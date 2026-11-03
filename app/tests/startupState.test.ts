@@ -124,10 +124,23 @@ describe("startupRetryDue — Clerk opnieuw starten", () => {
       ).toBe(true);
   });
 
-  it.each(["background", "inactive", "unknown"])("app van %s naar active, online: ja", (appState) => {
+  it("app terug uit de achtergrond, online: ja", () => {
+    expect(
+      startupRetryDue({ state: "startupFailed", before: { appState: "background", online: true }, now: ON }),
+    ).toBe(true);
+  });
+
+  // F18 (K8): inactive is het Bedieningspaneel, een melding of de
+  // app-wisselaar. Dat is niet "terugkomen", en mag de app niet herladen.
+  it.each(["inactive", "unknown"])("van %s naar active, netwerk al aan: nee", (appState) => {
     expect(startupRetryDue({ state: "startupFailed", before: { appState, online: true }, now: ON })).toBe(
-      true,
+      false,
     );
+  });
+
+  it.each(["inactive", "unknown"])("van %s naar active, en het netwerk kwam terug: ja", (appState) => {
+    for (const online of [false, null])
+      expect(startupRetryDue({ state: "startupFailed", before: { appState, online }, now: ON })).toBe(true);
   });
 
   it("niets veranderd: nee, de user tikt op Opnieuw", () => {

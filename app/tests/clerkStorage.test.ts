@@ -290,3 +290,47 @@ describe("clerkStorage — verwijderen faalt", () => {
     expectClean(data, ALL_SECRETS);
   });
 });
+
+// F19 (R5-2): de eerste bewerking van een instantie leest eerst de vlag uit
+// de backend. Begint wipe() terwijl die lees-actie nog loopt, dan mag de
+// lees-actie de wis niet ongedaan maken.
+describe("clerkStorage — een wis wint van een lees-actie die nog liep (F19)", () => {
+  type Storage = ReturnType<typeof createClerkStorage>;
+  // Laat de eerste bewerking beginnen: de lees-actie van de vlag staat dan
+  // open in de backend (die antwoordt pas na een tik).
+  const readStarted = async () => {
+    for (let i = 0; i < 10; i++) await Promise.resolve();
+  };
+  const FIRST: [string, (s: Storage) => Promise<unknown>][] = [
+    ["get", (s) => s.resourceCache().get(CLIENT)],
+    ["set", (s) => s.resourceCache().set(CLIENT, SECRETS.client)],
+    ["getToken", (s) => s.tokenCache.getToken(CLIENT_JWT_KEY)],
+    ["saveToken", (s) => s.tokenCache.saveToken(CLIENT_JWT_KEY, SECRETS.clientJwt)],
+  ];
+
+  it.each(FIRST)("wipe() tijdens de eerste lees-actie (%s): daarna schrijft en leest niets", async (_, first) => {
+    const { backend, data } = fakeBackend();
+    const storage = createClerkStorage(backend, PK);
+    const running = first(storage).catch(() => {});
+    await readStarted();
+    const wiped = storage.wipe();
+    await Promise.all([running, wiped]);
+    await fill(storage);
+    expectClean(data, ALL_SECRETS);
+    expect(await storage.resourceCache().get(CLIENT)).toBeNull();
+    expect(await storage.tokenCache.getToken(CLIENT_JWT_KEY)).toBeFalsy();
+  });
+
+  it.each(FIRST)("ook na een koude start met data van eerder (eerste bewerking %s)", async (_, first) => {
+    const { backend, data } = fakeBackend();
+    await fill(createClerkStorage(backend, PK));
+    const storage = createClerkStorage(backend, PK);
+    const running = first(storage).catch(() => {});
+    await readStarted();
+    const wiped = storage.wipe();
+    await Promise.all([running, wiped]);
+    await fill(storage);
+    expectClean(data, ALL_SECRETS);
+    expect(await createClerkStorage(backend, PK).resourceCache().get(CLIENT)).toBeNull();
+  });
+});
