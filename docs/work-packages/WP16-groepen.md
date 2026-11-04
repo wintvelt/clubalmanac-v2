@@ -1,6 +1,6 @@
 # WP16: Groepen — overzicht en detail, met live ongelezen-tellers
 
-> Regie-draft 2026-11-04. App-WP (zie [`work-package-specs.md` §App-WP's](../conventions/work-package-specs.md#app-wps-fase-4)), met een mogelijk backend-deel. Eigen sessie per rol. Bouwt op [WP15a](./WP15a-navigatie-subscriptions.md) en [WP15b](./WP15b-profiel-instellingen-info.md).
+> ✅ Afgerond 2026-11-04 (gate build 47, hercheck build 48). App-WP (zie [`work-package-specs.md` §App-WP's](../conventions/work-package-specs.md#app-wps-fase-4)), met een backend-deel. Eigen sessie per rol. Bouwt op [WP15a](./WP15a-navigatie-subscriptions.md) en [WP15b](./WP15b-profiel-instellingen-info.md).
 
 ## Productdoel
 
@@ -312,134 +312,42 @@ Let op: het bewerkformulier vulde het datumveld vooraf met `sortDate || createdA
 
 **Jaar en volgorde in de app.** De datum van een groep of album is `sortDate`, anders `createdAt`. Het jaar is het kalenderjaar van die datum in Nederlandse tijd (invariant 11). Een gemigreerde dag staat op UTC-middernacht, en dat is in Nederland 01:00 of 02:00 op dezelfde dag: het jaar klopt dus ook op 1 januari. Volgorde: nieuwste datum eerst, dan naam, dan id.
 
-**Getallen.** Geteld op de prod-extract van 2026-11-04, bij stap 3 hieronder.
+**Getallen.** Geteld op de prod-extract van 2026-11-04, bij de herlaadbeurt.
 
 | | Totaal | Met `sortDate` | In een ander jaar dan `createdAt` | Onleesbaar |
 |---|---|---|---|---|
 | Groepen (prod, 2026-11-04) | 6 | 1 | 0 | 0 |
 | Albums (prod, 2026-11-04) | 17 | 4 | 1 | 0 |
 
-**Migratie op dev: herladen met de WP12-tooling.** Een backfill kan niet: de koppeling van AWS-id naar Convex-id wordt niet bewaard, dus een los script weet niet welk Convex-album bij welk AWS-album hoort. Prod heeft niets extra's nodig: de T0-run gebruikt de nieuwe transform vanzelf.
+**Migratie op dev (2026-11-04).** Dev is opnieuw geladen met de WP12-tooling ([runbook](../runbooks/wp12-data-migratie.md)): export als anker, deploy, extract (`AWS_PROFILE=clubalmanac`), transform, load-files, reset, `userVisits` leeg, load-records, verify. Verify groen, de aantallen gelijk aan de WP12-baseline, en `sortDate` op 4 albums en 1 groep. Een backfill kan niet: de koppeling van AWS-id naar Convex-id wordt niet bewaard. Prod heeft niets extra's nodig: de T0-run gebruikt de nieuwe transform vanzelf. Vondst: `reset` kent `userVisits` niet (backlog in [`migratie-status.md`](../migratie-status.md)).
 
-Wat je kwijtraakt op dev: alles wat sinds de seed van 25 oktober op dev is gemaakt (testgroepen, uploads, ratings, naamwijzigingen, gelezen-stand). Users krijgen nieuwe Convex-id's; inloggen blijft werken, want de Clerk-subjects blijven hetzelfde. Een onthouden Home-groep op een toestel wijst daarna nergens meer naar: dat is meteen een test van invariant 6.
+**Testgroep op dev.** "Gatetest" blijft op dev staan, voor WP17 en later: dev1 is admin, de users-rij `dev-2@…` is lid, met de albums "Gatetest nu" (drie foto's van `dev-2@…`) en "Gatetest 2019" (`sortDate` in 2019). Een rij toevoegen in het dashboard: Data → tabel → Add, met een JSON-lijst (`[{…}]`). Let op: Clerk-account dev2 hoort bij de users-rij `dev-3@clubalmanac.test`, en dev3 bij `dev-2@…`.
 
-Stappen voor Wouter, ná B (schema en transform staan op dev):
+## Verloop
 
-1. Anker:
-   ```bash
-   npx convex export --path ./backups/wp16-dev-voor-sortdate.zip
-   ```
-2. Verse export uit AWS (read-only):
-   ```bash
-   npm run migrate -- extract
-   ```
-3. Tellen, lokaal, zonder namen:
-   ```bash
-   node -e 'const {items}=require("./scripts/.data/dynamo-extract.json");const r={};for(const i of items){const t=i.PK==="GBbase"?"groepen":String(i.PK).startsWith("GA")?"albums":null;if(!t)continue;const x=r[t]??={totaal:0,metSortDate:0,anderJaar:0,onleesbaar:0};x.totaal++;const s=typeof i.sortDate==="string"?i.sortDate.trim():"";if(!s)continue;x.metSortDate++;if(!/^\d{4}-\d{2}-\d{2}$/.test(s)){x.onleesbaar++;continue}if(s.slice(0,4)!==String(i.createdAt).slice(0,4))x.anderJaar++}console.log(r)'
-   ```
-   Zet de vier getallen per soort in de tabel hierboven.
-4. Transform met de bestaande `dev-config.json`:
-   ```bash
-   npm run migrate -- transform --target dev
-   ```
-5. Alleen de nieuwe bestanden (hervatbaar):
-   ```bash
-   npm run migrate -- load-files --target dev
-   ```
-6. Tabellen leeg (zonder `--all`: de bestanden blijven):
-   ```bash
-   npm run migrate -- reset --target dev --yes
-   ```
-7. Leeg in het dashboard de tabel `userVisits` (dev → Data → `userVisits` → Clear Table). `reset` kent die tabel niet (zie hieronder).
-8. Laden en controleren:
-   ```bash
-   npm run migrate -- load-records --target dev
-   ```
-   ```bash
-   npm run migrate -- verify --target dev
-   ```
-9. Check in het dashboard dat een paar albums en groepen een `sortDate` hebben, als de telling bij stap 3 die had.
-10. Opruimen:
-    ```bash
-    rm scripts/.data/dynamo-extract.json
-    ```
-11. Meldt `verify` storage-orphans (uploads die op dev zijn gedaan), ruim ze pas op als je tevreden bent: `prune-storage --target dev --yes`. Daarna kan de rollback hieronder de verwijderde bestanden niet meer terugzetten.
+A (drie rondes) → regie-besluiten → B → audit (geen blockers, één should-fix) → twee fix-cycli (alleen B) → gate → hercheck.
 
-**Gate-voorbereiding (ná stap 11).** Na de herlaadbeurt zijn dev1 en dev2 lid van gemigreerde groepen: dev1 (`dev-1@clubalmanac.test`, "Dev Wouter") van vijf, dev2 (`dev-2@clubalmanac.test`, "Dev Anna") van één, en die ene delen ze. Voor gate-stap 3 en 7 maak je er een eigen testgroep bij, zodat foto's toevoegen en dev1 eruit halen de gemigreerde data niet raken. Alles gaat in het Convex-dashboard van dev, tabblad Data, met de knop **Add** (een JSON-document invoegen) en **Filter**.
+| Cyclus | F | Kern | Bron |
+|---|---|---|---|
+| 1 | S1 | Na `reconnecting`, of na "Opnieuw" in de foutgrens, sprong Mijn groepen alsnog naar de laatst bezochte groep. De keuze van Home staat nu buiten het scherm (`app/src/lib/homeDecision.ts`, met test), één keer per sessie. | audit |
+| 1 | N4 | Runbook-regel: `users:profile` binnen Groep alleen op Leden. | audit |
+| 2 | F1 | De +-knop (sinds WP15a) was in licht geen ronde cirkel: het verloop rekende met de volle maat binnen de rand, en de effen achtergrond kwam erachter tevoorschijn. | gate build 47 |
 
-1. Log in de app één keer in als dev1 en als dev2. Daarmee staat er zeker een users-rij per account.
-2. Zoek de twee users. Data → `users` → Filter op `email` gelijk aan `dev-1@clubalmanac.test`. Kopieer het `_id`: dat is **ID-dev1**. Doe hetzelfde met `dev-2@clubalmanac.test`: **ID-dev2**. Twijfel je of dat de rij van het Clerk-account is: het `subject` in de rij is de User ID van `dev1+clerk_test@example.com` in het Clerk-dashboard (dev).
-3. Een tijdstempel van nu, in ms, in je terminal: **T**.
-   ```bash
-   date +%s000
-   ```
-4. De testgroep. Data → `groups` → Add:
-   ```json
-   { "name": "Gatetest", "createdBy": "ID-dev1", "createdAt": T }
-   ```
-   Vervang `ID-dev1` en `T` door de waarden uit stap 2 en 3. Het nieuwe `_id` is **ID-groep**.
-5. De leden. Data → `memberships` → Add, twee keer:
-   ```json
-   { "userId": "ID-dev1", "groupId": "ID-groep", "role": "admin", "joinedAt": T }
-   ```
-   ```json
-   { "userId": "ID-dev2", "groupId": "ID-groep", "role": "member", "joinedAt": T }
-   ```
-6. Twee albums. Data → `albums` → Add, twee keer. Het tweede heeft een gekozen datum in 2019 (besluit 3), dus Albums toont twee jaartallen:
-   ```json
-   { "groupId": "ID-groep", "name": "Gatetest nu", "createdBy": "ID-dev1", "createdAt": T }
-   ```
-   ```json
-   { "groupId": "ID-groep", "name": "Gatetest 2019", "createdBy": "ID-dev1", "createdAt": T, "sortDate": 1559347200000 }
-   ```
-   De `_id`'s zijn **ID-album-nu** en **ID-album-2019**.
-7. Een foto van dev2 om mee te koppelen. Data → `photos` → Filter op `ownerId` gelijk aan ID-dev2. Kopieer twee `_id`'s: **ID-foto-1** en **ID-foto-2**.
-8. Een eerste nieuwe foto voor dev1. Data → `albumPhotos` → Add, met **T + 1000** als `addedAt` (strikt na het lidmaatschap, anders telt hij niet):
-   ```json
-   { "albumId": "ID-album-nu", "photoId": "ID-foto-1", "groupId": "ID-groep", "addedAt": T + 1000, "addedBy": "ID-dev2" }
-   ```
-   Reken `T + 1000` zelf uit; het veld is een getal, geen som.
+## Gate-uitslag
 
-Nu is dev1 lid van twee groepen met albums: de gedeelde gemigreerde groep, en Gatetest. Op Gatetest staat bij dev1 een teller van 1 op "Gatetest nu" en op de groep. Bij dev2 staat er niets: een eigen foto telt niet.
+**Build 47 (2026-11-04),** met het dashboard als bewijs:
+- Mijn groepen met teller per groep, Albums per jaar (ook 2019 via `sortDate`), Leden zonder e-mailadres, het albumpad zonder `markSeen`: ✅;
+- live teller: een foto van een ander lid gaf binnen seconden 1 → 2; op een andere tab geen `albums:listByGroupWithUnread`, terug op Home één uitvoering en 3: ✅;
+- Home na een koude start: de laatste groep, zonder flits; vliegtuigmodus op Mijn groepen springt niet (6b); een andere user krijgt de groep niet: ✅;
+- uit de open groep gehaald: NL-melding, geen oude albums, Home daarna Mijn groepen; ook met Profiel in beeld (7b, N1 trad niet op): ✅;
+- grootste tekst, licht en donker: ✅, op de +-knop na (F1).
 
-**Gate-stap 3 (live teller).** Open als dev1 Gatetest op Albums, met het dashboard open op Logs. Neem een nieuwe **T2** met `date +%s000`, en voeg in `albumPhotos` toe:
-```json
-{ "albumId": "ID-album-nu", "photoId": "ID-foto-2", "groupId": "ID-groep", "addedAt": T2, "addedBy": "ID-dev2" }
-```
-De teller op "Gatetest nu" gaat binnen enkele seconden van 1 naar 2.
+**Build 48 (2026-11-04), op `0f08958`:** F1 ✅.
 
-**Gate-stap 7 (uit de open groep).** Open als dev1 Gatetest. Data → `memberships` → Filter op `groupId` gelijk aan ID-groep → selecteer de rij met `userId` = ID-dev1 → Delete. De app toont de NL-melding met een weg naar Mijn groepen, en Home opent daarna Mijn groepen, niet Gatetest.
+## Backlog (kan-punten)
 
-Een rij wissen in het dashboard slaat de cascade over (M1, M3, en promotie van een nieuwe admin), anders dan `groups.removeMember`. Voor deze test maakt dat niet uit: de app reageert op het verdwenen lidmaatschap. Gatetest heeft daarna geen admin meer; dat is op dev geen probleem. Terugzetten: de eerste regel uit stap 5 opnieuw toevoegen. Na de gate mag Gatetest blijven staan. Wil je hem weg: wis eerst de rijen in `albumPhotos`, `albumLastSeen`, `albums` en `memberships` met `groupId` of `albumId` van Gatetest, en dan de groep. De foto's van dev2 blijven, die horen bij dev2.
-
-**Rollback.** Tot stap 11: `npx convex import --replace-all ./backups/wp16-dev-voor-sortdate.zip` zet de tabellen terug. De bestanden staan er nog, want `reset` zonder `--all` laat ze staan. Wil je ook de code terug: eerst de data, dan de code. Een schema zonder `sortDate` laat zich niet deployen zolang er rijen met `sortDate` staan.
-
-**Vondst buiten WP16: `reset` kent `userVisits` niet.** De tabel van WP15b valt niet onder `MONITORED_TABLES` en dus niet onder `reset`. Na een herlaadbeurt wijzen de oude rijen naar users die niet meer bestaan. Niemand ziet dat (geen publieke query leest de tabel, en de dagelijkse scan controleert hem niet), maar het is vuil, en op prod speelt het niet (leeg op T0). Staat op de backlog: [`migratie-status.md`](../migratie-status.md) §Pre-cutover deferred items.
-
-**RED-breedte.** Omdat de WP23-wereld (`tests/readWhitelist/_world.ts`) nu `sortDate` vult, falen alle tests die die wereld gebruiken (WP23, WP24, `profileQuery`) met "Unexpected field `sortDate`", tot het schema-veld er is. Dat is één oorzaak, en het eerste wat B doet.
-
-## Audit (2026-11-04) en fix-cyclus 1
-
-Audit op `790983f`: geen blockers, één should-fix. Fix-cyclus 1 doet alleen B.
-
-| # | Bevinding | Besluit |
-|---|---|---|
-| S1 | Na `reconnecting`, of na "Opnieuw" bij een fout in `listMine`, mount Mijn groepen opnieuw en springt alsnog naar de laatst bezochte groep. Dat breekt invariant 12. | Fix-cyclus 1. De keuze van Home overleeft een remount van Mijn groepen, een herverbinding en een reset van de foutgrens. Zet de toestand in iets wat je kunt testen, en test het. |
-| N4 | De runbook-regel zegt dat `users:profile` alleen op Leden loopt. Hij loopt ook op Profiel. | Fix-cyclus 1: "binnen Groep alleen op Leden". |
-| N1 | Word je uit een groep gehaald terwijl Groep niet in beeld is, dan toont de terugkeer even de oude inhoud, tot `NOT_MEMBER` binnenkomt. Dat komt uit het WP15a-ontwerp (de laatst bekende waarde blijft staan). | Backlog. Je zag die inhoud al. Gate-stap 7b meet hoe lang het duurt. |
-| N2 | Een verzonnen id geeft "Controleer je verbinding" met "Opnieuw", dat nooit lukt. | Naar WP22 (deep links). |
-| N3 | De album-reads geven nog een gewone `Error`, geen `NOT_MEMBER`. | Voorwaarde voor de WP17-spec. |
-
-Gate-aanvulling:
-- **6b (S1):** open Gatetest, ga terug naar Mijn groepen, zet vliegtuigmodus 10 seconden aan en weer uit. Mijn groepen blijft staan.
-- **7b (N1):** haal dev1 uit Gatetest terwijl Profiel in beeld is, en ga terug naar Home. Noteer of je de oude albums even ziet, en hoe lang.
-
-## Gate build 47 (2026-11-04) en fix-cyclus 2
-
-Gate-stappen 1–7, 6b en 7b zijn groen, met het dashboard als bewijs. Bij 7b kwam direct de melding, zonder oude albums (N1 trad niet op). Bij de grootste tekst vond Wouter één ding buiten de scope, dat er al sinds WP15a zit:
-
-| # | Bevinding | Gewenst gedrag |
-|---|---|---|
-| F1 | De +-knop in licht is geen ronde cirkel. Het verloop bolt rechts en onder uit en is daar afgekapt, en linksboven is een lichtblauwe rand te zien. Het verloop vult het vlak binnen de rand van 1,5 pt, maar rekent met de volle maat, en de effen achtergrond van de knop komt erachter tevoorschijn. | Een ronde cirkel in het verloop, met de rand van design.md §4 er netjes omheen, in licht en donker, bij elke tekstgrootte. Geen effen kleur die naast het verloop zichtbaar is. |
-
-Testaccounts op dev: Clerk-account dev2 hoort bij de users-rij `dev-3@clubalmanac.test`, en dev3 bij `dev-2@…`. De transform nummert de nep-adressen niet in de volgorde van de Clerk-accounts. Kan-punt, zie de backlog bij de closeout.
+- Word je uit een groep gehaald terwijl Groep niet in beeld is, dan kan de terugkeer even de oude inhoud tonen, tot `NOT_MEMBER` binnenkomt (audit N1, uit het WP15a-ontwerp). Niet gezien bij de gate.
+- Een verzonnen groep-id geeft "Controleer je verbinding" met "Opnieuw", dat nooit lukt (audit N2). Naar WP22.
+- De album-reads geven nog een gewone `Error`, geen `NOT_MEMBER` (audit N3). Voorwaarde voor WP17.
+- Op Groep, en op het inlogscherm, scrolt de inhoud onder een statusbalk zonder achtergrond door (B).
+- De transform nummert de nep-adressen `dev-N@clubalmanac.test` niet in de volgorde van de Clerk-accounts, wat verwarrend is bij een gate.
