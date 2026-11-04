@@ -53,9 +53,9 @@ Wouter voert dit zelf uit. Versies komen uit de repo en de laptop van 2026-11-04
 5. Homebrew, daarna `brew install fnm gh cocoapods tmux`. Git komt mee met Xcode.
 6. Node via fnm, zoals in [`external-services.md`](./external-services.md) §EAS-build stap 1. Gebruik `24.22.1`, de versie uit `app/eas.json` `build.base.node`. Op de server staat ook een andere Node (v26) op het pad. `node -v` toont pas v24.22.1 in een nieuw tabblad na `fnm default`. Sluit daarna de Claude-app (Cmd+Q) en open hem opnieuw: sessies erven de shell-omgeving van de app.
 7. `npm install -g eas-cli@27.4.1`.
-8. GitHub-token: maak een fine-grained token voor alleen `wintvelt/clubalmanac-v2` (Contents: lezen en schrijven) en `wintvelt/clubalmanac-app` (Contents: lezen). Daarna `gh auth login` met dat token en `gh auth setup-git`.
-9. Repo clonen naar `/Users/wintvelt/Code/clubalmanac-v2` (zelfde pad als de laptop). Daarna `npm ci` in de root en in `app/`. Check: `npm run typecheck` en `npm test` op beide plekken, net als `.github/workflows/ci.yml`.
-10. Oude repo's clonen naar `/Users/wintvelt/Documents/DEV/DEV/`: `blob-images-api`, `blob-images-api-user`, `-groups`, `-photos`, `-invites`, `-features`, `blob-images-common` (alle publiek) en `clubalmanac-app` (privé, via het token). Let op: `blob-images-api-features` en `blob-images-common` staan nu níet op de laptop, wel op GitHub.
+8. GitHub-token: maak een fine-grained token voor alleen `wintvelt/clubalmanac-v2` (Contents: lezen en schrijven). Een fine-grained token geeft alle gekozen repo's dezelfde rechten; daarom gaat `clubalmanac-app` niet via het token (zie stap 10). Daarna `gh auth login` met dat token en `gh auth setup-git`.
+9. Repo clonen naar `/Users/wintvelt/Code/clubalmanac-v2` (zelfde pad als de laptop). Daarna `npm ci` in de root en in `app/`. Check: `npm run typecheck` en `npm test` op beide plekken, net als `.github/workflows/ci.yml`. Op de server groen op 2026-11-04.
+10. Oude repo's clonen naar `/Users/wintvelt/Documents/DEV/DEV/`: `blob-images-api`, `blob-images-api-user`, `-groups`, `-photos`, `-invites`, `-features`, `blob-images-common` (alle publiek) en `clubalmanac-app` (privé: kopieer de map van de laptop met `scp`, dan heeft het token er geen rechten op nodig). Let op: `blob-images-api-features` en `blob-images-common` staan nu níet op de laptop, wel op GitHub.
 11. Memory kopiëren: `~/.claude/projects/-Users-wintvelt-Code-clubalmanac-v2/memory/` van de laptop naar hetzelfde pad op de server. Anders mist de server de feedback-regels.
 12. Convex CLI: geen aparte installatie, `npx convex` uit de repo (1.45.0).
 13. Claude-desktop-app installeren en inloggen. Zet **Connect new sessions to Remote Control** aan. Maak een environment aan: selector onder het invoerveld → **New environment** → tab **Local** → map `~/Code/clubalmanac-v2` → **Create environment**. Een Local-environment is een opgeslagen "draai op deze Mac, in deze map". Zet in `~/.claude/settings.json` de deny-regels uit §Goedkeuren op afstand.
@@ -106,7 +106,7 @@ Alleen namen, geen waarden. Geen enkele komt in de repo of in de EAS-env.
 | ASC-API-key voor `eas submit` | EAS-managed, op EAS-servers (aangemaakt in WP14) | Nee | Blijft bij EAS. Check met `eas credentials -p ios` |
 | ASC-API-key `.p8` + `EXPO_ASC_*`, `EXPO_APPLE_TEAM_ID` | niet aanwezig | Alleen als EAS zonder vragen certificaten moet herstellen | Niet aanmaken. Bij verloop draait Wouter één build met vragen |
 | Clerk- en Mailjet-geheimen | Convex-env-vars (dashboard) | Nee | Blijven in Convex |
-| GitHub | `gh` in de sleutelhanger (account `wintvelt`, scopes `repo`, `workflow`, …) | Ja: push door Wouter, clone van `clubalmanac-app` | Nieuw fine-grained token, alleen voor de twee repo's (checklist-stap 8). Niet het laptop-token kopiëren |
+| GitHub | `gh` in de sleutelhanger (account `wintvelt`, scopes `repo`, `workflow`, …) | Ja: push door Wouter | Nieuw fine-grained token, alleen voor `clubalmanac-v2` (checklist-stap 8). Niet het laptop-token kopiëren |
 
 ## EAS zonder vragen
 
@@ -133,7 +133,7 @@ Het blijft een schrijfactie op een extern account, dus **Wouter draait het zelf*
 
 | Risico of vraag | Toelichting | Beslissing door |
 |---|---|---|
-| GitHub-token op de server | Elke sessie kan het token gebruiken, ook buiten `git push` om (bv. `gh api`). De deny-regel blokkeert alleen `git push`. Beperking: token alleen voor twee repo's, deny op `gh auth` en `gh api`. Restrisico: een push naar `clubalmanac-v2` via een omweg | Geaccepteerd |
+| GitHub-token op de server | Elke sessie kan het token gebruiken, ook buiten `git push` om (bv. `gh api`). De deny-regel blokkeert alleen `git push`. Beperking: token alleen voor `clubalmanac-v2`, deny op `gh auth` en `gh api`. Restrisico: een push naar `clubalmanac-v2` via een omweg | Geaccepteerd |
 | Sub-sessies via Remote Control | De docs zeggen niet expliciet dat sub-sessies en voorstel-kaarten op afstand werken | §Testplan |
 | Herstart van de server | Tot Wouter inlogt, draait er geen sessie. Lopend werk stopt | Geaccepteerd |
 | Sleutelhanger via SSH | Via SSH is de login-sleutelhanger vaak op slot (`gh`, `EXPO_TOKEN`). Dan eerst `security unlock-keychain` | Bij installatie |
