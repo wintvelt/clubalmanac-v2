@@ -417,3 +417,19 @@ Een rij wissen in het dashboard slaat de cascade over (M1, M3, en promotie van e
 **Vondst buiten WP16: `reset` kent `userVisits` niet.** De tabel van WP15b valt niet onder `MONITORED_TABLES` en dus niet onder `reset`. Na een herlaadbeurt wijzen de oude rijen naar users die niet meer bestaan. Niemand ziet dat (geen publieke query leest de tabel, en de dagelijkse scan controleert hem niet), maar het is vuil, en op prod speelt het niet (leeg op T0). Staat op de backlog: [`migratie-status.md`](../migratie-status.md) §Pre-cutover deferred items.
 
 **RED-breedte.** Omdat de WP23-wereld (`tests/readWhitelist/_world.ts`) nu `sortDate` vult, falen alle tests die die wereld gebruiken (WP23, WP24, `profileQuery`) met "Unexpected field `sortDate`", tot het schema-veld er is. Dat is één oorzaak, en het eerste wat B doet.
+
+## Audit (2026-11-04) en fix-cyclus 1
+
+Audit op `790983f`: geen blockers, één should-fix. Fix-cyclus 1 doet alleen B.
+
+| # | Bevinding | Besluit |
+|---|---|---|
+| S1 | Na `reconnecting`, of na "Opnieuw" bij een fout in `listMine`, mount Mijn groepen opnieuw en springt alsnog naar de laatst bezochte groep. Dat breekt invariant 12. | Fix-cyclus 1. De keuze van Home overleeft een remount van Mijn groepen, een herverbinding en een reset van de foutgrens. Zet de toestand in iets wat je kunt testen, en test het. |
+| N4 | De runbook-regel zegt dat `users:profile` alleen op Leden loopt. Hij loopt ook op Profiel. | Fix-cyclus 1: "binnen Groep alleen op Leden". |
+| N1 | Word je uit een groep gehaald terwijl Groep niet in beeld is, dan toont de terugkeer even de oude inhoud, tot `NOT_MEMBER` binnenkomt. Dat komt uit het WP15a-ontwerp (de laatst bekende waarde blijft staan). | Backlog. Je zag die inhoud al. Gate-stap 7b meet hoe lang het duurt. |
+| N2 | Een verzonnen id geeft "Controleer je verbinding" met "Opnieuw", dat nooit lukt. | Naar WP22 (deep links). |
+| N3 | De album-reads geven nog een gewone `Error`, geen `NOT_MEMBER`. | Voorwaarde voor de WP17-spec. |
+
+Gate-aanvulling:
+- **6b (S1):** open Gatetest, ga terug naar Mijn groepen, zet vliegtuigmodus 10 seconden aan en weer uit. Mijn groepen blijft staan.
+- **7b (N1):** haal dev1 uit Gatetest terwijl Profiel in beeld is, en ga terug naar Home. Noteer of je de oude albums even ziet, en hoe lang.
