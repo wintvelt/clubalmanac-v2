@@ -37,7 +37,7 @@ WP1-WP4 liepen vóór de formele spec-doc-discipline (geen WP-file). Status uit 
 | WP-Design | Designstap: richting C+ (iOS-eigen, lime-sky-verloop, oranje actie), licht + donker volgen iOS, ontworpen voor 50+, toegankelijkheidscheck (13 punten) verwerkt. Bron: [`docs/design.md`](../design.md). Thema-code + basiscomponenten in `app/src/theme` en `app/src/components`, iconen via Ionicons, Liquid Glass-app-icoon. | [`WP-Design.md`](./WP-Design.md) | ✅ landed 2026-10-25 (gate build 41, deels → WP15) |
 | WP15a | Navigatie-skelet (Expo Router, tabbalk, terugknop) + subscription-discipline. App-WP + adversarial pass (ops hoog). | [`WP15a-navigatie-subscriptions.md`](./WP15a-navigatie-subscriptions.md) | ✅ 2026-11-03 (gate build 44 groen) |
 | WP15b | Profiel (naam bewerken, geen "laatste bezoek"), Instellingen, Info-pagina's, uitgelogde tabbalk, `recordVisit` (throttled). Na WP15a. Gate meet ook tabwissel → query stopt (uit WP15a). App-WP met klein backend-deel (naamvalidatie), Setup 2. | [`WP15b-profiel-instellingen-info.md`](./WP15b-profiel-instellingen-info.md) | ✅ 2026-11-04 (gate build 45, hercheck build 46) |
-| WP16 | Groups overzicht + detail (unread realtime) | — | open |
+| WP16 | Mijn groepen, Groep (Albums met live ongelezen-tellers, Leden), Home = laatst bezochte groep. App-WP, Setup 2. | [`WP16-groepen.md`](./WP16-groepen.md) | draft-spec 2026-11-04 |
 | WP17 | Albums + foto's bekijken (`exifOrientation`, laadprestatie, `by_flagged`-check) | — | open |
 | WP18 | Foto-upload (HEIC→JPEG, retry/idempotency) + profielfoto uploaden/verwijderen (besluit 2026-11-02) — Setup 2 + adversarial pass | — | open |
 | WP19 | Ratings + invites (incl. signup) | — | open |
