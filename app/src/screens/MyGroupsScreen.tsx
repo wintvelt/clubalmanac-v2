@@ -13,6 +13,7 @@ import { api } from "../convexApi";
 import { forgetLastGroup, loadLastGroup } from "../data/lastGroup";
 import { useLiveQuery } from "../data/useLiveQuery";
 import { groupPath } from "../lib/groupRoutes";
+import { homeDecisions, homeSessionKey } from "../lib/homeDecision";
 import { displayYear, homeTarget, roleLabel, sortMyGroups, unreadBadge } from "../lib/groups";
 import { radius, size, space, useTheme } from "../theme";
 import type { FunctionReturnType } from "convex/server";
@@ -58,18 +59,22 @@ function MyGroupsList() {
   );
 }
 
-// Home kiest één keer per sessie (invariant 12). De poort mount alles opnieuw
-// per Clerk-sessie, dus na inloggen als een ander kiest Home opnieuw, met het
-// geheugen van die user (invariant 6). Opent een deep link een ander scherm
-// boven dit scherm, dan kiest Home niets.
+// Home kiest één keer per sessie (invariant 12). Het geheugen daarvan staat in
+// homeDecisions, buiten dit scherm: een remount na "reconnecting" of na
+// "Opnieuw" in de foutgrens kiest niet nog eens (fix-cyclus 1, S1). Een nieuwe
+// Clerk-sessie kiest opnieuw, met het geheugen van die user (invariant 6).
+// Opent een deep link een ander scherm boven dit scherm, dan kiest Home niets.
 function useHomeDecision(groups: MyGroup[] | undefined): boolean {
-  const { userId } = useAuth();
+  const { userId, sessionId } = useAuth();
+  const sessionKey = homeSessionKey(userId, sessionId);
   const focused = useIsFocused();
   // undefined: nog niet gelezen.
   const [lastGroupId, setLastGroupId] = useState<string | null | undefined>(undefined);
   // "pushing": de groep gaat erop. Tot hij dit scherm bedekt, blijft het
   // laden staan, anders flitst de lijst nog even (invariant 12).
-  const [phase, setPhase] = useState<"deciding" | "pushing" | "done">("deciding");
+  const [phase, setPhase] = useState<"deciding" | "pushing" | "done">(() =>
+    homeDecisions.isDecided(sessionKey) ? "done" : "deciding",
+  );
   const decided = phase !== "deciding";
 
   useEffect(() => {
@@ -85,6 +90,7 @@ function useHomeDecision(groups: MyGroup[] | undefined): boolean {
 
   useEffect(() => {
     if (target === null || target.kind === "wait") return;
+    homeDecisions.markDecided(sessionKey);
     if (target.kind === "group" && focused) {
       router.push(groupPath(target.groupId));
       setPhase("pushing");
