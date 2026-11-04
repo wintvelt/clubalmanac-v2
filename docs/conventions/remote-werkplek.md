@@ -51,7 +51,7 @@ Wouter voert dit zelf uit. Versies komen uit de repo en de laptop van 2026-11-04
 3. Toegang van buiten huis: bv. Tailscale, voor SSH en Scherm delen.
 4. Xcode 27.2 met het iOS-platform. Daarna `sudo xcode-select -s /Applications/Xcode.app`, `sudo xcodebuild -license accept`, `xcodebuild -runFirstLaunch`.
 5. Homebrew, daarna `brew install fnm gh cocoapods tmux`. Git komt mee met Xcode.
-6. Node via fnm, zoals in [`external-services.md`](./external-services.md) §EAS-build stap 1. Gebruik `24.22.1`, de versie uit `app/eas.json` `build.base.node`.
+6. Node via fnm, zoals in [`external-services.md`](./external-services.md) §EAS-build stap 1. Gebruik `24.22.1`, de versie uit `app/eas.json` `build.base.node`. Op de server staat ook een andere Node (v26) op het pad. `node -v` toont pas v24.22.1 in een nieuw tabblad na `fnm default`. Sluit daarna de Claude-app (Cmd+Q) en open hem opnieuw: sessies erven de shell-omgeving van de app.
 7. `npm install -g eas-cli@27.4.1`.
 8. GitHub-token: maak een fine-grained token voor alleen `wintvelt/clubalmanac-v2` (Contents: lezen en schrijven) en `wintvelt/clubalmanac-app` (Contents: lezen). Daarna `gh auth login` met dat token en `gh auth setup-git`.
 9. Repo clonen naar `/Users/wintvelt/Code/clubalmanac-v2` (zelfde pad als de laptop). Daarna `npm ci` in de root en in `app/`. Check: `npm run typecheck` en `npm test` op beide plekken, net als `.github/workflows/ci.yml`.
