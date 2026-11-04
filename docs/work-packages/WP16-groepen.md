@@ -14,14 +14,14 @@ Een ingelogde user ziet op Mijn groepen al zijn groepen. In een groep ziet hij d
 4. **Je ziet alleen groepen waar je lid van bent, en van leden alleen naam, profielfoto en rol.** Dat bewaakt de backend (WP23-whitelist, `requireMember`), niet het scherm.
 5. **Wie geen lid meer is, ziet dat netjes.** Word je uit een groep gehaald terwijl je hem open hebt, of opent een link of Home een groep waar je geen lid meer van bent, dan crasht de app niet en toont hij geen oude inhoud. Je ziet een NL-melding en een weg naar Mijn groepen.
 6. **Home onthoudt de laatst bezochte groep per user.** Na uitloggen en inloggen als een ander krijgt die user niet de groep van de vorige (zoals WP15b invariant 12). Bestaat de groep niet meer, of ben je geen lid meer: Mijn groepen.
-7. **Een cover toont de foto rechtop.** Groeps- en albumcovers volgen `photos.exifOrientation`, niet de EXIF-tag in het bestand ([WP8](./WP8-photo-rotation.md) §Frontend-contract).
-8. **WP13, WP15a en WP15b blijven werken.** De bestaande tests blijven groen, met alleen A's bewuste aanpassingen. Schermen gebruiken alleen tokens en componenten uit `app/src/theme` en `app/src/components`, en volgen [`design.md`](../design.md) §3 (grote tekst: groepstabs 2×2, albumnamen nooit afgekapt), §6 (toestanden) en §7 (stack, terugknop-pil op de cover).
+7. **Een cover toont de foto rechtop.** Groeps- en albumcovers volgen `photos.exifOrientation`, niet de EXIF-tag in het bestand ([WP8](./WP8-photo-rotation.md) §Frontend-contract). **→ Verschoven naar WP17 (besluit 2).** WP16 toont geen beeld.
+8. **WP13, WP15a en WP15b blijven werken.** De bestaande tests blijven groen, met alleen A's bewuste aanpassingen. Schermen gebruiken alleen tokens en componenten uit `app/src/theme` en `app/src/components`, en volgen [`design.md`](../design.md) §3 (grote tekst: groepstabs 2×2, albumnamen nooit afgekapt; *de 2×2 schuift naar WP18/WP19 (besluit 5): in WP16 kappen de twee tabs niet af*), §6 (toestanden) en §7 (stack, terugknop-pil op de cover).
 
 ## Edge cases + scope-uitsluitingen
 
 **In scope:**
-- Mijn groepen: lijst met groepsnaam, cover en je rol; leeg-toestand voor een user zonder groepen
-- Groep: kop met cover en terugknop-pil, groepstabs (design.md §7), tab Albums met albums per jaar (jaartallen in Literata) en de teller per album, tab Leden
+- Mijn groepen: lijst met groepsnaam, cover (*WP17, besluit 2*) en je rol; leeg-toestand voor een user zonder groepen
+- Groep: kop met cover (*WP17, besluit 2*) en terugknop-pil, groepstabs (design.md §7; *alleen Albums en Leden, besluit 5*), tab Albums met albums per jaar (jaartallen in Literata) en de teller per album, tab Leden
 - Home = laatst bezochte groep, anders Mijn groepen
 - Toestanden laden, leeg, fout en `reconnecting` op elk scherm
 - Routes voor Mijn groepen, Groep en het albumpad dat WP17 vult
@@ -49,13 +49,13 @@ Een ingelogde user ziet op Mijn groepen al zijn groepen. In een groep ziet hij d
 - **ops: medium.**
   - `albums.listByGroupWithUnread` draait opnieuw bij elke wijziging in iets wat hij las: elk album van de groep, elke koppeling van een nieuwe foto, elke foto in die set, en je eigen `albumLastSeen`-rijen. Met ~50–100 foto's per album is dat licht, maar een teller op Mijn groepen over alle groepen vermenigvuldigt het.
   - Een fout getal faalt stil: niemand ziet het als fout. Het dashboard is het bewijs bij de gate.
-  - Covers laden beelden uit Convex-storage. Laadprestatie van rasters is WP17; hier gaat het om een handvol covers.
+  - ~~Covers laden beelden uit Convex-storage.~~ *Vervalt: geen beelden in WP16 (besluit 2).*
 - **external deps: laag.** Geen nieuwe dienst.
 - **multi-user/concurrency: medium.**
   - Tellers hangen af van wat andere leden doen.
   - Lidmaatschap kan verdwijnen terwijl het scherm open is (invariant 5).
   - "Markeer alles gelezen" terwijl een ander een foto toevoegt: een foto die net vóór `now` landt, geldt als gelezen. Acceptabel als de actie bewust is.
-- **data/schema-evolutie: laag.**
+- **data/schema-evolutie: ~~laag~~ medium (besluit 3).** Zie §sortDate.
   - Geen schemawijziging verwacht. Een veld voor de laatst bezochte groep in de backend zou additief en optioneel zijn.
   - De gemigreerde `albumLastSeen`-rijen (WP12) worden hier voor het eerst aan users getoond. De gate kijkt of de tellers op dev geloofwaardig zijn.
 - **ops-runbook-impact:** geen env-vars. B voegt in `external-services.md` §Convex een regel toe: hoe je in het dashboard ziet dat `albums:listByGroupWithUnread` alleen loopt voor de open groep, en wat een nieuwe foto doet.
@@ -97,7 +97,7 @@ Er is geen red-team: geen enkele dimensie is hoog. Komt beheer in scope, of vind
   5. Tik op een album: het WP17-pad opent, en de teller blijft staan.
   6. Home: sluit Clubalmanac op je iPhone en open hem opnieuw. Home opent de laatst bezochte groep. Log uit en in als dev2: Home opent niet de groep van dev1.
   7. Haal jezelf in het dashboard uit de open groep: een NL-melding en een weg naar Mijn groepen, geen crash.
-  8. Mijn groepen en Groep bij de grootste tekst, in licht en donker: groepstabs 2×2, albumnamen niet afgekapt.
+  8. Mijn groepen en Groep bij de grootste tekst, in licht en donker: ~~groepstabs 2×2~~ de twee groepstabs en de albumnamen niet afgekapt (besluit 5).
   9. Ruimte voor bevindingen buiten deze stappen
 
 ---
@@ -108,25 +108,25 @@ Bronnen: de oude app (`screens/Home.jsx`, `Group.jsx`, `GroupAlbumsSub.jsx`, `Gr
 
 ### Kernvondsten
 
-1. **De app kan nog geen beeld tonen.** Geen publieke functie geeft een URL voor een `storageId`. Volgens WP23 komt `getUrl` met WP17. Invariant 7 (covers rechtop) en de profielfoto's op Leden gaan daar nu van uit. Zie open vraag 2.
+1. **De app kan nog geen beeld tonen.** Geen publieke functie geeft een URL voor een `storageId`. Volgens WP23 komt `getUrl` met WP17. Besluit 2: beelden en invariant 7 naar WP17.
 2. **Een gewone `Error` uit een query laat het scherm crashen.** `useQuery` van Convex gooit de fout tijdens het renderen, en de app heeft geen error boundary. In productie is de tekst bovendien "Server Error" (WP15b). Een lid dat uit de open groep verdwijnt, crasht dus nu de app (invariant 5). De groep-reads geven daarom een `ConvexError` met code `NOT_MEMBER`, en de app vangt die op zonder te crashen (invariant 9).
-3. **De oude app sorteerde op een datum die de migratie niet meeneemt.** Groepen en albums hadden een `sortDate`: een datum die een admin zelf kon kiezen, met `createdAt` als terugval. Daarop sorteerde de oude app (nieuwste eerst), en daar kwam "Sinds 2019" en "Opgericht 2019" vandaan. De WP12-transform neemt `sortDate` niet mee. Zonder die datum valt een album met een gekozen datum in het jaar waarin het is aangemaakt. Zie open vraag 3.
-4. **De oude app had een teller per groep.** Op Mijn groepen stond per groep een oranje getal: alle nieuwe foto's over alle albums. Zie open vraag 4.
+3. **De oude app sorteerde op een datum die de migratie niet meeneemt.** Groepen en albums hadden een `sortDate`: een datum die een admin zelf kon kiezen, met `createdAt` als terugval. Daarop sorteerde de oude app (nieuwste eerst), en daar kwam "Sinds 2019" en "Opgericht 2019" vandaan. De WP12-transform neemt `sortDate` niet mee. Besluit 3: de datum gaat mee, zie §sortDate.
+4. **De oude app had een teller per groep.** Op Mijn groepen stond per groep een oranje getal: alle nieuwe foto's over alle albums. Besluit 4: ja.
 5. **"Markeer alles gelezen" bestond niet.** De oude app had niets vergelijkbaars. `groups.markAllAlbumsSeen` blijft daarom buiten WP16.
 
 ### Beslissingen op "Te beslissen door A"
 
 **1. Pariteit:** zie de checklist per scherm hieronder.
 
-**2. Groepsbeheer:** dit had de oude app. Advies: niet in WP16, wel een eigen WP vóór T0. Zie open vraag 1.
+**2. Groepsbeheer:** dit had de oude app. Besluit 1: niet in WP16, wel een eigen WP vóór T0.
 
 | Actie (oude app) | Wie (oude backend + UI) | Nieuwe backend nu | Verschil |
 |---|---|---|---|
 | Nieuwe groep (naam, omschrijving, cover) | iedereen | `groups.create` | Geen cover bij aanmaken |
-| Groep bewerken: naam, omschrijving, datum, cover (tab Cover) | admin | `groups.update` (admin) | Geen datum (vondst 3) |
+| Groep bewerken: naam, omschrijving, datum, cover (tab Cover) | admin | `groups.update` (admin) | Datum bewerken: beheer-WP (besluit 3) |
 | Groep verwijderen | alleen de oprichter | `groups.remove`: elke admin | Strenger in v1 |
 | Nieuw album (naam, cover) | UI: alleen admin; backend: elk lid (bug in de rolcheck) | `albums.create`: elk lid | Keuze nodig |
-| Album bewerken: naam, datum, cover; album verwijderen | admin | `albums.update`, `albums.remove` | Geen datum |
+| Album bewerken: naam, datum, cover; album verwijderen | admin | `albums.update`, `albums.remove` | Datum bewerken: beheer-WP (besluit 3) |
 | Rol wijzigen ("Maak admin", "Maak gast") | admin; een gewone admin niet bij de oprichter | `groups.updateMemberRole`: elke admin, ook bij de oprichter; de laatste admin blijft | Oprichter niet beschermd |
 | Oprichter overdragen ("Maak founder") | alleen de oprichter | geen mutation | Ontbreekt |
 | Lid verwijderen ("Verban uit groep") | admin; niet de oprichter | `groups.removeMember` (admin) | Oprichter niet beschermd |
@@ -147,14 +147,14 @@ Een beheer-WP raakt rollen per groep. Daar geldt de standing rule Toegangsdefini
 | Andere user | Een opgeslagen groep van user A geeft user B niets (invariant 6). Een onleesbare opgeslagen waarde geeft ook niets. |
 | "Home-groep wissen" | Vervalt. Home ruimt zichzelf op, en de terugknop-pil leidt altijd naar Mijn groepen. |
 
-**5. Groepstabs Cover en Uitnodigen:** in de oude app zagen alleen admins die tabs. Een gewoon lid zag alleen Albums en Leden. Advies: weglaten tot WP18 en WP19. Zie open vraag 5.
+**5. Groepstabs Cover en Uitnodigen:** in de oude app zagen alleen admins die tabs. Een gewoon lid zag alleen Albums en Leden. Besluit 5: weglaten tot WP18 en WP19.
 
 **6. Backend-functies die een scherm mist:**
 
 | Functie | Wat | Waarom | Tests |
 |---|---|---|---|
 | Groep-reads: `groups.getById`, `groups.getWithCover`, `groups.listMembers`, `albums.listByGroup`, `albums.listByGroupWithUnread` | Geen lid, of de groep bestaat niet: een `ConvexError` met code `NOT_MEMBER`. Beide gevallen geven precies dezelfde fout (geen bestaans-orakel, WP23). | Invariant 5 en 9 | `tests/groups/notMember.test.ts` |
-| `groups.listMine` | Per groep ook `unreadCount`: de som van de tellers van `albums.listByGroupWithUnread` voor die groep | Teller per groep (open vraag 4). Vervalt bij "nee". | `tests/groups/listMineUnread.test.ts`, `tests/readWhitelist/groups.test.ts` (vorm aangepast) |
+| `groups.listMine` | Per groep ook `unreadCount`: de som van de tellers van `albums.listByGroupWithUnread` voor die groep | Teller per groep (besluit 4) | `tests/groups/listMineUnread.test.ts`, `tests/readWhitelist/groups.test.ts` (vorm aangepast) |
 
 Een eigen rol op het Groep-scherm is niet nodig zolang er geen admin-tabs of beheer in WP16 zitten. `groups.listMine` geeft de rol al.
 
@@ -179,11 +179,11 @@ Alles staat in de stack van de Home-tab, dus achter de bestaande `Protected` van
 
 | Oude app | Nieuw (16) |
 |---|---|
-| Groepen als tegels met cover, naam, "Sinds <jaar> · N leden" | Per groep: cover, naam, "Sinds <jaar>" en je rol. Geen aantal leden: dat kostte een query per groep. Het staat op Leden. |
-| Oranje teller per groep (nieuwe foto's over alle albums) | Ja, als open vraag 4 "ja" wordt. 0 geeft geen teller. |
-| Sortering: datum van de groep (`sortDate`, anders `createdAt`), nieuwste eerst | `createdAt`, nieuwste eerst; bij gelijke datum op naam. Of de gemigreerde datum (open vraag 3). |
+| Groepen als tegels met cover, naam, "Sinds <jaar> · N leden" | Per groep: een vlak in het verloop met de eerste letter (besluit 2), naam, "Sinds <jaar>" en je rol. Geen aantal leden: dat kostte een query per groep. Het staat op Leden. |
+| Oranje teller per groep (nieuwe foto's over alle albums) | Ja (besluit 4). 0 geeft geen teller. |
+| Sortering: datum van de groep (`sortDate`, anders `createdAt`), nieuwste eerst | `sortDate`, anders `createdAt`, nieuwste eerst; bij gelijke datum op naam (besluit 3) |
 | Uitnodigingen (status "invite") weggefilterd | Niet van toepassing: `listMine` geeft alleen lidmaatschappen |
-| Knop "Nieuwe groep" | Beheer (open vraag 1) |
+| Knop "Nieuwe groep" | Beheer-WP (besluit 1) |
 | Leeg: "Je bent nergens lid. Maak anders je eigen groep." | Leeg-toestand (design.md §6). De zin verwijst niet naar "groep maken" zolang dat er niet is. |
 | Fout: "opnieuw laden" | Fout met "Opnieuw" (design.md §6) |
 | Tik op een groep zet de Home-groep | Openen van een groep zet de laatst bezochte groep (beslissing 4) |
@@ -193,19 +193,19 @@ Alles staat in de stack van de Home-tab, dus achter de bestaande `Protected` van
 
 | Oude app | Nieuw (16) |
 |---|---|
-| Cover over de volle breedte, naam, omschrijving | Zo, met de terugknop-pil (design.md §7). Zonder beeld: zie open vraag 2. |
+| Cover over de volle breedte, naam, omschrijving | Een vlak in het verloop met de eerste letter (besluit 2), naam, omschrijving, terugknop-pil (design.md §7) |
 | "Opgericht <jaar> · N leden" (aantal incl. uitnodigingen) | "Opgericht <jaar>". Het aantal leden staat op Leden. |
-| Tabs: Albums, Leden; voor admins ook Cover en Uitnodigen; Films bij twee vaste groepen | Albums en Leden. Cover en Uitnodigen: open vraag 5. Films vervalt (was hard gecodeerd voor twee groepen). |
+| Tabs: Albums, Leden; voor admins ook Cover en Uitnodigen; Films bij twee vaste groepen | Albums en Leden. Cover en Uitnodigen: WP18 en WP19 (besluit 5). Films vervalt (was hard gecodeerd voor twee groepen). |
 
 **Groep → Albums**
 
 | Oude app | Nieuw (16) |
 |---|---|
-| Tegels in een raster, nieuwste eerst, met "Sinds <jaar>" | Albums per jaar, met het jaartal als kop (design.md C+). Jaren nieuwste eerst. Binnen een jaar nieuwste eerst, bij gelijke datum op naam. |
-| Cover per album | Open vraag 2 |
+| Tegels in een raster, nieuwste eerst, met "Sinds <jaar>" | Albums per jaar, met het jaartal als kop (design.md C+). Jaar en volgorde volgen `sortDate`, anders `createdAt` (besluit 3). Jaren nieuwste eerst. Binnen een jaar nieuwste eerst, bij gelijke datum op naam. |
+| Cover per album | Een vlak in het verloop met de eerste letter; de cover komt met WP17 (besluit 2) |
 | Oranje teller per album (nieuwe foto's) | De teller uit `albums.listByGroupWithUnread`, live (invariant 1 en 2). 0 geeft geen teller. VoiceOver leest "3 nieuwe foto's". |
 | Albumnaam op de tegel | Nooit afgekapt (design.md §3) |
-| Knop "Nieuw album" (alleen admin) | Beheer (open vraag 1) |
+| Knop "Nieuw album" (alleen admin) | Beheer-WP (besluit 1) |
 | Leeg: "Nog geen albums hier" | Leeg-toestand, zonder verwijzing naar "album maken" |
 | Tik: albumscherm, terug met de groepsnaam | Tik: het WP17-pad, teller blijft staan (invariant 3) |
 
@@ -215,10 +215,10 @@ Alles staat in de stack van de Home-tab, dus achter de bestaande `Protected` van
 |---|---|
 | Secties Admins, Gasten, Uitgenodigd | Secties Admins en Leden. Uitnodigingen: WP19. |
 | Per sectie op naam (hoofdletters tellen niet) | Zo, Nederlandse sortering |
-| Per lid: profielfoto, naam, "lid sinds <jaar>" | Naam, profielfoto (open vraag 2), rol via de sectie, "Lid sinds <jaar>" |
+| Per lid: profielfoto, naam, "lid sinds <jaar>" | Naam, de eerste letter in plaats van de profielfoto (WP17, besluit 2), rol via de sectie, "Lid sinds <jaar>" |
 | Labels "Eigenaar" (oprichter) en "Me" | Labels "Oprichter" en "Jij" |
 | E-mailadres bij een uitnodiging | Vervalt: nooit een e-mailadres (invariant 4) |
-| Menu per lid (rol, verbannen, verlaten, oprichter) | Beheer (open vraag 1) |
+| Menu per lid (rol, verbannen, verlaten, oprichter) | Beheer-WP (besluit 1) |
 | "Groep zonder leden. Dit kan eigenlijk niet." | Kan niet voorkomen: jij bent er zelf. Geen eigen tekst. |
 
 Een lid zonder naam (gemigreerd, of zonder naam in Clerk) staat onderaan zijn sectie, met een neutrale tekst in plaats van de naam. Een lidmaatschap zonder user-rij (hoort niet te bestaan) ook.
@@ -237,7 +237,7 @@ De rol "member" heette in de oude app "gast". Nieuw: "lid". "Gast" klinkt tijdel
 
 9. **Geen lid meer geeft een herkenbare fout, en de app vangt hem op.** De groep-reads geven bij geen lid en bij een onbekende groep precies dezelfde `ConvexError` met code `NOT_MEMBER`. De app herkent hem aan de code, nooit aan de tekst. Hij crasht niet, toont geen oude inhoud van de groep, en toont een NL-melding met een knop naar Mijn groepen. Elke andere fout geeft de gewone fout-toestand met "Opnieuw".
 10. **De teller per groep is de som van de tellers per album.** Hetzelfde getal als de albums van die groep samen. De app telt niet zelf op.
-11. **Een jaar is een kalenderjaar in Nederlandse tijd.** Een album dat op 1 januari om 00:30 (NL) is aangemaakt, staat onder het nieuwe jaar, ook al is het in UTC nog 31 december. Dat geldt ook voor "Sinds <jaar>", "Opgericht <jaar>" en "Lid sinds <jaar>".
+11. **Een jaar is een kalenderjaar in Nederlandse tijd, van `sortDate` als die er is, anders van `createdAt`.** Een album dat op 1 januari om 00:30 (NL) is aangemaakt, staat onder het nieuwe jaar, ook al is het in UTC nog 31 december. Dat geldt ook voor "Sinds <jaar>" en "Opgericht <jaar>" (met `sortDate`), en voor "Lid sinds <jaar>" (met `joinedAt`).
 12. **Home kiest één keer per sessie.** Tot bekend is welke groepen je hebt, toont Home een laad-toestand, geen flits van Mijn groepen of van een oude groep.
 
 ### Edge cases
@@ -253,24 +253,17 @@ De rol "member" heette in de oude app "gast". Nieuw: "lid". "Gast" klinkt tijdel
 - **Uitloggen en inloggen als een ander op hetzelfde toestel:** Home toont de groep van de nieuwe user of Mijn groepen, nooit die van de vorige.
 - **Een groep openen via een oude of verzonnen id (deep link, WP22):** een id die geen Convex-id is, geeft een validatiefout en dus de gewone fout-toestand. Een geldige id van een groep zonder lidmaatschap geeft de melding van invariant 9.
 
-### Open vragen voor Wouter
-
-| # | Vraag | Opties | Advies A |
-|---|---|---|---|
-| 1 | **Groepsbeheer in WP16?** | a) WP16 alleen lezen, beheer in een eigen WP vóór T0. b) Een deel in WP16 (bijvoorbeeld groep verlaten). c) Alles in WP16. | a. Beheer raakt rollen, en de regels wijken af van v1 (tabel bij beslissing 2): de oprichter is niet beschermd, overdragen ontbreekt, verlaten werkt anders. Dat verdient een eigen A→B→audit, met de standing rule Toegangsdefinities. Zonder beheer kan een user na T0 geen groep maken, verlaten of album maken: het beheer-WP hoort dus vóór T0. |
-| 2 | **Covers en profielfoto's in WP16?** De app kan nog geen beeld ophalen. | a) WP16 zonder beelden: een vlak in het verloop en de eerste letter. Covers, profielfoto's en invariant 7 gaan naar WP17. b) Het beeldpad (URL per foto, met foto-toegang) naar voren halen in WP16. | a. Het beeldpad is een eigen ontwerp: thumbnails, laadprestatie, hoe lang een URL geldig is, en wat een ex-lid met een oude URL kan (WP24 noemt `storageId` uit de foto-vorm halen als WP17-werk). Bij b stijgt security/privacy naar hoog, en heroverweegt regie de setup. |
-| 3 | **De datum van albums en groepen (`sortDate`).** Wordt die gemigreerd? | a) Nee: jaar en volgorde volgen `createdAt`. b) Ja: de WP12-transform neemt `sortDate` mee in een nieuw optioneel veld (additief), en jaar en volgorde volgen die datum, anders `createdAt`. Bewerken van de datum hoort dan bij beheer. | Hangt af van de data. Hoeveel albums hebben een `sortDate` in een ander jaar dan `createdAt`? Zijn dat er een paar, dan a. Anders b: de jaarindeling is de kern van C+. |
-| 4 | **Teller per groep op Mijn groepen?** | a) Ja, via `unreadCount` in `groups.listMine`. b) Nee. | a. De oude app had hem, en het is de reden om de app te openen. Kosten: `listMine` leest dan elke album-koppeling na je laatste bezoek, in al je groepen, en draait opnieuw bij een wijziging daarin. Bij ~16 users licht; alleen live op Mijn groepen. De tests staan klaar en vervallen bij b. |
-| 5 | **Groepstabs Cover en Uitnodigen?** | a) Weglaten tot WP18 en WP19. b) Voor admins tonen als leeg-toestand ("Komt in een volgende versie"). | a. Gewone leden zagen ze nooit. Met twee tabs is er geen 2×2 te testen: die check schuift naar WP18 of WP19. |
-
 ### Tests
 
 | Bestand | Pint |
 |---|---|
 | `tests/groups/notMember.test.ts` | Invariant 5 en 9: `NOT_MEMBER` bij geen lid en bij een onbekende groep, gelijk voor beide; ook na verwijderen terwijl je kijkt, en na het verwijderen van de groep |
-| `tests/groups/listMineUnread.test.ts` | Invariant 10: `unreadCount` per groep = som van de albumtellers; eigen foto's tellen niet; een andere user ziet zijn eigen getal; groepen zonder albums geven 0 (vervalt bij vraag 4 "nee") |
+| `tests/groups/listMineUnread.test.ts` | Invariant 10: `unreadCount` per groep = som van de albumtellers; eigen foto's tellen niet; een andere user ziet zijn eigen getal; groepen zonder albums geven 0 |
 | `tests/readWhitelist/groups.test.ts` (A paste aan) | De vorm van `listMine`: groep-velden, rol en `unreadCount` |
-| `app/tests/groups.test.ts` | Albums per jaar (invariant 11), de volgorde van Mijn groepen, de secties van Leden, het tellerlabel, de foutklasse (invariant 9), Home (invariant 6 en 12) en het geheugen per user |
+| `tests/readWhitelist/_world.ts` (A paste aan) | `sortDate` in de groep- en albumvorm, en gevuld in de seed |
+| `tests/migration/sortDate.test.ts` | De transform neemt `sortDate` mee (§sortDate) |
+| `tests/albums/sortDateUnread.test.ts` | `sortDate` telt niet mee in de tellers |
+| `app/tests/groups.test.ts` | Het jaar (`displayYear`, `sortDate` voor `createdAt`), albums per jaar (invariant 11), de volgorde van Mijn groepen, de secties van Leden, het tellerlabel, de foutklasse (invariant 9), Home (invariant 6 en 12) en het geheugen per user |
 | `app/tests/groupRoutes.test.ts` | De paden, en de routebestanden voor Groep en Album bestaan onder de Home-stack, zijn afgeschermd, en zijn niet publiek |
 
 De pure logica staat in de app-tests als functies in `app/src/lib/groups.ts` en `app/src/lib/groupRoutes.ts`. B kiest de vorm van de schermen zelf.
@@ -284,3 +277,96 @@ De pure logica staat in de app-tests als functies in `app/src/lib/groups.ts` en 
 | 3 | `sortDate`? | Meenemen (Wouter). Albums en groepen krijgen een optioneel veld, de WP12-transform neemt het mee, en jaar en volgorde volgen `sortDate`, anders `createdAt`. Datum bewerken hoort bij het beheer-WP. Data/schema-evolutie gaat naar medium: zie A's aanvulling hieronder. |
 | 4 | Teller per groep? | Ja (Wouter), via `unreadCount` in `groups.listMine`. |
 | 5 | Tabs Cover en Uitnodigen? | Weglaten tot WP18 en WP19 (regie, volgt uit 1). De 2×2-check bij grote tekst schuift mee. Gate-stap 8 checkt alleen dat de twee tabs en de albumnamen niet afkappen. |
+
+### sortDate (A, ronde 2, na besluit 3)
+
+**Bron in AWS.**
+
+| | Groep | Album |
+|---|---|---|
+| Record | `PK = GBbase`, `SK = <groupId>` | `PK = GA<groupId>`, `SK = <albumId>` |
+| Veld | `sortDate` (top-level). Kopieën in `membership.group` tellen niet: de transform leest alleen het `GBbase`-record. | `sortDate` (top-level) |
+| Formaat | Kalenderdag `YYYY-MM-DD`, als string. De app schreef `toISOString().slice(0, 10)` van de datumkiezer. | Zelfde |
+| Wie zette het | Een admin, via "Groep bewerken" (tab Cover). Bij aanmaken nooit. | Een admin, via "Album bewerken". Bij aanmaken nooit. |
+| Gebruik in v1 | Sortering van Mijn groepen (nieuwste eerst), "Sinds <jaar>", "Opgericht <jaar>" | Sortering van de albums (nieuwste eerst), "Sinds <jaar>" |
+| Terugval in v1 | `sortDate \|\| createdAt` | Zelfde |
+
+Let op: het bewerkformulier vulde het datumveld vooraf met `sortDate || createdAt`. Wie een groep of album opsloeg om de naam te wijzigen, schreef dus ook `sortDate = createdAt`. Een `sortDate` die gelijk is aan `createdAt` is daarom gewoon, en onschuldig.
+
+**Het veld.**
+
+| Onderdeel | Besluit |
+|---|---|
+| Schema | `groups.sortDate` en `albums.sortDate`: `v.optional(v.number())`, epoch-ms. Additief, geen index nodig: de app sorteert de handvol groepen en albums zelf. |
+| Vorm (WP23) | `sortDate` komt in `groupFields` en `albumFields`. Elke read met een groep- of albumvorm geeft hem dus mee: `groups.getById`, `getWithCover`, `listMine`, `albums.getById`, `getWithGroup`, `getWithCover`, `listByGroup`, `listByGroupWithUnread`. Alleen als hij gevuld is. |
+| Schrijven | Geen publieke mutation zet `sortDate` in WP16. Bewerken hoort bij het beheer-WP (besluit 3). |
+| Teller | `sortDate` telt niet mee in "nieuw". De terugval van de teller blijft `max(album.createdAt, membership.joinedAt)`. |
+
+**WP12-transform.**
+
+- `GBbase.sortDate` wordt `groups.sortDate`, `GA….sortDate` wordt `albums.sortDate`.
+- Zelfde regel als `createdAt` (WP12 correctie 1): een kalenderdag wordt epoch-ms op UTC-middernacht van die dag.
+- Geen bron of een lege string: geen veld. De transform kopieert `createdAt` niet: de terugval doet de app.
+- Een onbruikbare waarde (geen string, geen geldige datum): geen veld, een waarschuwing met het bron-id en het woord `sortDate`, en de run gaat door. Een datum is cosmetisch; een run stoppen is daarvoor te zwaar.
+- `createdAt` blijft de eigen aanmaakdatum.
+
+**Jaar en volgorde in de app.** De datum van een groep of album is `sortDate`, anders `createdAt`. Het jaar is het kalenderjaar van die datum in Nederlandse tijd (invariant 11). Een gemigreerde dag staat op UTC-middernacht, en dat is in Nederland 01:00 of 02:00 op dezelfde dag: het jaar klopt dus ook op 1 januari. Volgorde: nieuwste datum eerst, dan naam, dan id.
+
+**Getallen.** Nog niet geteld. De AWS-export staat niet meer lokaal (het runbook wist hem na een seed), en dev-Convex heeft het veld niet. Wouter telt bij stap 3 van de migratie hieronder.
+
+| | Totaal | Met `sortDate` | In een ander jaar dan `createdAt` | Onleesbaar |
+|---|---|---|---|---|
+| Groepen (prod) | — | — | — | — |
+| Albums (prod) | — | — | — | — |
+
+**Migratie op dev: herladen met de WP12-tooling.** Een backfill kan niet: de koppeling van AWS-id naar Convex-id wordt niet bewaard, dus een los script weet niet welk Convex-album bij welk AWS-album hoort. Prod heeft niets extra's nodig: de T0-run gebruikt de nieuwe transform vanzelf.
+
+Wat je kwijtraakt op dev: alles wat sinds de seed van 25 oktober op dev is gemaakt (testgroepen, uploads, ratings, naamwijzigingen, gelezen-stand). Users krijgen nieuwe Convex-id's; inloggen blijft werken, want de Clerk-subjects blijven hetzelfde. Een onthouden Home-groep op een toestel wijst daarna nergens meer naar: dat is meteen een test van invariant 6.
+
+Stappen voor Wouter, ná B (schema en transform staan op dev):
+
+1. Anker:
+   ```bash
+   npx convex export --path ./backups/wp16-dev-voor-sortdate.zip
+   ```
+2. Verse export uit AWS (read-only):
+   ```bash
+   npm run migrate -- extract
+   ```
+3. Tellen, lokaal, zonder namen:
+   ```bash
+   node -e 'const {items}=require("./scripts/.data/dynamo-extract.json");const r={};for(const i of items){const t=i.PK==="GBbase"?"groepen":String(i.PK).startsWith("GA")?"albums":null;if(!t)continue;const x=r[t]??={totaal:0,metSortDate:0,anderJaar:0,onleesbaar:0};x.totaal++;const s=typeof i.sortDate==="string"?i.sortDate.trim():"";if(!s)continue;x.metSortDate++;if(!/^\d{4}-\d{2}-\d{2}$/.test(s)){x.onleesbaar++;continue}if(s.slice(0,4)!==String(i.createdAt).slice(0,4))x.anderJaar++}console.log(r)'
+   ```
+   Zet de vier getallen per soort in de tabel hierboven.
+4. Transform met de bestaande `dev-config.json`:
+   ```bash
+   npm run migrate -- transform --target dev
+   ```
+5. Alleen de nieuwe bestanden (hervatbaar):
+   ```bash
+   npm run migrate -- load-files --target dev
+   ```
+6. Tabellen leeg (zonder `--all`: de bestanden blijven):
+   ```bash
+   npm run migrate -- reset --target dev --yes
+   ```
+7. Leeg in het dashboard de tabel `userVisits` (dev → Data → `userVisits` → Clear Table). `reset` kent die tabel niet (zie hieronder).
+8. Laden en controleren:
+   ```bash
+   npm run migrate -- load-records --target dev
+   ```
+   ```bash
+   npm run migrate -- verify --target dev
+   ```
+9. Check in het dashboard dat een paar albums en groepen een `sortDate` hebben, als de telling bij stap 3 die had.
+10. Opruimen:
+    ```bash
+    rm scripts/.data/dynamo-extract.json
+    ```
+11. Meldt `verify` storage-orphans (uploads die op dev zijn gedaan), ruim ze pas op als je tevreden bent: `prune-storage --target dev --yes`. Daarna kan de rollback hieronder de verwijderde bestanden niet meer terugzetten.
+
+**Rollback.** Tot stap 11: `npx convex import --replace-all ./backups/wp16-dev-voor-sortdate.zip` zet de tabellen terug. De bestanden staan er nog, want `reset` zonder `--all` laat ze staan. Wil je ook de code terug: eerst de data, dan de code. Een schema zonder `sortDate` laat zich niet deployen zolang er rijen met `sortDate` staan.
+
+**Vondst buiten WP16: `reset` kent `userVisits` niet.** De tabel van WP15b valt niet onder `MONITORED_TABLES` en dus niet onder `reset`. Na een herlaadbeurt wijzen de oude rijen naar users die niet meer bestaan. Niemand ziet dat (geen publieke query leest de tabel, en de dagelijkse scan controleert hem niet), maar het is vuil, en op prod speelt het niet (leeg op T0). Kandidaat voor de backlog: `userVisits` onder de FK-controle van WP10, dan doet `reset` hem vanzelf mee.
+
+**RED-breedte.** Omdat de WP23-wereld (`tests/readWhitelist/_world.ts`) nu `sortDate` vult, falen alle tests die die wereld gebruiken (WP23, WP24, `profileQuery`) met "Unexpected field `sortDate`", tot het schema-veld er is. Dat is één oorzaak, en het eerste wat B doet.
