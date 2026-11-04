@@ -13,4 +13,5 @@ Files in deze folder:
 - [`convex-runtimes.md`](./convex-runtimes.md) — Isolate vs `"use node"` runtime keuze + splits-patroon bij Buffer-vereisende libs
 - [`data-migration-preflight.md`](./data-migration-preflight.md) — 0e sub-fase vóór schema/data-werk: tag + snapshot + count-query + strategie
 - [`cross-cutting-review.md`](./cross-cutting-review.md) — Vier-perspectief-pas vóór cutover (a11y / security / GDPR / architectuur)
+- [`remote-werkplek.md`](./remote-werkplek.md) — Sessies op een Mac-server laten doorlopen: opzet, installatie, credentials (advies, nog niet ingericht)
 - [`audit-track-record.md`](./audit-track-record.md) — Productie-bugs gevonden door audit-pas (bewijs voor discipline-waarde)
