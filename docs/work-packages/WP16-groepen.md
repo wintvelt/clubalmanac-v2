@@ -274,3 +274,13 @@ De rol "member" heette in de oude app "gast". Nieuw: "lid". "Gast" klinkt tijdel
 | `app/tests/groupRoutes.test.ts` | De paden, en de routebestanden voor Groep en Album bestaan onder de Home-stack, zijn afgeschermd, en zijn niet publiek |
 
 De pure logica staat in de app-tests als functies in `app/src/lib/groups.ts` en `app/src/lib/groupRoutes.ts`. B kiest de vorm van de schermen zelf.
+
+### Regie-besluiten (2026-11-04)
+
+| # | Vraag van A | Besluit |
+|---|---|---|
+| 1 | Groepsbeheer in WP16? | Nee (Wouter). WP16 alleen lezen. Beheer krijgt een eigen WP vóór T0, met de standing rule Toegangsdefinities. |
+| 2 | Covers en profielfoto's? | Naar WP17 (Wouter), samen met het beeldpad. WP16 toont een vlak in het verloop met de eerste letter. Invariant 7 verhuist naar WP17. |
+| 3 | `sortDate`? | Meenemen (Wouter). Albums en groepen krijgen een optioneel veld, de WP12-transform neemt het mee, en jaar en volgorde volgen `sortDate`, anders `createdAt`. Datum bewerken hoort bij het beheer-WP. Data/schema-evolutie gaat naar medium: zie A's aanvulling hieronder. |
+| 4 | Teller per groep? | Ja (Wouter), via `unreadCount` in `groups.listMine`. |
+| 5 | Tabs Cover en Uitnodigen? | Weglaten tot WP18 en WP19 (regie, volgt uit 1). De 2×2-check bij grote tekst schuift mee. Gate-stap 8 checkt alleen dat de twee tabs en de albumnamen niet afkappen. |
