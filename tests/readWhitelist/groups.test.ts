@@ -111,7 +111,8 @@ describe("groups.listMine", () => {
     expect(await asGhost(t).query(api.groups.listMine, {})).toEqual([]);
   });
 
-  it("per groep precies de groep-velden + eigen rol", async () => {
+  // WP16 (open vraag 4, A paste aan): ook de teller per groep.
+  it("per groep precies de groep-velden + eigen rol + unreadCount", async () => {
     const t = newT();
     const w = await seedWorld(t);
     const mine = (await asUser(t, w, "alice").query(
@@ -122,7 +123,7 @@ describe("groups.listMine", () => {
       [w.groups.G1, w.groups.G3].sort(),
     );
     for (const g of mine) {
-      expectShape(g, [...SHAPE.group, "role"]);
+      expectShape(g, [...SHAPE.group, "role", "unreadCount"]);
       expect(g.role).toBe("admin");
     }
   });
