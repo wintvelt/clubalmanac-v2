@@ -47,7 +47,7 @@ Schermdelen is alleen nodig bij de eerste installatie (login, macOS-rechten, eer
 Wouter voert dit zelf uit. Versies komen uit de repo en de laptop van 2026-11-04.
 
 1. Server-Mac: Apple Silicon, macOS die Xcode 27.2 draait (laptop: macOS 27.2). Ongeveer 80 GB vrij voor Xcode, simulators en `node_modules`.
-2. Gebruiker `wintvelt`, zodat de paden uit `CLAUDE.md` en de memory-map kloppen. macOS-instellingen: niet automatisch slapen, opnieuw starten na stroomuitval, Extern inloggen (SSH) en Scherm delen aan.
+2. De gebruiker op de server is `macserver` (vastgesteld 2026-11-04), dus de paden zijn `/Users/macserver/…`. Het pad naar de oude repo's in `CLAUDE.md` en de naam van de memory-map (`-Users-macserver-Code-clubalmanac-v2`) wijken daardoor af; los dat op vóór A op de server draait. macOS-instellingen: niet automatisch slapen, opnieuw starten na stroomuitval, Extern inloggen (SSH) en Scherm delen aan.
 3. Toegang van buiten huis: bv. Tailscale, voor SSH en Scherm delen.
 4. Xcode 27.2 met het iOS-platform. Daarna `sudo xcode-select -s /Applications/Xcode.app`, `sudo xcodebuild -license accept`, `xcodebuild -runFirstLaunch`.
 5. Homebrew, daarna `brew install fnm gh cocoapods tmux`. Git komt mee met Xcode.
@@ -58,7 +58,7 @@ Wouter voert dit zelf uit. Versies komen uit de repo en de laptop van 2026-11-04
 10. Oude repo's clonen naar `/Users/wintvelt/Documents/DEV/DEV/`: `blob-images-api`, `blob-images-api-user`, `-groups`, `-photos`, `-invites`, `-features`, `blob-images-common` (alle publiek) en `clubalmanac-app` (privé, via het token). Let op: `blob-images-api-features` en `blob-images-common` staan nu níet op de laptop, wel op GitHub.
 11. Memory kopiëren: `~/.claude/projects/-Users-wintvelt-Code-clubalmanac-v2/memory/` van de laptop naar hetzelfde pad op de server. Anders mist de server de feedback-regels.
 12. Convex CLI: geen aparte installatie, `npx convex` uit de repo (1.45.0).
-13. Claude-desktop-app installeren en inloggen. Zet **Connect new sessions to Remote Control** aan. Open de repo als project. Zet in `~/.claude/settings.json` de deny-regels uit §Goedkeuren op afstand.
+13. Claude-desktop-app installeren en inloggen. Zet **Connect new sessions to Remote Control** aan. Maak een environment aan: selector onder het invoerveld → **New environment** → tab **Local** → map `~/Code/clubalmanac-v2` → **Create environment**. Een Local-environment is een opgeslagen "draai op deze Mac, in deze map". Zet in `~/.claude/settings.json` de deny-regels uit §Goedkeuren op afstand.
 14. Proef: laat een sessie `npx expo run:ios` in `app/` draaien en sta het simulator-toestel toe (via Scherm delen).
 15. Daarna het §Testplan.
 16. Niet nodig op de server: AWS CLI en het AWS-profiel. De AWS-SDK zit in de devDependencies en is alleen voor `scripts/migrate`.
@@ -78,6 +78,8 @@ Doe dit met de laptop dicht, alleen met de Claude-app op de iPhone. Gebruik een 
 | 7 | Laat een sub-sessie `git push` proberen | Geweigerd door de deny-regel |
 | 8 | Laat een sub-sessie B de app in de simulator openen | De build loopt en Claude ziet het scherm. Kijken kan alleen via Scherm delen; Remote Control toont de pane niet |
 | 9 | Laat een sessie een uur doorlopen met de laptop dicht | Werk gaat door; de iPhone ziet de voortgang |
+
+**Uitkomst 2026-11-04 (stap 1–5): geslaagd.** Regie op de server startte vanaf de iPhone een sub-sessie (`start_session`) zonder klik in de desktop-app. De sub-sessie stond apart in de lijst op de iPhone. Permissie-vragen van beide sessies kwamen op de iPhone en waren daar goed te keuren. Regie kreeg het rapport vanzelf. In mode Manual vraagt elke sessie ook toestemming voor Bash-commando's zoals `git status`; `auto` in `~/.claude/settings.json` scheelt die vragen.
 
 Faalt stap 2 of 3: dan is de terugvaloptie dat Wouter elke rol-sessie zelf start vanaf de iPhone. Regie schrijft dan alleen de prompt.
 
