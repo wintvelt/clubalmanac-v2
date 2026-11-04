@@ -114,17 +114,13 @@ function PlusButton() {
       onPress={() => router.push("/toevoegen")}
       style={({ pressed }) => [styles.item, { flex: PLUS_WEIGHT }, pressed && styles.pressed]}
     >
-      <View
-        style={[
-          styles.plus,
-          { backgroundColor: colors.gradEnd },
-          scheme === "light" && {
-            borderWidth: border.plusLight,
-            borderColor: plusButton.ringLight,
-          },
-        ]}
-      >
+      {/* Geen rand en geen achtergrond op dit vlak: een rand verschuift het
+          verloop (absoluteFill begint binnen de rand) en een effen kleur komt
+          ernaast tevoorschijn (WP16 fix-cyclus 2, F1). De rand ligt als eigen
+          laag over het verloop, binnen dezelfde Ø 58. */}
+      <View style={styles.plus}>
         <Gradient from={colors.gradStart} to={colors.gradEnd} radius={size.plus / 2} />
+        {scheme === "light" && <View style={styles.plusRing} pointerEvents="none" />}
         <Icon name="plus" size={34} color={colors.onGradient} filled />
       </View>
       <Label text="Toevoegen" focused={false} color={colors.tabInactive} />
@@ -185,6 +181,16 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: plusButton.shadow.offsetY },
     shadowRadius: plusButton.shadow.radius,
     shadowOpacity: plusButton.shadow.opacity,
+  },
+  plusRing: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    width: size.plus,
+    height: size.plus,
+    borderRadius: size.plus / 2,
+    borderWidth: border.plusLight,
+    borderColor: plusButton.ringLight,
   },
   pressed: { opacity: 0.75 },
 });
