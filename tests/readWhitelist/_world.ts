@@ -36,7 +36,8 @@ export const SHAPE = {
     // WP15b: lastVisitAt is geen deel meer van het eigen profiel. De seed
     // vult hem nog wel, zodat zijn afwezigheid in de response iets bewijst.
   ],
-  group: ["_id", "name", "description", "coverPhotoId", "createdBy", "createdAt"],
+  // WP16 (besluit 3, A paste aan): de gekozen datum uit v1.
+  group: ["_id", "name", "description", "coverPhotoId", "sortDate", "createdBy", "createdAt"],
   membership: ["_id", "userId", "groupId", "role", "joinedAt"],
   album: [
     "_id",
@@ -44,6 +45,7 @@ export const SHAPE = {
     "name",
     "description",
     "coverPhotoId",
+    "sortDate",
     "createdBy",
     "createdAt",
   ],
@@ -256,6 +258,7 @@ export async function seedWorld(t: T) {
         name,
         description: `Omschrijving ${name}`,
         coverPhotoId,
+        sortDate: now - 400 * DAY,
         createdBy,
         createdAt: now - 50 * DAY,
       });
@@ -291,6 +294,7 @@ export async function seedWorld(t: T) {
         name,
         description: `Album ${name}`,
         coverPhotoId,
+        sortDate: now - 300 * DAY,
         createdBy,
         createdAt: now - 30 * DAY,
       });

@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   albumsByYear,
   decodeLastGroup,
+  displayYear,
   encodeLastGroup,
   groupErrorKind,
   homeTarget,
@@ -13,7 +14,8 @@ import {
 } from "../src/lib/groups";
 
 // WP16, pure logica achter Mijn groepen, Groep (Albums, Leden) en Home.
-// Spec: docs/work-packages/WP16-groepen.md §Spec-criticus aanvullingen.
+// Spec: docs/work-packages/WP16-groepen.md §Spec-criticus aanvullingen en
+// §sortDate (besluit 3: jaar en volgorde volgen sortDate, anders createdAt).
 // De schermen zelf test de gate; hier staat wat er getoond wordt en in welke
 // volgorde, niet hoe.
 
@@ -41,10 +43,32 @@ describe("yearOf: kalenderjaar in Nederlandse tijd", () => {
   });
 });
 
+// --- displayYear: de gekozen datum, anders de aanmaakdatum (besluit 3) -----------
+
+describe("displayYear", () => {
+  it("zonder sortDate: het jaar van createdAt", () => {
+    expect(displayYear({ createdAt: at("2021-04-05T00:00:00Z") })).toBe(2021);
+  });
+
+  it("met sortDate: het jaar van sortDate, ook als createdAt later is", () => {
+    expect(displayYear({ createdAt: at("2021-04-05T00:00:00Z"), sortDate: at("2015-06-01T00:00:00Z") })).toBe(2015);
+  });
+
+  it("een gemigreerde sortDate op 1 januari (UTC-middernacht) blijft in zijn jaar", () => {
+    expect(displayYear({ createdAt: at("2021-04-05T00:00:00Z"), sortDate: at("2015-01-01T00:00:00Z") })).toBe(2015);
+    expect(displayYear({ createdAt: at("2021-04-05T00:00:00Z"), sortDate: at("2014-12-31T00:00:00Z") })).toBe(2014);
+  });
+});
+
 // --- albumsByYear (Groep → Albums) ------------------------------------------
 
-type Album = { _id: string; name: string; createdAt: number };
-const album = (_id: string, name: string, iso: string): Album => ({ _id, name, createdAt: at(iso) });
+type Album = { _id: string; name: string; createdAt: number; sortDate?: number };
+const album = (_id: string, name: string, iso: string, sortIso?: string): Album => ({
+  _id,
+  name,
+  createdAt: at(iso),
+  ...(sortIso !== undefined ? { sortDate: at(sortIso) } : {}),
+});
 
 describe("albumsByYear", () => {
   it("geen albums: geen jaren", () => {
@@ -83,6 +107,17 @@ describe("albumsByYear", () => {
     expect(years.map((y) => y.year)).toEqual([2024]);
   });
 
+  it("sortDate gaat voor createdAt, voor het jaar én voor de volgorde", () => {
+    const years = albumsByYear([
+      album("recent", "Recent", "2021-03-01T10:00:00Z"),
+      album("oud", "Oud kamp", "2021-02-01T10:00:00Z", "2015-07-10T00:00:00Z"),
+      album("later", "Later gezet", "2019-01-01T10:00:00Z", "2021-06-01T00:00:00Z"),
+    ]);
+    expect(years.map((y) => y.year)).toEqual([2021, 2015]);
+    expect(years[0]!.albums.map((a) => a._id)).toEqual(["later", "recent"]);
+    expect(years[1]!.albums.map((a) => a._id)).toEqual(["oud"]);
+  });
+
   it("de albums blijven zoals ze binnenkomen, met hun eigen velden (zoals de teller)", () => {
     const withCount = { ...album("a", "Kamp", "2019-08-01T10:00:00Z"), unreadCount: 4 };
     const input = [withCount];
@@ -94,8 +129,13 @@ describe("albumsByYear", () => {
 
 // --- sortMyGroups (Mijn groepen) --------------------------------------------
 
-type Group = { _id: string; name: string; createdAt: number };
-const group = (_id: string, name: string, iso: string): Group => ({ _id, name, createdAt: at(iso) });
+type Group = { _id: string; name: string; createdAt: number; sortDate?: number };
+const group = (_id: string, name: string, iso: string, sortIso?: string): Group => ({
+  _id,
+  name,
+  createdAt: at(iso),
+  ...(sortIso !== undefined ? { sortDate: at(sortIso) } : {}),
+});
 
 describe("sortMyGroups", () => {
   it("nieuwste groep eerst", () => {
@@ -105,6 +145,14 @@ describe("sortMyGroups", () => {
       group("mid", "Midden", "2018-01-01T00:00:00Z"),
     ]);
     expect(sorted.map((g) => g._id)).toEqual(["new", "mid", "old"]);
+  });
+
+  it("sortDate gaat voor createdAt", () => {
+    const sorted = sortMyGroups([
+      group("a", "Nieuw aangemaakt, oud gedateerd", "2022-01-01T00:00:00Z", "2010-05-01T00:00:00Z"),
+      group("b", "Gewoon", "2018-01-01T00:00:00Z"),
+    ]);
+    expect(sorted.map((g) => g._id)).toEqual(["b", "a"]);
   });
 
   it("zelfde datum: op naam", () => {
