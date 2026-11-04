@@ -96,6 +96,8 @@ export const photoLayers = {
   // Zwart, van boven naar onder: 62%, 55% op 100 pt, 0% onderaan.
   coverScrim: { top: 0.62, at100: 0.55, bottom: 0 },
   pill: { color: "#0F172A", opacity: 0.62, blur: 8 },
+  // Wit op een van de lagen hierboven.
+  text: "#FFFFFF",
 } as const;
 
 // De + in de tabbalk (design.md §4, §5): rand alleen in licht, schaduw 0 4 14
@@ -123,6 +125,14 @@ export const size = {
   tabPillHeight: 32,
   noticeIcon: 26,
   emptyIcon: 84,
+  // Vlak met de eerste letter: groep in Mijn groepen, album, lid (WP16).
+  groupTile: 64,
+  albumTile: 56,
+  avatar: 44,
+  // Hoogte van het vlak bovenaan Groep, onder de statusbalk.
+  cover: 168,
+  // Het verloopstreepje naast een jaartal.
+  yearStripe: 4,
   // Leesbare tekstkolom op iPad en liggend (design.md §9).
   maxTextColumn: 640,
 } as const;

@@ -73,6 +73,14 @@ De app vraagt live data alleen op voor het scherm in beeld, zolang de app `activ
 - **`recordVisit`** staat onder Functions als `users:recordVisit`. Verwacht één aanroep per terugkeer naar de app, hoogstens één per uur per user (de app throttlet zelf ook). In de tabel `userVisits` verandert hoogstens één keer per uur per user iets. Na een `recordVisit` volgt geen `users:current` en geen `users:profile`: het bezoek staat buiten de users-rij. Uitlezen kan alleen intern (`users:getLastVisit`).
 - **Tabwissel:** `users:profile` is de eigen query van Profiel. Hij draait bij het openen van Profiel, en daarna alleen als je eigen rij wijzigt. Na een wissel naar een andere tab: geen `users:profile` meer, ook niet als je naam op een ander toestel wijzigt. Terug op Profiel: één uitvoering.
 
+### Groepen en tellers (WP16)
+
+- **`albums:listByGroupWithUnread`** loopt alleen als Groep open staat op de groepstab Albums. Op Leden, op een andere tab, op het albumscherm erboven of met de app op de achtergrond: geen uitvoering, ook niet bij een nieuwe foto. Terug op Albums: één uitvoering.
+- **Wat hem laat draaien:** elke wijziging in een album van die groep, een nieuwe of verwijderde koppeling in `albumPhotos` van die albums, een wijziging in een nieuwe foto (ook een rating, die alleen de foto-rij raakt; het getal blijft dan gelijk) en je eigen `albumLastSeen`-rijen. Een nieuwe foto van een ander lid geeft één uitvoering, en de teller gaat met één omhoog.
+- **`groups:listMine`** (Mijn groepen) telt dezelfde tellers op voor al je groepen. Hij draait bij een nieuwe foto in élke groep waar je lid van bent, maar alleen zolang Mijn groepen in beeld is.
+- **`groups:listMembers`** en **`users:profile`** lopen alleen op de groepstab Leden. **`groups:getById`** loopt zolang Groep in beeld is.
+- **Geen lid meer:** de groep-reads geven dan een `ConvexError` met code `NOT_MEMBER`. In Logs staat dat als een mislukte query; dat is verwacht, geen storing.
+
 ## Auth: Clerk
 
 `picked-quail-97.clerk.accounts.dev` is de dev instance. Free tier vanaf `accounts.clerk.dev` voor signup-mails (geen custom email domain — paid feature, niet nodig voor 16 signups).

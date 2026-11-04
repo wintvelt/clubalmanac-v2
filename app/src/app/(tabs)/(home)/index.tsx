@@ -1,3 +1,3 @@
-import { HomeScreen } from "../../../screens/HomeScreen";
+import { MyGroupsScreen } from "../../../screens/MyGroupsScreen";
 
-export default HomeScreen;
+export default MyGroupsScreen;

@@ -39,6 +39,9 @@ export default defineSchema({
     name: v.string(),
     description: v.optional(v.string()),
     coverPhotoId: v.optional(v.id("photos")),
+    // WP16 besluit 3: de gekozen datum uit v1 (epoch-ms). Jaar en volgorde in
+    // de app; geen rol in de ongelezen-teller.
+    sortDate: v.optional(v.number()),
     createdBy: v.id("users"),
     createdAt: v.number(),
   }).index("by_createdBy", ["createdBy"]),
@@ -63,6 +66,8 @@ export default defineSchema({
     name: v.string(),
     description: v.optional(v.string()),
     coverPhotoId: v.optional(v.id("photos")),
+    // WP16 besluit 3: zie groups.sortDate.
+    sortDate: v.optional(v.number()),
     createdBy: v.id("users"),
     createdAt: v.number(),
   }).index("by_group", ["groupId"]),

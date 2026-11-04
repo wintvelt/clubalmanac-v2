@@ -86,6 +86,30 @@ function toEpoch(value: unknown): number | undefined {
   return Number.isNaN(t) ? undefined : t;
 }
 
+/**
+ * WP16 besluit 3: de gekozen datum van een groep of album (`sortDate` in v1,
+ * kalenderdag `YYYY-MM-DD`). Zelfde regel als `createdAt`. Geen bron of een
+ * lege string: geen veld (de app valt terug op `createdAt`). Een onbruikbare
+ * waarde: geen veld en een waarschuwing; een datum is cosmetisch, de run gaat
+ * door.
+ */
+function sortDateOf(
+  value: unknown,
+  where: string,
+  warn: (message: string) => void,
+): number | undefined {
+  if (value === undefined || value === null) return undefined;
+  if (typeof value === "string" && value.trim().length === 0) return undefined;
+  const s = typeof value === "string" ? value.trim() : undefined;
+  if (s !== undefined && /^\d{4}-\d{2}-\d{2}$/.test(s)) {
+    const t = Date.parse(`${s}T00:00:00.000Z`);
+    // Date.parse rolt geen ongeldige dag door; toch de dag terugcontroleren.
+    if (!Number.isNaN(t) && new Date(t).toISOString().slice(0, 10) === s) return t;
+  }
+  warn(`${where}: onbruikbare sortDate — weggelaten`);
+  return undefined;
+}
+
 function normalizeEmail(value: unknown): string | undefined {
   const s = str(value);
   return s === undefined ? undefined : s.toLowerCase();
@@ -493,6 +517,7 @@ export function transform(items: SourceItem[], config: TransformConfig): Transfo
       name,
       description: str(item.description),
       coverPhotoId,
+      sortDate: sortDateOf(item.sortDate, `groep ${groupId}`, warn),
       createdBy,
       createdAt,
     });
@@ -642,6 +667,7 @@ export function transform(items: SourceItem[], config: TransformConfig): Transfo
       name,
       description: undefined, // createAlbum.js schrijft 'm nooit
       coverPhotoId: undefined,
+      sortDate: sortDateOf(album.item.sortDate, `album ${albumId}`, warn),
       createdBy,
       createdAt,
     });

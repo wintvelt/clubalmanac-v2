@@ -77,6 +77,7 @@ export const groupFields = {
   name: v.string(),
   description: v.optional(v.string()),
   coverPhotoId: v.optional(v.id("photos")),
+  sortDate: v.optional(v.number()),
   createdBy: v.id("users"),
   createdAt: v.number(),
 };
@@ -99,6 +100,7 @@ export const albumFields = {
   name: v.string(),
   description: v.optional(v.string()),
   coverPhotoId: v.optional(v.id("photos")),
+  sortDate: v.optional(v.number()),
   createdBy: v.id("users"),
   createdAt: v.number(),
 };

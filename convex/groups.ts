@@ -1,4 +1,4 @@
-import { v } from "convex/values";
+import { ConvexError, v } from "convex/values";
 import {
   mutation,
   query,
@@ -22,6 +22,7 @@ import {
 import {
   deleteAlbumLastSeenByAlbum,
   deleteAlbumLastSeenForUserInGroup,
+  sumUnreadInGroup,
   upsertAlbumLastSeen,
 } from "./albums";
 
@@ -56,6 +57,22 @@ export async function requireMember(
   const user = await requireCurrentUser(ctx);
   const membership = await getMembership(ctx, user._id, groupId);
   if (!membership) throw new Error("Geen lid van deze groep");
+  return { user, membership };
+}
+
+// WP16 invariant 9: de reads achter het Groep-scherm geven bij geen lid en
+// bij een onbekende groep precies dezelfde ConvexError. De app herkent hem
+// aan de code (een gewone Error heet in productie "Server Error"). Mutations
+// houden requireMember: daar is geen scherm dat erop wacht.
+export const NOT_MEMBER = { code: "NOT_MEMBER" } as const;
+
+export async function requireMemberForRead(
+  ctx: QueryCtx,
+  groupId: Id<"groups">,
+) {
+  const user = await requireCurrentUser(ctx);
+  const membership = await getMembership(ctx, user._id, groupId);
+  if (!membership) throw new ConvexError(NOT_MEMBER);
   return { user, membership };
 }
 
@@ -106,15 +123,15 @@ export const create = mutation({
   },
 });
 
-// WP23: groep-reads alleen voor leden (geen webmaster-bypass). requireMember
-// geeft voor een onbekende groep dezelfde error als voor een niet-lid
-// ("Geen lid van deze groep"): geen bestaans-orakel. Responses zijn
+// WP23: groep-reads alleen voor leden (geen webmaster-bypass).
+// requireMemberForRead geeft voor een onbekende groep dezelfde error als voor
+// een niet-lid (NOT_MEMBER, WP16): geen bestaans-orakel. Responses zijn
 // whitelists uit lib/shapes, geen spreads van rijen.
 export const getById = query({
   args: { groupId: v.id("groups") },
   returns: v.union(group, v.null()),
   handler: async (ctx, { groupId }) => {
-    await requireMember(ctx, groupId);
+    await requireMemberForRead(ctx, groupId);
     const row = await ctx.db.get(groupId);
     return row ? pick(row, groupFields) : null;
   },
@@ -131,7 +148,7 @@ export const getWithCover = query({
     v.null(),
   ),
   handler: async (ctx, { groupId }) => {
-    const { user } = await requireMember(ctx, groupId);
+    const { user } = await requireMemberForRead(ctx, groupId);
     const row = await ctx.db.get(groupId);
     if (!row) return null;
     const cover = await getAccessiblePhoto(ctx, user._id, row.coverPhotoId);
@@ -142,9 +159,14 @@ export const getWithCover = query({
   },
 });
 
+// WP16 besluit 4 + invariant 10: per groep ook `unreadCount`, de som van de
+// tellers die albums.listByGroupWithUnread voor die groep geeft (zelfde
+// helper, dus zelfde definitie van "nieuw").
 export const listMine = query({
   args: {},
-  returns: v.array(v.object({ ...groupFields, role: ROLE })),
+  returns: v.array(
+    v.object({ ...groupFields, role: ROLE, unreadCount: v.number() }),
+  ),
   handler: async (ctx) => {
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) return [];
@@ -160,7 +182,8 @@ export const listMine = query({
       memberships.map(async (m) => {
         const row = await ctx.db.get(m.groupId);
         if (!row) return null;
-        return { ...pick(row, groupFields), role: m.role };
+        const unreadCount = await sumUnreadInGroup(ctx, user._id, m);
+        return { ...pick(row, groupFields), role: m.role, unreadCount };
       }),
     );
     return groups.filter((g): g is NonNullable<typeof g> => g !== null);
@@ -178,7 +201,7 @@ export const listMembers = query({
     }),
   ),
   handler: async (ctx, { groupId }) => {
-    await requireMember(ctx, groupId);
+    await requireMemberForRead(ctx, groupId);
 
     const memberships = await ctx.db
       .query("memberships")

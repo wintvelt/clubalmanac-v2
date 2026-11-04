@@ -6,7 +6,7 @@ import {
   type QueryCtx,
 } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
-import { getMembership, requireMember } from "./groups";
+import { getMembership, requireMember, requireMemberForRead } from "./groups";
 import { requireCurrentUser } from "./users";
 import {
   getAccessiblePhoto,
@@ -120,7 +120,7 @@ export const listByGroup = query({
   args: { groupId: v.id("groups") },
   returns: v.array(album),
   handler: async (ctx, { groupId }) => {
-    await requireMember(ctx, groupId);
+    await requireMemberForRead(ctx, groupId);
     const rows = await ctx.db
       .query("albums")
       .withIndex("by_group", (q) => q.eq("groupId", groupId))
@@ -135,47 +135,73 @@ export const listByGroup = query({
 //                     ?? max(album.createdAt, membership.joinedAt)
 //   unreadCount = aantal albumPhotos.by_album_added(albumId, addedAt > eff)
 //                  waarvan photo.ownerId != currentUserId
+// `sortDate` telt niet mee (WP16 besluit 3).
+async function unreadInAlbum(
+  ctx: QueryCtx,
+  userId: Id<"users">,
+  membership: Doc<"memberships">,
+  album: Doc<"albums">,
+): Promise<number> {
+  const lastSeen = await ctx.db
+    .query("albumLastSeen")
+    .withIndex("by_user_album", (q) =>
+      q.eq("userId", userId).eq("albumId", album._id),
+    )
+    .unique();
+  // Strict > overal: foto met addedAt === effectiveLastSeen is niet unread.
+  // Zowel lastSeen-pad ("ik heb gezien wat tot T zichtbaar was") als
+  // fallback-pad (max-cutoff) gebruiken zelfde semantiek. Zie design-doc
+  // sectie "Unread-count per album per user > Strict > semantiek".
+  const effective =
+    lastSeen?.lastSeenAt ?? Math.max(album.createdAt, membership.joinedAt);
+
+  const candidates = await ctx.db
+    .query("albumPhotos")
+    .withIndex("by_album_added", (q) =>
+      q.eq("albumId", album._id).gt("addedAt", effective),
+    )
+    .collect();
+
+  let unreadCount = 0;
+  for (const ap of candidates) {
+    const photo = await ctx.db.get(ap.photoId);
+    if (photo && photo.ownerId !== userId) unreadCount++;
+  }
+  return unreadCount;
+}
+
+async function albumsOfGroup(ctx: QueryCtx, groupId: Id<"groups">) {
+  return await ctx.db
+    .query("albums")
+    .withIndex("by_group", (q) => q.eq("groupId", groupId))
+    .collect();
+}
+
+// WP16 invariant 10: de teller per groep (groups.listMine) is de som van de
+// tellers hieronder. Eén definitie van "nieuw".
+export async function sumUnreadInGroup(
+  ctx: QueryCtx,
+  userId: Id<"users">,
+  membership: Doc<"memberships">,
+): Promise<number> {
+  const albums = await albumsOfGroup(ctx, membership.groupId);
+  const counts = await Promise.all(
+    albums.map((a) => unreadInAlbum(ctx, userId, membership, a)),
+  );
+  return counts.reduce((n, c) => n + c, 0);
+}
+
 export const listByGroupWithUnread = query({
   args: { groupId: v.id("groups") },
   returns: v.array(v.object({ ...albumFields, unreadCount: v.number() })),
   handler: async (ctx, { groupId }) => {
-    const { user, membership } = await requireMember(ctx, groupId);
-    const albums = await ctx.db
-      .query("albums")
-      .withIndex("by_group", (q) => q.eq("groupId", groupId))
-      .collect();
-
+    const { user, membership } = await requireMemberForRead(ctx, groupId);
+    const albums = await albumsOfGroup(ctx, groupId);
     return await Promise.all(
-      albums.map(async (album) => {
-        const lastSeen = await ctx.db
-          .query("albumLastSeen")
-          .withIndex("by_user_album", (q) =>
-            q.eq("userId", user._id).eq("albumId", album._id),
-          )
-          .unique();
-        // Strict > overal: foto met addedAt === effectiveLastSeen is niet unread.
-        // Zowel lastSeen-pad ("ik heb gezien wat tot T zichtbaar was") als
-        // fallback-pad (max-cutoff) gebruiken zelfde semantiek. Zie design-doc
-        // sectie "Unread-count per album per user > Strict > semantiek".
-        const effective =
-          lastSeen?.lastSeenAt ??
-          Math.max(album.createdAt, membership.joinedAt);
-
-        const candidates = await ctx.db
-          .query("albumPhotos")
-          .withIndex("by_album_added", (q) =>
-            q.eq("albumId", album._id).gt("addedAt", effective),
-          )
-          .collect();
-
-        let unreadCount = 0;
-        for (const ap of candidates) {
-          const photo = await ctx.db.get(ap.photoId);
-          if (photo && photo.ownerId !== user._id) unreadCount++;
-        }
-
-        return { ...pick(album, albumFields), unreadCount };
-      }),
+      albums.map(async (album) => ({
+        ...pick(album, albumFields),
+        unreadCount: await unreadInAlbum(ctx, user._id, membership, album),
+      })),
     );
   },
 });
