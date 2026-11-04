@@ -87,6 +87,8 @@ Doe dit met de laptop dicht, alleen met de Claude-app op de iPhone. Gebruik een 
 
 **Stap 7: geslaagd.** In een sub-sessie werd `git push --dry-run` geweigerd door `Bash(git push:*)` uit `.claude/settings.json`, zonder prompt en zonder omweg.
 
+**Stap 8: geslaagd, met een omweg (2026-11-04).** Met UTF-8 in de sessie lukten `pod install` en de build; de app toonde het inlogscherm in de iPhone 18 Pro-simulator (iOS 27.2). Na de installatie stopte `expo run:ios`, omdat de sessie System Events niet mag besturen (macOS-toestemming **Automatisering**); de sessie startte Metro daarna apart en opende de app met `xcrun simctl`. Toestemming geven: Apple-menu → **Systeeminstellingen** → **Privacy en beveiliging** → **Automatisering**, of **Sta toe** in de vraag die macOS toont bij de volgende `expo run:ios` (via Scherm delen).
+
 Faalt stap 2 of 3: dan is de terugvaloptie dat Wouter elke rol-sessie zelf start vanaf de iPhone. Regie schrijft dan alleen de prompt.
 
 ## Credentials
