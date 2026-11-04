@@ -433,3 +433,13 @@ Audit op `790983f`: geen blockers, één should-fix. Fix-cyclus 1 doet alleen B.
 Gate-aanvulling:
 - **6b (S1):** open Gatetest, ga terug naar Mijn groepen, zet vliegtuigmodus 10 seconden aan en weer uit. Mijn groepen blijft staan.
 - **7b (N1):** haal dev1 uit Gatetest terwijl Profiel in beeld is, en ga terug naar Home. Noteer of je de oude albums even ziet, en hoe lang.
+
+## Gate build 47 (2026-11-04) en fix-cyclus 2
+
+Gate-stappen 1–7, 6b en 7b zijn groen, met het dashboard als bewijs. Bij 7b kwam direct de melding, zonder oude albums (N1 trad niet op). Bij de grootste tekst vond Wouter één ding buiten de scope, dat er al sinds WP15a zit:
+
+| # | Bevinding | Gewenst gedrag |
+|---|---|---|
+| F1 | De +-knop in licht is geen ronde cirkel. Het verloop bolt rechts en onder uit en is daar afgekapt, en linksboven is een lichtblauwe rand te zien. Het verloop vult het vlak binnen de rand van 1,5 pt, maar rekent met de volle maat, en de effen achtergrond van de knop komt erachter tevoorschijn. | Een ronde cirkel in het verloop, met de rand van design.md §4 er netjes omheen, in licht en donker, bij elke tekstgrootte. Geen effen kleur die naast het verloop zichtbaar is. |
+
+Testaccounts op dev: Clerk-account dev2 hoort bij de users-rij `dev-3@clubalmanac.test`, en dev3 bij `dev-2@…`. De transform nummert de nep-adressen niet in de volgorde van de Clerk-accounts. Kan-punt, zie de backlog bij de closeout.
