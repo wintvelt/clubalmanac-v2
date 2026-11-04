@@ -2,6 +2,16 @@
 
 Advies, 2026-11-04. Nog niets geïnstalleerd of ingesteld. Doel: regie-, A-, B- en audit-sessies lopen door als de laptop dicht is.
 
+## Besluiten Wouter (2026-11-04)
+
+| Vraag | Besluit |
+|---|---|
+| Push-route | GitHub-token op de server. Wouter pusht vanuit zijn eigen SSH-terminal op de server |
+| Herstart server | Na een herstart logt Wouter opnieuw in via Scherm delen. Geen automatisch inloggen; FileVault mag aan |
+| eas-cli | Nieuwere versie op de server is goed: dezelfde als de laptop (27.4.1). `app/eas.json` eist `>= 25.0.0` |
+| Oude repo's voor A | Ook clonen op de server |
+| Hoofdtest | Kan regie op de server zelf sub-sessies starten, in een dialoog via Remote Control? Zie §Testplan |
+
 ## Kan het?
 
 Ja. Aanbevolen: **de Claude-desktop-app draait op de server-Mac zelf, met Remote Control aan.** Wouter stuurt de sessies vanaf laptop, telefoon of browser.
@@ -27,7 +37,7 @@ Schermdelen is alleen nodig bij de eerste installatie (login, macOS-rechten, eer
 |---|---|---|
 | Remote Control | Permissie-vragen beantwoorden vanaf telefoon of laptop | Desktop-app op de server, instelling hierboven |
 | Permissie-mode `auto` | Minder vragen; een classifier toetst elke actie. Deny-regels blijven gelden | `~/.claude/settings.json` op de server, `"permissions": {"defaultMode": "auto"}`. In `.claude/settings.json` van de repo heeft `auto` geen effect |
-| Deny-regels | Blokkeren in elke mode, ook `bypassPermissions` | `Bash(git push:*)` staat al in de repo. Voeg op de server in `~/.claude/settings.json` toe: `eas build`, `eas submit`, `eas credentials`, `npx convex deploy`, `gh auth` |
+| Deny-regels | Blokkeren in elke mode, ook `bypassPermissions` | `Bash(git push:*)` staat al in de repo. Voeg op de server in `~/.claude/settings.json` toe: `eas build`, `eas submit`, `eas credentials`, `npx convex deploy`, `gh auth`, `gh api` |
 | Simulator-toestel | Eenmalige toestemming per toestel, daarna geen vragen | Bij de installatie, via schermdelen |
 
 `bypassPermissions` is af te raden: de server heeft echte logins (Convex, Expo, GitHub).
@@ -37,18 +47,39 @@ Schermdelen is alleen nodig bij de eerste installatie (login, macOS-rechten, eer
 Wouter voert dit zelf uit. Versies komen uit de repo en de laptop van 2026-11-04.
 
 1. Server-Mac: Apple Silicon, macOS die Xcode 27.2 draait (laptop: macOS 27.2). Ongeveer 80 GB vrij voor Xcode, simulators en `node_modules`.
-2. macOS-instellingen: niet automatisch slapen, opnieuw starten na stroomuitval, Extern inloggen (SSH) en Scherm delen aan. Beslis over automatisch inloggen (zie Risico's).
+2. Gebruiker `wintvelt`, zodat de paden uit `CLAUDE.md` en de memory-map kloppen. macOS-instellingen: niet automatisch slapen, opnieuw starten na stroomuitval, Extern inloggen (SSH) en Scherm delen aan.
 3. Toegang van buiten huis: bv. Tailscale, voor SSH en Scherm delen.
 4. Xcode 27.2 met het iOS-platform. Daarna `sudo xcode-select -s /Applications/Xcode.app`, `sudo xcodebuild -license accept`, `xcodebuild -runFirstLaunch`.
 5. Homebrew, daarna `brew install fnm gh cocoapods tmux`. Git komt mee met Xcode.
 6. Node via fnm, zoals in [`external-services.md`](./external-services.md) §EAS-build stap 1. Gebruik `24.22.1`, de versie uit `app/eas.json` `build.base.node`.
-7. `npm install -g eas-cli@<versie>`. Kies eerst de versie: het runbook pint 25.3.0, de laptop heeft 27.4.1.
-8. Repo clonen (publiek, geen login nodig). Daarna `npm ci` in de root en in `app/`. Check: `npm run typecheck` en `npm test` op beide plekken, net als `.github/workflows/ci.yml`.
-9. Convex CLI: geen aparte installatie, `npx convex` uit de repo (1.45.0).
-10. Claude-desktop-app installeren en inloggen. Zet **Connect new sessions to Remote Control** aan. Open de repo als project.
-11. Proef: laat een sessie `npx expo run:ios` in `app/` draaien en het simulator-toestel toestaan.
-12. Proef: start vanaf de laptop een regie-sessie op de server, laat die een sub-sessie starten, en controleer dat de sub-sessie op de telefoon verschijnt.
-13. Niet nodig op de server: AWS CLI en het AWS-profiel. De AWS-SDK zit in de devDependencies en is alleen voor `scripts/migrate`.
+7. `npm install -g eas-cli@27.4.1`.
+8. GitHub-token: maak een fine-grained token voor alleen `wintvelt/clubalmanac-v2` (Contents: lezen en schrijven) en `wintvelt/clubalmanac-app` (Contents: lezen). Daarna `gh auth login` met dat token en `gh auth setup-git`.
+9. Repo clonen naar `/Users/wintvelt/Code/clubalmanac-v2` (zelfde pad als de laptop). Daarna `npm ci` in de root en in `app/`. Check: `npm run typecheck` en `npm test` op beide plekken, net als `.github/workflows/ci.yml`.
+10. Oude repo's clonen naar `/Users/wintvelt/Documents/DEV/DEV/`: `blob-images-api`, `blob-images-api-user`, `-groups`, `-photos`, `-invites`, `-features`, `blob-images-common` (alle publiek) en `clubalmanac-app` (privé, via het token). Let op: `blob-images-api-features` en `blob-images-common` staan nu níet op de laptop, wel op GitHub.
+11. Memory kopiëren: `~/.claude/projects/-Users-wintvelt-Code-clubalmanac-v2/memory/` van de laptop naar hetzelfde pad op de server. Anders mist de server de feedback-regels.
+12. Convex CLI: geen aparte installatie, `npx convex` uit de repo (1.45.0).
+13. Claude-desktop-app installeren en inloggen. Zet **Connect new sessions to Remote Control** aan. Open de repo als project. Zet in `~/.claude/settings.json` de deny-regels uit §Goedkeuren op afstand.
+14. Proef: laat een sessie `npx expo run:ios` in `app/` draaien en sta het simulator-toestel toe (via Scherm delen).
+15. Daarna het §Testplan.
+16. Niet nodig op de server: AWS CLI en het AWS-profiel. De AWS-SDK zit in de devDependencies en is alleen voor `scripts/migrate`.
+
+## Testplan: regie start sub-sessies op afstand
+
+Doe dit met de laptop dicht, alleen met de Claude-app op de iPhone. Gebruik een proef-opdracht zonder echte WP, zodat er niets in de historie komt.
+
+| # | Stap | Geslaagd als |
+|---|---|---|
+| 1 | Start op de server een regie-sessie (eenmalig via Scherm delen, of vanaf de iPhone als de server-app een nieuwe sessie toelaat). Open hem op de iPhone | De sessie staat in de lijst op de iPhone en reageert |
+| 2 | Typ op de iPhone: *"regie: start een sub-sessie wp-a die alleen `git status` draait en rapporteert"* | De sub-sessie start zonder klik in de desktop-app, want de opdracht staat in Wouters eigen woorden |
+| 3 | Kijk in de sessielijst op de iPhone | De sub-sessie staat er ook in, apart te openen |
+| 4 | Laat de sub-sessie iets doen dat om toestemming vraagt (bv. een bestand schrijven in Manual-mode) | De vraag komt als melding op de iPhone en is daar te beantwoorden |
+| 5 | Wacht tot de sub-sessie klaar is | Regie krijgt het rapport en gaat zelf verder |
+| 6 | Vraag regie om een sub-sessie *voor te stellen* in plaats van te starten | De voorstel-kaart met knoppen is op de iPhone zichtbaar en werkt. Zo niet: dan typt Wouter de start-opdracht altijd expliciet (stap 2) |
+| 7 | Laat een sub-sessie `git push` proberen | Geweigerd door de deny-regel |
+| 8 | Laat een sub-sessie B de app in de simulator openen | De build loopt en Claude ziet het scherm. Kijken kan alleen via Scherm delen; Remote Control toont de pane niet |
+| 9 | Laat een sessie een uur doorlopen met de laptop dicht | Werk gaat door; de iPhone ziet de voortgang |
+
+Faalt stap 2 of 3: dan is de terugvaloptie dat Wouter elke rol-sessie zelf start vanaf de iPhone. Regie schrijft dan alleen de prompt.
 
 ## Credentials
 
@@ -69,7 +100,7 @@ Alleen namen, geen waarden. Geen enkele komt in de repo of in de EAS-env.
 | ASC-API-key voor `eas submit` | EAS-managed, op EAS-servers (aangemaakt in WP14) | Nee | Blijft bij EAS. Check met `eas credentials -p ios` |
 | ASC-API-key `.p8` + `EXPO_ASC_*`, `EXPO_APPLE_TEAM_ID` | niet aanwezig | Alleen als EAS zonder vragen certificaten moet herstellen | Niet aanmaken. Bij verloop draait Wouter één build met vragen |
 | Clerk- en Mailjet-geheimen | Convex-env-vars (dashboard) | Nee | Blijven in Convex |
-| GitHub | `gh` in de sleutelhanger (account `wintvelt`, scopes `repo`, `workflow`, …) | Alleen voor push | Zie Risico's: push-route is een besluit |
+| GitHub | `gh` in de sleutelhanger (account `wintvelt`, scopes `repo`, `workflow`, …) | Ja: push door Wouter, clone van `clubalmanac-app` | Nieuw fine-grained token, alleen voor de twee repo's (checklist-stap 8). Niet het laptop-token kopiëren |
 
 ## EAS zonder vragen
 
@@ -86,7 +117,7 @@ Het blijft een schrijfactie op een extern account, dus **Wouter draait het zelf*
 
 ## Wat bij Wouter blijft
 
-- **Push.** De deny-regel `Bash(git push:*)` geldt ook op de server. Wouter pusht vanuit zijn eigen SSH-terminal op de server, of haalt de commits naar de laptop en pusht daar.
+- **Push.** De deny-regel `Bash(git push:*)` geldt ook op de server. Wouter pusht vanuit zijn eigen SSH-terminal op de server.
 - **CLI-schrijfacties op externe accounts**: `eas build`, `eas submit`, `eas env:set`, `npx convex login`, `npx convex deploy` naar prod, Convex-env-vars, dashboards.
 - **TestFlight en de gate op de iPhone.** De server bouwt niets voor het toestel; EAS bouwt in de cloud.
 - **Geen geheimen in de repo of EAS-env.** `.env`-bestanden gaan per `scp`, tokens in de sleutelhanger van de server.
@@ -96,16 +127,15 @@ Het blijft een schrijfactie op een extern account, dus **Wouter draait het zelf*
 
 | Risico of vraag | Toelichting | Beslissing door |
 |---|---|---|
-| Push-route | (a) GitHub-token op de server: snel, maar elke sessie kan `gh auth token` lezen. Beperk met een fine-grained token voor alleen deze repo en een deny op `gh auth`. (b) Geen GitHub-schrijfrecht op de server: de laptop haalt de commits op via SSH (`git fetch server main`) en pusht. Veiliger, maar de laptop moet aan | Wouter |
-| Sub-sessies en Remote Control | De docs zeggen niet expliciet dat sub-sessies die regie start automatisch aan Remote Control hangen. Test in checklist-stap 12 | Test |
-| Herstart van de server | Na een update of stroomuitval moet iemand inloggen, anders draait de desktop-app niet. Automatisch inloggen werkt niet met FileVault aan. Kies: FileVault aan + na herstart via Scherm delen inloggen, of FileVault uit | Wouter |
+| GitHub-token op de server | Elke sessie kan het token gebruiken, ook buiten `git push` om (bv. `gh api`). De deny-regel blokkeert alleen `git push`. Beperking: token alleen voor twee repo's, deny op `gh auth` en `gh api`. Restrisico: een push naar `clubalmanac-v2` via een omweg | Geaccepteerd |
+| Sub-sessies via Remote Control | De docs zeggen niet expliciet dat sub-sessies en voorstel-kaarten op afstand werken | §Testplan |
+| Herstart van de server | Tot Wouter inlogt, draait er geen sessie. Lopend werk stopt | Geaccepteerd |
 | Sleutelhanger via SSH | Via SSH is de login-sleutelhanger vaak op slot (`gh`, `EXPO_TOKEN`). Dan eerst `security unlock-keychain` | Bij installatie |
 | Twee checkouts | Laptop en server lopen uit elkaar. Werk op één plek tegelijk; pull op de laptop pas na de push | Discipline |
-| Versie eas-cli | Runbook pint 25.3.0, de laptop draait 27.4.1. Kies één versie en pas het runbook aan | Regie |
+| eas-cli-pin in het runbook | [`external-services.md`](./external-services.md) §EAS-build stap 2 pint nog 25.3.0; de praktijk is 27.4.1 | Regie |
 | Deny-syntax | De docs tonen `Bash(git push *)`, de repo gebruikt `Bash(git push:*)`. Controleer op de server dat `git push` geweigerd wordt | Test |
 | Gebruik | Meer parallelle sessies, ook 's nachts, telt mee in de limiet van het Claude-abonnement | Wouter |
 | Nachtwerk zonder antwoord | Een sessie die op een vraag wacht, staat stil tot Wouter antwoordt. Push-meldingen helpen; `auto`-mode vermindert het aantal vragen | Wouter |
-| Toegangs-grenzen per rol | A mag oude code lezen. Die repo's staan in `/Users/wintvelt/Documents/DEV/DEV/` op de laptop. Clone ze op de server op hetzelfde pad, of laat A op de laptop | Regie |
 
 ## Bronnen
 
