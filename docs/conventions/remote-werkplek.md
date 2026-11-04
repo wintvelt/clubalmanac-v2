@@ -81,6 +81,10 @@ Doe dit met de laptop dicht, alleen met de Claude-app op de iPhone. Gebruik een 
 
 **Uitkomst 2026-11-04 (stap 1–5): geslaagd.** Regie op de server startte vanaf de iPhone een sub-sessie (`start_session`) zonder klik in de desktop-app. De sub-sessie stond apart in de lijst op de iPhone. Permissie-vragen van beide sessies kwamen op de iPhone en waren daar goed te keuren. Regie kreeg het rapport vanzelf. In mode Manual vraagt elke sessie ook toestemming voor Bash-commando's zoals `git status`; `auto` in `~/.claude/settings.json` scheelt die vragen.
 
+**Stap 6: werkt niet op afstand.** Een voorstel-kaart (sub-sessie voorstellen zonder te starten) weigert de app als je via Remote Control werkt: er zit niemand achter de desktop-app om de kaart te beantwoorden. Regel daarom: **zeg op afstand altijd expliciet "start"**. Regie mag dan direct starten.
+
+**Stap 7: geslaagd.** In een sub-sessie werd `git push --dry-run` geweigerd door `Bash(git push:*)` uit `.claude/settings.json`, zonder prompt en zonder omweg.
+
 Faalt stap 2 of 3: dan is de terugvaloptie dat Wouter elke rol-sessie zelf start vanaf de iPhone. Regie schrijft dan alleen de prompt.
 
 ## Credentials
@@ -135,7 +139,6 @@ Het blijft een schrijfactie op een extern account, dus **Wouter draait het zelf*
 | Sleutelhanger via SSH | Via SSH is de login-sleutelhanger vaak op slot (`gh`, `EXPO_TOKEN`). Dan eerst `security unlock-keychain` | Bij installatie |
 | Twee checkouts | Laptop en server lopen uit elkaar. Werk op één plek tegelijk; pull op de laptop pas na de push | Discipline |
 | eas-cli-pin in het runbook | [`external-services.md`](./external-services.md) §EAS-build stap 2 pint nog 25.3.0; de praktijk is 27.4.1 | Regie |
-| Deny-syntax | De docs tonen `Bash(git push *)`, de repo gebruikt `Bash(git push:*)`. Controleer op de server dat `git push` geweigerd wordt | Test |
 | Gebruik | Meer parallelle sessies, ook 's nachts, telt mee in de limiet van het Claude-abonnement | Wouter |
 | Nachtwerk zonder antwoord | Een sessie die op een vraag wacht, staat stil tot Wouter antwoordt. Push-meldingen helpen; `auto`-mode vermindert het aantal vragen | Wouter |
 
