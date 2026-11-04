@@ -365,8 +365,55 @@ Stappen voor Wouter, ná B (schema en transform staan op dev):
     ```
 11. Meldt `verify` storage-orphans (uploads die op dev zijn gedaan), ruim ze pas op als je tevreden bent: `prune-storage --target dev --yes`. Daarna kan de rollback hieronder de verwijderde bestanden niet meer terugzetten.
 
+**Gate-voorbereiding (ná stap 11).** Na de herlaadbeurt zijn dev1 en dev2 lid van gemigreerde groepen: dev1 (`dev-1@clubalmanac.test`, "Dev Wouter") van vijf, dev2 (`dev-2@clubalmanac.test`, "Dev Anna") van één, en die ene delen ze. Voor gate-stap 3 en 7 maak je er een eigen testgroep bij, zodat foto's toevoegen en dev1 eruit halen de gemigreerde data niet raken. Alles gaat in het Convex-dashboard van dev, tabblad Data, met de knop **Add** (een JSON-document invoegen) en **Filter**.
+
+1. Log in de app één keer in als dev1 en als dev2. Daarmee staat er zeker een users-rij per account.
+2. Zoek de twee users. Data → `users` → Filter op `email` gelijk aan `dev-1@clubalmanac.test`. Kopieer het `_id`: dat is **ID-dev1**. Doe hetzelfde met `dev-2@clubalmanac.test`: **ID-dev2**. Twijfel je of dat de rij van het Clerk-account is: het `subject` in de rij is de User ID van `dev1+clerk_test@example.com` in het Clerk-dashboard (dev).
+3. Een tijdstempel van nu, in ms, in je terminal: **T**.
+   ```bash
+   date +%s000
+   ```
+4. De testgroep. Data → `groups` → Add:
+   ```json
+   { "name": "Gatetest", "createdBy": "ID-dev1", "createdAt": T }
+   ```
+   Vervang `ID-dev1` en `T` door de waarden uit stap 2 en 3. Het nieuwe `_id` is **ID-groep**.
+5. De leden. Data → `memberships` → Add, twee keer:
+   ```json
+   { "userId": "ID-dev1", "groupId": "ID-groep", "role": "admin", "joinedAt": T }
+   ```
+   ```json
+   { "userId": "ID-dev2", "groupId": "ID-groep", "role": "member", "joinedAt": T }
+   ```
+6. Twee albums. Data → `albums` → Add, twee keer. Het tweede heeft een gekozen datum in 2019 (besluit 3), dus Albums toont twee jaartallen:
+   ```json
+   { "groupId": "ID-groep", "name": "Gatetest nu", "createdBy": "ID-dev1", "createdAt": T }
+   ```
+   ```json
+   { "groupId": "ID-groep", "name": "Gatetest 2019", "createdBy": "ID-dev1", "createdAt": T, "sortDate": 1559347200000 }
+   ```
+   De `_id`'s zijn **ID-album-nu** en **ID-album-2019**.
+7. Een foto van dev2 om mee te koppelen. Data → `photos` → Filter op `ownerId` gelijk aan ID-dev2. Kopieer twee `_id`'s: **ID-foto-1** en **ID-foto-2**.
+8. Een eerste nieuwe foto voor dev1. Data → `albumPhotos` → Add, met **T + 1000** als `addedAt` (strikt na het lidmaatschap, anders telt hij niet):
+   ```json
+   { "albumId": "ID-album-nu", "photoId": "ID-foto-1", "groupId": "ID-groep", "addedAt": T + 1000, "addedBy": "ID-dev2" }
+   ```
+   Reken `T + 1000` zelf uit; het veld is een getal, geen som.
+
+Nu is dev1 lid van twee groepen met albums: de gedeelde gemigreerde groep, en Gatetest. Op Gatetest staat bij dev1 een teller van 1 op "Gatetest nu" en op de groep. Bij dev2 staat er niets: een eigen foto telt niet.
+
+**Gate-stap 3 (live teller).** Open als dev1 Gatetest op Albums, met het dashboard open op Logs. Neem een nieuwe **T2** met `date +%s000`, en voeg in `albumPhotos` toe:
+```json
+{ "albumId": "ID-album-nu", "photoId": "ID-foto-2", "groupId": "ID-groep", "addedAt": T2, "addedBy": "ID-dev2" }
+```
+De teller op "Gatetest nu" gaat binnen enkele seconden van 1 naar 2.
+
+**Gate-stap 7 (uit de open groep).** Open als dev1 Gatetest. Data → `memberships` → Filter op `groupId` gelijk aan ID-groep → selecteer de rij met `userId` = ID-dev1 → Delete. De app toont de NL-melding met een weg naar Mijn groepen, en Home opent daarna Mijn groepen, niet Gatetest.
+
+Een rij wissen in het dashboard slaat de cascade over (M1, M3, en promotie van een nieuwe admin), anders dan `groups.removeMember`. Voor deze test maakt dat niet uit: de app reageert op het verdwenen lidmaatschap. Gatetest heeft daarna geen admin meer; dat is op dev geen probleem. Terugzetten: de eerste regel uit stap 5 opnieuw toevoegen. Na de gate mag Gatetest blijven staan. Wil je hem weg: wis eerst de rijen in `albumPhotos`, `albumLastSeen`, `albums` en `memberships` met `groupId` of `albumId` van Gatetest, en dan de groep. De foto's van dev2 blijven, die horen bij dev2.
+
 **Rollback.** Tot stap 11: `npx convex import --replace-all ./backups/wp16-dev-voor-sortdate.zip` zet de tabellen terug. De bestanden staan er nog, want `reset` zonder `--all` laat ze staan. Wil je ook de code terug: eerst de data, dan de code. Een schema zonder `sortDate` laat zich niet deployen zolang er rijen met `sortDate` staan.
 
-**Vondst buiten WP16: `reset` kent `userVisits` niet.** De tabel van WP15b valt niet onder `MONITORED_TABLES` en dus niet onder `reset`. Na een herlaadbeurt wijzen de oude rijen naar users die niet meer bestaan. Niemand ziet dat (geen publieke query leest de tabel, en de dagelijkse scan controleert hem niet), maar het is vuil, en op prod speelt het niet (leeg op T0). Kandidaat voor de backlog: `userVisits` onder de FK-controle van WP10, dan doet `reset` hem vanzelf mee.
+**Vondst buiten WP16: `reset` kent `userVisits` niet.** De tabel van WP15b valt niet onder `MONITORED_TABLES` en dus niet onder `reset`. Na een herlaadbeurt wijzen de oude rijen naar users die niet meer bestaan. Niemand ziet dat (geen publieke query leest de tabel, en de dagelijkse scan controleert hem niet), maar het is vuil, en op prod speelt het niet (leeg op T0). Staat op de backlog: [`migratie-status.md`](../migratie-status.md) §Pre-cutover deferred items.
 
 **RED-breedte.** Omdat de WP23-wereld (`tests/readWhitelist/_world.ts`) nu `sortDate` vult, falen alle tests die die wereld gebruiken (WP23, WP24, `profileQuery`) met "Unexpected field `sortDate`", tot het schema-veld er is. Dat is één oorzaak, en het eerste wat B doet.

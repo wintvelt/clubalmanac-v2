@@ -232,6 +232,7 @@ WP5/WP6 deferred items zijn nu verdeeld over fase 2 en fase 5:
 
 - **Backend-code** (fase 2, [ ]-bullet bovenaan §Fase 2): WP5/WP6 integration-tests `tests/integration/mailjet/sendRoundtrip.test.ts` + `tests/integration/clerk/onboardingWebhook.test.ts`
 - **Prod-env activatie + Gates herhalen** (fase 5 T-4 weken, zie §Cutover stappenplan): prod env-vars, Mailjet prod webhook-config, Clerk prod webhook-config, WP5 Gates 1+2 herhalen, WP6 Gates 1+2+3 herhalen
+- **`userVisits` onder de FK-controle van WP10** (vondst WP16-A): `reset` leegt alleen `MONITORED_TABLES`, en `userVisits` staat daar niet in. Na een dev-herlaadbeurt wijzen de oude rijen naar users die niet meer bestaan; niemand ziet het, want geen publieke query of scan leest de tabel. Op prod is hij op T0 leeg. Fix: een FK-controle op `userVisits.userId` in WP10, dan neemt `reset` hem vanzelf mee. Tot dan: bij elke dev-herlaadbeurt de tabel in het dashboard leegmaken (WP16 §sortDate, stap 7).
 - **`users.lastVisitAt` opruimen** (na WP15b): het bezoek staat nu in een eigen tabel. De transform (WP12) neemt `visitDateLast` niet meer mee, en het veld gaat uit het schema. Eerst de dev-rijen leegmaken, anders faalt de schema-check.
 
 Reden voor split: integration-tests zijn écht backend-code (env-var-gated, in CI-uitsluitingslijst per `integration-tests.md`) — past in fase 2. Prod-env-activatie heeft pas zin in T-4 weken (idle prod-deployment eerder = cost + drift-risico, plus Gates moeten toch herhaald worden vlak vóór T-0).
