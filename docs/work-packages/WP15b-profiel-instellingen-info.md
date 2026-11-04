@@ -1,6 +1,6 @@
 # WP15b: Profiel, Instellingen, Info, recordVisit
 
-> Regie-draft. App-WP (zie [`work-package-specs.md` §App-WP's](../conventions/work-package-specs.md#app-wps-fase-4)), met een klein backend-deel. Eigen sessie per rol. Bouwt op [WP15a](./WP15a-navigatie-subscriptions.md).
+> ✅ Afgerond 2026-11-04 (gate build 45, hercheck build 46). App-WP (zie [`work-package-specs.md` §App-WP's](../conventions/work-package-specs.md#app-wps-fase-4)), met een klein backend-deel. Eigen sessie per rol. Bouwt op [WP15a](./WP15a-navigatie-subscriptions.md).
 
 ## Productdoel
 
@@ -122,7 +122,7 @@ Nog een vondst: een gewone `Error` uit een mutation komt in productie bij de cli
 | Profielquery | Nieuw: `users.profile`, met dezelfde vorm als `users.current`. Alleen Profiel gebruikt hem, via `useLiveQuery`. Het is een andere functie, dus Convex voegt de twee abonnementen niet samen. |
 | `users.current` | Blijft wat hij is, zonder `lastVisitAt`. Smaller maken levert niets op: hij draait toch opnieuw bij elke wijziging in de rij. Zo blijft WP15a ongemoeid. |
 | Account verwijderen | `deleteSelf` ruimt de bezoekrij op (nieuwe cascade-rij U11). Dit staat nu al vast, niet pas in het WP voor account verwijderen. |
-| `users.lastVisitAt` in het schema | Blijft voorlopig staan. Alleen de migratie vult hem nog, en geen code leest of schrijft hem. Regie beslist of de migratie het AWS-bezoek naar de nieuwe tabel zet (open vraag 1). |
+| `users.lastVisitAt` in het schema | Blijft voorlopig staan, ongebruikt. Het AWS-bezoek gaat niet mee (regie-besluit 1). |
 
 Dit draait WP12-cascade-rij U2 deels terug. Daar staat dat de AWS-splitsing tussen gebruiker en bezoek een DynamoDB-truc was. In Convex is er een andere reden voor zo'n splitsing: de reactiviteit.
 
@@ -166,7 +166,7 @@ De oude app had dezelfde lijst op twee plekken: Info (uitgelogd) en Instellingen
 | Contact | Geen eigen pagina, maar een regel die een `mailto:` opent naar het contactadres. |
 | Probleem melden (formulier) | Vervalt in 15b. De backend heeft het al (`features.create` met type `problem` mailt de webmaster), maar alleen voor ingelogde users. Het formulier hoort bij een feature-WP. |
 
-De teksten staan in [`WP15b-info-teksten.md`](./WP15b-info-teksten.md), als concept. B neemt ze letterlijk over. Wouter keurt ze goed bij de gate. Wat na de migratie niet meer klopt:
+De teksten staan in [`WP15b-info-teksten.md`](./WP15b-info-teksten.md). B nam ze letterlijk over; de bron in de app is `app/src/content/infoTexts.ts`. Wat na de migratie niet meer klopte:
 - Opslag "bij Amazon Web Services in Frankfurt" wordt: Convex (EU, Dublin), Clerk (inloggen; Clerk is een Amerikaans bedrijf, dus doorgifte buiten de EU), Mailjet (e-mail, Frankrijk), en Photon van Komoot (plaatsnamen bij de GPS-gegevens van een foto, Duitsland).
 - "Wachtwoord vergeten": er is geen wachtwoord meer, je logt in met een code per e-mail.
 - Je e-mailadres is niet meer zichtbaar voor andere leden (WP23). In de oude voorwaarden staat van wel.
@@ -239,54 +239,45 @@ Een user zonder naam (gemigreerd, of zonder naam in Clerk): het veld is leeg en 
 - **App naar de achtergrond tijdens het opslaan**: het antwoord komt bij terugkeer. De melding of bevestiging staat dan alsnog onder de knop.
 - **Een deep link naar `/info/privacy` terwijl je ingelogd bent**: Home, niet de privacypagina. Een deep link naar de juiste plek is voor WP22.
 
-### Contract voor A's tests
+### Tests en runbook
 
-| Module | Signatuur | Pint |
-|---|---|---|
-| `convex/lib/constants.ts` | `VISIT_PERIOD_MS = 3_600_000`, `NAME_MAX_LENGTH = 50` | punt 2 en 3 |
-| `convex/users.ts` | `updateProfile` gooit bij een ongeldige naam `ConvexError({ code })`, met `code` = `NAME_EMPTY`, `NAME_TOO_LONG` of `NAME_INVALID` | invarianten 1 en 9 |
-| `convex/users.ts` | `recordVisit` (bestaat), met throttle en zonder schrijven in de `users`-rij | invarianten 5 en 6 |
-| `convex/users.ts` | `getLastVisit`: internal query, `{ userId: Id<"users"> }` → `number \| null` | punt 1 |
-| `convex/users.ts` | `profile`: publieke query, `{}` → `ownProfile \| null`, `null` zonder identity of rij | invariant 7 |
-| `convex/lib/shapes.ts` | `ownProfile` zonder `lastVisitAt` | invariant 6 |
-| `app/src/lib/visit.ts` | `VISIT_PERIOD_MS`; `shouldRecordVisit(input: { previous: { appState: string; authState: SessionState }; current: { appState: string; authState: SessionState }; userId: string \| null; now: number; lastAttempt: { userId: string; at: number } \| null }): boolean` | punt 2, invarianten 5 en 12 |
-| `app/src/lib/nameError.ts` | `NAME_MAX_LENGTH`; `nameErrorText(error: unknown): string` | invariant 10 |
-| `app/src/lib/infoPages.ts` | `INFO_PAGES: readonly { slug: string; title: string }[]`; `infoPath(slug: string, signedIn: boolean): string` | punt 4, routes |
-| `app/src/lib/routeAccess.ts` | `PUBLIC_PATHS` = `/inloggen`, `/info`, `/info/over`, `/info/privacy`, `/info/voorwaarden` | invariant 4 |
-
-Tests:
-- root: `tests/users/updateProfileName.test.ts`, `tests/users/recordVisit.test.ts` (herschreven), `tests/users/profileQuery.test.ts`
-- app: `app/tests/visit.test.ts`, `app/tests/nameError.test.ts`, `app/tests/infoRoutes.test.ts`
-
-Aangepaste bestaande tests (bewust):
-- `tests/readWhitelist/_world.ts`: `SHAPE.ownProfile` zonder `lastVisitAt`. De seed vult hem nog wel: zo bewijst de test dat hij niet lekt.
-- `tests/readWhitelist/inventory.test.ts`: `users:profile` erbij.
-- `app/tests/routeAccess.test.ts`: de test "bevat in 15a alleen /inloggen" kijkt nu naar de set van 15b.
-- `tests/users/recordVisit.test.ts`: "server throttled niet" vervalt (punt 2).
-
-
-Doc-deliverables voor B: cascade-rij U11 (`deleteSelf` ruimt het bezoek op) in `cascade-matrix.md`; de runbook-regels hieronder in `external-services.md` §Convex; design.md §10 nr. 14 op "opgelost".
-
-### Ops-runbook (aanvulling op B's regel in `external-services.md`)
-
-- `recordVisit` staat in het dashboard onder Functions. Verwacht één aanroep per terugkeer naar de app, hoogstens één per uur per user. In de bezoektabel verandert hoogstens één keer per uur iets. Na een `recordVisit` volgt geen `users:current` en geen `users:profile`.
-- De tabwissel: `users:profile` draait bij het openen van Profiel, en daarna alleen als je eigen rij wijzigt. Na een wissel naar een andere tab: geen `users:profile` meer, ook niet als je naam op een ander toestel wijzigt.
+De contracten staan in de tests: root `tests/users/{updateProfileName,recordVisit,profileQuery}.test.ts`, app `app/tests/{visit,nameError,infoRoutes}.test.ts`. A paste bewust aan: `tests/readWhitelist/_world.ts` en `inventory.test.ts` (WP23), `app/tests/routeAccess.test.ts` (WP15a). Het runbook voor `recordVisit` en de tabwissel staat in [`external-services.md`](../conventions/external-services.md) §Convex. Cascade-rij U11 staat in [`cascade-matrix.md`](../cascade-matrix.md).
 
 ### Regie-besluiten (2026-11-03)
 
 | # | Vraag van A | Besluit |
 |---|---|---|
-| 1 | AWS-bezoek migreren? | Nee (Wouter). Het eerste bezoek na T0 vult de bezoektabel. `users.lastVisitAt` blijft voorlopig in het schema, ongebruikt. Opruimen staat op de backlog in `migratie-status.md`. |
+| 1 | AWS-bezoek migreren? | Nee (Wouter). Het eerste bezoek na T0 vult de bezoektabel. `users.lastVisitAt` opruimen staat in `migratie-status.md`. |
 | 2 | WP23-tests aanpassen? | Ja (regie). De inventaristest vraagt precies om zo'n bewuste wijziging. |
-| 3 | Eigen bezoektabel? | Ja (Wouter). Invariant 6 en gate-stap 4 blijven zoals ze zijn. |
-| 4 | Teksten | Ingevuld in `WP15b-info-teksten.md` (Wouter): contact `wouter@clubalmanac.com`, alleen het adres (geen telefoon), de website blijft met de foto's. Clerk valt onder het EU-VS Data Privacy Framework ([Clerk DPF-notice](https://clerk.com/legal/dpf)). De back-upbelofte vervalt: het Starter-plan van Convex heeft geen automatische back-ups ([Convex docs](https://docs.convex.dev/database/backup-restore)). |
+| 3 | Eigen bezoektabel? | Ja (Wouter). |
+| 4 | Teksten | Contact `wouter@clubalmanac.com`, alleen het adres, de website met de foto's (Wouter). Clerk valt onder het EU-VS Data Privacy Framework ([Clerk DPF-notice](https://clerk.com/legal/dpf)). Geen back-upbelofte: het Starter-plan van Convex heeft geen automatische back-ups ([Convex docs](https://docs.convex.dev/database/backup-restore)). |
 | 5 | Probleem melden | Naar een feature-WP (regie). In 15b alleen Contact via `mailto:`. |
 
-## Gate build 45 (2026-11-03) en fix-cyclus 1
+## Verloop
 
-Gate-stappen 1 tot en met 7 zijn groen, met het dashboard als bewijs. De tabwissel stopt `users:profile`, en een terugkeer naar de app geeft geen `recordVisit` binnen het uur. Er zijn twee bevindingen. Fix-cyclus 1 doet alleen B, want het gaat om schermgedrag zonder pure logica. B checkt de fixes in de simulator bij de grootste AX-stand.
+A → regie-besluiten → B → audit (geen blockers) → gate → één fix-cyclus (alleen B).
 
-| # | Bevinding | Gewenst gedrag |
-|---|---|---|
-| F1 | De bevestiging "Je naam is opgeslagen." blijft op Profiel staan, ook na een wissel naar een andere tab en terug. | De bevestiging en de foutmelding verdwijnen ook zodra je Profiel verlaat (besluit Wouter). Typen en opnieuw opslaan wissen ze al. Een antwoord dat binnenkomt terwijl je weg bent, staat er bij terugkomst niet meer. |
-| F2 | Bij grote tekst wordt de kop "Over deze app" op Over de app afgekapt tot "Over deze a". | Elke kop en elke tekst op de Info-pagina's, op Profiel en op Instellingen loopt door op een volgende regel. Nergens valt tekst weg, ook niet bij de grootste AX-stand. |
+| Cyclus | F | Kern | Bron |
+|---|---|---|---|
+| 1 | F1 | De bevestiging en de foutmelding op Profiel verdwijnen zodra je Profiel verlaat. Een antwoord dat binnenkomt terwijl je weg bent, toont niets meer. | gate build 45 |
+| 1 | F2 | Bij een live wissel van de tekstgrootte werd de kop "Over deze app" afgekapt. RN 0.88 hergebruikt de gemeten tekst per node; `Text` hermeet nu bij een andere `fontScale`. | gate build 45 |
+
+## Gate-uitslag
+
+**Build 45 (2026-11-03):** stap 1–7 ✅, met het dashboard als bewijs:
+- de tabwissel stopt `users:profile`;
+- een wijziging in de rij via het dashboard geeft buiten Profiel alleen `users:current`;
+- terug naar de app binnen het uur: geen `recordVisit`, en `userVisits` heeft één rij;
+- uitgelogd: Inloggen · Info, zonder user-gegevens;
+- "Geen internet" bij een koude start offline, na ongeveer 15 s.
+
+Twee bevindingen: F1 en F2.
+
+**Build 46 (2026-11-04), op `997b045`:** F1 en F2 ✅.
+
+## Backlog (kan-punten)
+
+- `LARGE_TEXT_SCALE` (1,2, de grens waarop het icoon in `Notice` boven de tekst gaat) wordt een thema-token (audit N1).
+- Een test voor de hook `useRecordVisit`. Nu is alleen de pure logica in `visit.ts` getest (audit N2).
+- Een mislukte `mailto:` (geen mail-app) faalt stil. Een melding met het adres zou helpen (audit N3).
+- Bij de grootste AX-stand breekt een heel lang woord in de lopende tekst nog midden in het woord (B).
