@@ -312,12 +312,12 @@ Let op: het bewerkformulier vulde het datumveld vooraf met `sortDate || createdA
 
 **Jaar en volgorde in de app.** De datum van een groep of album is `sortDate`, anders `createdAt`. Het jaar is het kalenderjaar van die datum in Nederlandse tijd (invariant 11). Een gemigreerde dag staat op UTC-middernacht, en dat is in Nederland 01:00 of 02:00 op dezelfde dag: het jaar klopt dus ook op 1 januari. Volgorde: nieuwste datum eerst, dan naam, dan id.
 
-**Getallen.** Nog niet geteld. De AWS-export staat niet meer lokaal (het runbook wist hem na een seed), en dev-Convex heeft het veld niet. Wouter telt bij stap 3 van de migratie hieronder.
+**Getallen.** Geteld op de prod-extract van 2026-11-04, bij stap 3 hieronder.
 
 | | Totaal | Met `sortDate` | In een ander jaar dan `createdAt` | Onleesbaar |
 |---|---|---|---|---|
-| Groepen (prod) | — | — | — | — |
-| Albums (prod) | — | — | — | — |
+| Groepen (prod, 2026-11-04) | 6 | 1 | 0 | 0 |
+| Albums (prod, 2026-11-04) | 17 | 4 | 1 | 0 |
 
 **Migratie op dev: herladen met de WP12-tooling.** Een backfill kan niet: de koppeling van AWS-id naar Convex-id wordt niet bewaard, dus een los script weet niet welk Convex-album bij welk AWS-album hoort. Prod heeft niets extra's nodig: de T0-run gebruikt de nieuwe transform vanzelf.
 
