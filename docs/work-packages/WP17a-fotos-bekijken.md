@@ -4,15 +4,28 @@
 
 ## Productdoel
 
-Een lid opent een album en ziet de foto's rechtop, en snel genoeg om erdoor te bladeren. Groeps- en albumcovers en profielfoto's verschijnen op de plekken waar WP16 nu een letter toont. Niemand zonder toegang tot een foto krijgt het beeld te zien: niet wie uitgelogd is, niet wie geen lid is, niet een ex-lid, en ook niet iemand die alleen een id of een oude link heeft.
+Een lid opent een album en ziet de foto's rechtop, en snel genoeg om erdoor te bladeren. Groeps- en albumcovers en profielfoto's verschijnen op de plekken waar WP16 nu een letter toont. Niemand zonder toegang tot een foto krijgt het beeld te zien: niet wie uitgelogd is, niet wie geen lid is, niet een ex-lid, en ook niet iemand die alleen een id of een oude link heeft. Een profielfoto is openbaar (besluit 8).
+
+## Besluiten Wouter 2026-11-06 (op A's open vragen)
+
+1. **Beeldpad: vorm B.** Een httpAction die bij elk verzoek de login en de foto-toegang checkt. Geen `getUrl` naar de client.
+2. **Verkleinde versies: eigen WP ([WP25](./README.md)).** Het begint met een spike: kan Convex verkleinen, hoeveel originelen zijn HEIC. WP25 is af vóór de gate van 17a; B van 17a hoeft er niet op te wachten. Het beeldpad van 17a neemt een formaat aan (*klein*, *groot*) en geeft het origineel zolang dat formaat er niet is. Vraag 9 (wat `exifOrientation` betekent) gaat mee naar WP25.
+3. **Cache op het toestel:** gewist bij uitloggen. Wat een ex-lid al in de cache heeft, accepteren we.
+4. **Gemelde foto's:** zoals v1, gewoon in het album, zonder markering.
+6. **Album gelezen:** zoals A adviseert, bij openen met minstens één geladen foto, en opnieuw bij een foto die erbij komt terwijl het scherm open is.
+8. **Een profielfoto is openbaar, ook uitgelogd.** Je ziet hem zonder gedeelde groep en zonder toegang tot de foto erachter. Gevolgen:
+   - Het beeldpad voor een profielfoto checkt geen login en geen groep. Het geeft alleen het beeld dat op dat moment de profielfoto is; een oud of ander beeld nooit.
+   - Een foto als profielfoto instellen maakt dat beeld openbaar. De gate op `users.updateProfile` (WP24 invariant 8) is daarmee de enige drempel. WP17b ("als profielfoto instellen") laat de user dat weten.
+   - WP24 heraudit N2 (`groups.addMember` zonder instemming geeft het profielbeeld prijs) is geen lek meer. Kernvondst 7 (invite-landing) ook niet: de landing mag de profielfoto van de afzender tonen (WP19), via het user-id, nog steeds zonder `storageId` (invariant 10).
+   - De telling voor vraag 8 vervalt.
 
 ## Invarianten
 
-1. **Het beeld volgt de foto-toegang.** Bytes van een foto krijgt alleen wie er foto-toegang toe heeft (`canAccessPhoto`, WP23). Een id, een `storageId` of een URL alleen is nooit genoeg. Dit geldt voor elk beeld: albumfoto's, covers en profielfoto's.
-2. **Wie de toegang verliest, verliest het beeld.** Na vertrek uit een groep, verwijdering uit een album of verwijdering van de foto levert een eerder verkregen link of id het beeld niet meer op. Hoe snel dat moet, is open vraag 1. Of een cache op het toestel van het ex-lid hieronder valt, is open vraag 3.
-3. **Een profielfoto lekt geen foto.** Je ziet de profielfoto van iemand met wie je een groep deelt, en van niemand anders. Na vertrek uit de groep zie je hem niet meer (WP24 N4). Een profielfoto die een foto is waar de kijker geen toegang toe heeft, geeft die foto niet prijs (WP24 heraudit N2, via `groups.addMember` zonder instemming).
-4. **Elk beeld staat rechtop, en wordt precies één keer gedraaid.** Raster, detail, covers en profielfoto's volgen `photos.exifOrientation` uit Convex, niet de EXIF-tag in het bestand ([WP8](./WP8-photo-rotation.md) §Frontend-contract). Een foto waarvan het bestand zelf een andere oriëntatie draagt dan de DB, toont de DB-stand.
-5. **Een album openen downloadt niet elke foto op volle grootte.** Een album van 50 foto's opent in een paar seconden op 4G en kost geen honderden MB. Het meetpunt legt Wouter vast bij open vraag 2; regie stelt voor: de eerste rij is binnen 3 seconden zichtbaar op 4G.
+1. **Het beeld van een foto volgt de foto-toegang.** Bytes van een albumfoto of cover krijgt alleen wie er foto-toegang toe heeft (`canAccessPhoto`, WP23). Een id, een `storageId` of een URL alleen is nooit genoeg. Profielfoto's: invariant 3.
+2. **Wie de toegang verliest, verliest het beeld.** Na vertrek uit een groep, verwijdering uit een album of verwijdering van de foto levert een eerder verkregen link of id het beeld niet meer op, bij het volgende verzoek (besluit 1). De cache op het toestel valt hier buiten (besluit 3).
+3. **Een profielfoto is openbaar, en alleen de profielfoto.** Iedereen, ook uitgelogd, krijgt via het user-id het beeld dat nu de profielfoto van die user is (besluit 8). Een vorige profielfoto, of een ander beeld van die user, levert het pad nooit op. Geen profielfoto: hetzelfde antwoord als een onbekend user-id.
+4. **Elk beeld staat rechtop, en wordt precies één keer gedraaid.** Raster, detail, covers en profielfoto's volgen `photos.exifOrientation` uit Convex, niet de EXIF-tag in het bestand ([WP8](./WP8-photo-rotation.md) §Frontend-contract). Een foto waarvan het bestand zelf een andere oriëntatie draagt dan de DB, toont de DB-stand. Volledig te halen met de formaten uit WP25 (kernvondst 4).
+5. **Een album openen downloadt niet elke foto op volle grootte.** Een album van 50 foto's opent in een paar seconden op 4G en kost geen honderden MB. Meetpunt (regie-voorstel): de eerste rij is binnen 3 seconden zichtbaar op 4G. Te halen met WP25.
 6. **Een album is gelezen zodra de user de foto's zag.** Het openen van het albumscherm, met foto's in beeld, zet de teller van dat album in Groep op nul ([WP16](./WP16-groepen.md) invariant 3). Laden of een fout telt niet als gezien.
 7. **Wie geen lid meer is, ziet dat netjes, ook in een album of op een foto.** De album- en foto-reads geven `NOT_MEMBER` (WP16 audit N3), en de app toont dezelfde NL-melding en weg naar Mijn groepen als in WP16 invariant 5. Geen crash en geen oude inhoud.
 8. **Live alleen voor het scherm in beeld.** Album- en foto-reads lopen via `useLiveQuery` (WP15a invariant 5). Op een andere tab of in de achtergrond loopt geen query.
@@ -75,7 +88,7 @@ Een lid opent een album en ziet de foto's rechtop, en snel genoeg om erdoor te b
 | 3 | Wouter + regie | besluiten op A's open vragen, vooral 1, 2 en 3 |
 | 4 | B (`wp-b`), eigen sessie | impl tot groen, simulator-check in licht en donker en bij de grootste tekst, runbook-regel |
 | 5 | audit (`wp-audit`), eigen sessie | rapport in chat |
-| 6 | red-team, eigen sessie | zoekt actief een pad naar beeldbytes zonder foto-toegang: met een id, een `storageId`, een oude URL, een profielfoto, als ex-lid of uitgelogd. Krijgt alleen het productdoel en de diff. Rapport verbatim naar Wouter. |
+| 6 | red-team, eigen sessie | zoekt actief een pad naar beeldbytes zonder foto-toegang: met een id, een `storageId`, een oude URL, als ex-lid of uitgelogd, en via het openbare profielpad een ander beeld dan de actuele profielfoto. Krijgt alleen het productdoel en de diff. Rapport verbatim naar Wouter. |
 | 7 | Wouter | gate |
 
 ## Cross-refs
@@ -312,4 +325,4 @@ De inventaristests: `tests/images/noStorageIds.test.ts` (geen `_storage`-id in e
 | `app/tests/photos.test.ts` | Pure logica: de volgorde in het album, de datum van een foto, de draaiing per `exifOrientation` (tegen een onafhankelijke afleiding uit de EXIF-definitie), de markeringen die blijven staan (invariant 12), wanneer `markSeen` loopt (vraag 6) |
 | `app/tests/groupRoutes.test.ts` (A vult aan) | Het pad en het routebestand van het foto-detail |
 
-De pure logica staat in de app-tests als functies in `app/src/lib/photos.ts` en `app/src/lib/groupRoutes.ts`. B kiest de vorm van de schermen zelf. Hangt een besluit van Wouter af van vraag 1, 2, 8 of 9 anders uit dan het advies, dan past A in ronde 2 de tests aan.
+De pure logica staat in de app-tests als functies in `app/src/lib/photos.ts` en `app/src/lib/groupRoutes.ts`. B kiest de vorm van de schermen zelf. Hangt een besluit van Wouter af van vraag 1, 2, 8 of 9 anders uit dan het advies, dan past A in ronde 2 de tests aan. *Regie: besluit 8 wijkt af (§Besluiten Wouter); A past `access.test.ts`, `httpRoute.test.ts` en de invite-landing aan.*
