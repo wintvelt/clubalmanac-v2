@@ -103,7 +103,7 @@ Twee parallelle tracks. Beide kunnen onafhankelijk doorlopen worden, maar moeten
 
 **Besluit 2026-10-25: verse app in `app/` van deze repo, geen upgrade van de oude.**
 
-- Oude app (`/Users/wintvelt/Documents/DEV/DEV/clubalmanac-app`, Expo 47, ~10k regels JS, 47 schermen) is alleen referentie en checklist. Upgraden loont niet: de datalaag (Amplify + react-query) gaat er toch uit.
+- Oude app (`~/Code/v1/clubalmanac-app`, Expo 47, ~10k regels JS, 47 schermen) is alleen referentie en checklist. Upgraden loont niet: de datalaag (Amplify + react-query) gaat er toch uit.
 - Monorepo, zodat de app de getypeerde Convex-API (`convex/_generated`) direct importeert.
 - Zelfde App Store-identiteit: bundle ID `com.wintvelt.clubalmanac-app`, EAS project `bd5c6c93-059d-409f-bca5-f658ec5722d5`. Apple heeft de oude app op 2026-07-28 uit distributie gehaald (geen update in 3 jaar); het record bestaat nog en een goedgekeurde update zet hem terug. De nieuwe app gaat live als update, bestaande users hoeven niets te zoeken.
 - TestFlight werkt terwijl de app uit distributie is ([WP14](./work-packages/WP14-eas-testflight-spike.md) ✅ 2026-10-25). Elke app-WP kan via TestFlight op een toestel getest worden; runbook in [`external-services.md`](./conventions/external-services.md) §EAS-build en TestFlight.

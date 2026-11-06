@@ -47,7 +47,7 @@ User-truth, niet impl-vorm.
 - **migratie-plan**: §Fase 2 email-bullet ([`docs/migratie-plan-convex.md:910`](../migratie-plan-convex.md)), §Email infrastructure (zoek "Verified-sender-check" rond r.740-745)
 - **cascade-matrix**: rij IB1 (bounce → expire + notify), rij FL2 (deny-pad email naar owner) — [`docs/cascade-matrix.md:126,133`](../cascade-matrix.md)
 - **oude AWS-code** (alleen A leest):
-  - `/Users/wintvelt/Documents/DEV/DEV/blob-images-api-photos/handlersPhoto/flagPhotoDecide.js` r.16-56 (deny-template NL)
+  - `~/Code/v1/blob-images-api-photos/handlersPhoto/flagPhotoDecide.js` r.16-56 (deny-template NL)
   - `blob-images-api*` repo's voor invite/accept/decline/bounce/problem-report SES-templates — A inventariseert exact pad in spec-aanvulling
 - **externe service**: [`external-services.md` §Mailjet](../conventions/external-services.md) — drie known-issues, twee als hard gate
 - **bestaande backend-haken** (B implementeert *in*, niet *vanaf nul*):

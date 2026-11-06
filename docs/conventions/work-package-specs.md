@@ -18,7 +18,7 @@ Aanvulling op [`ab-audit-workflow.md`](./ab-audit-workflow.md). Voor elk werkpak
 | B | ❌ | impl tot tests groen | impl in `convex/` of `app/`, één commit |
 | Audit | ❌ | beoordeelt geheel | tekst-rapport in chat, geen commits |
 
-Oude code = de AWS-backend-repos (`blob-images-api*`, `blob-images-common`) én de oude iPhone-app (`/Users/wintvelt/Documents/DEV/DEV/clubalmanac-app`, besluit 2026-10-25).
+Oude code = de AWS-backend-repos (`blob-images-api*`, `blob-images-common`) én de oude iPhone-app (`~/Code/v1/clubalmanac-app`, besluit 2026-10-25).
 
 Het toegangs-onderscheid is bias-vermijding. Alleen A vertaalt oude flows; B en Audit toetsen tegen de spec, niet tegen de legacy.
 

@@ -1,6 +1,6 @@
 # Remote werkplek (Mac-server)
 
-Advies, 2026-11-04. Nog niets geïnstalleerd of ingesteld. Doel: regie-, A-, B- en audit-sessies lopen door als de laptop dicht is.
+Opzet en uitkomst van de tests, 2026-11-04 tot 2026-11-06. Doel: regie-, A-, B- en audit-sessies lopen door als de laptop dicht is. Alle stappen uit §Testplan zijn geslaagd, behalve voorstel-kaarten op afstand (stap 6).
 
 ## Besluiten Wouter (2026-11-04)
 
@@ -47,7 +47,7 @@ Schermdelen is alleen nodig bij de eerste installatie (login, macOS-rechten, eer
 Wouter voert dit zelf uit. Versies komen uit de repo en de laptop van 2026-11-04.
 
 1. Server-Mac: Apple Silicon, macOS die Xcode 27.2 draait (laptop: macOS 27.2). Ongeveer 80 GB vrij voor Xcode, simulators en `node_modules`.
-2. De gebruiker op de server is `macserver` (vastgesteld 2026-11-04), dus de paden zijn `/Users/macserver/…`. Het pad naar de oude repo's in `CLAUDE.md` en de naam van de memory-map (`-Users-macserver-Code-clubalmanac-v2`) wijken daardoor af; los dat op vóór A op de server draait. macOS-instellingen: niet automatisch slapen, opnieuw starten na stroomuitval, Extern inloggen (SSH) en Scherm delen aan.
+2. De gebruiker op de server is `macserver` (vastgesteld 2026-11-04), dus de paden zijn `/Users/macserver/…`. De naam van de memory-map wijkt daardoor af (`-Users-macserver-Code-clubalmanac-v2`). De docs noemen de oude repo's met `~/Code/v1/`; dat klopt op de server, en A draait niet meer op de laptop. macOS-instellingen: niet automatisch slapen, opnieuw starten na stroomuitval, Extern inloggen (SSH) en Scherm delen aan.
 3. Adres van de server in het thuisnetwerk: `macserver@macserver.home` (staat bij **Extern inloggen**). Kopiëren gaat met `scp` vanaf de laptop. Inloggen zonder wachtwoord: `ssh-keygen -t ed25519` en `ssh-copy-id macserver@macserver.home` op de laptop (gedaan 2026-11-06, één sleutel in `~/.ssh/authorized_keys`). Toegang van buiten huis: bv. Tailscale, voor SSH en Scherm delen.
 4. Xcode 27.2 met het iOS-platform. Daarna `sudo xcode-select -s /Applications/Xcode.app`, `sudo xcodebuild -license accept`, `xcodebuild -runFirstLaunch`.
 5. Homebrew, daarna `brew install fnm gh cocoapods tmux`. Git komt mee met Xcode.
@@ -57,7 +57,7 @@ Wouter voert dit zelf uit. Versies komen uit de repo en de laptop van 2026-11-04
 7. `npm install -g eas-cli@27.4.1`.
 8. GitHub-token: maak een fine-grained token voor alleen `wintvelt/clubalmanac-v2` (Contents en Pull requests: lezen en schrijven). Een fine-grained token geeft alle gekozen repo's dezelfde rechten; daarom gaat `clubalmanac-app` niet via het token (zie stap 10). Daarna `gh auth login` met dat token en `gh auth setup-git`. Gedaan 2026-11-04: er stond al een oudere `gh`-login voor `wintvelt` op de server; die is vervangen door het nieuwe token (`github_pat_…`). `git push --dry-run` vanuit Wouters terminal werkt.
 9. Repo clonen naar `/Users/wintvelt/Code/clubalmanac-v2` (zelfde pad als de laptop). Daarna `npm ci` in de root en in `app/`. Check: `npm run typecheck` en `npm test` op beide plekken, net als `.github/workflows/ci.yml`. Op de server groen op 2026-11-04.
-10. Oude repo's clonen naar `~/Documents/DEV/DEV/` op de server: `blob-images-api`, `blob-images-api-user`, `-groups`, `-photos`, `-invites`, `-features`, `blob-images-common` (alle publiek) en `clubalmanac-app` (privé, dus niet via het token). `Documents` op de laptop staat in iCloud en de meeste bestanden van de oude app staan alleen daar; `scp` en `git bundle` falen daarop. Werkende route: op de laptop clonen uit GitHub naar `~/Code`, daarvan een `git bundle` maken, die met `scp` naar de server sturen en daar clonen. Gedaan 2026-11-04. `Documents` op de server staat niet in iCloud (`xattr ~/Documents` is leeg). Let op: `blob-images-api-features` en `blob-images-common` staan nu níet op de laptop, wel op GitHub.
+10. Oude repo's in `~/Code/v1/` op de server: `blob-images-api`, `blob-images-api-user`, `-groups`, `-photos`, `-invites`, `-features`, `blob-images-common` (alle publiek) en `clubalmanac-app` (privé, dus niet via het token). Ze kwamen er via een `git bundle` van de laptop (de oude app staat op de laptop grotendeels alleen in iCloud). Verhuisd van `~/Documents/DEV/DEV/` naar `~/Code/v1/` op 2026-11-06. De kopie op de laptop blijft staan, ongebruikt.
 11. Memory kopiëren: `~/.claude/projects/-Users-wintvelt-Code-clubalmanac-v2/memory/` van de laptop naar `~/.claude/projects/-Users-macserver-Code-clubalmanac-v2/memory/` op de server. Anders mist de server de feedback-regels. Gedaan 2026-11-04, net als de oude repo's.
 12. Convex CLI: geen aparte installatie, `npx convex` uit de repo (1.45.0).
 13. Claude-desktop-app installeren en inloggen. Zet **Connect new sessions to Remote Control** aan. Maak een environment aan: selector onder het invoerveld → **New environment** → tab **Local** → map `~/Code/clubalmanac-v2` → **Create environment**. Een Local-environment is een opgeslagen "draai op deze Mac, in deze map". Zet in `~/.claude/settings.json` de deny-regels uit §Goedkeuren op afstand. Stand 2026-11-04: app, login, environment, `defaultMode: auto` en de deny-regels klaar (getest: nieuwe sessie start in Auto, `eas build --help` geweigerd). Ook klaar: `.env.local` en `app/.env.local` gekopieerd, `npx convex login`, `eas login` (`eas whoami` = `wintvelt`).
@@ -144,11 +144,9 @@ Het blijft een schrijfactie op een extern account, dus **Wouter draait het zelf*
 | Risico of vraag | Toelichting | Beslissing door |
 |---|---|---|
 | GitHub-token op de server | Elke sessie kan het token gebruiken, ook buiten `git push` om (bv. `gh api`). De GitHub-ruleset houdt `main` dicht, maar een branch pushen kan elke sessie. Beperking: token alleen voor `clubalmanac-v2`, deny op `gh auth` en `gh api`. Restrisico: een push naar `clubalmanac-v2` via een omweg | Geaccepteerd |
-| Sub-sessies via Remote Control | De docs zeggen niet expliciet dat sub-sessies en voorstel-kaarten op afstand werken | §Testplan |
 | Herstart van de server | Tot Wouter inlogt, draait er geen sessie. Lopend werk stopt | Geaccepteerd |
 | Sleutelhanger via SSH | Via SSH is de login-sleutelhanger vaak op slot (`gh`, `EXPO_TOKEN`). Dan eerst `security unlock-keychain` | Bij installatie |
 | Twee checkouts | Laptop en server lopen uit elkaar. Werk op één plek tegelijk; pull op de laptop pas na de push | Discipline |
-| Vaste laptop-paden | `CLAUDE.md`, `.claude/agents/wp-{a,b,audit}.md` en `work-package-specs.md` noemen `/Users/wintvelt/Documents/DEV/DEV/`. Op de server is dat `/Users/macserver/…`. Voorstel: overal `~/Documents/DEV/DEV/` | Regie |
 | Gebruik | Meer parallelle sessies, ook 's nachts, telt mee in de limiet van het Claude-abonnement | Wouter |
 | Nachtwerk zonder antwoord | Een sessie die op een vraag wacht, staat stil tot Wouter antwoordt. Push-meldingen helpen; `auto`-mode vermindert het aantal vragen | Wouter |
 
