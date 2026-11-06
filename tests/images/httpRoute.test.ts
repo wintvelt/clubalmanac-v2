@@ -304,3 +304,126 @@ describe("GET /beeld/profiel/<userId> — openbaar (besluit 8)", () => {
     expect(await res.text()).not.toContain(PROFILE_BYTES);
   });
 });
+
+// --- Content-Type (invariant 17, fix-cyclus 3, N-S2) -------------------------------
+//
+// Veel gemigreerde beelden staan in storage als `application/octet-stream`
+// (regie op dev: 444 van 1002). Dan bepalen de eerste bytes het type. Beide
+// beeldpaden sturen de bytes ongewijzigd en altijd `nosniff`. Het type:
+//   - opgeslagen als een rasterbeeld (image/jpeg, png, webp, heic, heif, gif):
+//     dat type;
+//   - anders (octet-stream, leeg, of een ander type): JPEG, PNG, WebP of HEIC
+//     uit de eerste bytes; onbekend: `application/octet-stream`.
+// Nooit een ander opgeslagen type: een HTML- of SVG-bestand als profielfoto
+// zou anders op het openbare profielpad in een browser draaien.
+
+const bytesOf = (...parts: (number[] | string)[]) =>
+  new Uint8Array(parts.flatMap((p) => (typeof p === "string" ? [...p].map((c) => c.charCodeAt(0)) : p)));
+
+const JPEG = bytesOf([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10], "JFIF", [0x00, 0x01, 0xff, 0xd9]);
+const PNG = bytesOf([0x89], "PNG", [0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d], "IHDR");
+const WEBP = bytesOf("RIFF", [0x24, 0x00, 0x00, 0x00], "WEBPVP8 ");
+const HEIC = bytesOf([0x00, 0x00, 0x00, 0x18], "ftypheic", [0x00, 0x00, 0x00, 0x00]);
+const UNKNOWN = bytesOf("GEEN-BEELD", [0x00, 0x01, 0x02, 0x03, 0xfe, 0xfd]);
+const HTML = bytesOf("<!doctype html><script>alert(1)</script>");
+const SVG = bytesOf('<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>');
+
+// Een foto van owen in album A met dit beeld (mia heeft toegang), en hetzelfde
+// beeld als profielfoto van owen.
+async function storedImage(t: T, bytes: Uint8Array<ArrayBuffer>, type: string | null) {
+  const s = await setup(t);
+  const { photoId } = await t.run(async (ctx) => {
+    const blob = type === null ? new Blob([bytes]) : new Blob([bytes], { type });
+    const storageId = await ctx.storage.store(blob);
+    const photoId = await ctx.db.insert("photos", {
+      ownerId: s.owen,
+      storageId,
+      ratingCount: 0,
+      createdAt: Date.now(),
+    });
+    await ctx.db.patch(s.owen, { profilePhotoStorageId: storageId });
+    return { photoId };
+  });
+  await withUser(t, "user_owen").mutation(api.albums.addPhoto, { albumId: s.A, photoId });
+  return { ...s, photoId };
+}
+
+async function both(t: T, s: { photoId: Id<"photos">; owen: Id<"users"> }) {
+  return {
+    foto: await withUser(t, "user_mia").fetch(photoPath(s.photoId), { method: "GET" }),
+    profiel: await t.fetch(profilePath(s.owen), { method: "GET" }),
+  };
+}
+
+async function expectServed(res: Response, bytes: Uint8Array, type: string) {
+  expect(res.status).toBe(200);
+  expect(res.headers.get("Content-Type")).toBe(type);
+  expect(res.headers.get("X-Content-Type-Options")).toBe("nosniff");
+  expect(new Uint8Array(await res.arrayBuffer())).toEqual(bytes);
+}
+
+describe("beeldpaden — Content-Type (invariant 17)", () => {
+  it("octet-stream met JPEG-bytes: 200, dezelfde bytes, image/jpeg (foto- en profielpad)", async () => {
+    const t = convexTest(schema, modules);
+    const s = await storedImage(t, JPEG, "application/octet-stream");
+    const { foto, profiel } = await both(t, s);
+    await expectServed(foto, JPEG, "image/jpeg");
+    await expectServed(profiel, JPEG, "image/jpeg");
+  });
+
+  it("zonder opgeslagen type, met JPEG-bytes: image/jpeg", async () => {
+    const t = convexTest(schema, modules);
+    const s = await storedImage(t, JPEG, null);
+    const { foto, profiel } = await both(t, s);
+    await expectServed(foto, JPEG, "image/jpeg");
+    await expectServed(profiel, JPEG, "image/jpeg");
+  });
+
+  it.each([
+    ["PNG", PNG, "image/png"],
+    ["WebP", WEBP, "image/webp"],
+    ["HEIC", HEIC, "image/heic"],
+  ] as const)("octet-stream met %s-bytes: %s", async (_name, bytes, type) => {
+    const t = convexTest(schema, modules);
+    const s = await storedImage(t, bytes, "application/octet-stream");
+    const { foto, profiel } = await both(t, s);
+    await expectServed(foto, bytes, type);
+    await expectServed(profiel, bytes, type);
+  });
+
+  it("octet-stream met onbekende bytes: 200, dezelfde bytes, application/octet-stream", async () => {
+    const t = convexTest(schema, modules);
+    const s = await storedImage(t, UNKNOWN, "application/octet-stream");
+    const { foto, profiel } = await both(t, s);
+    await expectServed(foto, UNKNOWN, "application/octet-stream");
+    await expectServed(profiel, UNKNOWN, "application/octet-stream");
+  });
+
+  it("een opgeslagen rasterbeeld-type gaat ongewijzigd door", async () => {
+    const t = convexTest(schema, modules);
+    const s = await storedImage(t, PNG, "image/png");
+    const { foto, profiel } = await both(t, s);
+    await expectServed(foto, PNG, "image/png");
+    await expectServed(profiel, PNG, "image/png");
+  });
+
+  it.each([
+    ["text/html", HTML],
+    ["image/svg+xml", SVG],
+    ["text/html; charset=utf-8", HTML],
+  ] as const)("opgeslagen als %s: nooit dat type, maar application/octet-stream", async (stored, bytes) => {
+    const t = convexTest(schema, modules);
+    const s = await storedImage(t, bytes, stored);
+    const { foto, profiel } = await both(t, s);
+    await expectServed(foto, bytes, "application/octet-stream");
+    await expectServed(profiel, bytes, "application/octet-stream");
+  });
+
+  it("opgeslagen als text/html, maar met JPEG-bytes: image/jpeg", async () => {
+    const t = convexTest(schema, modules);
+    const s = await storedImage(t, JPEG, "text/html");
+    const { foto, profiel } = await both(t, s);
+    await expectServed(foto, JPEG, "image/jpeg");
+    await expectServed(profiel, JPEG, "image/jpeg");
+  });
+});
