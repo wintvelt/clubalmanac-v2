@@ -87,7 +87,9 @@ Doe dit met de laptop dicht, alleen met de Claude-app op de iPhone. Gebruik een 
 
 **Ask-regel voor push werkt niet (2026-11-06).** `Bash(git push:*)` als ask-regel gaf in desktop-app-sessies geen vraag, op de server én op de laptop; `git push` liep direct. Daarom terug naar deny. Daarna gekozen voor branches + PR's met een GitHub-ruleset op `main`.
 
-**Stap 7: geslaagd met de oude regel (2026-11-04).** Toen weigerde `Bash(git push:*)` elke push. Hertest met de nieuwe regel na de ruleset.
+**Stap 7: geslaagd (2026-11-06).** Met de nieuwe regel weigert `Bash(git push origin main:*)` een push naar `main`.
+
+**PR-werkwijze: geslaagd (2026-11-06).** Ruleset `main` actief (default branch, geen bypass, alleen merge commits, check `test`, geen force-push, niet verwijderen). Regie op de server maakte vanaf de iPhone de branch `regie/eas-cli-pin`, pushte en opende [wintvelt/clubalmanac-v2#1](https://github.com/wintvelt/clubalmanac-v2/pull/1). Wouter merget in de GitHub-app nadat `test` groen was. Het token heeft daarvoor ook **Pull requests: Read and write** nodig.
 
 **Stap 8: geslaagd, met een omweg (2026-11-04).** Met UTF-8 in de sessie lukten `pod install` en de build; de app toonde het inlogscherm in de iPhone 18 Pro-simulator (iOS 27.2). Na de installatie stopte `expo run:ios`, omdat de sessie System Events niet mag besturen (macOS-toestemming **Automatisering**); de sessie startte Metro daarna apart en opende de app met `xcrun simctl`. Toestemming geven: Apple-menu → **Systeeminstellingen** → **Privacy en beveiliging** → **Automatisering**, of **Sta toe** in de vraag die macOS toont bij de volgende `expo run:ios` (via Scherm delen). Gedaan 2026-11-04: Claude → System Events staat aan, net als **Let Claude use it** in de pane.
 
@@ -147,7 +149,6 @@ Het blijft een schrijfactie op een extern account, dus **Wouter draait het zelf*
 | Sleutelhanger via SSH | Via SSH is de login-sleutelhanger vaak op slot (`gh`, `EXPO_TOKEN`). Dan eerst `security unlock-keychain` | Bij installatie |
 | Twee checkouts | Laptop en server lopen uit elkaar. Werk op één plek tegelijk; pull op de laptop pas na de push | Discipline |
 | Vaste laptop-paden | `CLAUDE.md`, `.claude/agents/wp-{a,b,audit}.md` en `work-package-specs.md` noemen `/Users/wintvelt/Documents/DEV/DEV/`. Op de server is dat `/Users/macserver/…`. Voorstel: overal `~/Documents/DEV/DEV/` | Regie |
-| eas-cli-pin in het runbook | [`external-services.md`](./external-services.md) §EAS-build stap 2 pint nog 25.3.0; de praktijk is 27.4.1 | Regie |
 | Gebruik | Meer parallelle sessies, ook 's nachts, telt mee in de limiet van het Claude-abonnement | Wouter |
 | Nachtwerk zonder antwoord | Een sessie die op een vraag wacht, staat stil tot Wouter antwoordt. Push-meldingen helpen; `auto`-mode vermindert het aantal vragen | Wouter |
 
