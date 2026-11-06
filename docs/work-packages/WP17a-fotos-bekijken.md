@@ -137,13 +137,37 @@ Bronnen: de oude app (`screens/AlbumPhotos.jsx`, `PhotoDetail.jsx`, `GroupMember
 
 **Advies: B.** Het beeld volgt dan letterlijk de foto-toegang, bij elk verzoek, zonder geheim en zonder vervaltijd om over na te denken. Met verkleinde versies (vraag 2) zijn de verzoeken klein. De client vraagt een beeld op met een foto-id of een user-id, nooit met een `storageId` (invariant 10). Een beeld zonder toegang, een onbekend id en een gewist beeld geven precies hetzelfde antwoord (geen orakel). Uitgelogd: 401.
 
-**2. Verkleinde versies: ja.** Zie kernvondst 2 en 3. Advies: twee formaten, één keer gemaakt op de server en daarna bewaard: *klein* (lange zijde ~512 px: raster, covers in lijsten, avatars) en *groot* (lange zijde ~1600 px: detail, zoom, koppen). Het origineel blijft voor 17b (delen, downloaden). Gevolgen:
-- Schema: optionele velden op `photos` (additief). Een backfill over de 1601 foto's op dev en, na de T0-load, op prod. Volgens [`data-migration-preflight.md`](../conventions/data-migration-preflight.md): telling vooraf, preview-run op dev, een backfill die tellingen teruggeeft.
-- WP18: een upload maakt de formaten meteen. WP12: de load of een stap erna maakt ze voor de bestaande foto's.
-- Opslag groeit naar schatting met minder dan 10%.
-- Een foto zonder formaat (nog niet gemaakt, of het maken faalde) toont het origineel. Langzaam, maar nooit leeg.
-- Waar ze gemaakt worden (Node-action met een beeldbibliotheek, HEIC-ondersteuning) is een spike voor B of regie, vóór de impl. Lukt dat niet in Convex: terug naar regie (vorm D).
-- Meetpunt invariant 5: regie's voorstel (eerste rij binnen 3 seconden op 4G) is met *klein* ruim haalbaar.
+**2. Verkleinde versies.** *Input Wouter (2026-11-06, via regie):* er komt zeker een thumbnail-oplossing. De aparte image-service van v1, waarbij de app het formaat bij de aanroep meegaf, vindt hij "niet ideaal". Hoe en waar de verkleining in de nieuwe architectuur komt, beslist hij nog. Hieronder de feiten en de opties.
+
+*Hoe v1 het deed.*
+- Een aparte dienst op `img.clubalmanac.com`, buiten de v1-repo's. Het aanroep-formaat is dat van AWS' Serverless Image Handler: base64 van `{ bucket, key, edits: { resize: { width, height, fit: "cover" } } }`. Een Lambda verkleinde op verzoek uit het origineel in S3, met CloudFront ervoor. De cache-instellingen staan niet in de repo's; in de AWS-console (CloudFormation) zijn ze terug te vinden.
+- De app (`lib/image-helper.js`) bouwde de URL zelf uit de S3-sleutel en een breedte. Formaten per plek: 64 px (lijst gemelde foto's), 96×96 (avatar Profiel), 128 (publicaties), 256 (kaarten groep en album, Leden, uitnodigingen), 512 (raster), 600 (bewerkformulieren), 800 (foto-menu), min(1200, schermbreedte × 2,5) (detail en zoom), 1900 (koppen, achtergrond Profiel).
+- Cache op het toestel: `react-native-fast-image`, per URL. De URL hing alleen af van sleutel en formaat, dus hij bleef eindeloos geldig. Draaien in v1 schreef een nieuw bestand met een nieuwe sleutel, en dus een nieuwe URL.
+- De backend gebruikte dezelfde dienst in mails: de cover van de groep (600×200) in de uitnodiging, plus logo en handtekening. Een mailclient kan geen token meesturen, dus dat kon alleen omdat de dienst open was. v2 heeft geen beelden in mails (WP5). Wie dat later terug wil, heeft een open of ondertekende URL nodig: vorm B dekt het niet.
+- Het origineel ging nooit naar de app.
+
+*Opties voor v2.*
+
+| | Hoe | Upload (WP18) | 1601 bestaande foto's | WP12-tooling | Beeldpad (vraag 1) | Risico |
+|---|---|---|---|---|---|---|
+| **A. Bij upload, op de server** | Na de upload maakt een Node-action vaste formaten (bijvoorbeeld *klein* ~512 px, *groot* ~1600 px) en bewaart ze in Convex-storage. Optionele velden op `photos`. | De bestaande pijplijn na `/upload` (naast `extractMetadata`) krijgt een stap. | Backfill-action op dev en na de T0-load op prod, in batches, met tellingen (pre-flight). | Transform ongewijzigd. Load of runbook krijgt een stap erna. `verify`, `storageInventory`, `prune-storage` en `reset` moeten de formaten kennen. | Geeft het gevraagde formaat, anders het origineel. | Een beeldbibliotheek met native code in de Convex Node-runtime (spike). HEIC. |
+| **B. Op aanvraag, op de server, daarna bewaard** | Het eerste verzoek om (foto, formaat) maakt het formaat in de httpAction en bewaart het. Volgende verzoeken krijgen het bewaarde. | Ongewijzigd (eventueel vooraf opwarmen). | Geen backfill. Het eerste openen van een oud album is traag (verkleinen van 3,5 MB per foto). | Ongewijzigd, op de storage-checks na (zoals A). | Maakt, bewaart en serveert. Twee gelijktijdige verzoeken mogen niet twee keer bewaren. | Als A, plus wachttijd bij de eerste kijker en zwaardere httpActions. |
+| **C. Op het toestel bij upload** | De app verkleint voor de upload (bijvoorbeeld `expo-image-manipulator`) en stuurt origineel en formaten mee. | Upload met meerdere bestanden, idempotentie per set. | Offline: de WP12-tooling verkleint lokaal uit de S3-extract (Node met een beeldbibliotheek op Wouters machine) en laadt de formaten mee. | Transform en `load-files` krijgen de formaten. `verify` telt ze. | Als A | Geen native code in Convex. Wel: een client kan een formaat sturen dat niet bij het origineel past (melden, WP20). Twee bronnen van verkleining (app en tooling). |
+| **D. Externe beelddienst** (Cloudflare Images, of R2 met transformaties) | Zoals v1: het formaat in de URL, verkleind en gecachet aan de rand. Ondertekende URL's met vervaltijd. | Upload naar de dienst. | Migratie van alle bestanden naar de dienst. | `load-files` naar de dienst | Vorm C of D van vraag 1. Invariant 2 binnen de vervaltijd. | Nieuwe externe dienst, geheimen, runbook; dit is wat Wouter "niet ideaal" noemt. |
+
+Voor alle opties geldt:
+- De storage-orphancheck van WP10 (`photos.storageId` ∪ profielfoto's) ziet een formaat als wees, tot hij ze kent (A, B, C).
+- De opruiming na wissen (U7) neemt de formaten mee.
+- Formaten worden gemaakt uit de ruwe pixels, zonder EXIF. Daarmee is vraag 9 opgelost.
+- De opslag groeit met minder dan 10%.
+- Een foto zonder formaat toont het origineel: traag, maar nooit leeg.
+- Draaien (WP8) blijft alleen een DB-waarde: de formaten hoeven niet opnieuw.
+
+*Past het in 17a?* A's advies: **een eigen WP, vóór de gate van 17a, niet per se vóór B van 17a.**
+- Het raakt upload, schema, de WP12-tooling, monitoring en cascade, met een data-actie op 1601 foto's: een ander risicoprofiel (data/schema medium) dan 17a (beeldtoegang, security hoog, red-team). Samen wordt het een WP die de red-team niet meer overziet.
+- Wat er eerst moet: een spike. Kan de Convex Node-runtime verkleinen (A en B)? Hoeveel originelen zijn HEIC (telling)? Die uitkomst bepaalt mee of A, B of C overblijft.
+- Het contract tussen de twee WP's: het beeldpad van 17a neemt een formaat aan (*klein* of *groot*) en geeft het origineel zolang het formaat er niet is. Dan kan 17a-B bouwen en testen zonder op het formaten-WP te wachten. Gate-stap 4 (laadtijd op 4G) wacht wel op het formaten-WP.
+- Meetpunt invariant 5: regie's voorstel (eerste rij binnen 3 seconden op 4G) is met *klein* ruim haalbaar, met het origineel niet (kernvondst 3).
 
 **3. Cache op het toestel.** Advies: een diskcache, gewist bij uitloggen, net als de Clerk-opslag (WP15a). Dat is meer dan nice-to-have: bij vorm B is de cache-sleutel de URL, niet de user. Zonder wissen ziet de volgende user op hetzelfde toestel de beelden van de vorige. Wat een ex-lid in zijn cache heeft, accepteren: hij zag het eerder met recht, net als een screenshot.
 
@@ -170,7 +194,7 @@ Bronnen: de oude app (`screens/AlbumPhotos.jsx`, `PhotoDetail.jsx`, `GroupMember
 
 **8 (nieuw). Een profielfoto die een foto is.** Invariant 3 zegt: een profielfoto geeft geen foto prijs waar de kijker geen toegang toe heeft. Gemigreerde profielfoto's delen hun beeld met een foto. Advies: je ziet de profielfoto van iemand als je een groep met hem deelt, én (als het beeld bij een of meer foto's hoort) je toegang hebt tot minstens één van die foto's. Anders de letter. Gevolg: deel je met Bob alleen groep Y, en is zijn profielfoto een foto uit groep X, dan zie je de letter. Alternatief: de profielfoto krijgt bij instellen een eigen kopie van het beeld (WP18 en 17b), en de regel wordt alleen "een gedeelde groep". Dat lost het voor nieuwe profielfoto's op, niet voor de gemigreerde. Telling: hoeveel profielfoto's een foto zijn, en hoeveel paren (kijker, lid) de letter zouden zien (§Meting op dev).
 
-**9 (nieuw). Wat `exifOrientation` betekent.** Zie kernvondst 4. Advies: `exifOrientation` is de draaiing ten opzichte van de ruwe pixels, zoals WP8 het bedoelt, en de app krijgt nooit bytes waarin een decoder nog een tag kan toepassen. Met de verkleinde versies van vraag 2 is dat vanzelf zo: ze worden gemaakt uit de ruwe pixels, zonder EXIF. De backfill van vraag 2 zet voor gemigreerde foto's zonder `exifOrientation` de tag uit het bestand in de DB. Zonder verkleinde versies is invariant 4 niet te halen zonder de tag uit het bestand apart op te slaan. Telling: hoeveel bestanden een tag ongelijk aan 1 dragen. Dat vraagt de bytes; de backfill kan het tellen in zijn preview-run.
+**9 (nieuw). Wat `exifOrientation` betekent.** Zie kernvondst 4. Advies: `exifOrientation` is de draaiing ten opzichte van de ruwe pixels, zoals WP8 het bedoelt, en de app krijgt nooit bytes waarin een decoder nog een tag kan toepassen. Met de verkleinde versies van vraag 2 is dat vanzelf zo: ze worden gemaakt uit de ruwe pixels, zonder EXIF. Wie de formaten voor de bestaande foto's maakt (backfill bij optie A, WP12-tooling bij C, het eerste verzoek bij B), zet voor gemigreerde foto's zonder `exifOrientation` de tag uit het bestand in de DB. Zonder verkleinde versies is invariant 4 niet te halen zonder de tag uit het bestand apart op te slaan. Telling: hoeveel bestanden een tag ongelijk aan 1 dragen. Dat vraagt de bytes; de preview-run van die stap kan het tellen.
 
 ### Inventaris beeld-paden (standing rule Toegangsdefinities)
 
@@ -271,7 +295,7 @@ De inventaristests: `tests/images/noStorageIds.test.ts` (geen `_storage`-id in e
 ### Meting op dev (Wouter)
 
 1. **Storage-URL** (vraag 1): `npm run test:integration -- tests/integration/convex/storageUrl.test.ts` (vereist `.env.integration` met de dev-URL en `INTEGRATION_TEST_ENABLED=true` op dev, zoals WP2). De test pint wat de docs beloven (zonder auth op te halen; na wissen weg) en print de headers en of de URL stabiel is.
-2. **Tellingen** (vraag 2, 8, 9): de dev-tabellen exporteren naar `scripts/.data/wp17a/` en `node scripts/.data/wp17a/tel.mjs` draaien. Het script geeft: grootte per beeld (mediaan, p90, max, totaal), de grootste albums in MB, `exifOrientation` per waarde, profielfoto's die een foto zijn, en de paren (kijker, lid) die met het advies van vraag 8 de letter zien. De commando's staan in A's rapport.
+2. **Tellingen** (vraag 2, 8, 9): de dev-tabellen exporteren naar `scripts/.data/wp17a/` en `node scripts/.data/wp17a/tel.mjs` draaien. Het script geeft: grootte per beeld (mediaan, p90, max, totaal), het `contentType` van de beelden (hoeveel HEIC, voor de spike van vraag 2), de grootste albums in MB, `exifOrientation` per waarde, profielfoto's die een foto zijn, en de paren (kijker, lid) die met het advies van vraag 8 de letter zien. De commando's staan in A's rapport.
 3. **Laadtijd op 4G:** bij de gate (stap 4), met de build van B.
 
 ### Tests
