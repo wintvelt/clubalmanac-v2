@@ -114,7 +114,10 @@ Een lid opent een album en ziet de foto's rechtop, en snel genoeg om erdoor te b
   3. Covers in Mijn groepen en Groep, profielfoto's in Leden.
   4. Laadtijd op 4G (wifi uit) van een groot album op dev: binnen het meetpunt van open vraag 2.
   5. Haal jezelf in het dashboard uit de groep terwijl een foto open staat: NL-melding, weg naar Mijn groepen.
-  6. Ex-lid: een eerder verkregen link of id levert het beeld niet meer op, binnen de tijd van open vraag 1. Hoe je dit test, schrijft A uit.
+  6. Ex-lid: een eerder verkregen link of id levert het beeld niet meer op, bij het volgende verzoek (besluit 1). Zo test je het (A, fix-cyclus 1):
+     - Draai `npm run test:integration -- tests/integration/images/exMember.test.ts`. Nodig in `.env.integration`: `CONVEX_URL` (dev), `CLERK_SECRET_KEY`, `CLERK_TEST_USER_WEBMASTER_EMAIL` en `CLERK_TEST_USER_REGULAR_EMAIL` (WP4-setup). De test maakt een wegwerp-groep met een foto. Hij haalt die foto als lid op (200, dezelfde bytes), laat het lid vertrekken, en vraagt dezelfde URL opnieuw met een geldig token (404) en zonder token (401). Daarna ruimt hij op. "Gatetest" blijft ongemoeid.
+     - In het dashboard (Logs, filter `/beeld/foto/`) zie je de drie verzoeken, met 200, 404 en 401.
+     - In de app: wat al op het toestel stond, mag nog te zien zijn tot het uitloggen (besluit 3). Na uitloggen en inloggen als een ander op hetzelfde toestel verschijnt het beeld niet meer.
   7. Dashboard: op een andere tab loopt geen album- of foto-query.
   8. Albumscherm en detail bij de grootste tekst, in licht en donker.
   9. Ruimte voor bevindingen buiten deze stappen
@@ -263,7 +266,7 @@ De inventaristests: `tests/images/noStorageIds.test.ts` (geen `_storage`-id in e
 | Swipen door het album, in de volgorde van het raster; de lijst geknipt op 20 voor en na (prestatie) | Swipen door hetzelfde album, zelfde volgorde. Hoe B het licht houdt, kiest B. |
 | Beeld passend in het scherm (hooguit 1200 px) | *groot*, passend |
 | Tik: zoom tot 2,5×, nog een tik terug | Zoomen (knijpen en dubbeltik), tot zeker 2,5× |
-| Datum (EXIF, anders upload), als ruwe tekst | Datum van de foto in het Nederlands, zonder tijd |
+| Datum (EXIF, anders upload), als ruwe tekst | Datum van de foto in het Nederlands, zonder tijd (invariant 15) |
 | Avatar en naam van de eigenaar | Ja (avatar via het beeldpad, anders de letter) |
 | Plaats (`exifAddress`) | `locationLabel`, als die er is |
 | "Publicaties": albums met de foto in groepen van de kijker | 17b (vraag 7) |
@@ -287,6 +290,7 @@ De inventaristests: `tests/images/noStorageIds.test.ts` (geen `_storage`-id in e
 12. **Een markering blijft staan zolang het scherm open is.** Een foto die nieuw was toen het album openging, of die erbij kwam terwijl het open was, houdt zijn markering tot de user het scherm verlaat. `markSeen` haalt hem niet live weg.
 13. **Zonder toegang, onbekend of gewist: één antwoord.** Het beeldpad geeft voor een foto zonder toegang, een onbekend id en een gewist beeld hetzelfde antwoord. Uitgelogd geeft 401 en nooit bytes.
 14. **Een profielfoto die er niet is, ziet eruit als geen profielfoto.** Geen profielfoto, een gewist beeld en een onbekend user-id geven hetzelfde antwoord, en de app toont de letter, zonder fout-toestand.
+15. **De datum van een foto is de datum op de klok van de camera** (regie-besluit, fix-cyclus 1, S3). `takenAt` is de kloktijd van de camera, opgeslagen alsof het UTC is: zo schrijft `exif-parser` hem (WP7), en zo landt de kalenderdag van v1 (`exifDate`, `YYYY-MM-DD`) via de WP12-transform op UTC-middernacht. De app toont de UTC-kalenderdag van `takenAt`, zonder omrekening: een avondfoto van 22:30 blijft op die dag. Zonder `takenAt` is `createdAt` de datum: een echt tijdstip, dus de dag in Nederlandse tijd.
 
 ### Edge cases
 
@@ -320,9 +324,11 @@ De inventaristests: `tests/images/noStorageIds.test.ts` (geen `_storage`-id in e
 | `tests/images/noStorageIds.test.ts` | Invariant 10: geen `_storage`-id in een return-validator van een publieke query |
 | `tests/albums/listPhotosNew.test.ts` | Invariant 11: `isNew` en `owner` in `listPhotos`, dezelfde definitie als de teller, `markSeen` |
 | `tests/readWhitelist/_world.ts`, `albums.test.ts`, `users.test.ts`, `invites.test.ts`, `tests/invites/publicGet.test.ts`, `tests/writeGates/storageReuse.test.ts` (A paste aan) | De vormen zonder `storageId`; `listPhotos` met `owner` en `isNew`; de landing met `inviter._id` (besluit 8) |
-| `tests/images/httpRoute.test.ts` | Besluit 1, 2 en 8: foto-pad met 401, één 404 en `private`; profielpad openbaar en actueel; het formaat-contract (*klein*/*groot*, terugval op het origineel, 400 bij een onbekende waarde); de routelijst |
+| `tests/images/httpRoute.test.ts` | Besluit 1, 2 en 8: foto-pad met 401, één 404 en `private`; profielpad openbaar en actueel, met `no-cache`; het formaat-contract (*klein*/*groot*, terugval op het origineel, 400 bij een onbekende waarde); de routelijst |
 | `tests/integration/convex/storageUrl.test.ts` | Meting vraag 1 (niet in CI) |
-| `app/tests/photos.test.ts` | Pure logica: de volgorde in het album, de datum van een foto, de draaiing per `exifOrientation` (tegen een onafhankelijke afleiding uit de EXIF-definitie), de markeringen die blijven staan (invariant 12), wanneer `markSeen` loopt (vraag 6) |
+| `app/tests/photos.test.ts` | Pure logica: de volgorde in het album, de datum van een foto (invariant 15), de draaiing per `exifOrientation` en de transform die React Native echt toepast (beide tegen een onafhankelijke afleiding uit de EXIF-definitie en de RN-bron), de markeringen die blijven staan (invariant 12), wanneer `markSeen` loopt (vraag 6) |
+| `app/tests/imageCache.test.ts` | Besluit 3: lokaal wissen leegt geheugen en schijf van de beeldcache, ook als dat half mislukt. Invariant 3: een beeld met een profielbron heeft geen cache. |
+| `tests/integration/images/exMember.test.ts` | Gate-stap 6 (invariant 2) op dev, met echte tokens (niet in CI) |
 | `app/tests/groupRoutes.test.ts` (A vult aan) | Het pad en het routebestand van het foto-detail |
 
 De pure logica staat in de app-tests als functies in `app/src/lib/photos.ts` en `app/src/lib/groupRoutes.ts`. B kiest de vorm van de schermen zelf. Ronde 2 (A, na de besluiten): de tests volgen besluit 1, 2 en 8. De keuze van het formaat zelf (welk bestand bij *klein* of *groot*) pint WP25.
