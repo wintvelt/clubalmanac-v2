@@ -209,4 +209,6 @@ Volgens [`data-migration-preflight.md`](../conventions/data-migration-preflight.
 | `tests/photoFormats/inventory.test.ts` | invariant 9, 10, 14–16: WP10 (wees, ontbrekend formaat), `storageInventory`, `clearTable` |
 | `tests/photos/extractMetadata.test.ts` (aangepast) | invariant 12: `extractMetadata` schrijft `exifOrientation` niet meer |
 
+`images.test.ts` heeft sharp en heic-decode nodig in `dependencies` (B voegt ze toe, exact gepind). A heeft hem gecontroleerd tegen een wegwerp-implementatie buiten de repo: groen, en rood voor twee mutanten (HEIC met de EXIF-tag uit het bestand; JPEG-pixels zelf gedraaid). De andere files draaien in de edge-runtime van convex-test en mocken de beeldbibliotheek.
+
 De CLI (`formaten`) en de runbook-entry hebben geen eigen test: het gedrag staat hierboven, en de preview-run op dev is de gate.
