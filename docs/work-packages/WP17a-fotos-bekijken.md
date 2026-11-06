@@ -15,7 +15,7 @@ Een lid opent een album en ziet de foto's rechtop, en snel genoeg om erdoor te b
 6. **Album gelezen:** zoals A adviseert, bij openen met minstens één geladen foto, en opnieuw bij een foto die erbij komt terwijl het scherm open is.
 8. **Een profielfoto is openbaar, ook uitgelogd.** Je ziet hem zonder gedeelde groep en zonder toegang tot de foto erachter. Gevolgen:
    - Het beeldpad voor een profielfoto checkt geen login en geen groep. Het geeft alleen het beeld dat op dat moment de profielfoto is; een oud of ander beeld nooit.
-   - Een foto als profielfoto instellen maakt dat beeld openbaar. De gate op `users.updateProfile` (WP24 invariant 8) is daarmee de enige drempel. WP17b ("als profielfoto instellen") laat de user dat weten.
+   - Een foto als profielfoto instellen maakt dat beeld openbaar. De gate op `users.updateProfile` is daarmee de enige drempel: alleen een eigen beeld (besluit 10, invariant 16). WP17b ("als profielfoto instellen") laat de user dat weten.
    - WP24 heraudit N2 (`groups.addMember` zonder instemming geeft het profielbeeld prijs) is geen lek meer. Kernvondst 7 (invite-landing) ook niet: de landing mag de profielfoto van de afzender tonen (WP19), via het user-id, nog steeds zonder `storageId` (invariant 10).
    - De telling voor vraag 8 vervalt.
 9. **Audit S1 (fix-cyclus 1): een pad met kapotte procent-codering geeft 520, en dat accepteren we.** Convex weigert zo'n pad al vóór onze httpAction, ook bij routes die niet bestaan (gemeten op dev met `d4354e8`). Het is voor elk pad hetzelfde antwoord, zonder bytes, dus het verraadt niets.
@@ -216,6 +216,12 @@ Voor alle opties geldt:
 
 **9 (nieuw). Wat `exifOrientation` betekent.** Zie kernvondst 4. Advies: `exifOrientation` is de draaiing ten opzichte van de ruwe pixels, zoals WP8 het bedoelt, en de app krijgt nooit bytes waarin een decoder nog een tag kan toepassen. Met de verkleinde versies van vraag 2 is dat vanzelf zo: ze worden gemaakt uit de ruwe pixels, zonder EXIF. Wie de formaten voor de bestaande foto's maakt (backfill bij optie A, WP12-tooling bij C, het eerste verzoek bij B), zet voor gemigreerde foto's zonder `exifOrientation` de tag uit het bestand in de DB. Zonder verkleinde versies is invariant 4 niet te halen zonder de tag uit het bestand apart op te slaan. Telling: hoeveel bestanden een tag ongelijk aan 1 dragen. Dat vraagt de bytes; de preview-run van die stap kan het tellen.
 
+**10 (nieuw, fix-cyclus 2). Gemigreerde profielfoto's die de foto van een ander zijn.** v1 liet een profielfoto zetten op elke foto met foto-toegang (`blob-images-api-user`, `getPhotoById`: eigen foto, of een foto in een groep van de user). De WP12-transform neemt die profielfoto over (`photoUrl` → `profilePhotoStorageKey`). Op prod kan een user dus vanaf T0 een profielfoto hebben die de foto van een ander lid is, en met besluit 8 is die openbaar. Invariant 16 dekt alleen nieuwe keuzes. Op dev komt het niet voor (3 users: twee een eigen foto, één een los beeld). Telling op prod: zie §Meting op dev, punt 4. Opties, als de telling niet nul is:
+- (a) Accepteren. In v1 zag elk groepslid die profielfoto al, en het beeld was zonder login op te halen met de sleutel (kernvondst 2).
+- (b) In de WP12-transform zo'n profielfoto niet overnemen; de user ziet bij T0 de letter en kiest opnieuw.
+
+Advies: (b). De reden van besluit 10 geldt hier ook, en het openbare pad (op user-id, te vinden via ledenlijst en invite-landing) is ruimer dan een groepslid in v1. Het raakt WP12, niet 17a.
+
 ### Inventaris beeld-paden (standing rule Toegangsdefinities)
 
 **Waar een beeld-id zichtbaar wordt** (nu; invariant 10 haalt elk `storageId` uit publieke responses):
@@ -237,7 +243,7 @@ Voor alle opties geldt:
 | Pad | Neemt aan / schrijft | Gate |
 |---|---|---|
 | Beeldpad (besluit 1) | foto-id, user-id, formaat | Foto: `images.photoImage` (toestemmingslijst: eigenaar, of lid van een groep met de foto in een album). Profiel: openbaar, alleen het beeld dat nu de profielfoto is (besluit 8). |
-| `users.updateProfile` | `storageId` | `canUseStorage` (WP24 invariant 8). Na 17a kent de client geen `storageId` meer: "als profielfoto instellen" (17b) heeft een variant op foto-id nodig. |
+| `users.updateProfile` | `storageId` | Alleen een eigen beeld (invariant 16, besluit 10; scherpt WP24 invariant 8 aan). Na 17a kent de client geen `storageId` meer: "als profielfoto instellen" (17b) heeft een variant op foto-id nodig, met dezelfde regel: alleen een eigen foto. |
 | `photos.update`, `remove`, `rotate`, `flag`, `appeal`, `decideFlag`; `ratings.upsert`, `remove`; `albums.addPhoto`, `removePhoto`; `groups.update`, `albums.update` (cover) | foto-id | WP24, ongewijzigd. Geen ervan geeft bytes. |
 | `groups.addMember`, `removeMember`, `create`, `remove`; `invites.accept`; `users.deleteSelf`; Clerk-webhook (`registerFromSession`) | lidmaatschappen | WP24. `groups.addMember` zonder instemming geeft voor het beeld niets meer prijs: een profielfoto is openbaar (besluit 8), en een foto volgt de foto-toegang. Het gat zelf blijft voor het beheer-WP. |
 | `albums.addPhoto`, `removePhoto`, `remove`; `groups.remove`; `photos.remove` | `albumPhotos` | WP24, ongewijzigd |
@@ -295,6 +301,11 @@ De inventaristests: `tests/images/noStorageIds.test.ts` (geen `_storage`-id in e
 13. **Zonder toegang, onbekend of gewist: één antwoord.** Het beeldpad geeft voor een foto zonder toegang, een onbekend id en een gewist beeld hetzelfde antwoord. Uitgelogd geeft 401 en nooit bytes.
 14. **Een profielfoto die er niet is, ziet eruit als geen profielfoto.** Geen profielfoto, een gewist beeld en een onbekend user-id geven hetzelfde antwoord, en de app toont de letter, zonder fout-toestand.
 15. **De datum van een foto is de datum op de klok van de camera** (regie-besluit, fix-cyclus 1, S3). `takenAt` is de kloktijd van de camera, opgeslagen alsof het UTC is: zo schrijft `exif-parser` hem (WP7), en zo landt de kalenderdag van v1 (`exifDate`, `YYYY-MM-DD`) via de WP12-transform op UTC-middernacht. De app toont de UTC-kalenderdag van `takenAt`, zonder omrekening: een avondfoto van 22:30 blijft op die dag. Zonder `takenAt` is `createdAt` de datum: een echt tijdstip, dus de dag in Nederlandse tijd.
+16. **Als profielfoto alleen een eigen beeld** (besluit 10, fix-cyclus 2). Een profielfoto is openbaar (besluit 8), dus `users.updateProfile` zet `profilePhotoStorageId` alleen op:
+    - het beeld van een foto waarvan de caller de eigenaar is. Een eigen upload valt hieronder: `POST /upload` maakt een eigen foto-rij. Een beeld dat aan foto's van twee eigenaren hangt, mag elk van beide eigenaren gebruiken;
+    - de eigen huidige profielfoto (opnieuw zetten maakt niets nieuw openbaar).
+
+    Foto-toegang tot de foto van een ander is niet genoeg, ook niet als groepsgenoot, admin of webmaster. Geweigerd geeft dezelfde uitkomst als een onbekend beeld en verandert niets, ook de naam in dezelfde aanroep niet. Het profielpad van de caller geeft daarna nog steeds zijn oude profielfoto. Dit vervangt de tak "foto met foto-toegang" van WP24 invariant 8.
 
 ### Edge cases
 
@@ -318,17 +329,19 @@ De inventaristests: `tests/images/noStorageIds.test.ts` (geen `_storage`-id in e
 1. **Storage-URL** (vraag 1): `npm run test:integration -- tests/integration/convex/storageUrl.test.ts` (vereist `.env.integration` met de dev-URL en `INTEGRATION_TEST_ENABLED=true` op dev, zoals WP2). De test pint wat de docs beloven (zonder auth op te halen; na wissen weg) en print de headers en of de URL stabiel is.
 2. **Tellingen** (input voor WP25: formaten en vraag 9): de dev-tabellen exporteren naar `scripts/.data/wp17a/` en `node scripts/.data/wp17a/tel.mjs` draaien. Het script geeft: grootte per beeld (mediaan, p90, max, totaal), het `contentType` van de beelden (hoeveel HEIC, voor de spike), de grootste albums in MB, en `exifOrientation` per waarde. De telling voor vraag 8 vervalt (besluit 8).
 3. **Laadtijd op 4G:** bij de gate (stap 4), met de build van B en de formaten van WP25.
+4. **Profielfoto's van een ander** (vraag 10, prod): na `npm run migrate -- extract` en `npm run migrate -- transform --target prod` (alleen lezen op AWS; schrijft `scripts/.data/convex-records.json`) draait `node scripts/.data/wp17a/profiel.mjs`. Het telt per user of de profielfoto een eigen foto is, de foto van een ander of een los beeld.
 
 ### Tests
 
 | Bestand | Pint |
 |---|---|
-| `tests/images/access.test.ts` | Invariant 1, 2, 3, 13 en 14: de foto volgt de foto-toegang, ook na vertrek, na uit het album halen en na wissen; de profielfoto is openbaar en altijd de actuele (besluit 8) |
+| `tests/images/access.test.ts` | Invariant 1, 2, 3, 13 en 14: de foto volgt de foto-toegang, ook na vertrek, na uit het album halen en na wissen; de profielfoto is openbaar en altijd de actuele (besluit 8); de foto van een ander wordt niet openbaar via een profielfoto (invariant 16) |
 | `tests/images/notMember.test.ts` | Invariant 7: `NOT_MEMBER` op de album- en foto-reads, gelijk voor geen toegang en onbekend, ook na verwijderen terwijl je kijkt |
 | `tests/images/noStorageIds.test.ts` | Invariant 10: geen `_storage`-id in een return-validator van een publieke query |
 | `tests/albums/listPhotosNew.test.ts` | Invariant 11: `isNew` en `owner` in `listPhotos`, dezelfde definitie als de teller, `markSeen` |
-| `tests/readWhitelist/_world.ts`, `albums.test.ts`, `users.test.ts`, `invites.test.ts`, `tests/invites/publicGet.test.ts`, `tests/writeGates/storageReuse.test.ts` (A paste aan) | De vormen zonder `storageId`; `listPhotos` met `owner` en `isNew`; de landing met `inviter._id` (besluit 8) |
-| `tests/images/httpRoute.test.ts` | Besluit 1, 2 en 8: foto-pad met 401, één 404 en `private`; profielpad openbaar en actueel, met `no-cache`; het formaat-contract (*klein*/*groot*, terugval op het origineel, 400 bij een onbekende waarde); de routelijst |
+| `tests/readWhitelist/_world.ts`, `albums.test.ts`, `users.test.ts`, `invites.test.ts`, `tests/invites/publicGet.test.ts` (A paste aan) | De vormen zonder `storageId`; `listPhotos` met `owner` en `isNew`; de landing met `inviter._id` (besluit 8) |
+| `tests/writeGates/storageReuse.test.ts` (A paste aan) | Invariant 16: als profielfoto alleen een eigen beeld; de foto van een ander met foto-toegang, ook bij twee eigenaren, wordt geweigerd met dezelfde uitkomst als een onbekend beeld |
+| `tests/images/httpRoute.test.ts` | Besluit 1, 2 en 8: foto-pad met 401, één 404 en `private`; profielpad openbaar en actueel, met `no-cache`, en na een geweigerde poging met de foto van een ander geen bytes van die foto (invariant 16); het formaat-contract (*klein*/*groot*, terugval op het origineel, 400 bij een onbekende waarde); de routelijst |
 | `tests/integration/convex/storageUrl.test.ts` | Meting vraag 1 (niet in CI) |
 | `app/tests/photos.test.ts` | Pure logica: de volgorde in het album, de datum van een foto (invariant 15), de draaiing per `exifOrientation` en de transform die React Native echt toepast (beide tegen een onafhankelijke afleiding uit de EXIF-definitie en de RN-bron), de markeringen die blijven staan (invariant 12), wanneer `markSeen` loopt (vraag 6) |
 | `app/tests/imageCache.test.ts` | Besluit 3: lokaal wissen leegt geheugen en schijf van de beeldcache, ook als dat half mislukt. Invariant 3: een beeld met een profielbron heeft geen cache. |
