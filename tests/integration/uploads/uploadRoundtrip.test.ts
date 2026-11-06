@@ -1,5 +1,6 @@
 import { ConvexHttpClient } from "convex/browser";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { createHash } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { api } from "../../../convex/_generated/api";
@@ -31,6 +32,9 @@ import { getConvexSiteBase, requireEnv } from "../_helpers/convexSite";
 //     WP23: getById vereist foto-toegang, dus de client draagt dezelfde JWT.
 //     De foto-vorm bevat geen GPS meer (A-keuze 2); `locationLabel` bewijst
 //     dat de coördinaten uitgelezen én gegeocodeerd zijn.
+//   - WP17a: het bestand zelf via het beeldpad `GET /beeld/foto/<photoId>`
+//     met dezelfde JWT; de bytes zijn gelijk aan de upload. De foto-vorm
+//     bevat geen `storageId` meer (invariant 10).
 //   - Cleanup: photos.remove via dezelfde JWT (best-effort).
 //
 // Niet in CI. Lokaal: `npm run test:integration`.
@@ -119,7 +123,6 @@ describe("WP7 — upload-pipeline empirische gate", () => {
         takenAt?: number;
         locationLabel?: string;
         exifOrientation?: number;
-        storageId: string;
         ownerId: string;
       } & Record<string, unknown>;
       let photo: PhotoRow | null = null;
@@ -136,8 +139,9 @@ describe("WP7 — upload-pipeline empirische gate", () => {
 
       expect(photo).not.toBeNull();
       // Basis: row bestaat
-      expect(photo!.storageId).toBeDefined();
       expect(photo!.ownerId).toBeDefined();
+      // WP17a invariant 10: geen beeld-id in de foto-vorm.
+      expect(photo!.storageId).toBeUndefined();
       // EXIF: DateTimeOriginal of CreateDate is gevuld
       expect(photo!.takenAt).toBeDefined();
       expect(typeof photo!.takenAt).toBe("number");
@@ -150,6 +154,17 @@ describe("WP7 — upload-pipeline empirische gate", () => {
       expect(photo!.locationLabel).toBeDefined();
       expect(typeof photo!.locationLabel).toBe("string");
       expect(photo!.locationLabel!.length).toBeGreaterThan(0);
+
+      // WP17a: het opgeslagen bestand is precies de upload, opgehaald via
+      // het beeldpad (vervangt de oude check op `storageId`).
+      const sha = (b: Uint8Array) => createHash("sha256").update(b).digest("hex");
+      const img = await fetch(`${siteBase}/beeld/foto/${body.photoId}`, {
+        headers: { Authorization: `Bearer ${jwt}` },
+      });
+      expect(img.status).toBe(200);
+      const bytes = new Uint8Array(await img.arrayBuffer());
+      expect(bytes.length).toBe(photoBuffer.length);
+      expect(sha(bytes)).toBe(sha(new Uint8Array(photoBuffer)));
     },
     30_000,
   );
