@@ -9,14 +9,14 @@ Voor elk backend werkpakket in clubalmanac-v2 migratie volgen drie aparte Claude
 - Schrijft RED tests die het verwachte gedrag pinnen
 - Mag `docs/migratie-plan-convex.md` en `docs/cascade-matrix.md` updaten
 - NIET de implementatie aanraken
-- Commit + push aan einde
+- Commit aan einde, op de WP-branch (regie pusht)
 
 **B — implementer**
 - Leest A's tests + plan-doc
 - Leest NIET de oude AWS code (om bias te vermijden)
 - Implementeert tot tests groen zijn
 - Conflict protocol: bij twijfel over A's spec → stop en rapporteer
-- Commit + push aan einde
+- Commit aan einde, op de WP-branch (regie pusht)
 
 **Auditor**
 - Leest huidige implementatie + tests naast elkaar

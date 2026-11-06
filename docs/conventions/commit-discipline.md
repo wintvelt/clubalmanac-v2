@@ -1,10 +1,10 @@
 # Commit discipline
 
-A en B doen elk een commit aan einde van hun werk. Push gebeurt door Wouter. Auditor doet géén commit (alleen rapport in chat).
+A en B doen elk een commit aan einde van hun werk, op de WP-branch. Regie pusht de branch en maakt een PR; Wouter merget. Auditor doet géén commit (alleen rapport in chat).
 
 ## Hoe toepassen
 
-In A en B prompts laatste sectie: instructeer **commit lokaal, niet pushen**. Voor auditor-prompt expliciet "geen file-edits, alleen rapport".
+In A en B prompts laatste sectie: instructeer **commit lokaal, niet pushen, niet van branch wisselen**. Voor auditor-prompt expliciet "geen file-edits, alleen rapport".
 
 Twee commits per A→B cyclus:
 1. A's tests + doc-updates
@@ -29,15 +29,21 @@ Doc-deliverables (spec §X):
 - [ ] integration-test deferred — gemarkeerd in spec, niet aangemaakt
 ```
 
-## Push-blokkade (settings.json deny-rule)
+## Branch, PR en merge (sinds 2026-11-06)
 
-Sinds WP5(B) — waar de B-sessie pushte ondanks "Wouter pusht handmatig"-mandaat — staat `Bash(git push:*)` in `.claude/settings.json` als deny-rule. Deze geldt voor **elke** Claude Code-sessie in deze repo (zowel Wouter's hoofd-sessie als rol-sessies à la wp-a/wp-b/wp-audit). Sub-agents die via `Agent(subagent_type: ...)` worden gespawned erven dezelfde deny.
+`main` is op GitHub beschermd met een ruleset: alleen via een pull request, CI (`test`) groen, alleen merge commits, geen force-push, niet verwijderen, geen uitzonderingen. Ook Wouter pusht niet meer direct naar `main`.
 
-Workflow: A of B commit met pathspec, `git commit -m "..." -- <eigen paden>`. `git push` faalt met permission-denied. Sessie eindigt met "commit X gedaan, push geweigerd door settings.json". **Wouter pusht vanuit zijn eigen terminal** (`cd <repo> && git push origin main`) — niet vanuit een Claude Code-sessie.
+1. **Regie** maakt bij de start van een WP een branch, vóór er een rol-sessie start: `git switch main && git pull && git switch -c wp<n>`. Regie-werk buiten een WP: `regie/<onderwerp>`.
+2. **A, B en audit** werken op die branch, committen met pathspec, wisselen nooit van branch en pushen niet.
+3. **Regie** pusht als er geen rol-sessie draait (`git push -u origin wp<n>`) en maakt de PR (`gh pr create --fill --base main`). Een volgende push werkt de PR bij.
+4. **Wouter** merget in de GitHub-app met **Create a merge commit**. Geen squash: de commits per rol moeten in de historie blijven.
+5. **Regie** daarna: `git switch main && git pull && git branch -d wp<n>`.
 
-Een allow-regel in `.claude/settings.local.json` heft deze deny niet op: deny wint op elk niveau. Een ask-regel in plaats van de deny is op 2026-11-06 geprobeerd en werkte niet: in de desktop-app (laptop en server, mode `auto`) liep `git push` zonder vraag door. Daarom weer deny. De regel is geen harde grens: `git -C . push` valt er bijvoorbeeld buiten.
+Vangrails in `.claude/settings.json` (deny): force-push en `git push origin main`. GitHub weigert die ook; de deny geeft eerder een duidelijke melding. De ruleset is de echte grens; een Claude-regel is te omzeilen (`git -C . push`).
 
-Eerdere versie van dit doc claimde een pre-push hook; die bestond niet (`.git/hooks/pre-push` ontbrak, `core.hooksPath` unset). Permission-deny is de simpelere oplossing — geen extra files in versie-control, geen fresh-clone-setup nodig.
+De repo is publiek: een gepushte branch is meteen openbaar, ook vóór de merge.
+
+Geschiedenis: na WP5(B), waar B pushte tegen het mandaat in, stond elke `git push` op deny en pushte alleen Wouter. Een ask-regel (push na goedkeuring) gaf in de desktop-app geen vraag (getest 2026-11-06). Een allow in `.claude/settings.local.json` heft een deny niet op: deny wint op elk niveau.
 
 ## Niet pushen terwijl een rol-sessie draait
 
@@ -66,4 +72,4 @@ Praktisch: scheid doc-besluiten van implementatie, en scheid werk van verschille
 
 ## Waarom
 
-Voorkomt ophoping van werktree changes. Per A→B cyclus committen geeft cleaner git-history. Auditor produceert tekst, niet code → niets te committen. Push centraal bij Wouter houdt CI-rood-vensters (verwacht tussen A en B) onder regie.
+Voorkomt ophoping van werktree changes. Per A→B cyclus committen geeft cleaner git-history. Auditor produceert tekst, niet code → niets te committen. De merge door Wouter, met CI groen, houdt CI-rood-vensters (verwacht tussen A en B) buiten `main`.

@@ -74,7 +74,7 @@ Voor hoog-risico WPs (Setup 2 + Setup 6, of dimensies = hoog): default = eigen C
 
 ## Volgorde per WP
 
-1. **Regie**: trigger `phase-kickoff` skill, doe risico-assessment, schrijf draft `docs/work-packages/WP<n>.md`, commit + push.
+1. **Regie**: trigger `phase-kickoff` skill, doe risico-assessment, maak de branch `wp<n>` vanaf een actuele `main`, schrijf draft `docs/work-packages/WP<n>.md`, commit.
 2. **A-sessie**: pak `wp-a` mandaat. Vult spec aan + commit. Schrijft RED tests + commit. Stopt.
 3. **Regie**: review A's commits. Eventueel spec-aanpassing als gat is gevonden.
 4. **B-sessie**: pak `wp-b` mandaat. Implementeert tot groen + commit. Stopt.

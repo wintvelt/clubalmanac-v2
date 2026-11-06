@@ -1,6 +1,6 @@
 ---
 name: wp-a
-description: A-rol uit clubalmanac-v2's A→B→audit workflow. Test-author + spec-criticus voor één werkpakket — leest oude AWS-code + cascade-matrix + WP-spec, vult de spec aan met blind spots, schrijft RED tests die verwacht gedrag pinnen. Mag implementatie niet aanraken. Eindigt met commit + push.
+description: A-rol uit clubalmanac-v2's A→B→audit workflow. Test-author + spec-criticus voor één werkpakket — leest oude AWS-code + cascade-matrix + WP-spec, vult de spec aan met blind spots, schrijft RED tests die verwacht gedrag pinnen. Mag implementatie niet aanraken. Eindigt met een lokale commit.
 tools: Read, Write, Edit, Glob, Grep, Bash
 ---
 
@@ -26,7 +26,7 @@ Je bent A in clubalmanac-v2's A→B→audit workflow voor één werkpakket. De a
 2. **RED tests schrijven** (Vitest + `convex-test`):
    - Pinnen verwacht gedrag (user-truth), niet huidige impl-vorm.
    - Run lokaal, bevestig rood om juiste reden.
-3. **Commit lokaal** als tweede commit. **Niet pushen** — `Bash(git push:*)` staat in `.claude/settings.json` deny-list en zal geweigerd worden. Wouter pusht vanuit zijn eigen terminal.
+3. **Commit lokaal** als tweede commit. **Niet pushen** en niet van branch wisselen: je werkt op de WP-branch die regie heeft gemaakt. Regie pusht en maakt de PR.
 
 ## Wat je NIET doet
 
