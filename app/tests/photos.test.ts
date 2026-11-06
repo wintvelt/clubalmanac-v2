@@ -4,6 +4,7 @@ import {
   keepNewMarkers,
   nextAfterRemoval,
   orientationOf,
+  orientationTransform,
   photoDate,
   shouldMarkSeen,
   sortAlbumPhotos,
@@ -47,21 +48,54 @@ describe("photoDate: de datum van de foto, anders de upload", () => {
   });
 });
 
-describe("formatPhotoDate: Nederlands, zonder tijd, in Nederlandse tijd", () => {
+// Fix-cyclus 1, S3 (regie-besluit): de datum van een foto is de datum op de
+// klok van de camera. `takenAt` komt uit exif-parser (en uit v1 als
+// kalenderdag), die de kloktijd van de camera opslaat alsof het UTC is. De app
+// rekent die dus niet om: de dag is de UTC-kalenderdag van `takenAt`. Zonder
+// `takenAt` is `createdAt` de datum: een echt tijdstip, dus in Nederlandse
+// tijd.
+describe("formatPhotoDate: de datum van de foto, Nederlands, zonder tijd", () => {
   it("een gewone dag", () => {
-    expect(formatPhotoDate(at("2023-03-12T10:00:00Z"))).toBe("12 maart 2023");
+    expect(formatPhotoDate({ takenAt: at("2023-03-12T10:00:00Z"), createdAt: 0 })).toBe(
+      "12 maart 2023",
+    );
   });
 
-  it("zomertijd: 22:30 UTC is in Nederland al de volgende dag", () => {
-    expect(formatPhotoDate(at("2023-07-01T22:30:00Z"))).toBe("2 juli 2023");
+  it("takenAt: een avondfoto blijft op de dag van de camera, ook in de zomer", () => {
+    // De camera zei 1 juli 22:30; geen omrekening naar 2 juli.
+    expect(formatPhotoDate({ takenAt: at("2023-07-01T22:30:00Z"), createdAt: 0 })).toBe(
+      "1 juli 2023",
+    );
   });
 
-  it("wintertijd: 23:30 UTC op oudjaar is in Nederland al nieuwjaarsdag", () => {
-    expect(formatPhotoDate(at("2022-12-31T23:30:00Z"))).toBe("1 januari 2023");
+  it("takenAt: oudjaarsavond 23:30 blijft 31 december", () => {
+    expect(formatPhotoDate({ takenAt: at("2022-12-31T23:30:00Z"), createdAt: 0 })).toBe(
+      "31 december 2022",
+    );
   });
 
-  it("wintertijd: 22:30 UTC is in Nederland nog dezelfde dag", () => {
-    expect(formatPhotoDate(at("2023-01-10T22:30:00Z"))).toBe("10 januari 2023");
+  it("takenAt uit v1 (kalenderdag, UTC-middernacht): die dag", () => {
+    expect(formatPhotoDate({ takenAt: at("2019-05-04T00:00:00Z"), createdAt: 0 })).toBe(
+      "4 mei 2019",
+    );
+  });
+
+  it("takenAt wint van createdAt", () => {
+    expect(
+      formatPhotoDate({ takenAt: at("2020-02-02T12:00:00Z"), createdAt: at("2024-06-01T12:00:00Z") }),
+    ).toBe("2 februari 2020");
+  });
+
+  it("zonder takenAt, zomertijd: createdAt 22:30 UTC is in Nederland al de volgende dag", () => {
+    expect(formatPhotoDate({ createdAt: at("2023-07-01T22:30:00Z") })).toBe("2 juli 2023");
+  });
+
+  it("zonder takenAt, wintertijd: createdAt 23:30 UTC op oudjaar is in Nederland nieuwjaarsdag", () => {
+    expect(formatPhotoDate({ createdAt: at("2022-12-31T23:30:00Z") })).toBe("1 januari 2023");
+  });
+
+  it("zonder takenAt, wintertijd: createdAt 22:30 UTC is in Nederland nog dezelfde dag", () => {
+    expect(formatPhotoDate({ createdAt: at("2023-01-10T22:30:00Z") })).toBe("10 januari 2023");
   });
 });
 
@@ -218,6 +252,64 @@ describe("swapsAspect: breedte en hoogte wisselen bij een kwartslag", () => {
 
   it("geen waarde: niet gewisseld", () => {
     expect(swapsAspect(undefined)).toBe(false);
+  });
+});
+
+// --- De transform die het beeld echt krijgt (fix-cyclus 1, S2) ----------------------
+//
+// orientationTransform(exif) is de `transform`-lijst voor React Native. De
+// test leest die lijst zoals React Native hem toepast, en vergelijkt het
+// resultaat met de EXIF-oracle hierboven. Zo valt een verwisseling van
+// spiegelen en draaien in de lijst op (tags 5 en 7), ook als orientationOf
+// zelf klopt.
+//
+// Hoe React Native de lijst toepast, uit de bron (react-native 0.88,
+// ReactCommon/react/renderer): BaseViewProps::resolveTransform vermenigvuldigt
+// per item `M = M * T_i`, en Transform::operator* rekent met rijvectoren
+// (p' = p · M) zo dat het laatste item als eerste op het beeld werkt. Zoals
+// in CSS. `rotate: "90deg"` draait met de klok mee op het scherm (y omlaag),
+// `scaleX: -1` spiegelt horizontaal. Te zien in de simulator met een
+// testbeeld per tag (gate).
+
+type RNOp = { rotate?: string; scaleX?: number } & Record<string, unknown>;
+
+function opMatrix(op: RNOp): Mat {
+  const keys = Object.keys(op);
+  expect(keys, `alleen rotate of scaleX per item: ${JSON.stringify(op)}`).toHaveLength(1);
+  if (op.rotate !== undefined) {
+    const m = /^(-?\d+)deg$/.exec(op.rotate);
+    expect(m, `rotate in graden: ${op.rotate}`).not.toBeNull();
+    return rotation(Number(m![1]));
+  }
+  if (op.scaleX !== undefined) {
+    expect(op.scaleX === 1 || op.scaleX === -1).toBe(true);
+    return op.scaleX === -1 ? MIRROR : IDENTITY;
+  }
+  throw new Error(`onverwacht item: ${JSON.stringify(op)}`);
+}
+
+// Het laatste item werkt als eerste: M = T0 · T1 · … · Tn (kolomvectoren).
+function rnMatrix(ops: readonly RNOp[]): Mat {
+  return ops.reduce<Mat>((m, op) => mul(m, opMatrix(op)), IDENTITY);
+}
+
+describe("orientationTransform: wat React Native op het beeld toepast", () => {
+  it("sanity: de lezing van de lijst ziet het verschil tussen eerst spiegelen en eerst draaien", () => {
+    const mirrorFirst = rnMatrix([{ rotate: "90deg" }, { scaleX: -1 }]);
+    const rotateFirst = rnMatrix([{ scaleX: -1 }, { rotate: "90deg" }]);
+    expect(norm(mirrorFirst)).toEqual(norm(oracle(7)));
+    expect(norm(rotateFirst)).toEqual(norm(oracle(5)));
+  });
+
+  for (const tag of [1, 2, 3, 4, 5, 6, 7, 8]) {
+    it(`tag ${tag}: het beeld staat rechtop volgens de EXIF-definitie`, () => {
+      const ops = orientationTransform(tag) as RNOp[];
+      expect(norm(rnMatrix(ops))).toEqual(norm(oracle(tag)));
+    });
+  }
+
+  it.each([undefined, 0, 9, 1.5])("geen of ongeldige waarde (%s): geen transform", (v) => {
+    expect(norm(rnMatrix(orientationTransform(v) as RNOp[]))).toEqual(IDENTITY);
   });
 });
 

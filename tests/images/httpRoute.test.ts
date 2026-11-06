@@ -213,6 +213,21 @@ describe("GET /beeld/profiel/<userId> — openbaar (besluit 8)", () => {
     expect(await res.text()).toBe(PROFILE_BYTES);
   });
 
+  // Fix-cyclus 1, S6: dezelfde URL geeft na een wissel een ander beeld, dus
+  // geen cache mag het antwoord hergebruiken zonder het opnieuw te vragen.
+  it("Cache-Control: no-cache of no-store, nooit immutable of een max-age zonder hervalidatie", async () => {
+    const t = convexTest(schema, modules);
+    const s = await setup(t);
+    for (const url of [profilePath(s.owen), `${profilePath(s.owen)}?formaat=klein`]) {
+      const res = await t.fetch(url, { method: "GET" });
+      expect(res.status).toBe(200);
+      const cc = res.headers.get("Cache-Control") ?? "";
+      expect(cc, url).toMatch(/\b(no-cache|no-store)\b/);
+      expect(cc, url).not.toMatch(/\bimmutable\b/);
+      expect(cc, url).not.toMatch(/\bmax-age=[1-9]/);
+    }
+  });
+
   it("alleen de actuele profielfoto: na een wissel geeft dezelfde URL het nieuwe beeld", async () => {
     const t = convexTest(schema, modules);
     const s = await setup(t);
