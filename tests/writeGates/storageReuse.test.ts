@@ -140,14 +140,14 @@ describe("invariant 8 — users.updateProfile weigert een beeld dat niet van de 
     await expectRejectedNoChange(t, () => setProfile(client, aliceProfile));
   });
 
-  it("groepsgenoot die het profielbeeld in de ledenlijst ziet, neemt het niet over", async () => {
+  // WP17a invariant 10 (A paste aan): de ledenlijst geeft geen beeld-id meer.
+  // De gate blijft: een groepsgenoot die het id op een andere manier kent
+  // (een oude build, een log), neemt het niet over.
+  it("groepsgenoot die het profielbeeld-id kent, neemt het niet over", async () => {
     const t = newT();
     const w = await seedWorld(t);
     const bob = asUser(t, w, "bob");
-    const members = await bob.query(api.groups.listMembers, { groupId: w.groups.G1 });
-    const alice = members.find((m) => m.user?._id === w.users.alice.id);
-    const seen = alice!.user!.profilePhotoStorageId!;
-    expect(seen).toBe(await profileStorageOf(t, w.users.alice.id));
+    const seen = await profileStorageOf(t, w.users.alice.id);
     await expectRejectedNoChange(t, () => setProfile(bob, seen));
   });
 
@@ -155,9 +155,8 @@ describe("invariant 8 — users.updateProfile weigert een beeld dat niet van de 
     const t = newT();
     const w = await seedWorld(t);
     const dave = asUser(t, w, "dave");
-    const members = await dave.query(api.groups.listMembers, { groupId: w.groups.G3 });
-    const seen = members.find((m) => m.user?._id === w.users.alice.id)!.user!
-      .profilePhotoStorageId!;
+    // WP17a invariant 10 (A paste aan): het id komt niet meer uit de ledenlijst.
+    const seen = await profileStorageOf(t, w.users.alice.id);
     await dave.mutation(api.groups.removeMember, {
       groupId: w.groups.G3,
       userId: w.users.dave.id,

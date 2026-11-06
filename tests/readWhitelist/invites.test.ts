@@ -29,7 +29,7 @@ function expectNoInviteSecrets(value: unknown, w: World) {
 }
 
 describe("invites.getByToken — anonieme landingspagina", () => {
-  it("precies status, isExpired, rol, email van de genodigde, groep (id, naam, omschrijving) en inviter (naam, profielfoto)", async () => {
+  it("precies status, isExpired, rol, email van de genodigde, groep (id, naam, omschrijving) en inviter (naam; WP17a: geen beeld-id)", async () => {
     const t = newT();
     const w = await seedWorld(t);
     const got = (await t.query(api.invites.getByToken, {

@@ -176,7 +176,8 @@ describe("albums — vormen voor een lid", () => {
     }
   });
 
-  it("listPhotos: per item albumPhoto-velden + foto-vorm; geen GPS, filename, flag-velden of user-secrets", async () => {
+  // WP17a (A paste aan): per item ook `owner` (publiek profiel) en `isNew`.
+  it("listPhotos: per item albumPhoto-velden + foto-vorm + owner + isNew; geen GPS, filename, flag-velden of user-secrets", async () => {
     const t = newT();
     const w = await seedWorld(t);
     const list = (await asUser(t, w, "bob").query(api.albums.listPhotos, {
@@ -186,10 +187,13 @@ describe("albums — vormen voor een lid", () => {
       [w.photos.pBob, w.photos.pAlice].sort(),
     );
     for (const item of list) {
-      expectShape(item, ["albumPhoto", "photo"]);
+      expectShape(item, ["albumPhoto", "photo", "owner", "isNew"]);
       expectShape(item.albumPhoto, SHAPE.albumPhoto);
       expectShape(item.photo, SHAPE.photo);
+      expectShape(item.owner, SHAPE.publicProfile);
       expect(item.albumPhoto.photoId).toBe(item.photo._id);
+      expect(item.owner._id).toBe(item.photo.ownerId);
+      expect(typeof item.isNew).toBe("boolean");
     }
     expectNoUserSecrets(list, w);
   });
@@ -205,8 +209,12 @@ describe("albums.listPhotos — null-tak (audit-ronde 1)", () => {
     })) as R[];
     const orphan = list.find((i) => i.albumPhoto.photoId === w.photos.pAlice);
     expect(orphan, "publicatie van de verdwenen foto ontbreekt").toBeDefined();
-    expectShape(orphan, ["albumPhoto", "photo"]);
+    expectShape(orphan, ["albumPhoto", "photo", "owner", "isNew"]);
     expectShape(orphan!.albumPhoto, SHAPE.albumPhoto);
     expect(orphan!.photo).toBeNull();
+    // WP17a: zonder foto-rij geen eigenaar, en niets nieuws (de teller telt
+    // hem ook niet).
+    expect(orphan!.owner).toBeNull();
+    expect(orphan!.isNew).toBe(false);
   });
 });
