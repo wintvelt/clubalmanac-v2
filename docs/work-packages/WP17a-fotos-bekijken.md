@@ -19,6 +19,9 @@ Een lid opent een album en ziet de foto's rechtop, en snel genoeg om erdoor te b
    - WP24 heraudit N2 (`groups.addMember` zonder instemming geeft het profielbeeld prijs) is geen lek meer. Kernvondst 7 (invite-landing) ook niet: de landing mag de profielfoto van de afzender tonen (WP19), via het user-id, nog steeds zonder `storageId` (invariant 10).
    - De telling voor vraag 8 vervalt.
 9. **Audit S1 (fix-cyclus 1): een pad met kapotte procent-codering geeft 520, en dat accepteren we.** Convex weigert zo'n pad al vóór onze httpAction, ook bij routes die niet bestaan (gemeten op dev met `d4354e8`). Het is voor elk pad hetzelfde antwoord, zonder bytes, dus het verraadt niets.
+10. **Red-team R1: als profielfoto alleen een eigen foto of een eigen upload.** Met besluit 8 maakt een profielfoto het beeld openbaar. Dan mag niemand het beeld van een ander lid als profielfoto zetten, ook niet als hij die foto mag zien. Fix in fix-cyclus 2 (A→B).
+11. **Red-team R2 (`_test`-functies zijn publiek op dev):** niet in 17a. Wordt een eigen WP26 vóór T0.
+12. **Red-team R3 (een openstaande uitnodiging haalt een verwijderd lid terug):** niet in 17a. Wordt een eis in het Groepsbeheer-WP: wie uit een groep verdwijnt, verliest ook de openstaande uitnodigingen voor die groep.
 
 ## Invarianten
 
