@@ -22,6 +22,7 @@ Een lid opent een album en ziet de foto's rechtop, en snel genoeg om erdoor te b
 10. **Red-team R1: als profielfoto alleen een eigen foto of een eigen upload.** Met besluit 8 maakt een profielfoto het beeld openbaar. Dan mag niemand het beeld van een ander lid als profielfoto zetten, ook niet als hij die foto mag zien. Fix in fix-cyclus 2 (A→B).
 11. **Red-team R2 (`_test`-functies zijn publiek op dev):** niet in 17a. Wordt een eigen WP26 vóór T0.
 12. **Red-team R3 (een openstaande uitnodiging haalt een verwijderd lid terug):** niet in 17a. Wordt een eis in het Groepsbeheer-WP: wie uit een groep verdwijnt, verliest ook de openstaande uitnodigingen voor die groep.
+13. **Vraag 10: gemigreerde profielfoto's van een ander accepteren (optie a).** Telling op prod (extract 2026-11-06): 1 van de 20 users heeft als profielfoto de foto van een ander lid; ze delen nog een groep. Geen losse kopieën. De WP12-transform blijft ongewijzigd; die ene foto is vanaf T0 openbaar.
 
 ## Invarianten
 
@@ -363,5 +364,5 @@ De pure logica staat in de app-tests als functies in `app/src/lib/photos.ts` en 
 - **Audit en red-team:** audit vond 1 blocker (B1, `Blob.slice` in de Convex-runtime) en 6 should-fixes; red-team vond R1–R3. Fix-cyclus 1 (B1, S1–S6), 2 (R1, invariant 16) en 3 (heraudit N-S1 en N-S2, invariant 17 en 18, plus tests op de aansluiting van de retry). Heraudit en red-team-hercheck: geen blocker. R2 → WP26, R3 → Groepsbeheer.
 - **Op dev gezien:** octet-stream-albums laden in de echte runtime (B1); laatste deploy `1af3f61`.
 - **Open voor de gate (Wouter, TestFlight, na WP25):** stap 1 en 4 (formaten, laadtijd), stap 6 (ex-lid), iOS `Cache.db` na uitloggen (red-team N2), geen 429's van Clerk als een heel album tegelijk een vers token vraagt.
-- **Open, buiten 17a:** vraag 10 (gemigreerde profielfoto's van een ander): telling op Wouters laptop, besluit gaat naar WP12.
+- **Vraag 10:** geteld op prod en geaccepteerd (besluit 13); geen wijziging in WP12.
 - **Backlog:** één live query per cover (N2); oude avatar na wisselen van profielfoto tot de cache verloopt (N4); geen CORS op de beeldpaden voor de webapp (N6, bij het webapp-WP).
