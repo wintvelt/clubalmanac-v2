@@ -20,6 +20,7 @@ import { modules } from "../_helpers/modules";
 //   GET /beeld/profiel/<userId>[?formaat=klein|groot]
 //     Openbaar, ook uitgelogd (besluit 8): de bytes van de actuele
 //     profielfoto. Geen profielfoto, onbekend of misvormd id: één 404.
+//     Als profielfoto alleen een eigen beeld (besluit 10, invariant 16).
 //
 // Formaat (besluit 2): `klein` en `groot` zijn geldig; zonder `formaat` het
 // origineel. Zolang een formaat er niet is (WP25 maakt ze), geeft het pad het
@@ -242,6 +243,27 @@ describe("GET /beeld/profiel/<userId> — openbaar (besluit 8)", () => {
     const body = await res.text();
     expect(body).toBe(PHOTO_BYTES);
     expect(body).not.toContain(PROFILE_BYTES);
+  });
+
+  it("invariant 16 (besluit 10): de foto van een ander wordt via het profielpad niet openbaar", async () => {
+    // Red-team R1: Mia (lid, ziet P) probeert het beeld van Owens foto P als
+    // profielfoto te zetten. Geweigerd; haar profielpad blijft het 404 van
+    // "geen profielfoto", voor iedereen, en geeft nooit de bytes van P.
+    const t = convexTest(schema, modules);
+    const s = await setup(t);
+    const before = await snapshot(await t.fetch(profilePath(s.mia), { method: "GET" }));
+    expect(before.status).toBe(404);
+    const photoStorage = await t.run(async (ctx) => (await ctx.db.get(s.photoId))!.storageId);
+    await expect(
+      withUser(t, "user_mia").mutation(api.users.updateProfile, {
+        profilePhotoStorageId: photoStorage,
+      }),
+    ).rejects.toThrow();
+    for (const url of [profilePath(s.mia), `${profilePath(s.mia)}?formaat=groot`]) {
+      const anon = await snapshot(await t.fetch(url, { method: "GET" }));
+      expect(anon, url).toEqual(before);
+      expect(anon.body, url).not.toContain(PHOTO_BYTES);
+    }
   });
 
   it("invariant 14: geen profielfoto, onbekend en misvormd id geven hetzelfde 404-antwoord", async () => {

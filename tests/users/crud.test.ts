@@ -89,8 +89,8 @@ describe("users.updateProfile", () => {
     const id = await seedUser(t, "user_alice", "alice@x.com");
     const as = withUser(t, "user_alice");
 
-    // WP24 invariant 8: een profielfoto is het beeld van een eigen foto (of
-    // een foto met toegang), geen los beeld.
+    // WP24 invariant 8 / WP17a invariant 16: een profielfoto is het beeld van
+    // een eigen foto, geen los beeld en niet de foto van een ander.
     const storageId = await t.run(async (ctx) => {
       const s = await ctx.storage.store(new Blob(["x"]));
       await ctx.db.insert("photos", {

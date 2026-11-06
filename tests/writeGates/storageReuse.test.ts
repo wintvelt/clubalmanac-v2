@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
 import {
+  addMembership,
   asUser,
   expectNoMutationOracle,
   expectRejectedNoChange,
@@ -14,13 +15,17 @@ import {
   type World,
 } from "./_helpers";
 
-// WP24 invariant 8 (vervangt A-keuze 5, fix-cyclus na audit-ronde 1 S1):
-// een publieke mutation koppelt een beeld (storageId) alleen aan de caller
-// als dat beeld al van de caller is of door de caller gezien mag worden:
-// het beeld van een eigen foto, van een foto met foto-toegang, of de eigen
-// huidige profielfoto. Elk ander beeld wordt geweigerd: dat van een foto
-// zonder toegang, andermans profielbeeld, en een los beeld dat nergens aan
-// hangt. Onbekend en verboden beeld geven dezelfde uitkomst.
+// WP24 invariant 8 (vervangt A-keuze 5, fix-cyclus na audit-ronde 1 S1),
+// aangescherpt door WP17a besluit 10 / invariant 16 (red-team R1): een
+// publieke mutation koppelt een beeld (storageId) alleen aan de caller als dat
+// beeld al van de caller is: het beeld van een eigen foto (ook een eigen
+// upload: /upload maakt een eigen foto-rij), of de eigen huidige profielfoto.
+// Een profielfoto is openbaar (WP17a besluit 8), dus foto-toegang tot de foto
+// van een ander is niet genoeg: anders maakt een groepsgenoot andermans foto
+// openbaar, ook na zijn vertrek. Elk ander beeld wordt geweigerd: dat van een
+// foto van een ander (met of zonder toegang), andermans profielbeeld, en een
+// los beeld dat nergens aan hangt. Onbekend en verboden beeld geven dezelfde
+// uitkomst.
 //
 // Profielbeelden staan in het publiek profiel (groups.listMembers,
 // users.getById, invite-landing). In de seed-wereld heeft elke user een los
@@ -118,7 +123,7 @@ describe("invariant 8 — inventaris publieke paden met een beeld-id", () => {
 
 // --- geweigerd ------------------------------------------------------------
 
-describe("invariant 8 — users.updateProfile weigert een beeld dat niet van de caller is", () => {
+describe("invariant 8 / WP17a invariant 16 — users.updateProfile weigert een beeld dat niet van de caller is", () => {
   it("vers account met het beeld van een foto van een ander: geweigerd, state ongewijzigd", async () => {
     const t = newT();
     const w = await seedWorld(t);
@@ -180,6 +185,44 @@ describe("invariant 8 — users.updateProfile weigert een beeld dat niet van de 
     await expectRejectedNoChange(t, () => setProfile(asUser(t, w, "alice"), loose), "alice");
   });
 
+  // WP17a besluit 10 (red-team R1): foto-toegang is niet genoeg.
+  it("groepsgenoot met foto-toegang tot de foto van een ander: geweigerd (besluit 10)", async () => {
+    const t = newT();
+    const w = await seedWorld(t);
+    // bob ziet pAlice via G1/A1; dave via G3/A3.
+    const aliceImage = await storageOf(t, w.photos.pAlice);
+    await expectRejectedNoChange(t, () => setProfile(asUser(t, w, "bob"), aliceImage), "bob");
+    await expectRejectedNoChange(t, () => setProfile(asUser(t, w, "dave"), aliceImage), "dave");
+  });
+
+  it("admin van de groep met de foto van een lid: geweigerd (besluit 10)", async () => {
+    const t = newT();
+    const w = await seedWorld(t);
+    // alice is admin van G1; pBob staat in A1.
+    const bobImage = await storageOf(t, w.photos.pBob);
+    await expectRejectedNoChange(t, () => setProfile(asUser(t, w, "alice"), bobImage));
+  });
+
+  it("webmaster die lid is van de groep met de foto: geweigerd (geen bypass, besluit 10)", async () => {
+    const t = newT();
+    const w = await seedWorld(t);
+    await addMembership(t, w.users.wm.id, w.groups.G1);
+    const aliceImage = await storageOf(t, w.photos.pAlice);
+    await expectRejectedNoChange(t, () => setProfile(asUser(t, w, "wm"), aliceImage));
+  });
+
+  it("geweigerde foto van een ander samen met een geldige nieuwe naam: ook de naam blijft oud", async () => {
+    const t = newT();
+    const w = await seedWorld(t);
+    const aliceImage = await storageOf(t, w.photos.pAlice);
+    await expectRejectedNoChange(t, () =>
+      asUser(t, w, "bob").mutation(api.users.updateProfile, {
+        name: "Nieuwe Bob",
+        profilePhotoStorageId: aliceImage,
+      }),
+    );
+  });
+
   it("geweigerd beeld samen met een geldige nieuwe naam: ook de naam blijft oud", async () => {
     const t = newT();
     const w = await seedWorld(t);
@@ -196,7 +239,7 @@ describe("invariant 8 — users.updateProfile weigert een beeld dat niet van de 
 
 // --- toegestaan -----------------------------------------------------------
 
-describe("invariant 8 — users.updateProfile accepteert een beeld van de caller", () => {
+describe("invariant 8 / WP17a invariant 16 — users.updateProfile accepteert een eigen beeld", () => {
   it("het beeld van een eigen foto", async () => {
     const t = newT();
     const w = await seedWorld(t);
@@ -209,15 +252,6 @@ describe("invariant 8 — users.updateProfile accepteert een beeld van de caller
     const t = newT();
     const w = await seedWorld(t);
     const storageId = await storageOf(t, w.photos.pBobPrivate);
-    await setProfile(asUser(t, w, "bob"), storageId);
-    expect((await profileOf(t, w.users.bob.id))?.profilePhotoStorageId).toBe(storageId);
-  });
-
-  it("het beeld van een foto van een ander waar de caller foto-toegang toe heeft (v1-pariteit)", async () => {
-    const t = newT();
-    const w = await seedWorld(t);
-    // bob ziet pAlice via G1/A1.
-    const storageId = await storageOf(t, w.photos.pAlice);
     await setProfile(asUser(t, w, "bob"), storageId);
     expect((await profileOf(t, w.users.bob.id))?.profilePhotoStorageId).toBe(storageId);
   });
@@ -264,13 +298,12 @@ describe("invariant 8 — beeld aan foto's van twee eigenaren (N1)", () => {
     return { storageId, carolCopy };
   }
 
-  it("toegang tot één van de twee foto's is genoeg: de caller ziet het beeld al", async () => {
+  it("toegang tot één van de twee foto's, eigenaar van geen van beide: geweigerd (besluit 10)", async () => {
     const t = newT();
     const w = await seedWorld(t);
     const { storageId } = await twoOwnerPixels(t, w);
-    // bob: toegang tot pAlice (G1), niet tot carols foto.
-    await setProfile(asUser(t, w, "bob"), storageId);
-    expect((await profileOf(t, w.users.bob.id))?.profilePhotoStorageId).toBe(storageId);
+    // bob: toegang tot pAlice (G1), niet tot carols foto, eigenaar van geen van beide.
+    await expectRejectedNoChange(t, () => setProfile(asUser(t, w, "bob"), storageId));
   });
 
   it("eigenaar van één van de twee foto's mag zijn eigen beeld gebruiken", async () => {
@@ -279,6 +312,15 @@ describe("invariant 8 — beeld aan foto's van twee eigenaren (N1)", () => {
     const { storageId } = await twoOwnerPixels(t, w);
     await setProfile(asUser(t, w, "alice"), storageId);
     expect((await profileOf(t, w.users.alice.id))?.profilePhotoStorageId).toBe(storageId);
+  });
+
+  it("ook de eigenaar van de andere foto, ook zonder toegang tot de eerste", async () => {
+    const t = newT();
+    const w = await seedWorld(t);
+    const { storageId } = await twoOwnerPixels(t, w);
+    // carol: eigenaar van de kopie, geen toegang tot pAlice.
+    await setProfile(asUser(t, w, "carol"), storageId);
+    expect((await profileOf(t, w.users.carol.id))?.profilePhotoStorageId).toBe(storageId);
   });
 
   it("toegang tot geen van beide: geweigerd", async () => {
@@ -316,6 +358,19 @@ describe("invariant 8 — onbekend en verboden beeld geven dezelfde uitkomst (N3
       t,
       () => setProfile(client, stale),
       () => setProfile(client, forbidden),
+    );
+  });
+
+  it("onbekend beeld tegenover het beeld van een foto van een ander mét toegang (besluit 10)", async () => {
+    const t = newT();
+    const w = await seedWorld(t);
+    const bob = asUser(t, w, "bob");
+    const stale = await staleStorage(t);
+    const aliceImage = await storageOf(t, w.photos.pAlice);
+    await expectNoMutationOracle(
+      t,
+      () => setProfile(bob, stale),
+      () => setProfile(bob, aliceImage),
     );
   });
 

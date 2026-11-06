@@ -28,7 +28,9 @@ import { modules } from "../_helpers/modules";
 // groep en zonder toegang tot een foto met hetzelfde beeld. Maar alleen het
 // beeld dat nú de profielfoto is: nooit een vorige profielfoto of een ander
 // beeld van die user. Geen profielfoto, een gewist beeld en een onbekend
-// user-id geven hetzelfde: `null` (invariant 14).
+// user-id geven hetzelfde: `null` (invariant 14). Wat een profielfoto mag
+// zijn, alleen een eigen beeld (besluit 10, invariant 16), pint
+// tests/writeGates/storageReuse.test.ts; hier het gevolg voor het profielpad.
 //
 // De tests pinnen het originele `storageId`. De formaten (klein, groot) komen
 // met WP25 (besluit 2); WP25 pint de keuze van het formaat.
@@ -315,6 +317,26 @@ describe("images.profileImage — een profielfoto is openbaar (invariant 3)", ()
     expect(await t.query(profileImage, { userId: s.owen })).toBe(P2.storageId);
     // Het foto-pad volgt nog steeds de foto-toegang (invariant 1).
     expect(await withUser(t, "user_mia").query(photoImage, { photoId: P2.photoId })).toBeNull();
+  });
+
+  it("invariant 16 (besluit 10): een lid maakt de foto van een ander niet openbaar via zijn profielfoto", async () => {
+    // Red-team R1: Mia ziet P (lid van G). Ze probeert het beeld van P als
+    // profielfoto te zetten. Dat wordt geweigerd, dus het openbare profielpad
+    // van Mia geeft P nooit, ook niet uitgelogd of na haar vertrek.
+    const t = newT();
+    const s = await setup(t);
+    const mia = withUser(t, "user_mia");
+    expect(await mia.query(photoImage, { photoId: s.P.photoId })).toBe(s.P.storageId);
+    await expect(
+      mia.mutation(api.users.updateProfile, { profilePhotoStorageId: s.P.storageId }),
+    ).rejects.toThrow();
+    for (const client of [t, withUser(t, "user_xena"), mia]) {
+      expect(await client.query(profileImage, { userId: s.mia })).toBeNull();
+    }
+    await mia.mutation(api.groups.removeMember, { groupId: s.G, userId: s.mia });
+    expect(await t.query(profileImage, { userId: s.mia })).toBeNull();
+    // Het foto-pad blijft de foto-toegang volgen.
+    expect(await withUser(t, "user_xena").query(photoImage, { photoId: s.P.photoId })).toBeNull();
   });
 
   it("de webmaster: de profielfoto (geen bypass nodig, het is openbaar)", async () => {
