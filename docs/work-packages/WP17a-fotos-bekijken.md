@@ -133,7 +133,7 @@ Bronnen: de oude app (`screens/AlbumPhotos.jsx`, `PhotoDetail.jsx`, `GroupMember
 4. **De oriëntatie kan dubbel draaien.** iOS (en elke gangbare beeldbibliotheek in React Native) past bij het decoderen de EXIF-tag uit het bestand zelf toe. De app past daarna `exifOrientation` uit de DB toe (WP8). Een nieuwe upload krijgt `exifOrientation` = de tag uit het bestand (WP7 `extractMetadata`), dus zo'n foto draait twee keer. Gemigreerde foto's hebben geen `exifOrientation` (WP12: "de oude app roteerde de bytes zelf"). Dat klopt voor foto's die v1 met Jimp draaide, maar niet per se voor foto's die nooit gedraaid zijn: een iPhone-JPEG draagt vaak tag 6. Hoeveel dat er zijn, is niet geteld. Zie open vraag 9.
 5. **"Nieuw" werkte in v1 anders dan in v2.** v1 zette een foto op "gezien" bij het eerste bezoek aan de app op een volgende dag, niet bij het openen van het album (`userChangeToMembership.js`). Een nieuwe foto hield zijn oranje hoekje dus de hele dag. v2 kiest bij het openen van het album (`markSeen`, WP16 invariant 3). Gevolg: zodra `markSeen` loopt, maakt de live query alle foto's "niet nieuw", terwijl de user er nog naar kijkt. Zie invariant 12.
 6. **Een foto wissen wist ook een profielfoto die dat beeld gebruikt.** `internalRemovePhoto` plant het wissen van `storageId`, ook als een user dat beeld als profielfoto heeft (gemigreerde profielfoto's delen hun beeld met een foto). De profielfoto wijst daarna naar niets. Voor 17a: zo'n profielfoto toont de letter (invariant 14). De cascade zelf: backlog (cascade-matrix P5 noemt het al als `[GAP]`).
-7. **De invite-landing geeft het profielbeeld-id van de afzender aan een anonieme houder van het token** (`invites.getByToken`, `landingInviterFields`). Met een beeldpad op `storageId` zou dat bytes opleveren zonder login. Invariant 10 haalt het id weg; de landing (WP19) toont de letter.
+7. **De invite-landing geeft het profielbeeld-id van de afzender aan een anonieme houder van het token** (`invites.getByToken`, `landingInviterFields`). Met een beeldpad op `storageId` zou dat bytes opleveren zonder login. Invariant 10 haalt het id weg; met besluit 8 toont de landing (WP19) de profielfoto via het user-id van de afzender.
 8. **De album-reads geven nog een gewone `Error`** (WP16 backlog N3), en `photos.getById`/`getWithOwner` ook. Het detail heeft eigenaar en "nieuw" per foto nodig, en die staan niet in `albums.listPhotos`.
 9. **`by_flagged` is niet sparse.** In Convex staan documenten zonder het veld gewoon in de index (`undefined < null < alle andere waarden`, docs Types). Het JS-filter in `listMyFlagged` en `listAllFlagged` blijft dus nodig, of de query krijgt een ondergrens. Geen meting op dev nodig: dit is gedocumenteerd gedrag, en de huidige code is correct. Buiten 17a.
 
@@ -199,13 +199,13 @@ Voor alle opties geldt:
 |---|---|---|---|
 | Album- en foto-reads: `albums.getById`, `getWithGroup`, `getWithCover`, `listPhotos`, `photos.getById`, `getWithOwner` | Geen toegang, of het album of de foto bestaat niet: `ConvexError` met code `NOT_MEMBER`, voor beide gevallen gelijk | Invariant 7, WP16 N3 | `tests/images/notMember.test.ts` |
 | `albums.listPhotos` | Per foto ook `owner` (publiek profiel) en `isNew` voor de caller. `isNew` volgt dezelfde definitie als de teller: van een ander, toegevoegd na het laatste bezoek. | Detail toont de eigenaar; het raster de markering. Eén definitie van nieuw (invariant 11). | `tests/albums/listPhotosNew.test.ts`, `tests/readWhitelist/albums.test.ts` (vorm aangepast) |
-| Toegangsregel voor het beeld: `internal.images.photoImage({ photoId })` en `internal.images.profileImage({ userId })` | Het beeld voor de caller, of `null`. Eén regel die elke vorm van vraag 1 gebruikt. | Invariant 1, 2, 3 | `tests/images/access.test.ts` |
-| Beeldpad (vorm B): `GET /beeld/foto/<photoId>` en `GET /beeld/profiel/<userId>` | Bytes als de regel hierboven een beeld geeft, anders één en dezelfde 404; uitgelogd 401 | Vraag 1 | `tests/images/httpRoute.test.ts` (alleen bij vorm B) |
+| Toegangsregel voor het beeld: `internal.images.photoImage({ photoId })` en `internal.images.profileImage({ userId })` | Foto: het beeld als de caller foto-toegang heeft, anders `null`. Profiel: de actuele profielfoto voor iedereen, ook uitgelogd (besluit 8), anders `null`. | Invariant 1, 2, 3 | `tests/images/access.test.ts` |
+| Beeldpad (besluit 1): `GET /beeld/foto/<photoId>` en `GET /beeld/profiel/<userId>`, beide met `?formaat=klein\|groot` | Bytes als de regel hierboven een beeld geeft, anders één en dezelfde 404. Foto: uitgelogd 401, `Cache-Control: private`. Profiel: openbaar. Formaat (besluit 2): zonder `formaat` het origineel; zolang een formaat er niet is (WP25) ook het origineel; een onbekende waarde 400, voor iedereen gelijk. Het formaat verandert niets aan de toegang. | Besluit 1, 2, 8 | `tests/images/httpRoute.test.ts` |
 | Foto-, profiel- en landing-vormen | Geen `storageId` en geen `profilePhotoStorageId` meer in een publieke response | Invariant 10 | `tests/images/noStorageIds.test.ts`, `tests/readWhitelist/_world.ts` (vorm aangepast) |
 
 "Publicaties" (in welke albums staat deze foto, alleen in groepen van de kijker) vraagt een nieuwe read met een eigen toegangsregel. Advies: naar 17b.
 
-**8 (nieuw). Een profielfoto die een foto is.** Invariant 3 zegt: een profielfoto geeft geen foto prijs waar de kijker geen toegang toe heeft. Gemigreerde profielfoto's delen hun beeld met een foto. Advies: je ziet de profielfoto van iemand als je een groep met hem deelt, én (als het beeld bij een of meer foto's hoort) je toegang hebt tot minstens één van die foto's. Anders de letter. Gevolg: deel je met Bob alleen groep Y, en is zijn profielfoto een foto uit groep X, dan zie je de letter. Alternatief: de profielfoto krijgt bij instellen een eigen kopie van het beeld (WP18 en 17b), en de regel wordt alleen "een gedeelde groep". Dat lost het voor nieuwe profielfoto's op, niet voor de gemigreerde. Telling: hoeveel profielfoto's een foto zijn, en hoeveel paren (kijker, lid) de letter zouden zien (§Meting op dev).
+**8 (nieuw). Een profielfoto die een foto is.** A adviseerde de profielfoto af te schermen als hij het beeld is van een foto zonder toegang. Besluit 8 (Wouter) wijkt af: een profielfoto is openbaar. Zie §Besluiten Wouter.
 
 **9 (nieuw). Wat `exifOrientation` betekent.** Zie kernvondst 4. Advies: `exifOrientation` is de draaiing ten opzichte van de ruwe pixels, zoals WP8 het bedoelt, en de app krijgt nooit bytes waarin een decoder nog een tag kan toepassen. Met de verkleinde versies van vraag 2 is dat vanzelf zo: ze worden gemaakt uit de ruwe pixels, zonder EXIF. Wie de formaten voor de bestaande foto's maakt (backfill bij optie A, WP12-tooling bij C, het eerste verzoek bij B), zet voor gemigreerde foto's zonder `exifOrientation` de tag uit het bestand in de DB. Zonder verkleinde versies is invariant 4 niet te halen zonder de tag uit het bestand apart op te slaan. Telling: hoeveel bestanden een tag ongelijk aan 1 dragen. Dat vraagt de bytes; de preview-run van die stap kan het tellen.
 
@@ -220,7 +220,7 @@ Voor alle opties geldt:
 | Groep- en albumvorm (`listMine`, `listByGroup`, `listByGroupWithUnread`, `getById`, `getWithGroup`) | `coverPhotoId` | idem |
 | `publicProfile`: `users.getById`, `groups.listMembers`, `photos.getWithOwner` (owner), `albums.listPhotos` (owner, nieuw) | `profilePhotoStorageId` | Weg. Het beeld via het user-id. |
 | `ownProfile`: `users.current`, `users.profile` | `profilePhotoStorageId` | Weg. Het eigen beeld via het eigen user-id. |
-| `invites.getByToken` (anoniem) | `inviter.profilePhotoStorageId` | Weg (kernvondst 7) |
+| `invites.getByToken` (anoniem) | `inviter.profilePhotoStorageId` | Weg. In de plaats: `inviter._id`, zodat de landing (WP19) de profielfoto via het openbare profielpad toont (besluit 8). Herziet de uitsluiting van `_id` uit WP23/audit-8. |
 | `ratings.listForPhoto` | foto-id | Ongewijzigd |
 | `POST /upload` | foto-id van de eigen upload | Ongewijzigd |
 | `_test:storageUpload`, `_test:storageDownloadUrl` | `storageId`, URL | Alleen met `INTEGRATION_TEST_ENABLED` (dev). Buiten scope, zoals in WP23. |
@@ -229,10 +229,10 @@ Voor alle opties geldt:
 
 | Pad | Neemt aan / schrijft | Gate |
 |---|---|---|
-| Beeldpad (nieuw, vraag 1) | foto-id, user-id | De regel van `images.photoImage`/`profileImage` (toestemmingslijst: eigenaar, lid van een groep met de foto in een album; profiel: zie vraag 8) |
+| Beeldpad (besluit 1) | foto-id, user-id, formaat | Foto: `images.photoImage` (toestemmingslijst: eigenaar, of lid van een groep met de foto in een album). Profiel: openbaar, alleen het beeld dat nu de profielfoto is (besluit 8). |
 | `users.updateProfile` | `storageId` | `canUseStorage` (WP24 invariant 8). Na 17a kent de client geen `storageId` meer: "als profielfoto instellen" (17b) heeft een variant op foto-id nodig. |
 | `photos.update`, `remove`, `rotate`, `flag`, `appeal`, `decideFlag`; `ratings.upsert`, `remove`; `albums.addPhoto`, `removePhoto`; `groups.update`, `albums.update` (cover) | foto-id | WP24, ongewijzigd. Geen ervan geeft bytes. |
-| `groups.addMember`, `removeMember`, `create`, `remove`; `invites.accept`; `users.deleteSelf`; Clerk-webhook (`registerFromSession`) | lidmaatschappen | WP24. **`groups.addMember` zonder instemming** maakt een aanvaller medelid van het slachtoffer: vanaf 17a ziet hij daardoor diens profielfoto (vraag 8 beperkt dat tot wat hij al mocht zien). Fix hoort bij het beheer-WP. |
+| `groups.addMember`, `removeMember`, `create`, `remove`; `invites.accept`; `users.deleteSelf`; Clerk-webhook (`registerFromSession`) | lidmaatschappen | WP24. `groups.addMember` zonder instemming geeft voor het beeld niets meer prijs: een profielfoto is openbaar (besluit 8), en een foto volgt de foto-toegang. Het gat zelf blijft voor het beheer-WP. |
 | `albums.addPhoto`, `removePhoto`, `remove`; `groups.remove`; `photos.remove` | `albumPhotos` | WP24, ongewijzigd |
 | `POST /upload` | nieuwe foto van de caller | Ongewijzigd |
 
@@ -277,7 +277,7 @@ De inventaristests: `tests/images/noStorageIds.test.ts` (geen `_storage`-id in e
 | Mijn groepen, kaart per groep | Cover 256 px | Cover (*klein*), anders de letter |
 | Groep, kop | Cover 1900 px | Cover (*groot*), anders de letter |
 | Groep → Albums, tegel per album | Cover 256 px | Cover (*klein*), anders de letter |
-| Groep → Leden | Profielfoto 256 px, rond | Profielfoto (*klein*), rond; anders de letter (vraag 8, invariant 14) |
+| Groep → Leden | Profielfoto 256 px, rond | Profielfoto (*klein*), rond; anders de letter (invariant 14) |
 | Profiel | Avatar 96 px, plus de profielfoto als achtergrond (1900 px) | Avatar (*klein*). De achtergrond: B kiest, binnen design.md. |
 
 ### Aanvullende invarianten
@@ -286,7 +286,7 @@ De inventaristests: `tests/images/noStorageIds.test.ts` (geen `_storage`-id in e
 11. **Eén definitie van nieuw.** `isNew` in `albums.listPhotos` is waar voor precies de foto's die de teller van dat album telt: van een ander, toegevoegd na het laatste bezoek (of na `max(album.createdAt, joinedAt)` zonder bezoek). Het aantal `isNew` is gelijk aan de teller.
 12. **Een markering blijft staan zolang het scherm open is.** Een foto die nieuw was toen het album openging, of die erbij kwam terwijl het open was, houdt zijn markering tot de user het scherm verlaat. `markSeen` haalt hem niet live weg.
 13. **Zonder toegang, onbekend of gewist: één antwoord.** Het beeldpad geeft voor een foto zonder toegang, een onbekend id en een gewist beeld hetzelfde antwoord. Uitgelogd geeft 401 en nooit bytes.
-14. **Een profielfoto die er niet is of die je niet mag zien, ziet eruit als geen profielfoto.** De letter, zonder fout-toestand. Zo verraadt de avatar niet of iemand een profielfoto heeft die je niet mag zien.
+14. **Een profielfoto die er niet is, ziet eruit als geen profielfoto.** Geen profielfoto, een gewist beeld en een onbekend user-id geven hetzelfde antwoord, en de app toont de letter, zonder fout-toestand.
 
 ### Edge cases
 
@@ -308,21 +308,21 @@ De inventaristests: `tests/images/noStorageIds.test.ts` (geen `_storage`-id in e
 ### Meting op dev (Wouter)
 
 1. **Storage-URL** (vraag 1): `npm run test:integration -- tests/integration/convex/storageUrl.test.ts` (vereist `.env.integration` met de dev-URL en `INTEGRATION_TEST_ENABLED=true` op dev, zoals WP2). De test pint wat de docs beloven (zonder auth op te halen; na wissen weg) en print de headers en of de URL stabiel is.
-2. **Tellingen** (vraag 2, 8, 9): de dev-tabellen exporteren naar `scripts/.data/wp17a/` en `node scripts/.data/wp17a/tel.mjs` draaien. Het script geeft: grootte per beeld (mediaan, p90, max, totaal), het `contentType` van de beelden (hoeveel HEIC, voor de spike van vraag 2), de grootste albums in MB, `exifOrientation` per waarde, profielfoto's die een foto zijn, en de paren (kijker, lid) die met het advies van vraag 8 de letter zien. De commando's staan in A's rapport.
-3. **Laadtijd op 4G:** bij de gate (stap 4), met de build van B.
+2. **Tellingen** (input voor WP25: formaten en vraag 9): de dev-tabellen exporteren naar `scripts/.data/wp17a/` en `node scripts/.data/wp17a/tel.mjs` draaien. Het script geeft: grootte per beeld (mediaan, p90, max, totaal), het `contentType` van de beelden (hoeveel HEIC, voor de spike), de grootste albums in MB, en `exifOrientation` per waarde. De telling voor vraag 8 vervalt (besluit 8).
+3. **Laadtijd op 4G:** bij de gate (stap 4), met de build van B en de formaten van WP25.
 
 ### Tests
 
 | Bestand | Pint |
 |---|---|
-| `tests/images/access.test.ts` | Invariant 1, 2, 3 en 13: de toegangsregel voor foto's en profielfoto's, ook na vertrek, na uit het album halen, na wissen, en de profielfoto die een foto is (vraag 8) |
+| `tests/images/access.test.ts` | Invariant 1, 2, 3, 13 en 14: de foto volgt de foto-toegang, ook na vertrek, na uit het album halen en na wissen; de profielfoto is openbaar en altijd de actuele (besluit 8) |
 | `tests/images/notMember.test.ts` | Invariant 7: `NOT_MEMBER` op de album- en foto-reads, gelijk voor geen toegang en onbekend, ook na verwijderen terwijl je kijkt |
 | `tests/images/noStorageIds.test.ts` | Invariant 10: geen `_storage`-id in een return-validator van een publieke query |
 | `tests/albums/listPhotosNew.test.ts` | Invariant 11: `isNew` en `owner` in `listPhotos`, dezelfde definitie als de teller, `markSeen` |
-| `tests/readWhitelist/_world.ts`, `albums.test.ts` (A paste aan) | De vormen zonder `storageId`, en `listPhotos` met `owner` en `isNew` |
-| `tests/images/httpRoute.test.ts` | Vorm B (voorlopig, op advies vraag 1): 401, één 404, bytes voor wie toegang heeft, de routelijst |
+| `tests/readWhitelist/_world.ts`, `albums.test.ts`, `users.test.ts`, `invites.test.ts`, `tests/invites/publicGet.test.ts`, `tests/writeGates/storageReuse.test.ts` (A paste aan) | De vormen zonder `storageId`; `listPhotos` met `owner` en `isNew`; de landing met `inviter._id` (besluit 8) |
+| `tests/images/httpRoute.test.ts` | Besluit 1, 2 en 8: foto-pad met 401, één 404 en `private`; profielpad openbaar en actueel; het formaat-contract (*klein*/*groot*, terugval op het origineel, 400 bij een onbekende waarde); de routelijst |
 | `tests/integration/convex/storageUrl.test.ts` | Meting vraag 1 (niet in CI) |
 | `app/tests/photos.test.ts` | Pure logica: de volgorde in het album, de datum van een foto, de draaiing per `exifOrientation` (tegen een onafhankelijke afleiding uit de EXIF-definitie), de markeringen die blijven staan (invariant 12), wanneer `markSeen` loopt (vraag 6) |
 | `app/tests/groupRoutes.test.ts` (A vult aan) | Het pad en het routebestand van het foto-detail |
 
-De pure logica staat in de app-tests als functies in `app/src/lib/photos.ts` en `app/src/lib/groupRoutes.ts`. B kiest de vorm van de schermen zelf. Hangt een besluit van Wouter af van vraag 1, 2, 8 of 9 anders uit dan het advies, dan past A in ronde 2 de tests aan. *Regie: besluit 8 wijkt af (§Besluiten Wouter); A past `access.test.ts`, `httpRoute.test.ts` en de invite-landing aan.*
+De pure logica staat in de app-tests als functies in `app/src/lib/photos.ts` en `app/src/lib/groupRoutes.ts`. B kiest de vorm van de schermen zelf. Ronde 2 (A, na de besluiten): de tests volgen besluit 1, 2 en 8. De keuze van het formaat zelf (welk bestand bij *klein* of *groot*) pint WP25.
