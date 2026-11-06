@@ -306,6 +306,12 @@ De inventaristests: `tests/images/noStorageIds.test.ts` (geen `_storage`-id in e
     - de eigen huidige profielfoto (opnieuw zetten maakt niets nieuw openbaar).
 
     Foto-toegang tot de foto van een ander is niet genoeg, ook niet als groepsgenoot, admin of webmaster. Geweigerd geeft dezelfde uitkomst als een onbekend beeld en verandert niets, ook de naam in dezelfde aanroep niet. Het profielpad van de caller geeft daarna nog steeds zijn oude profielfoto. Dit vervangt de tak "foto met foto-toegang" van WP24 invariant 8.
+17. **Het type van een beeld** (fix-cyclus 3, N-S2). Beide beeldpaden sturen de opgeslagen bytes ongewijzigd, met `X-Content-Type-Options: nosniff`. `Content-Type`:
+    - opgeslagen als rasterbeeld (`image/jpeg`, `png`, `webp`, `heic`, `heif`, `gif`): dat type;
+    - anders (`application/octet-stream`, geen type, of een ander type): JPEG, PNG, WebP of HEIC uit de eerste bytes. Onbekende bytes: 200 met `application/octet-stream`.
+
+    Nooit een ander opgeslagen type. `/upload` neemt elk type aan, dus een eigen upload als `text/html` of `image/svg+xml` zou als profielfoto op het openbare profielpad in een browser draaien.
+18. **Een beeld dat niet laadt, probeert het één keer opnieuw, met een vers token** (fix-cyclus 3, N-S1). Een verlopen token geeft 401. Na een fout haalt het beeld een vers token (Clerk `skipCache`) en wacht daarop: er gaat geen verzoek meer uit met het oude token. Lukt ook die poging niet, of komt er geen token, dan valt het terug: de fout-tegel, of de letter op een cover. Een laat token of een late fout van een eerdere poging verandert niets. "Opnieuw" op de fout-tegel begint zo'n reeks opnieuw, ook met een vers token.
 
 ### Edge cases
 
@@ -329,7 +335,7 @@ De inventaristests: `tests/images/noStorageIds.test.ts` (geen `_storage`-id in e
 1. **Storage-URL** (vraag 1): `npm run test:integration -- tests/integration/convex/storageUrl.test.ts` (vereist `.env.integration` met de dev-URL en `INTEGRATION_TEST_ENABLED=true` op dev, zoals WP2). De test pint wat de docs beloven (zonder auth op te halen; na wissen weg) en print de headers en of de URL stabiel is.
 2. **Tellingen** (input voor WP25: formaten en vraag 9): de dev-tabellen exporteren naar `scripts/.data/wp17a/` en `node scripts/.data/wp17a/tel.mjs` draaien. Het script geeft: grootte per beeld (mediaan, p90, max, totaal), het `contentType` van de beelden (hoeveel HEIC, voor de spike), de grootste albums in MB, en `exifOrientation` per waarde. De telling voor vraag 8 vervalt (besluit 8).
 3. **Laadtijd op 4G:** bij de gate (stap 4), met de build van B en de formaten van WP25.
-4. **Profielfoto's van een ander** (vraag 10, prod): na `npm run migrate -- extract` en `npm run migrate -- transform --target prod` (alleen lezen op AWS; schrijft `scripts/.data/convex-records.json`) draait `node scripts/.data/wp17a/profiel.mjs`. Het telt per user of de profielfoto een eigen foto is, de foto van een ander of een los beeld.
+4. **Profielfoto's van een ander** (vraag 10, prod): op Wouters laptop (de server heeft geen AWS-sleutels) `node scripts/.data/wp17a/profiel.mjs scripts/.data/dynamo-extract.json`. Het script leest alleen het ruwe extract (vers: `npm run migrate -- extract`, alleen lezen op AWS) en telt per user of de profielfoto een eigen foto is, de foto van een ander, een standaardbeeld of een los beeld.
 
 ### Tests
 
@@ -341,10 +347,11 @@ De inventaristests: `tests/images/noStorageIds.test.ts` (geen `_storage`-id in e
 | `tests/albums/listPhotosNew.test.ts` | Invariant 11: `isNew` en `owner` in `listPhotos`, dezelfde definitie als de teller, `markSeen` |
 | `tests/readWhitelist/_world.ts`, `albums.test.ts`, `users.test.ts`, `invites.test.ts`, `tests/invites/publicGet.test.ts` (A paste aan) | De vormen zonder `storageId`; `listPhotos` met `owner` en `isNew`; de landing met `inviter._id` (besluit 8) |
 | `tests/writeGates/storageReuse.test.ts` (A paste aan) | Invariant 16: als profielfoto alleen een eigen beeld; de foto van een ander met foto-toegang, ook bij twee eigenaren, wordt geweigerd met dezelfde uitkomst als een onbekend beeld |
-| `tests/images/httpRoute.test.ts` | Besluit 1, 2 en 8: foto-pad met 401, één 404 en `private`; profielpad openbaar en actueel, met `no-cache`, en na een geweigerde poging met de foto van een ander geen bytes van die foto (invariant 16); het formaat-contract (*klein*/*groot*, terugval op het origineel, 400 bij een onbekende waarde); de routelijst |
+| `tests/images/httpRoute.test.ts` | Besluit 1, 2 en 8: foto-pad met 401, één 404 en `private`; profielpad openbaar en actueel, met `no-cache`, en na een geweigerde poging met de foto van een ander geen bytes van die foto (invariant 16); het formaat-contract (*klein*/*groot*, terugval op het origineel, 400 bij een onbekende waarde); het `Content-Type` uit opgeslagen type of eerste bytes, nooit een ander opgeslagen type (invariant 17); de routelijst |
 | `tests/integration/convex/storageUrl.test.ts` | Meting vraag 1 (niet in CI) |
 | `app/tests/photos.test.ts` | Pure logica: de volgorde in het album, de datum van een foto (invariant 15), de draaiing per `exifOrientation` en de transform die React Native echt toepast (beide tegen een onafhankelijke afleiding uit de EXIF-definitie en de RN-bron), de markeringen die blijven staan (invariant 12), wanneer `markSeen` loopt (vraag 6) |
 | `app/tests/imageCache.test.ts` | Besluit 3: lokaal wissen leegt geheugen en schijf van de beeldcache, ook als dat half mislukt. Invariant 3: een beeld met een profielbron heeft geen cache. |
+| `app/tests/imageRetry.test.ts` | Invariant 18: na een fout één nieuwe poging met een vers token, geen verzoek met het oude, daarna terugvallen; de app gebruikt `src/lib/imageRetry.ts` |
 | `tests/integration/images/exMember.test.ts` | Gate-stap 6 (invariant 2) op dev, met echte tokens (niet in CI) |
 | `app/tests/groupRoutes.test.ts` (A vult aan) | Het pad en het routebestand van het foto-detail |
 
