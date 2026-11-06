@@ -143,7 +143,8 @@ export const create = mutation({
 // heeft. Wél de invitee-email: met code-login moet de user precies dat adres
 // gebruiken, en het token ging al naar dat adres. Geen token-echo,
 // invitedBy-id, bouncedAt, `_id` of tijden.
-// Inviter = {name, profilePhotoStorageId}; groep = {_id, name, description}
+// Inviter = {_id, name} (WP17a besluit 8: `_id` voor het openbare
+// profielpad, geen beeld-id); groep = {_id, name, description}
 // (`_id` voor "accepteren, dan naar de groep"; ontsluit niets voor een
 // niet-lid).
 export const getByToken = query({

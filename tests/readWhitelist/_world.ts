@@ -25,12 +25,14 @@ export type T = ReturnType<typeof convexTest>;
 export type R = Record<string, any>;
 
 export const SHAPE = {
-  publicProfile: ["_id", "name", "profilePhotoStorageId"],
+  // WP17a invariant 10 (A paste aan): geen profilePhotoStorageId meer. Het
+  // beeld loopt via het user-id. De seed vult het veld nog wel, zodat zijn
+  // afwezigheid in de response iets bewijst.
+  publicProfile: ["_id", "name"],
   ownProfile: [
     "_id",
     "email",
     "name",
-    "profilePhotoStorageId",
     "photoCount",
     "createdAt",
     // WP15b: lastVisitAt is geen deel meer van het eigen profiel. De seed
@@ -53,7 +55,8 @@ export const SHAPE = {
   photo: [
     "_id",
     "ownerId",
-    "storageId",
+    // WP17a invariant 10 (A paste aan): geen storageId meer; het beeld loopt
+    // via het foto-id.
     "width",
     "height",
     "takenAt",
@@ -99,7 +102,11 @@ export const SHAPE = {
   // A-keuze 6 herzien (Wouter, 47b65bc): email van de genodigde wél.
   inviteLanding: ["status", "isExpired", "role", "email", "group", "inviter"],
   landingGroup: ["_id", "name", "description"],
-  landingInviter: ["name", "profilePhotoStorageId"],
+  // WP17a besluit 8 + invariant 10 (A paste aan): geen profielbeeld-id op de
+  // anonieme landing, wel het user-id van de afzender. Daarmee toont de
+  // landing zijn profielfoto via het openbare profielpad. Dit herziet de
+  // uitsluiting van `_id` uit WP23 (precedent audit-8).
+  landingInviter: ["_id", "name"],
 } as const;
 
 /** Keys met een gedefinieerde waarde, gesorteerd. `null` telt als gedefinieerd. */

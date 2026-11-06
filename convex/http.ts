@@ -2,6 +2,8 @@ import { httpRouter } from "convex/server";
 import { verifyWebhook } from "@clerk/backend/webhooks";
 import { httpAction } from "./_generated/server";
 import { internal } from "./_generated/api";
+import type { Id } from "./_generated/dataModel";
+import { parseImageFormat } from "./images";
 
 // Cascade matrix IB1: Mailjet bounce-webhook → internal.invites.handleBounce.
 // Voltooit IB1 cascade per docs/cascade-matrix.md (bounce → status=expired
@@ -322,6 +324,157 @@ http.route({
     }
 
     return Response.json({ photoId }, { status: 200 });
+  }),
+});
+
+// WP17a: het beeldpad (besluit 1: vorm B). Bij elk verzoek de toegangsregel
+// uit convex/images.ts, dan de bytes uit storage. De client kent geen
+// `storageId` en geen storage-URL (invariant 10); hij vraagt een beeld op met
+// een foto-id of een user-id.
+//
+//   GET /beeld/foto/<photoId>[?formaat=klein|groot]
+//     400 onbekend formaat (vóór alles, dus voor iedereen gelijk)
+//     401 uitgelogd of ongeldige token (nooit bytes)
+//     404 geen toegang, onbekend, misvormd, foto of beeld gewist: één
+//         antwoord (invariant 13)
+//     200 de bytes, `Cache-Control: private` (geen proxy of CDN mag een beeld
+//         achter een login bewaren), `Vary: Authorization`
+//   GET /beeld/profiel/<userId>[?formaat=klein|groot]
+//     Openbaar (besluit 8): geen login-check. 400 als hierboven; 404 voor geen
+//     profielfoto, onbekend, misvormd of gewist (invariant 14); 200 met de
+//     bytes van de actuele profielfoto. `no-cache`: dezelfde URL geeft na een
+//     wissel een ander beeld, dus een cache moet het eerst opnieuw vragen.
+//
+// Formaat (besluit 2): tot WP25 de verkleinde versies maakt, geeft elk
+// formaat het origineel. Het formaat wordt pas gebruikt nadat de regel een
+// beeld gaf; het opent niets.
+const PHOTO_PREFIX = "/beeld/foto/";
+const PROFILE_PREFIX = "/beeld/profiel/";
+
+const NOT_FOUND = () => new Response("Niet gevonden", { status: 404 });
+const BAD_FORMAT = () => new Response("Onbekend formaat", { status: 400 });
+
+// Een id met kapotte procent-codering (`%E0%A4%A`) is een misvormd id: geen
+// exception (500), maar een lege string, en daarmee hetzelfde antwoord als een
+// onbekend id (invariant 13 en 14; audit S1).
+function idFromPath(request: Request, prefix: string): string {
+  const raw = new URL(request.url).pathname.slice(prefix.length);
+  try {
+    return decodeURIComponent(raw);
+  } catch {
+    return "";
+  }
+}
+
+// Het type uit de eerste bytes. Veel gemigreerde beelden staan in storage als
+// `application/octet-stream` (telling regie op dev: 444 van 1002); dan bepalen
+// de magische bytes het type, zodat ook een browser (Track B) het als beeld
+// toont ondanks `nosniff`.
+function sniffImageType(b: Uint8Array): string | null {
+  const ascii = (from: number, to: number) => String.fromCharCode(...b.subarray(from, to));
+  if (b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff) return "image/jpeg";
+  if (b[0] === 0x89 && ascii(1, 4) === "PNG") return "image/png";
+  if (ascii(0, 4) === "RIFF" && ascii(8, 12) === "WEBP") return "image/webp";
+  if (ascii(4, 8) === "ftyp" && /^(heic|heix|hevc|mif1|msf1)$/.test(ascii(8, 12))) return "image/heic";
+  return null;
+}
+
+// Invariant 17: alleen een opgeslagen rasterbeeld-type gaat door. Elk ander
+// type (octet-stream, leeg, of bijvoorbeeld `text/html` of `image/svg+xml`
+// van een eigen upload) wordt nooit verstuurd: anders draait zo'n bestand als
+// profielfoto op het openbare profielpad in een browser.
+const RASTER_TYPES = new Set([
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+  "image/heic",
+  "image/heif",
+  "image/gif",
+]);
+
+function storedRasterType(type: string): string | null {
+  const base = type.split(";")[0]!.trim().toLowerCase();
+  return RASTER_TYPES.has(base) ? base : null;
+}
+
+// Een beeld met een rasterbeeld-type gaat als Blob door, zonder het te lezen.
+// Anders leest de action het hele bestand: `Blob.slice()` gevolgd door
+// `arrayBuffer()` gaf in de echte Convex-runtime een RangeError (WP7-gate,
+// zie convex/photoMetadata.ts; audit B1), dus geen slice, maar één
+// `arrayBuffer()` en een `Uint8Array`-view op de eerste bytes. Daarna gaan
+// dezelfde bytes als body mee. Geheugen: het grootste origineel is ~20 MB,
+// onder de 64 MiB van een httpAction en de 100 MiB per respons (Convex-docs,
+// Limits).
+async function imageBody(blob: Blob): Promise<{ body: Blob | ArrayBuffer; type: string }> {
+  const stored = storedRasterType(blob.type);
+  if (stored) return { body: blob, type: stored };
+  const bytes = await blob.arrayBuffer();
+  const head = new Uint8Array(bytes, 0, Math.min(12, bytes.byteLength));
+  return { body: bytes, type: sniffImageType(head) ?? "application/octet-stream" };
+}
+
+async function imageResponse(
+  ctx: { storage: { get: (id: Id<"_storage">) => Promise<Blob | null> } },
+  storageId: Id<"_storage"> | null,
+  cacheControl: string,
+  extraHeaders: Record<string, string> = {},
+): Promise<Response> {
+  if (!storageId) return NOT_FOUND();
+  const blob = await ctx.storage.get(storageId);
+  if (!blob) return NOT_FOUND();
+  const { body, type } = await imageBody(blob);
+  return new Response(body, {
+    status: 200,
+    headers: {
+      "Content-Type": type,
+      "Cache-Control": cacheControl,
+      "X-Content-Type-Options": "nosniff",
+      ...extraHeaders,
+    },
+  });
+}
+
+http.route({
+  pathPrefix: PHOTO_PREFIX,
+  method: "GET",
+  handler: httpAction(async (ctx, request) => {
+    const format = parseImageFormat(
+      new URL(request.url).searchParams.get("formaat"),
+    );
+    if (format === "ongeldig") return BAD_FORMAT();
+
+    // Zelfde JWT-throw-handling als `/upload`: een ongeldige token is 401,
+    // geen 500.
+    let identity;
+    try {
+      identity = await ctx.auth.getUserIdentity();
+    } catch {
+      return new Response("Unauthorized", { status: 401 });
+    }
+    if (!identity) return new Response("Unauthorized", { status: 401 });
+
+    const storageId = await ctx.runQuery(internal.images.photoImage, {
+      photoId: idFromPath(request, PHOTO_PREFIX),
+    });
+    return await imageResponse(ctx, storageId, "private, max-age=3600", {
+      Vary: "Authorization",
+    });
+  }),
+});
+
+http.route({
+  pathPrefix: PROFILE_PREFIX,
+  method: "GET",
+  handler: httpAction(async (ctx, request) => {
+    const format = parseImageFormat(
+      new URL(request.url).searchParams.get("formaat"),
+    );
+    if (format === "ongeldig") return BAD_FORMAT();
+
+    const storageId = await ctx.runQuery(internal.images.profileImage, {
+      userId: idFromPath(request, PROFILE_PREFIX),
+    });
+    return await imageResponse(ctx, storageId, "public, no-cache");
   }),
 });
 

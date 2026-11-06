@@ -71,7 +71,7 @@ describe("invites.getByToken — landingspagina lookup", () => {
     // Geen withUser → anonymous query
     const got = await t.query(api.invites.getByToken, { token });
     expect(got?.status).toBe("pending");
-    // Audit-8: inviter is gesluisd tot {name, profilePhotoStorageId}; check
+    // Audit-8 (WP17a besluit 8 herzien): inviter is gesluisd tot {_id, name}; check
     // alleen op aanwezigheid hier. Field-shape wordt gepind in de [audit-8]
     // sluis-test verderop.
     expect(got?.inviter).not.toBeNull();
@@ -117,10 +117,13 @@ describe("invites.getByToken — landingspagina lookup", () => {
     expect(inviter.photoLimit).toBeUndefined();
     expect(inviter.lastVisitAt).toBeUndefined();
     expect(inviter.createdAt).toBeUndefined();
-    expect(inviter._id).toBeUndefined();
     expect(inviter._creationTime).toBeUndefined();
-    // Allow-list: enkel name + profilePhotoStorageId.
-    const allowed = new Set(["name", "profilePhotoStorageId"]);
+    // WP17a besluit 8 + invariant 10 (A paste aan): geen beeld-id meer, wel
+    // het user-id, zodat de landing de profielfoto via het openbare
+    // profielpad toont. Herziet audit-8 ("geen _id").
+    expect(inviter.profilePhotoStorageId).toBeUndefined();
+    // Allow-list: enkel _id + name.
+    const allowed = new Set(["_id", "name"]);
     for (const k of Object.keys(inviter)) {
       expect(allowed.has(k)).toBe(true);
     }

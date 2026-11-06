@@ -365,7 +365,7 @@ photos: {
 - `listMyFlagged()` — current user's eigen photos die geflagd zijn (voor `Inappropriate.jsx`)
 - `listAllFlagged()` — webmaster only, scan `by_flagged` index (voor `InappropriateAdmin.jsx`)
 
-**TODO voor fase 4 (client-integratie + dev-deployment validatie):** in `convex-test` blijkt index `by_flagged` óók records te returnen met `flaggedAt = undefined` — niet sparse-strict. B's implementatie heeft daarom een JS-filter na `.collect()` toegevoegd voor zowel `listMyFlagged` als `listAllFlagged`. Verifieer tegen de echte Convex dev deployment of de index daar wél sparse is. Zo ja: filter weghalen (cleanup-PR). Zo nee: filter laten staan en accepteren.
+**`by_flagged` is niet sparse** (WP17a): Convex zet documenten zonder `flaggedAt` gewoon in de index (`undefined` sorteert vóór alle waarden). Het JS-filter in `listMyFlagged` en `listAllFlagged` blijft dus nodig, of de query krijgt een ondergrens.
 
 **Scheduled cron (daily):**
 Vind photos waar `flaggedDeleteDate < now` (en niet onder appeal), auto-delete via `internalRemovePhoto`. Was niet expliciet in oude AWS code (mogelijk handmatig opgeruimd of bug). Convex cron lost dit definitief op.

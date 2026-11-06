@@ -80,13 +80,16 @@ export async function isPublishedInAlbum(
   return ap !== null;
 }
 
-// WP24 invariant 8: een publieke mutation koppelt een beeld (storageId)
-// alleen aan de caller als dat beeld al van de caller is of door de caller
-// gezien mag worden. Toegestaan: het beeld van minstens één foto waar de
-// caller foto-toegang toe heeft (eigen foto inbegrepen), of de eigen huidige
-// profielfoto (ook een los, gemigreerd v1-beeld). Geweigerd: al het andere,
-// ook andermans profielbeeld en een los beeld. Een onbekend beeld-id heeft
-// geen foto-rij en valt in dezelfde tak (één uitkomst, geen orakel).
+// WP24 invariant 8, aangescherpt door WP17a besluit 10 / invariant 16: een
+// publieke mutation koppelt een beeld (storageId) alleen aan de caller als dat
+// beeld al van de caller is. Toegestaan: het beeld van minstens één foto
+// waarvan de caller de eigenaar is (een eigen upload inbegrepen; een beeld aan
+// foto's van twee eigenaren mag elk van beide gebruiken), of de eigen huidige
+// profielfoto (ook een los, gemigreerd v1-beeld). Foto-toegang tot de foto van
+// een ander is niet genoeg: een profielfoto is openbaar (WP17a besluit 8).
+// Geweigerd: al het andere, ook andermans profielbeeld en een los beeld. Een
+// onbekend beeld-id heeft geen foto-rij en valt in dezelfde tak (één uitkomst,
+// geen orakel).
 //
 // Het enige publieke pad met een beeld-id is users.updateProfile
 // (photos.create is intern); tests/writeGates/storageReuse.test.ts pint dat.
@@ -100,8 +103,5 @@ export async function canUseStorage(
     .query("photos")
     .withIndex("by_storage", (q) => q.eq("storageId", storageId))
     .collect();
-  for (const p of photos) {
-    if (await canAccessPhoto(ctx, user._id, p)) return true;
-  }
-  return false;
+  return photos.some((p) => p.ownerId === user._id);
 }

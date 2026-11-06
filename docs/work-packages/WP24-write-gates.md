@@ -31,7 +31,7 @@ Zoals in WP23 §Begrippen. Kort:
 5. **Webmaster-check dwingt de users-rij zelf af.** `isWebmaster` geeft `false` voor een identity met een webmaster-email maar zonder users-rij, ook als de aanroeper dat niet vooraf checkt.
 6. **Geen webmaster-bypass.** Ook de webmaster heeft voor de mutations uit invariant 2 gewone foto-toegang nodig (lijn van WP23).
 7. **Bestaand gedrag met toegang verandert niet.** Wie toegang heeft, kan wat die nu kan. Bestaande rol-checks (admin, creator, eigenaar-kan-eigen-foto-niet-melden) blijven.
-8. **Een beeld koppelen alleen als de caller het al mag zien** (audit-ronde 1). Een publieke mutation koppelt een `storageId` alleen aan de caller als het het beeld is van een eigen foto of van een foto met foto-toegang, of de eigen huidige profielfoto. Al het andere wordt geweigerd, met één uitkomst: andermans profielbeeld, een los beeld, een onbekend beeld. Een toestemmingslijst, geen verbodslijst. `users.updateProfile` is het enige publieke pad met een beeld-id; `photos.create` is intern.
+8. **Een beeld koppelen alleen als het al van de caller is** (audit-ronde 1; aangescherpt door [WP17a](./WP17a-fotos-bekijken.md) besluit 10 en invariant 16). Een publieke mutation koppelt een `storageId` alleen aan de caller als het het beeld is van een eigen foto, of de eigen huidige profielfoto. Foto-toegang alleen is niet genoeg: een profielfoto is openbaar (WP17a besluit 8). Al het andere wordt geweigerd, met één uitkomst: andermans profielbeeld, een los beeld, een onbekend beeld. Een toestemmingslijst, geen verbodslijst. `users.updateProfile` is het enige publieke pad met een beeld-id; `photos.create` is intern.
 
 ## Edge cases + scope-uitsluitingen
 

@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { albumPath, groupPath } from "../src/lib/groupRoutes";
+import { albumPath, groupPath, photoPath } from "../src/lib/groupRoutes";
 import { PUBLIC_PATHS, routeAccess } from "../src/lib/routeAccess";
 import { listFiles } from "./support/sourceScan";
 
@@ -30,6 +30,11 @@ describe("paden", () => {
   it("albumPath", () => {
     expect(albumPath("g1", "a1")).toBe("/groep/g1/album/a1");
   });
+
+  // WP17a: het foto-detail staat onder het album, in dezelfde stack.
+  it("photoPath", () => {
+    expect(photoPath("g1", "a1", "p1")).toBe("/groep/g1/album/a1/foto/p1");
+  });
 });
 
 describe("routebestanden in de Home-stack", () => {
@@ -45,6 +50,10 @@ describe("routebestanden in de Home-stack", () => {
     expect(homeRoutes()).toContain("/groep/[groupId]/album/[albumId]");
   });
 
+  it("Foto-detail (WP17a): /groep/[groupId]/album/[albumId]/foto/[photoId]", () => {
+    expect(homeRoutes()).toContain("/groep/[groupId]/album/[albumId]/foto/[photoId]");
+  });
+
   it("geen route per groepstab", () => {
     const tabs = homeRoutes().filter((p) => /^\/groep\/\[groupId\]\/(albums|leden|cover|uitnodigen)$/.test(p));
     expect(tabs).toEqual([]);
@@ -52,7 +61,7 @@ describe("routebestanden in de Home-stack", () => {
 });
 
 describe("toegang", () => {
-  const paths = [groupPath("g1"), albumPath("g1", "a1")];
+  const paths = [groupPath("g1"), albumPath("g1", "a1"), "/groep/g1/album/a1/foto/p1"];
 
   it.each(paths)("%s is niet publiek", (path) => {
     expect(PUBLIC_PATHS.has(path)).toBe(false);

@@ -8,3 +8,8 @@ export function groupPath(groupId: string): string {
 export function albumPath(groupId: string, albumId: string): string {
   return `${groupPath(groupId)}/album/${encodeURIComponent(albumId)}`;
 }
+
+// WP17a: het foto-detail staat onder het album, in dezelfde stack.
+export function photoPath(groupId: string, albumId: string, photoId: string): string {
+  return `${albumPath(groupId, albumId)}/foto/${encodeURIComponent(photoId)}`;
+}

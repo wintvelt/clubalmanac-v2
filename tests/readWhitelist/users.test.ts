@@ -56,7 +56,7 @@ describe("users.getById — publiek profiel", () => {
     ).rejects.toThrow();
   });
 
-  it("medelid: precies id, naam, profielfoto — geen email, subject, tellers of tijden", async () => {
+  it("medelid: precies id en naam (WP17a: geen beeld-id) — geen email, subject, tellers of tijden", async () => {
     const t = newT();
     const w = await seedWorld(t);
     const bob = (await asUser(t, w, "alice").query(api.users.getById, {

@@ -1,4 +1,4 @@
-import { v } from "convex/values";
+import { ConvexError, v } from "convex/values";
 import {
   mutation,
   query,
@@ -6,7 +6,12 @@ import {
   type QueryCtx,
 } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
-import { getMembership, requireMember, requireMemberForRead } from "./groups";
+import {
+  getMembership,
+  NOT_MEMBER,
+  requireMember,
+  requireMemberForRead,
+} from "./groups";
 import { requireCurrentUser } from "./users";
 import {
   getAccessiblePhoto,
@@ -22,6 +27,8 @@ import {
   photo,
   photoFields,
   pick,
+  publicProfile,
+  publicProfileFields,
 } from "./lib/shapes";
 import { recomputeRatingAggregate } from "./ratings";
 
@@ -60,6 +67,23 @@ async function requireAlbumAccess(
   return { user, album, membership };
 }
 
+// WP17a invariant 7 (WP16 backlog N3): de reads achter het albumscherm geven
+// bij geen lid en bij een onbekend of gewist album dezelfde ConvexError met
+// code NOT_MEMBER, zoals de groep-reads (requireMemberForRead). De app
+// herkent hem aan de code. Mutations houden requireAlbumAccess.
+async function requireAlbumAccessForRead(
+  ctx: QueryCtx,
+  albumId: Id<"albums">,
+) {
+  const user = await requireCurrentUser(ctx);
+  const album = await ctx.db.get(albumId);
+  const membership = album
+    ? await getMembership(ctx, user._id, album.groupId)
+    : null;
+  if (!album || !membership) throw new ConvexError(NOT_MEMBER);
+  return { user, album, membership };
+}
+
 export const create = mutation({
   args: {
     groupId: v.id("groups"),
@@ -83,7 +107,7 @@ export const getById = query({
   args: { albumId: v.id("albums") },
   returns: album,
   handler: async (ctx, { albumId }) => {
-    const { album: row } = await requireAlbumAccess(ctx, albumId);
+    const { album: row } = await requireAlbumAccessForRead(ctx, albumId);
     return pick(row, albumFields);
   },
 });
@@ -94,7 +118,7 @@ export const getWithGroup = query({
   args: { albumId: v.id("albums") },
   returns: v.object({ ...albumFields, group: v.union(group, v.null()) }),
   handler: async (ctx, { albumId }) => {
-    const { album: row } = await requireAlbumAccess(ctx, albumId);
+    const { album: row } = await requireAlbumAccessForRead(ctx, albumId);
     const g = await ctx.db.get(row.groupId);
     return { ...pick(row, albumFields), group: g ? pick(g, groupFields) : null };
   },
@@ -107,7 +131,7 @@ export const getWithCover = query({
   args: { albumId: v.id("albums") },
   returns: v.object({ ...albumFields, cover: v.union(photo, v.null()) }),
   handler: async (ctx, { albumId }) => {
-    const { user, album: row } = await requireAlbumAccess(ctx, albumId);
+    const { user, album: row } = await requireAlbumAccessForRead(ctx, albumId);
     const cover = await getAccessiblePhoto(ctx, user._id, row.coverPhotoId);
     return {
       ...pick(row, albumFields),
@@ -136,7 +160,7 @@ export const listByGroup = query({
 //   unreadCount = aantal albumPhotos.by_album_added(albumId, addedAt > eff)
 //                  waarvan photo.ownerId != currentUserId
 // `sortDate` telt niet mee (WP16 besluit 3).
-async function unreadInAlbum(
+async function effectiveLastSeen(
   ctx: QueryCtx,
   userId: Id<"users">,
   membership: Doc<"memberships">,
@@ -152,8 +176,30 @@ async function unreadInAlbum(
   // Zowel lastSeen-pad ("ik heb gezien wat tot T zichtbaar was") als
   // fallback-pad (max-cutoff) gebruiken zelfde semantiek. Zie design-doc
   // sectie "Unread-count per album per user > Strict > semantiek".
-  const effective =
-    lastSeen?.lastSeenAt ?? Math.max(album.createdAt, membership.joinedAt);
+  return lastSeen?.lastSeenAt ?? Math.max(album.createdAt, membership.joinedAt);
+}
+
+/**
+ * WP17a invariant 11: één definitie van "nieuw" voor de teller hieronder en
+ * `isNew` in `listPhotos`. Van een ander, en toegevoegd na het effectieve
+ * laatste bezoek (strict).
+ */
+function isNewFor(
+  userId: Id<"users">,
+  effective: number,
+  ap: Doc<"albumPhotos">,
+  photo: Doc<"photos"> | null,
+): boolean {
+  return photo !== null && photo.ownerId !== userId && ap.addedAt > effective;
+}
+
+async function unreadInAlbum(
+  ctx: QueryCtx,
+  userId: Id<"users">,
+  membership: Doc<"memberships">,
+  album: Doc<"albums">,
+): Promise<number> {
+  const effective = await effectiveLastSeen(ctx, userId, membership, album);
 
   const candidates = await ctx.db
     .query("albumPhotos")
@@ -165,7 +211,7 @@ async function unreadInAlbum(
   let unreadCount = 0;
   for (const ap of candidates) {
     const photo = await ctx.db.get(ap.photoId);
-    if (photo && photo.ownerId !== userId) unreadCount++;
+    if (isNewFor(userId, effective, ap, photo)) unreadCount++;
   }
   return unreadCount;
 }
@@ -266,25 +312,47 @@ export async function deleteAlbumLastSeenForUserInGroup(
   }
 }
 
+// WP17a: per foto ook de eigenaar (publiek profiel, voor het detail) en
+// `isNew` voor de caller (de markering in het raster). `isNew` volgt dezelfde
+// definitie als de teller (isNewFor, invariant 11). Zonder foto-rij: geen
+// eigenaar en niet nieuw.
 export const listPhotos = query({
   args: { albumId: v.id("albums") },
   returns: v.array(
-    v.object({ albumPhoto, photo: v.union(photo, v.null()) }),
+    v.object({
+      albumPhoto,
+      photo: v.union(photo, v.null()),
+      owner: v.union(publicProfile, v.null()),
+      isNew: v.boolean(),
+    }),
   ),
   handler: async (ctx, { albumId }) => {
-    await requireAlbumAccess(ctx, albumId);
+    const { user, album, membership } = await requireAlbumAccessForRead(
+      ctx,
+      albumId,
+    );
+    const effective = await effectiveLastSeen(ctx, user._id, membership, album);
 
     const albumPhotos = await ctx.db
       .query("albumPhotos")
       .withIndex("by_album", (q) => q.eq("albumId", albumId))
       .collect();
 
+    const owners = new Map<Id<"users">, Doc<"users"> | null>();
+    const ownerOf = async (ownerId: Id<"users">) => {
+      if (!owners.has(ownerId)) owners.set(ownerId, await ctx.db.get(ownerId));
+      return owners.get(ownerId) ?? null;
+    };
+
     return await Promise.all(
       albumPhotos.map(async (ap) => {
         const p = await ctx.db.get(ap.photoId);
+        const owner = p ? await ownerOf(p.ownerId) : null;
         return {
           albumPhoto: pick(ap, albumPhotoFields),
           photo: p ? pick(p, photoFields) : null,
+          owner: owner ? pick(owner, publicProfileFields) : null,
+          isNew: isNewFor(user._id, effective, ap, p),
         };
       }),
     );

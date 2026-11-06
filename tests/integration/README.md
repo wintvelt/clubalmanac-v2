@@ -29,6 +29,8 @@ Integration suite groeit per werkpakket. Elk werkpakket = aparte sub-folder.
 | WP4 | Clerk JWT validation roundtrip via `whoami` httpAction | `clerk/` | `CLERK_SECRET_KEY`, `CLERK_TEST_USER_*_EMAIL` |
 | WP11 | Mailjet Send-API contract (direct) | `mailjet/` | `MAILJET_API_KEY`, `MAILJET_API_SECRET`, `MAILJET_TEST_*_FROM` |
 | WP11 | Clerk onboarding-webhook (atomic, live route) | `clerk/` | `CONVEX_URL`, `CLERK_WEBHOOK_SECRET` |
+| WP17a | Convex storage-URL: zonder auth, na wissen weg, headers (meting) | `convex/storageUrl.test.ts` | `CONVEX_URL` (+ `INTEGRATION_TEST_ENABLED` op dev, zoals WP2) |
+| WP17a | Gate-stap 6: ex-lid krijgt met een oude beeld-URL 404 | `images/exMember.test.ts` | `CONVEX_URL`, `CLERK_SECRET_KEY`, `CLERK_TEST_USER_WEBMASTER_EMAIL`, `CLERK_TEST_USER_REGULAR_EMAIL` |
 
 Env-vars voor WP2-4 lopen via `.env.integration` (in `.gitignore`),
 geladen door [`_helpers/setup.ts`](./_helpers/setup.ts) via `dotenv` —

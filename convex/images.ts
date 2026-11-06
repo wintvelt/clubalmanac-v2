@@ -1,0 +1,81 @@
+import { v } from "convex/values";
+import { internalQuery, type QueryCtx } from "./_generated/server";
+import type { Id } from "./_generated/dataModel";
+import { getBySubject } from "./users";
+import { canAccessPhoto } from "./lib/photoAccess";
+
+// WP17a: de toegangsregel voor beeldbytes (invariant 1, 2, 3, 13, 14).
+// Het beeldpad (`GET /beeld/...`, convex/http.ts, besluit 1: vorm B) vraagt
+// bij elk verzoek "welk beeld krijgt deze caller nu?" en serveert dat, of één
+// en hetzelfde 404. Geen `getUrl` naar de client: een storage-URL is een
+// bearer-link zonder vervaldatum (spec kernvondst 1).
+//
+// De id's komen ruw uit het pad, dus de args zijn strings: een misvormd id,
+// een id van een andere tabel en een onbekend id vallen zo in dezelfde tak
+// als geen toegang (`null`), zonder validatiefout en zonder 500.
+
+/** Bestaat het beeld nog in storage? De cleanup na wissen loopt async. */
+async function storedImage(
+  ctx: QueryCtx,
+  storageId: Id<"_storage"> | undefined,
+): Promise<Id<"_storage"> | null> {
+  if (!storageId) return null;
+  const meta = await ctx.db.system.get(storageId);
+  return meta ? storageId : null;
+}
+
+/**
+ * Foto: het beeld als de caller nu foto-toegang heeft (`canAccessPhoto`,
+ * WP23: eigenaar, of lid van een groep met de foto in een album; geen
+ * webmaster-bypass). Anders `null`: uitgelogd, geen users-rij, geen toegang,
+ * onbekend of misvormd id, foto of beeld gewist.
+ */
+export const photoImage = internalQuery({
+  args: { photoId: v.string() },
+  returns: v.union(v.id("_storage"), v.null()),
+  handler: async (ctx, { photoId }) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) return null;
+    const user = await getBySubject(ctx, identity.subject);
+    if (!user) return null;
+    const id = ctx.db.normalizeId("photos", photoId);
+    if (!id) return null;
+    const photo = await ctx.db.get(id);
+    if (!photo || !(await canAccessPhoto(ctx, user._id, photo))) return null;
+    return await storedImage(ctx, photo.storageId);
+  },
+});
+
+/**
+ * Profiel (besluit 8): openbaar, ook uitgelogd. Alleen het beeld dat nú de
+ * profielfoto van die user is; een vorige profielfoto of een ander beeld van
+ * die user levert dit pad nooit op. Geen profielfoto, een gewist beeld en een
+ * onbekend of misvormd user-id: `null` (invariant 14).
+ */
+export const profileImage = internalQuery({
+  args: { userId: v.string() },
+  returns: v.union(v.id("_storage"), v.null()),
+  handler: async (ctx, { userId }) => {
+    const id = ctx.db.normalizeId("users", userId);
+    if (!id) return null;
+    const user = await ctx.db.get(id);
+    if (!user) return null;
+    return await storedImage(ctx, user.profilePhotoStorageId);
+  },
+});
+
+// Besluit 2: het beeldpad neemt een formaat aan. Zonder formaat het
+// origineel. WP25 maakt de verkleinde versies; tot die er zijn, geeft elk
+// formaat het origineel. Het formaat verandert niets aan de toegang: het
+// wordt pas gekozen nadat de regel hierboven een beeld gaf.
+export const IMAGE_FORMATS = ["klein", "groot"] as const;
+export type ImageFormat = (typeof IMAGE_FORMATS)[number];
+
+export function parseImageFormat(
+  raw: string | null,
+): ImageFormat | "origineel" | "ongeldig" {
+  if (raw === null) return "origineel";
+  return (IMAGE_FORMATS as readonly string[]).includes(raw)
+    ? (raw as ImageFormat)
+    : "ongeldig";
+}

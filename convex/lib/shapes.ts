@@ -48,11 +48,14 @@ export function pick<Row extends object, F extends PropertyValidators>(
 
 // ── users ─────────────────────────────────────────────────────────
 
-/** Wat een ander lid van een user ziet. Geen email, subject, tellers, tijden. */
+/**
+ * Wat een ander lid van een user ziet. Geen email, subject, tellers, tijden.
+ * WP17a invariant 10: geen beeld-id. De profielfoto loopt via het user-id
+ * (`GET /beeld/profiel/<userId>`).
+ */
 export const publicProfileFields = {
   _id: v.id("users"),
   name: v.optional(v.string()),
-  profilePhotoStorageId: v.optional(v.id("_storage")),
 };
 export const publicProfile = v.object(publicProfileFields);
 
@@ -64,7 +67,6 @@ export const ownProfileFields = {
   _id: v.id("users"),
   email: v.string(),
   name: v.optional(v.string()),
-  profilePhotoStorageId: v.optional(v.id("_storage")),
   photoCount: v.number(),
   createdAt: v.number(),
 };
@@ -121,11 +123,12 @@ export const albumPhoto = v.object(albumPhotoFields);
 /**
  * Foto-vorm. Geen `filename`/`mimeType` (A-keuze 3), geen GPS (A-keuze 2),
  * geen flag-velden: die komen er alleen bij via de flag-veldsets hieronder.
+ * WP17a invariant 10: geen `storageId`; het beeld loopt via het foto-id
+ * (`GET /beeld/foto/<photoId>`), met een toegangscheck per verzoek.
  */
 export const photoFields = {
   _id: v.id("photos"),
   ownerId: v.id("users"),
-  storageId: v.id("_storage"),
   width: v.optional(v.number()),
   height: v.optional(v.number()),
   takenAt: v.optional(v.number()),
@@ -209,10 +212,14 @@ export const landingGroupFields = {
   description: v.optional(v.string()),
 };
 
-/** Inviter op de invite-landing (precedent audit-8): geen `_id`. */
+/**
+ * Inviter op de invite-landing. WP17a besluit 8 + invariant 10: het user-id
+ * (de landing toont de profielfoto via het openbare profielpad), geen
+ * beeld-id. Herziet audit-8 ("geen `_id`").
+ */
 export const landingInviterFields = {
+  _id: v.id("users"),
   name: v.optional(v.string()),
-  profilePhotoStorageId: v.optional(v.id("_storage")),
 };
 
 /**

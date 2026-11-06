@@ -5,7 +5,7 @@ import { Pressable, StyleSheet, View } from "react-native";
 import type { Id } from "../../../convex/_generated/dataModel";
 import { Button } from "../components/Button";
 import { Icon } from "../components/Icon";
-import { LetterTile } from "../components/LetterTile";
+import { ProfileAvatar } from "../components/Photo";
 import { ListSection } from "../components/ListRow";
 import { Notice } from "../components/Notice";
 import { QueryBoundary } from "../components/QueryBoundary";
@@ -30,7 +30,7 @@ import {
   yearOf,
 } from "../lib/groups";
 import { radius, size, space, useTheme } from "../theme";
-import { backToMyGroups, CoverHeader, LoadError } from "./GroupParts";
+import { AlbumCoverTile, backToMyGroups, CoverHeader, LoadError } from "./GroupParts";
 
 type Tab = "albums" | "leden";
 const TABS = [
@@ -53,7 +53,8 @@ export function GroupScreen() {
 }
 
 function GroupContent({ groupId }: { groupId: Id<"groups"> }) {
-  const group = useLiveQuery(api.groups.getById, { groupId });
+  // WP17a: met de cover (en zijn draaiing) voor de kop.
+  const group = useLiveQuery(api.groups.getWithCover, { groupId });
   const [tab, setTab] = useState<Tab>("albums");
   const { userId } = useAuth();
 
@@ -66,7 +67,7 @@ function GroupContent({ groupId }: { groupId: Id<"groups"> }) {
   if (group === null) return <NotMember groupId={groupId} />;
 
   return (
-    <Screen header={<CoverHeader name={group?.name} />}>
+    <Screen header={<CoverHeader name={group?.name} cover={group?.cover} />}>
       {/* De titel is de terugknop-tekst op het albumscherm. */}
       <Stack.Screen options={{ title: group?.name ?? "Groep" }} />
       {group === undefined ? (
@@ -139,6 +140,8 @@ function AlbumsTab({ groupId }: { groupId: Id<"groups"> }) {
           {inYear.map((album) => (
             <AlbumRow
               key={album._id}
+              albumId={album._id}
+              coverPhotoId={album.coverPhotoId}
               name={album.name}
               unreadCount={album.unreadCount}
               onPress={() => router.push(albumPath(groupId, album._id))}
@@ -150,8 +153,21 @@ function AlbumsTab({ groupId }: { groupId: Id<"groups"> }) {
   );
 }
 
-// Invariant 3: tikken opent het WP17-pad en zet de teller niet op nul.
-function AlbumRow({ name, unreadCount, onPress }: { name: string; unreadCount: number; onPress: () => void }) {
+// Invariant 3: tikken opent het album; pas het albumscherm zet de teller op
+// nul (WP17a vraag 6). De cover *klein*, anders de letter (WP17a).
+function AlbumRow({
+  albumId,
+  coverPhotoId,
+  name,
+  unreadCount,
+  onPress,
+}: {
+  albumId: Id<"albums">;
+  coverPhotoId?: string;
+  name: string;
+  unreadCount: number;
+  onPress: () => void;
+}) {
   const { colors } = useTheme();
   const badge = unreadBadge(unreadCount);
   return (
@@ -165,7 +181,14 @@ function AlbumRow({ name, unreadCount, onPress }: { name: string; unreadCount: n
         pressed && { backgroundColor: colors.line },
       ]}
     >
-      <LetterTile name={name} size={size.albumTile} radius={radius.albumTile} variant="albumName" />
+      <AlbumCoverTile
+        albumId={albumId}
+        coverPhotoId={coverPhotoId}
+        name={name}
+        size={size.albumTile}
+        radius={radius.albumTile}
+        variant="albumName"
+      />
       <View style={styles.text}>
         {/* Albumnamen breken over regels, nooit afgekapt (design.md §3). */}
         <Text variant="albumName">{name}</Text>
@@ -210,7 +233,7 @@ function MembersTab({ groupId, founderId }: { groupId: Id<"groups">; founderId: 
                   accessibilityLabel={`${name ?? "Naam onbekend"}, ${meta}`}
                   style={styles.member}
                 >
-                  <LetterTile name={name} size={size.avatar} radius={size.avatar / 2} variant="bodyStrong" />
+                  <ProfileAvatar userId={m.user?._id} name={name} size={size.avatar} />
                   <View style={styles.text}>
                     <Text color={name ? "text" : "muted"}>{name ?? "Naam onbekend"}</Text>
                     <Text variant="albumMeta" color="muted">

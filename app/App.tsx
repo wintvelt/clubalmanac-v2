@@ -5,6 +5,7 @@ import { useState, type ReactNode } from "react";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { deviceClerkStorage } from "./src/auth/deviceClerkStorage";
 import { ConvexProviderWithClerkRetry } from "./src/data/convexConnection";
+import { ImageHostProvider } from "./src/data/images";
 import { OnlineProvider } from "./src/data/online";
 import { parseClientEnv, type ClientEnv } from "./src/lib/env";
 import { StatusScreen } from "./src/screens/StatusScreen";
@@ -56,7 +57,9 @@ function Providers({ env, children }: { env: ClientEnv; children: ReactNode }) {
         tokenCache={storage.tokenCache}
         __experimental_resourceCache={storage.resourceCache}
       >
-        <ConvexPerSession convex={convex}>{children}</ConvexPerSession>
+        <ImageHostProvider convexUrl={env.convexUrl}>
+          <ConvexPerSession convex={convex}>{children}</ConvexPerSession>
+        </ImageHostProvider>
       </ClerkProvider>
     </OnlineProvider>
   );

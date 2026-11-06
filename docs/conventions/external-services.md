@@ -78,8 +78,16 @@ De app vraagt live data alleen op voor het scherm in beeld, zolang de app `activ
 - **`albums:listByGroupWithUnread`** loopt alleen als Groep open staat op de groepstab Albums. Op Leden, op een andere tab, op het albumscherm erboven of met de app op de achtergrond: geen uitvoering, ook niet bij een nieuwe foto. Terug op Albums: één uitvoering.
 - **Wat hem laat draaien:** elke wijziging in een album van die groep, een nieuwe of verwijderde koppeling in `albumPhotos` van die albums, een wijziging in een nieuwe foto (ook een rating, die alleen de foto-rij raakt; het getal blijft dan gelijk) en je eigen `albumLastSeen`-rijen. Een nieuwe foto van een ander lid geeft één uitvoering, en de teller gaat met één omhoog.
 - **`groups:listMine`** (Mijn groepen) telt dezelfde tellers op voor al je groepen. Hij draait bij een nieuwe foto in élke groep waar je lid van bent, maar alleen zolang Mijn groepen in beeld is.
-- **`groups:listMembers`** en **`users:profile`** lopen binnen Groep alleen op de tab Leden (`users:profile` loopt daarnaast op Profiel). **`groups:getById`** loopt zolang Groep in beeld is.
+- **`groups:listMembers`** en **`users:profile`** lopen binnen Groep alleen op de tab Leden (`users:profile` loopt daarnaast op Profiel). **`groups:getWithCover`** loopt zolang Groep in beeld is (WP17a, voor de cover in de kop).
 - **Geen lid meer:** de groep-reads geven dan een `ConvexError` met code `NOT_MEMBER`. In Logs staat dat als een mislukte query; dat is verwacht, geen storing.
+
+### Beeldpad en bandbreedte (WP17a)
+
+Beelden lopen via de httpActions `GET /beeld/foto/<photoId>` en `GET /beeld/profiel/<userId>` op de `.convex.site`-host, met een toegangscheck per verzoek. Geen storage-URL naar de app.
+
+- **Beeldverkeer van één album:** Logs, filter op `/beeld/foto`. Elke tegel is één regel, dus een album van 50 foto's geeft bij openen hoogstens 50 regels plus de cover, en alleen voor de tegels in beeld. Daarnaast `internal images:photoImage`, één per beeld. Status 404 is een beeld zonder toegang, een gewiste foto of een misvormd id; 401 is een verlopen of ontbrekend token. Na een mislukt beeld haalt de app één keer zelf een vers token en vraagt het opnieuw: een 401 gevolgd door een 200 voor dezelfde foto is dus normaal. Een beeld zonder toegang geeft zo twee 404's, daarna de fout-tegel (of de letter bij een cover).
+- **Bandbreedte:** Usage, regel **Data egress** (GB, ook het origineel zolang WP25 nog geen verkleinde versies heeft). De beeldpaden tellen daarnaast mee in **Function calls** (HTTP action). Wil je de bytes per verzoek: een log stream geeft `network_egress_bytes` per `function_execution`. Meet een album door Usage vóór en na het openen te vergelijken, op een rustig moment.
+- **Covers en profielfoto's:** per groeps- of albumkaart met een cover loopt `groups:getWithCover` of `albums:getWithCover` (voor de draaiing) zolang het scherm in beeld is. `/beeld/profiel` is openbaar en heeft geen login nodig. De app cachet een profielfoto niet (dezelfde URL geeft na een wissel een ander beeld), dus elke avatar in beeld is één verzoek.
 
 ## Auth: Clerk
 

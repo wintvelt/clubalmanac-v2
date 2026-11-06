@@ -129,6 +129,8 @@ export const size = {
   groupTile: 64,
   albumTile: 56,
   avatar: 44,
+  // Eigen profielfoto bovenaan Profiel (WP17a, pariteit v1: 96 pt).
+  profileAvatar: 96,
   // Hoogte van het vlak bovenaan Groep, onder de statusbalk.
   cover: 168,
   // Het verloopstreepje naast een jaartal.
