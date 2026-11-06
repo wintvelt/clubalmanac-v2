@@ -6,12 +6,12 @@ Files in deze folder:
 
 - [`ab-audit-workflow.md`](./ab-audit-workflow.md) — A→B→audit discipline voor backend werkpakketten
 - [`work-package-specs.md`](./work-package-specs.md) — Per-WP spec-doc, rolverdeling + toegangs-tabel, subagent-configs
-- [`commit-discipline.md`](./commit-discipline.md) — Wie committed wanneer, push-hook gedrag
+- [`commit-discipline.md`](./commit-discipline.md) — Wie committed wanneer, push alleen na goedkeuring
 - [`prompt-discipline.md`](./prompt-discipline.md) — Geen pseudo-code in B-prompts (bias-vermijding)
 - [`external-services.md`](./external-services.md) — Photon (geocoding) / Mailjet (email) / Clerk (auth) keuzes
 - [`integration-tests.md`](./integration-tests.md) — Aparte test-laag tegen echte externe services (productie-blind-spots)
 - [`convex-runtimes.md`](./convex-runtimes.md) — Isolate vs `"use node"` runtime keuze + splits-patroon bij Buffer-vereisende libs
 - [`data-migration-preflight.md`](./data-migration-preflight.md) — 0e sub-fase vóór schema/data-werk: tag + snapshot + count-query + strategie
 - [`cross-cutting-review.md`](./cross-cutting-review.md) — Vier-perspectief-pas vóór cutover (a11y / security / GDPR / architectuur)
-- [`remote-werkplek.md`](./remote-werkplek.md) — Sessies op een Mac-server laten doorlopen: opzet, installatie, credentials (advies, nog niet ingericht)
+- [`remote-werkplek.md`](./remote-werkplek.md) — Sessies op een Mac-server laten doorlopen: opzet, installatie, credentials, testuitkomsten (ingericht 2026-11-04)
 - [`audit-track-record.md`](./audit-track-record.md) — Productie-bugs gevonden door audit-pas (bewijs voor discipline-waarde)

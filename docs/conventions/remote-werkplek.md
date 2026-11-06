@@ -6,7 +6,7 @@ Advies, 2026-11-04. Nog niets geïnstalleerd of ingesteld. Doel: regie-, A-, B- 
 
 | Vraag | Besluit |
 |---|---|
-| Push-route | GitHub-token op de server. Wouter pusht vanuit zijn eigen SSH-terminal op de server |
+| Push-route | GitHub-token op de server. Sinds 2026-11-06: `git push` is een ask-regel; regie pusht na Wouters goedkeuring op de iPhone |
 | Herstart server | Na een herstart logt Wouter opnieuw in via Scherm delen. Geen automatisch inloggen; FileVault mag aan |
 | eas-cli | Nieuwere versie op de server is goed: dezelfde als de laptop (27.4.1). `app/eas.json` eist `>= 25.0.0` |
 | Oude repo's voor A | Ook clonen op de server |
@@ -37,7 +37,7 @@ Schermdelen is alleen nodig bij de eerste installatie (login, macOS-rechten, eer
 |---|---|---|
 | Remote Control | Permissie-vragen beantwoorden vanaf telefoon of laptop | Desktop-app op de server, instelling hierboven |
 | Permissie-mode `auto` | Minder vragen; een classifier toetst elke actie. Deny-regels blijven gelden | `~/.claude/settings.json` op de server, `"permissions": {"defaultMode": "auto"}`. In `.claude/settings.json` van de repo heeft `auto` geen effect |
-| Deny-regels | Blokkeren in elke mode, ook `bypassPermissions` | `Bash(git push:*)` staat al in de repo. Voeg op de server in `~/.claude/settings.json` toe: `eas build`, `eas submit`, `eas credentials`, `npx convex deploy`, `gh auth`, `gh api` |
+| Deny-regels | Blokkeren in elke mode, ook `bypassPermissions` | Voeg op de server in `~/.claude/settings.json` toe: `eas build`, `eas submit`, `eas credentials`, `npx convex deploy`, `gh auth`, `gh api` |
 | Simulator-toestel | Eenmalige toestemming per toestel, daarna geen vragen | Bij de installatie, via schermdelen |
 
 `bypassPermissions` is af te raden: de server heeft echte logins (Convex, Expo, GitHub).
@@ -77,7 +77,7 @@ Doe dit met de laptop dicht, alleen met de Claude-app op de iPhone. Gebruik een 
 | 4 | Laat de sub-sessie iets doen dat om toestemming vraagt (bv. een bestand schrijven in Manual-mode) | De vraag komt als melding op de iPhone en is daar te beantwoorden |
 | 5 | Wacht tot de sub-sessie klaar is | Regie krijgt het rapport en gaat zelf verder |
 | 6 | Vraag regie om een sub-sessie *voor te stellen* in plaats van te starten | De voorstel-kaart met knoppen is op de iPhone zichtbaar en werkt. Zo niet: dan typt Wouter de start-opdracht altijd expliciet (stap 2) |
-| 7 | Laat een sub-sessie `git push` proberen | Geweigerd door de deny-regel |
+| 7 | Laat een sub-sessie `git push --dry-run` proberen | Er komt een goedkeuringsvraag op de iPhone |
 | 8 | Laat een sub-sessie B de app in de simulator openen | De build loopt en Claude ziet het scherm. Kijken kan alleen via Scherm delen; Remote Control toont de pane niet |
 | 9 | Laat een sessie een uur doorlopen met de laptop dicht | Werk gaat door; de iPhone ziet de voortgang |
 
@@ -85,7 +85,7 @@ Doe dit met de laptop dicht, alleen met de Claude-app op de iPhone. Gebruik een 
 
 **Stap 6: werkt niet op afstand.** Een voorstel-kaart (sub-sessie voorstellen zonder te starten) weigert de app als je via Remote Control werkt: er zit niemand achter de desktop-app om de kaart te beantwoorden. Regel daarom: **zeg op afstand altijd expliciet "start"**. Regie mag dan direct starten.
 
-**Stap 7: geslaagd.** In een sub-sessie werd `git push --dry-run` geweigerd door `Bash(git push:*)` uit `.claude/settings.json`, zonder prompt en zonder omweg.
+**Stap 7: geslaagd met de oude deny-regel (2026-11-04).** Sinds 2026-11-06 is het een ask-regel; hertest stap 7.
 
 **Stap 8: geslaagd, met een omweg (2026-11-04).** Met UTF-8 in de sessie lukten `pod install` en de build; de app toonde het inlogscherm in de iPhone 18 Pro-simulator (iOS 27.2). Na de installatie stopte `expo run:ios`, omdat de sessie System Events niet mag besturen (macOS-toestemming **Automatisering**); de sessie startte Metro daarna apart en opende de app met `xcrun simctl`. Toestemming geven: Apple-menu → **Systeeminstellingen** → **Privacy en beveiliging** → **Automatisering**, of **Sta toe** in de vraag die macOS toont bij de volgende `expo run:ios` (via Scherm delen). Gedaan 2026-11-04: Claude → System Events staat aan, net als **Let Claude use it** in de pane.
 
@@ -129,7 +129,7 @@ Het blijft een schrijfactie op een extern account, dus **Wouter draait het zelf*
 
 ## Wat bij Wouter blijft
 
-- **Push.** De deny-regel `Bash(git push:*)` geldt ook op de server. Wouter pusht vanuit zijn eigen SSH-terminal op de server.
+- **Goedkeuren van elke push.** `git push` is een ask-regel; zie [`commit-discipline.md`](./commit-discipline.md).
 - **CLI-schrijfacties op externe accounts**: `eas build`, `eas submit`, `eas env:set`, `npx convex login`, `npx convex deploy` naar prod, Convex-env-vars, dashboards.
 - **TestFlight en de gate op de iPhone.** De server bouwt niets voor het toestel; EAS bouwt in de cloud.
 - **Geen geheimen in de repo of EAS-env.** `.env`-bestanden gaan per `scp`, tokens in de sleutelhanger van de server.
@@ -139,7 +139,7 @@ Het blijft een schrijfactie op een extern account, dus **Wouter draait het zelf*
 
 | Risico of vraag | Toelichting | Beslissing door |
 |---|---|---|
-| GitHub-token op de server | Elke sessie kan het token gebruiken, ook buiten `git push` om (bv. `gh api`). De deny-regel blokkeert alleen `git push`. Beperking: token alleen voor `clubalmanac-v2`, deny op `gh auth` en `gh api`. Restrisico: een push naar `clubalmanac-v2` via een omweg | Geaccepteerd |
+| GitHub-token op de server | Elke sessie kan het token gebruiken, ook buiten `git push` om (bv. `gh api`). De ask-regel vangt alleen `git push`. Beperking: token alleen voor `clubalmanac-v2`, deny op `gh auth` en `gh api`. Restrisico: een push naar `clubalmanac-v2` via een omweg | Geaccepteerd |
 | Sub-sessies via Remote Control | De docs zeggen niet expliciet dat sub-sessies en voorstel-kaarten op afstand werken | §Testplan |
 | Herstart van de server | Tot Wouter inlogt, draait er geen sessie. Lopend werk stopt | Geaccepteerd |
 | Sleutelhanger via SSH | Via SSH is de login-sleutelhanger vaak op slot (`gh`, `EXPO_TOKEN`). Dan eerst `security unlock-keychain` | Bij installatie |

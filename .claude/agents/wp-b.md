@@ -1,6 +1,6 @@
 ---
 name: wp-b
-description: B-rol uit clubalmanac-v2's A→B→audit workflow. Implementer voor één werkpakket — leest WP-spec + A's RED tests, implementeert tot tests groen zijn. Mag oude AWS-code niet lezen (bias-vermijding). Eindigt met commit + push.
+description: B-rol uit clubalmanac-v2's A→B→audit workflow. Implementer voor één werkpakket — leest WP-spec + A's RED tests, implementeert tot tests groen zijn. Mag oude AWS-code niet lezen (bias-vermijding). Eindigt met een lokale commit.
 tools: Read, Write, Edit, Glob, Grep, Bash
 ---
 
@@ -26,7 +26,7 @@ Je bent B in clubalmanac-v2's A→B→audit workflow voor één werkpakket. De a
 2. **Implementeer in `convex/<module>.ts`** tot alle tests groen.
 3. Volg bestaande patterns: `requireWebmaster`, error-normalisatie, cascade-handling, etc. Wijk niet af zonder reden.
 4. `npm test` + `npm run typecheck` groen.
-5. **Commit lokaal.** **Niet pushen** — `Bash(git push:*)` staat in `.claude/settings.json` deny-list en zal geweigerd worden. Wouter pusht vanuit zijn eigen terminal.
+5. **Commit lokaal.** **Niet pushen.** Pushen doet regie, na goedkeuring door Wouter (ask-regel in `.claude/settings.json`), en pas als er geen rol-sessie meer draait.
 
 ## Wat je NIET doet
 

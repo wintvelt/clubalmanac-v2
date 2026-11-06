@@ -1,6 +1,6 @@
 # Commit discipline
 
-A en B doen elk een commit aan einde van hun werk. Push gebeurt door Wouter. Auditor doet géén commit (alleen rapport in chat).
+A en B doen elk een commit aan einde van hun werk. Pushen doet regie of Wouter, altijd na Wouters goedkeuring. Auditor doet géén commit (alleen rapport in chat).
 
 ## Hoe toepassen
 
@@ -29,15 +29,18 @@ Doc-deliverables (spec §X):
 - [ ] integration-test deferred — gemarkeerd in spec, niet aangemaakt
 ```
 
-## Push-blokkade (settings.json deny-rule)
+## Push alleen na goedkeuring (settings.json ask-regel)
 
-Sinds WP5(B) — waar de B-sessie pushte ondanks "Wouter pusht handmatig"-mandaat — staat `Bash(git push:*)` in `.claude/settings.json` als deny-rule. Deze geldt voor **elke** Claude Code-sessie in deze repo (zowel Wouter's hoofd-sessie als rol-sessies à la wp-a/wp-b/wp-audit). Sub-agents die via `Agent(subagent_type: ...)` worden gespawned erven dezelfde deny.
+`Bash(git push:*)` staat in `.claude/settings.json` als **ask-regel**. Elke Claude Code-sessie in deze repo vraagt dan toestemming vóór een push; ook sub-agents en sessies op de Mac-server. De vraag komt via Remote Control ook op de iPhone (zie [`remote-werkplek.md`](./remote-werkplek.md)).
 
-Workflow: A of B commit met pathspec, `git commit -m "..." -- <eigen paden>`. `git push` faalt met permission-denied. Sessie eindigt met "commit X gedaan, push geweigerd door settings.json". **Wouter pusht vanuit zijn eigen terminal** (`cd <repo> && git push origin main`) — niet vanuit een Claude Code-sessie.
+Rolverdeling:
+- **A, B en audit pushen nooit.** Zij committen met pathspec en eindigen met "commit X gedaan".
+- **Regie** stelt een push voor als er geen rol-sessie meer draait (zie hieronder). Wouter keurt de vraag goed of af.
+- **Wouter** kan ook zelf pushen vanuit een eigen terminal.
 
-Als Wouter incidenteel tóch vanuit Claude Code wil pushen: voeg lokaal `Bash(git push:*)` toe aan `.claude/settings.local.json` allow-list (gitignored, alleen per-checkout). Deny gaat normaal voor allow, maar local-allow overruled global-deny binnen settings-precedence.
+Lees de vraag voordat je goedkeurt: welke sessie vraagt het, en draait er nog een rol-sessie?
 
-Eerdere versie van dit doc claimde een pre-push hook; die bestond niet (`.git/hooks/pre-push` ontbrak, `core.hooksPath` unset). Permission-deny is de simpelere oplossing — geen extra files in versie-control, geen fresh-clone-setup nodig.
+Geschiedenis: na WP5(B), waar B pushte tegen het mandaat in, stond `git push` als deny-regel. Op 2026-11-06 is dat een ask-regel geworden, zodat regie op de server kan pushen terwijl Wouter alleen een iPhone heeft. Een `allow` in `.claude/settings.local.json` heft een deny niet op: deny wint op elk niveau.
 
 ## Niet pushen terwijl een rol-sessie draait
 
@@ -66,4 +69,4 @@ Praktisch: scheid doc-besluiten van implementatie, en scheid werk van verschille
 
 ## Waarom
 
-Voorkomt ophoping van werktree changes. Per A→B cyclus committen geeft cleaner git-history. Auditor produceert tekst, niet code → niets te committen. Push centraal bij Wouter houdt CI-rood-vensters (verwacht tussen A en B) onder regie.
+Voorkomt ophoping van werktree changes. Per A→B cyclus committen geeft cleaner git-history. Auditor produceert tekst, niet code → niets te committen. Push alleen na Wouters goedkeuring houdt CI-rood-vensters (verwacht tussen A en B) onder regie.
