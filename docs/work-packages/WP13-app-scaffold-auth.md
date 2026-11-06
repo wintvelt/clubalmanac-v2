@@ -55,7 +55,7 @@ Een bestaande user opent de nieuwe app op een iPhone (simulator), logt in met zi
 - [`migratie-plan-convex.md`](../migratie-plan-convex.md) §Auth (Clerk + Convex), §TypeScript
 - WP4 (JWT-roundtrip, email-claim), WP6 (`session.created` + atomic onboarding)
 - `convex/users.ts`: `current`
-- Oude app (alleen A leest): `/Users/wintvelt/Documents/DEV/DEV/clubalmanac-app`, login-schermen en `app.json` (versie, buildnummer)
+- Oude app (alleen A leest): `~/Code/v1/clubalmanac-app`, login-schermen en `app.json` (versie, buildnummer)
 - [`external-services.md`](../conventions/external-services.md) §Auth: Clerk
 
 ## Acceptance
@@ -87,7 +87,7 @@ Gevolgen:
 
 ## Spec-criticus aanvullingen (A, 2026-10-25)
 
-Bron: oude app `/Users/wintvelt/Documents/DEV/DEV/clubalmanac-app` (Expo 47, Amplify/Cognito), `app.json`, `eas.json` en de meegeleverde `.ipa`. De oude login was volledig client-side Cognito; de AWS-backend speelt geen rol in deze flow.
+Bron: oude app `~/Code/v1/clubalmanac-app` (Expo 47, Amplify/Cognito), `app.json`, `eas.json` en de meegeleverde `.ipa`. De oude login was volledig client-side Cognito; de AWS-backend speelt geen rol in deze flow.
 
 ### Invariant 8: versie en build
 

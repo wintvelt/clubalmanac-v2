@@ -1,7 +1,7 @@
 // TDD red phase voor invites.create + invites.remove.
 //
 // Bron: er is geen oude AWS sendInvite handler in
-// /Users/wintvelt/Documents/DEV/DEV/blob-images-api-invites/ — die zat
+// ~/Code/v1/blob-images-api-invites/ — die zat
 // in blob-images-api-groups/handlersInvite/sendInvite.js maar die directory
 // bestaat niet meer in dit DEV-archief. De tests hieronder zijn afgeleid van:
 // - de invite-shape die getInvite() in

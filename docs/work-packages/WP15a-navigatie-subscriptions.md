@@ -76,7 +76,7 @@ Een ingelogde user gaat met de tabbalk naar Home, Mijn foto's, Toevoegen, Profie
 - [WP13](./WP13-app-scaffold-auth.md): `deriveAuthState`, invarianten 4, 10, 11, 13; §Pariteit-checklist (tabbalk)
 - [WP-Design](./WP-Design.md): invarianten 6 en 11; gate-uitslag (stap 2–5 schuiven hierheen)
 - [`migratie-status.md`](../migratie-status.md) §Fase 4 Track A, Subscription discipline
-- Oude app (alleen A): `/Users/wintvelt/Documents/DEV/DEV/clubalmanac-app`, navigatie en tabbalk
+- Oude app (alleen A): `~/Code/v1/clubalmanac-app`, navigatie en tabbalk
 
 ## Acceptance
 

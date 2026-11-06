@@ -82,7 +82,7 @@ Er is geen red-team: geen enkele dimensie is hoog. Vindt de audit iets in de aut
 - [`migratie-plan-convex.md`](../migratie-plan-convex.md) §User visit tracking
 - [`design.md`](../design.md) §5, §6, §7, §9, §10 nr. 14
 - [`external-services.md`](../conventions/external-services.md) §Convex (live queries meten)
-- Oude app (alleen A): `/Users/wintvelt/Documents/DEV/DEV/clubalmanac-app`, schermen Profiel, Instellingen, Info en de uitgelogde tabbalk
+- Oude app (alleen A): `~/Code/v1/clubalmanac-app`, schermen Profiel, Instellingen, Info en de uitgelogde tabbalk
 
 ## Acceptance
 

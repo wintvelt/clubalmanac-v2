@@ -183,4 +183,4 @@ Uitzondering: queries zonder trigger (puur read-tests) leven bij de query-owner.
 
 ## Bron
 
-Oorspronkelijke handlers in `/Users/wintvelt/Documents/DEV/DEV/blob-images-api/handlersDBstreams/`. Dispatcher logica in `mainStream.js`.
+Oorspronkelijke handlers in `~/Code/v1/blob-images-api/handlersDBstreams/`. Dispatcher logica in `mainStream.js`.

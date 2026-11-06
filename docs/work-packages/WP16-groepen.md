@@ -83,7 +83,7 @@ Er is geen red-team: geen enkele dimensie is hoog. Komt beheer in scope, of vind
 - [`migratie-plan-convex.md`](../migratie-plan-convex.md) §Unread-count per album per user
 - [`cascade-matrix.md`](../cascade-matrix.md) AP1, AP2, A2, M3
 - [`design.md`](../design.md) §3, §4, §5, §6, §7, §10
-- Oude app (alleen A): `/Users/wintvelt/Documents/DEV/DEV/clubalmanac-app`, schermen Mijn groepen, Groep (Albums, Leden) en Home
+- Oude app (alleen A): `~/Code/v1/clubalmanac-app`, schermen Mijn groepen, Groep (Albums, Leden) en Home
 
 ## Acceptance
 
