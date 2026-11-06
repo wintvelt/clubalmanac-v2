@@ -379,7 +379,25 @@ function sniffImageType(b: Uint8Array): string | null {
   return null;
 }
 
-// Een beeld met een `image/*`-type gaat als Blob door, zonder het te lezen.
+// Invariant 17: alleen een opgeslagen rasterbeeld-type gaat door. Elk ander
+// type (octet-stream, leeg, of bijvoorbeeld `text/html` of `image/svg+xml`
+// van een eigen upload) wordt nooit verstuurd: anders draait zo'n bestand als
+// profielfoto op het openbare profielpad in een browser.
+const RASTER_TYPES = new Set([
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+  "image/heic",
+  "image/heif",
+  "image/gif",
+]);
+
+function storedRasterType(type: string): string | null {
+  const base = type.split(";")[0]!.trim().toLowerCase();
+  return RASTER_TYPES.has(base) ? base : null;
+}
+
+// Een beeld met een rasterbeeld-type gaat als Blob door, zonder het te lezen.
 // Anders leest de action het hele bestand: `Blob.slice()` gevolgd door
 // `arrayBuffer()` gaf in de echte Convex-runtime een RangeError (WP7-gate,
 // zie convex/photoMetadata.ts; audit B1), dus geen slice, maar één
@@ -388,10 +406,11 @@ function sniffImageType(b: Uint8Array): string | null {
 // onder de 64 MiB van een httpAction en de 100 MiB per respons (Convex-docs,
 // Limits).
 async function imageBody(blob: Blob): Promise<{ body: Blob | ArrayBuffer; type: string }> {
-  if (blob.type.startsWith("image/")) return { body: blob, type: blob.type };
+  const stored = storedRasterType(blob.type);
+  if (stored) return { body: blob, type: stored };
   const bytes = await blob.arrayBuffer();
   const head = new Uint8Array(bytes, 0, Math.min(12, bytes.byteLength));
-  return { body: bytes, type: sniffImageType(head) ?? (blob.type || "application/octet-stream") };
+  return { body: bytes, type: sniffImageType(head) ?? "application/octet-stream" };
 }
 
 async function imageResponse(

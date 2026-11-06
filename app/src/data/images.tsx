@@ -7,6 +7,15 @@ import {
   siteUrlOf,
   type ImageFormat,
 } from "../lib/imageUrls";
+import {
+  imageFailed,
+  imageLoadView,
+  initialImageLoad,
+  retryByUser,
+  tokenArrived,
+  tokenRequest,
+  type ImageLoad,
+} from "../lib/imageRetry";
 
 // WP17a: bronnen voor beelden uit het beeldpad (besluit 1). Een foto vraagt
 // het Clerk-token voor Convex in de Authorization-header; het beeldpad checkt
@@ -22,47 +31,58 @@ function useSiteUrl(): string | null {
   return useContext(SiteUrl);
 }
 
-// Hetzelfde token als de Convex-client (src/data/convexConnection.tsx): de
-// JWT-template "convex", tenzij de sessie zelf al voor Convex is. Clerk houdt
-// het token in een cache en ververst het zelf. `attempt` haalt opnieuw op,
-// na een mislukt beeld (een verlopen token geeft 401).
-function useConvexToken(attempt: number): string | null | undefined {
+// Een foto-beeld met het Clerk-token, via de toestand van src/lib/imageRetry
+// (invariant 18). Hetzelfde token als de Convex-client
+// (src/data/convexConnection.tsx): de JWT-template "convex", tenzij de sessie
+// zelf al voor Convex is. Clerk houdt het token in een cache; na een fout
+// haalt de herhaling een vers token (skipCache), want een verlopen token
+// geeft 401. Er gaat geen verzoek uit tot het token van de huidige poging er
+// is; een laat token van een eerdere poging telt niet.
+//
+// `source`: de bron, `undefined` zolang het token er nog niet is, `null` als
+// het beeld terugvalt (fout-tegel of letter). `attempt` is de key van het
+// beeld: een nieuwe poging bouwt het opnieuw op. De cache-sleutel is de URL,
+// dus een nieuw token alleen laadt het beeld niet opnieuw.
+export function usePhotoLoad(photoId: string, format: ImageFormat) {
+  const site = useSiteUrl();
   const { isSignedIn, getToken, sessionClaims } = useAuth();
-  const [token, setToken] = useState<string | null | undefined>(undefined);
   const forConvex = sessionClaims?.aud === "convex";
+  const [load, setLoad] = useState<ImageLoad>(initialImageLoad);
+  const request = tokenRequest(load);
+  const requestAttempt = request?.attempt;
+  const skipCache = request?.skipCache ?? false;
   useEffect(() => {
-    let current = true;
+    if (requestAttempt === undefined) return;
+    const arrived = (token: string | null) => setLoad((s) => tokenArrived(s, requestAttempt, token));
     if (!isSignedIn) {
-      setToken(null);
+      arrived(null);
       return;
     }
-    const fetch = forConvex ? getToken({ skipCache: attempt > 0 }) : getToken({ template: "convex", skipCache: attempt > 0 });
+    const fetch = forConvex ? getToken({ skipCache }) : getToken({ template: "convex", skipCache });
     void fetch.then(
-      (t) => current && setToken(t),
-      () => current && setToken(null),
+      (token) => arrived(token ?? null),
+      () => arrived(null),
     );
-    return () => {
-      current = false;
-    };
     // getToken van Clerk is niet gememoïseerd (zie convexConnection).
-  }, [isSignedIn, forConvex, attempt]); // eslint-disable-line react-hooks/exhaustive-deps
-  return token;
-}
+  }, [requestAttempt, skipCache, isSignedIn, forConvex]); // eslint-disable-line react-hooks/exhaustive-deps
 
-// De bron van een foto, of `undefined` zolang het token er nog niet is, of
-// `null` zonder token (dan toont de plek zijn fout-toestand). De cache-sleutel
-// is de URL: bij een nieuw token laadt het beeld niet opnieuw.
-export function usePhotoSource(
-  photoId: string,
-  format: ImageFormat,
-  attempt = 0,
-): ImageSource | null | undefined {
-  const site = useSiteUrl();
-  const token = useConvexToken(attempt);
-  if (site === null || token === null) return null;
-  if (token === undefined) return undefined;
-  const uri = photoImageUrl(site, photoId, format);
-  return { uri, cacheKey: uri, headers: { Authorization: `Bearer ${token}` } };
+  const view = imageLoadView(load);
+  let source: ImageSource | null | undefined;
+  if (site === null || view.kind === "failed") source = null;
+  else if (view.kind === "wait") source = undefined;
+  else {
+    const uri = photoImageUrl(site, photoId, format);
+    source = { uri, cacheKey: uri, headers: { Authorization: `Bearer ${view.token}` } };
+  }
+  const attempt = view.kind === "load" ? view.attempt : load.attempt;
+  return {
+    source,
+    attempt,
+    // Het beeld van deze poging laadde niet.
+    onError: () => setLoad((s) => imageFailed(s, attempt)),
+    // "Opnieuw" op de fout-tegel.
+    retry: () => setLoad((s) => retryByUser(s)),
+  };
 }
 
 export function useProfileSource(userId: string, format: ImageFormat): ImageSource | null {
