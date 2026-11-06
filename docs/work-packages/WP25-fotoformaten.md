@@ -1,6 +1,6 @@
 # WP25: Verkleinde versies van foto's (formaten *klein* en *groot*)
 
-> Draft regie 2026-11-06. Backend-WP met een raakvlak met de app en de migratie. Eerst een spike, dan kiest Wouter de optie, dan A → B → audit, en een red-team op de backfill en de T0-keten (data/schema hoog). Volgt uit [WP17a](./WP17a-fotos-bekijken.md) besluit 2, vraag 2 en vraag 9. Af vóór de gate van WP17a.
+> Draft regie 2026-11-06; spike en besluiten 2026-11-06. Backend-WP met een raakvlak met de app en de migratie. Eerst een spike, dan kiest Wouter de optie, dan A → B → audit, en een red-team op de backfill en de T0-keten (data/schema hoog). Volgt uit [WP17a](./WP17a-fotos-bekijken.md) besluit 2, vraag 2 en vraag 9. Af vóór de gate van WP17a.
 
 ## Productdoel
 
@@ -37,11 +37,24 @@ Eén sessie op dev, met een timebox. Er gaat niets naar de branch: de spike leve
 4. **Grootte van een formaat.** Hoe groot zijn *klein* (~512 px) en *groot* (~1600 px) gemiddeld, als JPEG en als WebP? Toont `expo-image` op iOS beide?
 5. **Prod.** Is dev representatief voor de prod-tellingen van vraag 2 en 3? Zo niet: een script dat op Wouters laptop alleen leest uit S3 (zoals `extract`).
 
-## Te beslissen door Wouter (na de spike)
+## Uitkomst spike (2026-11-06)
 
-1. **Optie** uit WP17a vraag 2: A (bij de upload, op de server), B (op aanvraag, daarna bewaard), C (op het toestel bij de upload, en de WP12-tooling voor de bestaande foto's) of D (een externe beelddienst).
-2. **Maten en bestandstype** van *klein* en *groot*.
-3. **HEIC-originelen:** formaten als JPEG of WebP maken en het origineel houden, of iets anders.
+Gemeten op dev in een Node-action (linux arm64, ~1 core), met echte dev-bestanden. Niets gecommit; dev wordt na afloop opgeruimd met een deploy vanaf `wp25`.
+
+- **Verkleinen in Convex werkt** met sharp 0.35.5 (`externalPackages` in `convex.json`). Eén keer decoderen naar *groot* en *klein* uit *groot* maken: 1–5 s per foto, ook voor de grootste (20 MB). Piek ~260–390 MB.
+- **Harde grens: 512 MB per Node-action.** Vier grote foto's tegelijk gaf een out-of-memory. Parallel werken levert niets op (~1 core). Eén foto per keer.
+- **HEIC:** op dev 0 (995 JPEG, 6 PNG; de 444 octet-stream zijn JPEG of PNG). Sharp decodeert HEIC niet; heic-decode 2.1.0 (WASM) wel. Niet gemeten: een echte iPhone-HEIC met `irot` of oriëntatie ≠ 1.
+- **Oriëntatie:** 114 van de 1001 bestanden hebben een tag ≠ 1 (58× 6, 56× 3); `exifOrientation` is overal leeg.
+- **Grootte** (langste zijde, JPEG mozjpeg q80): *klein* gemiddeld 35 kB (max 71), *groot* 258 kB (max 667). WebP levert gemiddeld niets op. Opslag erbij ~10%.
+- **Backfill prod** (~1600 foto's, ~3 s per foto): ruwweg 16–80 minuten, in batches.
+- **Prod-telling** niet gedaan: het besluit hangt er niet van af (HEIC wordt ondersteund, de backfill leest de tag per bestand).
+
+## Besluiten Wouter (2026-11-06)
+
+1. **Optie A:** formaten op de server, in een Node-action die na de upload wordt ingepland, één foto per keer. De backfill gebruikt dezelfde action, in batches.
+2. **Maten:** *klein* 512 px en *groot* 1600 px, langste zijde.
+3. **Bestandstype:** JPEG.
+4. **HEIC:** de formaten worden JPEG (via heic-decode); het origineel blijft. Open voor A: past libheif `irot` zelf toe? Zo ja, dan draait een HEIC dubbel (invariant 6). A test met een echte iPhone-HEIC.
 
 ## Edge cases en scope
 
@@ -65,8 +78,8 @@ Eén sessie op dev, met een timebox. Er gaat niets naar de branch: de spike leve
 
 | Stap | Wie | Wat |
 |---|---|---|
-| 0 | Spike-sessie | Het rapport hierboven. Geen code naar de branch. |
-| 1 | Wouter | Kiest de optie, de maten en wat er met HEIC gebeurt. |
+| 0 | Spike-sessie | ✅ §Uitkomst spike. |
+| 1 | Wouter | ✅ Optie A, 512/1600, JPEG, HEIC als JPEG (§Besluiten). |
 | 2 | A | Spec-criticus en RED tests. Leest de WP12-tooling, WP7, WP8, WP10 en de cascade-matrix. |
 | 3 | B | Impl, plus de preview-run van de backfill op dev. |
 | 4 | Audit | Op spec, tests en impl. |
