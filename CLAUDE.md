@@ -43,7 +43,7 @@ Toegangs-grenzen per rol staan in [`docs/conventions/work-package-specs.md`](./d
 
 ## Commit + push
 
-Lokale commits per rol. Pushen kan alleen na goedkeuring door Wouter: `Bash(git push:*)` staat in `.claude/settings.json` als ask-regel, dus elke push geeft een vraag (ook op de iPhone via Remote Control). Rol-sessies (A/B/audit) pushen nooit; regie stelt een push voor als er geen rol-sessie draait. Zie [`docs/conventions/commit-discipline.md`](./docs/conventions/commit-discipline.md).
+Lokale commits per rol; push door Wouter vanuit eigen terminal. `Bash(git push:*)` staat in `.claude/settings.json` deny-list — élke Claude Code-sessie hier kan committen, niet pushen. Zie [`docs/conventions/commit-discipline.md`](./docs/conventions/commit-discipline.md).
 
 ## Belangrijke known issues
 

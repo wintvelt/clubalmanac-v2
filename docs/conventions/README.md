@@ -6,7 +6,7 @@ Files in deze folder:
 
 - [`ab-audit-workflow.md`](./ab-audit-workflow.md) — A→B→audit discipline voor backend werkpakketten
 - [`work-package-specs.md`](./work-package-specs.md) — Per-WP spec-doc, rolverdeling + toegangs-tabel, subagent-configs
-- [`commit-discipline.md`](./commit-discipline.md) — Wie committed wanneer, push alleen na goedkeuring
+- [`commit-discipline.md`](./commit-discipline.md) — Wie committed wanneer, push-hook gedrag
 - [`prompt-discipline.md`](./prompt-discipline.md) — Geen pseudo-code in B-prompts (bias-vermijding)
 - [`external-services.md`](./external-services.md) — Photon (geocoding) / Mailjet (email) / Clerk (auth) keuzes
 - [`integration-tests.md`](./integration-tests.md) — Aparte test-laag tegen echte externe services (productie-blind-spots)
