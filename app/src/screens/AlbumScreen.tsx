@@ -8,7 +8,7 @@ import type { Id } from "../../../convex/_generated/dataModel";
 import { BackPill } from "../components/BackPill";
 import { Gradient } from "../components/Gradient";
 import { Icon } from "../components/Icon";
-import { PhotoImage } from "../components/Photo";
+import { CoverScrim, PhotoImage } from "../components/Photo";
 import { QueryBoundary } from "../components/QueryBoundary";
 import { Screen } from "../components/Screen";
 import { EmptyState, LoadingState } from "../components/States";
@@ -235,13 +235,16 @@ function AlbumHeader({
     <View style={{ marginBottom: space.l }}>
       <View style={{ width, height }}>
         {album?.cover ? (
-          <PhotoImage
-            photoId={album.cover._id}
-            format="groot"
-            exifOrientation={album.cover.exifOrientation}
-            box={{ width, height }}
-            fallback={<Gradient from={colors.washStart} to={colors.washEnd} />}
-          />
+          <>
+            <PhotoImage
+              photoId={album.cover._id}
+              format="groot"
+              exifOrientation={album.cover.exifOrientation}
+              box={{ width, height }}
+              fallback={<Gradient from={colors.washStart} to={colors.washEnd} />}
+            />
+            <CoverScrim height={height} />
+          </>
         ) : (
           <View style={[StyleSheet.absoluteFill, styles.center]}>
             <Gradient from={colors.washStart} to={colors.washEnd} />

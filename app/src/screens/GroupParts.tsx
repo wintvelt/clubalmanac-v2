@@ -1,5 +1,5 @@
 import { router } from "expo-router";
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { StyleSheet, useWindowDimensions, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { Id } from "../../../convex/_generated/dataModel";
@@ -7,7 +7,7 @@ import { BackPill } from "../components/BackPill";
 import { Gradient } from "../components/Gradient";
 import { LetterTile } from "../components/LetterTile";
 import { Notice } from "../components/Notice";
-import { PhotoImage } from "../components/Photo";
+import { CoverScrim, PhotoImage } from "../components/Photo";
 import { QueryBoundary } from "../components/QueryBoundary";
 import { SmallButton } from "../components/SmallButton";
 import { Text } from "../components/Text";
@@ -47,34 +47,43 @@ export function CoverHeader({ name, cover }: { name?: string; cover?: CoverPhoto
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
-  const height = insets.top + size.cover;
-  const letter = (
+  // Bij grote tekst kan de kop hoger worden dan het vaste vlak; de cover groeit mee.
+  const [measured, setMeasured] = useState(0);
+  const height = Math.max(insets.top + size.cover, measured);
+  const tile =
+    name !== undefined ? (
+      <LetterTile name={name} size={size.groupTile * 1.5} radius={radius.groupPhoto} variant="largeTitle" />
+    ) : null;
+  // Mislukt het beeld: de wash-tint met de letter in het midden.
+  const fallback = (
     <>
       <Gradient from={colors.washStart} to={colors.washEnd} />
-      {name !== undefined && (
-        <View style={[styles.coverTile, { paddingTop: insets.top + space.s + size.touchMin }]}>
-          <LetterTile name={name} size={size.groupTile * 1.5} radius={radius.groupPhoto} variant="largeTitle" />
-        </View>
-      )}
+      <View style={styles.coverFallbackTile}>{tile}</View>
     </>
   );
   return (
-    <View style={[styles.cover, { minHeight: height }]}>
-      <View style={StyleSheet.absoluteFill}>
-        {cover ? (
+    <View
+      style={[styles.cover, { paddingTop: insets.top + space.s, minHeight: insets.top + size.cover }]}
+      onLayout={(e) => setMeasured(Math.ceil(e.nativeEvent.layout.height))}
+    >
+      {cover ? (
+        <View style={StyleSheet.absoluteFill}>
           <PhotoImage
             photoId={cover._id}
             format="groot"
             exifOrientation={cover.exifOrientation}
             box={{ width, height }}
-            fallback={letter}
+            fallback={fallback}
           />
-        ) : (
-          letter
-        )}
-      </View>
-      <View style={[styles.coverColumn, { paddingTop: insets.top + space.s }]}>
+          <CoverScrim height={height} />
+        </View>
+      ) : (
+        <Gradient from={colors.washStart} to={colors.washEnd} />
+      )}
+      <View style={styles.coverColumn}>
         <BackPill title="Mijn groepen" onPress={backToMyGroups} />
+        {/* Zonder cover staat de letter in de flow, onder de pil (WP16). */}
+        {!cover && tile && <View style={styles.coverTile}>{tile}</View>}
       </View>
     </View>
   );
@@ -156,5 +165,6 @@ const styles = StyleSheet.create({
     paddingBottom: space.l,
     gap: space.l,
   },
-  coverTile: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0, alignItems: "center", justifyContent: "center", paddingBottom: space.l },
+  coverTile: { flex: 1, alignItems: "center", justifyContent: "center" },
+  coverFallbackTile: { ...StyleSheet.absoluteFill, alignItems: "center", justifyContent: "center" },
 });

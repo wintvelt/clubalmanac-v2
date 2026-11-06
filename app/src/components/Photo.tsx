@@ -1,10 +1,11 @@
 import { Image, type ImageContentFit } from "expo-image";
+import Svg, { Defs, LinearGradient, Rect, Stop } from "react-native-svg";
 import { useState, type ReactNode } from "react";
 import { Pressable, StyleSheet, View } from "react-native";
 import { useProfileSource, usePhotoSource } from "../data/images";
 import type { ImageFormat } from "../lib/imageUrls";
 import { orientationTransform, swapsAspect } from "../lib/photos";
-import { useTheme } from "../theme";
+import { photoLayers, useTheme } from "../theme";
 import { Icon } from "./Icon";
 import { LetterTile } from "./LetterTile";
 import type { TypeRoleName } from "../theme";
@@ -82,7 +83,12 @@ export function PhotoImage({
 
   return (
     <View
-      style={[box, { borderRadius: radius, overflow: "hidden", backgroundColor: colors.line }]}
+      style={[
+        box,
+        // Grijs zolang het laadt; daarna niets, zodat een passend beeld (detail)
+        // geen grijze balken krijgt.
+        { borderRadius: radius, overflow: "hidden", backgroundColor: state === "loaded" ? "transparent" : colors.line },
+      ]}
       accessible={accessibilityLabel !== undefined}
       accessibilityRole={accessibilityLabel !== undefined ? "image" : undefined}
       accessibilityLabel={accessibilityLabel}
@@ -172,6 +178,25 @@ function ProfileImage({
         onError={() => setState("failed")}
       />
     </View>
+  );
+}
+
+// De scrim over een cover-foto (design.md §2, photoLayers.coverScrim): zwart
+// van boven naar onder, zodat de statusbalk en de terugknop-pil leesbaar zijn.
+export function CoverScrim({ height }: { height: number }) {
+  const { top, at100, bottom } = photoLayers.coverScrim;
+  const at = Math.min(1, 100 / Math.max(height, 1));
+  return (
+    <Svg style={StyleSheet.absoluteFill} pointerEvents="none">
+      <Defs>
+        <LinearGradient id="scrim" x1="0" y1="0" x2="0" y2="1">
+          <Stop offset={0} stopColor="#000000" stopOpacity={top} />
+          <Stop offset={at} stopColor="#000000" stopOpacity={at100} />
+          <Stop offset={1} stopColor="#000000" stopOpacity={bottom} />
+        </LinearGradient>
+      </Defs>
+      <Rect width="100%" height="100%" fill="url(#scrim)" />
+    </Svg>
   );
 }
 
