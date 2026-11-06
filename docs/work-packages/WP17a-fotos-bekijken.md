@@ -352,6 +352,7 @@ De inventaristests: `tests/images/noStorageIds.test.ts` (geen `_storage`-id in e
 | `app/tests/photos.test.ts` | Pure logica: de volgorde in het album, de datum van een foto (invariant 15), de draaiing per `exifOrientation` en de transform die React Native echt toepast (beide tegen een onafhankelijke afleiding uit de EXIF-definitie en de RN-bron), de markeringen die blijven staan (invariant 12), wanneer `markSeen` loopt (vraag 6) |
 | `app/tests/imageCache.test.ts` | Besluit 3: lokaal wissen leegt geheugen en schijf van de beeldcache, ook als dat half mislukt. Invariant 3: een beeld met een profielbron heeft geen cache. |
 | `app/tests/imageRetry.test.ts` | Invariant 18: na een fout één nieuwe poging met een vers token, geen verzoek met het oude, daarna terugvallen; de app gebruikt `src/lib/imageRetry.ts` |
+| `app/tests/photoLoad.test.ts`, `photoImage.test.ts` | Invariant 18 in de app: `usePhotoLoad` met een nagebootste Clerk (`skipCache` bij de herhaling, nooit een bron met het oude of een laat token, `retry`); `PhotoImage` met key per poging, `onError` en "Opnieuw". Een kleine hook-runtime vervangt React (`app/tests/support/hookRuntime.ts`) |
 | `tests/integration/images/exMember.test.ts` | Gate-stap 6 (invariant 2) op dev, met echte tokens (niet in CI) |
 | `app/tests/groupRoutes.test.ts` (A vult aan) | Het pad en het routebestand van het foto-detail |
 
