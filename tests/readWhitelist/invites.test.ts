@@ -29,7 +29,7 @@ function expectNoInviteSecrets(value: unknown, w: World) {
 }
 
 describe("invites.getByToken — anonieme landingspagina", () => {
-  it("precies status, isExpired, rol, email van de genodigde, groep (id, naam, omschrijving) en inviter (naam; WP17a: geen beeld-id)", async () => {
+  it("precies status, isExpired, rol, email van de genodigde, groep (id, naam, omschrijving) en inviter (id en naam; WP17a besluit 8: geen beeld-id)", async () => {
     const t = newT();
     const w = await seedWorld(t);
     const got = (await t.query(api.invites.getByToken, {
@@ -45,11 +45,10 @@ describe("invites.getByToken — anonieme landingspagina", () => {
     expect(got.group._id).toBe(w.groups.G1);
     expect(got.group.name).toBe("Club");
     expect(got.inviter.name).toBe("Alice");
-
-    const json = JSON.stringify(got);
-    expect(json, "invitedBy-id op de landing").not.toContain(
-      w.users.alice.id,
-    );
+    // WP17a besluit 8: het user-id van de afzender, voor het openbare
+    // profielpad. Geen beeld-id (invariant 10).
+    expect(got.inviter._id).toBe(w.users.alice.id);
+    expect(JSON.stringify(got)).not.toContain("profilePhotoStorageId");
     expectNoInviteSecrets(got, w);
     expectNoUserSecrets(got, w);
   });

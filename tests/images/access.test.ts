@@ -1,17 +1,17 @@
 import { convexTest } from "convex-test";
 import { makeFunctionReference } from "convex/server";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
 import schema from "../../convex/schema";
 import { registerUser, withUser } from "../_helpers/auth";
 import { modules } from "../_helpers/modules";
 
-// WP17a invarianten 1, 2, 3, 13 en 14, vraag 8 (spec §Spec-criticus
-// aanvullingen). De toegangsregel voor beeldbytes, los van de vorm waarin het
-// beeld de client bereikt (vraag 1). Elke vorm vraagt deze regel: "welk beeld
-// mag de caller nu zien voor deze foto / dit profiel?". Antwoord: het beeld,
-// of `null`.
+// WP17a invarianten 1, 2, 3, 13 en 14, besluiten 1, 2 en 8 (spec §Besluiten
+// Wouter 2026-11-06). De toegangsregel voor beeldbytes, los van hoe het beeld
+// de client bereikt. Het beeldpad (vorm B, tests/images/httpRoute.test.ts)
+// vraagt per verzoek: "welk beeld krijgt deze caller nu voor deze foto / dit
+// profiel?". Antwoord: het beeld, of `null`.
 //
 // Twee interne queries in een nieuwe module `convex/images.ts`:
 //   images.photoImage({ photoId })  → Id<"_storage"> | null
@@ -20,17 +20,18 @@ import { modules } from "../_helpers/modules";
 // identity van het verzoek).
 //
 // Foto: het beeld volgt `canAccessPhoto` (WP23): eigenaar, of lid van een
-// groep waarin de foto in een album staat. Geen webmaster-bypass.
-// Profiel: zichzelf altijd; een ander alleen bij een gedeelde groep, én (als
-// het beeld bij een of meer foto's hoort) met toegang tot minstens één van die
-// foto's (vraag 8, advies). Anders `null`, net als zonder profielfoto
-// (invariant 14).
+// groep waarin de foto in een album staat. Geen webmaster-bypass. Geen
+// toegang, onbekend id en gewist beeld geven hetzelfde: `null` (invariant
+// 13). Uitgelogd ook `null` (het beeldpad geeft dan eerst 401).
 //
-// Geen toegang, onbekend id en gewist beeld geven hetzelfde: `null`
-// (invariant 13). Uitgelogd ook `null` (het beeldpad geeft dan eerst 401).
+// Profiel (besluit 8, invariant 3): openbaar, ook uitgelogd, zonder gedeelde
+// groep en zonder toegang tot een foto met hetzelfde beeld. Maar alleen het
+// beeld dat nú de profielfoto is: nooit een vorige profielfoto of een ander
+// beeld van die user. Geen profielfoto, een gewist beeld en een onbekend
+// user-id geven hetzelfde: `null` (invariant 14).
 //
-// NB: de tests pinnen het beeld als het originele `storageId`. Besluit Wouter
-// tot verkleinde versies (vraag 2), dan past A dit in ronde 2 aan.
+// De tests pinnen het originele `storageId`. De formaten (klein, groot) komen
+// met WP25 (besluit 2); WP25 pint de keuze van het formaat.
 
 type T = ReturnType<typeof convexTest>;
 
@@ -263,85 +264,42 @@ describe("images.photoImage — wie de toegang verliest, verliest het beeld (inv
 });
 
 // ---------------------------------------------------------------------------
-// Profielfoto's
+// Profielfoto's (besluit 8)
 // ---------------------------------------------------------------------------
 
-describe("images.profileImage — wie een profielfoto ziet (invariant 3)", () => {
-  it("zichzelf: altijd, ook zonder groep", async () => {
+describe("images.profileImage — een profielfoto is openbaar (invariant 3)", () => {
+  it("zichzelf, een medelid, iemand zonder gedeelde groep: allemaal de profielfoto", async () => {
     const t = newT();
     const s = await setup(t);
-    const xenaProfile = await blob(t, "profiel-xena");
-    await setProfileBlob(t, s.xena, xenaProfile);
-    expect(await withUser(t, "user_xena").query(profileImage, { userId: s.xena })).toBe(
-      xenaProfile,
-    );
-    expect(await withUser(t, "user_owen").query(profileImage, { userId: s.owen })).toBe(
+    for (const subject of ["user_owen", "user_mia", "user_xena"]) {
+      expect(await withUser(t, subject).query(profileImage, { userId: s.owen }), subject).toBe(
+        s.owenProfile,
+      );
+    }
+  });
+
+  it("uitgelogd, of een identity zonder users-rij: ook de profielfoto", async () => {
+    const t = newT();
+    const s = await setup(t);
+    expect(await t.query(profileImage, { userId: s.owen })).toBe(s.owenProfile);
+    expect(await withUser(t, "user_spook").query(profileImage, { userId: s.owen })).toBe(
       s.owenProfile,
     );
   });
 
-  it("een medelid: de profielfoto", async () => {
-    const t = newT();
-    const s = await setup(t);
-    expect(await withUser(t, "user_mia").query(profileImage, { userId: s.owen })).toBe(
-      s.owenProfile,
-    );
-  });
-
-  it("geen gedeelde groep: null", async () => {
-    const t = newT();
-    const s = await setup(t);
-    expect(await withUser(t, "user_xena").query(profileImage, { userId: s.owen })).toBeNull();
-  });
-
-  it("WP24 N4: na vertrek uit de groep: null", async () => {
+  it("na vertrek uit de groep: nog steeds de profielfoto (WP24 N4 vervalt door besluit 8)", async () => {
     const t = newT();
     const s = await setup(t);
     const mia = withUser(t, "user_mia");
     await mia.mutation(api.groups.removeMember, { groupId: s.G, userId: s.mia });
-    expect(await mia.query(profileImage, { userId: s.owen })).toBeNull();
-    // En andersom: Owen ziet Mia niet meer.
-    const miaProfile = await blob(t, "profiel-mia");
-    await setProfileBlob(t, s.mia, miaProfile);
-    expect(await withUser(t, "user_owen").query(profileImage, { userId: s.mia })).toBeNull();
+    expect(await mia.query(profileImage, { userId: s.owen })).toBe(s.owenProfile);
   });
 
-  it("invariant 14: zonder profielfoto, onbekende user en geen toegang geven hetzelfde: null", async () => {
+  it("een profielfoto die het beeld van een foto is: ook voor wie geen toegang tot die foto heeft", async () => {
+    // Owen zet het beeld van zijn foto P2 (alleen in een album van groep X)
+    // als profielfoto. Daarmee is dat beeld openbaar via zijn profiel; via het
+    // foto-pad blijft het dicht voor wie geen foto-toegang heeft.
     const t = newT();
-    const s = await setup(t);
-    const xena = withUser(t, "user_xena");
-    const gone = await deletedUserId(t);
-    const noAccess = await xena.query(profileImage, { userId: s.owen });
-    const unknown = await xena.query(profileImage, { userId: gone });
-    // Mia heeft geen profielfoto; Owen deelt een groep met haar.
-    const none = await withUser(t, "user_owen").query(profileImage, { userId: s.mia });
-    expect(noAccess).toBeNull();
-    expect(unknown).toBeNull();
-    expect(none).toBeNull();
-  });
-
-  it("kernvondst 6: een profielfoto waarvan het beeld gewist is: null", async () => {
-    const t = newT();
-    const s = await setup(t);
-    await t.run((ctx) => ctx.storage.delete(s.owenProfile));
-    expect(await withUser(t, "user_mia").query(profileImage, { userId: s.owen })).toBeNull();
-    expect(await withUser(t, "user_owen").query(profileImage, { userId: s.owen })).toBeNull();
-  });
-
-  it("uitgelogd, of een identity zonder users-rij: null", async () => {
-    const t = newT();
-    const s = await setup(t);
-    expect(await t.query(profileImage, { userId: s.owen })).toBeNull();
-    expect(await withUser(t, "user_spook").query(profileImage, { userId: s.owen })).toBeNull();
-  });
-});
-
-describe("images.profileImage — een profielfoto die een foto is (vraag 8, WP24 heraudit N2)", () => {
-  /**
-   * Owen's profielfoto is het beeld van foto P2, die alleen in een album van
-   * groep X staat (Owen en Zed). Mia deelt met Owen alleen groep G.
-   */
-  async function photoAsProfile(t: T) {
     const s = await setup(t);
     const zed = await registerUser(t, "user_zed", "zed@x.com", "Zed");
     const X = await withUser(t, "user_owen").mutation(api.groups.create, { name: "X" });
@@ -349,95 +307,76 @@ describe("images.profileImage — een profielfoto die een foto is (vraag 8, WP24
     const AX = await withUser(t, "user_owen").mutation(api.albums.create, { groupId: X, name: "AX" });
     const P2 = await insertPhoto(t, s.owen);
     await withUser(t, "user_owen").mutation(api.albums.addPhoto, { albumId: AX, photoId: P2.photoId });
-    await setProfileBlob(t, s.owen, P2.storageId);
-    return { ...s, zed, X, AX, P2 };
-  }
-
-  it("een medelid zonder toegang tot die foto: null (de profielfoto geeft de foto niet prijs)", async () => {
-    const t = newT();
-    const s = await photoAsProfile(t);
-    expect(await withUser(t, "user_mia").query(profileImage, { userId: s.owen })).toBeNull();
-  });
-
-  it("een medelid mét toegang tot die foto: de profielfoto", async () => {
-    const t = newT();
-    const s = await photoAsProfile(t);
-    expect(await withUser(t, "user_zed").query(profileImage, { userId: s.owen })).toBe(
-      s.P2.storageId,
-    );
-  });
-
-  it("zichzelf: altijd", async () => {
-    const t = newT();
-    const s = await photoAsProfile(t);
-    expect(await withUser(t, "user_owen").query(profileImage, { userId: s.owen })).toBe(
-      s.P2.storageId,
-    );
-  });
-
-  it("de foto komt ook in een album van G: dan ziet Mia de profielfoto wel", async () => {
-    const t = newT();
-    const s = await photoAsProfile(t);
-    await withUser(t, "user_owen").mutation(api.albums.addPhoto, {
-      albumId: s.A,
-      photoId: s.P2.photoId,
+    await withUser(t, "user_owen").mutation(api.users.updateProfile, {
+      profilePhotoStorageId: P2.storageId,
     });
-    expect(await withUser(t, "user_mia").query(profileImage, { userId: s.owen })).toBe(
-      s.P2.storageId,
-    );
+
+    expect(await withUser(t, "user_mia").query(profileImage, { userId: s.owen })).toBe(P2.storageId);
+    expect(await t.query(profileImage, { userId: s.owen })).toBe(P2.storageId);
+    // Het foto-pad volgt nog steeds de foto-toegang (invariant 1).
+    expect(await withUser(t, "user_mia").query(photoImage, { photoId: P2.photoId })).toBeNull();
   });
 
-  it("hetzelfde beeld bij twee foto-rijen: toegang tot één ervan volstaat", async () => {
-    const t = newT();
-    const s = await photoAsProfile(t);
-    // Een tweede foto-rij van Owen op hetzelfde beeld, in album A van groep G.
-    const copy = await insertPhoto(t, s.owen, s.P2.storageId);
-    await withUser(t, "user_owen").mutation(api.albums.addPhoto, {
-      albumId: s.A,
-      photoId: copy.photoId,
-    });
-    expect(await withUser(t, "user_mia").query(profileImage, { userId: s.owen })).toBe(
-      s.P2.storageId,
-    );
-  });
-
-  it("aanval via groups.addMember zonder instemming: de aanvaller krijgt de foto niet", async () => {
-    const t = newT();
-    const s = await photoAsProfile(t);
-    // Xena maakt een eigen groep en zet Owen erin, zonder dat hij iets doet.
-    const evil = await withUser(t, "user_xena").mutation(api.groups.create, { name: "Lokaas" });
-    await withUser(t, "user_xena").mutation(api.groups.addMember, { groupId: evil, userId: s.owen });
-    expect(await withUser(t, "user_xena").query(profileImage, { userId: s.owen })).toBeNull();
-  });
-
-  it("dezelfde aanval bij een losse profielfoto: de aanvaller ziet hem (bekend, fix in het beheer-WP)", async () => {
-    // Geen foto prijsgegeven: het is een profielfoto, en Xena deelt nu een
-    // groep. Dat Xena die groep kon afdwingen, is het gat in groups.addMember
-    // (WP24-closeout), niet in het beeldpad.
+  it("de webmaster: de profielfoto (geen bypass nodig, het is openbaar)", async () => {
     const t = newT();
     const s = await setup(t);
-    const evil = await withUser(t, "user_xena").mutation(api.groups.create, { name: "Lokaas" });
-    await withUser(t, "user_xena").mutation(api.groups.addMember, { groupId: evil, userId: s.owen });
-    expect(await withUser(t, "user_xena").query(profileImage, { userId: s.owen })).toBe(
-      s.owenProfile,
-    );
+    process.env.WEBMASTER_EMAILS = WM_EMAIL;
+    try {
+      expect(
+        await withUser(t, "user_wm", WM_EMAIL).query(profileImage, { userId: s.owen }),
+      ).toBe(s.owenProfile);
+    } finally {
+      delete process.env.WEBMASTER_EMAILS;
+    }
   });
 });
 
-// Geen webmaster-bypass voor profielfoto's.
-describe("images.profileImage — webmaster", () => {
-  beforeEach(() => {
-    process.env.WEBMASTER_EMAILS = WM_EMAIL;
-  });
-  afterEach(() => {
-    delete process.env.WEBMASTER_EMAILS;
-  });
-
-  it("de webmaster zonder gedeelde groep: null", async () => {
+describe("images.profileImage — alleen de actuele profielfoto (invariant 3)", () => {
+  it("na een nieuwe profielfoto geeft het pad de nieuwe, nooit meer de vorige", async () => {
     const t = newT();
     const s = await setup(t);
-    expect(
-      await withUser(t, "user_wm", WM_EMAIL).query(profileImage, { userId: s.owen }),
-    ).toBeNull();
+    // Owen kiest het beeld van zijn eigen foto Q (toegestaan door WP24 invariant 8).
+    await withUser(t, "user_owen").mutation(api.users.updateProfile, {
+      profilePhotoStorageId: s.Q.storageId,
+    });
+    for (const client of [t, withUser(t, "user_xena"), withUser(t, "user_owen")]) {
+      const got = await client.query(profileImage, { userId: s.owen });
+      expect(got).toBe(s.Q.storageId);
+      expect(got).not.toBe(s.owenProfile);
+    }
+  });
+
+  it("een user zonder profielfoto: null, ook als hij foto's heeft", async () => {
+    const t = newT();
+    const s = await setup(t);
+    // Mia heeft geen profielfoto; geef haar een eigen foto, die blijft privé.
+    await insertPhoto(t, s.mia);
+    expect(await t.query(profileImage, { userId: s.mia })).toBeNull();
+    expect(await withUser(t, "user_owen").query(profileImage, { userId: s.mia })).toBeNull();
+  });
+
+  it("invariant 14: geen profielfoto, onbekend user-id en gewist beeld geven hetzelfde: null", async () => {
+    const t = newT();
+    const s = await setup(t);
+    const gone = await deletedUserId(t);
+    const none = await t.query(profileImage, { userId: s.mia });
+    const unknown = await t.query(profileImage, { userId: gone });
+    await t.run((ctx) => ctx.storage.delete(s.owenProfile));
+    const wiped = await t.query(profileImage, { userId: s.owen });
+    expect(none).toBeNull();
+    expect(unknown).toBeNull();
+    expect(wiped).toBeNull();
+  });
+
+  it("kernvondst 6: de foto achter de profielfoto is gewist (en daarmee het beeld): null", async () => {
+    const t = newT();
+    const s = await setup(t);
+    await withUser(t, "user_owen").mutation(api.users.updateProfile, {
+      profilePhotoStorageId: s.Q.storageId,
+    });
+    await withUser(t, "user_owen").mutation(api.photos.remove, { photoId: s.Q.photoId });
+    // De storage-cleanup loopt async; ook als het beeld al weg is: null.
+    await t.run((ctx) => ctx.storage.delete(s.Q.storageId));
+    expect(await t.query(profileImage, { userId: s.owen })).toBeNull();
   });
 });

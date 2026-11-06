@@ -102,9 +102,11 @@ export const SHAPE = {
   // A-keuze 6 herzien (Wouter, 47b65bc): email van de genodigde wél.
   inviteLanding: ["status", "isExpired", "role", "email", "group", "inviter"],
   landingGroup: ["_id", "name", "description"],
-  // WP17a kernvondst 7 + invariant 10 (A paste aan): geen profielbeeld-id op
-  // de anonieme landing.
-  landingInviter: ["name"],
+  // WP17a besluit 8 + invariant 10 (A paste aan): geen profielbeeld-id op de
+  // anonieme landing, wel het user-id van de afzender. Daarmee toont de
+  // landing zijn profielfoto via het openbare profielpad. Dit herziet de
+  // uitsluiting van `_id` uit WP23 (precedent audit-8).
+  landingInviter: ["_id", "name"],
 } as const;
 
 /** Keys met een gedefinieerde waarde, gesorteerd. `null` telt als gedefinieerd. */

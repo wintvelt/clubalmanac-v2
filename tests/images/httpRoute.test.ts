@@ -7,19 +7,24 @@ import http from "../../convex/http";
 import { registerUser, withUser } from "../_helpers/auth";
 import { modules } from "../_helpers/modules";
 
-// WP17a vraag 1, VOORLOPIG op A's advies (vorm B): het beeld via een
-// httpAction die bij elk verzoek de identity en de toegang checkt. Kiest
-// Wouter een andere vorm, dan vervalt of verandert dit bestand (A, ronde 2).
-// De toegangsregel zelf staat los hiervan in tests/images/access.test.ts.
+// WP17a besluit 1 (vorm B), besluit 2 (formaat-contract) en besluit 8
+// (profielfoto openbaar). De toegangsregel zelf staat in
+// tests/images/access.test.ts; hier het http-pad eromheen.
 //
-//   GET /beeld/foto/<photoId>    — bytes van de foto als de caller toegang heeft
-//   GET /beeld/profiel/<userId>  — bytes van de profielfoto als de caller hem
-//                                  mag zien (vraag 8)
+//   GET /beeld/foto/<photoId>[?formaat=klein|groot]
+//     Bytes van de foto als de caller foto-toegang heeft. Uitgelogd: 401.
+//     Geen toegang, onbekend, misvormd id, gewist: precies hetzelfde
+//     404-antwoord (invariant 13), nooit een 500 en nooit bytes.
+//     `Cache-Control` bevat `private`: een proxy of CDN mag een beeld achter
+//     een login niet bewaren.
+//   GET /beeld/profiel/<userId>[?formaat=klein|groot]
+//     Openbaar, ook uitgelogd (besluit 8): de bytes van de actuele
+//     profielfoto. Geen profielfoto, onbekend of misvormd id: één 404.
 //
-// Uitgelogd: 401. Geen toegang, onbekend id, misvormd id, gewist beeld:
-// precies hetzelfde 404-antwoord (invariant 13), nooit een 500 en nooit bytes.
-// De response mag niet in een gedeelde cache belanden: `Cache-Control` bevat
-// `private` (een proxy of CDN mag een geauthenticeerd beeld niet bewaren).
+// Formaat (besluit 2): `klein` en `groot` zijn geldig; zonder `formaat` het
+// origineel. Zolang een formaat er niet is (WP25 maakt ze), geeft het pad het
+// origineel. Een onbekende waarde: 400, voor iedereen gelijk, dus zonder
+// orakel. Het formaat verandert niets aan de toegang.
 //
 // convex-test valideert geen JWT: `withIdentity(...).fetch` zet de identity
 // direct (zie tests/http/upload.test.ts). De echte JWT-check doet Convex vóór
@@ -151,54 +156,114 @@ describe("GET /beeld/foto/<photoId>", () => {
   });
 });
 
-describe("GET /beeld/profiel/<userId>", () => {
-  it("medelid: 200 met de bytes van de profielfoto, Cache-Control private", async () => {
+describe("GET /beeld/foto/<photoId> — formaat (besluit 2)", () => {
+  it.each(["klein", "groot"])("?formaat=%s: zolang het formaat er niet is, het origineel", async (formaat) => {
     const t = convexTest(schema, modules);
     const s = await setup(t);
-    const res = await withUser(t, "user_mia").fetch(profilePath(s.owen), { method: "GET" });
+    const res = await withUser(t, "user_mia").fetch(`${photoPath(s.photoId)}?formaat=${formaat}`, {
+      method: "GET",
+    });
     expect(res.status).toBe(200);
     expect(res.headers.get("Cache-Control") ?? "").toMatch(/\bprivate\b/);
+    expect(await res.text()).toBe(PHOTO_BYTES);
+  });
+
+  it("een formaat opent niets: geen toegang blijft 404, uitgelogd blijft 401", async () => {
+    const t = convexTest(schema, modules);
+    const s = await setup(t);
+    const plain = await snapshot(
+      await withUser(t, "user_xena").fetch(photoPath(s.photoId), { method: "GET" }),
+    );
+    const small = await snapshot(
+      await withUser(t, "user_xena").fetch(`${photoPath(s.photoId)}?formaat=klein`, { method: "GET" }),
+    );
+    expect(small).toEqual(plain);
+    expect(small.status).toBe(404);
+    const anon = await t.fetch(`${photoPath(s.photoId)}?formaat=klein`, { method: "GET" });
+    expect(anon.status).toBe(401);
+  });
+
+  it("onbekend formaat: 400, gelijk voor wie wel en wie geen toegang heeft", async () => {
+    const t = convexTest(schema, modules);
+    const s = await setup(t);
+    const member = await snapshot(
+      await withUser(t, "user_mia").fetch(`${photoPath(s.photoId)}?formaat=reuze`, { method: "GET" }),
+    );
+    const outsider = await snapshot(
+      await withUser(t, "user_xena").fetch(`${photoPath(s.photoId)}?formaat=reuze`, { method: "GET" }),
+    );
+    expect(member.status).toBe(400);
+    expect(member.body).not.toContain(PHOTO_BYTES);
+    expect(outsider).toEqual(member);
+  });
+});
+
+describe("GET /beeld/profiel/<userId> — openbaar (besluit 8)", () => {
+  it.each([
+    ["uitgelogd", null],
+    ["iemand zonder gedeelde groep", "user_xena"],
+    ["een medelid", "user_mia"],
+    ["zichzelf", "user_owen"],
+  ] as const)("%s: 200 met de bytes van de profielfoto", async (_label, subject) => {
+    const t = convexTest(schema, modules);
+    const s = await setup(t);
+    const client = subject === null ? t : withUser(t, subject);
+    const res = await client.fetch(profilePath(s.owen), { method: "GET" });
+    expect(res.status).toBe(200);
     expect(await res.text()).toBe(PROFILE_BYTES);
   });
 
-  it("zichzelf: 200", async () => {
+  it("alleen de actuele profielfoto: na een wissel geeft dezelfde URL het nieuwe beeld", async () => {
     const t = convexTest(schema, modules);
     const s = await setup(t);
-    const res = await withUser(t, "user_owen").fetch(profilePath(s.owen), { method: "GET" });
-    expect(res.status).toBe(200);
-  });
-
-  it("uitgelogd: 401", async () => {
-    const t = convexTest(schema, modules);
-    const s = await setup(t);
+    expect(await (await t.fetch(profilePath(s.owen), { method: "GET" })).text()).toBe(PROFILE_BYTES);
+    // Owen kiest het beeld van zijn foto P als profielfoto (WP24 invariant 8).
+    const photoStorage = await t.run(async (ctx) => (await ctx.db.get(s.photoId))!.storageId);
+    await withUser(t, "user_owen").mutation(api.users.updateProfile, {
+      profilePhotoStorageId: photoStorage,
+    });
     const res = await t.fetch(profilePath(s.owen), { method: "GET" });
-    expect(res.status).toBe(401);
+    expect(res.status).toBe(200);
+    const body = await res.text();
+    expect(body).toBe(PHOTO_BYTES);
+    expect(body).not.toContain(PROFILE_BYTES);
+  });
+
+  it("invariant 14: geen profielfoto, onbekend en misvormd id geven hetzelfde 404-antwoord", async () => {
+    const t = convexTest(schema, modules);
+    const s = await setup(t);
+    const gone = await registerUser(t, "user_weg", "weg@x.com", "Weg");
+    await t.run((ctx) => ctx.db.delete(gone));
+    const none = await snapshot(await t.fetch(profilePath(s.mia), { method: "GET" }));
+    const unknown = await snapshot(await t.fetch(profilePath(gone), { method: "GET" }));
+    const garbage = await snapshot(await t.fetch(profilePath("geen-id"), { method: "GET" }));
+    expect(none.status).toBe(404);
+    expect(unknown).toEqual(none);
+    expect(garbage).toEqual(none);
+  });
+
+  it("gewist beeld: 404, zelfde antwoord als geen profielfoto", async () => {
+    const t = convexTest(schema, modules);
+    const s = await setup(t);
+    const none = await snapshot(await t.fetch(profilePath(s.mia), { method: "GET" }));
+    await t.run((ctx) => ctx.storage.delete(s.profile));
+    const wiped = await snapshot(await t.fetch(profilePath(s.owen), { method: "GET" }));
+    expect(wiped).toEqual(none);
+  });
+
+  it.each(["klein", "groot"])("?formaat=%s: zolang het formaat er niet is, het origineel", async (formaat) => {
+    const t = convexTest(schema, modules);
+    const s = await setup(t);
+    const res = await t.fetch(`${profilePath(s.owen)}?formaat=${formaat}`, { method: "GET" });
+    expect(res.status).toBe(200);
+    expect(await res.text()).toBe(PROFILE_BYTES);
+  });
+
+  it("onbekend formaat: 400", async () => {
+    const t = convexTest(schema, modules);
+    const s = await setup(t);
+    const res = await t.fetch(`${profilePath(s.owen)}?formaat=reuze`, { method: "GET" });
+    expect(res.status).toBe(400);
     expect(await res.text()).not.toContain(PROFILE_BYTES);
-  });
-
-  it("invariant 14: geen gedeelde groep, geen profielfoto en misvormd id geven hetzelfde 404-antwoord", async () => {
-    const t = convexTest(schema, modules);
-    const s = await setup(t);
-    const noAccess = await snapshot(
-      await withUser(t, "user_xena").fetch(profilePath(s.owen), { method: "GET" }),
-    );
-    const none = await snapshot(
-      await withUser(t, "user_owen").fetch(profilePath(s.mia), { method: "GET" }),
-    );
-    const garbage = await snapshot(
-      await withUser(t, "user_xena").fetch(profilePath("geen-id"), { method: "GET" }),
-    );
-    expect(noAccess.status).toBe(404);
-    expect(noAccess.body).not.toContain(PROFILE_BYTES);
-    expect(none).toEqual(noAccess);
-    expect(garbage).toEqual(noAccess);
-  });
-
-  it("WP24 N4: na vertrek uit de groep 404", async () => {
-    const t = convexTest(schema, modules);
-    const s = await setup(t);
-    const mia = withUser(t, "user_mia");
-    await mia.mutation(api.groups.removeMember, { groupId: s.G, userId: s.mia });
-    expect((await mia.fetch(profilePath(s.owen), { method: "GET" })).status).toBe(404);
   });
 });
