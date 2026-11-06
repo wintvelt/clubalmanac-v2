@@ -247,9 +247,9 @@ export const updateProfile = mutation({
     // een geweigerde naam ook de profielfoto laat staan (invariant 9).
     if (args.name !== undefined) patch.name = validName(args.name);
     if (args.profilePhotoStorageId !== undefined) {
-      // WP24 invariant 8: alleen een beeld van de caller (eigen of
-      // toegankelijke foto, of de eigen huidige profielfoto). Check vóór de
-      // patch, zodat een geweigerd beeld ook de naam laat staan.
+      // WP24 invariant 8 / WP17a invariant 16: alleen een eigen beeld (een
+      // eigen foto, of de eigen huidige profielfoto). Check vóór de patch,
+      // zodat een geweigerd beeld ook de naam laat staan.
       if (!(await canUseStorage(ctx, user, args.profilePhotoStorageId))) {
         throw new Error("Geen toegang tot dit beeld");
       }
