@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { StyleSheet, View } from "react-native";
 import { Button } from "../components/Button";
 import { Notice } from "../components/Notice";
+import { ProfileAvatar } from "../components/Photo";
 import { Screen } from "../components/Screen";
 import { LoadingState } from "../components/States";
 import { Text } from "../components/Text";
@@ -11,7 +12,7 @@ import { TextField } from "../components/TextField";
 import { api } from "../convexApi";
 import { useLiveQuery } from "../data/useLiveQuery";
 import { nameErrorText } from "../lib/nameError";
-import { space } from "../theme";
+import { size, space } from "../theme";
 
 // WP15b: naam en e-mailadres, en de naam wijzigen. Een eigen live query
 // (users.profile, niet users.current van de poort): zo stopt hij bij een
@@ -74,9 +75,13 @@ export function ProfileScreen() {
 
   return (
     <Screen underHeader>
-      <Text variant="title" accessibilityRole="header">
-        {me.name || "Nog geen naam"}
-      </Text>
+      <View style={styles.head}>
+        {/* WP17a: de eigen profielfoto via het openbare profielpad, anders de letter. */}
+        <ProfileAvatar userId={me._id} name={me.name} size={size.profileAvatar} variant="largeTitle" />
+        <Text variant="title" accessibilityRole="header" style={styles.headText}>
+          {me.name || "Nog geen naam"}
+        </Text>
+      </View>
 
       <View style={styles.group}>
         <Text variant="fieldLabel">E-mailadres</Text>
@@ -112,4 +117,6 @@ export function ProfileScreen() {
 
 const styles = StyleSheet.create({
   group: { gap: space.s },
+  head: { flexDirection: "row", alignItems: "center", gap: space.l },
+  headText: { flex: 1 },
 });

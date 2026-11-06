@@ -1,5 +1,6 @@
 import * as SecureStore from "expo-secure-store";
 import { useSyncExternalStore } from "react";
+import { wipeImageCache } from "../data/images";
 import { createClerkStorage, type ClerkStorage, type SecureBackend } from "./clerkStorage";
 
 // De opslag van Clerk op dit toestel (WP15a F13): de keychain via
@@ -43,7 +44,12 @@ function setWipeFailed(value: boolean) {
   listeners.forEach((listener) => listener());
 }
 
+// WP17a besluit 3: ook de beeldcache op het toestel gaat weg, op elk pad dat
+// lokaal wist (uitloggen, "Opnieuw inloggen"). Best effort: de beelden in de
+// cache zijn alleen te zien met een URL die de volgende user zelf toegang
+// geeft, dus een mislukte beeldwis houdt het inloggen niet tegen.
 export async function wipeClerkStorage(): Promise<boolean> {
+  await wipeImageCache().catch(() => false);
   const ok = await current().wipe().catch(() => false);
   setWipeFailed(!ok);
   return ok;

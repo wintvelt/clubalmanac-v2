@@ -14,6 +14,7 @@ import type * as crons from "../crons.js";
 import type * as features from "../features.js";
 import type * as groups from "../groups.js";
 import type * as http from "../http.js";
+import type * as images from "../images.js";
 import type * as invites from "../invites.js";
 import type * as lib_auth from "../lib/auth.js";
 import type * as lib_constants from "../lib/constants.js";
@@ -45,6 +46,7 @@ declare const fullApi: ApiFromModules<{
   features: typeof features;
   groups: typeof groups;
   http: typeof http;
+  images: typeof images;
   invites: typeof invites;
   "lib/auth": typeof lib_auth;
   "lib/constants": typeof lib_constants;

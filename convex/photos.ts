@@ -1,4 +1,4 @@
-import { v } from "convex/values";
+import { ConvexError, v } from "convex/values";
 import {
   internalAction,
   internalMutation,
@@ -11,6 +11,7 @@ import {
 import type { Doc, Id } from "./_generated/dataModel";
 import { internal } from "./_generated/api";
 import { requireCurrentUser } from "./users";
+import { NOT_MEMBER } from "./groups";
 import { requireWebmaster } from "./lib/auth";
 import { canAccessPhoto } from "./lib/photoAccess";
 import {
@@ -47,6 +48,22 @@ export async function requirePhotoAccess(
   return { user, photo };
 }
 
+// WP17a invariant 7: de foto-reads achter het detail geven bij geen toegang
+// en bij een onbekende of gewiste foto dezelfde ConvexError met code
+// NOT_MEMBER (zoals de album- en groep-reads). Mutations en ratings houden
+// requirePhotoAccess.
+async function requirePhotoAccessForRead(
+  ctx: QueryCtx,
+  photoId: Id<"photos">,
+): Promise<{ user: Doc<"users">; photo: Doc<"photos"> }> {
+  const user = await requireCurrentUser(ctx);
+  const photo = await ctx.db.get(photoId);
+  if (!photo || !(await canAccessPhoto(ctx, user._id, photo))) {
+    throw new ConvexError(NOT_MEMBER);
+  }
+  return { user, photo };
+}
+
 // Cat-1 join-on-read: photo + owner data, vervangt denormalized
 // user-velden op photos uit DynamoDB. Cascade matrix row U3.
 // WP23: owner als publiek profiel (geen email/subject).
@@ -54,7 +71,7 @@ export const getWithOwner = query({
   args: { photoId: v.id("photos") },
   returns: v.object({ ...photoFields, owner: v.union(publicProfile, v.null()) }),
   handler: async (ctx, { photoId }) => {
-    const { photo } = await requirePhotoAccess(ctx, photoId);
+    const { photo } = await requirePhotoAccessForRead(ctx, photoId);
     const owner = await ctx.db.get(photo.ownerId);
     return {
       ...pick(photo, photoFields),
@@ -67,7 +84,7 @@ export const getById = query({
   args: { photoId: v.id("photos") },
   returns: photoShape,
   handler: async (ctx, { photoId }) => {
-    const { photo } = await requirePhotoAccess(ctx, photoId);
+    const { photo } = await requirePhotoAccessForRead(ctx, photoId);
     return pick(photo, photoFields);
   },
 });

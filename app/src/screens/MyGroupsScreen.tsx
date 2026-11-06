@@ -3,7 +3,6 @@ import { router, useIsFocused } from "expo-router";
 import { useEffect, useState } from "react";
 import { Pressable, StyleSheet, View } from "react-native";
 import { Icon } from "../components/Icon";
-import { LetterTile } from "../components/LetterTile";
 import { QueryBoundary } from "../components/QueryBoundary";
 import { Screen } from "../components/Screen";
 import { EmptyState, LoadingState } from "../components/States";
@@ -17,7 +16,7 @@ import { homeDecisions, homeSessionKey } from "../lib/homeDecision";
 import { displayYear, homeTarget, roleLabel, sortMyGroups, unreadBadge } from "../lib/groups";
 import { radius, size, space, useTheme } from "../theme";
 import type { FunctionReturnType } from "convex/server";
-import { LargeTitleHeader, LoadError } from "./GroupParts";
+import { GroupCoverTile, LargeTitleHeader, LoadError } from "./GroupParts";
 
 type MyGroup = FunctionReturnType<typeof api.groups.listMine>[number];
 
@@ -124,7 +123,13 @@ function GroupCard({ group }: { group: MyGroup }) {
         pressed && { backgroundColor: colors.line },
       ]}
     >
-      <LetterTile name={group.name} size={size.groupTile} radius={radius.groupPhoto} />
+      <GroupCoverTile
+        groupId={group._id}
+        coverPhotoId={group.coverPhotoId}
+        name={group.name}
+        size={size.groupTile}
+        radius={radius.groupPhoto}
+      />
       <View style={styles.text}>
         <Text variant="groupName">{group.name}</Text>
         <Text variant="meta" color="muted">
