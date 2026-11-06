@@ -18,6 +18,7 @@ Een lid opent een album en ziet de foto's rechtop, en snel genoeg om erdoor te b
    - Een foto als profielfoto instellen maakt dat beeld openbaar. De gate op `users.updateProfile` (WP24 invariant 8) is daarmee de enige drempel. WP17b ("als profielfoto instellen") laat de user dat weten.
    - WP24 heraudit N2 (`groups.addMember` zonder instemming geeft het profielbeeld prijs) is geen lek meer. Kernvondst 7 (invite-landing) ook niet: de landing mag de profielfoto van de afzender tonen (WP19), via het user-id, nog steeds zonder `storageId` (invariant 10).
    - De telling voor vraag 8 vervalt.
+9. **Audit S1 (fix-cyclus 1): een pad met kapotte procent-codering geeft 520, en dat accepteren we.** Convex weigert zo'n pad al vóór onze httpAction, ook bij routes die niet bestaan (gemeten op dev met `d4354e8`). Het is voor elk pad hetzelfde antwoord, zonder bytes, dus het verraadt niets.
 
 ## Invarianten
 
@@ -304,7 +305,7 @@ De inventaristests: `tests/images/noStorageIds.test.ts` (geen `_storage`-id in e
 - **Foto zonder `takenAt`:** sorteert op `createdAt`, en het detail toont die datum.
 - **Profielfoto waarvan het beeld gewist is** (kernvondst 6): de letter.
 - **Uitloggen en inloggen als een ander op hetzelfde toestel:** geen beeld van de vorige user uit de cache (vraag 3).
-- **Een verzonnen of misvormd id in het beeldpad:** hetzelfde antwoord als geen toegang, geen 500.
+- **Een verzonnen of misvormd id in het beeldpad:** hetzelfde antwoord als geen toegang, geen 500. Uitzondering: bij kapotte procent-codering antwoordt Convex zelf met 520 (besluit 9).
 - **Een groot album (100+ foto's):** het raster laadt alleen wat in beeld komt; het detail laadt de buren, niet het hele album.
 
 **Cascade-matrix.** Foto wissen: P3, P5, U7 (en kernvondst 6). Lid weg: M1, M3. Album of groep weg: A1, A2, G4. Uit een album: AP3, AP4. Met vorm B is geen nieuwe rij nodig: elk beeldverzoek leest de actuele staat. Met verkleinde versies wist de storage-cleanup van P/U7 ook de formaten: een nieuwe cel in U7.
