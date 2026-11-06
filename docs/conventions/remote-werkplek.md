@@ -89,6 +89,8 @@ Doe dit met de laptop dicht, alleen met de Claude-app op de iPhone. Gebruik een 
 
 **Stap 8: geslaagd, met een omweg (2026-11-04).** Met UTF-8 in de sessie lukten `pod install` en de build; de app toonde het inlogscherm in de iPhone 18 Pro-simulator (iOS 27.2). Na de installatie stopte `expo run:ios`, omdat de sessie System Events niet mag besturen (macOS-toestemming **Automatisering**); de sessie startte Metro daarna apart en opende de app met `xcrun simctl`. Toestemming geven: Apple-menu → **Systeeminstellingen** → **Privacy en beveiliging** → **Automatisering**, of **Sta toe** in de vraag die macOS toont bij de volgende `expo run:ios` (via Scherm delen). Gedaan 2026-11-04: Claude → System Events staat aan, net als **Let Claude use it** in de pane.
 
+**Stap 9: geslaagd (2026-11-05).** Wouter werkte ruim een uur vanaf de iPhone in een sessie op de server, met de laptop uit. Een nieuwe sessie starten vanaf de iPhone (zonder Scherm delen) is nog niet apart getest.
+
 Faalt stap 2 of 3: dan is de terugvaloptie dat Wouter elke rol-sessie zelf start vanaf de iPhone. Regie schrijft dan alleen de prompt.
 
 ## Credentials
