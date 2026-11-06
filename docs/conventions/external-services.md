@@ -145,7 +145,7 @@ Config: [`app/eas.json`](../../app/eas.json). EAS project `@wintvelt/clubalmanac
 Gate-commando's (Wouter, in `app/`, Node 24 actief):
 
 1. Node 24 via fnm: `brew install fnm`, `eval "$(fnm env --use-on-cd --version-file-strategy=recursive)"` in `~/.zshrc`, dan `fnm install 24 && fnm default 24`. `recursive` is nodig omdat `.nvmrc` alleen in de root staat en je in `app/` werkt. Een terminal die al open was, ziet dit pas na `fnm use 24` of in een nieuw tabblad. Check: `node -v` toont `v24.x`.
-2. `npm install -g eas-cli@25.3.0` (vaste versie, geen `latest`) en `eas login`. Check: `eas whoami` toont `wintvelt`.
+2. `npm install -g eas-cli@27.4.1` (vaste versie, geen `latest`) en `eas login`. Check: `eas whoami` toont `wintvelt`.
 3. Env-vars voor `development`, waarden uit `app/.env.local` (niet de root-`.env.local`, die is van de backend):
    - `eas env:set --environment development --name EXPO_PUBLIC_CONVEX_URL --value https://glorious-pheasant-759.eu-west-1.convex.cloud --visibility plaintext --scope project`
    - `eas env:set --environment development --name EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY --value "$(grep '^EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY=' .env.local | cut -d= -f2- | tr -d '"')" --visibility plaintext --scope project`
