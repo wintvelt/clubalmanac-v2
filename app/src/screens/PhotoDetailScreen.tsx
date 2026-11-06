@@ -22,7 +22,7 @@ import { Text } from "../components/Text";
 import { api } from "../convexApi";
 import { useAuthState } from "../data/authStateContext";
 import { useLiveQuery } from "../data/useLiveQuery";
-import { formatPhotoDate, nextAfterRemoval, photoDate, sortAlbumPhotos } from "../lib/photos";
+import { formatPhotoDate, nextAfterRemoval, sortAlbumPhotos } from "../lib/photos";
 import { size, space, useTheme } from "../theme";
 import { AlbumReadFailed } from "./AlbumParts";
 
@@ -102,7 +102,7 @@ function DetailContent({ albumId, initialPhotoId }: { albumId: Id<"albums">; ini
 
   return (
     <SafeAreaView edges={["left", "right", "bottom"]} style={[styles.fill, { backgroundColor: colors.bg }]}>
-      <Stack.Screen options={{ title: entry ? formatPhotoDate(photoDate(entry.photo)) : "Foto" }} />
+      <Stack.Screen options={{ title: entry ? formatPhotoDate(entry.photo) : "Foto" }} />
       {shown === undefined ? (
         <LoadingState label="Foto laden…" />
       ) : (
@@ -167,7 +167,7 @@ function ZoomablePhoto({ entry, box }: { entry: Shown; box: { width: number; hei
       <Pressable
         onPress={onPress}
         accessibilityRole="image"
-        accessibilityLabel={`Foto van ${formatPhotoDate(photoDate(entry.photo))}`}
+        accessibilityLabel={`Foto van ${formatPhotoDate(entry.photo)}`}
         accessibilityHint="Dubbeltik om in of uit te zoomen"
       >
         <PhotoImage
@@ -186,7 +186,7 @@ function ZoomablePhoto({ entry, box }: { entry: Shown; box: { width: number; hei
 function PhotoInfo({ entry }: { entry: Shown }) {
   const { colors } = useTheme();
   const name = entry.owner?.name ?? null;
-  const date = formatPhotoDate(photoDate(entry.photo));
+  const date = formatPhotoDate(entry.photo);
   return (
     <View
       style={[styles.info, { borderTopColor: colors.line }]}

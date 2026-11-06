@@ -354,25 +354,44 @@ const PROFILE_PREFIX = "/beeld/profiel/";
 const NOT_FOUND = () => new Response("Niet gevonden", { status: 404 });
 const BAD_FORMAT = () => new Response("Onbekend formaat", { status: 400 });
 
+// Een id met kapotte procent-codering (`%E0%A4%A`) is een misvormd id: geen
+// exception (500), maar een lege string, en daarmee hetzelfde antwoord als een
+// onbekend id (invariant 13 en 14; audit S1).
 function idFromPath(request: Request, prefix: string): string {
-  const path = new URL(request.url).pathname;
-  return decodeURIComponent(path.slice(prefix.length));
+  const raw = new URL(request.url).pathname.slice(prefix.length);
+  try {
+    return decodeURIComponent(raw);
+  } catch {
+    return "";
+  }
 }
 
-// Veel gemigreerde beelden staan in storage als `application/octet-stream`
-// (telling regie op dev: 444 van 1002). Dan bepalen de eerste bytes het type,
-// zodat ook een browser (Track B) het als beeld toont ondanks `nosniff`.
-// Grootte: het grootste origineel is ~20 MB, ruim onder de 100 MiB per
-// http-respons en de 64 MiB geheugen van een httpAction (Convex-docs, Limits).
-async function imageContentType(blob: Blob): Promise<string> {
-  if (blob.type.startsWith("image/")) return blob.type;
-  const b = new Uint8Array(await blob.slice(0, 12).arrayBuffer());
-  const ascii = (from: number, to: number) => String.fromCharCode(...b.slice(from, to));
+// Het type uit de eerste bytes. Veel gemigreerde beelden staan in storage als
+// `application/octet-stream` (telling regie op dev: 444 van 1002); dan bepalen
+// de magische bytes het type, zodat ook een browser (Track B) het als beeld
+// toont ondanks `nosniff`.
+function sniffImageType(b: Uint8Array): string | null {
+  const ascii = (from: number, to: number) => String.fromCharCode(...b.subarray(from, to));
   if (b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff) return "image/jpeg";
   if (b[0] === 0x89 && ascii(1, 4) === "PNG") return "image/png";
   if (ascii(0, 4) === "RIFF" && ascii(8, 12) === "WEBP") return "image/webp";
   if (ascii(4, 8) === "ftyp" && /^(heic|heix|hevc|mif1|msf1)$/.test(ascii(8, 12))) return "image/heic";
-  return blob.type || "application/octet-stream";
+  return null;
+}
+
+// Een beeld met een `image/*`-type gaat als Blob door, zonder het te lezen.
+// Anders leest de action het hele bestand: `Blob.slice()` gevolgd door
+// `arrayBuffer()` gaf in de echte Convex-runtime een RangeError (WP7-gate,
+// zie convex/photoMetadata.ts; audit B1), dus geen slice, maar één
+// `arrayBuffer()` en een `Uint8Array`-view op de eerste bytes. Daarna gaan
+// dezelfde bytes als body mee. Geheugen: het grootste origineel is ~20 MB,
+// onder de 64 MiB van een httpAction en de 100 MiB per respons (Convex-docs,
+// Limits).
+async function imageBody(blob: Blob): Promise<{ body: Blob | ArrayBuffer; type: string }> {
+  if (blob.type.startsWith("image/")) return { body: blob, type: blob.type };
+  const bytes = await blob.arrayBuffer();
+  const head = new Uint8Array(bytes, 0, Math.min(12, bytes.byteLength));
+  return { body: bytes, type: sniffImageType(head) ?? (blob.type || "application/octet-stream") };
 }
 
 async function imageResponse(
@@ -384,10 +403,11 @@ async function imageResponse(
   if (!storageId) return NOT_FOUND();
   const blob = await ctx.storage.get(storageId);
   if (!blob) return NOT_FOUND();
-  return new Response(blob, {
+  const { body, type } = await imageBody(blob);
+  return new Response(body, {
     status: 200,
     headers: {
-      "Content-Type": await imageContentType(blob),
+      "Content-Type": type,
       "Cache-Control": cacheControl,
       "X-Content-Type-Options": "nosniff",
       ...extraHeaders,

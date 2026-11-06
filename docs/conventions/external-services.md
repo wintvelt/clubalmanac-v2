@@ -85,9 +85,9 @@ De app vraagt live data alleen op voor het scherm in beeld, zolang de app `activ
 
 Beelden lopen via de httpActions `GET /beeld/foto/<photoId>` en `GET /beeld/profiel/<userId>` op de `.convex.site`-host, met een toegangscheck per verzoek. Geen storage-URL naar de app.
 
-- **Beeldverkeer van één album:** Logs, filter op `/beeld/foto`. Elke tegel is één regel, dus een album van 50 foto's geeft bij openen hoogstens 50 regels plus de cover, en alleen voor de tegels in beeld. Daarnaast `internal images:photoImage`, één per beeld. Status 404 is een beeld zonder toegang of een gewiste foto; 401 is een verlopen of ontbrekend token (de app haalt dan opnieuw op).
+- **Beeldverkeer van één album:** Logs, filter op `/beeld/foto`. Elke tegel is één regel, dus een album van 50 foto's geeft bij openen hoogstens 50 regels plus de cover, en alleen voor de tegels in beeld. Daarnaast `internal images:photoImage`, één per beeld. Status 404 is een beeld zonder toegang, een gewiste foto of een misvormd id; 401 is een verlopen of ontbrekend token. Na een mislukt beeld haalt de app één keer zelf een vers token en vraagt het opnieuw: een 401 gevolgd door een 200 voor dezelfde foto is dus normaal. Een beeld zonder toegang geeft zo twee 404's, daarna de fout-tegel (of de letter bij een cover).
 - **Bandbreedte:** Usage, regel **Data egress** (GB, ook het origineel zolang WP25 nog geen verkleinde versies heeft). De beeldpaden tellen daarnaast mee in **Function calls** (HTTP action). Wil je de bytes per verzoek: een log stream geeft `network_egress_bytes` per `function_execution`. Meet een album door Usage vóór en na het openen te vergelijken, op een rustig moment.
-- **Covers en profielfoto's:** per groeps- of albumkaart met een cover loopt `groups:getWithCover` of `albums:getWithCover` (voor de draaiing) zolang het scherm in beeld is. `/beeld/profiel` is openbaar en heeft geen login nodig.
+- **Covers en profielfoto's:** per groeps- of albumkaart met een cover loopt `groups:getWithCover` of `albums:getWithCover` (voor de draaiing) zolang het scherm in beeld is. `/beeld/profiel` is openbaar en heeft geen login nodig. De app cachet een profielfoto niet (dezelfde URL geeft na een wissel een ander beeld), dus elke avatar in beeld is één verzoek.
 
 ## Auth: Clerk
 

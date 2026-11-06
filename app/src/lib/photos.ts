@@ -44,10 +44,18 @@ function dutchOffset(ms: number): number {
   return summer ? 2 * HOUR : HOUR;
 }
 
-// "12 maart 2023": de dag in Nederlandse tijd, zonder tijd.
-export function formatPhotoDate(ms: number): string {
-  const local = new Date(ms + dutchOffset(ms));
-  return `${local.getUTCDate()} ${MONTHS[local.getUTCMonth()]} ${local.getUTCFullYear()}`;
+function dayString(d: Date): string {
+  return `${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]} ${d.getUTCFullYear()}`;
+}
+
+// Invariant 15 (fix-cyclus 1, S3): de datum van een foto is de datum op de
+// klok van de camera. `takenAt` is die kloktijd, opgeslagen alsof het UTC is
+// (exif-parser, WP7; v1-kalenderdag op UTC-middernacht, WP12), dus de
+// UTC-kalenderdag, zonder omrekening. Zonder `takenAt` is `createdAt` de
+// datum: een echt tijdstip, dus de dag in Nederlandse tijd. "12 maart 2023".
+export function formatPhotoDate(photo: PhotoDated): string {
+  if (photo.takenAt !== undefined) return dayString(new Date(photo.takenAt));
+  return dayString(new Date(photo.createdAt + dutchOffset(photo.createdAt)));
 }
 
 // --- Volgorde in het album ----------------------------------------------------------

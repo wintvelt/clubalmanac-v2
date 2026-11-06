@@ -1,6 +1,6 @@
 import { Image, type ImageContentFit } from "expo-image";
 import Svg, { Defs, LinearGradient, Rect, Stop } from "react-native-svg";
-import { useState, type ReactNode } from "react";
+import { useRef, useState, type ReactNode } from "react";
 import { Pressable, StyleSheet, View } from "react-native";
 import { useProfileSource, usePhotoSource } from "../data/images";
 import type { ImageFormat } from "../lib/imageUrls";
@@ -77,6 +77,19 @@ export function PhotoImage({
   const [attempt, setAttempt] = useState(0);
   const [state, setState] = useState<"loading" | "loaded" | "failed">("loading");
   const source = usePhotoSource(photoId, format, attempt);
+  // Audit S4: een verlopen token geeft 401. Het eerste mislukte verzoek haalt
+  // daarom zelf een vers token (attempt > 0 = skipCache) en probeert het
+  // opnieuw; pas als dat ook mislukt, staat de fout-tegel er (of de letter).
+  // Eén keer, zodat een beeld zonder toegang (404) niet blijft herhalen.
+  const autoRetried = useRef(false);
+  const onError = () => {
+    if (!autoRetried.current) {
+      autoRetried.current = true;
+      setAttempt((a) => a + 1);
+      return;
+    }
+    setState("failed");
+  };
   const failed = state === "failed" || source === null;
 
   if (failed && fallback !== undefined) return <>{fallback}</>;
@@ -105,7 +118,7 @@ export function PhotoImage({
               transition={150}
               accessible={false}
               onLoad={() => setState("loaded")}
-              onError={() => setState("failed")}
+              onError={onError}
             />
           )}
         </Oriented>
@@ -120,6 +133,7 @@ export function PhotoImage({
           accessibilityRole="button"
           accessibilityLabel="Foto laden lukt niet. Opnieuw laden"
           onPress={() => {
+            autoRetried.current = false;
             setState("loading");
             setAttempt((a) => a + 1);
           }}
@@ -142,8 +156,8 @@ type AvatarProps = {
 
 // Profielfoto, rond. Geen profielfoto, een gewist beeld of een fout: de
 // letter, zonder fout-toestand (invariant 14). Decoratief: de rij eromheen
-// draagt de naam. Openbaar (besluit 8); in het geheugen gecachet, niet op
-// schijf, want dezelfde URL geeft na een wissel een ander beeld.
+// draagt de naam. Openbaar (besluit 8), en zonder cache (invariant 3, audit
+// S6): dezelfde URL geeft na een wissel een ander beeld.
 export function ProfileAvatar({ userId, name, size, format = "klein", variant = "bodyStrong" }: AvatarProps) {
   const letter = <LetterTile name={name} size={size} radius={size / 2} variant={variant} />;
   if (!userId) return letter;
@@ -171,7 +185,7 @@ function ProfileImage({
         source={source}
         style={{ width: size, height: size, borderRadius: size / 2 }}
         contentFit="cover"
-        cachePolicy="memory"
+        cachePolicy="none"
         recyclingKey={userId}
         accessible={false}
         onLoad={() => setState("loaded")}

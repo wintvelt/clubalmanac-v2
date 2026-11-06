@@ -1,13 +1,14 @@
 import { useMutation } from "convex/react";
 import type { FunctionReturnType } from "convex/server";
 import { router, Stack, useIsFocused, useLocalSearchParams } from "expo-router";
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { FlatList, Pressable, StyleSheet, useWindowDimensions, View } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import type { Id } from "../../../convex/_generated/dataModel";
 import { BackPill } from "../components/BackPill";
 import { Gradient } from "../components/Gradient";
 import { Icon } from "../components/Icon";
+import { LetterTile } from "../components/LetterTile";
 import { CoverScrim, PhotoImage } from "../components/Photo";
 import { QueryBoundary } from "../components/QueryBoundary";
 import { Screen } from "../components/Screen";
@@ -19,7 +20,7 @@ import { useAppState } from "../data/useAppState";
 import { useLiveQuery } from "../data/useLiveQuery";
 import { groupPath, photoPath } from "../lib/groupRoutes";
 import { displayYear } from "../lib/groups";
-import { formatPhotoDate, keepNewMarkers, photoDate, shouldMarkSeen, sortAlbumPhotos } from "../lib/photos";
+import { formatPhotoDate, keepNewMarkers, shouldMarkSeen, sortAlbumPhotos } from "../lib/photos";
 import { photoLayers, radius, size, space, useTheme } from "../theme";
 import { AlbumReadFailed } from "./AlbumParts";
 
@@ -164,7 +165,7 @@ function Tile({
   isMine: boolean;
   onPress: () => void;
 }) {
-  const label = [`Foto van ${formatPhotoDate(photoDate(entry.photo))}`, isNew && "nieuw", isMine && "jouw foto"]
+  const label = [`Foto van ${formatPhotoDate(entry.photo)}`, isNew && "nieuw", isMine && "jouw foto"]
     .filter(Boolean)
     .join(", ");
   return (
@@ -226,33 +227,48 @@ function AlbumHeader({
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
-  const height = insets.top + Math.round(Math.min(width * 0.6, size.cover * 1.6));
+  const minHeight = insets.top + Math.round(Math.min(width * 0.6, size.cover * 1.6));
+  // Bij grote tekst kan de kop hoger worden; de cover groeit mee.
+  const [measured, setMeasured] = useState(0);
+  const height = Math.max(minHeight, measured);
   const back = () => {
     if (router.canGoBack()) router.back();
     else router.replace(groupPath(groupId));
   };
+  // N1 (audit, pariteit): zonder cover de letter van het album, zoals in de
+  // albumlijst, onder de pil in de flow (WP16-kop).
+  const tile =
+    album !== undefined ? (
+      <LetterTile name={album.name} size={size.groupTile * 1.5} radius={radius.albumTile} variant="largeTitle" />
+    ) : null;
   return (
     <View style={{ marginBottom: space.l }}>
-      <View style={{ width, height }}>
+      <View
+        style={{ width, minHeight, paddingTop: insets.top + space.s, overflow: "hidden" }}
+        onLayout={(e) => setMeasured(Math.ceil(e.nativeEvent.layout.height))}
+      >
         {album?.cover ? (
-          <>
+          <View style={StyleSheet.absoluteFill}>
             <PhotoImage
               photoId={album.cover._id}
               format="groot"
               exifOrientation={album.cover.exifOrientation}
               box={{ width, height }}
-              fallback={<Gradient from={colors.washStart} to={colors.washEnd} />}
+              fallback={
+                <>
+                  <Gradient from={colors.washStart} to={colors.washEnd} />
+                  <View style={[StyleSheet.absoluteFill, styles.center]}>{tile}</View>
+                </>
+              }
             />
             <CoverScrim height={height} />
-          </>
-        ) : (
-          <View style={[StyleSheet.absoluteFill, styles.center]}>
-            <Gradient from={colors.washStart} to={colors.washEnd} />
-            <Icon name="photos" size={40} color={colors.muted} />
           </View>
+        ) : (
+          <Gradient from={colors.washStart} to={colors.washEnd} />
         )}
-        <View style={[styles.pill, { top: insets.top + space.s }]}>
+        <View style={styles.headerColumn}>
           <BackPill title="Groep" onPress={back} />
+          {!album?.cover && tile && <View style={styles.headerTile}>{tile}</View>}
         </View>
       </View>
       {album !== undefined && (
@@ -283,7 +299,16 @@ const styles = StyleSheet.create({
   },
   intro: { gap: space.xs, paddingTop: space.l },
   center: { alignItems: "center", justifyContent: "center" },
-  pill: { position: "absolute", left: size.screenMargin },
+  headerColumn: {
+    flex: 1,
+    width: "100%",
+    maxWidth: size.maxTextColumn,
+    alignSelf: "center",
+    paddingHorizontal: size.screenMargin,
+    paddingBottom: space.l,
+    gap: space.l,
+  },
+  headerTile: { flex: 1, alignItems: "center", justifyContent: "center" },
   pressed: { opacity: 0.7 },
   newLabel: {
     position: "absolute",
