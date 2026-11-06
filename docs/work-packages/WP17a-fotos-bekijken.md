@@ -1,6 +1,6 @@
 # WP17a: Foto's bekijken — albumscherm, foto-detail en het beeldpad
 
-> Draft regie 2026-11-06. App-WP (zie [`work-package-specs.md` §App-WP's](../conventions/work-package-specs.md#app-wps-fase-4)), met een backend-deel. Eigen sessie per rol, plus een red-team op het beeldpad omdat security/privacy hoog is. Bouwt op [WP16](./WP16-groepen.md), [WP23](./WP23-read-whitelist.md) en [WP24](./WP24-write-gates.md). WP17 is gesplitst (besluit Wouter 2026-11-06): 17a is alleen bekijken, de acties op foto's komen in WP17b.
+> Landed 2026-11-06 (A → B → audit, red-team, drie fix-cycli; zie §Closeout). Draft regie 2026-11-06. App-WP (zie [`work-package-specs.md` §App-WP's](../conventions/work-package-specs.md#app-wps-fase-4)), met een backend-deel. Eigen sessie per rol, plus een red-team op het beeldpad omdat security/privacy hoog is. Bouwt op [WP16](./WP16-groepen.md), [WP23](./WP23-read-whitelist.md) en [WP24](./WP24-write-gates.md). WP17 is gesplitst (besluit Wouter 2026-11-06): 17a is alleen bekijken, de acties op foto's komen in WP17b.
 
 ## Productdoel
 
@@ -333,9 +333,9 @@ De inventaristests: `tests/images/noStorageIds.test.ts` (geen `_storage`-id in e
 ### Meting op dev (Wouter)
 
 1. **Storage-URL** (vraag 1): `npm run test:integration -- tests/integration/convex/storageUrl.test.ts` (vereist `.env.integration` met de dev-URL en `INTEGRATION_TEST_ENABLED=true` op dev, zoals WP2). De test pint wat de docs beloven (zonder auth op te halen; na wissen weg) en print de headers en of de URL stabiel is.
-2. **Tellingen** (input voor WP25: formaten en vraag 9): de dev-tabellen exporteren naar `scripts/.data/wp17a/` en `node scripts/.data/wp17a/tel.mjs` draaien. Het script geeft: grootte per beeld (mediaan, p90, max, totaal), het `contentType` van de beelden (hoeveel HEIC, voor de spike), de grootste albums in MB, en `exifOrientation` per waarde. De telling voor vraag 8 vervalt (besluit 8).
+2. **Tellingen** (input voor WP25: formaten en vraag 9): de dev-tabellen exporteren naar `scripts/.data/wp17a/` en `node scripts/wp17a/tel.mjs` draaien. Het script geeft: grootte per beeld (mediaan, p90, max, totaal), het `contentType` van de beelden (hoeveel HEIC, voor de spike), de grootste albums in MB, en `exifOrientation` per waarde. De telling voor vraag 8 vervalt (besluit 8). Uitkomst op dev (2026-11-06): 1001 foto's, 1002 storage-objecten, 2,98 GB; per beeld gemiddeld 2,98 MB, mediaan 2,47, p90 6,26, max 20,06 MB. `contentType`: 558 `image/jpeg`, 444 `application/octet-stream`, geen HEIC. Grootste album: 302 foto's, 1,06 GB (~445 s op 20 Mbit/s). `exifOrientation` leeg op alle 1001. Geen gemelde foto's.
 3. **Laadtijd op 4G:** bij de gate (stap 4), met de build van B en de formaten van WP25.
-4. **Profielfoto's van een ander** (vraag 10, prod): op Wouters laptop (de server heeft geen AWS-sleutels) `node scripts/.data/wp17a/profiel.mjs scripts/.data/dynamo-extract.json`. Het script leest alleen het ruwe extract (vers: `npm run migrate -- extract`, alleen lezen op AWS) en telt per user of de profielfoto een eigen foto is, de foto van een ander, een standaardbeeld of een los beeld.
+4. **Profielfoto's van een ander** (vraag 10, prod): op Wouters laptop (de server heeft geen AWS-sleutels) `node scripts/wp17a/profiel.mjs scripts/.data/dynamo-extract.json`. Het script leest alleen het ruwe extract (vers: `npm run migrate -- extract`, alleen lezen op AWS) en telt per user of de profielfoto een eigen foto is, de foto van een ander, een standaardbeeld of een los beeld.
 
 ### Tests
 
@@ -357,3 +357,11 @@ De inventaristests: `tests/images/noStorageIds.test.ts` (geen `_storage`-id in e
 | `app/tests/groupRoutes.test.ts` (A vult aan) | Het pad en het routebestand van het foto-detail |
 
 De pure logica staat in de app-tests als functies in `app/src/lib/photos.ts` en `app/src/lib/groupRoutes.ts`. B kiest de vorm van de schermen zelf. Ronde 2 (A, na de besluiten): de tests volgen besluit 1, 2 en 8. De keuze van het formaat zelf (welk bestand bij *klein* of *groot*) pint WP25.
+
+## Closeout (regie, 2026-11-06)
+
+- **Audit en red-team:** audit vond 1 blocker (B1, `Blob.slice` in de Convex-runtime) en 6 should-fixes; red-team vond R1–R3. Fix-cyclus 1 (B1, S1–S6), 2 (R1, invariant 16) en 3 (heraudit N-S1 en N-S2, invariant 17 en 18, plus tests op de aansluiting van de retry). Heraudit en red-team-hercheck: geen blocker. R2 → WP26, R3 → Groepsbeheer.
+- **Op dev gezien:** octet-stream-albums laden in de echte runtime (B1); laatste deploy `1af3f61`.
+- **Open voor de gate (Wouter, TestFlight, na WP25):** stap 1 en 4 (formaten, laadtijd), stap 6 (ex-lid), iOS `Cache.db` na uitloggen (red-team N2), geen 429's van Clerk als een heel album tegelijk een vers token vraagt.
+- **Open, buiten 17a:** vraag 10 (gemigreerde profielfoto's van een ander): telling op Wouters laptop, besluit gaat naar WP12.
+- **Backlog:** één live query per cover (N2); oude avatar na wisselen van profielfoto tot de cache verloopt (N4); geen CORS op de beeldpaden voor de webapp (N6, bij het webapp-WP).

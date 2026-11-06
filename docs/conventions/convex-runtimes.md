@@ -9,6 +9,10 @@ Convex draait functies in twee runtimes naast elkaar. Welke je krijgt = file-lev
 | **Isolate (V8)** | Default — geen directive | Web Standard APIs: `fetch`, `Blob`, `URL`, `Uint8Array`, `TextEncoder`, etc. Snel, schaalt goed, transactioneel-safe | Node-globals: **`Buffer`**, `process` (deels), Node-modules zonder npm-equivalent |
 | **Node** | `"use node";` als allereerste regel van de file | Volledige Node-API: `Buffer`, `crypto`, `node:fs` (read-only), npm-libs die Node-internals gebruiken | **Geen mutations of queries** in dezelfde file — alleen `action` en `httpAction` exports toegestaan |
 
+## Valkuil: `Blob.slice` in de isolate
+
+`blob.slice(...).arrayBuffer()` op een blob uit `ctx.storage.get` geeft een `RangeError` in de isolate-runtime. Lees de hele buffer (`await blob.arrayBuffer()`) en neem daar een `subarray` van. Unit-tests met een nagebootste blob zien dit niet. Twee keer gevonden: WP7 (HEIC-sniff in de upload) en WP17a (type-sniff op het beeldpad, audit B1).
+
 ## Wanneer welke
 
 **Default = isolate** voor alle nieuwe files. Het is sneller, transactioneel veiliger, en het overgrote deel van onze logica (mutations + queries) kan alleen daar draaien.
