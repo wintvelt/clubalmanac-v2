@@ -124,7 +124,7 @@ npm run migrate -- load-files --target prod    # uren; hervatbaar
 
 `load-files` rapporteert de gehaalde doorvoer in MB/s en een schatting voor 5,6 GB. Breekt de run af: gewoon opnieuw starten — wat in `storage-map.json` staat wordt overgeslagen.
 
-- [ ] Key-controle voor `formaten` (WP25), na `load-files`. `formaten` is het enige migrate-commando dat een internal action aanroept; een key zonder dat recht breekt op T0 af bij batch 1. De controle schrijft niets, mits prod nog geen foto-rij heeft. Eerst tellen (met je eigen Convex-login, los van de key):
+- [ ] Key- en bibliotheek-controle voor `formaten` (WP25), na `load-files`. `formaten` is het enige migrate-commando dat een internal action aanroept; een key zonder dat recht breekt op T0 af. Vóór de eerste batch draait hij `selfTest`: sharp en heic-decode op een ingebouwde JPEG en HEIC, zonder te schrijven. Zo test deze run ook de bibliotheek op prod. De controle schrijft niets, mits prod nog geen foto-rij heeft. Eerst tellen (met je eigen Convex-login, los van de key):
 
   ```bash
   npx convex run photos:formatStatus --prod      # door alleen bij photos: 0
@@ -133,10 +133,11 @@ npm run migrate -- load-files --target prod    # uren; hervatbaar
   Is `photos` niet 0, stop dan: `load-records` is al gedraaid en een `formaten`-run zou schrijven. Bij 0:
 
   ```bash
-  MIGRATE_ALLOW_PROD=yes npm run migrate -- formaten --target prod   # verwacht: "klaar", exitcode 0
+  MIGRATE_ALLOW_PROD=yes npm run migrate -- formaten --target prod   # verwacht: "beeldbibliotheek: ok", "klaar", exitcode 0
   ```
 
-  Exitcode 0 betekent dat de key internal actions mag draaien. Bij `OperationNotPermitted`: maak een nieuwe prod-key (§A) en herhaal.
+  Exitcode 0 betekent dat de key internal actions mag draaien en de bibliotheek werkt. Bij `OperationNotPermitted`: maak een nieuwe prod-key (§A) en herhaal. Bij `beeldbibliotheek werkt niet`: zie §Bekende meldingen.
+- [ ] HEIC's op prod geteld (WP25 besluit 7): `AWS_PROFILE=clubalmanac node scripts/wp25/prod-tel.mjs`. Leest alleen uit S3. Zitten er HEIC's boven 16 MP tussen, dan krijgen die op T0 geen formaten (`formaten` meldt ze als mislukt, "te groot"), en volgt de aparte stap uit besluit 7 vóór T0.
 
 
 ### T-0
@@ -166,9 +167,12 @@ npm run migrate -- verify --target prod
 `formaten` maakt van elke foto twee JPEG's (*klein* 512 px, *groot* 1600 px, langste zijde) en zet `exifOrientation` uit het bestand als die nog leeg is. Hij draait na `load-records` (eerder is er geen foto-rij) en vóór `verify` (dan dekt één groene `verify` alles).
 
 - Per batch één regel: gemaakt, al klaar, weg, mislukt (met foto-id's). Aan het eind de totalen en de telling vóór en na. Exitcode 0 alleen als geen foto meer zonder formaten is en niets mislukte.
-- Batch van 20 foto's, één foto tegelijk in een Node-action (512 MB per action). `--batch-size N` (1..100) als een batch te lang duurt. Gemeten op dev: zie §Meting hieronder.
+- Eerst `selfTest` (regel `beeldbibliotheek: ok`); mislukt die, dan stopt hij met exitcode 1, zonder batch.
+- Batch van 20 foto's, één foto tegelijk in een Node-action (512 MB per action). `--batch-size N` (1..50) als een batch te lang duurt; de HTTP-aanroep heeft een time-out van 300 s. Gemeten op dev: zie §Meting hieronder.
+- **Valt een batch-action om** (geheugen, time-out): de CLI meldt `action brak af` en doet die batch foto voor foto, elk in een eigen action. Valt ook die om, dan telt die foto als mislukt (`<foto-id>: action brak af`) en gaat de CLI door. Exitcode 1; een nieuwe run eindigt net zo, hij blijft niet hangen.
 - **Breekt hij af** (laptop dicht, netwerk weg, timeout): start hetzelfde commando opnieuw. Elke foto die klaar is, heeft zijn formaten en `exifOrientation` in één schrijfactie; een nieuwe run slaat die over. De app werkt halverwege: een foto zonder formaten toont het origineel. Hooguit één foto per afgebroken batch laat twee formaat-objecten zonder foto achter. `verify` noemt ze als storage-orphans, en `prune-storage` wist ze.
-- **Mislukt een foto** (het origineel ontbreekt of is geen leesbaar beeld): hij krijgt geen formaten en blijft ongewijzigd. De reden staat in de Convex-log onder `[photoFormats] mislukt photoId=…`. Een nieuwe run probeert hem opnieuw. Blijft hij mislukken, dan meldt `verify` hem als `formaten ontbreken` tot iemand hem wist. In de app toont hij het origineel.
+- **Mislukt een foto** (het origineel ontbreekt, is geen leesbaar beeld, of is een HEIC boven 16 MP: `te groot`, besluit 7): hij krijgt geen formaten en blijft ongewijzigd. De reden staat in de Convex-log onder `[photoFormats] mislukt photoId=…`. Een nieuwe run probeert hem opnieuw. Blijft hij mislukken, dan meldt `verify` hem als `formaten ontbreken` tot iemand hem wist. In de app toont hij het origineel.
+- **Een formaat-veld naar een gewist object** (`formaten dangling`, bv. `prune-storage` terwijl een action nog liep): telt als "geen formaten". De volgende run maakt een nieuwe set en ruimt de rest van de oude op.
 - **`prune-storage` na `formaten`** wist geen formaten: `storageInventory` telt ze als verwezen. Verwacht in de lijst van `verify` een handvol objecten, geen ~3200. Staan er duizenden formaat-objecten op de lijst, draai `prune-storage` dan niet en zoek uit waarom.
 - **`reset` + `load-records` na `formaten`**: `reset` wist de formaten van de foto's die hij weghaalt (het origineel blijft). Draai daarna `formaten` opnieuw.
 - **Terugrollen** naar code zonder formaten: het optionele veld `photos.formats` moet in het schema blijven staan (Convex weigert een schema-push die bestaande rijen afkeurt). De formaten blijven dan ongebruikt staan.
@@ -223,9 +227,11 @@ Breekt `load-records` halverwege af, dan stopt hij luid met de bron-sleutel in d
 | `N bestand(en) ... staan niet in de bucket` | Records verwijzen naar een verdwenen S3-object. Bekijk `scripts/.data/missing-files.json`; met `--accept-missing-files` slaat `load-records` die foto's over, benoemt ze per bron-sleutel, en `verify` meldt het verschil daarna als bevinding. |
 | `stemscore votes=N gaat verloren` | Bewust: de bron kent geen per-user upvotes, dus `upvoteCount` wordt 0. De oude score staat in het rapport zodat je 'm desgewenst handmatig terugzet. |
 | `formaten`: `batch 1 brak af: … OperationNotPermitted … runInternalActions` | De deploy key mag geen internal actions draaien. Er is niets geschreven. Maak een nieuwe key met `npx convex deployment token create` (§A), zet hem in `.env.migrate` en start opnieuw. |
+| `formaten`: `beeldbibliotheek werkt niet op de deployment` | `selfTest` faalde: sharp of heic-decode laadt of decodeert niet in de Node-action. Er is niets geschreven. Controleer de exacte versies in `package.json` en `externalPackages` in `convex.json`, deploy opnieuw en herhaal. Exitcode 1. |
+| `formaten`: `action brak af` | Een action viel om (geheugen of time-out). Bij een batch: die wordt foto voor foto overgedaan. Bij één foto: die telt als mislukt; de reden staat bij die functie in de Convex-log. |
 | `formaten`: `NIET KLAAR` | Er zijn nog foto's zonder formaten, of er mislukte er een. Draai `formaten` opnieuw; de mislukte foto-id's staan in de uitvoer, de reden in de Convex-log. Exitcode 1. |
 | `verify`: `photos/<id>: formaten ontbreken` | Een foto van meer dan een uur oud zonder formaten (WP25). Op T0: `formaten` is niet (af)gedraaid. Daarna: de stap na een upload mislukte. Draai `formaten`. |
-| `verify`: `photos/<id>: formaten dangling` | De foto verwijst naar een formaat dat niet meer in storage staat. De app toont het origineel. |
+| `verify`: `photos/<id>: formaten dangling` | De foto verwijst naar een formaat dat niet meer in storage staat. De app toont het origineel. Draai `formaten`: die maakt een nieuwe set. |
 | `createdBy gesynthetiseerd` | `albums.createdBy` bestaat niet in de bron en valt terug op de founder van de groep. |
 
 ## Opruimen (verplicht, niet optioneel)
