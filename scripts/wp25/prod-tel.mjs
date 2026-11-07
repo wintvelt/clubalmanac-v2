@@ -19,7 +19,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
-export const HEIC_MAX_PIXELS = 16_000_000;
+export const HEIC_MAX_PIXELS = 13_000_000;
 const KOP = 256 * 1024; // de kop: daar staan bij JPEG de SOF en bij HEIC de meta-box
 const HEIC_BRANDS = new Set(["heic", "heix", "hevc", "hevx", "heim", "heis", "mif1", "msf1"]);
 
