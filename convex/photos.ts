@@ -298,8 +298,6 @@ export async function internalRemovePhoto(
   // /blob-images-api/handlersDBstreams/photoDelToCover.js + dynamodb-lib-photo.js
   // listPhotoCovers). Bewust gedowngrade naar full-scan bij huidige schaal
   // (~16 users, tientallen groups/albums). TODO: by_cover index bij groei.
-  // [GAP] users-cover-clearing vervalt: nieuw schema heeft profilePhotoStorageId,
-  // geen coverPhotoId op users. Bewuste schema-versmalling t.o.v. AWS.
   const groups = await ctx.db.query("groups").collect();
   for (const g of groups) {
     if (g.coverPhotoId === photoId) {
@@ -310,6 +308,15 @@ export async function internalRemovePhoto(
   for (const a of albums) {
     if (a.coverPhotoId === photoId) {
       await ctx.db.patch(a._id, { coverPhotoId: undefined });
+    }
+  }
+  // WP17b A-keuze 1: ook elke profielfoto die het beeld van deze foto is, van
+  // elke user (v1 deed dat ook). Het beeld gaat hieronder uit storage, dus de
+  // profielfoto zou anders naar niets wijzen. Full-scan zoals hierboven.
+  const users = await ctx.db.query("users").collect();
+  for (const u of users) {
+    if (u.profilePhotoStorageId === photo.storageId) {
+      await ctx.db.patch(u._id, { profilePhotoStorageId: undefined });
     }
   }
 
