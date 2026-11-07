@@ -181,11 +181,11 @@ npm run migrate -- verify --target prod
      npm run migrate -- formaten --target prod --accept-no-formats <foto-id>,<foto-id>
      ```
 
-     Dat legt per foto vast dat hij zonder formaten mag (`noFormatsAcceptedAt`), en slaat hem daarna over. Exitcode 0 als niets anders mislukte. Een id dat geen foto is of al een formaat-veld heeft, weigert hij: dan is er niets geschreven.
+     Dezelfde run probeert de foto's nog eens, en tekent na de batches alleen af wat in die run mislukte (of al afgetekend was). Dat legt per foto vast dat hij zonder formaten mag (`noFormatsAcceptedAt`); volgende runs slaan hem over. Exitcode 0 als niets anders mislukte. Een ander id (een typfout, een foto die nu wel lukte) weigert hij met dat id: dan is er niets afgetekend, exitcode 1.
   4. `verify` meldt een afgetekende foto niet meer als `formaten ontbreken`, WP10 ook niet. `formaten` noemt ze bij elke run (`afgetekend zonder formaten`).
   5. Noteer de id's en de reden in het cutover-log. In de app toont zo'n foto het origineel: rechtop, maar traag.
 
-  Terugdraaien: maak `noFormatsAcceptedAt` van die foto leeg in het dashboard; de volgende run probeert hem weer.
+  Terugdraaien: `npm run migrate -- formaten --target prod --unaccept <foto-id>`. Die run probeert de foto meteen weer.
 - **Een formaat-veld naar een gewist object** (`formaten dangling`, bv. `prune-storage` terwijl een action nog liep): telt als "geen formaten". De volgende run maakt een nieuwe set en ruimt de rest van de oude op.
 - **`prune-storage` na `formaten`** wist geen formaten: `storageInventory` telt ze als verwezen. Verwacht in de lijst van `verify` een handvol objecten, geen ~3200. Staan er duizenden formaat-objecten op de lijst, draai `prune-storage` dan niet en zoek uit waarom.
 - **`reset` + `load-records` na `formaten`**: `reset` wist de formaten van de foto's die hij weghaalt (het origineel blijft). Draai daarna `formaten` opnieuw.

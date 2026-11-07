@@ -88,7 +88,8 @@ Gemeten op dev in een Node-action (linux arm64, ~1 core), met echte dev-bestande
 | 3 | B | ✅ Impl, plus de preview-run van de backfill op dev. |
 | 3a | Audit + red-team | ✅ Audit B1, S1–S2; red-team R1–R6. Wouter: alles in één fix-cyclus, besluit 7. |
 | 3b | A → B | ✅ Fix-cyclus 1. |
-| 3c | A → B | Fix-cyclus 2, na heraudit en hercheck red-team; besluit 8. |
+| 3c | A → B | ✅ Fix-cyclus 2, na heraudit en hercheck red-team; besluit 8. |
+| 3d | A → B | Fix-cyclus 3: oude schijfcache, avatar bij een nieuwe stand, aftekenen alleen na mislukken, `--unaccept`. |
 | 4 | Audit | Op spec, tests en impl. |
 | 5 | Red-team | Op de backfill en de T0-keten: wat als hij halverwege stopt, wat als `prune-storage` erna draait, raakt een formaat ooit iemand zonder toegang. |
 | 6 | Gate | Samen met WP17a stap 1 en 4, op één TestFlight-build. |
@@ -274,8 +275,9 @@ Na audit (B1, S2) en red-team (R1–R6), en besluit 7. Gelezen: de impl op `wp25
       - Een iPhone-HEIC is 12,2, 24,5 of 48 MP. 4032×3024 (12,2 MP) moet erdoor, 5712×4284 (24,5 MP) eruit.
       - **Aanname: de action is warm.** Convex kan een volgende action in hetzelfde Node-proces draaien. Een herkansing "in een eigen action" (invariant 21) is dus niet per se een vers proces, en het WASM-geheugen van eerdere HEIC's kan nog bezet zijn. De grens moet ook dan passen.
       - Gemeten in een warme action, met een tweede HEIC van 15,9–16 MP: audit lokaal 430–453 MB, red-team ~508–527 MB. Met ~90 MB voor Convex boven lokaal is dat 520–540 MB, boven de 512 MB.
-      - Bij 13 MP is het 3 MP × 13–21 MB minder: geschat 460–500 MB op Convex in een warme action. Krap, maar eronder.
-      - Prod heeft 0 HEIC's (telling 2026-11-07), en nieuwe uploads worden JPEG (WP18). De grens is een vangnet.
+      - **Beperking (fix-cyclus 3, kernvondst 21):** 13 MP houdt de piek niet altijd onder 512 MB. Komt een grotere HEIC na kleinere in dezelfde warme action (3× 12 MP, dan 2× 13 MP), dan mat de red-team 493–496 MB lokaal, ~585 MB op Convex. Bij een vaste maat blijft het ~375–385 MB lokaal. Valt de action om, dan vangt invariant 21 dat op: die foto foto voor foto, en zo nodig mislukt en afgetekend (invariant 25).
+      - Prod heeft 0 HEIC's (telling 2026-11-07), en nieuwe uploads worden JPEG (WP18). De grens is een vangnet; de echte oplossing is JPEG bij de upload (WP18, backlog).
+      - Het commentaar bij `HEIC_MAX_PIXELS` in `convex/lib/photoFormats.ts` zegt dit, niet "ook in een warme action onder 512 MB".
     - **AVIF onder `mif1`/`msf1`:** zo'n bestand ziet de stap ook als HEIF, dus boven 13 MP krijgt het geen formaten, al zou sharp het kunnen lezen. Geaccepteerd: prod heeft geen AVIF (dezelfde telling: alleen JPEG en PNG).
     - **Wat de grens níét raakt:** JPEG en PNG blijven onder de 200 MB, ook bij 48 MP.
 21. **Een action die omvalt, blokkeert de backfill niet (B1/R2).**
@@ -346,17 +348,20 @@ Na de heraudit en de hercheck van de red-team op fix-cyclus 1: geen blockers. Ge
 
 25. **Een foto zonder formaten kan bewust worden afgetekend (kernvondst 13).**
     - **Het commando:** `formaten --target <dev|prod> --accept-no-formats <photoId>[,<photoId>…]`. De operator noemt elke foto bij zijn id. Een vorm die alles aftekent, is er niet.
-    - **Wat het doet:** na `selfTest` en vóór de eerste batch legt `internal.photos.acceptNoFormats({ photoIds })` per foto vast dat hij zonder formaten mag: `photos.noFormatsAcceptedAt`, de tijd. Alles of niets. Is één id geen foto, of heeft hij een `formats`-veld (een volledige of een dangling set), dan gooit de mutation en schrijft niets. De CLI noemt het id en stopt met exitcode 1, zonder batch. Een dangling set herstelt een gewone run eerst (invariant 22).
-    - **In de backfill:** een afgetekende foto zonder formaten wordt overgeslagen, ook foto voor foto. Hij telt als `accepted`, niet als mislukt. Zo valt een foto die de action laat omvallen, niet bij elke run opnieuw om.
-    - **Exitcode 0** als elke foto zonder volledige set is afgetekend en niets anders mislukte. Elke run drukt de afgetekende foto's met hun id af (`afgetekend zonder formaten`), ook een run zonder de vlag.
-    - **Bewaking:** de integriteitsscan (WP10, en dus `verify`) meldt een afgetekende foto niet als `formaten ontbreken`. `formatStatus` telt ze apart.
+    - **Alleen wat in déze run mislukte (fix-cyclus 3):** de CLI tekent af ná de batches. Een id mag als hij in deze run mislukte (`failed`), of al afgetekend is (dan verandert er niets). Elk ander id (een typfout, een foto die nog niet geprobeerd is, een foto die nu wel formaten kreeg) weigert de CLI: hij noemt dat id, tekent niets af en eindigt met exitcode 1.
+    - **Wat het vastlegt:** `internal.photos.acceptNoFormats({ photoIds })` legt per foto `photos.noFormatsAcceptedAt` vast, de tijd. Alles of niets. Is één id geen foto, of heeft hij een `formats`-veld (een volledige of een dangling set), dan gooit de mutation met dat id en schrijft niets.
+    - **"Afgetekend"** betekent overal: `noFormatsAcceptedAt` gezet én geen `formats`-veld. Een rij met het veld en een (dangling) set telt als niet afgetekend.
+    - **In de backfill:** een afgetekende foto wordt overgeslagen, ook foto voor foto (`photoByPhoto`). Hij telt als `accepted`, niet als mislukt. Zo valt een foto die de action laat omvallen, niet bij elke run opnieuw om. Een dangling set wordt altijd hersteld (invariant 22), ook met het veld gezet.
+    - **`attachFormats` wist `noFormatsAcceptedAt`.** Heeft de foto formaten, dan is de aftekening voorbij; een latere dangling set meldt de scan dan gewoon.
+    - **Exitcode 0** als na de run elke foto zonder volledige set is afgetekend, en elke foto die in deze run mislukte nu is afgetekend. Elke run drukt de afgetekende foto's met hun id af (`afgetekend zonder formaten`), ook een run zonder de vlag.
+    - **Bewaking:** de integriteitsscan (WP10, en dus `verify`) meldt een afgetekende foto niet als `formaten ontbreken`. Een dangling set meldt hij altijd. `formatStatus` telt de afgetekende foto's apart.
     - **In de app** toont de foto het origineel, één keer gedraaid door iOS. Zonder formaten staat de tag uit het bestand niet in de DB (invariant 12).
-    - **Blijvend.** Het veld blijft staan. Terugdraaien: het veld leegmaken in het dashboard; de volgende run probeert de foto dan weer.
-    - **Verder niets:** de stap na een upload, `makeFormats` en `attachFormats` kijken niet naar het veld. Krijgt een afgetekende foto toch formaten, dan gelden die.
+    - **Blijvend** (besluit 8): het veld blijft staan. Terugdraaien: `formaten --unaccept <photoId>[,<photoId>…]`. Na `selfTest` en vóór de eerste batch wist `internal.photos.unacceptNoFormats({ photoIds })` het veld; dezelfde run probeert de foto dan weer. Alles of niets: is één id geen foto of niet afgetekend, dan gooit de mutation met dat id, schrijft niets, en stopt de CLI met exitcode 1, zonder batch. Een id in zowel `--accept-no-formats` als `--unaccept`: exitcode 1 vóór `selfTest`, niets geschreven.
+    - **Verder niets:** de stap na een upload en `makeFormats` kijken niet naar het veld. Krijgt een afgetekende foto toch formaten, dan gelden die (en wist `attachFormats` het veld).
 26. **De app bewaart een terugval niet op schijf, en wisselt bytes en stand tegelijk (kernvondst 14).**
     - **Server:** elke foto-vorm krijgt `hasFormats: boolean`. Elke user-vorm met `profileOrientation` (dezelfde zeven responses als invariant 19) krijgt `profileHasFormats: boolean`. Altijd aanwezig, en geen id. `hasFormats` is true als beide formaat-objecten van de foto nog in storage staan (invariant 22). `profileHasFormats` is hetzelfde voor de rij die het profielpad kiest (invariant 19). `hasFormats` en `exifOrientation` komen zo uit dezelfde query, en veranderen samen als de formaten worden vastgelegd.
-    - **Foto in de app:** `usePhotoLoad(photoId, format, hasFormats)` geeft een `cacheKey` die van `hasFormats` afhangt; de URL blijft gelijk. `PhotoImage` krijgt `hasFormats`. Zolang dat false is, zet hij `cachePolicy` op `"none"` of `"memory"`: niet op schijf. Met formaten blijft de schijfcache (invariant 1). Wisselt `hasFormats`, dan bouwt het beeld opnieuw op.
-    - **Avatar in de app:** `ProfileAvatar` krijgt `hasFormats` (uit `profileHasFormats`). Wisselt het, dan bouwt het beeld opnieuw op. `cachePolicy="none"` blijft (WP17a invariant 3).
+    - **Foto in de app:** `usePhotoLoad(photoId, format, hasFormats)` geeft een `cacheKey` die van `hasFormats` afhangt; de URL blijft gelijk. Geen van beide sleutels is de kale URL (fix-cyclus 3, kernvondst 16): daaronder bewaarden builds van vóór WP25 het origineel op schijf. `PhotoImage` krijgt `hasFormats`. Zolang dat false is, zet hij `cachePolicy` op `"none"` of `"memory"`: niet op schijf. Met formaten blijft de schijfcache (invariant 1). Wisselt `hasFormats`, dan bouwt het beeld opnieuw op.
+    - **Avatar in de app:** `ProfileAvatar` krijgt `hasFormats` (uit `profileHasFormats`). Wisselt dat, of wisselt de stand (`exifOrientation`), dan bouwt het beeld opnieuw op en haalt het de bytes opnieuw (fix-cyclus 3, kernvondst 17). Blijven beide gelijk, dan blijft het beeld staan. `cachePolicy="none"` blijft (WP17a invariant 3).
     - **Elke aanroep geeft het door:** elke `<PhotoImage>` geeft `hasFormats` van hetzelfde object als `exifOrientation`. Elke `<ProfileAvatar>` geeft `profileHasFormats` van hetzelfde object als `profileOrientation`.
     - Ontbreekt `hasFormats`, dan geldt false.
 27. **`selfTest` meldt de oorzaak (kernvondst 15).** Mag de key geen internal actions draaien (`OperationNotPermitted`, of de admin-key is afgewezen), dan zegt `formaten` dat, met het advies voor de key: een nieuwe key (runbook §A). Valt de verbinding weg (`fetch failed`, `ECONNREFUSED`, `ENOTFOUND`, `ETIMEDOUT`), dan het advies voor het netwerk. Alleen een andere fout krijgt het advies over sharp en heic-decode. Altijd exitcode 1, zonder batch.
@@ -378,7 +383,7 @@ Na de heraudit en de hercheck van de red-team op fix-cyclus 1: geen blockers. Ge
 - `internal.photos.formatStatus`: plus `acceptedWithoutFormats: number`. `withoutFormats` blijft elke foto zonder volledige set.
 - `internal.photos.formatBatch`: elk element plus `noFormatsAccepted: boolean`.
 - `internal.photoFormats.backfill`: de uitkomst plus `accepted: number`.
-- CLI: `formaten(target, batchSize?, acceptNoFormats?: Id<"photos">[])`, en `--accept-no-formats <id>[,<id>…]`.
+- CLI: `formaten(target, batchSize?, acceptNoFormats?: Id<"photos">[])`, en `--accept-no-formats <id>[,<id>…]`. Fix-cyclus 3 voegt `unaccept` toe.
 - Foto-vormen: `hasFormats: boolean`. User-vormen met `profileOrientation`: `profileHasFormats: boolean`.
 - App: `usePhotoLoad(photoId, format, hasFormats?)`, `PhotoImage` en `ProfileAvatar` met `hasFormats?: boolean`.
 
@@ -395,3 +400,38 @@ Na de heraudit en de hercheck van de red-team op fix-cyclus 1: geen blockers. Ge
 | `tests/readWhitelist/_world.ts` (`SHAPE`) | invariant 26: de nieuwe velden horen bij de vormen |
 | `app/tests/photoCache.test.ts` | invariant 26, app: `cachePolicy` en sleutel per `hasFormats`, opnieuw opbouwen bij een wissel, elke aanroep; de draaiing in `Oriented` |
 | `app/tests/photoLoad.test.ts` (aangevuld) | invariant 26: `cacheKey` hangt af van `hasFormats`, de URL niet |
+
+## Fix-cyclus 3 (A, 2026-11-07)
+
+Na de heraudit en de hercheck van de red-team op fix-cyclus 2: geen blockers. Gelezen: de impl op `wp25` (2977ec6), `scripts/migrate/formaten.ts`, `convex/photos.ts`, `convex/photoFormats.ts`, `convex/monitoring.ts`, `app/src/data/images.tsx`, `app/src/components/Photo.tsx`. De wijzigingen staan in invariant 20, 25 en 26 hierboven.
+
+### Kernvondsten
+
+16. **Een oude schijfcache raakt de sleutel "met formaten" (audit S1).** Builds van WP17a zetten `cacheKey: uri` met de schijfcache, terwijl de server het origineel gaf. Een testtoestel heeft daardoor originelen op schijf onder precies de sleutel die WP25 voor "met formaten" gebruikte. Een getagde foto draait dan dubbel, en de TestFlight-gate geeft een vals rood. Daarom is geen van beide sleutels nog de kale URL (invariant 26).
+17. **Een avatar herlaadt niet na een nieuwe profielfoto (red-team).** De key van het beeld hing alleen aan `hasFormats`, en de URL `/beeld/profiel/<userId>` verandert niet. Van een foto met stand 1 naar een met stand 6, beide met formaten: de stand wordt 6, de bytes blijven oud en worden gedraaid. De key hangt nu ook aan de stand (invariant 26). Gekozen boven een versie in de user-vorm: geen nieuw veld in zeven vormen, en het lost de verkeerde draaiing op.
+18. **Een afgetekende foto met een dangling set herstelt nooit (audit N1, red-team).** `formatBatch` keek alleen naar het veld; de backfill sloeg de foto over, `formaten` gaf exitcode 0, `verify` bleef `formaten dangling` melden. "Afgetekend" vraagt nu ook: geen `formats`-veld, en `attachFormats` wist het veld (invariant 25).
+19. **Aftekenen kon bij elke foto (red-team).** Een typfout of een foto die nooit geprobeerd is, kreeg blijvend geen formaten, en terugdraaien kon alleen in het dashboard. De CLI tekent nu alleen af wat in die run mislukte, en `--unaccept` draait terug (invariant 25).
+20. **Mutant AC4 overleeft.** `photoByPhoto` slaat een afgetekende foto over, maar geen test pint dat. Zonder die regel valt een afgetekende foto van 64 MP na elke omgevallen batch opnieuw om, en eindigt `formaten` op 1.
+21. **13 MP past niet altijd in een warme action (red-team).** Uitgewerkt bij invariant 20; buiten scope voor T0 (0 HEIC's op prod).
+
+### Edge cases (fix-cyclus 3)
+
+- **Een nieuwe profielfoto met dezelfde stand** bouwt het beeld niet opnieuw op: tot het scherm opnieuw opent, staat de oude foto er, wel recht. Zo was het al sinds WP17a. Geaccepteerd.
+- **Een rij met het veld en een set van vóór deze fix** (alleen dev): telt als niet afgetekend; de backfill herstelt een dangling set, en `attachFormats` wist dan het veld.
+- **De oude schijfcache** blijft op het toestel staan tot uitloggen (besluit 3) of tot expo-image hem opruimt. Niets leest hem nog.
+
+### Signaturen (fix-cyclus 3)
+
+- `internal.photos.unacceptNoFormats({ photoIds: Id<"photos">[] })` (mutation) → het aantal. Gooit volgens invariant 25.
+- `internal.photos.attachFormats`: wist `noFormatsAcceptedAt` bij `"attached"`.
+- `internal.photos.formatBatch`: `noFormatsAccepted` is het veld gezet én geen `formats`-veld. Zo ook `formatStatus.acceptedWithoutFormats` en `acceptedWithoutFormats`.
+- CLI: `formaten(target, batchSize?, acceptNoFormats?: Id<"photos">[], unaccept?: Id<"photos">[])`, en `--unaccept <id>[,<id>…]`.
+
+### Tests (A, fix-cyclus 3)
+
+| Bestand | Pint |
+|---|---|
+| `app/tests/photoLoad.test.ts` (aangevuld) | kernvondst 16: geen sleutel is de kale URL |
+| `app/tests/photoCache.test.ts` (aangevuld) | kernvondst 17: andere stand → ander beeld; gelijke props → hetzelfde beeld |
+| `tests/photoFormats/acceptNoFormats.test.ts` (aangevuld) | kernvondst 18: dangling met het veld wordt hersteld, `attachFormats` wist het veld, `formatBatch`/`formatStatus`; `unacceptNoFormats` |
+| `tests/photoFormats/formatenCli.test.ts` (aangepast) | kernvondst 18–20: aftekenen na de batches en alleen wat mislukte, `--unaccept`, AC4 in `photoByPhoto`, dangling met het veld via de CLI |
