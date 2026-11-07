@@ -10,6 +10,9 @@
 //
 // Runbook: docs/runbooks/wp12-data-migratie.md.
 
+import { realpathSync } from "node:fs";
+import { resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { extract } from "./extract.ts";
 import { formaten } from "./formaten.ts";
 import type { Id } from "../../convex/_generated/dataModel.js";
@@ -18,7 +21,7 @@ import { loadFiles } from "./loadFiles.ts";
 import { loadRecords } from "./loadRecords.ts";
 import { pruneStorage } from "./pruneStorage.ts";
 import { reset } from "./reset.ts";
-import { runTransform } from "./runTransform.ts";
+import { runTransform, type TransformOptions } from "./runTransform.ts";
 import { verify } from "./verify.ts";
 import type { Target } from "./config.ts";
 
@@ -43,8 +46,8 @@ opties
   --yes                      bevestiging voor reset en prune-storage
   --all                      reset wist ook de storage (en de storage-map)
   --accept-missing-files     load-records mag doorgaan met ontbrekende S3-objecten
-  --accept-expired-flags     transform mag doorgaan met gemelde foto's waarvan de
-                             verwijderdatum verstreken is (FL1 wist ze na het laden)
+  --accept-flagged-deletion  transform mag doorgaan met gemelde foto's die een
+                             verwijderdatum hebben (de FL1-cron wist ze)
   --batch-size N             formaten: foto's per action (1..50, standaard 20)
   --accept-no-formats ID,…   formaten: teken deze foto's af als "mag zonder formaten"
                              (blijvend in de DB; alleen wat in deze run mislukte)
@@ -66,6 +69,14 @@ function parseTarget(argv: string[]): Target {
   return value;
 }
 
+/**
+ * De argumenten van `transform` → de opties van `runTransform` (WP12b G2).
+ * `argv` zoals `main` hem ziet: commando plus opties.
+ */
+export function transformOptions(argv: string[]): TransformOptions {
+  return { acceptFlaggedDeletion: argv.includes("--accept-flagged-deletion") };
+}
+
 async function main(): Promise<number> {
   const argv = process.argv.slice(2);
   const command = argv[0];
@@ -79,9 +90,7 @@ async function main(): Promise<number> {
       inspect();
       return 0;
     case "transform":
-      runTransform(parseTarget(argv), Date.now(), {
-        acceptExpiredFlags: has("--accept-expired-flags"),
-      });
+      runTransform(parseTarget(argv), Date.now(), transformOptions(argv));
       return 0;
     case "load-files":
       return await loadFiles(parseTarget(argv));
@@ -117,11 +126,24 @@ async function main(): Promise<number> {
   }
 }
 
-main()
-  .then((code) => {
-    process.exitCode = code;
-  })
-  .catch((error: unknown) => {
-    console.error(error instanceof Error ? error.message : String(error));
-    process.exitCode = 1;
-  });
+/** Draait `main` alleen als dit bestand het startpunt is, niet bij een import. */
+function isEntryPoint(): boolean {
+  const entry = process.argv[1];
+  if (entry === undefined) return false;
+  try {
+    return realpathSync(resolve(entry)) === realpathSync(fileURLToPath(import.meta.url));
+  } catch {
+    return false;
+  }
+}
+
+if (isEntryPoint()) {
+  main()
+    .then((code) => {
+      process.exitCode = code;
+    })
+    .catch((error: unknown) => {
+      console.error(error instanceof Error ? error.message : String(error));
+      process.exitCode = 1;
+    });
+}

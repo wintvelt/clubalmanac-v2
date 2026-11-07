@@ -19,10 +19,13 @@ export type RecordsFile = {
   warnings: string[];
 };
 
+/** Wat de operator op de commandoregel van `transform` kan meegeven. */
+export type TransformOptions = { acceptFlaggedDeletion?: boolean };
+
 export function runTransform(
   target: Target,
   now = Date.now(),
-  options: { acceptExpiredFlags?: boolean } = {},
+  options: TransformOptions = {},
 ): RecordsFile {
   const extractFile = readData<ExtractFile>(EXTRACT_FILE);
   console.log(`[transform] ${describeExtract(extractFile.meta)}`);
@@ -30,7 +33,7 @@ export function runTransform(
 
   const config = {
     ...loadConfig(target, extractFile.items, now),
-    acceptExpiredFlags: options.acceptExpiredFlags === true,
+    acceptFlaggedDeletion: options.acceptFlaggedDeletion === true,
   };
   const { records, warnings } = transform(extractFile.items, config);
 

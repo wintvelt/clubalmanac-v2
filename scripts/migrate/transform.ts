@@ -42,10 +42,10 @@ export type TransformConfig = {
   /** Ontsnapping voor een groep zonder founder-membership: groupId → userId. */
   founderOverrides?: Record<string, string>;
   /**
-   * WP12b F1: de operator accepteert dat gemelde foto's met een verlopen
-   * verwijderdatum de eerste nacht na het laden gewist worden (`--accept-expired-flags`).
+   * WP12b G1: de operator accepteert dat de FL1-cron gemelde foto's met een
+   * verwijderdatum wist (`--accept-flagged-deletion`).
    */
-  acceptExpiredFlags?: boolean;
+  acceptFlaggedDeletion?: boolean;
 };
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -401,36 +401,34 @@ export function transform(items: SourceItem[], config: TransformConfig): Transfo
     includedPhotos.add(photoId);
   }
 
-  // ── gemelde foto's met een verlopen verwijderdatum (WP12b F1) ───────
-  // v1 wiste een gemelde foto nooit; de FL1-cron van v2 wist hem de eerste
-  // nacht na het laden zodra `flaggedDeleteDate <= nu`. Onomkeerbaar, dus een
-  // stop en geen waarschuwing tussen de rest — tenzij de operator het verlies
-  // accepteert. Alleen foto's die geladen worden; lege string = geen datum.
-  const expiredFlags = [...includedPhotos]
+  // ── gemelde foto's met een verwijderdatum (WP12b F1, G1) ────────────
+  // v1 wiste een gemelde foto nooit; de FL1-cron van v2 wist hem zodra zijn
+  // verwijderdatum voorbij is, en draait elke nacht. Elke datum, ook een in de
+  // toekomst, is dus verlies. Onomkeerbaar, dus een stop en geen waarschuwing
+  // tussen de rest — tenzij de operator het verlies accepteert. Alleen foto's
+  // die geladen worden; lege string (na een bezwaar) = geen datum.
+  const flaggedForDeletion = [...includedPhotos]
     .sort()
     .map((photoId) => ({
       photoId,
       deleteAt: toEpoch(src.photos.get(photoId)!.item.flaggedDeleteDate),
     }))
-    .filter(
-      (p): p is { photoId: string; deleteAt: number } =>
-        p.deleteAt !== undefined && p.deleteAt <= config.now,
-    );
-  if (expiredFlags.length > 0) {
+    .filter((p): p is { photoId: string; deleteAt: number } => p.deleteAt !== undefined);
+  if (flaggedForDeletion.length > 0) {
     const day = (t: number) => new Date(t).toISOString().slice(0, 10);
-    if (config.acceptExpiredFlags !== true) {
+    if (config.acceptFlaggedDeletion !== true) {
       fail(
-        `${expiredFlags.length} gemelde foto('s) met een verlopen verwijderdatum: ` +
-          expiredFlags.map((p) => `${p.photoId} (${day(p.deleteAt)})`).join(", ") +
-          `. v1 wiste ze nooit; de FL1-cron van v2 wist ze de eerste nacht na het laden. ` +
+        `${flaggedForDeletion.length} gemelde foto('s) met een verwijderdatum: ` +
+          flaggedForDeletion.map((p) => `${p.photoId} (${day(p.deleteAt)})`).join(", ") +
+          `. v1 wiste ze nooit; de FL1-cron van v2 wist ze zodra de datum voorbij is. ` +
           `Laat de datum in de bron wissen, of draai 'transform' opnieuw met ` +
-          `--accept-expired-flags om dat verlies te accepteren.`,
+          `--accept-flagged-deletion om dat verlies te accepteren.`,
       );
     }
-    for (const p of expiredFlags) {
+    for (const p of flaggedForDeletion) {
       warn(
-        `foto ${p.photoId}: flaggedDeleteDate ${day(p.deleteAt)} is verstreken — geaccepteerd ` +
-          `(--accept-expired-flags); de FL1-cron wist hem de eerste nacht na het laden`,
+        `foto ${p.photoId}: flaggedDeleteDate ${day(p.deleteAt)} — geaccepteerd ` +
+          `(--accept-flagged-deletion); de FL1-cron wist hem zodra die datum voorbij is`,
       );
     }
   }
