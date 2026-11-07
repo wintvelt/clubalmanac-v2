@@ -106,6 +106,17 @@ export default defineSchema({
     // EXIF Orientation tag (1..8). Audit-9 §photo rotation: client past
     // CSS-transform toe zodat liggend-gemaakte JPEGs correct rechtop staan.
     exifOrientation: v.optional(v.number()),
+    // WP25: de verkleinde JPEG's (langste zijde 512 en 1600), beide of geen.
+    // Gemaakt door `internal.photoFormats.makeFormats` na de upload of in de
+    // backfill. Nooit in een publieke response (WP17a invariant 10): het
+    // beeldpad kiest het formaat met het foto-id.
+    formats: v.optional(
+      v.object({ klein: v.id("_storage"), groot: v.id("_storage") }),
+    ),
+    // WP25 A-invariant 25: de operator tekende deze foto af als "mag zonder
+    // formaten" (`formaten --accept-no-formats`), met de tijd. De backfill
+    // slaat hem dan over; WP10 meldt hem niet als "formaten ontbreken".
+    noFormatsAcceptedAt: v.optional(v.number()),
     // Aggregate rating (gemiddelde van ratings table).
     ratingAverage: v.optional(v.number()),
     ratingCount: v.number(),

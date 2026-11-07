@@ -28,13 +28,17 @@ export const SHAPE = {
   // WP17a invariant 10 (A paste aan): geen profilePhotoStorageId meer. Het
   // beeld loopt via het user-id. De seed vult het veld nog wel, zodat zijn
   // afwezigheid in de response iets bewijst.
-  publicProfile: ["_id", "name"],
+  // WP25 fix-cyclus 2 (invariant 26): `profileHasFormats` staat in elke
+  // user-vorm met een avatar, ook zonder profielfoto (dan false).
+  // `profileOrientation` ontbreekt hier: de seed-profielfoto is een los beeld.
+  publicProfile: ["_id", "name", "profileHasFormats"],
   ownProfile: [
     "_id",
     "email",
     "name",
     "photoCount",
     "createdAt",
+    "profileHasFormats",
     // WP15b: lastVisitAt is geen deel meer van het eigen profiel. De seed
     // vult hem nog wel, zodat zijn afwezigheid in de response iets bewijst.
   ],
@@ -65,6 +69,8 @@ export const SHAPE = {
     "ratingAverage",
     "ratingCount",
     "createdAt",
+    // WP25 fix-cyclus 2 (invariant 26): altijd aanwezig, true of false.
+    "hasFormats",
   ],
   ownFlag: [
     "flaggedAt",
@@ -106,7 +112,7 @@ export const SHAPE = {
   // anonieme landing, wel het user-id van de afzender. Daarmee toont de
   // landing zijn profielfoto via het openbare profielpad. Dit herziet de
   // uitsluiting van `_id` uit WP23 (precedent audit-8).
-  landingInviter: ["_id", "name"],
+  landingInviter: ["_id", "name", "profileHasFormats"],
 } as const;
 
 /** Keys met een gedefinieerde waarde, gesorteerd. `null` telt als gedefinieerd. */

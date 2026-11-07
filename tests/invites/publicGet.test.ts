@@ -122,8 +122,11 @@ describe("invites.getByToken — landingspagina lookup", () => {
     // het user-id, zodat de landing de profielfoto via het openbare
     // profielpad toont. Herziet audit-8 ("geen _id").
     expect(inviter.profilePhotoStorageId).toBeUndefined();
-    // Allow-list: enkel _id + name.
-    const allowed = new Set(["_id", "name"]);
+    // Allow-list: _id + name, plus de stand en het formaat-vlag van de
+    // profielfoto (WP25 invariant 19 en 26; geen id, de foto is al openbaar).
+    // profileHasFormats is er altijd, profileOrientation alleen met een stand.
+    const allowed = new Set(["_id", "name", "profileHasFormats", "profileOrientation"]);
+    expect(inviter.profileHasFormats).toBe(false);
     for (const k of Object.keys(inviter)) {
       expect(allowed.has(k)).toBe(true);
     }

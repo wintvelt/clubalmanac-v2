@@ -345,14 +345,21 @@ http.route({
 //     bytes van de actuele profielfoto. `no-cache`: dezelfde URL geeft na een
 //     wissel een ander beeld, dus een cache moet het eerst opnieuw vragen.
 //
-// Formaat (besluit 2): tot WP25 de verkleinde versies maakt, geeft elk
-// formaat het origineel. Het formaat wordt pas gebruikt nadat de regel een
-// beeld gaf; het opent niets.
+// Formaat (besluit 2, WP25): `klein` of `groot` geeft de verkleinde JPEG van
+// die foto. Het formaat wordt pas gekozen nadat de regel een beeld gaf; het
+// opent niets (WP25 invariant 4). Heeft de foto het formaat niet (nog niet
+// gemaakt, of het object is weg), dan het origineel met `no-store`: anders
+// bewaart de app een origineel van megabytes onder de URL van het formaat
+// (WP25 A-invariant 13).
 const PHOTO_PREFIX = "/beeld/foto/";
 const PROFILE_PREFIX = "/beeld/profiel/";
 
 const NOT_FOUND = () => new Response("Niet gevonden", { status: 404 });
 const BAD_FORMAT = () => new Response("Onbekend formaat", { status: 400 });
+// `private` blijft erbij op het foto-pad: geen gedeelde cache, en de app
+// bewaart niets (A-invariant 13).
+const FALLBACK_CACHE_PHOTO = "private, no-store";
+const FALLBACK_CACHE_PROFILE = "no-store";
 
 // Een id met kapotte procent-codering (`%E0%A4%A`) is een misvormd id: geen
 // exception (500), maar een lege string, en daarmee hetzelfde antwoord als een
@@ -453,12 +460,23 @@ http.route({
     }
     if (!identity) return new Response("Unauthorized", { status: 401 });
 
-    const storageId = await ctx.runQuery(internal.images.photoImage, {
-      photoId: idFromPath(request, PHOTO_PREFIX),
+    const photoId = idFromPath(request, PHOTO_PREFIX);
+    if (format === "origineel") {
+      const storageId = await ctx.runQuery(internal.images.photoImage, { photoId });
+      return await imageResponse(ctx, storageId, "private, max-age=3600", {
+        Vary: "Authorization",
+      });
+    }
+    const choice = await ctx.runQuery(internal.images.photoImageInFormat, {
+      photoId,
+      formaat: format,
     });
-    return await imageResponse(ctx, storageId, "private, max-age=3600", {
-      Vary: "Authorization",
-    });
+    return await imageResponse(
+      ctx,
+      choice?.storageId ?? null,
+      choice?.fallback ? FALLBACK_CACHE_PHOTO : "private, max-age=3600",
+      { Vary: "Authorization" },
+    );
   }),
 });
 
@@ -471,10 +489,20 @@ http.route({
     );
     if (format === "ongeldig") return BAD_FORMAT();
 
-    const storageId = await ctx.runQuery(internal.images.profileImage, {
-      userId: idFromPath(request, PROFILE_PREFIX),
+    const userId = idFromPath(request, PROFILE_PREFIX);
+    if (format === "origineel") {
+      const storageId = await ctx.runQuery(internal.images.profileImage, { userId });
+      return await imageResponse(ctx, storageId, "public, no-cache");
+    }
+    const choice = await ctx.runQuery(internal.images.profileImageInFormat, {
+      userId,
+      formaat: format,
     });
-    return await imageResponse(ctx, storageId, "public, no-cache");
+    return await imageResponse(
+      ctx,
+      choice?.storageId ?? null,
+      choice?.fallback ? FALLBACK_CACHE_PROFILE : "public, no-cache",
+    );
   }),
 });
 

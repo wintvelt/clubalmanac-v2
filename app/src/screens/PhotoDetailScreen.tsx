@@ -174,6 +174,7 @@ function ZoomablePhoto({ entry, box }: { entry: Shown; box: { width: number; hei
           photoId={entry.albumPhoto.photoId}
           format="groot"
           exifOrientation={entry.photo.exifOrientation}
+          hasFormats={entry.photo.hasFormats}
           box={box}
           fit="contain"
         />
@@ -193,7 +194,13 @@ function PhotoInfo({ entry }: { entry: Shown }) {
       accessible
       accessibilityLabel={[name ? `Foto van ${name}` : null, date, entry.photo.locationLabel].filter(Boolean).join(", ")}
     >
-      <ProfileAvatar userId={entry.owner?._id} name={name} size={size.avatar} />
+      <ProfileAvatar
+        userId={entry.owner?._id}
+        name={name}
+        size={size.avatar}
+        exifOrientation={entry.owner?.profileOrientation}
+        hasFormats={entry.owner?.profileHasFormats}
+      />
       <View style={styles.infoText}>
         <Text variant="bodyStrong" color={name ? "text" : "muted"}>
           {name ?? "Naam onbekend"}

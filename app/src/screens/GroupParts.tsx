@@ -37,7 +37,7 @@ export function LargeTitleHeader({ title }: { title: string }) {
 }
 
 // Een cover-foto: het id plus de draaiing uit Convex (invariant 4).
-export type CoverPhoto = { _id: string; exifOrientation?: number };
+export type CoverPhoto = { _id: string; exifOrientation?: number; hasFormats?: boolean };
 
 // De kop van Groep (design.md §5, §7). Met een cover (WP17a): de foto over de
 // volle breedte (*groot*). Zonder cover, of als het beeld niet laadt: de
@@ -72,6 +72,7 @@ export function CoverHeader({ name, cover }: { name?: string; cover?: CoverPhoto
             photoId={cover._id}
             format="groot"
             exifOrientation={cover.exifOrientation}
+            hasFormats={cover.hasFormats}
             box={{ width, height }}
             fallback={fallback}
           />
@@ -132,6 +133,7 @@ function CoverTile({ cover, tile, letter }: { cover: CoverPhoto | null | undefin
       photoId={cover._id}
       format="klein"
       exifOrientation={cover.exifOrientation}
+      hasFormats={cover.hasFormats}
       box={{ width: tile.size, height: tile.size }}
       radius={tile.radius}
       fallback={letter}

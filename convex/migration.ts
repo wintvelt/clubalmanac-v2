@@ -1,7 +1,8 @@
 import { v } from "convex/values";
 import { internalMutation, internalQuery } from "./_generated/server";
+import { formatStorageIds } from "./photos";
 import type { Doc, Id, TableNames } from "./_generated/dataModel";
-import { collectDriftLines, MONITORED_TABLES } from "./monitoring";
+import { collectDriftLines, MONITORED_TABLES, referencedStorageIds } from "./monitoring";
 
 // WP12 — migratie-only Convex-functies (data-import vanuit AWS).
 //
@@ -185,11 +186,9 @@ export const storageInventory = internalQuery({
     const photos = await ctx.db.query("photos").collect();
     const users = await ctx.db.query("users").collect();
 
-    const referenced = new Set<string>();
-    for (const p of photos) referenced.add(p.storageId);
-    for (const u of users) {
-      if (u.profilePhotoStorageId) referenced.add(u.profilePhotoStorageId);
-    }
+    // WP25 (A-invariant 15): de formaten zijn verwezen storage. Anders wist
+    // `prune-storage` na de backfill élk formaat (A-kernvondst 3).
+    const referenced = referencedStorageIds(photos, users);
 
     const storageDocs = await ctx.db.system.query("_storage").collect();
     const present = new Set(storageDocs.map((s) => s._id as string));
@@ -256,6 +255,14 @@ export const clearTable = internalMutation({
     const name = assertMigrationTable(table);
     const docs = await ctx.db.query(name).take(limit);
     for (const doc of docs) {
+      // WP25 A-invariant 16: een foto-rij neemt zijn formaten mee. Ze staan
+      // niet in storage-map.json, dus na `reset` + `load-records` hingen ze
+      // anders aan niets. Het origineel blijft staan, voor `load-records`.
+      if (name === "photos") {
+        for (const id of formatStorageIds(doc as Doc<"photos">)) {
+          if (await ctx.db.system.get(id)) await ctx.storage.delete(id);
+        }
+      }
       await ctx.db.delete(doc._id as Id<TableNames>);
     }
     const next = await ctx.db.query(name).take(1);

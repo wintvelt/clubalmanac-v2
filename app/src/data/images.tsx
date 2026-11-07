@@ -43,7 +43,13 @@ function useSiteUrl(): string | null {
 // het beeld terugvalt (fout-tegel of letter). `attempt` is de key van het
 // beeld: een nieuwe poging bouwt het opnieuw op. De cache-sleutel is de URL,
 // dus een nieuw token alleen laadt het beeld niet opnieuw.
-export function usePhotoLoad(photoId: string, format: ImageFormat) {
+//
+// WP25 A-invariant 26: zonder formaten geeft het beeldpad het origineel onder
+// dezelfde URL. De sleutel hangt daarom af van `hasFormats` (ontbreekt het,
+// dan geldt false), zodat een bewaard origineel nooit als formaat terugkomt.
+// Geen van beide is de kale URL: daaronder bewaarden builds van vóór WP25 het
+// origineel op schijf (fix-cyclus 3, kernvondst 16).
+export function usePhotoLoad(photoId: string, format: ImageFormat, hasFormats?: boolean) {
   const site = useSiteUrl();
   const { isSignedIn, getToken, sessionClaims } = useAuth();
   const forConvex = sessionClaims?.aud === "convex";
@@ -72,7 +78,8 @@ export function usePhotoLoad(photoId: string, format: ImageFormat) {
   else if (view.kind === "wait") source = undefined;
   else {
     const uri = photoImageUrl(site, photoId, format);
-    source = { uri, cacheKey: uri, headers: { Authorization: `Bearer ${view.token}` } };
+    const cacheKey = `${uri}#${hasFormats === true ? "formaat" : "origineel"}`;
+    source = { uri, cacheKey, headers: { Authorization: `Bearer ${view.token}` } };
   }
   const attempt = view.kind === "load" ? view.attempt : load.attempt;
   return {

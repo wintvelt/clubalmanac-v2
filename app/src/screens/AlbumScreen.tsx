@@ -179,6 +179,7 @@ function Tile({
         photoId={entry.albumPhoto.photoId}
         format="klein"
         exifOrientation={entry.photo.exifOrientation}
+        hasFormats={entry.photo.hasFormats}
         box={{ width: tile, height: tile }}
       />
       {isNew && <NewLabel />}
@@ -253,6 +254,7 @@ function AlbumHeader({
               photoId={album.cover._id}
               format="groot"
               exifOrientation={album.cover.exifOrientation}
+              hasFormats={album.cover.hasFormats}
               box={{ width, height }}
               fallback={
                 <>

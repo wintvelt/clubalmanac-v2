@@ -14,11 +14,12 @@ import {
   membership,
   membershipFields,
   photo,
-  photoFields,
   pick,
   publicProfile,
   publicProfileFields,
 } from "./lib/shapes";
+import { avatarFieldsOf } from "./lib/profilePhoto";
+import { photoView } from "./lib/formatSet";
 import {
   deleteAlbumLastSeenByAlbum,
   deleteAlbumLastSeenForUserInGroup,
@@ -154,7 +155,7 @@ export const getWithCover = query({
     const cover = await getAccessiblePhoto(ctx, user._id, row.coverPhotoId);
     return {
       ...pick(row, groupFields),
-      cover: cover ? pick(cover, photoFields) : null,
+      cover: cover ? await photoView(ctx, cover) : null,
     };
   },
 });
@@ -213,7 +214,9 @@ export const listMembers = query({
         const user = await ctx.db.get(m.userId);
         return {
           membership: pick(m, membershipFields),
-          user: user ? pick(user, publicProfileFields) : null,
+          user: user
+            ? { ...pick(user, publicProfileFields), ...(await avatarFieldsOf(ctx, user)) }
+            : null,
         };
       }),
     );

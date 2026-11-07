@@ -16,6 +16,7 @@ import { requireWebmaster } from "./lib/auth";
 import { canAccessPhoto } from "./lib/photoAccess";
 import {
   allFlagFields,
+  hasFormatsField,
   ownFlagFields,
   photo as photoShape,
   photoFields,
@@ -23,6 +24,8 @@ import {
   publicProfile,
   publicProfileFields,
 } from "./lib/shapes";
+import { avatarFieldsOf } from "./lib/profilePhoto";
+import { hasCompleteFormats, photoView } from "./lib/formatSet";
 import {
   applyOrientation,
   rotationSwapsDimensions,
@@ -69,13 +72,15 @@ async function requirePhotoAccessForRead(
 // WP23: owner als publiek profiel (geen email/subject).
 export const getWithOwner = query({
   args: { photoId: v.id("photos") },
-  returns: v.object({ ...photoFields, owner: v.union(publicProfile, v.null()) }),
+  returns: v.object({ ...photoFields, ...hasFormatsField, owner: v.union(publicProfile, v.null()) }),
   handler: async (ctx, { photoId }) => {
     const { photo } = await requirePhotoAccessForRead(ctx, photoId);
     const owner = await ctx.db.get(photo.ownerId);
     return {
-      ...pick(photo, photoFields),
-      owner: owner ? pick(owner, publicProfileFields) : null,
+      ...(await photoView(ctx, photo)),
+      owner: owner
+        ? { ...pick(owner, publicProfileFields), ...(await avatarFieldsOf(ctx, owner)) }
+        : null,
     };
   },
 });
@@ -85,7 +90,7 @@ export const getById = query({
   returns: photoShape,
   handler: async (ctx, { photoId }) => {
     const { photo } = await requirePhotoAccessForRead(ctx, photoId);
-    return pick(photo, photoFields);
+    return await photoView(ctx, photo);
   },
 });
 
@@ -101,7 +106,7 @@ export const listByOwner = query({
       .query("photos")
       .withIndex("by_owner", (q) => q.eq("ownerId", ownerId))
       .collect();
-    return rows.map((p) => pick(p, photoFields));
+    return await Promise.all(rows.map((p) => photoView(ctx, p)));
   },
 });
 
@@ -218,6 +223,11 @@ export const createFromUploadInternal = internalMutation({
     await ctx.scheduler.runAfter(0, internal.photoMetadata.extractMetadata, {
       photoId,
     });
+    // WP25 invariant 2: de formaten (en de stand uit het bestand, A-inv. 12)
+    // komen kort na de upload, ongeacht wie uploadt.
+    await ctx.scheduler.runAfter(0, internal.photoFormats.makeFormats, {
+      photoId,
+    });
 
     return photoId;
   },
@@ -312,9 +322,10 @@ export async function internalRemovePhoto(
     });
   }
 
-  // U7-style storage cleanup (best-effort async).
+  // U7-style storage cleanup (best-effort async). WP25 invariant 8: de
+  // formaten gaan mee; het origineel en de formaten zijn van deze foto alleen.
   await ctx.scheduler.runAfter(0, internal.photos.cleanupStorage, {
-    storageIds: [photo.storageId],
+    storageIds: [photo.storageId, ...formatStorageIds(photo)],
   });
 
   await ctx.db.delete(photoId);
@@ -419,7 +430,8 @@ export const cleanupStorage = internalAction({
 
 // Internal patch-helper voor extractMetadata. Action kan niet direct
 // ctx.db.patch doen, dus delegate via een internal mutation. No-op als
-// photo intussen verwijderd is (cleanup-race).
+// photo intussen verwijderd is (cleanup-race). Geen `exifOrientation`: die
+// zet alleen `attachFormats`, samen met de formaten (WP25 A-invariant 12).
 export const patchMetadata = internalMutation({
   args: {
     photoId: v.id("photos"),
@@ -429,7 +441,6 @@ export const patchMetadata = internalMutation({
     latitude: v.optional(v.number()),
     longitude: v.optional(v.number()),
     locationLabel: v.optional(v.string()),
-    exifOrientation: v.optional(v.number()),
   },
   handler: async (ctx, { photoId, ...rest }) => {
     const photo = await ctx.db.get(photoId);
@@ -442,7 +453,6 @@ export const patchMetadata = internalMutation({
       "latitude",
       "longitude",
       "locationLabel",
-      "exifOrientation",
     ] as const) {
       if (rest[k] !== undefined) (patch[k] as unknown) = rest[k];
     }
@@ -459,6 +469,216 @@ export const patchMetadata = internalMutation({
 // `internal.photoMetadata.extractMetadata`. `isHeicLike` helper is mee-
 // verhuisd; `patchMetadata`, `getByIdInternal` en `reverseGeocode` blijven
 // hier (mutations + isolate-actions).
+
+// ── WP25: formaten ───────────────────────────────────────────────────
+
+/** De storage-objecten van de formaten van een foto (leeg zonder formaten). */
+export function formatStorageIds(photo: Doc<"photos">): Id<"_storage">[] {
+  return photo.formats ? [photo.formats.klein, photo.formats.groot] : [];
+}
+
+function validOrientation(o: number | undefined): number | undefined {
+  return o !== undefined && Number.isInteger(o) && o >= 1 && o <= 8 ? o : undefined;
+}
+
+/**
+ * Legt een set formaten vast (A-invariant 12 en 17). Eén schrijfactie: de
+ * formaten, plus de stand uit het bestand en de afmetingen als die nog leeg
+ * zijn. Een stand die er al staat (draaien, WP8) blijft staan.
+ *
+ * De eerste set blijft. Heeft de foto al formaten, of is hij weg, dan wordt de
+ * nieuwe set niet vastgelegd en verdwijnen zijn objecten uit storage: er
+ * blijft geen wees achter van een stap die te laat kwam.
+ */
+export const attachFormats = internalMutation({
+  args: {
+    photoId: v.id("photos"),
+    klein: v.id("_storage"),
+    groot: v.id("_storage"),
+    width: v.optional(v.number()),
+    height: v.optional(v.number()),
+    exifOrientation: v.optional(v.number()),
+  },
+  returns: v.union(v.literal("attached"), v.literal("alreadyDone"), v.literal("gone")),
+  handler: async (ctx, { photoId, klein, groot, width, height, exifOrientation }) => {
+    // A-invariant 22: nooit een id vastleggen van een object dat er niet is
+    // (bv. `prune-storage` terwijl de action liep). Gooien = niets geschreven;
+    // de stap ruimt zijn eigen objecten op en meldt `failed`.
+    for (const id of [klein, groot]) {
+      if ((await ctx.db.system.get(id)) === null) {
+        throw new Error(`attachFormats: nieuw object ${id} bestaat niet`);
+      }
+    }
+    const photo = await ctx.db.get(photoId);
+    if (!photo || (await hasCompleteFormats(ctx, photo))) {
+      await ctx.storage.delete(klein);
+      await ctx.storage.delete(groot);
+      return photo ? "alreadyDone" : "gone";
+    }
+    // Een set met een ontbrekend object wordt vervangen; wat er van over is, gaat weg.
+    for (const id of formatStorageIds(photo)) {
+      if ((await ctx.db.system.get(id)) !== null) await ctx.storage.delete(id);
+    }
+    // Met formaten is een aftekening voorbij (A-invariant 25).
+    const patch: Partial<Doc<"photos">> = { formats: { klein, groot }, noFormatsAcceptedAt: undefined };
+    const orientation = validOrientation(exifOrientation);
+    if (photo.exifOrientation === undefined && orientation !== undefined) {
+      patch.exifOrientation = orientation;
+    }
+    if (photo.width === undefined && width !== undefined) patch.width = width;
+    if (photo.height === undefined && height !== undefined) patch.height = height;
+    await ctx.db.patch(photoId, patch);
+    return "attached";
+  },
+});
+
+/** Wat de formaat-stap van een foto moet weten. `null`: de foto is weg. */
+export const formatInfo = internalQuery({
+  args: { photoId: v.id("photos") },
+  returns: v.union(v.object({ storageId: v.id("_storage"), hasFormats: v.boolean() }), v.null()),
+  handler: async (ctx, { photoId }) => {
+    const photo = await ctx.db.get(photoId);
+    if (!photo) return null;
+    return { storageId: photo.storageId, hasFormats: await hasCompleteFormats(ctx, photo) };
+  },
+});
+
+/**
+ * Afgetekend (A-invariant 25): het veld gezet én geen `formats`-veld. Een rij
+ * met het veld en een (dangling) set telt als niet afgetekend; de backfill
+ * herstelt die set, en `attachFormats` wist dan het veld.
+ */
+function isAccepted(photo: Doc<"photos">): boolean {
+  return photo.noFormatsAcceptedAt !== undefined && photo.formats === undefined;
+}
+
+/**
+ * De telling voor de backfill en de pre-flight (invariant 2). `withoutFormats`
+ * is elke foto zonder volledige set, ook de afgetekende; die staan daarnaast
+ * apart in `acceptedWithoutFormats` (A-invariant 25).
+ */
+export const formatStatus = internalQuery({
+  args: {},
+  returns: v.object({
+    photos: v.number(),
+    withFormats: v.number(),
+    withoutFormats: v.number(),
+    withExifOrientation: v.number(),
+    acceptedWithoutFormats: v.number(),
+  }),
+  handler: async (ctx) => {
+    const all = await ctx.db.query("photos").collect();
+    // Een set met een ontbrekend object telt niet mee (A-invariant 22).
+    let withFormats = 0;
+    let acceptedWithoutFormats = 0;
+    for (const p of all) {
+      if (await hasCompleteFormats(ctx, p)) withFormats += 1;
+      else if (isAccepted(p)) acceptedWithoutFormats += 1;
+    }
+    return {
+      photos: all.length,
+      withFormats,
+      withoutFormats: all.length - withFormats,
+      withExifOrientation: all.filter((p) => p.exifOrientation !== undefined).length,
+      acceptedWithoutFormats,
+    };
+  },
+});
+
+/** De id's van de afgetekende foto's zonder volledige set; `formaten` drukt ze af. */
+export const acceptedWithoutFormats = internalQuery({
+  args: {},
+  returns: v.array(v.id("photos")),
+  handler: async (ctx) => {
+    const ids: Id<"photos">[] = [];
+    for (const p of await ctx.db.query("photos").collect()) {
+      if (isAccepted(p)) ids.push(p._id);
+    }
+    return ids;
+  },
+});
+
+/**
+ * A-invariant 25: legt per foto vast dat hij zonder formaten mag (de tijd in
+ * `noFormatsAcceptedAt`). Alles of niets: is één id geen foto, of heeft hij een
+ * `formats`-veld (volledig of dangling), dan gooit hij met dat id en schrijft
+ * niets. Een dangling set herstelt een gewone run eerst (invariant 22).
+ */
+export const acceptNoFormats = internalMutation({
+  args: { photoIds: v.array(v.id("photos")) },
+  returns: v.number(),
+  handler: async (ctx, { photoIds }) => {
+    const unique = [...new Set(photoIds)];
+    for (const id of unique) {
+      const photo = await ctx.db.get(id);
+      // ConvexError: de tekst (met het id) komt ook op prod bij de CLI aan.
+      if (!photo) throw new ConvexError(`acceptNoFormats: ${id} is geen foto; niets afgetekend`);
+      if (photo.formats !== undefined) {
+        throw new ConvexError(
+          `acceptNoFormats: ${id} heeft al een formaat-veld; niets afgetekend. ` +
+            `Draai eerst \`formaten\` zonder de vlag.`,
+        );
+      }
+    }
+    const now = Date.now();
+    for (const id of unique) await ctx.db.patch(id, { noFormatsAcceptedAt: now });
+    return unique.length;
+  },
+});
+
+/**
+ * A-invariant 25: draait de aftekening terug (`formaten --unaccept`); de
+ * volgende batch probeert de foto weer. Alles of niets: is één id geen foto,
+ * of niet afgetekend, dan gooit hij met dat id en schrijft niets.
+ */
+export const unacceptNoFormats = internalMutation({
+  args: { photoIds: v.array(v.id("photos")) },
+  returns: v.number(),
+  handler: async (ctx, { photoIds }) => {
+    const unique = [...new Set(photoIds)];
+    for (const id of unique) {
+      const photo = await ctx.db.get(id);
+      if (!photo) throw new ConvexError(`unacceptNoFormats: ${id} is geen foto; niets teruggedraaid`);
+      if (!isAccepted(photo)) {
+        throw new ConvexError(`unacceptNoFormats: ${id} is niet afgetekend; niets teruggedraaid`);
+      }
+    }
+    for (const id of unique) await ctx.db.patch(id, { noFormatsAcceptedAt: undefined });
+    return unique.length;
+  },
+});
+
+/**
+ * Eén pagina foto's voor de backfill, in vaste volgorde (`_creationTime`).
+ * Alleen het id, of er al een volledige set is, en of hij is afgetekend; de
+ * action haalt de rest per foto.
+ */
+export const formatBatch = internalQuery({
+  args: { cursor: v.union(v.string(), v.null()), batchSize: v.number() },
+  returns: v.object({
+    photos: v.array(
+      v.object({ photoId: v.id("photos"), hasFormats: v.boolean(), noFormatsAccepted: v.boolean() }),
+    ),
+    cursor: v.union(v.string(), v.null()),
+  }),
+  handler: async (ctx, { cursor, batchSize }) => {
+    const page = await ctx.db
+      .query("photos")
+      .paginate({ cursor, numItems: Math.max(1, Math.floor(batchSize)) });
+    const photos = [];
+    for (const p of page.page) {
+      photos.push({
+        photoId: p._id,
+        hasFormats: await hasCompleteFormats(ctx, p),
+        noFormatsAccepted: isAccepted(p),
+      });
+    }
+    return {
+      photos,
+      cursor: page.isDone ? null : page.continueCursor,
+    };
+  },
+});
 
 // Internal query helper — actions kunnen niet direct ctx.db.get gebruiken.
 export const getByIdInternal = internalQuery({
@@ -653,16 +873,18 @@ export const decideFlag = mutation({
 const MY_FLAGGED_FIELDS = { ...photoFields, ...ownFlagFields };
 export const listMyFlagged = query({
   args: {},
-  returns: v.array(v.object(MY_FLAGGED_FIELDS)),
+  returns: v.array(v.object({ ...MY_FLAGGED_FIELDS, ...hasFormatsField })),
   handler: async (ctx) => {
     const user = await requireCurrentUser(ctx);
     const owned = await ctx.db
       .query("photos")
       .withIndex("by_owner", (q) => q.eq("ownerId", user._id))
       .collect();
-    return owned
-      .filter((p) => p.flaggedAt !== undefined)
-      .map((p) => pick(p, MY_FLAGGED_FIELDS));
+    return await Promise.all(
+      owned
+        .filter((p) => p.flaggedAt !== undefined)
+        .map(async (p) => ({ ...pick(p, MY_FLAGGED_FIELDS), hasFormats: await hasCompleteFormats(ctx, p) })),
+    );
   },
 });
 
@@ -673,13 +895,15 @@ export const listMyFlagged = query({
 const ALL_FLAGGED_FIELDS = { ...photoFields, ...allFlagFields };
 export const listAllFlagged = query({
   args: {},
-  returns: v.array(v.object(ALL_FLAGGED_FIELDS)),
+  returns: v.array(v.object({ ...ALL_FLAGGED_FIELDS, ...hasFormatsField })),
   handler: async (ctx) => {
     await requireWebmaster(ctx);
     const all = await ctx.db.query("photos").withIndex("by_flagged").collect();
-    return all
-      .filter((p) => p.flaggedAt !== undefined)
-      .map((p) => pick(p, ALL_FLAGGED_FIELDS));
+    return await Promise.all(
+      all
+        .filter((p) => p.flaggedAt !== undefined)
+        .map(async (p) => ({ ...pick(p, ALL_FLAGGED_FIELDS), hasFormats: await hasCompleteFormats(ctx, p) })),
+    );
   },
 });
 

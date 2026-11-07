@@ -57,7 +57,16 @@ export const publicProfileFields = {
   _id: v.id("users"),
   name: v.optional(v.string()),
 };
-export const publicProfile = v.object(publicProfileFields);
+/**
+ * WP25 A-invariant 19 en 26: de avatar-velden, van de foto-rij die het
+ * profielpad serveert (`lib/profilePhoto`). `profileOrientation` is de stand
+ * van die rij; `profileHasFormats` zegt of het profielpad een formaat geeft.
+ * Geen kolommen van `users`, dus niet in de `pick`-velden; de query zet ze
+ * erbij (`avatarFieldsOf`).
+ */
+const avatarFields = { profileOrientation: v.optional(v.number()), profileHasFormats: v.boolean() };
+
+export const publicProfile = v.object({ ...publicProfileFields, ...avatarFields });
 
 /**
  * Wat de user van zichzelf ziet. Geen subject, geen photoLimit (A-keuze 10),
@@ -70,7 +79,7 @@ export const ownProfileFields = {
   photoCount: v.number(),
   createdAt: v.number(),
 };
-export const ownProfile = v.object(ownProfileFields);
+export const ownProfile = v.object({ ...ownProfileFields, ...avatarFields });
 
 // ── groups / memberships ──────────────────────────────────────────
 
@@ -138,7 +147,13 @@ export const photoFields = {
   ratingCount: v.number(),
   createdAt: v.number(),
 };
-export const photo = v.object(photoFields);
+/**
+ * WP25 A-invariant 26: of het beeldpad een formaat geeft (een volledige set)
+ * of het origineel. Geen kolom, dus niet in `photoFields`; `photoView` in
+ * lib/formatSet zet hem erbij. Altijd aanwezig, en geen id.
+ */
+export const hasFormatsField = { hasFormats: v.boolean() };
+export const photo = v.object({ ...photoFields, ...hasFormatsField });
 
 /** Flag-velden voor de eigenaar: datums, geen melder en geen reden (A-keuze 4). */
 export const ownFlagFields = {
@@ -232,5 +247,5 @@ export const inviteLanding = v.object({
   role: v.optional(ROLE),
   email: v.string(),
   group: v.union(v.object(landingGroupFields), v.null()),
-  inviter: v.union(v.object(landingInviterFields), v.null()),
+  inviter: v.union(v.object({ ...landingInviterFields, ...avatarFields }), v.null()),
 });

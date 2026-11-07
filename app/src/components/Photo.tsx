@@ -51,6 +51,10 @@ type PhotoProps = {
   photoId: string;
   format: ImageFormat;
   exifOrientation?: number;
+  // WP25 A-invariant 26: `hasFormats` van hetzelfde object als
+  // `exifOrientation`. Zonder formaten geeft het beeldpad het origineel; dat
+  // gaat niet op schijf. Ontbreekt het, dan geldt false.
+  hasFormats?: boolean;
   box: Box;
   fit?: ImageContentFit;
   radius?: number;
@@ -67,6 +71,7 @@ export function PhotoImage({
   photoId,
   format,
   exifOrientation,
+  hasFormats,
   box,
   fit = "cover",
   radius = 0,
@@ -77,7 +82,8 @@ export function PhotoImage({
   const [state, setState] = useState<"loading" | "loaded">("loading");
   // Invariant 18: na een fout één nieuwe poging met een vers token, daarna
   // terugvallen (de fout-tegel, of `fallback`). Zie src/lib/imageRetry.ts.
-  const { source, attempt, onError, retry } = usePhotoLoad(photoId, format);
+  const withFormats = hasFormats === true;
+  const { source, attempt, onError, retry } = usePhotoLoad(photoId, format, withFormats);
   const failed = source === null;
 
   if (failed && fallback !== undefined) return <>{fallback}</>;
@@ -98,8 +104,11 @@ export function PhotoImage({
         <Oriented box={box} exifOrientation={exifOrientation}>
           {(inner) => (
             <Image
-              key={attempt}
+              // Wisselt hasFormats, dan bouwt het beeld opnieuw op: bytes en stand samen.
+              key={`${attempt}-${withFormats ? "formaat" : "origineel"}`}
               source={source}
+              // Met formaten de schijfcache (invariant 1); het origineel alleen in het geheugen.
+              cachePolicy={withFormats ? undefined : "memory"}
               style={inner}
               contentFit={fit}
               recyclingKey={photoId}
@@ -139,16 +148,40 @@ type AvatarProps = {
   size: number;
   format?: ImageFormat;
   variant?: TypeRoleName;
+  // WP25 A-invariant 19: `profileOrientation` uit de user-vorm. Het profielpad
+  // geeft *klein* met ruwe pixels; de avatar draait ze zoals Photo.
+  exifOrientation?: number;
+  // WP25 A-invariant 26: `profileHasFormats` van hetzelfde object. Wisselt het,
+  // of wisselt de stand, dan bouwt het beeld opnieuw op en haalt het de bytes
+  // opnieuw: de URL blijft gelijk, ook na een nieuwe profielfoto.
+  hasFormats?: boolean;
 };
 
 // Profielfoto, rond. Geen profielfoto, een gewist beeld of een fout: de
 // letter, zonder fout-toestand (invariant 14). Decoratief: de rij eromheen
 // draagt de naam. Openbaar (besluit 8), en zonder cache (invariant 3, audit
 // S6): dezelfde URL geeft na een wissel een ander beeld.
-export function ProfileAvatar({ userId, name, size, format = "klein", variant = "bodyStrong" }: AvatarProps) {
+export function ProfileAvatar({
+  userId,
+  name,
+  size,
+  format = "klein",
+  variant = "bodyStrong",
+  exifOrientation,
+  hasFormats,
+}: AvatarProps) {
   const letter = <LetterTile name={name} size={size} radius={size / 2} variant={variant} />;
   if (!userId) return letter;
-  return <ProfileImage userId={userId} size={size} format={format} letter={letter} />;
+  return (
+    <ProfileImage
+      userId={userId}
+      size={size}
+      format={format}
+      letter={letter}
+      exifOrientation={exifOrientation}
+      hasFormats={hasFormats === true}
+    />
+  );
 }
 
 function ProfileImage({
@@ -156,11 +189,15 @@ function ProfileImage({
   size,
   format,
   letter,
+  exifOrientation,
+  hasFormats,
 }: {
   userId: string;
   size: number;
   format: ImageFormat;
   letter: ReactNode;
+  exifOrientation: number | undefined;
+  hasFormats: boolean;
 }) {
   const source = useProfileSource(userId, format);
   const [state, setState] = useState<"loading" | "loaded" | "failed">("loading");
@@ -169,8 +206,15 @@ function ProfileImage({
     <View style={{ width: size, height: size }} accessible={false} importantForAccessibility="no-hide-descendants">
       {state === "loading" && <View style={StyleSheet.absoluteFill}>{letter}</View>}
       <Image
+        key={`${hasFormats ? "formaat" : "origineel"}-${exifOrientation ?? 1}`}
         source={source}
-        style={{ width: size, height: size, borderRadius: size / 2 }}
+        // Rond en vierkant: draaien verandert de maat niet, dus geen Oriented-box.
+        style={{
+          width: size,
+          height: size,
+          borderRadius: size / 2,
+          transform: orientationTransform(exifOrientation),
+        }}
         contentFit="cover"
         cachePolicy="none"
         recyclingKey={userId}

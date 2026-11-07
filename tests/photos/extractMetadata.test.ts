@@ -351,10 +351,12 @@ describe("photos.extractMetadata — EXIF parsing (mocked)", () => {
     expect(photo?.longitude).toBe(4.89);
   });
 
-  // [GAP] NIEUW gedrag — audit-9 §EXIF Orientation. exif-parser geeft
-  // tags.Orientation (1..8). v2 schema: exifOrientation. Test rondetript
-  // alle 8 valide waarden + invalid (0, 9) → undefined.
-  it("Orientation tag 1..8 → exifOrientation gezet", async () => {
+  // WP25 A-invariant 12 (was audit-9: tag → exifOrientation). De oriëntatie
+  // uit het bestand komt alleen samen met de formaten in de DB: de formaat-stap
+  // (internal.photoFormats.makeFormats) zet hem, `extractMetadata` niet meer.
+  // Anders draait de terugval op het origineel dubbel: iOS past de tag uit het
+  // bestand toe, en de app daarna dezelfde tag uit de DB (WP25 kernvondst 2).
+  it("WP25: Orientation tag 1..8 → exifOrientation blijft leeg (de formaat-stap zet hem)", async () => {
     const t = convexTest(schema, modules);
     const aliceId = await registerUserWithInvite(t, "user_alice", "a@x.com");
 
@@ -363,10 +365,12 @@ describe("photos.extractMetadata — EXIF parsing (mocked)", () => {
         ctx.storage.store(new Blob(["x"])),
       );
       const photoId = await insertPhotoFixture(t, aliceId, storageId);
-      exifMock = { kind: "ok", tags: { Orientation: o } };
+      exifMock = { kind: "ok", tags: { Orientation: o }, imageSize: { width: 40, height: 30 } };
       await t.action(internal.photoMetadata.extractMetadata, { photoId });
       const photo = await t.run((ctx) => ctx.db.get(photoId));
-      expect(photo?.exifOrientation).toBe(o);
+      expect(photo?.exifOrientation).toBeUndefined();
+      // De rest van de metadata komt wel: de stap draaide echt.
+      expect(photo?.width).toBe(40);
     }
   });
 
