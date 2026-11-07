@@ -20,6 +20,7 @@ import { TABLE_ORDER } from "../../scripts/migrate/types";
 import {
   buildExtract,
   CHOSEN,
+  type SourceItem,
   DEV_SUBJECTS,
   EXPECTED_STORAGE_KEYS,
   PROD_SUBJECTS,
@@ -84,8 +85,29 @@ export type ConsoleCapture = ReturnType<typeof captureConsole>;
 
 const NOW = Date.parse("2026-08-23T00:00:00.000Z");
 
-export function buildRecordsFile(target: "dev" | "prod" = "prod"): RecordsFile {
-  const { records, warnings } = transform(buildExtract(), {
+/**
+ * Het extract zoals `extract` het in `.data/dynamo-extract.json` wegschrijft.
+ * WP12b: `verify` leest zijn cover-verwachting uit de bron, niet uit de
+ * transform-uitvoer — dus het harnas moet het bronbestand ook kunnen leveren.
+ */
+export function buildExtractFile(items: SourceItem[] = buildExtract()) {
+  return {
+    meta: {
+      extractedAt: new Date(NOW).toISOString(),
+      table: "blob-images-photos-synthetisch",
+      region: "eu-central-1",
+      account: "000000000000",
+      itemCount: items.length,
+    },
+    items,
+  };
+}
+
+export function buildRecordsFile(
+  target: "dev" | "prod" = "prod",
+  items: SourceItem[] = buildExtract(),
+): RecordsFile {
+  const { records, warnings } = transform(items, {
     target,
     chosenUserIds: target === "dev" ? CHOSEN : null,
     anonymize: target === "dev",
@@ -211,6 +233,13 @@ export function createFakeDeployment() {
       };
     }
     if (name === "migration:integrityReport") return driftLines;
+    if (name === "migration:coverCounts") {
+      // WP12b invariant 6: hoeveel groepen en albums er in de deployment een
+      // cover hebben. Alleen een telling; de deployment kent geen bron-sleutels.
+      const withCover = (table: string): number =>
+        rows(table).filter((doc) => doc.coverPhotoId !== undefined && doc.coverPhotoId !== null).length;
+      return { groups: withCover("groups"), albums: withCover("albums") };
+    }
     throw new Error(`[fake] onbekende query: ${name}`);
   }
 

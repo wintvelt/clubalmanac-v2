@@ -26,6 +26,7 @@
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import type { FakeDeployment } from "./_harness";
 import {
+  buildExtractFile,
   buildRecordsFile,
   buildStorageMap,
   captureConsole,
@@ -88,8 +89,12 @@ let storageMap: StorageMapFile;
 let console_: ConsoleCapture;
 const logged = (): string => console_.log();
 
+/**
+ * De werkmap. Het extract staat er altijd bij, zoals in een echte run: `verify`
+ * leest daar de covers uit de bron (WP12b invariant 6).
+ */
 function put(files: Record<string, unknown>): void {
-  h.files = createFakeFiles(files);
+  h.files = createFakeFiles({ "dynamo-extract.json": buildExtractFile(), ...files });
 }
 
 function materializeStorage(map: StorageMapFile): void {

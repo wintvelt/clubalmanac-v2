@@ -55,6 +55,12 @@ export const MONITORED_FK_ORACLE: FkOracleEntry[] = [
   { table: "featureUpvotes", field: "userId", target: "users", required: true },
   { table: "albumLastSeen", field: "userId", target: "users", required: true },
   { table: "albumLastSeen", field: "albumId", target: "albums", required: true },
+  // WP12b: het bezoek uit v1 (`UVvisit.visitDateLast`) landt in `userVisits`.
+  // Daarmee vult de import die tabel, en valt hij onder reset, de
+  // leeg-preconditie en de telling van verify. Die volgen allemaal de set die
+  // WP10 bewaakt; zonder deze FK blijven na een reset rijen achter die naar
+  // verwijderde users wijzen, en ziet niemand het.
+  { table: "userVisits", field: "userId", target: "users", required: true },
   { table: "uploadIdempotency", field: "ownerId", target: "users", required: true },
   { table: "uploadIdempotency", field: "photoId", target: "photos", required: false },
 ];
@@ -78,6 +84,7 @@ export const MONITORED_TABLE_ORACLE: string[] = [
   "features",
   "featureUpvotes",
   "albumLastSeen",
+  "userVisits",
   "uploadIdempotency",
 ];
 
