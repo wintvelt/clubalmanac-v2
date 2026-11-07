@@ -12,6 +12,7 @@
 // uploadRoundtrip.test.ts schrijft ze.
 
 import { convexTest } from "convex-test";
+import { makeFunctionReference } from "convex/server";
 import { describe, expect, test } from "vitest";
 import { internal } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
@@ -210,5 +211,75 @@ describe("de bouwstenen van load-records", () => {
 
     const lines = await t.query(internal.migration.integrityReport, {});
     expect(lines.some((line) => /photoCount/i.test(line))).toBe(true);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// WP12b — RED: userVisits in de import, en de cover-telling voor verify.
+//
+// `coverCounts` bestaat nog niet; de verwijzing gaat via de functienaam, zodat
+// de typecheck niet op een ontbrekende export breekt zolang B hem niet heeft.
+// ─────────────────────────────────────────────────────────────────────────
+const coverCounts = makeFunctionReference<"query", Record<string, never>, { groups: number; albums: number }>(
+  "migration:coverCounts",
+);
+
+describe("WP12b: de import vult userVisits", () => {
+  test("insertRows schrijft een userVisits-rij", async () => {
+    const t = convexTest(schema, modules);
+    const { userId } = await seedUploadLeftovers(t);
+    const inserted = await t.mutation(internal.migration.insertRows, {
+      table: "userVisits",
+      rows: [{ sourceKey: "U-1", doc: { userId, lastVisitAt: NOW } }],
+    });
+    expect(inserted).toHaveLength(1);
+    const visit = await t.run(async (ctx) => ctx.db.get(inserted[0]!.id as Id<"userVisits">));
+    expect(visit?.lastVisitAt).toBe(NOW);
+  });
+
+  test("een userVisits-rij naar een verwijderde user is drift", async () => {
+    // Na een reset zonder userVisits in de bewaakte set bleven zulke rijen op
+    // dev achter, en niemand zag het.
+    const t = convexTest(schema, modules);
+    await t.run(async (ctx) => {
+      const userId = await ctx.db.insert("users", {
+        subject: "user_weg",
+        email: "weg@clubalmanac.test",
+        photoCount: 0,
+        photoLimit: 1000,
+        createdAt: NOW,
+      });
+      await ctx.db.insert("userVisits", { userId, lastVisitAt: NOW });
+      await ctx.db.delete(userId);
+    });
+    const lines = await t.query(internal.migration.integrityReport, {});
+    expect(lines.some((line) => line.includes("userVisits"))).toBe(true);
+  });
+});
+
+describe("WP12b invariant 6: coverCounts telt groepen en albums met een cover", () => {
+  test("alleen rijen met een cover tellen mee", async () => {
+    const t = convexTest(schema, modules);
+    const { userId, photoId } = await seedUploadLeftovers(t);
+    await t.run(async (ctx) => {
+      const met = await ctx.db.insert("groups", {
+        name: "Met cover",
+        coverPhotoId: photoId,
+        createdBy: userId,
+        createdAt: NOW,
+      });
+      await ctx.db.insert("groups", { name: "Zonder", createdBy: userId, createdAt: NOW });
+      await ctx.db.insert("albums", {
+        groupId: met,
+        name: "Album met cover",
+        coverPhotoId: photoId,
+        createdBy: userId,
+        createdAt: NOW,
+      });
+      await ctx.db.insert("albums", { groupId: met, name: "Album zonder", createdBy: userId, createdAt: NOW });
+      await ctx.db.insert("albums", { groupId: met, name: "Nog een zonder", createdBy: userId, createdAt: NOW });
+    });
+
+    expect(await t.query(coverCounts, {})).toEqual({ groups: 1, albums: 1 });
   });
 });

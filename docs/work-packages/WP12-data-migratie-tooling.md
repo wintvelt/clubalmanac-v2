@@ -102,6 +102,25 @@ Entries die wijzen naar een album buiten de groep, een verwijderd album of een v
 
 `photoUrl: ''`, `photoId: ''` en `flaggedDeleteDate: ''` staan als "leeg" in de tabel. De transform behandelt `''` als **afwezig** — anders landt er een lege string waar Convex een `v.id("_storage")` of `v.number()` verwacht en faalt `load-records` halverwege.
 
+### Bewuste drops
+
+Elk bronattribuut dat niet meegaat, met de reden (WP12b, uit de veldaudit van 2026-11-07). Wat hier niet staat en niet meegaat, is een fout.
+
+| Bronattribuut | Reden |
+|---|---|
+| `UM` (uitnodiging) `invitation.message`, `user.name` | Geen geldige uitnodigingen meer op prod; v2 heeft er geen veld voor; tokens worden toch vernieuwd. |
+| `UM` (lid) `invitation` | Wie iemand uitnodigde; v1 toonde het niet in de ledenlijst. |
+| `UPstats.deletedFlagged` | Teller van afgewezen bezwaren; v1 schreef hem en las hem nergens. |
+| `UPstats.inviteId` | Alleen voor het automatisch accepteren bij aanmelding; alle users bestaan al. |
+| `UPstats.photoCount` | Wordt herteld uit de foto's. |
+| `UVvisit.visitDatePrev` | "Laatste bezoek" op het v1-profiel; WP15b maakt het bezoek bewust onzichtbaar. `visitDateLast` gaat wel mee, naar `userVisits`. |
+| `UVvisit.cognitoId`; `RK` (elk item); `datePK`, `dateSK` (`PO`, `GP`); `PO.flagged` | Cognito- en indexvelden; geen betekenis in v2. |
+| `UF.prevRating`, `PO.rating` | Hulpveld en afgeleid aggregaat; likes worden herteld. |
+| `user`, `group`, `photo` (kopieën op `UM`, `GA`, `GP`, `PO`, `NFfeature`) en het `USER`-record | Gedenormaliseerde kopieën; de bron is het basisrecord. |
+| `GA.photo`, `GBbase.photo` | Kopie van de cover-foto; de cover gaat via `photoId`. |
+| `UBbase.photoId` | v2 koppelt de profielfoto aan het beeld, niet aan een foto-id. Telling: 0 verouderde sleutels. |
+| `NFfeature.votes`, `NFfeature.comment` | Zie §Besluiten en hierboven; de waarde staat in het transform-rapport. |
+
 ## Besluiten
 
 | Onderwerp | Besluit |
@@ -160,7 +179,7 @@ Gevolgen elders: fase 4 moet ze in de nieuwe app weer tonen (de verwijzing zit i
 
 ### Controle
 
-- **Een controle leidt zijn verwachting niet af uit de gecontroleerde stap.** De verwachting van `verify` komt uit `meta.counts` in `convex-records.json` — de eerdere, onafhankelijke laag.
+- **Een controle leidt zijn verwachting niet af uit de gecontroleerde stap.** De verwachting van `verify` komt uit `meta.counts` in `convex-records.json` — de eerdere, onafhankelijke laag. Voor de covers is dat niet genoeg, want het gat zat in de transform zelf (WP12b): die verwachting komt uit `dynamo-extract.json`. Zonder extract is `verify` niet groen.
 - **Elk verschil is een bevinding**, ook als het verklaarbaar is door overgeslagen bestanden. Verklaarbaar is niet goedgekeurd.
 - **`verify` reconcilieert twee kanten op**: elke `storageId` in een record bestaat, én elk object in `_storage` hangt aan minstens één record.
 - **`verify` noemt élk object dat weg zou gaan**, niet een greep eruit. Een sample van tien alarmeert wel en is te weinig om op te beslissen.
@@ -213,7 +232,7 @@ Acht losse commando's en geen enkele knop: `extract` en `load-files` zijn traag 
 
 | # | Wat | Hangt af van |
 |---|---|---|
-| 1 | `users` | Clerk-ID-map, storage-map voor profielfoto's |
+| 1 | `users`, daarna `userVisits` | Clerk-ID-map, storage-map voor profielfoto's |
 | 2 | `groups`, `memberships` | 1 |
 | 3 | `albums` | 2 |
 | 4 | `photos` | 1, storage-map |

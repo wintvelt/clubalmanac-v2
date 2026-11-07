@@ -23,8 +23,8 @@ export default defineSchema({
     photoCount: v.number(),
     // Limiet voor uploads. Default in createUser mutation.
     photoLimit: v.number(),
-    // Ongebruikt sinds WP15b: het bezoek staat in `userVisits`. Alleen de
-    // migratie vult dit veld nog; opruimen staat op de backlog.
+    // Ongebruikt sinds WP15b: het bezoek staat in `userVisits`. Sinds WP12b
+    // vult ook de migratie dit veld niet meer; opruimen staat op de backlog.
     lastVisitAt: v.optional(v.number()),
     createdAt: v.number(),
   })

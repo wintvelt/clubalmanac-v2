@@ -77,6 +77,9 @@ export const MONITORED_FKS: Array<{
   { table: "featureUpvotes", field: "userId", required: true },
   { table: "albumLastSeen", field: "userId", required: true },
   { table: "albumLastSeen", field: "albumId", required: true },
+  // WP12b: de migratie vult het bezoek uit v1 in `userVisits`. Daarmee valt de
+  // tabel onder reset, de leeg-preconditie en de telling van verify.
+  { table: "userVisits", field: "userId", required: true },
   { table: "uploadIdempotency", field: "ownerId", required: true },
   { table: "uploadIdempotency", field: "photoId", required: false },
 ];

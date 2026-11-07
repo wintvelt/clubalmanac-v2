@@ -603,31 +603,9 @@ prod-URL-blocklist in `_helpers/safety.ts`.
 4. `.env.integration` lokaal aanvullen met `CLERK_SECRET_KEY`,
    `CLERK_TEST_USER_REGULAR_EMAIL`, `CLERK_TEST_USER_WEBMASTER_EMAIL`.
 
-### User visit tracking (`users.lastVisitAt`)
+### User visit tracking (`userVisits`)
 
-Oude AWS app had `UV` records in DynamoDB voor visit-tracking. Doel onbekend (geen rapportage of analytics actief). Behouden in nieuwe schema voor toekomstige use cases (active users count, "wie heeft 'm al gezien"-feature).
-
-**Capture-mechanisme:** expliciete mutation `users.recordVisit()` aangeroepen door client bij `AppState` transitie naar `active` (foreground). Niet als side-effect van `users.getMe` query (queries moeten puur blijven, en lastVisitAt-update zou query-cache invalideren).
-
-```ts
-// client (App.tsx of vergelijkbaar)
-useEffect(() => {
-  const sub = AppState.addEventListener("change", state => {
-    if (state === "active") recordVisit();
-  });
-  return () => sub.remove();
-}, []);
-
-// convex/users.ts
-export const recordVisit = mutation({
-  handler: async (ctx) => {
-    const userId = await getCurrentUserId(ctx);
-    await ctx.db.patch(userId, { lastVisitAt: Date.now() });
-  }
-});
-```
-
-Throttle aan client-zijde: niet vaker dan 1x per minuut, ook al transitioneert AppState meerdere keren snel achter elkaar.
+Oude AWS app had `UV` records in DynamoDB voor visit-tracking. Behouden voor toekomstige use cases (active users count). Sinds WP15b staat het bezoek in een eigen tabel `userVisits` (één rij per user), niet op `users`: `users.recordVisit()` (client, bij `AppState` → `active`) schrijft hoogstens één keer per uur, en alleen intern te lezen (`getLastVisit`). De migratie zet `visitDateLast` in die tabel (WP12b). `users.lastVisitAt` is ongebruikt; opruimen staat op de backlog.
 
 ### Email infrastructure (Mailjet + Clerk)
 

@@ -92,6 +92,7 @@ Bouw migratie-tooling die zowel dev (subset) als prod (volledig) kan vullen. Eé
 - [x] **Dev seed gedraaid** (2026-10-25): `reset` → `load-files` → `load-records`, 2081 rijen, 1002 bestanden (3,1 GB). Doorvoer gemeten: ~3,6 MB/s (~29 Mbit/s).
 - [x] **Validatie dev** (2026-10-25): `verify` groen — alle counts gelijk aan de transform, integriteitsscan 0, 1002/1002 storage-objecten door records gebruikt.
 - [x] **Dev leegmaken + herladen** (2026-10-25): `reset` + `load-records` + groene `verify` in enkele minuten; bestanden blijven staan. Zo herlaad je dev bij elke schema-wijziging in fase 4.
+- [x] **Veldfixes ([WP12b](./work-packages/WP12b-migratie-veldfixes.md), 2026-11-07):** albumcovers gaan nu mee (de transform liet ze leeg), het bezoek naar `userVisits`, `verify` telt covers uit de bron, en de transform stopt bij een gemelde foto met een verwijderdatum (`--accept-flagged-deletion`). Uit een veldaudit over alle bronvelden; de bewuste drops staan in WP12. Dev opnieuw geladen, `verify` groen.
 - [ ] Performance check op foto laden in dev. Als te traag: switch naar R2 component (kan ook later)
 - [ ] S3 prod data laten staan als backup tot ~T+90
 

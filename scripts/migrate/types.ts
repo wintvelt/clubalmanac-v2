@@ -21,6 +21,7 @@ export type Row = Record<string, unknown> & { sourceKey: string };
  */
 export const TABLE_ORDER = [
   "users",
+  "userVisits",
   "groups",
   "memberships",
   "albums",
@@ -63,6 +64,7 @@ export type FkSpec = { field: string; target: TableName; required: boolean };
  */
 export const FKS: Record<TableName, FkSpec[]> = {
   users: [],
+  userVisits: [{ field: "userId", target: "users", required: true }],
   groups: [
     { field: "createdBy", target: "users", required: true },
     { field: "coverPhotoId", target: "photos", required: false },
@@ -137,6 +139,7 @@ export const INTERNAL_FIELDS = new Set([
 export function emptyRecords(): Records {
   return {
     users: [],
+    userVisits: [],
     groups: [],
     memberships: [],
     albums: [],

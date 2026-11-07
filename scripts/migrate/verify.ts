@@ -10,6 +10,11 @@
 //      ochtend per mail.
 //   3. De volledige WP10-integriteitsscan, read-only (geen monitoringRuns-rij,
 //      geen drift-mail): aggregates, FK's, orphans.
+//   4. Covers (WP12b invariant 6): hoeveel groepen en albums een cover hebben.
+//      Rijen tellen ziet een leeg veld niet, en zo bleven de albumcovers weg.
+//      De verwachting komt uit `dynamo-extract.json`, de laag vóór de
+//      transform, want daar zat het gat: records zonder cover en een deployment
+//      zonder cover waren het met elkaar eens.
 //
 // De verwachting komt uit `meta.counts` — de eerdere, onafhankelijke laag — en
 // nooit uit een herberekening die dezelfde weg aflegt als `load-records` (WP12
@@ -25,11 +30,46 @@
 import { internal } from "../../convex/_generated/api.js";
 import type { Target } from "./config.ts";
 import { makeAdminClient, runQuery } from "./convexAdmin.ts";
+import type { ExtractFile } from "./extract.ts";
 import { readStorageMap, referencedStorageKeys } from "./loadFiles.ts";
-import { RECORDS_FILE, readData } from "./paths.ts";
+import { EXTRACT_FILE, RECORDS_FILE, dataFileExists, readData } from "./paths.ts";
 import { summarize } from "./runTransform.ts";
 import type { RecordsFile } from "./runTransform.ts";
 import { TABLE_ORDER } from "./types.ts";
+
+/**
+ * Hoeveel groepen en albums na het laden een cover horen te hebben. Telt een
+ * groep of album mee als hij geladen wordt én in de bron (`GBbase.photoId`,
+ * `GA.photoId`) een cover heeft waarvan de foto ook geladen wordt. Een cover
+ * naar een niet-bestaande foto of een foto buiten de dev-seed wist de transform
+ * met een melding; die telt niet mee. Waar de foto staat telt niet (besluit 4).
+ *
+ * Bewust een eigen lezing van de bron en niet de parser van de transform: de
+ * controle mag niet het materiaal van de gecontroleerde stap gebruiken.
+ */
+function expectedCovers(
+  extract: ExtractFile,
+  recordsFile: RecordsFile,
+): { groups: number; albums: number } {
+  const loaded = (rows: Array<{ sourceKey: string }>) => new Set(rows.map((r) => r.sourceKey));
+  const photos = loaded(recordsFile.records.photos);
+  const groups = loaded(recordsFile.records.groups);
+  const albums = loaded(recordsFile.records.albums);
+  const text = (value: unknown): string | undefined =>
+    typeof value === "string" && value.trim().length > 0 ? value.trim() : undefined;
+
+  let groupCovers = 0;
+  let albumCovers = 0;
+  for (const item of extract.items) {
+    const pk = text(item.PK);
+    const sk = text(item.SK);
+    const cover = text(item.photoId);
+    if (pk === undefined || sk === undefined || cover === undefined || !photos.has(cover)) continue;
+    if (pk === "GBbase" && groups.has(sk)) groupCovers += 1;
+    else if (pk.startsWith("GA") && albums.has(sk)) albumCovers += 1;
+  }
+  return { groups: groupCovers, albums: albumCovers };
+}
 
 /**
  * "Geef de hele lijst" voor `storageInventory`. Bewust een groot getal en geen
@@ -146,6 +186,30 @@ export async function verify(target: Target): Promise<number> {
   for (const line of drift.slice(0, 40)) console.log(`  ${line}`);
   if (drift.length > 40) console.log(`  … en nog ${drift.length - 40}`);
   if (drift.length > 0) problems += 1;
+
+  // ── 4. covers, verwachting uit de bron ──────────────────────────────
+  if (!dataFileExists(EXTRACT_FILE)) {
+    problems += 1;
+    console.log(
+      `\n[verify] covers: FOUT ${EXTRACT_FILE} ontbreekt in scripts/.data/. Zonder de bron ` +
+        `kan verify niet controleren of de album- en groepscovers geladen zijn.`,
+    );
+  } else {
+    const expected = expectedCovers(readData<ExtractFile>(EXTRACT_FILE), recordsFile);
+    const found = await runQuery(admin, internal.migration.coverCounts, {});
+    console.log(`\n[verify] covers (verwacht = de bron, voor zover de foto geladen wordt):`);
+    for (const [label, want, got] of [
+      ["groups", expected.groups, found.groups],
+      ["albums", expected.albums, found.albums],
+    ] as const) {
+      const ok = want === got;
+      if (!ok) problems += 1;
+      console.log(
+        `  ${ok ? "ok " : "FOUT"} ${label.padEnd(16)} met cover: verwacht ${want}, gevonden ${got}` +
+          (ok ? "" : ` — ${label === "albums" ? "album" : "groeps"}cover(s) ontbreken of zijn te veel`),
+      );
+    }
+  }
 
   // ── rapport ─────────────────────────────────────────────────────────
   // Geen aftrekpost, maar een bevinding met naam en toenaam: welke bestanden

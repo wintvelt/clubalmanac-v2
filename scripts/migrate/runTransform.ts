@@ -19,12 +19,22 @@ export type RecordsFile = {
   warnings: string[];
 };
 
-export function runTransform(target: Target, now = Date.now()): RecordsFile {
+/** Wat de operator op de commandoregel van `transform` kan meegeven. */
+export type TransformOptions = { acceptFlaggedDeletion?: boolean };
+
+export function runTransform(
+  target: Target,
+  now = Date.now(),
+  options: TransformOptions = {},
+): RecordsFile {
   const extractFile = readData<ExtractFile>(EXTRACT_FILE);
   console.log(`[transform] ${describeExtract(extractFile.meta)}`);
   console.log(`[transform] doel: ${target}`);
 
-  const config = loadConfig(target, extractFile.items, now);
+  const config = {
+    ...loadConfig(target, extractFile.items, now),
+    acceptFlaggedDeletion: options.acceptFlaggedDeletion === true,
+  };
   const { records, warnings } = transform(extractFile.items, config);
 
   const counts: Record<string, number> = {};
