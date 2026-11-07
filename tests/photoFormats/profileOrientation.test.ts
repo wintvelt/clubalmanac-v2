@@ -225,3 +225,89 @@ describe("geen stand: het veld ontbreekt", () => {
     expectShape(me, SHAPE.ownProfile);
   });
 });
+
+// ── fix-cyclus 2 ─────────────────────────────────────────────────────
+// Kernvondst 15: de rang telde "veld gezet" als formaten, en twee mutanten
+// overleefden (P2: bij gelijke stap de nieuwste rij; P6: de stand niet
+// gecontroleerd). "Met formaten" is een volledige set, zoals invariant 22.
+
+describe("fix-cyclus 2: een volledige set gaat voor een dangling set", () => {
+  it("twee eigen rijen: de oudere heeft een dangling set (stand 6), de nieuwere een volledige (stand 3): de nieuwere", async () => {
+    const t = convexTest(schema, modules);
+    const s = await setup(t);
+    const storageId = await t.run((ctx) => ctx.storage.store(new Blob(["BEELD"], { type: "image/jpeg" })));
+    const older = await addRow(t, s.owen, storageId, { label: "HALF", withFormats: true, exifOrientation: 6 });
+    await addRow(t, s.owen, storageId, { label: "HEEL", withFormats: true, exifOrientation: 3 });
+    await t.run(async (ctx) => {
+      const row = await ctx.db.get(older);
+      await ctx.storage.delete((row as R).formats.klein);
+      await ctx.db.patch(older, { createdAt: Date.now() - DAY });
+      await ctx.db.patch(s.owen, { profilePhotoStorageId: storageId });
+    });
+
+    expect(await servedText(t, s.owen)).toBe("klein van HEEL");
+    expect(await standOf(t, s.owen)).toBe(3);
+  });
+
+  it("de eigen rij heeft een dangling set (stand 6), een andere een volledige (stand 3): die andere", async () => {
+    const t = convexTest(schema, modules);
+    const s = await setup(t);
+    const storageId = await t.run((ctx) => ctx.storage.store(new Blob(["BEELD"], { type: "image/jpeg" })));
+    const own = await addRow(t, s.owen, storageId, { label: "OWEN", withFormats: true, exifOrientation: 6 });
+    await addRow(t, s.bob, storageId, { label: "BOB", withFormats: true, exifOrientation: 3 });
+    await t.run(async (ctx) => {
+      const row = await ctx.db.get(own);
+      await ctx.storage.delete((row as R).formats.groot);
+      await ctx.db.patch(s.owen, { profilePhotoStorageId: storageId });
+    });
+
+    expect(await servedText(t, s.owen)).toBe("klein van BOB");
+    expect(await standOf(t, s.owen)).toBe(3);
+  });
+});
+
+describe("fix-cyclus 2: binnen een stap de oudste rij (P2)", () => {
+  it("twee andere rijen met formaten: de rij met de oudste createdAt, ook als die later is ingevoegd", async () => {
+    const t = convexTest(schema, modules);
+    const s = await setup(t);
+    const storageId = await t.run((ctx) => ctx.storage.store(new Blob(["BEELD"], { type: "image/jpeg" })));
+    await addRow(t, s.bob, storageId, { label: "NIEUW", withFormats: true, exifOrientation: 6 });
+    const old = await addRow(t, s.mia, storageId, { label: "OUD", withFormats: true, exifOrientation: 3 });
+    await t.run(async (ctx) => {
+      await ctx.db.patch(old, { createdAt: Date.now() - 30 * DAY });
+      await ctx.db.patch(s.owen, { profilePhotoStorageId: storageId });
+    });
+
+    expect(await servedText(t, s.owen)).toBe("klein van OUD");
+    expect(await standOf(t, s.owen)).toBe(3);
+  });
+
+  it("gelijke createdAt: de eerst ingevoegde rij", async () => {
+    const t = convexTest(schema, modules);
+    const s = await setup(t);
+    const storageId = await t.run((ctx) => ctx.storage.store(new Blob(["BEELD"], { type: "image/jpeg" })));
+    const first = await addRow(t, s.bob, storageId, { label: "EERSTE", withFormats: true, exifOrientation: 8 });
+    const second = await addRow(t, s.mia, storageId, { label: "TWEEDE", withFormats: true, exifOrientation: 6 });
+    await t.run(async (ctx) => {
+      const at = Date.now() - DAY;
+      await ctx.db.patch(first, { createdAt: at });
+      await ctx.db.patch(second, { createdAt: at });
+      await ctx.db.patch(s.owen, { profilePhotoStorageId: storageId });
+    });
+
+    expect(await servedText(t, s.owen)).toBe("klein van EERSTE");
+    expect(await standOf(t, s.owen)).toBe(8);
+  });
+});
+
+describe("fix-cyclus 2: alleen een geldige stand (P6)", () => {
+  it.each([0, 9, 2.5, -1])("exifOrientation %s in de rij: geen profileOrientation", async (bad) => {
+    const t = convexTest(schema, modules);
+    const s = await setup(t);
+    const p = await seedPhoto(t, s.owen, { original: "OWEN", withFormats: true, exifOrientation: bad });
+    await t.run((ctx) => ctx.db.patch(s.owen, { profilePhotoStorageId: p.storageId }));
+
+    expect(await servedText(t, s.owen)).toBe("klein van OWEN");
+    expect(await standOf(t, s.owen)).toBeUndefined();
+  });
+});

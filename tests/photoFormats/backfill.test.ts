@@ -364,6 +364,6 @@ describe("backfill (invariant 2, 11)", () => {
   it("lege deployment: één batch, cursor null, alles nul", async () => {
     const t = convexTest(schema, modules);
     const r: Batch = await t.action(I.photoFormats.backfill, { cursor: null, batchSize: 10 });
-    expect(r).toEqual({ cursor: null, created: 0, alreadyDone: 0, gone: 0, failed: [] });
+    expect(r).toEqual({ cursor: null, created: 0, alreadyDone: 0, gone: 0, accepted: 0, failed: [] });
   });
 });

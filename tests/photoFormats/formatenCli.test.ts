@@ -25,10 +25,11 @@ const h = vi.hoisted(() => ({
   crashed: false,
   calls: [] as string[],
   selfTestBroken: false,
+  selfTestError: null as string | null,
 }));
 
 vi.mock("../../convex/lib/photoFormats", () => ({
-  HEIC_MAX_PIXELS: 16_000_000,
+  HEIC_MAX_PIXELS: 13_000_000,
   makeFormatImages: async (bytes: Uint8Array) => {
     if (h.crashed) throw new Error("de action is al omgevallen");
     const text = new TextDecoder().decode(bytes);
@@ -64,6 +65,9 @@ vi.mock("../../scripts/migrate/convexAdmin.ts", () => ({
     if (name.endsWith("selfTest") && h.selfTestBroken) {
       throw new Error("Cannot find module 'sharp'");
     }
+    if (name.endsWith("selfTest") && h.selfTestError !== null) {
+      throw new Error(h.selfTestError);
+    }
     h.crashed = false;
     const result = await h.t.action(ref, args);
     if (h.crashed) {
@@ -79,6 +83,7 @@ beforeEach(() => {
   h.crashed = false;
   h.calls = [];
   h.selfTestBroken = false;
+  h.selfTestError = null;
   vi.useFakeTimers();
 });
 afterEach(() => {
@@ -184,5 +189,116 @@ describe("de beeldbibliotheek eerst (invariant 24)", () => {
     expect(h.calls).toContain("photoFormats:selfTest");
     expect(h.calls).not.toContain("photoFormats:backfill");
     expect(cliText(out)).toMatch(/sharp/);
+    expect(cliText(out), "het advies over de bibliotheek").toMatch(/package\.json/);
+  });
+});
+
+// ── fix-cyclus 2 ─────────────────────────────────────────────────────
+
+const LIBRARY_ADVICE = /package\.json|convex\.json/;
+
+// De derde parameter (de af te tekenen foto's) bestaat pas na de impl.
+const formatenAccept = formaten as unknown as (
+  target: "dev" | "prod",
+  batchSize: number,
+  acceptNoFormats?: Id<"photos">[],
+) => Promise<number>;
+
+describe("selfTest faalt: het advies past bij de oorzaak (invariant 27)", () => {
+  it.each([
+    "[Request ID: x] Server Error: OperationNotPermitted: this key cannot runInternalActions",
+    "[migrate] https://fake-dev-deployment.convex.cloud wees de admin-key af.\n401 Unauthorized",
+  ])("de key mag geen internal actions draaien (%s): het key-advies, niet dat van de bibliotheek", async (error) => {
+    await seed(["a"]);
+    h.selfTestError = error;
+    const out = captureConsole();
+
+    expect(await formaten("dev", 20)).toBe(1);
+
+    expect(h.calls).not.toContain("photoFormats:backfill");
+    const text = cliText(out);
+    expect(text).toMatch(/key/i);
+    expect(text).toMatch(/internal action/i);
+    expect(text).not.toMatch(LIBRARY_ADVICE);
+  });
+
+  it.each(["fetch failed", "connect ECONNREFUSED 127.0.0.1:443", "getaddrinfo ENOTFOUND x.convex.cloud", "connect ETIMEDOUT"])(
+    "de verbinding viel weg (%s): het netwerk-advies, niet dat van de bibliotheek",
+    async (error) => {
+      await seed(["a"]);
+      h.selfTestError = error;
+      const out = captureConsole();
+
+      expect(await formaten("dev", 20)).toBe(1);
+
+      expect(h.calls).not.toContain("photoFormats:backfill");
+      const text = cliText(out);
+      expect(text).toMatch(/verbinding|netwerk/i);
+      expect(text).not.toMatch(LIBRARY_ADVICE);
+    },
+  );
+});
+
+describe("--accept-no-formats: een foto die blijft mislukken bewust aftekenen (invariant 25)", () => {
+  it("run 1 mislukt op één foto; run 2 tekent hem af: exit 0, en hij wordt niet meer geprobeerd", async () => {
+    const ids = await seed(["a", "crash", "c"]);
+    captureConsole();
+    expect(await formaten("dev", 20)).toBe(1);
+
+    h.calls = [];
+    const out = captureConsole();
+    const code = await formatenAccept("dev", 20, [ids[1]!]);
+
+    expect(code).toBe(0);
+    expect(h.calls.filter((c) => c.endsWith("makeFormats")), "geen herkansing voor de afgetekende foto").toEqual([]);
+    expect(await formatsOf(h.t, ids[1]!)).toBeUndefined();
+    const text = cliText(out);
+    expect(text).toMatch(new RegExp(`afgetekend zonder formaten[\\s\\S]*${ids[1]}`));
+  });
+
+  it("aftekenen gebeurt na selfTest en vóór de eerste batch", async () => {
+    const ids = await seed(["crash", "b"]);
+    captureConsole();
+
+    expect(await formatenAccept("dev", 20, [ids[0]!])).toBe(0);
+
+    const self = h.calls.indexOf("photoFormats:selfTest");
+    const accept = h.calls.indexOf("photos:acceptNoFormats");
+    const batch = h.calls.indexOf("photoFormats:backfill");
+    expect(self).toBeGreaterThanOrEqual(0);
+    expect(accept).toBeGreaterThan(self);
+    expect(batch).toBeGreaterThan(accept);
+  });
+
+  it("een volgende run zonder de vlag: nog steeds exit 0, en de afgetekende foto staat in de uitvoer", async () => {
+    const ids = await seed(["a", "crash"]);
+    captureConsole();
+    await formatenAccept("dev", 20, [ids[1]!]);
+
+    const out = captureConsole();
+    expect(await formaten("dev", 20)).toBe(0);
+    expect(cliText(out)).toMatch(new RegExp(`afgetekend zonder formaten[\\s\\S]*${ids[1]}`));
+  });
+
+  it("een id met een formaat-veld: exit 1, geen batch, niets afgetekend", async () => {
+    const ids = await seed(["a", "b"]);
+    captureConsole();
+    await formaten("dev", 20);
+    h.calls = [];
+
+    const out = captureConsole();
+    expect(await formatenAccept("dev", 20, [ids[0]!])).toBe(1);
+
+    expect(h.calls).not.toContain("photoFormats:backfill");
+    expect(cliText(out)).toContain(ids[0]!);
+    const photo = (await h.t.run((ctx) => ctx.db.get(ids[0]!))) as { noFormatsAcceptedAt?: number } | null;
+    expect(photo?.noFormatsAcceptedAt).toBeUndefined();
+  });
+
+  it("afgetekend, maar een andere foto mislukt nog: exit 1", async () => {
+    const ids = await seed(["crash", "b", "crash ook"]);
+    captureConsole();
+
+    expect(await formatenAccept("dev", 20, [ids[0]!])).toBe(1);
   });
 });

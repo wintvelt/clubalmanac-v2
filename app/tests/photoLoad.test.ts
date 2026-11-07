@@ -204,3 +204,36 @@ describe("usePhotoLoad — uitgelogd", () => {
     expect(auth.calls).toHaveLength(0);
   });
 });
+
+// WP25 fix-cyclus 2 (A-invariant 26, red-team N1): expo-image kijkt niet naar
+// `no-store`. Zonder formaten geeft het beeldpad het origineel onder dezelfde
+// URL als het formaat; met formaten de ruwe pixels. De sleutel in de cache
+// hangt daarom af van `hasFormats`, zodat een bewaard origineel nooit als
+// formaat terugkomt. De URL zelf blijft gelijk (het beeldpad kiest).
+describe("usePhotoLoad — de cache-sleutel hangt af van hasFormats", () => {
+  async function sourceWith(hasFormats: boolean | undefined) {
+    const { usePhotoLoad } = await import("../src/data/images");
+    const h = rt.runtime;
+    h.provide(h.contexts[0]!, SITE);
+    const hook = usePhotoLoad as unknown as (id: string, f: string, has?: boolean) => Load;
+    h.render(() => hook("foto1", "klein", hasFormats));
+    auth.tokens.at(-1)!.resolve("tok");
+    const l = await settle();
+    return l.source as { uri: string; cacheKey?: string };
+  }
+
+  it("met en zonder formaten: dezelfde URL, een andere cacheKey", async () => {
+    const met = await sourceWith(true);
+    const zonder = await sourceWith(false);
+    expect(met.uri).toBe(zonder.uri);
+    expect(met.cacheKey, "met formaten").toBeDefined();
+    expect(zonder.cacheKey, "zonder formaten").toBeDefined();
+    expect(met.cacheKey).not.toBe(zonder.cacheKey);
+  });
+
+  it("hasFormats ontbreekt: dezelfde sleutel als zonder formaten", async () => {
+    const onbekend = await sourceWith(undefined);
+    const zonder = await sourceWith(false);
+    expect(onbekend.cacheKey).toBe(zonder.cacheKey);
+  });
+});

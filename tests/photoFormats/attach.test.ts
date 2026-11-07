@@ -182,6 +182,7 @@ describe("formatStatus: de telling (invariant 2, pre-flight)", () => {
       withFormats: 2,
       withoutFormats: 2,
       withExifOrientation: 2,
+      acceptedWithoutFormats: 0,
     });
   });
 
@@ -192,6 +193,27 @@ describe("formatStatus: de telling (invariant 2, pre-flight)", () => {
       withFormats: 0,
       withoutFormats: 0,
       withExifOrientation: 0,
+      acceptedWithoutFormats: 0,
+    });
+  });
+
+  it("D6: een set met een ontbrekend object telt als zonder formaten (invariant 22)", async () => {
+    // De exitcode van `formaten` leunt op deze telling. Telt hij het veld in
+    // plaats van de objecten, dan eindigt een run met een dangling set op 0.
+    const t = convexTest(schema, modules);
+    const { owner } = await setup(t);
+    await seedPhoto(t, owner, { withFormats: true });
+    const half = await seedPhoto(t, owner, { withFormats: true });
+    const otherHalf = await seedPhoto(t, owner, { withFormats: true });
+    await t.run(async (ctx) => {
+      await ctx.storage.delete(half.klein!);
+      await ctx.storage.delete(otherHalf.groot!);
+    });
+
+    expect(await t.query(I.photos.formatStatus, {})).toMatchObject({
+      photos: 3,
+      withFormats: 1,
+      withoutFormats: 2,
     });
   });
 });

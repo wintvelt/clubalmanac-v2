@@ -9,8 +9,9 @@ import * as lib from "../../convex/lib/photoFormats";
 //
 // Een HEIC van 24 MP laat de Node-action van 512 MB omvallen (lokaal 454–554 MB,
 // Convex ~90 MB hoger). `makeFormatImages` leest daarom eerst de maat uit de
-// HEIF-kop (`ispe` van het primaire item) en weigert boven 16 MP, vóór het
-// decoderen. heic-decode is hier nep en gooit "decode aangeroepen": zo ziet de
+// HEIF-kop (`ispe` van het primaire item) en weigert boven 13 MP, vóór het
+// decoderen. Fix-cyclus 2: 16 MP paste niet in een warme action (een tweede HEIC
+// van ~16 MP: 520–540 MB op Convex). heic-decode is hier nep en gooit "decode aangeroepen": zo ziet de
 // test of de stap de decoder bereikt, zonder ooit 17 MP te decoderen.
 
 vi.mock("heic-decode", () => {
@@ -27,8 +28,8 @@ const read = (name: string) => new Uint8Array(readFileSync(join(FIXTURES, name))
 const L = lib as any;
 
 describe("de grens", () => {
-  it("HEIC_MAX_PIXELS is 16 MP: 4032×3024 (12,2 MP) erdoor, 5712×4284 (24,5 MP) niet", () => {
-    expect(L.HEIC_MAX_PIXELS).toBe(16_000_000);
+  it("HEIC_MAX_PIXELS is 13 MP: 4032×3024 (12,2 MP) erdoor, 5712×4284 (24,5 MP) niet", () => {
+    expect(L.HEIC_MAX_PIXELS).toBe(13_000_000);
     expect(4032 * 3024).toBeLessThanOrEqual(L.HEIC_MAX_PIXELS);
     expect(5712 * 4284).toBeGreaterThan(L.HEIC_MAX_PIXELS);
   });
