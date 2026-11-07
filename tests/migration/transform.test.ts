@@ -91,12 +91,16 @@ describe("datums", () => {
 // users — vier bronrecords, één rij
 // ────────────────────────────────────────────────────────────────────────
 describe("users", () => {
-  test("UBbase + UPstats + UVvisit smelten samen tot één rij per user", () => {
+  test("UBbase + UPstats + UVvisit leveren één user-rij; het bezoek staat in userVisits", () => {
+    // WP12b invariant 3: `UVvisit.visitDateLast` landt in `userVisits`, niet
+    // meer in `users.lastVisitAt` (dat sinds WP15b niemand leest).
     const { records } = runProd();
     expect(records.users.filter((u: Row) => u.sourceKey === "U-alice")).toHaveLength(1);
     const alice = bySource(records.users, "U-alice");
     expect(alice.createdAt).toBe(day("2021-03-01"));
-    expect(alice.lastVisitAt).toBe(day("2026-08-01"));
+    expect(alice.lastVisitAt).toBeUndefined();
+    const visits = records.userVisits.filter((v: Row) => v.userId === "U-alice");
+    expect(visits.map((v: Row) => v.lastVisitAt)).toEqual([day("2026-08-01")]);
   });
 
   test("het afgeleide USER-record levert geen tweede user op", () => {
