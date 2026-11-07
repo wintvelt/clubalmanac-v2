@@ -27,12 +27,12 @@ Na de migratie ziet een lid elk album met de cover die het in de oude app had, e
 
 ## Invarianten
 
-1. Een album krijgt de cover uit de bron als die foto gemigreerd wordt én in dat album staat. Anders blijft de cover leeg, met een melding en een telling, net als bij groepen.
-2. Een groepscover volgt dezelfde regel: de foto moet in een album van die groep staan (WP24 invariant 2). Nu checkt de transform alleen of de foto bestaat.
+1. Een album krijgt de cover uit de bron (`GA.photoId`) zodra die foto gemigreerd wordt. Waar de foto staat, maakt voor de migratie niet uit (besluit 4). Staat hij niet in dat album, dan komt hij mee met een waarschuwing in het transform-rapport die album en foto noemt. Wordt de foto niet gemigreerd (bestaat niet, of valt buiten de dev-seed), dan blijft de cover leeg, met een melding die album en foto noemt. Een cover in het eigen album geeft geen waarschuwing.
+2. Een groepscover volgt dezelfde regel: hij komt mee zodra de foto gemigreerd wordt. Staat de foto in geen album van die groep, dan een waarschuwing die groep en foto noemt; in v2 ziet alleen de eigenaar zo'n cover (WP23 invariant 10), en na T0 kiest een admin een nieuwe (WP17b). De publicatie-eis van WP24 invariant 2 geldt voor nieuwe covers, niet voor de migratie. Een cover in een album van de groep geeft geen waarschuwing.
 3. Elke gemigreerde user met een `visitDateLast` krijgt één `userVisits`-rij met die tijd. `users.lastVisitAt` vult de transform niet meer.
-4. Een standaard-profielfoto buiten `protected/` landt op de manier die WP17a en WP23 voor een profielfoto verwachten, of valt bewust weg. A zoekt uit wat er nu gebeurt; zie Open vragen.
+4. Een standaard-profielfoto buiten `protected/` landt als los beeld, één storage-object per bestand, gedeeld door de users die hem hebben (besluit 5). Zo werkt de keten al; niets bouwen. Zie A1.
 5. Elk bronattribuut dat niet meegaat, staat als bewuste drop in de WP12-spec, met de reden.
-6. `verify` vangt een ontbrekende cover. Een album- of groepscover die in de bron staat en resolvet, maar in Convex leeg is, is een bevinding.
+6. `verify` vangt een ontbrekende cover. Een album- of groepscover die in de bron staat en waarvan de foto gemigreerd wordt, maar die in Convex leeg is, is een bevinding. Een cover die alleen een waarschuwing kreeg (invariant 1 en 2) is geen bevinding. Zie A4.
 
 ## Edge cases + scope-uitsluitingen
 
@@ -42,8 +42,7 @@ Na de migratie ziet een lid elk album met de cover die het in de oude app had, e
 
 ## Open vragen
 
-1. **Standaardfoto (A).** Wat doet de keten nu met een `photoUrl` buiten `protected/`? Wordt het één gedeeld bestand, een kopie per user, of een fout? En wat wil v2: een eigen standaardbeeld in de app, of het oude bestand?
-2. **Welke v1-versie draait op prod (Wouter + A).** De uitgecheckte `master` is niet de nieuwste: die staat op `origin/dev` (api, groups, invites), `origin/hotfix` (photos) en `origin/hotfixes` (user). Wouter haalt de deploydata van de Lambda's op; A legt ze naast de branches. Wijkt de gedeployde versie af van wat WP12 las, dan meldt A of dat de mapping raakt.
+Geen. Vraag 1 (standaardfoto) is besluit 5, vraag 2 (welke v1-versie draait) is beantwoord in A2.
 
 ## Risico-assessment
 
@@ -127,7 +126,7 @@ Open vraag 2 is daarmee beantwoord: welke branch er ook draait, de mapping blijf
 - **Gevolg van de draft.** Invariant 1 ("in dat album") gooit een albumcover weg die elk lid in v2 gewoon zou zien. Invariant 2 gooit een groepscover weg die de eigenaar nog zou zien; de andere leden zien hem hoe dan ook niet meer. En elke bewuste drop maakt `verify` rood (invariant 6, "elk verschil is een bevinding"), dus T0 wordt dan nooit groen zonder acceptatie-mechanisme.
 - **Voorstel A:** een cover komt mee zodra de foto gemigreerd wordt, zonder publicatie-eis (zoals de groepscover nu al werkt, en in lijn met WP24 "bestaande covers blijven staan"). Een cover die niet in een album van de groep staat krijgt een waarschuwing in het transform-rapport ("alleen de eigenaar ziet hem"), geen drop. Dan is `verify` groen te krijgen en verdwijnt er niets.
 - **Eerst tellen.** Het telscript telt nu per cover waar de foto staat (zie A7). Zijn de afwijkende aantallen 0, dan is de keuze theoretisch en vallen draft en voorstel samen.
-- **Tests:** de gevallen die onder beide lezingen hetzelfde uitkomen zijn gepind; de twee betwiste gevallen niet, tot het besluit er is.
+- **Besloten (besluit 4):** voorstel A. Invariant 1 en 2 zijn daarop herschreven; beide gevallen zijn gepind.
 
 ### A4. Invariant 6 — `verify` haalt zijn verwachting uit de bron
 
@@ -173,15 +172,14 @@ node scripts/.data/veld-tel.mjs
 
 | Bestand | Wat |
 |---|---|
-| `tests/migration/wp12bTransform.test.ts` | Invariant 1 (cover in het eigen album komt mee op prod en dev; cover naar een niet-bestaande of weggefilterde foto: leeg plus melding; elke cover resolvet; regressie groepscover) en invariant 3 (rijen, datum, dev-filter, lege string, `users.lastVisitAt` leeg, FK en `sourceKey`). |
-| `tests/migration/wp12bVerify.test.ts` | Invariant 6: groen als alles klopt (ook met covers die terecht wegvielen); niet groen bij een ontbrekende album- of groepscover, bij het oorspronkelijke gat (transform zonder albumcovers), en zonder extract. |
+| `tests/migration/wp12bTransform.test.ts` | Invariant 1 en 2 (cover in het eigen album komt mee op prod en dev, zonder waarschuwing; cover uit een ander album, cover in geen album en groepscover zonder publicatie in de groep: mee, met waarschuwing die rij en foto noemt; cover naar een niet-bestaande of weggefilterde foto: leeg plus melding; elke cover resolvet) en invariant 3 (rijen, datum, dev-filter, lege string, `users.lastVisitAt` leeg, FK en `sourceKey`). |
+| `tests/migration/wp12bVerify.test.ts` | Invariant 6: groen als alles klopt (ook met covers die terecht wegvielen, en met covers die alleen een waarschuwing kregen); niet groen bij een ontbrekende album- of groepscover, bij het oorspronkelijke gat (transform zonder albumcovers), en zonder extract. |
 | `tests/migration/migrationFunctions.test.ts` | `insertRows` op `userVisits`, een wees-`userVisits` is drift, `coverCounts` telt alleen rijen met een cover. |
 | `tests/migration/fkOracle.ts` | `userVisits.userId → users` in de oracle; daardoor rood in `sharedLists.test.ts` en de tel- en leeg-lussen van `migrationFunctions.test.ts` (A5). |
 | Harnas | `buildExtractWithCovers` (fixture), `buildExtractFile`, `buildRecordsFile(target, items)`, nep-`coverCounts`; `verifyAndReset` en `pruneStorage` zetten het extract standaard in de werkmap. |
 
-21 rood, allemaal om de bedoelde reden; de rest van de suite (1341) en de typecheck zijn groen.
+29 rood, allemaal om de bedoelde reden; de rest van de suite (1344) en de typecheck zijn groen.
 
 ### Nog bij Wouter
 
-1. **Covers buiten het eigen album (A3):** voorstel A (meenemen met waarschuwing) of de draft (weglaten)? Eerst de nieuwe telling draaien.
-2. **Standaardfoto (A1):** akkoord met het oude bestand houden?
+Niets. Besluit 4 en 5 zijn verwerkt in invariant 1, 2 en 4.

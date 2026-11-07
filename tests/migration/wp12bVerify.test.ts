@@ -11,7 +11,8 @@
 // zijn verwachting niet af uit de gecontroleerde stap).
 //
 // "Resolvet" betekent hier: de cover-foto staat in de bron én wordt geladen (hij
-// staat in de foto's van convex-records.json). Een cover naar een foto die niet
+// staat in de foto's van convex-records.json). Waar de foto staat, telt niet
+// (besluit 4): een cover buiten het eigen album komt mee met een waarschuwing. Een cover naar een foto die niet
 // bestaat of buiten de dev-seed valt, wordt door de transform gewist en gemeld,
 // en is voor verify geen bevinding — anders is dev nooit groen.
 //
@@ -111,6 +112,19 @@ describe("WP12b invariant 6: verify vangt een ontbrekende cover", () => {
     // Premisse: de bron heeft covers die resolven én covers die dat niet doen
     // (A-3 naar een niet-bestaande foto, A-4 en G-3 naar een foto buiten de
     // dev-seed). Alleen de eerste soort hoort er te zijn.
+    await loadRecords("dev", false);
+    await expect(verify("dev")).resolves.toBe(0);
+  });
+
+  test("besluit 4: covers zonder publicatie in het eigen album houden verify groen", async () => {
+    // Premisse: de transform nam ze mee (A-5, A-6, G-4). Een waarschuwing is
+    // geen bevinding; anders wordt T0 nooit groen.
+    const coverOf = (table: "albums" | "groups", key: string) =>
+      records.records[table].find((r) => r.sourceKey === key)?.coverPhotoId;
+    expect(coverOf("albums", "A-5"), "A-5 zonder cover in de records").toBe("P-bob-2");
+    expect(coverOf("albums", "A-6"), "A-6 zonder cover in de records").toBe("P-alice-2");
+    expect(coverOf("groups", "G-4"), "G-4 zonder cover in de records").toBe("P-alice-2");
+
     await loadRecords("dev", false);
     await expect(verify("dev")).resolves.toBe(0);
   });

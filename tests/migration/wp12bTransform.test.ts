@@ -10,12 +10,10 @@
 // waarschuwingen. Dit bestand bouwt er een variant op met precies de gevallen
 // die WP12b raakt (`buildExtractWithCovers` in fixture.ts).
 //
-// Bewust NIET gepind (open vraag bij Wouter, zie WP12b §Spec-criticus): een
-// cover die in de bron wél resolvet maar niet in dát album staat (wel in een
-// ander album van de groep), en een groepscover die in geen enkel album van de
-// groep staat (in v1 kon je een groepscover uploaden zonder publicatie). Die
-// gevallen komen in deze fixture daarom niet voor, behalve G-3 uit de gedeelde
-// fixture, waar alleen de bestaande regressie op getest wordt.
+// Besluit 4 (Wouter, 2026-11-07): een cover komt mee zodra de foto gemigreerd
+// wordt, ook als hij niet in het eigen album of in geen album van de groep
+// staat. Dan een waarschuwing, geen drop. In v1 kon je een groepscover
+// uploaden zonder publicatie (`createPhoto.js`, actie `groupcover`).
 
 import { describe, expect, test } from "vitest";
 import { transform, type TransformConfig } from "../../scripts/migrate/transform";
@@ -105,6 +103,53 @@ describe("WP12b invariant 1: een album krijgt de cover uit de bron", () => {
   test("regressie: de groepscover van G-1 blijft staan", () => {
     expect(row(run(PROD).records.groups, "G-1").coverPhotoId).toBe("P-alice-1");
     expect(row(run(DEV).records.groups, "G-1").coverPhotoId).toBe("P-alice-1");
+  });
+});
+
+// ── besluit 4: covers buiten het eigen album ──────────────────────────
+
+/** Een waarschuwing die beide noemt: de rij en de foto. */
+const warnsAbout = (warnings: string[], key: string, photoId: string): boolean =>
+  warnings.some((w) => w.includes(key) && w.includes(photoId));
+
+describe("WP12b besluit 4: een cover zonder publicatie komt mee, met een waarschuwing", () => {
+  for (const config of [PROD, DEV]) {
+    test(`${config.target}: albumcover uit een ander album van de groep`, () => {
+      const { records, warnings } = run(config);
+      expect(row(records.albums, "A-5").coverPhotoId).toBe("P-bob-2");
+      expect(warnsAbout(warnings, "A-5", "P-bob-2"), "geen waarschuwing voor A-5").toBe(true);
+    });
+
+    test(`${config.target}: albumcover die in geen enkel album staat`, () => {
+      const { records, warnings } = run(config);
+      expect(row(records.albums, "A-6").coverPhotoId).toBe("P-alice-2");
+      expect(warnsAbout(warnings, "A-6", "P-alice-2"), "geen waarschuwing voor A-6").toBe(true);
+    });
+
+    test(`${config.target}: groepscover die in geen album van de groep staat`, () => {
+      const { records, warnings } = run(config);
+      expect(row(records.groups, "G-4").coverPhotoId).toBe("P-alice-2");
+      expect(warnsAbout(warnings, "G-4", "P-alice-2"), "geen waarschuwing voor G-4").toBe(true);
+    });
+
+    test(`${config.target}: een cover in het eigen album of in de groep geeft geen waarschuwing`, () => {
+      const { warnings } = run(config);
+      expect(warnsAbout(warnings, "A-1", "P-bob-1"), "A-1: cover staat in A-1").toBe(false);
+      expect(warnsAbout(warnings, "G-1", "P-alice-1"), "G-1: cover staat in A-1 van G-1").toBe(false);
+    });
+  }
+
+  test("prod: groepscover van een foto die alleen in een andere groep staat (G-3)", () => {
+    const { records, warnings } = run(PROD);
+    expect(row(records.groups, "G-3").coverPhotoId).toBe("P-dave-1");
+    expect(warnsAbout(warnings, "G-3", "P-dave-1"), "geen waarschuwing voor G-3").toBe(true);
+  });
+
+  test("dev: een cover naar een foto buiten de seed blijft gewoon leeg, zonder publicatie-waarschuwing", () => {
+    // Twee verschillende meldingen: "gewist" (foto niet gemigreerd) en
+    // "zonder publicatie" (foto wel gemigreerd). G-3 hoort bij de eerste.
+    const { records } = run(DEV);
+    expect(row(records.groups, "G-3").coverPhotoId).toBeUndefined();
   });
 });
 

@@ -353,7 +353,13 @@ export function buildExtract(): SourceItem[] {
  *   - A-4 is Daves album: cover P-dave-1, en die foto staat in A-4. Op prod
  *     resolvet de cover, op dev niet (Dave is niet chosen, zijn foto valt weg);
  *   - een bezoek voor Dave (niet chosen) en een gewist bezoek voor Carol
- *     (lege-string-sentinel, WP12 correctie 6).
+ *     (lege-string-sentinel, WP12 correctie 6);
+ *   - besluit 4, covers zonder publicatie in het eigen album: A-5 heeft als
+ *     cover P-bob-2 (staat in A-1, een ander album van G-1), A-6 heeft P-alice-2
+ *     (staat in geen enkel album), en groep G-4 (founder Alice) heeft P-alice-2
+ *     als cover zonder publicatie in G-4 — de v1-upload-route `groupcover`.
+ *     G-3 uit de gedeelde fixture is het prod-geval: cover P-dave-1, die alleen
+ *     in G-1 staat.
  */
 export function buildExtractWithCovers(): SourceItem[] {
   const items = buildExtract().map((item) =>
@@ -370,6 +376,10 @@ export function buildExtractWithCovers(): SourceItem[] {
     },
     { PK: "UVvisit", SK: "U-dave", visitDateLast: "2026-07-15", createdAt: "2021-03-04" },
     { PK: "UVvisit", SK: "U-carol", visitDateLast: "", createdAt: "2021-03-03" },
+    { PK: "GAG-1", SK: "A-5", name: "Leen-cover", photoId: "P-bob-2", createdAt: "2021-04-09" },
+    { PK: "GAG-1", SK: "A-6", name: "Losse cover", photoId: "P-alice-2", createdAt: "2021-04-10" },
+    { PK: "GBbase", SK: "G-4", name: "Uploadcover", photoId: "P-alice-2", createdAt: "2021-08-01" },
+    { PK: "UMU-alice", SK: "G-4", role: "admin", isFounder: true, user: ALICE, createdAt: "2021-08-01" },
   );
   return items;
 }
