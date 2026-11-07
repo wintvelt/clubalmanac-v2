@@ -214,3 +214,28 @@ Niets. Besluit 4 en 5 zijn verwerkt in invariant 1, 2 en 4.
 | `tests/migration/wp12bFixcyclus1.test.ts` | F1: stop bij een verlopen datum (ook op de dag zelf), de melding noemt de foto en de vlag; met de vlag door, datum behouden, waarschuwing per foto; een datum in de toekomst, een gewiste datum en een foto buiten de dev-seed stoppen niets. | rood |
 | idem | F2: groepscover die alleen in een andere groep staat noemt die groep; de melding verschilt van "staat nergens". | rood |
 | idem | F3: de twee albumcover-meldingen verschillen. | groen (vastpinnen) |
+
+## Fix-cyclus 2
+
+> Na de heraudit van fix-cyclus 1 (geen blockers), akkoord Wouter 2026-11-07. A pint, B bouwt. Vervangt de stopregel van F1.
+
+### G1. De transform stopt bij elke geladen foto met een verwijderdatum (heraudit S1, besluit Wouter)
+
+- **Probleem.** F1 stopte alleen bij `flaggedDeleteDate <= nu`. De FL1-cron draait elke nacht; een foto met morgen als datum kwam erdoor en was de eerste nacht na T0 toch weg.
+- **Regel.** De transform stopt bij elke foto die geladen wordt en een `flaggedDeleteDate` heeft, welke datum ook. v1 wiste zo'n foto nooit, v2 altijd. Een gewiste datum (lege string, na een bezwaar) is geen datum; een foto buiten de dev-seed telt niet mee. De melding noemt elke foto en de vlag.
+- **Vlag hernoemd:** `--accept-flagged-deletion` op `transform`, in de config `acceptFlaggedDeletion`. "Expired" klopt niet meer, en de nieuwe naam zegt wat je accepteert: dat de cron deze foto's wist. De oude vlag `--accept-expired-flags` heeft geen effect meer; wie hem nog typt, ziet de transform gewoon stoppen.
+- **Met de vlag:** door, de foto behoudt zijn datum, en per foto een waarschuwing in het rapport (zoals F1).
+- **Runbook:** de T0-stap en de foutentabel volgen de nieuwe regel en de nieuwe vlag. Telling prod: 0 foto's met een verwijderdatum.
+
+### G2. De vlag komt aan (heraudit S2)
+
+- **Probleem.** Geen test viel om als de vlag in `runTransform.ts` of `cli.ts` hard op "aan" stond.
+- **`runTransform`:** zonder de optie stopt hij op een extract met een verwijderdatum en schrijft hij geen `convex-records.json`; met `acceptFlaggedDeletion: true` gaat hij door. De oude optienaam zet niets aan.
+- **CLI.** Om de stap van argument naar optie te kunnen testen, eist de spec twee dingen van `cli.ts`: hij exporteert `transformOptions(argv)`, die de argumenten vertaalt naar de opties van `runTransform` (`argv` zoals `main` hem ziet: commando plus opties, zonder `node` en het pad); en `main()` draait alleen als `cli.ts` het startpunt is, niet bij een import. Getest: `--accept-flagged-deletion` geeft de vlag, zonder argument of met de oude vlag niet, en een import van `cli.ts` start geen commando.
+
+### G3. Tests
+
+| Bestand | Wat |
+|---|---|
+| `tests/migration/wp12bFixcyclus1.test.ts` | F1-tests aangepast aan G1: elke datum stopt (verleden, vandaag, toekomst), nieuwe vlag. F2 en F3 ongewijzigd. |
+| `tests/migration/wp12bFixcyclus2.test.ts` | G2: `runTransform` met en zonder de optie, en de oude optienaam; `transformOptions` in `cli.ts`; een import van `cli.ts` start niets. |

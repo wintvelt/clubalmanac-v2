@@ -1,9 +1,11 @@
 // WP12b fix-cyclus 1 — RED tests na de audit (spec §Fix-cyclus 1).
 //
-// F1  Een gemelde foto met een verlopen verwijderdatum stopt de transform,
-//     tenzij de operator het verlies accepteert. v1 wiste zo'n foto nooit; de
-//     FL1-cron van v2 wist hem de eerste nacht na T0. De oude T0-check hing aan
-//     een script buiten de repo en kon dus stil wegvallen.
+// F1  Een gemelde foto met een verwijderdatum stopt de transform, tenzij de
+//     operator het verlies accepteert. v1 wiste zo'n foto nooit; de FL1-cron
+//     van v2 wist hem. De oude T0-check hing aan een script buiten de repo en
+//     kon dus stil wegvallen. Fix-cyclus 2 (G1) scherpte de regel aan: élke
+//     datum stopt, ook een in de toekomst, want de cron draait elke nacht; de
+//     vlag heet sindsdien `--accept-flagged-deletion`.
 // F2  Een groepscover die alleen in een album van een andere groep staat krijgt
 //     een eigen melding, die die groep noemt.
 // F3  De twee albumcover-meldingen ("ander album van de groep", "geen album")
@@ -35,9 +37,9 @@ const DEV: TransformConfig = {
   now: NOW,
 };
 
-/** Dezelfde config, met het verlies van verlopen meldingen geaccepteerd. */
+/** Dezelfde config, met het verlies van gemelde foto's geaccepteerd (G1). */
 const accepting = (config: TransformConfig): TransformConfig =>
-  Object.assign({}, config, { acceptExpiredFlags: true });
+  Object.assign({}, config, { acceptFlaggedDeletion: true });
 
 const row = (rows: Row[], sourceKey: string): Row => {
   const found = rows.find((r) => r.sourceKey === sourceKey);
@@ -56,19 +58,18 @@ function withFlag(photoKey: string, deleteDate: string): SourceItem[] {
 
 // ── F1 ────────────────────────────────────────────────────────────────
 
-describe("WP12b F1: een verlopen verwijderdatum stopt de transform", () => {
+describe("WP12b F1/G1: een verwijderdatum stopt de transform", () => {
   test("verwijderdatum in het verleden: stop, met de foto en de vlag in de melding", () => {
     const items = withFlag("P-bob-1", "2026-07-15");
     expect(() => transform(items, PROD)).toThrow(/P-bob-1/);
-    expect(() => transform(items, PROD)).toThrow(/--accept-expired-flags/);
+    expect(() => transform(items, PROD)).toThrow(/--accept-flagged-deletion/);
   });
 
-  test("verwijderdatum op de dag van de run telt als verlopen", () => {
-    // De cron wist bij flaggedDeleteDate <= nu; de stop gebruikt dezelfde grens.
+  test("verwijderdatum op de dag van de run stopt", () => {
     expect(() => transform(withFlag("P-bob-1", "2026-08-23"), PROD)).toThrow(/P-bob-1/);
   });
 
-  test("dev: een verlopen foto die in de seed zit stopt ook", () => {
+  test("dev: een gemelde foto die in de seed zit stopt ook", () => {
     expect(() => transform(withFlag("P-bob-1", "2026-07-15"), DEV)).toThrow(/P-bob-1/);
   });
 
@@ -81,8 +82,20 @@ describe("WP12b F1: een verlopen verwijderdatum stopt de transform", () => {
     ).toHaveLength(1);
   });
 
-  test("een verwijderdatum in de toekomst stopt niets", () => {
-    expect(() => transform(withFlag("P-bob-1", "2026-09-01"), PROD)).not.toThrow();
+  test("G1: een verwijderdatum in de toekomst stopt ook", () => {
+    // De cron draait elke nacht: morgen als datum is de eerste nacht na T0 weg.
+    expect(() => transform(withFlag("P-bob-1", "2026-08-24"), PROD)).toThrow(/P-bob-1/);
+    expect(() => transform(withFlag("P-bob-1", "2027-01-01"), PROD)).toThrow(/P-bob-1/);
+  });
+
+  test("G1: met de vlag gaat ook een datum in de toekomst door, met waarschuwing", () => {
+    const { warnings } = transform(withFlag("P-bob-1", "2027-01-01"), accepting(PROD));
+    expect(warnings.some((w) => w.includes("P-bob-1") && /flaggedDeleteDate|verwijder/i.test(w))).toBe(true);
+  });
+
+  test("G1: de oude optienaam accepteert niets meer", () => {
+    const oud = Object.assign({}, PROD, { acceptExpiredFlags: true });
+    expect(() => transform(withFlag("P-bob-1", "2026-07-15"), oud)).toThrow(/P-bob-1/);
   });
 
   test("een gewiste verwijderdatum (lege string, na bezwaar) stopt niets", () => {
@@ -90,7 +103,7 @@ describe("WP12b F1: een verlopen verwijderdatum stopt de transform", () => {
     expect(() => transform(buildExtractWithCovers(), PROD)).not.toThrow();
   });
 
-  test("dev: een verlopen foto buiten de seed stopt niets", () => {
+  test("dev: een gemelde foto buiten de seed stopt niets", () => {
     // P-dave-1 is van Dave, niet chosen: de foto wordt niet geladen.
     const items = withFlag("P-dave-1", "2026-07-15");
     expect(() => transform(items, DEV)).not.toThrow();
