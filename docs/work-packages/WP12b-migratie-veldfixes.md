@@ -105,6 +105,18 @@ Commitdata per repo (laatste commit per branch). De uitgecheckte branch is `mast
 
 Een Lambda met `LastModified` na de datum van de nieuwste branch draait die branch (of iets nieuwers dat niet in de repo staat); vóór de `master`-datum draait iets ouders. Wat de branches op schrijfpaden verschillen: `groups/dev` schrijft `sortDate` op een album (`updateAlbum`), `api/dev` accepteert bij aanmelding automatisch de uitnodiging, `user/hotfixes` zet een tijd vóór de bestandsnaam en heeft `listInvites`. **Geen van die verschillen verandert de betekenis van een attribuut dat de transform leest.** De mapping hangt af van wat er in de data staat, en dat heeft de telling gemeten. Raakt de `LastModified`-vergelijking dit toch, dan alleen als er een Lambda blijkt te draaien die in geen enkele branch staat; dan meldt A dat.
 
+**Uitkomst (2026-11-07).** Photos draait `hotfix` (laatste deploy 2023-12-18, de dag van die tip); dat is wat de veldaudit las. Voor de andere vijf services, `master` naast de nieuwere branch:
+
+| Service | Verschil op schrijfpaden | Raakt een veld of de mapping? |
+|---|---|---|
+| user (`hotfixes`) | `listInvites` (alleen lezen); upload zet een tijd vóór de bestandsnaam | Nee. Alleen de vorm van de S3-sleutel; transform en `load-files` nemen `PO.url` zoals hij is. |
+| groups (`dev`) | `updateAlbum` schrijft `GA.sortDate`; cover-upload weigert een gemelde foto | Eén veld: `GA.sortDate`. De transform leest het al en laat het weg als het ontbreekt; de app valt dan terug op `createdAt`, net als v1. De extract laat zien of het gevuld is (telscript: "GA met sortDate"). |
+| features (`dev`) | probleem-melding per mail | Nee, schrijft niets in DynamoDB. |
+| api (`dev`) | stream accepteert de uitnodiging bij aanmelding (via `UPstats.inviteId`) | Nee. Schrijft dezelfde `UM`-velden als een handmatige acceptatie. |
+| invites (`dev`) | alleen `serverless.yml` | Nee. |
+
+Open vraag 2 is daarmee beantwoord: welke branch er ook draait, de mapping blijft gelijk. Wouter hoeft geen deploydata meer op te zoeken.
+
 ### A3. Invarianten 1 en 2 kloppen niet met de bron — besluit Wouter nodig
 
 - **Groepscover zonder publicatie bestaat in v1.** De upload-actie `groupcover` (`blob-images-api-photos/handlersPhoto/createPhoto.js:140-158`) maakt een foto en zet hem als groepscover zonder albumfoto. `createGroup`/`updateGroup` accepteren elke foto waar de admin toegang toe heeft, ook een eigen foto in geen enkel album. v1 toonde de cover aan elk lid (een kopie op de groep).
@@ -171,4 +183,3 @@ node scripts/.data/veld-tel.mjs
 
 1. **Covers buiten het eigen album (A3):** voorstel A (meenemen met waarschuwing) of de draft (weglaten)? Eerst de nieuwe telling draaien.
 2. **Standaardfoto (A1):** akkoord met het oude bestand houden?
-3. **`LastModified` van de prod-Lambda's (A2):** regie stuurt ze door; A legt ze naast de tabel.
