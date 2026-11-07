@@ -57,7 +57,7 @@ Gemeten op dev in een Node-action (linux arm64, ~1 core), met echte dev-bestande
 4. **HEIC:** de formaten worden JPEG (via heic-decode); het origineel blijft. Open voor A: past libheif `irot` zelf toe? Zo ja, dan draait een HEIC dubbel (invariant 6). A test met een echte iPhone-HEIC. *Antwoord A: ja, zie A-kernvondst 1.*
 5. **T0:** de app gaat pas open na de backfill en een groene `verify` (2026-11-07).
 6. **Transparantie** wordt wit in de JPEG (2026-11-07).
-7. **Te grote HEIC** (meer pixels dan de action aankan): geen formaten, de app toont het origineel, en de stap meldt "mislukt" (2026-11-07). Dit is een tussenoplossing. Nieuwe uploads worden JPEG in de app ([WP18](./README.md)), dus het raakt alleen oude HEIC's van prod. Hoeveel dat er zijn, telt A vóór T0. Zijn het er meer dan nul, dan maakt de migratie hun formaten lokaal (zonder geheugengrens), als aparte stap.
+7. **Te grote HEIC** (meer pixels dan de action aankan): geen formaten, de app toont het origineel, en de stap meldt "mislukt" (2026-11-07). Dit is een tussenoplossing. Nieuwe uploads worden JPEG in de app ([WP18](./README.md)), dus het raakt alleen oude HEIC's van prod. Telling prod (2026-11-07): 0 HEIC's, dus geen aparte stap nodig.
 
 ## Edge cases en scope
 
@@ -294,7 +294,7 @@ Na audit (B1, S2) en red-team (R1–R6), en besluit 7. Gelezen: de impl op `wp25
 ### Pre-flight (aanvulling)
 
 9. **`verify` als geheel (R6).** `verify` heeft `scripts/.data/convex-records.json` van de dev-load nodig. Dat bestand staat alleen op de machine waar `transform` en `load-records` liepen: Wouters laptop. Na de fix-deploy en een run van `formaten` op dev draait Wouter daar `npm run migrate -- verify --target dev`. B neemt de uitkomst op in de B-rapportage. Groen is de gate vóór de prod-run, net als op T0.
-10. **HEIC's op prod tellen (besluit 7).** `AWS_PROFILE=clubalmanac node scripts/wp25/prod-tel.mjs` op Wouters laptop. Het script leest alleen, uit S3. Het telt de HEIC's met hun maat (en hoeveel er boven 16 MP zitten) en de tien grootste JPEG's. De uitvoer bevat geen sleutels of namen. Is het aantal HEIC's boven de grens meer dan nul, dan volgt de aparte stap uit besluit 7.
+10. **HEIC's op prod tellen (besluit 7).** `AWS_PROFILE=clubalmanac node scripts/wp25/prod-tel.mjs` op Wouters laptop. Het script leest alleen, uit S3. Het telt de HEIC's met hun maat (en hoeveel er boven 16 MP zitten) en de tien grootste JPEG's. De uitvoer bevat geen sleutels of namen. Gedaan 2026-11-07: 1601 objecten, 1558 JPEG, 43 PNG, 0 HEIC. De grootste JPEG's zijn 64 MP (2×, niet in de dev-set) en 49,8 MP (wel in de dev-set, ging goed).
 
 ### Signaturen (aanvulling)
 
