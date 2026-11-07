@@ -59,7 +59,7 @@ Geen. Vraag 1 (standaardfoto) is besluit 5, vraag 2 (welke v1-versie draait) is 
 | 1 | A | Spec-criticus, open vraag 1 en 2, RED tests op de transform en `verify`. |
 | 2 | B | Impl, runbook, dev opnieuw laden (Wouter draait de commando's). |
 | 3 | Audit | Op spec, tests en impl. |
-| 4 | Gate | Wouter: in de app hebben de albums op dev een cover. `verify` groen. |
+| 4 | Gate | Eerst `verify` groen, dan pas de app openen: de app maakt bij openen `userVisits`- en `albumLastSeen`-rijen aan, en dan klopt de telling van `verify` niet meer (audit). Daarna Wouter: in de app hebben de albums op dev een cover. |
 
 ## Cross-refs
 

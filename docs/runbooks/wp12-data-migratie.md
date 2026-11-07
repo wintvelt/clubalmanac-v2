@@ -264,5 +264,5 @@ Breekt `load-records` halverwege af, dan stopt hij luid met de bron-sleutel in d
 `scripts/.data/` bevat productie-PII van 20 mensen: namen, adressen, Cognito-subs (ook in S3-sleutels), invite-berichten en de volledige recordset. De map staat in `.gitignore`, maar dat is geen bewaartermijn.
 
 - [ ] Na een geslaagde dev-seed en een groene `verify`: `rm scripts/.data/dynamo-extract.json`. Dat is het bestand met de onbewerkte productiedata — namen, adressen, invite-berichten. Wil je later opnieuw `verify` draaien, draai dan eerst `extract` en `transform` opnieuw (§Run 1). `convex-records.json`, `storage-map.json` en de config blijven staan tot de volgende seed: `reset` + `load-records` heeft ze nodig, en `prune-storage` ook. Let op: `convex-records.json` is geanonimiseerd maar niet PII-vrij — de S3-sleutels dragen Cognito-subs. Weg bij de eindopruiming hieronder.
-- [ ] Na T-0 en een groene `verify`: `rm -rf scripts/.data/` volledig, plus `.env.migrate`.
+- [ ] Na T0 en een groene `verify`: `rm -rf scripts/.data/` volledig, plus `.env.migrate`.
 - [ ] Bij T+30, samen met de rest van de cutover-opruiming: `convex/migration.ts` en `scripts/migrate/` verwijderen, en de AWS-read-only-credentials intrekken. Zie het fase 5-stappenplan in `migratie-status.md`.
