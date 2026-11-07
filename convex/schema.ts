@@ -113,6 +113,10 @@ export default defineSchema({
     formats: v.optional(
       v.object({ klein: v.id("_storage"), groot: v.id("_storage") }),
     ),
+    // WP25 A-invariant 25: de operator tekende deze foto af als "mag zonder
+    // formaten" (`formaten --accept-no-formats`), met de tijd. De backfill
+    // slaat hem dan over; WP10 meldt hem niet als "formaten ontbreken".
+    noFormatsAcceptedAt: v.optional(v.number()),
     // Aggregate rating (gemiddelde van ratings table).
     ratingAverage: v.optional(v.number()),
     ratingCount: v.number(),

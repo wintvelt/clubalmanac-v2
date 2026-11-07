@@ -238,6 +238,7 @@ function MembersTab({ groupId, founderId }: { groupId: Id<"groups">; founderId: 
                     name={name}
                     size={size.avatar}
                     exifOrientation={m.user?.profileOrientation}
+                    hasFormats={m.user?.profileHasFormats}
                   />
                   <View style={styles.text}>
                     <Text color={name ? "text" : "muted"}>{name ?? "Naam onbekend"}</Text>

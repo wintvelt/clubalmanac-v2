@@ -16,6 +16,7 @@ import { requireWebmaster } from "./lib/auth";
 import { canAccessPhoto } from "./lib/photoAccess";
 import {
   allFlagFields,
+  hasFormatsField,
   ownFlagFields,
   photo as photoShape,
   photoFields,
@@ -23,7 +24,8 @@ import {
   publicProfile,
   publicProfileFields,
 } from "./lib/shapes";
-import { profileOrientationOf } from "./lib/profilePhoto";
+import { avatarFieldsOf } from "./lib/profilePhoto";
+import { hasCompleteFormats, photoView } from "./lib/formatSet";
 import {
   applyOrientation,
   rotationSwapsDimensions,
@@ -70,14 +72,14 @@ async function requirePhotoAccessForRead(
 // WP23: owner als publiek profiel (geen email/subject).
 export const getWithOwner = query({
   args: { photoId: v.id("photos") },
-  returns: v.object({ ...photoFields, owner: v.union(publicProfile, v.null()) }),
+  returns: v.object({ ...photoFields, ...hasFormatsField, owner: v.union(publicProfile, v.null()) }),
   handler: async (ctx, { photoId }) => {
     const { photo } = await requirePhotoAccessForRead(ctx, photoId);
     const owner = await ctx.db.get(photo.ownerId);
     return {
-      ...pick(photo, photoFields),
+      ...(await photoView(ctx, photo)),
       owner: owner
-        ? { ...pick(owner, publicProfileFields), ...(await profileOrientationOf(ctx, owner)) }
+        ? { ...pick(owner, publicProfileFields), ...(await avatarFieldsOf(ctx, owner)) }
         : null,
     };
   },
@@ -88,7 +90,7 @@ export const getById = query({
   returns: photoShape,
   handler: async (ctx, { photoId }) => {
     const { photo } = await requirePhotoAccessForRead(ctx, photoId);
-    return pick(photo, photoFields);
+    return await photoView(ctx, photo);
   },
 });
 
@@ -104,7 +106,7 @@ export const listByOwner = query({
       .query("photos")
       .withIndex("by_owner", (q) => q.eq("ownerId", ownerId))
       .collect();
-    return rows.map((p) => pick(p, photoFields));
+    return await Promise.all(rows.map((p) => photoView(ctx, p)));
   },
 });
 
@@ -529,19 +531,6 @@ export const attachFormats = internalMutation({
   },
 });
 
-/**
- * Heeft de foto een volledige set: beide formaat-objecten bestaan nog? Een set
- * met een ontbrekend object telt als "geen formaten" (A-invariant 22), zodat de
- * backfill hem herstelt.
- */
-async function hasCompleteFormats(ctx: QueryCtx, photo: Doc<"photos">): Promise<boolean> {
-  if (!photo.formats) return false;
-  return (
-    (await ctx.db.system.get(photo.formats.klein)) !== null &&
-    (await ctx.db.system.get(photo.formats.groot)) !== null
-  );
-}
-
 /** Wat de formaat-stap van een foto moet weten. `null`: de foto is weg. */
 export const formatInfo = internalQuery({
   args: { photoId: v.id("photos") },
@@ -553,7 +542,16 @@ export const formatInfo = internalQuery({
   },
 });
 
-/** De telling voor de backfill en de pre-flight (invariant 2). */
+/** Afgetekend en (nog) zonder volledige set: de backfill slaat hem over (A-invariant 25). */
+async function acceptedWithoutSet(ctx: QueryCtx, photo: Doc<"photos">): Promise<boolean> {
+  return photo.noFormatsAcceptedAt !== undefined && !(await hasCompleteFormats(ctx, photo));
+}
+
+/**
+ * De telling voor de backfill en de pre-flight (invariant 2). `withoutFormats`
+ * is elke foto zonder volledige set, ook de afgetekende; die staan daarnaast
+ * apart in `acceptedWithoutFormats` (A-invariant 25).
+ */
 export const formatStatus = internalQuery({
   args: {},
   returns: v.object({
@@ -561,29 +559,79 @@ export const formatStatus = internalQuery({
     withFormats: v.number(),
     withoutFormats: v.number(),
     withExifOrientation: v.number(),
+    acceptedWithoutFormats: v.number(),
   }),
   handler: async (ctx) => {
     const all = await ctx.db.query("photos").collect();
     // Een set met een ontbrekend object telt niet mee (A-invariant 22).
     let withFormats = 0;
-    for (const p of all) if (await hasCompleteFormats(ctx, p)) withFormats += 1;
+    let acceptedWithoutFormats = 0;
+    for (const p of all) {
+      if (await hasCompleteFormats(ctx, p)) withFormats += 1;
+      else if (p.noFormatsAcceptedAt !== undefined) acceptedWithoutFormats += 1;
+    }
     return {
       photos: all.length,
       withFormats,
       withoutFormats: all.length - withFormats,
       withExifOrientation: all.filter((p) => p.exifOrientation !== undefined).length,
+      acceptedWithoutFormats,
     };
+  },
+});
+
+/** De id's van de afgetekende foto's zonder volledige set; `formaten` drukt ze af. */
+export const acceptedWithoutFormats = internalQuery({
+  args: {},
+  returns: v.array(v.id("photos")),
+  handler: async (ctx) => {
+    const ids: Id<"photos">[] = [];
+    for (const p of await ctx.db.query("photos").collect()) {
+      if (await acceptedWithoutSet(ctx, p)) ids.push(p._id);
+    }
+    return ids;
+  },
+});
+
+/**
+ * A-invariant 25: legt per foto vast dat hij zonder formaten mag (de tijd in
+ * `noFormatsAcceptedAt`). Alles of niets: is één id geen foto, of heeft hij een
+ * `formats`-veld (volledig of dangling), dan gooit hij met dat id en schrijft
+ * niets. Een dangling set herstelt een gewone run eerst (invariant 22).
+ */
+export const acceptNoFormats = internalMutation({
+  args: { photoIds: v.array(v.id("photos")) },
+  returns: v.number(),
+  handler: async (ctx, { photoIds }) => {
+    const unique = [...new Set(photoIds)];
+    for (const id of unique) {
+      const photo = await ctx.db.get(id);
+      // ConvexError: de tekst (met het id) komt ook op prod bij de CLI aan.
+      if (!photo) throw new ConvexError(`acceptNoFormats: ${id} is geen foto; niets afgetekend`);
+      if (photo.formats !== undefined) {
+        throw new ConvexError(
+          `acceptNoFormats: ${id} heeft al een formaat-veld; niets afgetekend. ` +
+            `Draai eerst \`formaten\` zonder de vlag.`,
+        );
+      }
+    }
+    const now = Date.now();
+    for (const id of unique) await ctx.db.patch(id, { noFormatsAcceptedAt: now });
+    return unique.length;
   },
 });
 
 /**
  * Eén pagina foto's voor de backfill, in vaste volgorde (`_creationTime`).
- * Alleen het id en of er al formaten zijn; de action haalt de rest per foto.
+ * Alleen het id, of er al een volledige set is, en of hij is afgetekend; de
+ * action haalt de rest per foto.
  */
 export const formatBatch = internalQuery({
   args: { cursor: v.union(v.string(), v.null()), batchSize: v.number() },
   returns: v.object({
-    photos: v.array(v.object({ photoId: v.id("photos"), hasFormats: v.boolean() })),
+    photos: v.array(
+      v.object({ photoId: v.id("photos"), hasFormats: v.boolean(), noFormatsAccepted: v.boolean() }),
+    ),
     cursor: v.union(v.string(), v.null()),
   }),
   handler: async (ctx, { cursor, batchSize }) => {
@@ -591,7 +639,13 @@ export const formatBatch = internalQuery({
       .query("photos")
       .paginate({ cursor, numItems: Math.max(1, Math.floor(batchSize)) });
     const photos = [];
-    for (const p of page.page) photos.push({ photoId: p._id, hasFormats: await hasCompleteFormats(ctx, p) });
+    for (const p of page.page) {
+      photos.push({
+        photoId: p._id,
+        hasFormats: await hasCompleteFormats(ctx, p),
+        noFormatsAccepted: p.noFormatsAcceptedAt !== undefined,
+      });
+    }
     return {
       photos,
       cursor: page.isDone ? null : page.continueCursor,
@@ -792,16 +846,18 @@ export const decideFlag = mutation({
 const MY_FLAGGED_FIELDS = { ...photoFields, ...ownFlagFields };
 export const listMyFlagged = query({
   args: {},
-  returns: v.array(v.object(MY_FLAGGED_FIELDS)),
+  returns: v.array(v.object({ ...MY_FLAGGED_FIELDS, ...hasFormatsField })),
   handler: async (ctx) => {
     const user = await requireCurrentUser(ctx);
     const owned = await ctx.db
       .query("photos")
       .withIndex("by_owner", (q) => q.eq("ownerId", user._id))
       .collect();
-    return owned
-      .filter((p) => p.flaggedAt !== undefined)
-      .map((p) => pick(p, MY_FLAGGED_FIELDS));
+    return await Promise.all(
+      owned
+        .filter((p) => p.flaggedAt !== undefined)
+        .map(async (p) => ({ ...pick(p, MY_FLAGGED_FIELDS), hasFormats: await hasCompleteFormats(ctx, p) })),
+    );
   },
 });
 
@@ -812,13 +868,15 @@ export const listMyFlagged = query({
 const ALL_FLAGGED_FIELDS = { ...photoFields, ...allFlagFields };
 export const listAllFlagged = query({
   args: {},
-  returns: v.array(v.object(ALL_FLAGGED_FIELDS)),
+  returns: v.array(v.object({ ...ALL_FLAGGED_FIELDS, ...hasFormatsField })),
   handler: async (ctx) => {
     await requireWebmaster(ctx);
     const all = await ctx.db.query("photos").withIndex("by_flagged").collect();
-    return all
-      .filter((p) => p.flaggedAt !== undefined)
-      .map((p) => pick(p, ALL_FLAGGED_FIELDS));
+    return await Promise.all(
+      all
+        .filter((p) => p.flaggedAt !== undefined)
+        .map(async (p) => ({ ...pick(p, ALL_FLAGGED_FIELDS), hasFormats: await hasCompleteFormats(ctx, p) })),
+    );
   },
 });
 

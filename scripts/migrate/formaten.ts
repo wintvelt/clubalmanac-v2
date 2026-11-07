@@ -5,10 +5,18 @@
 // leeg is, de stand uit het bestand (A-invariant 12), in één schrijfactie.
 //
 // Eerst `selfTest` (A-invariant 24): laadt de beeldbibliotheek niet, dan stopt
-// hij vóór de eerste batch. Daarna batches van `internal.photoFormats.backfill`,
-// één foto tegelijk in de action (512 MB per Node-action). Gemeten op dev: ~50 s
-// per batch van 20. Hooguit 50 per batch (A-invariant 23): de HTTP-aanroep
-// heeft een time-out van 300 s.
+// hij vóór de eerste batch. Het advies past bij de oorzaak (A-invariant 27):
+// de key, het netwerk, of de bibliotheek.
+//
+// Dan, met `--accept-no-formats <id>[,<id>…]`, het aftekenen (A-invariant 25):
+// die foto's mogen zonder formaten. Dat blijft in de DB staan (besluit 8); de
+// backfill slaat ze over, ook in een run zonder de vlag. Weigert de mutation
+// één id, dan is niets afgetekend en stopt de CLI zonder batch.
+//
+// Daarna batches van `internal.photoFormats.backfill`, één foto tegelijk in de
+// action (512 MB per Node-action). Gemeten op dev: ~50 s per batch van 20.
+// Hooguit 50 per batch (A-invariant 23): de HTTP-aanroep heeft een time-out
+// van 300 s.
 //
 // Valt een batch-action om (geheugen, time-out; A-invariant 21), dan doet de
 // CLI die pagina nog eens, nu elke foto zonder formaten in een eigen action.
@@ -17,21 +25,51 @@
 // Hervatbaar zonder eigen staat: een nieuwe run begint vooraan en slaat elke
 // foto met formaten over (invariant 11). Breekt hij af, start hem opnieuw.
 //
-// Exitcode 0 alleen als na de run geen foto meer zonder formaten is en niets
-// mislukte. Op T0 lopen deze commando's in een keten; de operator leest de
-// exitcode.
+// Exitcode 0 alleen als na de run elke foto zonder volledige set is
+// afgetekend en niets mislukte. Op T0 lopen deze commando's in een keten; de
+// operator leest de exitcode.
 
 import { internal } from "../../convex/_generated/api.js";
 import type { Id } from "../../convex/_generated/dataModel.js";
 import type { Target } from "./config.ts";
-import { makeAdminClient, runAction, runQuery, type AdminClient } from "./convexAdmin.ts";
+import { makeAdminClient, runAction, runMutation, runQuery, type AdminClient } from "./convexAdmin.ts";
 
 const DEFAULT_BATCH = 20;
 const MAX_BATCH = 50;
 
-type Totals = { created: number; alreadyDone: number; gone: number; failed: Id<"photos">[] };
+type Totals = { created: number; alreadyDone: number; gone: number; accepted: number; failed: Id<"photos">[] };
 
-const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
+/** De tekst van een fout; bij een ConvexError met tekst als data die tekst. */
+const message = (error: unknown) => {
+  const data = (error as { data?: unknown } | null)?.data;
+  if (typeof data === "string") return data;
+  return error instanceof Error ? error.message : String(error);
+};
+
+const KEY_ERROR = /OperationNotPermitted|runInternalActions|admin-key af|BadAdminKey|Unauthorized|\b401\b|\b403\b/i;
+const NETWORK_ERROR = /fetch failed|ECONNREFUSED|ENOTFOUND|ETIMEDOUT|ECONNRESET|EAI_AGAIN|socket hang up/i;
+
+/** Het advies bij een mislukte `selfTest`, naar de oorzaak (A-invariant 27). */
+function selfTestAdvice(target: Target, error: string): string {
+  if (KEY_ERROR.test(error)) {
+    return (
+      `[formaten] key mag geen internal actions draaien op de deployment: ${error}\n` +
+      `[formaten] geen batch gedraaid. Maak een nieuwe key met \`npx convex deployment token create\` ` +
+      `(runbook §A), zet hem in MIGRATE_CONVEX_ADMIN_KEY_${target.toUpperCase()} in .env.migrate en start opnieuw.`
+    );
+  }
+  if (NETWORK_ERROR.test(error)) {
+    return (
+      `[formaten] geen verbinding met de deployment: ${error}\n` +
+      `[formaten] geen batch gedraaid. Controleer het netwerk en MIGRATE_CONVEX_URL_${target.toUpperCase()}, ` +
+      `en start opnieuw.`
+    );
+  }
+  return (
+    `[formaten] beeldbibliotheek werkt niet op de deployment: ${error}\n` +
+    `[formaten] geen batch gedraaid. Controleer sharp en heic-decode (package.json, convex.json) en deploy opnieuw.`
+  );
+}
 
 /**
  * De pagina van een afgebroken batch, foto voor foto. Geeft de cursor van de
@@ -44,9 +82,13 @@ async function photoByPhoto(
   total: Totals,
 ): Promise<string | null> {
   const page = await runQuery(admin, internal.photos.formatBatch, { cursor, batchSize });
-  for (const { photoId, hasFormats } of page.photos) {
+  for (const { photoId, hasFormats, noFormatsAccepted } of page.photos) {
     if (hasFormats) {
       total.alreadyDone += 1;
+      continue;
+    }
+    if (noFormatsAccepted) {
+      total.accepted += 1;
       continue;
     }
     try {
@@ -65,7 +107,11 @@ async function photoByPhoto(
   return page.cursor;
 }
 
-export async function formaten(target: Target, batchSize = DEFAULT_BATCH): Promise<number> {
+export async function formaten(
+  target: Target,
+  batchSize = DEFAULT_BATCH,
+  acceptNoFormats: Id<"photos">[] = [],
+): Promise<number> {
   if (!Number.isInteger(batchSize) || batchSize < 1 || batchSize > MAX_BATCH) {
     throw new Error(`[formaten] --batch-size moet 1..${MAX_BATCH} zijn, kreeg ${batchSize}`);
   }
@@ -79,20 +125,31 @@ export async function formaten(target: Target, batchSize = DEFAULT_BATCH): Promi
         `HEIC ${self.heic.width}×${self.heic.height})`,
     );
   } catch (error) {
-    console.error(
-      `[formaten] beeldbibliotheek werkt niet op de deployment: ${message(error)}\n` +
-        `[formaten] geen batch gedraaid. Controleer sharp en heic-decode (package.json, convex.json) en deploy opnieuw.`,
-    );
+    console.error(selfTestAdvice(target, message(error)));
     return 1;
+  }
+
+  if (acceptNoFormats.length > 0) {
+    try {
+      const n = await runMutation(admin, internal.photos.acceptNoFormats, { photoIds: acceptNoFormats });
+      console.log(`[formaten] afgetekend: ${n} foto('s) mogen zonder formaten (${acceptNoFormats.join(", ")})`);
+    } catch (error) {
+      console.error(
+        `[formaten] aftekenen geweigerd: ${message(error)}\n` +
+          `[formaten] gevraagd: ${acceptNoFormats.join(", ")}. Niets afgetekend, geen batch gedraaid.`,
+      );
+      return 1;
+    }
   }
 
   const before = await runQuery(admin, internal.photos.formatStatus, {});
   console.log(
     `[formaten] vóór: ${before.photos} foto's, ${before.withFormats} met formaten, ` +
-      `${before.withoutFormats} zonder, ${before.withExifOrientation} met exifOrientation`,
+      `${before.withoutFormats} zonder (${before.acceptedWithoutFormats} afgetekend), ` +
+      `${before.withExifOrientation} met exifOrientation`,
   );
 
-  const total: Totals = { created: 0, alreadyDone: 0, gone: 0, failed: [] };
+  const total: Totals = { created: 0, alreadyDone: 0, gone: 0, accepted: 0, failed: [] };
   const started = Date.now();
   let cursor: string | null = null;
   let batch = 0;
@@ -127,10 +184,11 @@ export async function formaten(target: Target, batchSize = DEFAULT_BATCH): Promi
     total.created += r.created;
     total.alreadyDone += r.alreadyDone;
     total.gone += r.gone;
+    total.accepted += r.accepted;
     total.failed.push(...r.failed);
     console.log(
       `[formaten] batch ${String(batch).padStart(3)}: gemaakt ${r.created}, al klaar ${r.alreadyDone}, ` +
-        `weg ${r.gone}, mislukt ${r.failed.length}` +
+        `weg ${r.gone}, afgetekend ${r.accepted}, mislukt ${r.failed.length}` +
         (r.failed.length > 0 ? ` (${r.failed.join(", ")})` : "") +
         ` — ${((Date.now() - t0) / 1000).toFixed(1)} s`,
     );
@@ -140,25 +198,34 @@ export async function formaten(target: Target, batchSize = DEFAULT_BATCH): Promi
   const after = await runQuery(admin, internal.photos.formatStatus, {});
   console.log(
     `\n[formaten] totaal: gemaakt ${total.created}, al klaar ${total.alreadyDone}, weg ${total.gone}, ` +
-      `mislukt ${total.failed.length} — ${batch} batch(es), ${((Date.now() - started) / 60000).toFixed(1)} min`,
+      `afgetekend ${total.accepted}, mislukt ${total.failed.length} — ${batch} batch(es), ` +
+      `${((Date.now() - started) / 60000).toFixed(1)} min`,
   );
   if (total.failed.length > 0) {
     console.log(`[formaten] mislukt (foto-id's; reden in de Convex-log, '[photoFormats] mislukt'):`);
     for (const id of total.failed) console.log(`  - ${id}`);
   }
+  if (after.acceptedWithoutFormats > 0) {
+    const accepted = await runQuery(admin, internal.photos.acceptedWithoutFormats, {});
+    console.log(`[formaten] afgetekend zonder formaten (${accepted.length}; toont in de app het origineel):`);
+    for (const id of accepted) console.log(`  - ${id}`);
+  }
   console.log(
     `[formaten] na: ${after.photos} foto's, ${after.withFormats} met formaten, ` +
-      `${after.withoutFormats} zonder, ${after.withExifOrientation} met exifOrientation`,
+      `${after.withoutFormats} zonder (${after.acceptedWithoutFormats} afgetekend), ` +
+      `${after.withExifOrientation} met exifOrientation`,
   );
 
-  if (after.withoutFormats > 0 || total.failed.length > 0) {
+  const missing = after.withoutFormats - after.acceptedWithoutFormats;
+  if (missing > 0 || total.failed.length > 0) {
     console.error(
-      `\n[formaten] NIET KLAAR: ${after.withoutFormats} foto('s) zonder formaten, ` +
+      `\n[formaten] NIET KLAAR: ${missing} foto('s) zonder formaten (niet afgetekend), ` +
         `${total.failed.length} mislukt. Een nieuwe upload tijdens de run krijgt zijn formaten zelf; ` +
-        `draai het commando opnieuw en bekijk de mislukte foto's.`,
+        `draai het commando opnieuw en bekijk de mislukte foto's. Blijft dezelfde foto mislukken: ` +
+        `runbook §Formaten, "Blijft een foto mislukken".`,
     );
     return 1;
   }
-  console.log(`\n[formaten] klaar: elke foto heeft zijn formaten.`);
+  console.log(`\n[formaten] klaar: elke foto heeft zijn formaten, of is afgetekend.`);
   return 0;
 }

@@ -112,9 +112,9 @@ export const profileImageInFormat = internalQuery({
     const original = await storedImage(ctx, user.profilePhotoStorageId);
     if (!original) return null;
     // Dezelfde rij als de stand in de user-vormen (A-invariant 19).
-    const photo = await profilePhotoRow(ctx, user);
-    if (!photo?.formats) return { storageId: original, fallback: true };
-    return await chooseFormat(ctx, photo, formaat, original);
+    const chosen = await profilePhotoRow(ctx, user);
+    if (!chosen?.row.formats) return { storageId: original, fallback: true };
+    return await chooseFormat(ctx, chosen.row, formaat, original);
   },
 });
 

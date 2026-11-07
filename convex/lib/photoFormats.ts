@@ -30,8 +30,12 @@ import type SharpModule from "sharp";
 
 export const KLEIN_MAX = 512;
 export const GROOT_MAX = 1600;
-/** 4032×3024 (12,2 MP) erdoor, 5712×4284 (24,5 MP) niet. Gelijk aan scripts/wp25/prod-tel.mjs. */
-export const HEIC_MAX_PIXELS = 16_000_000;
+/**
+ * 4032×3024 (12,2 MP) erdoor, 5712×4284 (24,5 MP) niet. 13 MP en niet 16: ook
+ * in een warme action, met het WASM-geheugen van een eerdere HEIC nog bezet,
+ * blijft de piek onder 512 MB (A-invariant 20). Gelijk aan scripts/wp25/prod-tel.mjs.
+ */
+export const HEIC_MAX_PIXELS = 13_000_000;
 const JPEG_OPTIONS = { quality: 80, mozjpeg: true } as const;
 const WHITE = { r: 255, g: 255, b: 255 };
 

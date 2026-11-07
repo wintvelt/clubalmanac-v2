@@ -25,12 +25,12 @@ import {
   group,
   groupFields,
   photo,
-  photoFields,
   pick,
   publicProfile,
   publicProfileFields,
 } from "./lib/shapes";
-import { profileOrientationOf } from "./lib/profilePhoto";
+import { avatarFieldsOf } from "./lib/profilePhoto";
+import { photoView } from "./lib/formatSet";
 import { recomputeRatingAggregate } from "./ratings";
 
 async function requireAlbum(
@@ -136,7 +136,7 @@ export const getWithCover = query({
     const cover = await getAccessiblePhoto(ctx, user._id, row.coverPhotoId);
     return {
       ...pick(row, albumFields),
-      cover: cover ? pick(cover, photoFields) : null,
+      cover: cover ? await photoView(ctx, cover) : null,
     };
   },
 });
@@ -346,7 +346,7 @@ export const listPhotos = query({
         owners.set(
           ownerId,
           ctx.db.get(ownerId).then(async (u) =>
-            u ? { ...pick(u, publicProfileFields), ...(await profileOrientationOf(ctx, u)) } : null,
+            u ? { ...pick(u, publicProfileFields), ...(await avatarFieldsOf(ctx, u)) } : null,
           ),
         );
       }
@@ -359,7 +359,7 @@ export const listPhotos = query({
         const owner = p ? await ownerOf(p.ownerId) : null;
         return {
           albumPhoto: pick(ap, albumPhotoFields),
-          photo: p ? pick(p, photoFields) : null,
+          photo: p ? await photoView(ctx, p) : null,
           owner,
           isNew: isNewFor(user._id, effective, ap, p),
         };

@@ -185,6 +185,8 @@ export async function collectDriftLines(ctx: {
   for (const p of allPhotos) {
     if (p.createdAt > now - FORMATS_GRACE_MS) continue;
     if (!p.formats) {
+      // A-invariant 25: bewust afgetekend (`formaten --accept-no-formats`).
+      if (p.noFormatsAcceptedAt !== undefined) continue;
       driftRows.push({ table: "photos", id: p._id, detail: "formaten ontbreken" });
     } else if (!presentStorage.has(p.formats.klein) || !presentStorage.has(p.formats.groot)) {
       driftRows.push({ table: "photos", id: p._id, detail: "formaten dangling" });

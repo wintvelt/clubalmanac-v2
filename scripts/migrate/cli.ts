@@ -12,6 +12,7 @@
 
 import { extract } from "./extract.ts";
 import { formaten } from "./formaten.ts";
+import type { Id } from "../../convex/_generated/dataModel.js";
 import { inspect } from "./inspect.ts";
 import { loadFiles } from "./loadFiles.ts";
 import { loadRecords } from "./loadRecords.ts";
@@ -43,6 +44,8 @@ opties
   --all                      reset wist ook de storage (en de storage-map)
   --accept-missing-files     load-records mag doorgaan met ontbrekende S3-objecten
   --batch-size N             formaten: foto's per action (1..50, standaard 20)
+  --accept-no-formats ID,…   formaten: teken deze foto's af als "mag zonder formaten"
+                             (blijvend in de DB; alleen foto's zonder formaat-veld)
 
 omgeving (.env.migrate, gitignored)
   MIGRATE_CONVEX_URL_DEV / _PROD, MIGRATE_CONVEX_ADMIN_KEY_DEV / _PROD
@@ -81,7 +84,15 @@ async function main(): Promise<number> {
       return await loadRecords(parseTarget(argv), has("--accept-missing-files"));
     case "formaten": {
       const index = argv.indexOf("--batch-size");
-      return await formaten(parseTarget(argv), index >= 0 ? Number(argv[index + 1]) : undefined);
+      const accept = argv.indexOf("--accept-no-formats");
+      if (accept >= 0 && (argv[accept + 1] === undefined || argv[accept + 1]!.startsWith("--"))) {
+        throw new Error(`[migrate] --accept-no-formats verwacht foto-id's: <id>[,<id>…]`);
+      }
+      const ids =
+        accept >= 0
+          ? (argv[accept + 1]!.split(",").map((x) => x.trim()).filter(Boolean) as Id<"photos">[])
+          : undefined;
+      return await formaten(parseTarget(argv), index >= 0 ? Number(argv[index + 1]) : undefined, ids);
     }
     case "verify":
       return await verify(parseTarget(argv));

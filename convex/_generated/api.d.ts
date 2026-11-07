@@ -21,6 +21,7 @@ import type * as lib_constants from "../lib/constants.js";
 import type * as lib_email from "../lib/email.js";
 import type * as lib_emailTemplates from "../lib/emailTemplates.js";
 import type * as lib_exifOrientation from "../lib/exifOrientation.js";
+import type * as lib_formatSet from "../lib/formatSet.js";
 import type * as lib_mailjet from "../lib/mailjet.js";
 import type * as lib_photoAccess from "../lib/photoAccess.js";
 import type * as lib_photoFormats from "../lib/photoFormats.js";
@@ -57,6 +58,7 @@ declare const fullApi: ApiFromModules<{
   "lib/email": typeof lib_email;
   "lib/emailTemplates": typeof lib_emailTemplates;
   "lib/exifOrientation": typeof lib_exifOrientation;
+  "lib/formatSet": typeof lib_formatSet;
   "lib/mailjet": typeof lib_mailjet;
   "lib/photoAccess": typeof lib_photoAccess;
   "lib/photoFormats": typeof lib_photoFormats;

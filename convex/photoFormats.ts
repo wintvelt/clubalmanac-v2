@@ -26,6 +26,7 @@ type BatchResult = {
   created: number;
   alreadyDone: number;
   gone: number;
+  accepted: number;
   failed: Id<"photos">[];
 };
 
@@ -60,7 +61,7 @@ async function makeFormatsFor(ctx: ActionCtx, photoId: Id<"photos">): Promise<Ou
     // Geen `Blob.slice` in Convex (convex-runtimes.md): de hele buffer.
     images = await makeFormatImages(new Uint8Array(await blob.arrayBuffer()));
   } catch (e) {
-    // Bv. "te groot (24.5 MP, grens 16 MP)" (A-invariant 20) of geen beeld.
+    // Bv. "te groot (24.5 MP, grens 13 MP)" (A-invariant 20) of geen beeld.
     console.error(`[photoFormats] mislukt photoId=${photoId}: ${e instanceof Error ? e.message : String(e)}`);
     return "failed";
   }
@@ -129,7 +130,8 @@ export const selfTest = internalAction({
  * Eén batch van de backfill, in vaste volgorde. `cursor: null` in de uitkomst
  * betekent dat de doorloop klaar is. Een tweede doorloop verandert niets: een
  * foto met formaten telt als `alreadyDone` (invariant 11). Een foto die mislukt
- * blokkeert de rest niet en staat met zijn id in `failed`.
+ * blokkeert de rest niet en staat met zijn id in `failed`. Een afgetekende foto
+ * zonder volledige set telt als `accepted` en wordt niet geprobeerd (A-invariant 25).
  */
 export const backfill = internalAction({
   args: { cursor: v.union(v.string(), v.null()), batchSize: v.number() },
@@ -138,15 +140,30 @@ export const backfill = internalAction({
     created: v.number(),
     alreadyDone: v.number(),
     gone: v.number(),
+    accepted: v.number(),
     failed: v.array(v.id("photos")),
   }),
   handler: async (ctx, { cursor, batchSize }): Promise<BatchResult> => {
     const started = Date.now();
-    const batch: { photos: { photoId: Id<"photos">; hasFormats: boolean }[]; cursor: string | null } =
-      await ctx.runQuery(internal.photos.formatBatch, { cursor, batchSize });
-    const result: BatchResult = { cursor: batch.cursor, created: 0, alreadyDone: 0, gone: 0, failed: [] };
+    const batch: {
+      photos: { photoId: Id<"photos">; hasFormats: boolean; noFormatsAccepted: boolean }[];
+      cursor: string | null;
+    } = await ctx.runQuery(internal.photos.formatBatch, { cursor, batchSize });
+    const result: BatchResult = {
+      cursor: batch.cursor,
+      created: 0,
+      alreadyDone: 0,
+      gone: 0,
+      accepted: 0,
+      failed: [],
+    };
     let peakRss = process.memoryUsage().rss;
-    for (const { photoId, hasFormats } of batch.photos) {
+    for (const { photoId, hasFormats, noFormatsAccepted } of batch.photos) {
+      // A-invariant 25: afgetekend zonder formaten; niet opnieuw proberen.
+      if (!hasFormats && noFormatsAccepted) {
+        result.accepted += 1;
+        continue;
+      }
       const r: Outcome = hasFormats ? "alreadyDone" : await makeFormatsFor(ctx, photoId);
       if (r === "failed") result.failed.push(photoId);
       else result[r] += 1;
@@ -155,7 +172,8 @@ export const backfill = internalAction({
     // De meting voor het runbook (pre-flight 5): tijd en piek-RSS per batch.
     console.log(
       `[photoFormats] batch photos=${batch.photos.length} created=${result.created} ` +
-        `alreadyDone=${result.alreadyDone} gone=${result.gone} failed=${result.failed.length} ` +
+        `alreadyDone=${result.alreadyDone} gone=${result.gone} accepted=${result.accepted} ` +
+        `failed=${result.failed.length} ` +
         `ms=${Date.now() - started} peakRssMB=${Math.round(peakRss / 1_048_576)}`,
     );
     return result;
