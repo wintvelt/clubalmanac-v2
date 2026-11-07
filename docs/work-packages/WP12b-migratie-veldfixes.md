@@ -22,7 +22,7 @@ Na de migratie ziet een lid elk album met de cover die het in de oude app had, e
 1. Albumcovers worden overgenomen.
 2. Het bezoek wordt een rij in `userVisits`. Het is alleen intern te lezen (WP15b), maar daar bewaart v2 het.
 3. Eigen branch, na de merge van WP25.
-4. **Covers zonder publicatie (A3):** voorstel A. Een cover komt mee zodra de foto gemigreerd wordt; staat hij in geen album van de groep, dan een waarschuwing in het transform-rapport, geen drop. Telling prod: alle 17 albumcovers staan in hun eigen album; 3 van de 4 groepscovers staan in geen album van de groep, dus die ziet in v2 alleen de eigenaar. Dat de leden ze ook zien, regelt WP27 (besluit 2026-11-07), niet deze WP.
+4. **Covers zonder publicatie (A3):** voorstel A. Een cover komt mee zodra de foto gemigreerd wordt; staat hij in geen album van de groep, dan een waarschuwing in het transform-rapport, geen drop. Telling prod: alle 17 albumcovers staan in hun eigen album; 3 van de 4 groepscovers staan in geen album van de groep, dus die ziet in v2 alleen de eigenaar. Na T0 kiest een admin voor die groepen een nieuwe cover uit een album (WP17b). WP27, dat de toegang tot covers zou verruimen, is vervallen (besluit 2026-11-07): v2 laat als cover alleen een foto in de groep toe, dus het ging alleen om deze gemigreerde covers.
 5. **Standaardfoto (A1):** het oude bestand houden, als los beeld gedeeld per bestand. Niets bouwen.
 
 ## Invarianten
@@ -201,7 +201,7 @@ Niets. Besluit 4 en 5 zijn verwerkt in invariant 1, 2 en 4.
 ### F2. Groepscover uit een andere groep: eigen melding (audit S1)
 
 - Nu geeft de transform dezelfde tekst voor een groepscover die nergens staat en een die alleen in een album van een andere groep staat. Dat worden twee meldingen. De tweede noemt de andere groep (of groepen).
-- Of zo'n cover in v2 zichtbaar wordt, beslist WP27; hier alleen de melding.
+- Hier alleen de melding; zichtbaarheid zie besluit 4.
 
 ### F3. Albumcover: de twee meldingen blijven verschillend (audit N3)
 
@@ -247,4 +247,4 @@ Niets. Besluit 4 en 5 zijn verwerkt in invariant 1, 2 en 4.
 - **`formaten` op dev:** 1 foto mislukte op een tijdelijke storage-fout van Convex ("Try again later"), en één batch brak af op "too many system operations" en ging per foto verder. Een tweede run maakte de laatste foto. Op T0: bij mislukte foto's eerst opnieuw draaien.
 - **Rest (heraudit 2):** de aanroep van `runTransform` in `main()` van `cli.ts` heeft geen eigen test (de vlag hard aan valt niet op). Eén regel, klein risico, geaccepteerd (Wouter). Ook niet getest: de controle of `cli.ts` het startpunt is.
 - **Gatetest** (WP16) is weg door de `reset`. Opnieuw aanmaken vóór de gate van WP17b.
-- **Naar WP27:** covers zichtbaar voor alle leden, en het besluit over een groepscover uit een andere groep.
+- **WP27 vervallen:** de gemigreerde covers zonder publicatie krijgen na T0 een nieuwe cover (WP17b). De verwijzing naar WP27 in de meldingen van de transform is verouderd.

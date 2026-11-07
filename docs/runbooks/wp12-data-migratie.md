@@ -254,10 +254,10 @@ Breekt `load-records` halverwege af, dan stopt hij luid met de bron-sleutel in d
 | `verify`: `covers: FOUT dynamo-extract.json ontbreekt` | `verify` haalt de verwachte covers uit de bron (WP12b). Draai `extract` en `transform` opnieuw; een extract dat niet bij `convex-records.json` hoort, geeft een vertekend beeld. |
 | `verify`: `FOUT groups/albums met cover: verwacht N, gevonden M` | Er staan minder (of meer) covers in de deployment dan de bron heeft. Bij minder: de transform of `load-records` liet ze vallen. Na `--accept-missing-files` is dit verwacht als een cover-foto zonder bestand was. |
 | `album X: cover P staat niet in dit album maar wel in groep G` | Bewust overgenomen (WP12b besluit 4). Elk lid ziet de cover, want de foto staat in de groep. |
-| `album X` of `groep G`: `cover P staat in geen album van de groep` | Bewust overgenomen (WP12b besluit 4). In v2 ziet alleen de eigenaar zo'n cover; dat de leden hem ook zien, regelt WP27. |
+| `album X` of `groep G`: `cover P staat in geen album van de groep` | Bewust overgenomen (WP12b besluit 4). In v2 ziet alleen de eigenaar zo'n cover. Na T0 kiest een admin een nieuwe cover uit een album (WP17b). De "(WP27)" in de melding is verouderd: WP27 is vervallen (2026-11-07). |
 | `album X: coverPhotoId P resolvet niet — gewist` | De cover-foto bestaat niet in de bron, of valt buiten de dev-seed. Album zonder cover, net als bij een groep. |
 | `transform`: `gemelde foto('s) met een verwijderdatum` | De FL1-cron wist ze zodra de datum voorbij is; v1 deed dat nooit. Laat de datum in de bron wissen, of draai `transform` opnieuw met `--accept-flagged-deletion` (zie T0). |
-| `groep G: cover P staat alleen in een album van een andere groep (G2)` | Bewust overgenomen (WP12b). Of de leden van G hem in v2 zien, beslist WP27. |
+| `groep G: cover P staat alleen in een album van een andere groep (G2)` | Bewust overgenomen (WP12b). In v2 zien alleen de leden van G2 hem; kies na T0 een nieuwe cover (WP17b). |
 | `createdBy gesynthetiseerd` | `albums.createdBy` bestaat niet in de bron en valt terug op de founder van de groep. |
 
 ## Opruimen (verplicht, niet optioneel)
