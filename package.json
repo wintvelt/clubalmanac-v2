@@ -30,6 +30,8 @@
   },
   "dependencies": {
     "convex": "^1.45.0",
-    "exif-parser": "^0.1.12"
+    "exif-parser": "^0.1.12",
+    "heic-decode": "2.1.0",
+    "sharp": "0.35.5"
   }
 }

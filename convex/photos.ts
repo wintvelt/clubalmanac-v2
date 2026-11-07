@@ -218,6 +218,11 @@ export const createFromUploadInternal = internalMutation({
     await ctx.scheduler.runAfter(0, internal.photoMetadata.extractMetadata, {
       photoId,
     });
+    // WP25 invariant 2: de formaten (en de stand uit het bestand, A-inv. 12)
+    // komen kort na de upload, ongeacht wie uploadt.
+    await ctx.scheduler.runAfter(0, internal.photoFormats.makeFormats, {
+      photoId,
+    });
 
     return photoId;
   },
@@ -312,9 +317,10 @@ export async function internalRemovePhoto(
     });
   }
 
-  // U7-style storage cleanup (best-effort async).
+  // U7-style storage cleanup (best-effort async). WP25 invariant 8: de
+  // formaten gaan mee; het origineel en de formaten zijn van deze foto alleen.
   await ctx.scheduler.runAfter(0, internal.photos.cleanupStorage, {
-    storageIds: [photo.storageId],
+    storageIds: [photo.storageId, ...formatStorageIds(photo)],
   });
 
   await ctx.db.delete(photoId);
@@ -419,7 +425,8 @@ export const cleanupStorage = internalAction({
 
 // Internal patch-helper voor extractMetadata. Action kan niet direct
 // ctx.db.patch doen, dus delegate via een internal mutation. No-op als
-// photo intussen verwijderd is (cleanup-race).
+// photo intussen verwijderd is (cleanup-race). Geen `exifOrientation`: die
+// zet alleen `attachFormats`, samen met de formaten (WP25 A-invariant 12).
 export const patchMetadata = internalMutation({
   args: {
     photoId: v.id("photos"),
@@ -429,7 +436,6 @@ export const patchMetadata = internalMutation({
     latitude: v.optional(v.number()),
     longitude: v.optional(v.number()),
     locationLabel: v.optional(v.string()),
-    exifOrientation: v.optional(v.number()),
   },
   handler: async (ctx, { photoId, ...rest }) => {
     const photo = await ctx.db.get(photoId);
@@ -442,7 +448,6 @@ export const patchMetadata = internalMutation({
       "latitude",
       "longitude",
       "locationLabel",
-      "exifOrientation",
     ] as const) {
       if (rest[k] !== undefined) (patch[k] as unknown) = rest[k];
     }
@@ -459,6 +464,97 @@ export const patchMetadata = internalMutation({
 // `internal.photoMetadata.extractMetadata`. `isHeicLike` helper is mee-
 // verhuisd; `patchMetadata`, `getByIdInternal` en `reverseGeocode` blijven
 // hier (mutations + isolate-actions).
+
+// ── WP25: formaten ───────────────────────────────────────────────────
+
+/** De storage-objecten van de formaten van een foto (leeg zonder formaten). */
+export function formatStorageIds(photo: Doc<"photos">): Id<"_storage">[] {
+  return photo.formats ? [photo.formats.klein, photo.formats.groot] : [];
+}
+
+function validOrientation(o: number | undefined): number | undefined {
+  return o !== undefined && Number.isInteger(o) && o >= 1 && o <= 8 ? o : undefined;
+}
+
+/**
+ * Legt een set formaten vast (A-invariant 12 en 17). Eén schrijfactie: de
+ * formaten, plus de stand uit het bestand en de afmetingen als die nog leeg
+ * zijn. Een stand die er al staat (draaien, WP8) blijft staan.
+ *
+ * De eerste set blijft. Heeft de foto al formaten, of is hij weg, dan wordt de
+ * nieuwe set niet vastgelegd en verdwijnen zijn objecten uit storage: er
+ * blijft geen wees achter van een stap die te laat kwam.
+ */
+export const attachFormats = internalMutation({
+  args: {
+    photoId: v.id("photos"),
+    klein: v.id("_storage"),
+    groot: v.id("_storage"),
+    width: v.optional(v.number()),
+    height: v.optional(v.number()),
+    exifOrientation: v.optional(v.number()),
+  },
+  returns: v.union(v.literal("attached"), v.literal("alreadyDone"), v.literal("gone")),
+  handler: async (ctx, { photoId, klein, groot, width, height, exifOrientation }) => {
+    const photo = await ctx.db.get(photoId);
+    if (!photo || photo.formats) {
+      await ctx.storage.delete(klein);
+      await ctx.storage.delete(groot);
+      return photo ? "alreadyDone" : "gone";
+    }
+    const patch: Partial<Doc<"photos">> = { formats: { klein, groot } };
+    const orientation = validOrientation(exifOrientation);
+    if (photo.exifOrientation === undefined && orientation !== undefined) {
+      patch.exifOrientation = orientation;
+    }
+    if (photo.width === undefined && width !== undefined) patch.width = width;
+    if (photo.height === undefined && height !== undefined) patch.height = height;
+    await ctx.db.patch(photoId, patch);
+    return "attached";
+  },
+});
+
+/** De telling voor de backfill en de pre-flight (invariant 2). */
+export const formatStatus = internalQuery({
+  args: {},
+  returns: v.object({
+    photos: v.number(),
+    withFormats: v.number(),
+    withoutFormats: v.number(),
+    withExifOrientation: v.number(),
+  }),
+  handler: async (ctx) => {
+    const all = await ctx.db.query("photos").collect();
+    const withFormats = all.filter((p) => p.formats !== undefined).length;
+    return {
+      photos: all.length,
+      withFormats,
+      withoutFormats: all.length - withFormats,
+      withExifOrientation: all.filter((p) => p.exifOrientation !== undefined).length,
+    };
+  },
+});
+
+/**
+ * Eén pagina foto's voor de backfill, in vaste volgorde (`_creationTime`).
+ * Alleen het id en of er al formaten zijn; de action haalt de rest per foto.
+ */
+export const formatBatch = internalQuery({
+  args: { cursor: v.union(v.string(), v.null()), batchSize: v.number() },
+  returns: v.object({
+    photos: v.array(v.object({ photoId: v.id("photos"), hasFormats: v.boolean() })),
+    cursor: v.union(v.string(), v.null()),
+  }),
+  handler: async (ctx, { cursor, batchSize }) => {
+    const page = await ctx.db
+      .query("photos")
+      .paginate({ cursor, numItems: Math.max(1, Math.floor(batchSize)) });
+    return {
+      photos: page.page.map((p) => ({ photoId: p._id, hasFormats: p.formats !== undefined })),
+      cursor: page.isDone ? null : page.continueCursor,
+    };
+  },
+});
 
 // Internal query helper — actions kunnen niet direct ctx.db.get gebruiken.
 export const getByIdInternal = internalQuery({

@@ -19,7 +19,9 @@ import type { Doc } from "./_generated/dataModel";
 //   DateTimeOriginal ?? CreateDate → takenAt (audit-10 §1: iOS prominent op
 //                                   DateTimeOriginal, Android op CreateDate)
 //   GPSLatitude / GPSLongitude    → latitude / longitude
-//   tags.Orientation              → exifOrientation (audit-9)
+//   tags.Orientation              → NIET meer (WP25 A-invariant 12: de stand
+//                                   uit het bestand komt alleen samen met de
+//                                   formaten in de DB, via photoFormats)
 //   imageSize.width/height        → width / height
 //
 // Graceful degradation (audit-10 §3 — granulaire try/catch met logging):
@@ -87,7 +89,6 @@ export const extractMetadata = internalAction({
     let takenAt: number | undefined;
     let latitude: number | undefined;
     let longitude: number | undefined;
-    let exifOrientation: number | undefined;
 
     try {
       // Lazy import: graceful failure als pakket niet laadt (rare maar
@@ -113,11 +114,6 @@ export const extractMetadata = internalAction({
         const lon = tags.GPSLongitude;
         if (typeof lat === "number") latitude = lat;
         if (typeof lon === "number") longitude = lon;
-
-        const orient = tags.Orientation;
-        if (typeof orient === "number" && orient >= 1 && orient <= 8) {
-          exifOrientation = orient;
-        }
 
         const size = result.imageSize as
           | { width?: number; height?: number }
@@ -178,7 +174,6 @@ export const extractMetadata = internalAction({
         typeof locationLabel === "string" && locationLabel.length > 0
           ? locationLabel
           : undefined,
-      exifOrientation,
     });
   },
 });

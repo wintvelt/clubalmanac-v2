@@ -85,7 +85,7 @@ export function makeAdminClient(target: Target, write: boolean): AdminClient {
 // ── typed wrappers ────────────────────────────────────────────────────
 //
 // ConvexHttpClient.query/mutation accepteren alleen public function-references.
-// Deze twee wrappers houden args + returntype getypeerd voor internal refs.
+// Deze wrappers houden args + returntype getypeerd voor internal refs.
 
 export async function runQuery<
   Q extends FunctionReference<"query", "internal", any, any>,
@@ -106,6 +106,18 @@ export async function runMutation<
     return await (admin.client as unknown as {
       mutation(ref: M, args: M["_args"]): Promise<M["_returnType"]>;
     }).mutation(ref, args);
+  } catch (error) {
+    throw explain(error, admin);
+  }
+}
+
+export async function runAction<
+  A extends FunctionReference<"action", "internal", any, any>,
+>(admin: AdminClient, ref: A, args: A["_args"]): Promise<A["_returnType"]> {
+  try {
+    return await (admin.client as unknown as {
+      action(ref: A, args: A["_args"]): Promise<A["_returnType"]>;
+    }).action(ref, args);
   } catch (error) {
     throw explain(error, admin);
   }

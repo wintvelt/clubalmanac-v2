@@ -14,9 +14,10 @@ npm run migrate -- <commando> --target dev|prod [opties]
 | 3 | `transform` | extract + config | `scripts/.data/convex-records.json` |
 | 4 | `load-files` | records + S3 (read-only) | Convex-storage + `scripts/.data/storage-map.json` |
 | 5 | `load-records` | records + storage-map | de Convex-tabellen |
-| 6 | `verify` | beide bestanden + de deployment | rapport in de terminal |
-| 7 | `prune-storage` | records + storage-map + de deployment | wist exact de storage-objecten waar niets meer naar verwijst |
-| 8 | `reset` | — | leegt de tabellen; met `--all` ook de storage |
+| 6 | `formaten` (WP25) | foto-rijen + originelen | per foto *klein* en *groot* in storage, plus `exifOrientation` als die leeg is |
+| 7 | `verify` | beide bestanden + de deployment | rapport in de terminal |
+| 8 | `prune-storage` | records + storage-map + de deployment | wist exact de storage-objecten waar niets meer naar verwijst |
+| 9 | `reset` | — | leegt de tabellen (en de formaten van de gewiste foto's); met `--all` ook de storage |
 
 ## Pre-flight
 
@@ -90,13 +91,14 @@ npm run migrate -- inspect                     # kies de 3 chosen users op feite
 npm run migrate -- transform --target dev      # seconden
 npm run migrate -- load-files --target dev     # 3,1 GB, ~15 min (gemeten 2026-10-25); hervatbaar
 npm run migrate -- load-records --target dev   # minuten
+npm run migrate -- formaten --target dev       # WP25; ~1 uur voor ~1000 foto's
 npm run migrate -- verify --target dev
 ```
 
 - Ook de dev-seed leest **productie**-AWS. De AWS-dev-omgeving wordt bewust genegeerd: alleen productie is representatief genoeg om de clients tegenaan te bouwen.
 - Anonimisatie staat automatisch aan bij `--target dev` en zit ín de transform: echte namen en adressen verlaten die stap niet, ook niet in invite-sleutels of -tokens. Foto's blijven echt (visuele realiteit) — de dev-database dus nooit publiek delen.
 - Een groep waarvan de founder niet chosen is, valt volledig af. Blijkt bij `inspect` dat je daarmee een groep kwijtraakt die je wilde testen, kies dan andere users — niet de regel verzachten.
-- Opnieuw seeden (bv. na een schema-wijziging): `reset --target dev --yes` en dan `load-records` opnieuw. De bestanden blijven staan, dus dat duurt minuten. Alleen als je ook de bestanden weg wilt: `reset --target dev --yes --all` — dat maakt `storage-map.json` in dezelfde beweging ongeldig.
+- Opnieuw seeden (bv. na een schema-wijziging): `reset --target dev --yes`, `load-records` en `formaten` opnieuw. De bestanden blijven staan, dus dat duurt minuten. Alleen als je ook de bestanden weg wilt: `reset --target dev --yes --all` — dat maakt `storage-map.json` in dezelfde beweging ongeldig.
 - `reset` leegt precies de tabellen die de leeg-preconditie van `load-records` telt — inclusief `uploadIdempotency`, dat de import zelf niet vult maar dat wél onder WP10's FK-controle valt. De dev-deployment heeft er rijen in van de upload-integration-test; bleven die staan, dan wezen hun `ownerId`'s na de seed naar verwijderde users en meldde de dagelijkse scan drift.
 
 ## Run 2 — prod (fase 5)
@@ -130,15 +132,32 @@ npm run migrate -- extract                      # verse stand, inclusief alles s
 npm run migrate -- transform --target prod
 npm run migrate -- load-files --target prod     # alleen de delta; de rest staat al in de map
 npm run migrate -- load-records --target prod   # minuten
+npm run migrate -- formaten --target prod       # WP25; 16–80 min, hervatbaar
 npm run migrate -- verify --target prod
 ```
 
-- [ ] `verify` is groen: rij-aantallen kloppen, geen dangling storage-verwijzingen, geen storage-orphans, integriteitsscan leeg.
+- [ ] `formaten` eindigt met exitcode 0: geen foto zonder formaten, niets mislukt. Zie §Formaten (WP25) hieronder.
+- [ ] `verify` is groen: rij-aantallen kloppen, geen dangling storage-verwijzingen, geen storage-orphans, integriteitsscan leeg (dus ook geen `formaten ontbreken`).
 
   `verify` vergelijkt met de tellingen die de **transform** heeft vastgelegd, niet met een herberekening uit de storage-map. Dat betekent dat een run met `--accept-missing-files` per definitie níet groen is: het verlies is verklaarbaar, maar verklaarbaar is niet goedgekeurd. Lees dan de bevinding, controleer dat het verschil exact de geaccepteerde bestanden betreft, en teken er bewust voor af.
 - [ ] Storage-orphans opgeruimd, als `verify` ze meldt — zie hieronder.
 - [ ] `integrityCheck`-cron op prod weer aan.
+- [ ] Pas nu de app open (WP25 besluit 5): na `formaten` en een groene `verify`.
 - [ ] `unset MIGRATE_ALLOW_PROD`.
+
+#### Formaten (WP25)
+
+`formaten` maakt van elke foto twee JPEG's (*klein* 512 px, *groot* 1600 px, langste zijde) en zet `exifOrientation` uit het bestand als die nog leeg is. Hij draait na `load-records` (eerder is er geen foto-rij) en vóór `verify` (dan dekt één groene `verify` alles).
+
+- Per batch één regel: gemaakt, al klaar, weg, mislukt (met foto-id's). Aan het eind de totalen en de telling vóór en na. Exitcode 0 alleen als geen foto meer zonder formaten is en niets mislukte.
+- Batch van 20 foto's, één foto tegelijk in een Node-action (512 MB per action). `--batch-size N` (1..100) als een batch te lang duurt. Gemeten op dev: zie §Meting hieronder.
+- **Breekt hij af** (laptop dicht, netwerk weg, timeout): start hetzelfde commando opnieuw. Elke foto die klaar is, heeft zijn formaten en `exifOrientation` in één schrijfactie; een nieuwe run slaat die over. De app werkt halverwege: een foto zonder formaten toont het origineel. Hooguit één foto per afgebroken batch laat twee formaat-objecten zonder foto achter. `verify` noemt ze als storage-orphans, en `prune-storage` wist ze.
+- **Mislukt een foto** (het origineel ontbreekt of is geen leesbaar beeld): hij krijgt geen formaten en blijft ongewijzigd. De reden staat in de Convex-log onder `[photoFormats] mislukt photoId=…`. Een nieuwe run probeert hem opnieuw. Blijft hij mislukken, dan meldt `verify` hem als `formaten ontbreken` tot iemand hem wist. In de app toont hij het origineel.
+- **`prune-storage` na `formaten`** wist geen formaten: `storageInventory` telt ze als verwezen. Verwacht in de lijst van `verify` een handvol objecten, geen ~3200. Staan er duizenden formaat-objecten op de lijst, draai `prune-storage` dan niet en zoek uit waarom.
+- **`reset` + `load-records` na `formaten`**: `reset` wist de formaten van de foto's die hij weghaalt (het origineel blijft). Draai daarna `formaten` opnieuw.
+- **Terugrollen** naar code zonder formaten: het optionele veld `photos.formats` moet in het schema blijven staan (Convex weigert een schema-push die bestaande rijen afkeurt). De formaten blijven dan ongebruikt staan.
+
+Meting (dev, preview-run, nog in te vullen na de run): batchgrootte, tijd per batch, piek-RSS (`[photoFormats] batch … peakRssMB=` in de Convex-log), totale duur, en de schatting voor prod (~1600 foto's).
 
 #### Storage-orphans tussen T-2 en T-0
 
@@ -182,6 +201,9 @@ Breekt `load-records` halverwege af, dan stopt hij luid met de bron-sleutel in d
 | `N van de M verwezen bestand(en) staan niet in storage-map.json` | De gate vóór de eerste schrijf. Draai `load-files` (opnieuw) af — hij hervat waar hij gebleven was. Staan de bestanden aantoonbaar niet in S3, dan pas `--accept-missing-files`. |
 | `N bestand(en) ... staan niet in de bucket` | Records verwijzen naar een verdwenen S3-object. Bekijk `scripts/.data/missing-files.json`; met `--accept-missing-files` slaat `load-records` die foto's over, benoemt ze per bron-sleutel, en `verify` meldt het verschil daarna als bevinding. |
 | `stemscore votes=N gaat verloren` | Bewust: de bron kent geen per-user upvotes, dus `upvoteCount` wordt 0. De oude score staat in het rapport zodat je 'm desgewenst handmatig terugzet. |
+| `formaten`: `NIET KLAAR` | Er zijn nog foto's zonder formaten, of er mislukte er een. Draai `formaten` opnieuw; de mislukte foto-id's staan in de uitvoer, de reden in de Convex-log. Exitcode 1. |
+| `verify`: `photos/<id>: formaten ontbreken` | Een foto van meer dan een uur oud zonder formaten (WP25). Op T0: `formaten` is niet (af)gedraaid. Daarna: de stap na een upload mislukte. Draai `formaten`. |
+| `verify`: `photos/<id>: formaten dangling` | De foto verwijst naar een formaat dat niet meer in storage staat. De app toont het origineel. |
 | `createdBy gesynthetiseerd` | `albums.createdBy` bestaat niet in de bron en valt terug op de founder van de groep. |
 
 ## Opruimen (verplicht, niet optioneel)

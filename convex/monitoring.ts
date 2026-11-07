@@ -1,6 +1,6 @@
 import { v } from "convex/values";
 import { internalAction, internalMutation } from "./_generated/server";
-import type { Id, TableNames } from "./_generated/dataModel";
+import type { Doc, Id, TableNames } from "./_generated/dataModel";
 import type { QueryCtx } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { getWebmasterEmails } from "./lib/auth";
@@ -102,6 +102,33 @@ const OPTIONAL_FKS = MONITORED_FKS.filter((fk) => !fk.required);
 
 type DriftRow = { table: string; id: string; detail: string };
 
+// WP25 A-invariant 14: zo lang mag een nieuwe foto zonder formaten zijn.
+const FORMATS_GRACE_MS = 60 * 60 * 1000;
+
+/**
+ * De verwezen storage: `photos.storageId`, de twee formaten van elke foto
+ * (WP25 A-invariant 15) en `users.profilePhotoStorageId`. Eén definitie voor
+ * de wees-controle hier en `storageInventory` in convex/migration.ts, zodat
+ * `prune-storage` en WP10 nooit iets anders verwezen vinden.
+ */
+export function referencedStorageIds(
+  photos: Doc<"photos">[],
+  users: Doc<"users">[],
+): Set<string> {
+  const referenced = new Set<string>();
+  for (const p of photos) {
+    referenced.add(p.storageId);
+    if (p.formats) {
+      referenced.add(p.formats.klein);
+      referenced.add(p.formats.groot);
+    }
+  }
+  for (const u of users) {
+    if (u.profilePhotoStorageId) referenced.add(u.profilePhotoStorageId);
+  }
+  return referenced;
+}
+
 // Stabiele, korte signature (djb2) over de gesorteerde drift-regels. Twee runs
 // met identieke drift ⇒ identieke signature ⇒ dedup. Eén drift erbij/eraf ⇒
 // andere signature ⇒ nieuwe alert.
@@ -126,6 +153,7 @@ function hashSignature(lines: string[]): string {
 export async function collectDriftLines(ctx: {
   db: QueryCtx["db"];
 }): Promise<string[]> {
+  const now = Date.now();
   const driftRows: DriftRow[] = [];
 
   // Snapshot van alle bron-tabellen die de scan nodig heeft. Eén consistente
@@ -137,18 +165,29 @@ export async function collectDriftLines(ctx: {
   const allUpvotes = await ctx.db.query("featureUpvotes").collect();
 
   // ── (2a) Storage-orphans ──────────────────────────────────────────
-  // Referentie-set = photos.storageId ∪ users.profilePhotoStorageId. Een
-  // blob die in géén van beide voorkomt is orphan. profilePhotoStorageId
-  // meenemen is kritisch: anders is élke profielfoto een vals-positief.
-  const referencedStorage = new Set<string>();
-  for (const p of allPhotos) referencedStorage.add(p.storageId);
-  for (const u of allUsers) {
-    if (u.profilePhotoStorageId) referencedStorage.add(u.profilePhotoStorageId);
-  }
+  // Referentie-set = photos.storageId ∪ photos.formats ∪
+  // users.profilePhotoStorageId. Een blob die in géén ervan voorkomt is
+  // orphan. profilePhotoStorageId meenemen is kritisch: anders is élke
+  // profielfoto een vals-positief. Zo ook de formaten (WP25 A-invariant 15).
+  const referencedStorage = referencedStorageIds(allPhotos, allUsers);
   const storageDocs = await ctx.db.system.query("_storage").collect();
   for (const s of storageDocs) {
     if (!referencedStorage.has(s._id)) {
       driftRows.push({ table: "_storage", id: s._id, detail: "orphan blob" });
+    }
+  }
+
+  // ── WP25: ontbrekende formaten (A-invariant 14) ────────────────────
+  // Een foto ouder dan een uur zonder (bestaande) formaten toont in de app
+  // het trage origineel. Niet stil: een melding tot de formaten er zijn of
+  // de foto weg is. Het uur geeft de stap na de upload ruimte.
+  const presentStorage = new Set<string>(storageDocs.map((s) => s._id));
+  for (const p of allPhotos) {
+    if (p.createdAt > now - FORMATS_GRACE_MS) continue;
+    if (!p.formats) {
+      driftRows.push({ table: "photos", id: p._id, detail: "formaten ontbreken" });
+    } else if (!presentStorage.has(p.formats.klein) || !presentStorage.has(p.formats.groot)) {
+      driftRows.push({ table: "photos", id: p._id, detail: "formaten dangling" });
     }
   }
 

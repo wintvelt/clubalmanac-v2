@@ -1,6 +1,6 @@
 import { v } from "convex/values";
 import { internalQuery, type QueryCtx } from "./_generated/server";
-import type { Id } from "./_generated/dataModel";
+import type { Doc, Id } from "./_generated/dataModel";
 import { getBySubject } from "./users";
 import { canAccessPhoto } from "./lib/photoAccess";
 
@@ -13,6 +13,11 @@ import { canAccessPhoto } from "./lib/photoAccess";
 // De id's komen ruw uit het pad, dus de args zijn strings: een misvormd id,
 // een id van een andere tabel en een onbekend id vallen zo in dezelfde tak
 // als geen toegang (`null`), zonder validatiefout en zonder 500.
+
+// WP25: de keuze van het beeldpad als er een formaat gevraagd is. Het
+// storage-id blijft binnen de server (WP17a invariant 10).
+const formaatArg = v.union(v.literal("klein"), v.literal("groot"));
+const imageChoice = v.object({ storageId: v.id("_storage"), fallback: v.boolean() });
 
 /** Bestaat het beeld nog in storage? De cleanup na wissen loopt async. */
 async function storedImage(
@@ -47,6 +52,30 @@ export const photoImage = internalQuery({
 });
 
 /**
+ * WP25: het beeld van een foto in een formaat. Eerst dezelfde toegangsregel als
+ * `photoImage`; pas daarna wordt het formaat gekozen (invariant 4). Ontbreekt
+ * het formaat, of wijst het naar een gewist object, dan het origineel met
+ * `fallback: true` (invariant 3, A-invariant 13). `null` = 404.
+ */
+export const photoImageInFormat = internalQuery({
+  args: { photoId: v.string(), formaat: formaatArg },
+  returns: v.union(imageChoice, v.null()),
+  handler: async (ctx, { photoId, formaat }) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) return null;
+    const user = await getBySubject(ctx, identity.subject);
+    if (!user) return null;
+    const id = ctx.db.normalizeId("photos", photoId);
+    if (!id) return null;
+    const photo = await ctx.db.get(id);
+    if (!photo || !(await canAccessPhoto(ctx, user._id, photo))) return null;
+    const original = await storedImage(ctx, photo.storageId);
+    if (!original) return null;
+    return await chooseFormat(ctx, photo, formaat, original);
+  },
+});
+
+/**
  * Profiel (besluit 8): openbaar, ook uitgelogd. Alleen het beeld dat nú de
  * profielfoto van die user is; een vorige profielfoto of een ander beeld van
  * die user levert dit pad nooit op. Geen profielfoto, een gewist beeld en een
@@ -64,10 +93,50 @@ export const profileImage = internalQuery({
   },
 });
 
+/**
+ * WP25: de huidige profielfoto in een formaat (A-kernvondst 5). Een
+ * profielfoto heeft geen eigen formaten: het formaat is dat van de foto met
+ * hetzelfde beeld, bij voorkeur een foto van die user zelf. Alleen het beeld
+ * dat nú de profielfoto is; een los beeld zonder foto-rij of een foto zonder
+ * formaten geeft het origineel met `fallback: true`.
+ */
+export const profileImageInFormat = internalQuery({
+  args: { userId: v.string(), formaat: formaatArg },
+  returns: v.union(imageChoice, v.null()),
+  handler: async (ctx, { userId, formaat }) => {
+    const id = ctx.db.normalizeId("users", userId);
+    if (!id) return null;
+    const user = await ctx.db.get(id);
+    if (!user) return null;
+    const original = await storedImage(ctx, user.profilePhotoStorageId);
+    if (!original) return null;
+    const rows = await ctx.db
+      .query("photos")
+      .withIndex("by_storage", (q) => q.eq("storageId", original))
+      .collect();
+    const withFormats = rows.filter((p) => p.formats !== undefined);
+    const photo = withFormats.find((p) => p.ownerId === user._id) ?? withFormats[0];
+    if (!photo) return { storageId: original, fallback: true };
+    return await chooseFormat(ctx, photo, formaat, original);
+  },
+});
+
+/** Het formaat van een foto, of het origineel als terugval. */
+async function chooseFormat(
+  ctx: QueryCtx,
+  photo: Doc<"photos">,
+  formaat: ImageFormat,
+  original: Id<"_storage">,
+): Promise<{ storageId: Id<"_storage">; fallback: boolean }> {
+  const format = await storedImage(ctx, photo.formats?.[formaat]);
+  return format ? { storageId: format, fallback: false } : { storageId: original, fallback: true };
+}
+
 // Besluit 2: het beeldpad neemt een formaat aan. Zonder formaat het
-// origineel. WP25 maakt de verkleinde versies; tot die er zijn, geeft elk
-// formaat het origineel. Het formaat verandert niets aan de toegang: het
-// wordt pas gekozen nadat de regel hierboven een beeld gaf.
+// origineel. WP25 maakt de verkleinde versies; zolang een foto ze niet heeft,
+// geeft elk formaat het origineel (als terugval, zie hierboven). Het formaat
+// verandert niets aan de toegang: het wordt pas gekozen nadat de regel
+// hierboven een beeld gaf.
 export const IMAGE_FORMATS = ["klein", "groot"] as const;
 export type ImageFormat = (typeof IMAGE_FORMATS)[number];
 
