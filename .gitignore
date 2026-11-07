@@ -47,6 +47,9 @@ coverage/
 
 # Claude Code local settings (kan user-specifiek zijn)
 .claude/settings.local.json
+# Worktrees van sessies: eigen kopie van de repo, incl. scripts/.data (foto's). EAS leest
+# .git/info/exclude niet, dus zonder deze regel gaan ze mee in de build-upload.
+.claude/worktrees/
 
 # WP-Design: screenshots oude app met echte data, niet committen (repo is publiek)
 docs/design/oude-app/
