@@ -57,6 +57,7 @@ Gemeten op dev in een Node-action (linux arm64, ~1 core), met echte dev-bestande
 4. **HEIC:** de formaten worden JPEG (via heic-decode); het origineel blijft. Open voor A: past libheif `irot` zelf toe? Zo ja, dan draait een HEIC dubbel (invariant 6). A test met een echte iPhone-HEIC. *Antwoord A: ja, zie A-kernvondst 1.*
 5. **T0:** de app gaat pas open na de backfill en een groene `verify` (2026-11-07).
 6. **Transparantie** wordt wit in de JPEG (2026-11-07).
+7. **Te grote HEIC** (meer pixels dan de action aankan): geen formaten, de app toont het origineel, en de stap meldt "mislukt" (2026-11-07). Dit is een tussenoplossing. Nieuwe uploads worden JPEG in de app ([WP18](./README.md)), dus het raakt alleen oude HEIC's van prod. Hoeveel dat er zijn, telt A vóór T0. Zijn het er meer dan nul, dan maakt de migratie hun formaten lokaal (zonder geheugengrens), als aparte stap.
 
 ## Edge cases en scope
 
@@ -83,7 +84,9 @@ Gemeten op dev in een Node-action (linux arm64, ~1 core), met echte dev-bestande
 | 0 | Spike-sessie | ✅ §Uitkomst spike. |
 | 1 | Wouter | ✅ Optie A, 512/1600, JPEG, HEIC als JPEG (§Besluiten). |
 | 2 | A | ✅ Spec-criticus en RED tests; Wouter besluit 5 en 6. Leest de WP12-tooling, WP7, WP8, WP10 en de cascade-matrix. |
-| 3 | B | Impl, plus de preview-run van de backfill op dev. |
+| 3 | B | ✅ Impl, plus de preview-run van de backfill op dev. |
+| 3a | Audit + red-team | ✅ Audit B1, S1–S2; red-team R1–R6. Wouter: alles in één fix-cyclus, besluit 7. |
+| 3b | A → B | Fix-cyclus 1. |
 | 4 | Audit | Op spec, tests en impl. |
 | 5 | Red-team | Op de backfill en de T0-keten: wat als hij halverwege stopt, wat als `prune-storage` erna draait, raakt een formaat ooit iemand zonder toegang. |
 | 6 | Gate | Samen met WP17a stap 1 en 4, op één TestFlight-build. |
