@@ -212,3 +212,108 @@ Volgens [`data-migration-preflight.md`](../conventions/data-migration-preflight.
 `images.test.ts` heeft sharp en heic-decode nodig in `dependencies` (B voegt ze toe, exact gepind). A heeft hem gecontroleerd tegen een wegwerp-implementatie buiten de repo: groen, en rood voor twee mutanten (HEIC met de EXIF-tag uit het bestand; JPEG-pixels zelf gedraaid). De andere files draaien in de edge-runtime van convex-test en mocken de beeldbibliotheek.
 
 De CLI (`formaten`) en de runbook-entry hebben geen eigen test: het gedrag staat hierboven, en de preview-run op dev is de gate.
+
+## Fix-cyclus 1 (A, 2026-11-07)
+
+Na audit (B1, S2) en red-team (R1–R6), en besluit 7. Gelezen: de impl op `wp25` (192566b), het runbook, `app/src/components/Photo.tsx`, de red-team-notities. Voor punt 9 ook de v1-app en `blob-images-api-photos`.
+
+### Vraag 9: draaide v1 de pixels en liet het de tag staan?
+
+**Nee.** De backfill draait de 114 foto's met tag 3 of 6 op dev niet dubbel.
+
+- **Upload.** De v1-app stuurt de bytes van de image-picker ongewijzigd naar S3. Zie `clubalmanac-app/datastores/images.js:14` en `:22-26`, en `lib/images.js:1-5`: `fetch(uri)` → blob → `PUT`. De app draait niets.
+- **Backend.** De backend leest bij een nieuwe foto alleen datum en GPS uit (`blob-images-api-photos/handlersPhoto/createPhoto.js:86-101`). Hij schrijft de bytes niet terug.
+- **Draaien in v1.** Alleen "draaien" schreef de bytes opnieuw (`handlersPhoto/fixPhotoRotation.js:50-56`, Jimp 0.22). Jimp past bij het lezen de EXIF-stand toe, en zijn JPEG-encoder schrijft geen EXIF. Een in v1 gedraaide foto heeft dus rechtopstaande pixels zonder tag. Dat bedoelt de opmerking in `transform.ts:702`: v1 had geen stand-veld, want draaien veranderde de bytes zelf.
+- **Weergave.** v1 toonde elk beeld via de image handler met de EXIF-tag toegepast (`clubalmanac-app/lib/image-helper.js:4-27`). Pixels plus tag is dus precies wat de users zagen. De formaten met die tag in de DB tonen hetzelfde.
+- **Gemeten op dev** (alleen lezen, alleen tellingen). Ruwe pixels per tag:
+
+  | Tag | Liggend | Staand |
+  |---|---|---|
+  | 6 | 58 | 0 |
+  | 3 | 56 | 0 |
+  | 1 | 293 | 181 (en 1 vierkant) |
+
+  Een camera schrijft de ruwe pixels liggend, met tag 6 voor een staande foto. Had v1 de pixels gedraaid en de tag laten staan, dan waren die 58 staand geweest.
+- **Tag 3** laat zich niet uit de maat afleiden: 180° verandert de maat niet. Dezelfde upload-route en het ontbreken van elke draaistap wijzen ook daar op ruwe pixels. De steekproef in de app (pre-flight 6, drie foto's met tag 3) is de bevestiging.
+
+### Kernvondsten
+
+7. **Een avatar ligt na de backfill op zijn kant (R1).** `/beeld/profiel` geeft *klein*: ruwe pixels zonder tag. `ProfileAvatar` draait niet, en geen enkele user-vorm draagt een stand. Twee foto-rijen met hetzelfde beeld kunnen een andere stand hebben (WP8). De stand moet dus komen van de rij die het profielpad kiest.
+8. **Eén foto die de action laat omvallen, blokkeert de backfill blijvend (B1/R2).** Bij OOM of een time-out gooit `backfill` een fout. De CLI stopt dan, en een nieuwe run begint vooraan en stopt bij dezelfde foto.
+   - Gemeten piek-RSS lokaal: HEIC 12 MP ~300 MB, 24 MP 454–554 MB, 48 MP 739–955 MB.
+   - Convex zit ~90 MB hoger dan lokaal: de spike mat 391 MB bij 12 MP.
+   - Een HEIC van 24 MP valt dus om, en de iPhone 15 en 16 schieten standaard in 24 MP.
+   - Na een HEIC blijft het WASM-geheugen bezet: lokaal 340–380 MB, met een piek van 413 MB na vier HEIC's van 12 MP. Ook een reeks HEIC's van 12 MP kan een warme action dus vol laten lopen.
+9. **Een formaat dat naar een gewist object wijst, herstelt nooit (R3).**
+   - Hoe het ontstaat: `prune-storage` na een Ctrl-C terwijl een action nog loopt. Die action legt daarna ids vast van objecten die al gewist zijn.
+   - Wat er dan gebeurt: de backfill ziet `alreadyDone`, WP10 meldt elke ochtend "formaten dangling", en de terugval toont het origineel met de tag uit de DB (dubbel gedraaid).
+10. **`--batch-size` tot 100 komt te dicht bij de time-out van de CLI (R4).** Node-`fetch` heeft een `headersTimeout` van 300 s, en 100 foto's × ~2,6 s zit daar vlak onder.
+11. **De droge key-controle op T-2 laadt de beeldbibliotheek niet (R5).** Prod heeft dan 0 foto's, dus sharp en heic-decode worden nooit aangeroepen.
+
+### Aanvullende invarianten
+
+19. **Een avatar staat rechtop (R1).**
+    - **Waar het veld zit:** elke user-vorm waarmee de app een avatar toont, krijgt `profileOrientation` (optioneel, 1–8). Dat zijn:
+      - `publicProfile` in `photos.getWithOwner`, `albums.listPhotos`, `groups.listMembers` en `users.getById`;
+      - `ownProfile` in `users.current` en `users.profile`;
+      - de inviter in `invites.getByToken`.
+    - **Waar de waarde vandaan komt:** het is de `exifOrientation` van **dezelfde** foto-rij die het profielpad serveert. Eén functie kiest die rij voor beide, in deze volgorde:
+      1. een eigen rij met formaten;
+      2. een andere rij met formaten;
+      3. een eigen rij zonder formaten;
+      4. een andere rij zonder formaten.
+
+      Binnen elke stap gaat de oudste rij voor. Zonder rij (een los beeld, of geen profielfoto) of zonder stand ontbreekt het veld.
+    - **Wat er niet in mag:** het veld bevat alleen het getal. Geen beeld-id of foto-id (WP17a invariant 10).
+    - **In de app:** `ProfileAvatar` krijgt `exifOrientation` en draait het beeld met `orientationTransform`, zoals `Photo`. Elke plek in de app die `ProfileAvatar` gebruikt, geeft het veld door.
+20. **Een te grote HEIC wordt niet gedecodeerd (B1/R2, besluit 7).**
+    - **Wat de stap doet:** `makeFormatImages` leest eerst het aantal pixels van het primaire beeld uit de HEIF-kop (de `ispe` van het item uit `pitm`). Is dat meer dan `HEIC_MAX_PIXELS = 16_000_000`, dan gooit hij een fout met "te groot", zonder te decoderen. Een HEIC zonder leesbare maat in de kop wordt ook niet gedecodeerd ("maat onbekend"). De stap meldt `failed`, en de log zegt `[photoFormats] mislukt photoId=…: te groot (… MP)`.
+    - **Waarom 16 MP:**
+      - 4032×3024 (12,2 MP, de standaard-iPhone tot de 15) moet erdoor.
+      - 5712×4284 (24,5 MP) moet eruit.
+      - De geschatte piek in Convex bij 16 MP, in een verse action, is 391 MB + 4 MP × 13–21 MB = 443–475 MB. Dat is onder 512 MB met ~40 MB marge.
+      - Restgeheugen van eerdere HEIC's vangt invariant 21 op: elke herkansing draait in een eigen action.
+    - **Wat de grens níét raakt:** JPEG en PNG blijven onder de 200 MB, ook bij 48 MP.
+21. **Een action die omvalt, blokkeert de backfill niet (B1/R2).**
+    - **Na een afgebroken batch:** gooit `backfill` voor een cursor een fout, dan haalt de CLI dezelfde pagina op met `internal.photos.formatBatch({ cursor, batchSize })`. Daarna draait hij `internal.photoFormats.makeFormats({ photoId })` voor elke foto zonder formaten, elk in een eigen action.
+    - **Als zo'n action ook omvalt:** die foto telt als mislukt, met het id en "action brak af" op één regel in de uitvoer. De CLI gaat door met de volgende foto, en daarna met de cursor van die pagina.
+    - **Exitcode en herhaling:** de exitcode is 1 zolang er iets mislukte. Een tweede run eindigt net zo, en blijft niet hangen.
+    - **Na een upload:** valt de ingeplande `makeFormats` om (OOM, time-out), dan komt er **geen** `[photoFormats] mislukt` in de log. De action wordt niet herhaald. Het signaal is de melding "formaten ontbreken" van WP10, een uur later, en de reden staat bij die mislukte functie in de Convex-logs. De volgende run van `formaten` probeert hem opnieuw.
+22. **Een set met een ontbrekend object telt als "geen formaten" (R3).**
+    - **De backfill:** `formatBatch` geeft `hasFormats: false` voor een foto waarvan `klein` of `groot` niet meer in storage staat. `makeFormats` maakt een nieuwe set.
+    - **`attachFormats` vervangt zo'n set:** hij wist het overgebleven oude object, en laat een bestaande `exifOrientation` staan (invariant 12).
+    - **`attachFormats` controleert de nieuwe objecten:** bestaat `klein` of `groot` niet, dan gooit hij een fout en schrijft niets. De stap ruimt dan zijn eigen objecten op en meldt `failed`.
+23. **`--batch-size` is 1–50**, standaard 20.
+24. **De beeldbibliotheek wordt getest vóór de eerste batch (R5).**
+    - **De controle:** `internal.photoFormats.selfTest({})` draait `makeFormatImages` op een ingebouwde JPEG en een ingebouwde HEIC (bytes in de code, niet in storage). Hij schrijft niets (geen DB, geen storage) en geeft de maten terug. Gooit hij een fout, dan laadt of decodeert de bibliotheek niet.
+    - **Wanneer hij draait:** `formaten` roept hem aan vóór de eerste batch. Mislukt hij, dan stopt de CLI met exitcode 1, zonder batch.
+    - **Gevolg:** de droge key-controle op T-2 (`formaten --target prod` op een lege prod) test zo ook de bibliotheek. B werkt de T-2-regel in het runbook bij.
+
+**Edge case.** Zolang een formaat-veld dangling is, toont de terugval het origineel met de tag uit de DB. Dat is dubbel gedraaid, voor de foto en voor de avatar. Invariant 22 herstelt dat bij de volgende run, en WP10 meldt het tot dan. Geaccepteerd.
+
+### Pre-flight (aanvulling)
+
+9. **`verify` als geheel (R6).** `verify` heeft `scripts/.data/convex-records.json` van de dev-load nodig. Dat bestand staat alleen op de machine waar `transform` en `load-records` liepen: Wouters laptop. Na de fix-deploy en een run van `formaten` op dev draait Wouter daar `npm run migrate -- verify --target dev`. B neemt de uitkomst op in de B-rapportage. Groen is de gate vóór de prod-run, net als op T0.
+10. **HEIC's op prod tellen (besluit 7).** `AWS_PROFILE=clubalmanac node scripts/wp25/prod-tel.mjs` op Wouters laptop. Het script leest alleen, uit S3. Het telt de HEIC's met hun maat (en hoeveel er boven 16 MP zitten) en de tien grootste JPEG's. De uitvoer bevat geen sleutels of namen. Is het aantal HEIC's boven de grens meer dan nul, dan volgt de aparte stap uit besluit 7.
+
+### Signaturen (aanvulling)
+
+- `convex/lib/photoFormats.ts`: `export const HEIC_MAX_PIXELS = 16_000_000`.
+- `internal.photoFormats.selfTest({})` (Node-action) → `{ jpeg: { width, height }, heic: { width, height } }`.
+- `internal.photos.attachFormats`: zelfde args en uitkomsten. Gooit bij een nieuw object dat niet bestaat. Vervangt een set met een ontbrekend object.
+- User-vormen: `profileOrientation?: number` (invariant 19).
+- App: `ProfileAvatar` krijgt `exifOrientation?: number`.
+- CLI: `--batch-size` 1–50.
+
+### Tests (A, fix-cyclus 1)
+
+| Bestand | Pint |
+|---|---|
+| `tests/photoFormats/profileOrientation.test.ts` | invariant 19: stand van dezelfde rij als de geserveerde bytes, zeven responses, alleen het getal |
+| `app/tests/profileAvatar.test.ts` | invariant 19: `ProfileAvatar` draait zoals `Photo`; elke aanroep geeft de stand door |
+| `tests/photoFormats/heicLimit.test.ts` (Node, heic-decode gemockt) | invariant 20: boven de grens "te groot" zonder decoderen; eronder wel decoderen |
+| `tests/photoFormats/formatenCli.test.ts` | invariant 21, 23, 24: na een afgebroken batch één voor één, een crash telt als mislukt en de rest gaat door, run 2 eindigt; batch-size; `selfTest` eerst |
+| `tests/photoFormats/selfTest.test.ts` (Node, echte bibliotheek) | invariant 24: maten terug, niets geschreven |
+| `tests/photoFormats/backfill.test.ts`, `attach.test.ts` (aangevuld) | invariant 22; S2-M16: opruimen als het vastleggen mislukt |
+| `tests/photoFormats/inventory.test.ts` (aangevuld) | S2-M14: de WP10-melding "formaten dangling" |
+| `tests/photoFormats/prodTel.test.ts` | het telscript: maat uit de kop van HEIC en JPEG, grens gelijk aan de impl |
