@@ -37,9 +37,11 @@ Verplicht per [`data-migration-preflight.md`](../conventions/data-migration-pref
 ### A. `.env.migrate` (gitignored)
 
 ```
-# Convex-doelen. De admin-key is een deployment-scoped deploy key uit het
-# Convex-dashboard → Settings → Deploy Keys. Zonder zo'n key zijn de
-# migratie-functies (internal) niet aanroepbaar — dat is de bedoeling.
+# Convex-doelen. De admin-key is een deployment-scoped deploy key, gemaakt met
+# `npx convex deployment token create <naam> --deployment <dev|prod>`. Zonder
+# zo'n key zijn de migratie-functies (internal) niet aanroepbaar — dat is de
+# bedoeling. De key moet ook internal actions mogen draaien (`formaten`); een
+# oudere dev-key mocht dat niet (2026-11-07). Zie de key-controle bij T-2 weken.
 MIGRATE_CONVEX_URL_DEV=https://glorious-pheasant-759.eu-west-1.convex.cloud
 MIGRATE_CONVEX_ADMIN_KEY_DEV=dev:glorious-pheasant-759|<key>
 
@@ -122,6 +124,14 @@ npm run migrate -- load-files --target prod    # uren; hervatbaar
 
 `load-files` rapporteert de gehaalde doorvoer in MB/s en een schatting voor 5,6 GB. Breekt de run af: gewoon opnieuw starten — wat in `storage-map.json` staat wordt overgeslagen.
 
+- [ ] Key-controle voor `formaten` (WP25), na `load-files`. `formaten` is het enige migrate-commando dat een internal action aanroept; een key zonder dat recht breekt op T0 af bij batch 1. Prod heeft nu nog geen foto-rij, dus deze run schrijft niets:
+
+  ```bash
+  npm run migrate -- formaten --target prod      # verwacht: 0 foto's, "klaar", exitcode 0
+  ```
+
+  Exitcode 0 betekent dat de key internal actions mag draaien. Bij `OperationNotPermitted`: maak een nieuwe prod-key (§A) en herhaal. Meldt hij foto's (vóór: meer dan 0), stop dan: `load-records` is al gedraaid en dit is geen droge controle meer.
+
 
 ### T-0
 
@@ -201,6 +211,7 @@ Breekt `load-records` halverwege af, dan stopt hij luid met de bron-sleutel in d
 | `N van de M verwezen bestand(en) staan niet in storage-map.json` | De gate vóór de eerste schrijf. Draai `load-files` (opnieuw) af — hij hervat waar hij gebleven was. Staan de bestanden aantoonbaar niet in S3, dan pas `--accept-missing-files`. |
 | `N bestand(en) ... staan niet in de bucket` | Records verwijzen naar een verdwenen S3-object. Bekijk `scripts/.data/missing-files.json`; met `--accept-missing-files` slaat `load-records` die foto's over, benoemt ze per bron-sleutel, en `verify` meldt het verschil daarna als bevinding. |
 | `stemscore votes=N gaat verloren` | Bewust: de bron kent geen per-user upvotes, dus `upvoteCount` wordt 0. De oude score staat in het rapport zodat je 'm desgewenst handmatig terugzet. |
+| `formaten`: `batch 1 brak af: … OperationNotPermitted … runInternalActions` | De deploy key mag geen internal actions draaien. Er is niets geschreven. Maak een nieuwe key met `npx convex deployment token create` (§A), zet hem in `.env.migrate` en start opnieuw. |
 | `formaten`: `NIET KLAAR` | Er zijn nog foto's zonder formaten, of er mislukte er een. Draai `formaten` opnieuw; de mislukte foto-id's staan in de uitvoer, de reden in de Convex-log. Exitcode 1. |
 | `verify`: `photos/<id>: formaten ontbreken` | Een foto van meer dan een uur oud zonder formaten (WP25). Op T0: `formaten` is niet (af)gedraaid. Daarna: de stap na een upload mislukte. Draai `formaten`. |
 | `verify`: `photos/<id>: formaten dangling` | De foto verwijst naar een formaat dat niet meer in storage staat. De app toont het origineel. |
