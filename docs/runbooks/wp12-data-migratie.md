@@ -136,7 +136,7 @@ npm run migrate -- load-files --target prod    # uren; hervatbaar
   MIGRATE_ALLOW_PROD=yes npm run migrate -- formaten --target prod   # verwacht: "beeldbibliotheek: ok", "klaar", exitcode 0
   ```
 
-  Exitcode 0 betekent dat de key internal actions mag draaien en de bibliotheek werkt. Bij `OperationNotPermitted`: maak een nieuwe prod-key (§A) en herhaal. Bij `beeldbibliotheek werkt niet`: zie §Bekende meldingen.
+  Exitcode 0 betekent dat de key internal actions mag draaien en de bibliotheek werkt. Bij `key mag geen internal actions draaien`: maak een nieuwe prod-key (§A) en herhaal. Bij `geen verbinding met de deployment` of `beeldbibliotheek werkt niet`: zie §Bekende meldingen.
 - [ ] HEIC's op prod geteld (WP25 besluit 7): `AWS_PROFILE=clubalmanac node scripts/wp25/prod-tel.mjs`. Leest alleen uit S3. Gedaan 2026-11-07: 0 HEIC's. Zouden er HEIC's boven 13 MP tussen zitten, dan krijgen die op T0 geen formaten (`formaten` meldt ze als mislukt, "te groot"); zie §Formaten, "Blijft een foto mislukken".
 
 
@@ -167,7 +167,7 @@ npm run migrate -- verify --target prod
 `formaten` maakt van elke foto twee JPEG's (*klein* 512 px, *groot* 1600 px, langste zijde) en zet `exifOrientation` uit het bestand als die nog leeg is. Hij draait na `load-records` (eerder is er geen foto-rij) en vóór `verify` (dan dekt één groene `verify` alles).
 
 - Per batch één regel: gemaakt, al klaar, weg, mislukt (met foto-id's). Aan het eind de totalen en de telling vóór en na. Exitcode 0 alleen als geen foto meer zonder formaten is en niets mislukte.
-- Eerst `selfTest` (regel `beeldbibliotheek: ok`); mislukt die, dan stopt hij met exitcode 1, zonder batch.
+- Eerst `selfTest` (regel `beeldbibliotheek: ok`); mislukt die, dan stopt hij met exitcode 1, zonder batch. De melding noemt de oorzaak: de key, de verbinding of de bibliotheek (§Bekende meldingen).
 - Batch van 20 foto's, één foto tegelijk in een Node-action (512 MB per action). `--batch-size N` (1..50) als een batch te lang duurt; de HTTP-aanroep heeft een time-out van 300 s. Gemeten op dev: zie §Meting hieronder.
 - **Valt een batch-action om** (geheugen, time-out): de CLI meldt `action brak af` en doet die batch foto voor foto, elk in een eigen action. Valt ook die om, dan telt die foto als mislukt (`<foto-id>: action brak af`) en gaat de CLI door. Exitcode 1; een nieuwe run eindigt net zo, hij blijft niet hangen.
 - **Breekt hij af** (laptop dicht, netwerk weg, timeout): start hetzelfde commando opnieuw. Elke foto die klaar is, heeft zijn formaten en `exifOrientation` in één schrijfactie; een nieuwe run slaat die over. De app werkt halverwege: een foto zonder formaten toont het origineel. Hooguit één foto per afgebroken batch laat twee formaat-objecten zonder foto achter. `verify` noemt ze als storage-orphans, en `prune-storage` wist ze.
