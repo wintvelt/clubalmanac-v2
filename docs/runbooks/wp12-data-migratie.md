@@ -124,13 +124,19 @@ npm run migrate -- load-files --target prod    # uren; hervatbaar
 
 `load-files` rapporteert de gehaalde doorvoer in MB/s en een schatting voor 5,6 GB. Breekt de run af: gewoon opnieuw starten — wat in `storage-map.json` staat wordt overgeslagen.
 
-- [ ] Key-controle voor `formaten` (WP25), na `load-files`. `formaten` is het enige migrate-commando dat een internal action aanroept; een key zonder dat recht breekt op T0 af bij batch 1. Prod heeft nu nog geen foto-rij, dus deze run schrijft niets:
+- [ ] Key-controle voor `formaten` (WP25), na `load-files`. `formaten` is het enige migrate-commando dat een internal action aanroept; een key zonder dat recht breekt op T0 af bij batch 1. De controle schrijft niets, mits prod nog geen foto-rij heeft. Eerst tellen (met je eigen Convex-login, los van de key):
 
   ```bash
-  npm run migrate -- formaten --target prod      # verwacht: 0 foto's, "klaar", exitcode 0
+  npx convex run photos:formatStatus --prod      # door alleen bij photos: 0
   ```
 
-  Exitcode 0 betekent dat de key internal actions mag draaien. Bij `OperationNotPermitted`: maak een nieuwe prod-key (§A) en herhaal. Meldt hij foto's (vóór: meer dan 0), stop dan: `load-records` is al gedraaid en dit is geen droge controle meer.
+  Is `photos` niet 0, stop dan: `load-records` is al gedraaid en een `formaten`-run zou schrijven. Bij 0:
+
+  ```bash
+  MIGRATE_ALLOW_PROD=yes npm run migrate -- formaten --target prod   # verwacht: "klaar", exitcode 0
+  ```
+
+  Exitcode 0 betekent dat de key internal actions mag draaien. Bij `OperationNotPermitted`: maak een nieuwe prod-key (§A) en herhaal.
 
 
 ### T-0
