@@ -15,7 +15,7 @@ npm run migrate -- <commando> --target dev|prod [opties]
 | 4 | `load-files` | records + S3 (read-only) | Convex-storage + `scripts/.data/storage-map.json` |
 | 5 | `load-records` | records + storage-map | de Convex-tabellen |
 | 6 | `formaten` (WP25) | foto-rijen + originelen | per foto *klein* en *groot* in storage, plus `exifOrientation` als die leeg is |
-| 7 | `verify` | beide bestanden + de deployment | rapport in de terminal |
+| 7 | `verify` | het extract, beide bestanden + de deployment | rapport in de terminal |
 | 8 | `prune-storage` | records + storage-map + de deployment | wist exact de storage-objecten waar niets meer naar verwijst |
 | 9 | `reset` | — | leegt de tabellen (en de formaten van de gewiste foto's); met `--all` ook de storage |
 
@@ -100,8 +100,9 @@ npm run migrate -- verify --target dev
 - Ook de dev-seed leest **productie**-AWS. De AWS-dev-omgeving wordt bewust genegeerd: alleen productie is representatief genoeg om de clients tegenaan te bouwen.
 - Anonimisatie staat automatisch aan bij `--target dev` en zit ín de transform: echte namen en adressen verlaten die stap niet, ook niet in invite-sleutels of -tokens. Foto's blijven echt (visuele realiteit) — de dev-database dus nooit publiek delen.
 - Een groep waarvan de founder niet chosen is, valt volledig af. Blijkt bij `inspect` dat je daarmee een groep kwijtraakt die je wilde testen, kies dan andere users — niet de regel verzachten.
-- Opnieuw seeden (bv. na een schema-wijziging): `reset --target dev --yes`, `load-records` en `formaten` opnieuw. De bestanden blijven staan, dus dat duurt minuten. Alleen als je ook de bestanden weg wilt: `reset --target dev --yes --all` — dat maakt `storage-map.json` in dezelfde beweging ongeldig.
-- `reset` leegt precies de tabellen die de leeg-preconditie van `load-records` telt — inclusief `uploadIdempotency`, dat de import zelf niet vult maar dat wél onder WP10's FK-controle valt. De dev-deployment heeft er rijen in van de upload-integration-test; bleven die staan, dan wezen hun `ownerId`'s na de seed naar verwijderde users en meldde de dagelijkse scan drift.
+- Opnieuw seeden (bv. na een schema-wijziging): `reset --target dev --yes`, `load-records` en `formaten` opnieuw. De bestanden blijven staan, dus dat duurt minuten. Is de transform veranderd, of is het extract al gewist, draai dan eerst `extract` en `transform --target dev` opnieuw. `verify` heeft het extract nodig (zie hieronder). Alleen als je ook de bestanden weg wilt: `reset --target dev --yes --all` — dat maakt `storage-map.json` in dezelfde beweging ongeldig.
+- `reset` wist alles in de bewaakte tabellen, ook wat je met de hand op dev hebt gemaakt, zoals de testgroep Gatetest (WP16). Die moet je daarna opnieuw aanmaken.
+- `reset` leegt precies de tabellen die de leeg-preconditie van `load-records` telt — inclusief `uploadIdempotency`, dat de import zelf niet vult maar dat wél onder WP10's FK-controle valt. De dev-deployment heeft er rijen in van de upload-integration-test; bleven die staan, dan wezen hun `ownerId`'s na de seed naar verwijderde users en meldde de dagelijkse scan drift. Hetzelfde geldt voor `userVisits` (WP12b): de import vult hem met het laatste bezoek uit v1, en de app schrijft er bij elk bezoek in.
 
 ## Run 2 — prod (fase 5)
 
@@ -146,6 +147,7 @@ npm run migrate -- load-files --target prod    # uren; hervatbaar
 export MIGRATE_ALLOW_PROD=yes
 npx convex export --prod --path ./backups/wp12-prod-t0.zip  # tweede anker
 npm run migrate -- extract                      # verse stand, inclusief alles sinds T-2
+node scripts/.data/veld-tel.mjs                 # check gemelde foto's, zie hieronder
 npm run migrate -- transform --target prod
 npm run migrate -- load-files --target prod     # alleen de delta; de rest staat al in de map
 npm run migrate -- load-records --target prod   # minuten
@@ -153,8 +155,11 @@ npm run migrate -- formaten --target prod       # WP25; ~70 min (gemeten op dev)
 npm run migrate -- verify --target prod
 ```
 
+- [ ] Gemelde foto's (WP12b), vóór `load-records`. Kijk in de uitvoer van `veld-tel.mjs` naar de regel `PO met flaggedDeleteDate <= vandaag`. Op 2026-11-07 was dat 0. v1 wiste een gemelde foto nooit; de FL1-cron van v2 wist hem de eerste nacht na T0 als zijn verwijderdatum voorbij is. Staat er iets anders dan 0: stop en beslis (Wouter) wat er met die foto's gebeurt, vóór `load-records`.
 - [ ] `formaten` eindigt met exitcode 0: geen foto zonder formaten (behalve afgetekende), niets mislukt. Zie §Formaten (WP25) hieronder.
-- [ ] `verify` is groen: rij-aantallen kloppen, geen dangling storage-verwijzingen, geen storage-orphans, integriteitsscan leeg (dus ook geen `formaten ontbreken`).
+- [ ] `verify` is groen: rij-aantallen kloppen, geen dangling storage-verwijzingen, geen storage-orphans, integriteitsscan leeg (dus ook geen `formaten ontbreken`), en het aantal groepen en albums met een cover klopt met de bron.
+
+  De covers (WP12b) vergelijkt `verify` met `dynamo-extract.json`, niet met `convex-records.json`: het gat zat in de transform, en dan waren records en deployment het met elkaar eens. Verwacht: elke geladen groep of elk geladen album met een cover in de bron waarvan de foto ook geladen wordt. Zonder extract is `verify` niet groen. Een cover die niet in een album van de groep staat, komt wel mee; de transform meldt hem als waarschuwing (zie §Bekende meldingen).
 
   `verify` vergelijkt met de tellingen die de **transform** heeft vastgelegd, niet met een herberekening uit de storage-map. Dat betekent dat een run met `--accept-missing-files` per definitie níet groen is: het verlies is verklaarbaar, maar verklaarbaar is niet goedgekeurd. Lees dan de bevinding, controleer dat het verschil exact de geaccepteerde bestanden betreft, en teken er bewust voor af.
 - [ ] Storage-orphans opgeruimd, als `verify` ze meldt — zie hieronder.
@@ -247,12 +252,17 @@ Breekt `load-records` halverwege af, dan stopt hij luid met de bron-sleutel in d
 | `formaten`: `NIET KLAAR` | Er zijn nog foto's zonder formaten, of er mislukte er een. Draai `formaten` opnieuw; de mislukte foto-id's staan in de uitvoer, de reden in de Convex-log. Exitcode 1. Blijft dezelfde foto mislukken: §Formaten ("Blijft een foto mislukken"). |
 | `verify`: `photos/<id>: formaten ontbreken` | Een foto van meer dan een uur oud zonder formaten (WP25). Op T0: `formaten` is niet (af)gedraaid. Daarna: de stap na een upload mislukte. Draai `formaten`; blijft hij mislukken, zie §Formaten ("Blijft een foto mislukken"). |
 | `verify`: `photos/<id>: formaten dangling` | De foto verwijst naar een formaat dat niet meer in storage staat. De app toont het origineel. Draai `formaten`: die maakt een nieuwe set. |
+| `verify`: `covers: FOUT dynamo-extract.json ontbreekt` | `verify` haalt de verwachte covers uit de bron (WP12b). Draai `extract` en `transform` opnieuw; een extract dat niet bij `convex-records.json` hoort, geeft een vertekend beeld. |
+| `verify`: `FOUT groups/albums met cover: verwacht N, gevonden M` | Er staan minder (of meer) covers in de deployment dan de bron heeft. Bij minder: de transform of `load-records` liet ze vallen. Na `--accept-missing-files` is dit verwacht als een cover-foto zonder bestand was. |
+| `album X: cover P staat niet in dit album maar wel in groep G` | Bewust overgenomen (WP12b besluit 4). Elk lid ziet de cover, want de foto staat in de groep. |
+| `album X` of `groep G`: `cover P staat in geen album van de groep` | Bewust overgenomen (WP12b besluit 4). In v2 ziet alleen de eigenaar zo'n cover; dat de leden hem ook zien, regelt WP27. |
+| `album X: coverPhotoId P resolvet niet — gewist` | De cover-foto bestaat niet in de bron, of valt buiten de dev-seed. Album zonder cover, net als bij een groep. |
 | `createdBy gesynthetiseerd` | `albums.createdBy` bestaat niet in de bron en valt terug op de founder van de groep. |
 
 ## Opruimen (verplicht, niet optioneel)
 
 `scripts/.data/` bevat productie-PII van 20 mensen: namen, adressen, Cognito-subs (ook in S3-sleutels), invite-berichten en de volledige recordset. De map staat in `.gitignore`, maar dat is geen bewaartermijn.
 
-- [ ] Na een geslaagde dev-seed: `rm scripts/.data/dynamo-extract.json`. Dat is het bestand met de onbewerkte productiedata — namen, adressen, invite-berichten. `convex-records.json`, `storage-map.json` en de config blijven staan tot de volgende seed: `reset` + `load-records` heeft ze nodig, en `verify` en `prune-storage` ook. Let op: `convex-records.json` is geanonimiseerd maar niet PII-vrij — de S3-sleutels dragen Cognito-subs. Weg bij de eindopruiming hieronder.
+- [ ] Na een geslaagde dev-seed en een groene `verify`: `rm scripts/.data/dynamo-extract.json`. Dat is het bestand met de onbewerkte productiedata — namen, adressen, invite-berichten. Wil je later opnieuw `verify` draaien, draai dan eerst `extract` en `transform` opnieuw (§Run 1). `convex-records.json`, `storage-map.json` en de config blijven staan tot de volgende seed: `reset` + `load-records` heeft ze nodig, en `prune-storage` ook. Let op: `convex-records.json` is geanonimiseerd maar niet PII-vrij — de S3-sleutels dragen Cognito-subs. Weg bij de eindopruiming hieronder.
 - [ ] Na T-0 en een groene `verify`: `rm -rf scripts/.data/` volledig, plus `.env.migrate`.
 - [ ] Bij T+30, samen met de rest van de cutover-opruiming: `convex/migration.ts` en `scripts/migrate/` verwijderen, en de AWS-read-only-credentials intrekken. Zie het fase 5-stappenplan in `migratie-status.md`.

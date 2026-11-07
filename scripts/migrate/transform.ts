@@ -451,7 +451,8 @@ export function transform(items: SourceItem[], config: TransformConfig): Transfo
   const records: Records = emptyRecords();
 
   // ── users ───────────────────────────────────────────────────────────
-  // Vier bronrecords (UBbase / UPstats / UVvisit / USER) worden één rij.
+  // Vier bronrecords (UBbase / UPstats / UVvisit / USER) worden één rij, plus
+  // hooguit één `userVisits`-rij voor het bezoek (WP12b invariant 3).
   // De map dient twee doelen: botsende adressen betrappen, en de scrub laten
   // zien welk bron-adres bij welke user hoort.
   const emailToUserId = new Map<string, string>();
@@ -489,9 +490,16 @@ export function transform(items: SourceItem[], config: TransformConfig): Transfo
       profilePhotoStorageKey: str(user.base.photoUrl),
       photoCount: 0, // hertelling volgt na photos
       photoLimit: config.defaultPhotoLimit,
-      lastVisitAt: toEpoch(user.visit?.visitDateLast),
+      // `users.lastVisitAt` blijft leeg: sinds WP15b leest niemand hem.
       createdAt,
     });
+
+    // Het bezoek is een kalenderdag (UTC-middernacht); lege string = geen
+    // bezoek. Eén rij per user, dus de user-sleutel is uniek binnen de tabel.
+    const lastVisitAt = toEpoch(user.visit?.visitDateLast);
+    if (lastVisitAt !== undefined) {
+      records.userVisits.push({ sourceKey: userId, userId, lastVisitAt });
+    }
   }
 
   // ── groups ──────────────────────────────────────────────────────────
@@ -655,6 +663,14 @@ export function transform(items: SourceItem[], config: TransformConfig): Transfo
     if (createdAt === undefined) fail(`album ${albumId} heeft geen bruikbare createdAt`);
     const name = str(album.item.name);
     if (name === undefined) fail(`album ${albumId} heeft geen naam`);
+
+    // WP12b invariant 1: de cover komt mee zodra de foto geladen wordt. Of hij
+    // in dit album staat, controleert `warnUnpublishedCovers` hieronder.
+    let coverPhotoId = str(album.item.photoId);
+    if (coverPhotoId !== undefined && !includedPhotos.has(coverPhotoId)) {
+      warn(`album ${albumId}: coverPhotoId ${coverPhotoId} resolvet niet — gewist`);
+      coverPhotoId = undefined;
+    }
     // De bron kent geen albums.createdBy, in geen enkele vorm. Terugval op de
     // founder van de groep — gesynthetiseerd, dus expliciet gemeld.
     const createdBy = founderByGroup.get(album.groupId)!;
@@ -666,7 +682,7 @@ export function transform(items: SourceItem[], config: TransformConfig): Transfo
       groupId: album.groupId,
       name,
       description: undefined, // createAlbum.js schrijft 'm nooit
-      coverPhotoId: undefined,
+      coverPhotoId,
       sortDate: sortDateOf(album.item.sortDate, `album ${albumId}`, warn),
       createdBy,
       createdAt,
@@ -842,6 +858,9 @@ export function transform(items: SourceItem[], config: TransformConfig): Transfo
   // ── albumLastSeen (correctie 2) ─────────────────────────────────────
   deriveAlbumLastSeen({ src, records, includedAlbums, includedUsers, warn });
 
+  // ── covers zonder publicatie (WP12b besluit 4) ──────────────────────
+  warnUnpublishedCovers(records, warn);
+
   // ── slotcontrole + rapport ──────────────────────────────────────────
   assertReferentiallyClosed(records);
 
@@ -944,6 +963,53 @@ function deriveAlbumLastSeen(args: {
         lastSeenAt,
       });
     }
+  }
+}
+
+// ── covers zonder publicatie ──────────────────────────────────────────
+//
+// WP12b besluit 4: een cover die geladen wordt, komt mee, waar de foto ook
+// staat. Wel een waarschuwing als hij niet staat waar een lid hem kan zien,
+// want in v2 volgt een cover de foto-toegang (WP23 invariant 10):
+//   - albumcover uit een ander album van de groep: elk lid ziet hem;
+//   - album- of groepscover in geen album van de groep: alleen de eigenaar.
+// Gemeten op de rijen die geladen worden, want dat is wat v2 ziet.
+function warnUnpublishedCovers(records: Records, warn: (message: string) => void): void {
+  const albumsOfPhoto = new Map<string, Array<{ albumId: string; groupId: string }>>();
+  for (const ap of records.albumPhotos) {
+    const photoId = ap.photoId as string;
+    const list = albumsOfPhoto.get(photoId) ?? [];
+    list.push({ albumId: ap.albumId as string, groupId: ap.groupId as string });
+    albumsOfPhoto.set(photoId, list);
+  }
+  const placesOf = (photoId: string) => albumsOfPhoto.get(photoId) ?? [];
+
+  for (const album of records.albums) {
+    const cover = album.coverPhotoId;
+    if (typeof cover !== "string") continue;
+    const places = placesOf(cover);
+    if (places.some((p) => p.albumId === album.sourceKey)) continue;
+    if (places.some((p) => p.groupId === album.groupId)) {
+      warn(
+        `album ${album.sourceKey}: cover ${cover} staat niet in dit album maar wel in groep ` +
+          `${String(album.groupId)} — overgenomen, elk lid ziet hem`,
+      );
+    } else {
+      warn(
+        `album ${album.sourceKey}: cover ${cover} staat in geen album van groep ` +
+          `${String(album.groupId)} — overgenomen, alleen de eigenaar ziet hem (WP27)`,
+      );
+    }
+  }
+
+  for (const group of records.groups) {
+    const cover = group.coverPhotoId;
+    if (typeof cover !== "string") continue;
+    if (placesOf(cover).some((p) => p.groupId === group.sourceKey)) continue;
+    warn(
+      `groep ${group.sourceKey}: cover ${cover} staat in geen album van de groep — ` +
+        `overgenomen, alleen de eigenaar ziet hem (WP27)`,
+    );
   }
 }
 

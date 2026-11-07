@@ -26,6 +26,7 @@ import { collectDriftLines, MONITORED_TABLES, referencedStorageIds } from "./mon
 /** De tabellen die de import zelf vult, in laad-volgorde. */
 const LOAD_TABLES = [
   "users",
+  "userVisits",
   "groups",
   "memberships",
   "albums",
@@ -203,6 +204,24 @@ export const storageInventory = internalQuery({
       danglingCount: dangling.length,
       danglingSample: dangling.slice(0, sample),
       totalBytes: storageDocs.reduce((sum, s) => sum + s.size, 0),
+    };
+  },
+});
+
+/**
+ * Hoeveel groepen en albums een cover hebben (WP12b invariant 6). `verify` legt
+ * dit naast de verwachting uit de bron (`dynamo-extract.json`). Alleen een
+ * telling: de deployment kent geen bron-sleutels.
+ */
+export const coverCounts = internalQuery({
+  args: {},
+  returns: v.object({ groups: v.number(), albums: v.number() }),
+  handler: async (ctx) => {
+    const groups = await ctx.db.query("groups").collect();
+    const albums = await ctx.db.query("albums").collect();
+    return {
+      groups: groups.filter((g) => g.coverPhotoId !== undefined).length,
+      albums: albums.filter((a) => a.coverPhotoId !== undefined).length,
     };
   },
 });
