@@ -1,6 +1,6 @@
 # WP12b: Migratie-veldfixes — albumcovers, bezoek, bewuste drops
 
-> Draft regie 2026-11-07. Fix op de WP12-tooling, uit de TestFlight-gate van WP17a/WP25 (albumcovers ontbreken) en de veldaudit van A die daarop volgde. A → B → audit. Eigen branch `wp12b`. Vóór T0.
+> Landed 2026-11-07 (A → B → audit, twee fix-cycli, dev opnieuw geladen en gate groen; zie §Closeout). Draft regie 2026-11-07. Fix op de WP12-tooling, uit de TestFlight-gate van WP17a/WP25 (albumcovers ontbreken) en de veldaudit van A die daarop volgde. A → B → audit. Eigen branch `wp12b`. Vóór T0.
 
 ## Productdoel
 
@@ -56,10 +56,10 @@ Geen. Vraag 1 (standaardfoto) is besluit 5, vraag 2 (welke v1-versie draait) is 
 
 | Stap | Wie | Wat |
 |---|---|---|
-| 1 | A | Spec-criticus, open vraag 1 en 2, RED tests op de transform en `verify`. |
-| 2 | B | Impl, runbook, dev opnieuw laden (Wouter draait de commando's). |
-| 3 | Audit | Op spec, tests en impl. |
-| 4 | Gate | Eerst `verify` groen, dan pas de app openen: de app maakt bij openen `userVisits`- en `albumLastSeen`-rijen aan, en dan klopt de telling van `verify` niet meer (audit). Daarna Wouter: in de app hebben de albums op dev een cover. |
+| 1 | A | ✅ Spec-criticus, open vraag 1 en 2, RED tests op de transform en `verify`. |
+| 2 | B | ✅ Impl, runbook. Dev opnieuw geladen door regie op de server. |
+| 3 | Audit | ✅ Audit plus twee fix-cycli met heraudit; geen blockers. |
+| 4 | Gate | ✅ Eerst `verify` groen, dan pas de app openen: de app maakt bij openen `userVisits`- en `albumLastSeen`-rijen aan, en dan klopt de telling van `verify` niet meer (audit). Daarna Wouter: in de app hebben de albums op dev een cover. |
 
 ## Cross-refs
 
@@ -239,3 +239,12 @@ Niets. Besluit 4 en 5 zijn verwerkt in invariant 1, 2 en 4.
 |---|---|
 | `tests/migration/wp12bFixcyclus1.test.ts` | F1-tests aangepast aan G1: elke datum stopt (verleden, vandaag, toekomst), nieuwe vlag. F2 en F3 ongewijzigd. |
 | `tests/migration/wp12bFixcyclus2.test.ts` | G2: `runTransform` met en zonder de optie, en de oude optienaam; `transformOptions` in `cli.ts`; een import van `cli.ts` start niets. |
+
+## Closeout (regie, 2026-11-07)
+
+- **Dev opnieuw geladen** (server): transform, `reset`, `load-records` (15 covers nagevuld, 3 `userVisits`), `formaten`, `verify` groen. Covers: 3 groepen en 12 albums, gelijk aan de bron. De andere 5 albumcovers wijzen naar foto's buiten de dev-seed (eigenaar niet chosen); op prod resolven alle 17.
+- **Gate:** Wouter op build 54. De albums hebben een cover, behalve de vijf hierboven.
+- **`formaten` op dev:** 1 foto mislukte op een tijdelijke storage-fout van Convex ("Try again later"), en één batch brak af op "too many system operations" en ging per foto verder. Een tweede run maakte de laatste foto. Op T0: bij mislukte foto's eerst opnieuw draaien.
+- **Rest (heraudit 2):** de aanroep van `runTransform` in `main()` van `cli.ts` heeft geen eigen test (de vlag hard aan valt niet op). Eén regel, klein risico, geaccepteerd (Wouter). Ook niet getest: de controle of `cli.ts` het startpunt is.
+- **Gatetest** (WP16) is weg door de `reset`. Opnieuw aanmaken vóór de gate van WP17b.
+- **Naar WP27:** covers zichtbaar voor alle leden, en het besluit over een groepscover uit een andere groep.
