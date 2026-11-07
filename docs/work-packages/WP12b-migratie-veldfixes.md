@@ -22,6 +22,8 @@ Na de migratie ziet een lid elk album met de cover die het in de oude app had, e
 1. Albumcovers worden overgenomen.
 2. Het bezoek wordt een rij in `userVisits`. Het is alleen intern te lezen (WP15b), maar daar bewaart v2 het.
 3. Eigen branch, na de merge van WP25.
+4. **Covers zonder publicatie (A3):** voorstel A. Een cover komt mee zodra de foto gemigreerd wordt; staat hij in geen album van de groep, dan een waarschuwing in het transform-rapport, geen drop. Telling prod: alle 17 albumcovers staan in hun eigen album; 3 van de 4 groepscovers staan in geen album van de groep, dus die ziet in v2 alleen de eigenaar. Na T0 kiest een admin een nieuwe cover uit een album (WP17b). De toegangsregel blijft zoals hij is.
+5. **Standaardfoto (A1):** het oude bestand houden, als los beeld gedeeld per bestand. Niets bouwen.
 
 ## Invarianten
 
