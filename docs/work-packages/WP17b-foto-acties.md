@@ -68,4 +68,129 @@ Een lid doet met een foto wat in v1 kon: draaien en spiegelen, uit een album hal
 
 ---
 
-## Spec-criticus aanvullingen (A vult in)
+## Spec-criticus aanvullingen (A, 2026-11-07)
+
+Bronnen: de oude app (`components/PhotoMenu.jsx`, `PhotoSelectionHeader.jsx`, `screens/PhotoModal.jsx`, `PhotoDetail.jsx`, `PhotoEdit.jsx`, `PhotoSelectionMenu.jsx`, `AlbumPhotos.jsx`, `datastores/`), de oude backend (`blob-images-api-photos` op `hotfix`: `deletePhoto`, `fixPhotoRotation`, `libs/dynamodb-lib-single`; `blob-images-api-groups` op `dev`: `deleteAlbumPhoto`, `updateAlbum`, `updateGroup`; `blob-images-api-user` op `hotfixes`: `updateUser`; `blob-images-api`: `photoDelToCover`), en de huidige `convex/` en `app/`.
+
+### Kernvondsten
+
+1. **De app kan nu geen profielfoto zetten.** `users.updateProfile` neemt een `storageId`, en sinds WP17a invariant 10 kent de client geen `storageId` meer. Er is een pad op foto-id nodig (WP17a §Inventaris zag dat al). Zie vraag 4.
+2. **Een foto wissen laat een profielfoto achter die naar niets wijst.** v1 wiste bij het wissen van een foto ook de profielfoto van elke user die die foto had (`photoDelToCover`, ook op `UBbase`). v2 wist het beeld (U7), maar laat `profilePhotoStorageId` staan (P5, `[GAP]`). Tot nu kon de app niets wissen; met 17b wel. Een lid dat de foto wist die zijn profielfoto is, ziet de letter (WP17a invariant 14), maar de rij wijst naar een gewist beeld. Dat geldt ook voor de gemigreerde profielfoto die de foto van een ander is (WP17a besluit 13). Zie A-keuze 1.
+3. **De rol van de caller staat in geen read van het albumscherm.** Het menu heeft hem nodig (draaien, uit album, covers). `groups.listMine` geeft hem per groep, de album-reads niet. Het maker-veld van het album en `addedBy` staan er wel. B kiest de bron van de rol.
+4. **v1 draaide in een eigen scherm en bewaarde één keer.** Links, rechts en spiegelen als voorbeeld, "opslaan" alleen als er iets veranderde, dan één aanroep. v1 stuurde de hoek tegen de klok in (Jimp). `photos.rotate` neemt hem met de klok mee, eerst spiegelen en dan draaien, op het beeld zoals de user het ziet (WP8). Wie de v1-omrekening overneemt, draait de verkeerde kant op.
+5. **v1 vroeg geen bevestiging bij één foto verwijderen.** Alleen bij verwijderen in het selectiemenu ("definitief, ook uit alle albums en groepen") en bij melden. Uit album halen nooit. Invariant 2 is strenger dan v1, bewust.
+6. **In het v1-detail zag een admin minder.** Daar stond de admin-vlag vast op false: geen albumcover of groepscover, en draaien alleen op een eigen foto. Die kon alleen via lang drukken in het raster. Niet overnemen.
+7. **Draaien vóór de formaten** (WP25 §Edge cases). Het gaat alleen mis als het bestand een tag ongelijk aan 1 draagt én de user draait vóór `attachFormats`. Met 17b kan dat alleen bij een afgetekende foto die later toch formaten krijgt (`--unaccept`), en na WP18 in de seconden na een upload. Zie vraag 6.
+8. **Breedte en hoogte na draaien** (buiten 17b). WP8 wisselt `width` en `height` bij een kwartslag; WP25 zet ze als de maten van de pixels vóór de draaiing. Na draaien betekent het veld iets anders dan na de formaten. De app gebruikt ze nu niet: de vorm komt uit het vak en `exifOrientation`. Voor de backlog.
+9. **Twee keer tegelijk draaien is geen "laatste wint".** Convex voert de twee mutations na elkaar uit, en elk past zijn delta toe op de stand van dat moment. Beide draaiingen komen er dus op (correctie op §Risico). Wie als tweede bewaart, ziet een andere stand dan zijn voorbeeld. Geaccepteerd.
+
+### Antwoorden op de open vragen
+
+**1. Pariteit per actie.**
+
+| Actie | v1 menu | v1 backend | v2 backend | Verschil |
+|---|---|---|---|---|
+| Draaien, spiegelen | eigenaar of admin (lang drukken), eigenaar (detail) | elk lid met foto-toegang | eigenaar, of admin van een groep met de foto in een album (WP8) | gelijk aan het v1-menu |
+| Uit album | eigenaar (menu), admin (selectie) | eigenaar of admin | wie hem toevoegde, of admin | gelijk: alleen de eigenaar voegt toe (WP24 A-keuze 1) |
+| Verwijderen | eigenaar | eigenaar | eigenaar | gelijk |
+| Albumcover | admin | admin, foto-toegang | maker van het album of admin, foto in dat album | v2 ruimer: ook een lid dat het album maakte |
+| Groepscover | admin | admin, foto-toegang | admin, foto in een album van de groep | gelijk |
+| Profielfoto | iedereen, elke zichtbare foto | foto-toegang | alleen een eigen foto (WP17a besluit 10) | v2 strenger, bewust |
+| Delen, locatie | | | | WP17c |
+| Melden | niet-eigenaar | | | WP20 |
+
+Op prod is iedereen admin. Daar maken alleen "verwijderen" (eigenaar) en "profielfoto" (eigen foto) verschil. Advies: de v2-backend volgen.
+
+**2. Menu en selectie in v1.**
+- Detail: een knop "…" rechtsboven opent het menu.
+- Raster: lang drukken toont de foto met het menu eronder; een tik op de foto gaat naar het detail.
+- Selectie: "selecteer" in de kop van het album, dan vinkjes, een teller en "…". Daarin: toevoegen aan album, uit album, overal verwijderen, melden. Een actie die niet voor álle geselecteerde foto's mocht, stond grijs.
+- Bevestiging: zie kernvondst 5. Na een actie een korte melding, dan terug.
+
+**3. Verwijderen door een admin:** nee. In v1 verwijderde alleen de eigenaar een foto; een admin kon hem uit het album halen. v2 is gelijk.
+
+**4. Ontbrekende backend:**
+- **Profielfoto op foto-id** (kernvondst 1): `users.setProfilePhoto({ photoId })`, invariant 12. A schrijft de tests, B bouwt hem.
+- **Profielfoto vervalt als de foto gewist wordt:** A-keuze 1.
+- **Een cover wissen:** niet nodig. Het v1-foto-menu wiste nooit een cover; dat zat in groep en album bewerken (Groepsbeheer).
+- **De rol:** kernvondst 3, geen nieuwe functie nodig.
+
+**5. Bestaans-orakels in `rotate`, `update` en `remove`:** nog open (backlog). 17b verandert niet wie een id kent: het menu staat op foto's die de user al ziet. Advies: apart laten. De app hoeft de reden van een weigering niet uit de fout te halen; een gewone `Error` heet in productie toch "Server Error". Wat niet mag, weet de app vooraf (invariant 10), dus een weigering is een race en krijgt één algemene melding.
+
+### A-keuzes ter bevestiging
+
+De tests staan in een eigen `describe` met "A-keuze n" in de naam.
+
+1. **Een foto wissen wist ook elke profielfoto die dat beeld is** (v1-pariteit, kernvondst 2). In dezelfde transactie, voor elke user. Andere profielfoto's blijven. Geldt voor elk pad dat een foto wist: `photos.remove`, `users.deleteSelf` (U7) en de cron van FL1. Sluit de `[GAP]` in P5.
+2. **Selectie per foto, niet alles of niets.** v1 zette een actie grijs als hij niet voor alle foto's mocht. Invariant 7 doet hem voor de foto's waar het mag, en zegt hoeveel niet en waarom. A volgt invariant 7: de app bepaalt vooraf met de regel van het menu welke foto's mogen, stuurt alleen die, en telt wat daarna nog faalt apart.
+
+### Aanvullende invarianten
+
+10. **Het menu is nooit ruimer dan de backend.** Toont het menu een actie op een foto, dan slaagt de mutation voor die user. Staat de foto alleen in dit album, dan geldt ook het omgekeerde: wat de backend toelaat, toont het menu. Staat de foto ook in een andere groep waar de user admin is, dan mag het menu strenger zijn (draaien).
+11. **Draaien bewaart één keer, en het voorbeeld klopt.** Links, rechts en spiegelen in het draaischerm worden samen één `photos.rotate`. Na bewaren staat de foto precies zoals het voorbeeld. Komt het voorbeeld uit op de begintoestand, dan valt er niets te bewaren.
+12. **Profielfoto op foto-id.** `users.setProfilePhoto({ photoId })` zet de profielfoto op het beeld van die foto, als de caller de eigenaar is (WP17a invariant 16). Een foto van een ander (ook met toegang), een onbekend en een gewist id geven dezelfde weigering en veranderen niets. Daarna volgt de avatar de stand van die foto, ook na draaien.
+
+### Pariteit-checklist
+
+**Foto-menu** (detail: knop "…"; raster: lang drukken)
+
+| Oude app | Nieuw (17b) |
+|---|---|
+| Albumcover, Groepscover (admin) | Volgens invariant 10, in het detail en in het raster. Daarna een korte melding. |
+| Profielfoto (iedereen) | Alleen op een eigen foto. Eerst de melding dat een profielfoto voor iedereen te zien is, ook buiten de groep (invariant 6), met annuleren. |
+| Verwijder uit album (eigenaar) | Wie hem toevoegde, of admin. Bevestiging: vraag 3. |
+| Draaien (eigenaar of admin) | Opent het draaischerm (invariant 11). |
+| Locatie, Delen | WP17c |
+| Meld als ongepast | WP20 |
+| Verwijder overal (eigenaar, rood, onderaan) | Zo, met een bevestiging die zegt wat er weggaat: uit elk album, met de likes, als cover en als profielfoto. |
+| Na een actie een melding, dan terug | Korte melding. Na verwijderen of uit album gaat het detail naar de volgende foto (WP17a). |
+| Mislukt: "Helaas, niet gelukt" | Eén NL-melding, niets veranderd. |
+
+**Draaischerm**
+
+| Oude app | Nieuw (17b) |
+|---|---|
+| Foto groot; knoppen links, spiegelen, rechts | Zo |
+| "opslaan" grijs zolang er niets verandert | Zo (invariant 11) |
+| Voortgang "dit duurt even" (de server draaide pixels) | Niet nodig: één mutation |
+| Na opslaan terug | Zo |
+
+**Selectie** (albumscherm)
+
+| Oude app | Nieuw (17b) |
+|---|---|
+| "selecteer" in de kop, vinkjes, teller | Zo |
+| "…": toevoegen aan album, uit album, overal verwijderen, melden | Uit album en verwijderen. Toevoegen aan album: vraag 5. Melden: WP20. |
+| Grijs als het niet voor alle foto's mag | Per foto (A-keuze 2) |
+| Verwijderen met bevestiging | Zo, met het aantal |
+| Voortgang "3/5 foto's verwijderd" | Na afloop: hoeveel niet, en waarom (invariant 7) |
+
+### Edge cases
+
+- **Menu open, en de foto verdwijnt** (een ander wist hem of haalt hem uit het album): het menu sluit; het detail volgt WP17a.
+- **De rol verandert terwijl het menu open is:** het menu volgt de live rol. Een actie die toch geweigerd wordt, geeft de algemene melding.
+- **Twee admins zetten tegelijk een cover:** de laatste wint, iedereen ziet live de laatste.
+- **Profielfoto die zelf een foto is, en die foto draait:** de avatar draait mee (invariant 12, WP25 invariant 26).
+- **Profielfoto, daarna de foto uit alle albums:** de profielfoto blijft. Het is een eigen beeld, en openbaar.
+- **Groepscover, daarna de foto uit het laatste album van de groep:** AP4 wist de cover (bestaand).
+
+### Open vragen voor Wouter (met advies)
+
+1. **A-keuze 1: een foto wissen wist ook de profielfoto.** Advies: ja, v1-pariteit.
+2. **A-keuze 2: selectie per foto.** Advies: ja, zoals invariant 7.
+3. **Bevestiging bij uit album halen?** v1 vroeg niets. Haalt een admin de foto van een ander weg, dan kan hij hem niet terugzetten: dat kan alleen de eigenaar, en pas met WP17c. Advies: bevestiging bij een foto van een ander, niet bij een eigen foto.
+4. **"Publicaties" in het detail** (in welke albums staat deze foto). WP17a schoof het naar 17b; deze draft noemt het niet. Het vraagt een nieuwe read met een eigen toegangsregel. Advies: naar WP17c.
+5. **Toevoegen aan album in het selectiemenu.** v1 had het; deze draft noemt het niet. `albums.addPhoto` bestaat. Advies: naar WP17c, samen met Mijn foto's, waar v1 hetzelfde scherm "kies album" gebruikte.
+6. **Draaien vóór de formaten** (kernvondst 7). Advies: geen code in 17b. WP18 kijkt opnieuw, want daar ontstaat het venster.
+7. **Albumcover door een lid dat het album maakte** (v2 ruimer dan v1). Advies: zo laten; op prod is iedereen admin.
+
+### Tests
+
+| Bestand | Pint |
+|---|---|
+| `app/tests/photoActions.test.ts` | Pure logica in `app/src/lib/photoActions.ts`: het menu per rol, eigenaar, toevoeger en albummaker (invariant 1 en 10, orakel met de hand); de selectie (invariant 7, A-keuze 2); de draaiknoppen als één `photos.rotate` en de stand van het voorbeeld (invariant 11), tegen een orakel op een pixelrooster uit de EXIF-definitie |
+| `tests/photoActions/menuMatchesBackend.test.ts` | Invariant 10: per rol en per actie toont het menu hem precies als de mutation slaagt; strenger mag bij een foto in een tweede groep. Invariant 11: de stand na `photos.rotate` is de stand van het voorbeeld. |
+| `tests/users/setProfilePhoto.test.ts` | Invariant 12 |
+| `tests/photos/deleteClearsProfile.test.ts` | A-keuze 1, via `photos.remove`, `users.deleteSelf` en de FL1-cron |
+
+Geen UI-tests (app-WP). De schermen, de meldingen en de bevestigingen toetst de gate.
