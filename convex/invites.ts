@@ -21,6 +21,7 @@ import {
   landingInviterFields,
   pick,
 } from "./lib/shapes";
+import { profileOrientationOf } from "./lib/profilePhoto";
 import { INVITES_SENDER, sendMailjetMessage } from "./lib/mailjet";
 import {
   acceptedTemplate,
@@ -161,7 +162,9 @@ export const getByToken = query({
       ...(invite.role !== undefined ? { role: invite.role } : {}),
       email: invite.email,
       group: groupDoc ? pick(groupDoc, landingGroupFields) : null,
-      inviter: inviterDoc ? pick(inviterDoc, landingInviterFields) : null,
+      inviter: inviterDoc
+        ? { ...pick(inviterDoc, landingInviterFields), ...(await profileOrientationOf(ctx, inviterDoc)) }
+        : null,
     };
   },
 });

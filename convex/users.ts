@@ -24,6 +24,7 @@ import {
   publicProfile,
   publicProfileFields,
 } from "./lib/shapes";
+import { profileOrientationOf } from "./lib/profilePhoto";
 
 // Default upload-limiet voor nieuwe users. Mocht een admin een hogere limiet
 // willen geven, dan kan dat via directe DB patch (geen public mutation in
@@ -64,7 +65,7 @@ async function ownProfileOrNull(ctx: QueryCtx) {
   const identity = await ctx.auth.getUserIdentity();
   if (!identity) return null;
   const user = await getBySubject(ctx, identity.subject);
-  return user ? pick(user, ownProfileFields) : null;
+  return user ? { ...pick(user, ownProfileFields), ...(await profileOrientationOf(ctx, user)) } : null;
 }
 
 // WP23: eigen profiel (whitelist, zie lib/shapes). `null` zonder identity of
@@ -100,7 +101,7 @@ export const getById = query({
     }
     const target = await ctx.db.get(userId);
     if (!target) throw new Error(NO_USER_ACCESS);
-    return pick(target, publicProfileFields);
+    return { ...pick(target, publicProfileFields), ...(await profileOrientationOf(ctx, target)) };
   },
 });
 

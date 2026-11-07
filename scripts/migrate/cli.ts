@@ -42,7 +42,7 @@ opties
   --yes                      bevestiging voor reset en prune-storage
   --all                      reset wist ook de storage (en de storage-map)
   --accept-missing-files     load-records mag doorgaan met ontbrekende S3-objecten
-  --batch-size N             formaten: foto's per action (standaard 20)
+  --batch-size N             formaten: foto's per action (1..50, standaard 20)
 
 omgeving (.env.migrate, gitignored)
   MIGRATE_CONVEX_URL_DEV / _PROD, MIGRATE_CONVEX_ADMIN_KEY_DEV / _PROD

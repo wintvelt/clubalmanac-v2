@@ -3,8 +3,9 @@
 import { v } from "convex/values";
 import { internalAction, type ActionCtx } from "./_generated/server";
 import { internal } from "./_generated/api";
-import type { Doc, Id } from "./_generated/dataModel";
+import type { Id } from "./_generated/dataModel";
 import { makeFormatImages } from "./lib/photoFormats";
+import { selfTestHeic, selfTestJpeg } from "./lib/selfTestImages";
 
 // WP25 — de formaat-stap (besluit 1: optie A).
 //
@@ -40,11 +41,13 @@ async function storeJpeg(ctx: ActionCtx, bytes: Uint8Array): Promise<Id<"_storag
 }
 
 async function makeFormatsFor(ctx: ActionCtx, photoId: Id<"photos">): Promise<Outcome> {
-  const photo: Doc<"photos"> | null = await ctx.runQuery(internal.photos.getByIdInternal, {
-    photoId,
-  });
+  const photo: { storageId: Id<"_storage">; hasFormats: boolean } | null = await ctx.runQuery(
+    internal.photos.formatInfo,
+    { photoId },
+  );
   if (!photo) return "gone";
-  if (photo.formats) return "alreadyDone";
+  // Een set met een ontbrekend object telt als geen set (A-invariant 22).
+  if (photo.hasFormats) return "alreadyDone";
 
   const blob = await ctx.storage.get(photo.storageId);
   if (!blob) {
@@ -57,7 +60,8 @@ async function makeFormatsFor(ctx: ActionCtx, photoId: Id<"photos">): Promise<Ou
     // Geen `Blob.slice` in Convex (convex-runtimes.md): de hele buffer.
     images = await makeFormatImages(new Uint8Array(await blob.arrayBuffer()));
   } catch (e) {
-    console.error(`[photoFormats] mislukt photoId=${photoId}: geen leesbaar beeld`, e);
+    // Bv. "te groot (24.5 MP, grens 16 MP)" (A-invariant 20) of geen beeld.
+    console.error(`[photoFormats] mislukt photoId=${photoId}: ${e instanceof Error ? e.message : String(e)}`);
     return "failed";
   }
 
@@ -97,6 +101,28 @@ export const makeFormats = internalAction({
   args: { photoId: v.id("photos") },
   returns: outcome,
   handler: async (ctx, { photoId }): Promise<Outcome> => await makeFormatsFor(ctx, photoId),
+});
+
+/**
+ * A-invariant 24: laadt en draait de beeldbibliotheek op een ingebouwde JPEG en
+ * HEIC. Schrijft niets. `formaten` roept hem aan vóór de eerste batch, zodat
+ * ook een run op een lege deployment (de key-controle op T-2) sharp en
+ * heic-decode test. Gooit als de bibliotheek niet laadt of niet decodeert.
+ */
+export const selfTest = internalAction({
+  args: {},
+  returns: v.object({
+    jpeg: v.object({ width: v.number(), height: v.number() }),
+    heic: v.object({ width: v.number(), height: v.number() }),
+  }),
+  handler: async () => {
+    const jpeg = await makeFormatImages(selfTestJpeg());
+    const heic = await makeFormatImages(selfTestHeic());
+    return {
+      jpeg: { width: jpeg.width, height: jpeg.height },
+      heic: { width: heic.width, height: heic.height },
+    };
+  },
 });
 
 /**

@@ -4,9 +4,15 @@
 // foto-rijen en originelen; schrijft per foto de formaten en, als die nog
 // leeg is, de stand uit het bestand (A-invariant 12), in één schrijfactie.
 //
-// Batches van `internal.photoFormats.backfill`, één foto tegelijk in de action
-// (spike: 512 MB per Node-action). Een batch van 20 duurt ~1 minuut (spike:
-// ~3 s per foto, de grootste 5 s), ruim binnen de 10 minuten van een action.
+// Eerst `selfTest` (A-invariant 24): laadt de beeldbibliotheek niet, dan stopt
+// hij vóór de eerste batch. Daarna batches van `internal.photoFormats.backfill`,
+// één foto tegelijk in de action (512 MB per Node-action). Gemeten op dev: ~50 s
+// per batch van 20. Hooguit 50 per batch (A-invariant 23): de HTTP-aanroep
+// heeft een time-out van 300 s.
+//
+// Valt een batch-action om (geheugen, time-out; A-invariant 21), dan doet de
+// CLI die pagina nog eens, nu elke foto zonder formaten in een eigen action.
+// Valt die ook om, dan telt die foto als mislukt en gaat de CLI door.
 //
 // Hervatbaar zonder eigen staat: een nieuwe run begint vooraan en slaat elke
 // foto met formaten over (invariant 11). Breekt hij af, start hem opnieuw.
@@ -18,16 +24,67 @@
 import { internal } from "../../convex/_generated/api.js";
 import type { Id } from "../../convex/_generated/dataModel.js";
 import type { Target } from "./config.ts";
-import { makeAdminClient, runAction, runQuery } from "./convexAdmin.ts";
+import { makeAdminClient, runAction, runQuery, type AdminClient } from "./convexAdmin.ts";
 
 const DEFAULT_BATCH = 20;
+const MAX_BATCH = 50;
+
+type Totals = { created: number; alreadyDone: number; gone: number; failed: Id<"photos">[] };
+
+const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
+
+/**
+ * De pagina van een afgebroken batch, foto voor foto. Geeft de cursor van de
+ * volgende pagina terug.
+ */
+async function photoByPhoto(
+  admin: AdminClient,
+  cursor: string | null,
+  batchSize: number,
+  total: Totals,
+): Promise<string | null> {
+  const page = await runQuery(admin, internal.photos.formatBatch, { cursor, batchSize });
+  for (const { photoId, hasFormats } of page.photos) {
+    if (hasFormats) {
+      total.alreadyDone += 1;
+      continue;
+    }
+    try {
+      const r = await runAction(admin, internal.photoFormats.makeFormats, { photoId });
+      if (r === "failed") {
+        total.failed.push(photoId);
+        console.log(`[formaten]   ${photoId}: mislukt (reden in de Convex-log)`);
+      } else {
+        total[r] += 1;
+      }
+    } catch (error) {
+      total.failed.push(photoId);
+      console.log(`[formaten]   ${photoId}: action brak af — ${message(error)}`);
+    }
+  }
+  return page.cursor;
+}
 
 export async function formaten(target: Target, batchSize = DEFAULT_BATCH): Promise<number> {
-  if (!Number.isInteger(batchSize) || batchSize < 1 || batchSize > 100) {
-    throw new Error(`[formaten] --batch-size moet 1..100 zijn, kreeg ${batchSize}`);
+  if (!Number.isInteger(batchSize) || batchSize < 1 || batchSize > MAX_BATCH) {
+    throw new Error(`[formaten] --batch-size moet 1..${MAX_BATCH} zijn, kreeg ${batchSize}`);
   }
   const admin = makeAdminClient(target, true);
   console.log(`[formaten] doel: ${target} (${admin.url}), batch ${batchSize}`);
+
+  try {
+    const self = await runAction(admin, internal.photoFormats.selfTest, {});
+    console.log(
+      `[formaten] beeldbibliotheek: ok (JPEG ${self.jpeg.width}×${self.jpeg.height}, ` +
+        `HEIC ${self.heic.width}×${self.heic.height})`,
+    );
+  } catch (error) {
+    console.error(
+      `[formaten] beeldbibliotheek werkt niet op de deployment: ${message(error)}\n` +
+        `[formaten] geen batch gedraaid. Controleer sharp en heic-decode (package.json, convex.json) en deploy opnieuw.`,
+    );
+    return 1;
+  }
 
   const before = await runQuery(admin, internal.photos.formatStatus, {});
   console.log(
@@ -35,7 +92,7 @@ export async function formaten(target: Target, batchSize = DEFAULT_BATCH): Promi
       `${before.withoutFormats} zonder, ${before.withExifOrientation} met exifOrientation`,
   );
 
-  const total = { created: 0, alreadyDone: 0, gone: 0, failed: [] as Id<"photos">[] };
+  const total: Totals = { created: 0, alreadyDone: 0, gone: 0, failed: [] };
   const started = Date.now();
   let cursor: string | null = null;
   let batch = 0;
@@ -46,12 +103,26 @@ export async function formaten(target: Target, batchSize = DEFAULT_BATCH): Promi
     try {
       r = await runAction(admin, internal.photoFormats.backfill, { cursor, batchSize });
     } catch (error) {
-      console.error(
-        `[formaten] batch ${batch} brak af: ${error instanceof Error ? error.message : String(error)}\n` +
-          `[formaten] wat klaar is, blijft klaar. Start hetzelfde commando opnieuw; het slaat ` +
-          `foto's met formaten over.`,
+      console.log(
+        `[formaten] batch ${String(batch).padStart(3)}: action brak af (${message(error)}); ` +
+          `deze batch nu foto voor foto`,
       );
-      return 1;
+      const failedBefore = total.failed.length;
+      try {
+        cursor = await photoByPhoto(admin, cursor, batchSize, total);
+      } catch (inner) {
+        console.error(
+          `[formaten] batch ${batch} brak af: ${message(inner)}\n` +
+            `[formaten] wat klaar is, blijft klaar. Start hetzelfde commando opnieuw; het slaat ` +
+            `foto's met formaten over.`,
+        );
+        return 1;
+      }
+      console.log(
+        `[formaten] batch ${String(batch).padStart(3)}: foto voor foto klaar, ` +
+          `mislukt ${total.failed.length - failedBefore} — ${((Date.now() - t0) / 1000).toFixed(1)} s`,
+      );
+      continue;
     }
     total.created += r.created;
     total.alreadyDone += r.alreadyDone;

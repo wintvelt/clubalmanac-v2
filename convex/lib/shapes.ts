@@ -57,7 +57,14 @@ export const publicProfileFields = {
   _id: v.id("users"),
   name: v.optional(v.string()),
 };
-export const publicProfile = v.object(publicProfileFields);
+/**
+ * WP25 A-invariant 19: de stand van de avatar, de `exifOrientation` van de
+ * foto-rij die het profielpad serveert (`lib/profilePhoto`). Geen kolom van
+ * `users`, dus niet in de `pick`-velden; de query zet hem erbij.
+ */
+const profileOrientationField = { profileOrientation: v.optional(v.number()) };
+
+export const publicProfile = v.object({ ...publicProfileFields, ...profileOrientationField });
 
 /**
  * Wat de user van zichzelf ziet. Geen subject, geen photoLimit (A-keuze 10),
@@ -70,7 +77,7 @@ export const ownProfileFields = {
   photoCount: v.number(),
   createdAt: v.number(),
 };
-export const ownProfile = v.object(ownProfileFields);
+export const ownProfile = v.object({ ...ownProfileFields, ...profileOrientationField });
 
 // ── groups / memberships ──────────────────────────────────────────
 
@@ -232,5 +239,5 @@ export const inviteLanding = v.object({
   role: v.optional(ROLE),
   email: v.string(),
   group: v.union(v.object(landingGroupFields), v.null()),
-  inviter: v.union(v.object(landingInviterFields), v.null()),
+  inviter: v.union(v.object({ ...landingInviterFields, ...profileOrientationField }), v.null()),
 });

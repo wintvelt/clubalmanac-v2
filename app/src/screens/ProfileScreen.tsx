@@ -77,7 +77,13 @@ export function ProfileScreen() {
     <Screen underHeader>
       <View style={styles.head}>
         {/* WP17a: de eigen profielfoto via het openbare profielpad, anders de letter. */}
-        <ProfileAvatar userId={me._id} name={me.name} size={size.profileAvatar} variant="largeTitle" />
+        <ProfileAvatar
+          userId={me._id}
+          name={me.name}
+          size={size.profileAvatar}
+          variant="largeTitle"
+          exifOrientation={me.profileOrientation}
+        />
         <Text variant="title" accessibilityRole="header" style={styles.headText}>
           {me.name || "Nog geen naam"}
         </Text>

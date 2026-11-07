@@ -19,6 +19,7 @@ import {
   publicProfile,
   publicProfileFields,
 } from "./lib/shapes";
+import { profileOrientationOf } from "./lib/profilePhoto";
 import {
   deleteAlbumLastSeenByAlbum,
   deleteAlbumLastSeenForUserInGroup,
@@ -213,7 +214,9 @@ export const listMembers = query({
         const user = await ctx.db.get(m.userId);
         return {
           membership: pick(m, membershipFields),
-          user: user ? pick(user, publicProfileFields) : null,
+          user: user
+            ? { ...pick(user, publicProfileFields), ...(await profileOrientationOf(ctx, user)) }
+            : null,
         };
       }),
     );

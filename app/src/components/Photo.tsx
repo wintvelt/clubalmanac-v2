@@ -139,16 +139,28 @@ type AvatarProps = {
   size: number;
   format?: ImageFormat;
   variant?: TypeRoleName;
+  // WP25 A-invariant 19: `profileOrientation` uit de user-vorm. Het profielpad
+  // geeft *klein* met ruwe pixels; de avatar draait ze zoals Photo.
+  exifOrientation?: number;
 };
 
 // Profielfoto, rond. Geen profielfoto, een gewist beeld of een fout: de
 // letter, zonder fout-toestand (invariant 14). Decoratief: de rij eromheen
 // draagt de naam. Openbaar (besluit 8), en zonder cache (invariant 3, audit
 // S6): dezelfde URL geeft na een wissel een ander beeld.
-export function ProfileAvatar({ userId, name, size, format = "klein", variant = "bodyStrong" }: AvatarProps) {
+export function ProfileAvatar({
+  userId,
+  name,
+  size,
+  format = "klein",
+  variant = "bodyStrong",
+  exifOrientation,
+}: AvatarProps) {
   const letter = <LetterTile name={name} size={size} radius={size / 2} variant={variant} />;
   if (!userId) return letter;
-  return <ProfileImage userId={userId} size={size} format={format} letter={letter} />;
+  return (
+    <ProfileImage userId={userId} size={size} format={format} letter={letter} exifOrientation={exifOrientation} />
+  );
 }
 
 function ProfileImage({
@@ -156,11 +168,13 @@ function ProfileImage({
   size,
   format,
   letter,
+  exifOrientation,
 }: {
   userId: string;
   size: number;
   format: ImageFormat;
   letter: ReactNode;
+  exifOrientation: number | undefined;
 }) {
   const source = useProfileSource(userId, format);
   const [state, setState] = useState<"loading" | "loaded" | "failed">("loading");
@@ -170,7 +184,13 @@ function ProfileImage({
       {state === "loading" && <View style={StyleSheet.absoluteFill}>{letter}</View>}
       <Image
         source={source}
-        style={{ width: size, height: size, borderRadius: size / 2 }}
+        // Rond en vierkant: draaien verandert de maat niet, dus geen Oriented-box.
+        style={{
+          width: size,
+          height: size,
+          borderRadius: size / 2,
+          transform: orientationTransform(exifOrientation),
+        }}
         contentFit="cover"
         cachePolicy="none"
         recyclingKey={userId}

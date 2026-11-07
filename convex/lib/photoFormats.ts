@@ -18,6 +18,9 @@
 //
 // Geheugen (spike): één decode per foto, *klein* uit *groot*. Piek ~260–390 MB
 // bij 20 MB-originelen, onder de 512 MB van een Node-action. Eén foto tegelijk.
+// Een HEIC decodeert naar RGBA in WASM en groeit met de pixels: boven
+// HEIC_MAX_PIXELS valt de action om. De maat komt daarom eerst uit de kop, en
+// een te grote HEIC wordt niet gedecodeerd (A-invariant 20, besluit 7).
 //
 // sharp en heic-decode worden pas in de functie geladen: elke module in
 // `convex/` wordt in de tests in de edge-runtime geladen (WP25 §Edge cases),
@@ -27,6 +30,8 @@ import type SharpModule from "sharp";
 
 export const KLEIN_MAX = 512;
 export const GROOT_MAX = 1600;
+/** 4032×3024 (12,2 MP) erdoor, 5712×4284 (24,5 MP) niet. Gelijk aan scripts/wp25/prod-tel.mjs. */
+export const HEIC_MAX_PIXELS = 16_000_000;
 const JPEG_OPTIONS = { quality: 80, mozjpeg: true } as const;
 const WHITE = { r: 255, g: 255, b: 255 };
 
@@ -46,6 +51,79 @@ function isHeicLike(b: Uint8Array): boolean {
   if (b.length < 12) return false;
   const ascii = (from: number, to: number) => String.fromCharCode(...b.subarray(from, to));
   return ascii(4, 8) === "ftyp" && HEIC_BRANDS.has(ascii(8, 12));
+}
+
+/** Kinderen van een ISO-BMFF-box tussen [start, end). */
+function* boxes(b: Uint8Array, start: number, end: number) {
+  const dv = new DataView(b.buffer, b.byteOffset, b.byteLength);
+  let o = start;
+  while (o + 8 <= end) {
+    let size = dv.getUint32(o);
+    const type = String.fromCharCode(...b.subarray(o + 4, o + 8));
+    let header = 8;
+    if (size === 1) {
+      if (o + 16 > end) return;
+      size = Number(dv.getBigUint64(o + 8));
+      header = 16;
+    } else if (size === 0) {
+      size = end - o;
+    }
+    if (size < header || o + size > end) return;
+    yield { type, start: o + header, end: o + size };
+    o += size;
+  }
+}
+
+/**
+ * De maat van het primaire beeld van een HEIF: de `ispe` van het item uit
+ * `pitm` (bij tegels het `grid`-item, dus het hele beeld). `null` als de kop
+ * die niet (leesbaar) bevat.
+ */
+export function heifSize(b: Uint8Array): { width: number; height: number } | null {
+  const dv = new DataView(b.buffer, b.byteOffset, b.byteLength);
+  const meta = [...boxes(b, 0, b.length)].find((x) => x.type === "meta");
+  if (!meta) return null;
+  const inner = [...boxes(b, meta.start + 4, meta.end)]; // meta is een full box
+  const pitm = inner.find((x) => x.type === "pitm");
+  const iprp = inner.find((x) => x.type === "iprp");
+  if (!pitm || !iprp) return null;
+  const primary = b[pitm.start] === 0 ? dv.getUint16(pitm.start + 4) : dv.getUint32(pitm.start + 4);
+  const props = [...boxes(b, iprp.start, iprp.end)];
+  const ipco = props.find((x) => x.type === "ipco");
+  const ipma = props.find((x) => x.type === "ipma");
+  if (!ipco || !ipma) return null;
+  const list = [...boxes(b, ipco.start, ipco.end)];
+  const version = b[ipma.start]!;
+  const wideIndex = (b[ipma.start + 3]! & 1) === 1;
+  let o = ipma.start + 4;
+  const count = dv.getUint32(o);
+  o += 4;
+  for (let i = 0; i < count && o < ipma.end; i++) {
+    const itemId = version < 1 ? dv.getUint16(o) : dv.getUint32(o);
+    o += version < 1 ? 2 : 4;
+    const n = b[o]!;
+    o += 1;
+    for (let j = 0; j < n; j++) {
+      const index = wideIndex ? dv.getUint16(o) & 0x7fff : b[o]! & 0x7f;
+      o += wideIndex ? 2 : 1;
+      if (itemId !== primary || index === 0) continue;
+      const prop = list[index - 1];
+      if (prop?.type === "ispe" && prop.start + 12 <= prop.end) {
+        return { width: dv.getUint32(prop.start + 4), height: dv.getUint32(prop.start + 8) };
+      }
+    }
+  }
+  return null;
+}
+
+/** Gooit als een HEIC te groot is om in de action te decoderen, of zijn maat onbekend is. */
+function assertHeicFits(bytes: Uint8Array): void {
+  const size = heifSize(bytes);
+  if (!size || size.width <= 0 || size.height <= 0) throw new Error("HEIC: maat onbekend");
+  const pixels = size.width * size.height;
+  if (pixels > HEIC_MAX_PIXELS) {
+    throw new Error(`te groot (${(pixels / 1e6).toFixed(1)} MP, grens ${HEIC_MAX_PIXELS / 1e6} MP)`);
+  }
 }
 
 type Sharp = typeof SharpModule;
@@ -88,6 +166,7 @@ export async function makeFormatImages(bytes: Uint8Array): Promise<FormatImages>
 
   let heic: RawInput | null = null;
   if (isHeicLike(bytes)) {
+    assertHeicFits(bytes);
     try {
       heic = await decodeHeic(bytes);
     } catch {

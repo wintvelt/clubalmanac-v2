@@ -23,6 +23,7 @@ import {
   publicProfile,
   publicProfileFields,
 } from "./lib/shapes";
+import { profileOrientationOf } from "./lib/profilePhoto";
 import {
   applyOrientation,
   rotationSwapsDimensions,
@@ -75,7 +76,9 @@ export const getWithOwner = query({
     const owner = await ctx.db.get(photo.ownerId);
     return {
       ...pick(photo, photoFields),
-      owner: owner ? pick(owner, publicProfileFields) : null,
+      owner: owner
+        ? { ...pick(owner, publicProfileFields), ...(await profileOrientationOf(ctx, owner)) }
+        : null,
     };
   },
 });
@@ -496,11 +499,23 @@ export const attachFormats = internalMutation({
   },
   returns: v.union(v.literal("attached"), v.literal("alreadyDone"), v.literal("gone")),
   handler: async (ctx, { photoId, klein, groot, width, height, exifOrientation }) => {
+    // A-invariant 22: nooit een id vastleggen van een object dat er niet is
+    // (bv. `prune-storage` terwijl de action liep). Gooien = niets geschreven;
+    // de stap ruimt zijn eigen objecten op en meldt `failed`.
+    for (const id of [klein, groot]) {
+      if ((await ctx.db.system.get(id)) === null) {
+        throw new Error(`attachFormats: nieuw object ${id} bestaat niet`);
+      }
+    }
     const photo = await ctx.db.get(photoId);
-    if (!photo || photo.formats) {
+    if (!photo || (await hasCompleteFormats(ctx, photo))) {
       await ctx.storage.delete(klein);
       await ctx.storage.delete(groot);
       return photo ? "alreadyDone" : "gone";
+    }
+    // Een set met een ontbrekend object wordt vervangen; wat er van over is, gaat weg.
+    for (const id of formatStorageIds(photo)) {
+      if ((await ctx.db.system.get(id)) !== null) await ctx.storage.delete(id);
     }
     const patch: Partial<Doc<"photos">> = { formats: { klein, groot } };
     const orientation = validOrientation(exifOrientation);
@@ -511,6 +526,30 @@ export const attachFormats = internalMutation({
     if (photo.height === undefined && height !== undefined) patch.height = height;
     await ctx.db.patch(photoId, patch);
     return "attached";
+  },
+});
+
+/**
+ * Heeft de foto een volledige set: beide formaat-objecten bestaan nog? Een set
+ * met een ontbrekend object telt als "geen formaten" (A-invariant 22), zodat de
+ * backfill hem herstelt.
+ */
+async function hasCompleteFormats(ctx: QueryCtx, photo: Doc<"photos">): Promise<boolean> {
+  if (!photo.formats) return false;
+  return (
+    (await ctx.db.system.get(photo.formats.klein)) !== null &&
+    (await ctx.db.system.get(photo.formats.groot)) !== null
+  );
+}
+
+/** Wat de formaat-stap van een foto moet weten. `null`: de foto is weg. */
+export const formatInfo = internalQuery({
+  args: { photoId: v.id("photos") },
+  returns: v.union(v.object({ storageId: v.id("_storage"), hasFormats: v.boolean() }), v.null()),
+  handler: async (ctx, { photoId }) => {
+    const photo = await ctx.db.get(photoId);
+    if (!photo) return null;
+    return { storageId: photo.storageId, hasFormats: await hasCompleteFormats(ctx, photo) };
   },
 });
 
@@ -525,7 +564,9 @@ export const formatStatus = internalQuery({
   }),
   handler: async (ctx) => {
     const all = await ctx.db.query("photos").collect();
-    const withFormats = all.filter((p) => p.formats !== undefined).length;
+    // Een set met een ontbrekend object telt niet mee (A-invariant 22).
+    let withFormats = 0;
+    for (const p of all) if (await hasCompleteFormats(ctx, p)) withFormats += 1;
     return {
       photos: all.length,
       withFormats,
@@ -549,8 +590,10 @@ export const formatBatch = internalQuery({
     const page = await ctx.db
       .query("photos")
       .paginate({ cursor, numItems: Math.max(1, Math.floor(batchSize)) });
+    const photos = [];
+    for (const p of page.page) photos.push({ photoId: p._id, hasFormats: await hasCompleteFormats(ctx, p) });
     return {
-      photos: page.page.map((p) => ({ photoId: p._id, hasFormats: p.formats !== undefined })),
+      photos,
       cursor: page.isDone ? null : page.continueCursor,
     };
   },

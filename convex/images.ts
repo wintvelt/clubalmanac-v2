@@ -3,6 +3,7 @@ import { internalQuery, type QueryCtx } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import { getBySubject } from "./users";
 import { canAccessPhoto } from "./lib/photoAccess";
+import { profilePhotoRow } from "./lib/profilePhoto";
 
 // WP17a: de toegangsregel voor beeldbytes (invariant 1, 2, 3, 13, 14).
 // Het beeldpad (`GET /beeld/...`, convex/http.ts, besluit 1: vorm B) vraagt
@@ -110,13 +111,9 @@ export const profileImageInFormat = internalQuery({
     if (!user) return null;
     const original = await storedImage(ctx, user.profilePhotoStorageId);
     if (!original) return null;
-    const rows = await ctx.db
-      .query("photos")
-      .withIndex("by_storage", (q) => q.eq("storageId", original))
-      .collect();
-    const withFormats = rows.filter((p) => p.formats !== undefined);
-    const photo = withFormats.find((p) => p.ownerId === user._id) ?? withFormats[0];
-    if (!photo) return { storageId: original, fallback: true };
+    // Dezelfde rij als de stand in de user-vormen (A-invariant 19).
+    const photo = await profilePhotoRow(ctx, user);
+    if (!photo?.formats) return { storageId: original, fallback: true };
     return await chooseFormat(ctx, photo, formaat, original);
   },
 });

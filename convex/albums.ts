@@ -1,4 +1,4 @@
-import { ConvexError, v } from "convex/values";
+import { ConvexError, v, type Infer } from "convex/values";
 import {
   mutation,
   query,
@@ -30,6 +30,7 @@ import {
   publicProfile,
   publicProfileFields,
 } from "./lib/shapes";
+import { profileOrientationOf } from "./lib/profilePhoto";
 import { recomputeRatingAggregate } from "./ratings";
 
 async function requireAlbum(
@@ -338,10 +339,18 @@ export const listPhotos = query({
       .withIndex("by_album", (q) => q.eq("albumId", albumId))
       .collect();
 
-    const owners = new Map<Id<"users">, Doc<"users"> | null>();
-    const ownerOf = async (ownerId: Id<"users">) => {
-      if (!owners.has(ownerId)) owners.set(ownerId, await ctx.db.get(ownerId));
-      return owners.get(ownerId) ?? null;
+    // Per eigenaar één keer: het publieke profiel met de stand van de avatar.
+    const owners = new Map<Id<"users">, Promise<Infer<typeof publicProfile> | null>>();
+    const ownerOf = (ownerId: Id<"users">) => {
+      if (!owners.has(ownerId)) {
+        owners.set(
+          ownerId,
+          ctx.db.get(ownerId).then(async (u) =>
+            u ? { ...pick(u, publicProfileFields), ...(await profileOrientationOf(ctx, u)) } : null,
+          ),
+        );
+      }
+      return owners.get(ownerId)!;
     };
 
     return await Promise.all(
@@ -351,7 +360,7 @@ export const listPhotos = query({
         return {
           albumPhoto: pick(ap, albumPhotoFields),
           photo: p ? pick(p, photoFields) : null,
-          owner: owner ? pick(owner, publicProfileFields) : null,
+          owner,
           isNew: isNewFor(user._id, effective, ap, p),
         };
       }),

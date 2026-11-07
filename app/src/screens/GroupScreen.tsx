@@ -233,7 +233,12 @@ function MembersTab({ groupId, founderId }: { groupId: Id<"groups">; founderId: 
                   accessibilityLabel={`${name ?? "Naam onbekend"}, ${meta}`}
                   style={styles.member}
                 >
-                  <ProfileAvatar userId={m.user?._id} name={name} size={size.avatar} />
+                  <ProfileAvatar
+                    userId={m.user?._id}
+                    name={name}
+                    size={size.avatar}
+                    exifOrientation={m.user?.profileOrientation}
+                  />
                   <View style={styles.text}>
                     <Text color={name ? "text" : "muted"}>{name ?? "Naam onbekend"}</Text>
                     <Text variant="albumMeta" color="muted">
