@@ -41,6 +41,11 @@ export type TransformConfig = {
   now: number;
   /** Ontsnapping voor een groep zonder founder-membership: groupId → userId. */
   founderOverrides?: Record<string, string>;
+  /**
+   * WP12b F1: de operator accepteert dat gemelde foto's met een verlopen
+   * verwijderdatum de eerste nacht na het laden gewist worden (`--accept-expired-flags`).
+   */
+  acceptExpiredFlags?: boolean;
 };
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -394,6 +399,40 @@ export function transform(items: SourceItem[], config: TransformConfig): Transfo
       continue;
     }
     includedPhotos.add(photoId);
+  }
+
+  // ── gemelde foto's met een verlopen verwijderdatum (WP12b F1) ───────
+  // v1 wiste een gemelde foto nooit; de FL1-cron van v2 wist hem de eerste
+  // nacht na het laden zodra `flaggedDeleteDate <= nu`. Onomkeerbaar, dus een
+  // stop en geen waarschuwing tussen de rest — tenzij de operator het verlies
+  // accepteert. Alleen foto's die geladen worden; lege string = geen datum.
+  const expiredFlags = [...includedPhotos]
+    .sort()
+    .map((photoId) => ({
+      photoId,
+      deleteAt: toEpoch(src.photos.get(photoId)!.item.flaggedDeleteDate),
+    }))
+    .filter(
+      (p): p is { photoId: string; deleteAt: number } =>
+        p.deleteAt !== undefined && p.deleteAt <= config.now,
+    );
+  if (expiredFlags.length > 0) {
+    const day = (t: number) => new Date(t).toISOString().slice(0, 10);
+    if (config.acceptExpiredFlags !== true) {
+      fail(
+        `${expiredFlags.length} gemelde foto('s) met een verlopen verwijderdatum: ` +
+          expiredFlags.map((p) => `${p.photoId} (${day(p.deleteAt)})`).join(", ") +
+          `. v1 wiste ze nooit; de FL1-cron van v2 wist ze de eerste nacht na het laden. ` +
+          `Laat de datum in de bron wissen, of draai 'transform' opnieuw met ` +
+          `--accept-expired-flags om dat verlies te accepteren.`,
+      );
+    }
+    for (const p of expiredFlags) {
+      warn(
+        `foto ${p.photoId}: flaggedDeleteDate ${day(p.deleteAt)} is verstreken — geaccepteerd ` +
+          `(--accept-expired-flags); de FL1-cron wist hem de eerste nacht na het laden`,
+      );
+    }
   }
 
   // ── anonimisatie-mappings ───────────────────────────────────────────
@@ -1005,11 +1044,22 @@ function warnUnpublishedCovers(records: Records, warn: (message: string) => void
   for (const group of records.groups) {
     const cover = group.coverPhotoId;
     if (typeof cover !== "string") continue;
-    if (placesOf(cover).some((p) => p.groupId === group.sourceKey)) continue;
-    warn(
-      `groep ${group.sourceKey}: cover ${cover} staat in geen album van de groep — ` +
-        `overgenomen, alleen de eigenaar ziet hem (WP27)`,
-    );
+    const places = placesOf(cover);
+    if (places.some((p) => p.groupId === group.sourceKey)) continue;
+    if (places.length > 0) {
+      // WP12b F2: de foto staat wel ergens, maar in een andere groep. Of de
+      // leden van deze groep hem in v2 zien, beslist WP27.
+      const others = [...new Set(places.map((p) => p.groupId))].sort().join(", ");
+      warn(
+        `groep ${group.sourceKey}: cover ${cover} staat alleen in een album van een andere ` +
+          `groep (${others}) — overgenomen, zichtbaarheid voor de leden: WP27`,
+      );
+    } else {
+      warn(
+        `groep ${group.sourceKey}: cover ${cover} staat in geen album van de groep — ` +
+          `overgenomen, alleen de eigenaar ziet hem (WP27)`,
+      );
+    }
   }
 }
 

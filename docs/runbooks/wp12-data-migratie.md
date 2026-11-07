@@ -147,15 +147,14 @@ npm run migrate -- load-files --target prod    # uren; hervatbaar
 export MIGRATE_ALLOW_PROD=yes
 npx convex export --prod --path ./backups/wp12-prod-t0.zip  # tweede anker
 npm run migrate -- extract                      # verse stand, inclusief alles sinds T-2
-node scripts/.data/veld-tel.mjs                 # check gemelde foto's, zie hieronder
-npm run migrate -- transform --target prod
+npm run migrate -- transform --target prod      # stopt bij een verlopen melding, zie hieronder
 npm run migrate -- load-files --target prod     # alleen de delta; de rest staat al in de map
 npm run migrate -- load-records --target prod   # minuten
 npm run migrate -- formaten --target prod       # WP25; ~70 min (gemeten op dev), hervatbaar
 npm run migrate -- verify --target prod
 ```
 
-- [ ] Gemelde foto's (WP12b), vóór `load-records`. Kijk in de uitvoer van `veld-tel.mjs` naar de regel `PO met flaggedDeleteDate <= vandaag`. Op 2026-11-07 was dat 0. v1 wiste een gemelde foto nooit; de FL1-cron van v2 wist hem de eerste nacht na T0 als zijn verwijderdatum voorbij is. Staat er iets anders dan 0: stop en beslis (Wouter) wat er met die foto's gebeurt, vóór `load-records`.
+- [ ] Gemelde foto's (WP12b). `transform` stopt als een foto die geladen wordt een verwijderdatum op of vóór vandaag heeft, en noemt elke foto. v1 wiste een gemelde foto nooit; de FL1-cron van v2 wist hem de eerste nacht na T0. Op 2026-11-07 waren er 0. Stopt hij: beslis (Wouter) vóór `load-records`. Laat de datum in de bron wissen en draai `extract` en `transform` opnieuw, of accepteer het verlies met `transform --target prod --accept-expired-flags`. Dan staat er per foto een waarschuwing in het rapport.
 - [ ] `formaten` eindigt met exitcode 0: geen foto zonder formaten (behalve afgetekende), niets mislukt. Zie §Formaten (WP25) hieronder.
 - [ ] `verify` is groen: rij-aantallen kloppen, geen dangling storage-verwijzingen, geen storage-orphans, integriteitsscan leeg (dus ook geen `formaten ontbreken`), en het aantal groepen en albums met een cover klopt met de bron.
 
@@ -257,6 +256,8 @@ Breekt `load-records` halverwege af, dan stopt hij luid met de bron-sleutel in d
 | `album X: cover P staat niet in dit album maar wel in groep G` | Bewust overgenomen (WP12b besluit 4). Elk lid ziet de cover, want de foto staat in de groep. |
 | `album X` of `groep G`: `cover P staat in geen album van de groep` | Bewust overgenomen (WP12b besluit 4). In v2 ziet alleen de eigenaar zo'n cover; dat de leden hem ook zien, regelt WP27. |
 | `album X: coverPhotoId P resolvet niet — gewist` | De cover-foto bestaat niet in de bron, of valt buiten de dev-seed. Album zonder cover, net als bij een groep. |
+| `transform`: `gemelde foto('s) met een verlopen verwijderdatum` | De FL1-cron zou ze de eerste nacht na het laden wissen; v1 deed dat nooit. Laat de datum in de bron wissen, of draai `transform` opnieuw met `--accept-expired-flags` (zie T0). |
+| `groep G: cover P staat alleen in een album van een andere groep (G2)` | Bewust overgenomen (WP12b). Of de leden van G hem in v2 zien, beslist WP27. |
 | `createdBy gesynthetiseerd` | `albums.createdBy` bestaat niet in de bron en valt terug op de founder van de groep. |
 
 ## Opruimen (verplicht, niet optioneel)

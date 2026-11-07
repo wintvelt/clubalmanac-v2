@@ -43,6 +43,8 @@ opties
   --yes                      bevestiging voor reset en prune-storage
   --all                      reset wist ook de storage (en de storage-map)
   --accept-missing-files     load-records mag doorgaan met ontbrekende S3-objecten
+  --accept-expired-flags     transform mag doorgaan met gemelde foto's waarvan de
+                             verwijderdatum verstreken is (FL1 wist ze na het laden)
   --batch-size N             formaten: foto's per action (1..50, standaard 20)
   --accept-no-formats ID,…   formaten: teken deze foto's af als "mag zonder formaten"
                              (blijvend in de DB; alleen wat in deze run mislukte)
@@ -77,7 +79,9 @@ async function main(): Promise<number> {
       inspect();
       return 0;
     case "transform":
-      runTransform(parseTarget(argv));
+      runTransform(parseTarget(argv), Date.now(), {
+        acceptExpiredFlags: has("--accept-expired-flags"),
+      });
       return 0;
     case "load-files":
       return await loadFiles(parseTarget(argv));
