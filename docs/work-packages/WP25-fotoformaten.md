@@ -1,6 +1,6 @@
 # WP25: Verkleinde versies van foto's (formaten *klein* en *groot*)
 
-> Draft regie 2026-11-06; spike en besluiten 2026-11-06. Backend-WP met een raakvlak met de app en de migratie. Eerst een spike, dan kiest Wouter de optie, dan A → B → audit, en een red-team op de backfill en de T0-keten (data/schema hoog). Volgt uit [WP17a](./WP17a-fotos-bekijken.md) besluit 2, vraag 2 en vraag 9. Af vóór de gate van WP17a.
+> Landed 2026-11-07 (spike, A → B → audit, red-team, drie fix-cycli, gate op build 54; zie §Closeout). Draft regie 2026-11-06; spike en besluiten 2026-11-06. Backend-WP met een raakvlak met de app en de migratie. Eerst een spike, dan kiest Wouter de optie, dan A → B → audit, en een red-team op de backfill en de T0-keten (data/schema hoog). Volgt uit [WP17a](./WP17a-fotos-bekijken.md) besluit 2, vraag 2 en vraag 9. Af vóór de gate van WP17a.
 
 ## Productdoel
 
@@ -89,10 +89,10 @@ Gemeten op dev in een Node-action (linux arm64, ~1 core), met echte dev-bestande
 | 3a | Audit + red-team | ✅ Audit B1, S1–S2; red-team R1–R6. Wouter: alles in één fix-cyclus, besluit 7. |
 | 3b | A → B | ✅ Fix-cyclus 1. |
 | 3c | A → B | ✅ Fix-cyclus 2, na heraudit en hercheck red-team; besluit 8. |
-| 3d | A → B | Fix-cyclus 3: oude schijfcache, avatar bij een nieuwe stand, aftekenen alleen na mislukken, `--unaccept`. |
-| 4 | Audit | Op spec, tests en impl. |
-| 5 | Red-team | Op de backfill en de T0-keten: wat als hij halverwege stopt, wat als `prune-storage` erna draait, raakt een formaat ooit iemand zonder toegang. |
-| 6 | Gate | Samen met WP17a stap 1 en 4, op één TestFlight-build. |
+| 3d | A → B | ✅ Fix-cyclus 3: oude schijfcache, avatar bij een nieuwe stand, aftekenen alleen na mislukken, `--unaccept`. |
+| 4 | Audit | ✅ Na elke fix-cyclus; de laatste zonder blocker of should-fix. |
+| 5 | Red-team | ✅ Op de backfill en de T0-keten, plus hercheck na cyclus 1 en 2. |
+| 6 | Gate | ✅ Samen met WP17a op build 54 (2026-11-07). |
 
 ## Cross-refs
 
@@ -435,3 +435,11 @@ Na de heraudit en de hercheck van de red-team op fix-cyclus 2: geen blockers. Ge
 | `app/tests/photoCache.test.ts` (aangevuld) | kernvondst 17: andere stand → ander beeld; gelijke props → hetzelfde beeld |
 | `tests/photoFormats/acceptNoFormats.test.ts` (aangevuld) | kernvondst 18: dangling met het veld wordt hersteld, `attachFormats` wist het veld, `formatBatch`/`formatStatus`; `unacceptNoFormats` |
 | `tests/photoFormats/formatenCli.test.ts` (aangepast) | kernvondst 18–20: aftekenen na de batches en alleen wat mislukte, `--unaccept`, AC4 in `photoByPhoto`, dangling met het veld via de CLI |
+
+## Closeout (regie, 2026-11-07)
+
+- **Op dev:** `formaten` gaf 1001 van de 1001 foto's een set, run 2 had niets meer te doen. `verify` is groen op de rijen van de testgroep "Gatetest" na, die na de seed in de app is gemaakt.
+- **Gate:** build 54. Alles rechtop in raster, detail en Leden, ook in albums met tag 3 en 6. Een album van 302 foto's laadt heel snel, gemeten op 5G.
+- **Prod:** 0 HEIC's, grootste JPEG 64 MP. Die is niet getest; de `formaten`-run op T-2 is de eerste.
+- **Rest (audit cyclus 3):** een dangling set waarvan het opnieuw maken ook mislukt, teken je niet via de CLI af. Eerst `formats` wissen in het dashboard, dan aftekenen. Zeldzaam, dus zo gelaten.
+- **Backlog:** draaien vóór `attachFormats` → WP17b. Upload JPEG en de HEIC-check → WP18. Albumcovers in de transform → eigen WP12-fix (README).

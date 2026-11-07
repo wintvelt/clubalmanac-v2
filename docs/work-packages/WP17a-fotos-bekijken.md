@@ -113,19 +113,12 @@ Een lid opent een album en ziet de foto's rechtop, en snel genoeg om erdoor te b
 
 - Root en app: typecheck en tests groen op Node 24, ook in CI.
 - Audit en red-team: geen open blockers.
-- **Empirische gate (Wouter, TestFlight-build, met het Convex-dashboard open):**
-  1. Open "Gatetest nu": de drie foto's staan rechtop, de cover bovenaan. Swipe en zoom in het detail.
-  2. De teller van het album in Groep staat na het openen op nul.
-  3. Covers in Mijn groepen en Groep, profielfoto's in Leden.
-  4. Laadtijd op 4G (wifi uit) van een groot album op dev: binnen het meetpunt van open vraag 2.
-  5. Haal jezelf in het dashboard uit de groep terwijl een foto open staat: NL-melding, weg naar Mijn groepen.
-  6. Ex-lid: een eerder verkregen link of id levert het beeld niet meer op, bij het volgende verzoek (besluit 1). Zo test je het (A, fix-cyclus 1):
-     - Draai `npm run test:integration -- tests/integration/images/exMember.test.ts`. Nodig in `.env.integration`: `CONVEX_URL` (dev), `CLERK_SECRET_KEY`, `CLERK_TEST_USER_WEBMASTER_EMAIL` en `CLERK_TEST_USER_REGULAR_EMAIL` (WP4-setup). De test maakt een wegwerp-groep met een foto. Hij haalt die foto als lid op (200, dezelfde bytes), laat het lid vertrekken, en vraagt dezelfde URL opnieuw met een geldig token (404) en zonder token (401). Daarna ruimt hij op. "Gatetest" blijft ongemoeid.
-     - In het dashboard (Logs, filter `/beeld/foto/`) zie je de drie verzoeken, met 200, 404 en 401.
-     - In de app: wat al op het toestel stond, mag nog te zien zijn tot het uitloggen (besluit 3). Na uitloggen en inloggen als een ander op hetzelfde toestel verschijnt het beeld niet meer.
-  7. Dashboard: op een andere tab loopt geen album- of foto-query.
-  8. Albumscherm en detail bij de grootste tekst, in licht en donker.
-  9. Ruimte voor bevindingen buiten deze stappen
+- **Empirische gate (Wouter, TestFlight, samen met WP25):** ✅ build 54, 2026-11-07.
+  1. "Gatetest nu": de drie foto's staan rechtop. ✅
+  2. Een album met gedraaide foto's (tag 3 en 6), in raster en detail: alles rechtop. ✅
+  3. Laadtijd van een groot album (302 foto's) zonder wifi: de eerste rij is er heel snel. ✅ Gemeten op 5G, niet op 4G.
+  4. Groepscover in Mijn groepen en Groep, profielfoto's in Leden rechtop. ✅ Albumcovers ontbreken: de WP12-transform neemt ze niet over (eigen fix, README).
+  5. Geschrapt (besluit Wouter 2026-11-07), want niet te testen of al gedekt: de teller na openen (komt pas met upload, gate van WP18), uit de groep gehaald, geen query op een andere tab en het ex-lid (unit-tests op `NOT_MEMBER` en de beeldpaden), en de grootste tekst (latere opmaakronde).
 
 ---
 
@@ -363,6 +356,6 @@ De pure logica staat in de app-tests als functies in `app/src/lib/photos.ts` en 
 
 - **Audit en red-team:** audit vond 1 blocker (B1, `Blob.slice` in de Convex-runtime) en 6 should-fixes; red-team vond R1–R3. Fix-cyclus 1 (B1, S1–S6), 2 (R1, invariant 16) en 3 (heraudit N-S1 en N-S2, invariant 17 en 18, plus tests op de aansluiting van de retry). Heraudit en red-team-hercheck: geen blocker. R2 → WP26, R3 → Groepsbeheer.
 - **Op dev gezien:** octet-stream-albums laden in de echte runtime (B1); laatste deploy `1af3f61`.
-- **Open voor de gate (Wouter, TestFlight, na WP25):** stap 1 en 4 (formaten, laadtijd), stap 6 (ex-lid), iOS `Cache.db` na uitloggen (red-team N2), geen 429's van Clerk als een heel album tegelijk een vers token vraagt.
+- **Gate:** ✅ build 54, 2026-11-07, samen met WP25 (§Acceptance). Niet apart getest: iOS `Cache.db` na uitloggen (red-team N2) en 429's van Clerk; een album van 302 foto's laadde zonder fouttegels.
 - **Vraag 10:** geteld op prod en geaccepteerd (besluit 13); geen wijziging in WP12.
 - **Backlog:** één live query per cover (N2); oude avatar na wisselen van profielfoto tot de cache verloopt (N4); geen CORS op de beeldpaden voor de webapp (N6, bij het webapp-WP).
