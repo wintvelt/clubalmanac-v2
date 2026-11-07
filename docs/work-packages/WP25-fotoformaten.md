@@ -55,6 +55,8 @@ Gemeten op dev in een Node-action (linux arm64, ~1 core), met echte dev-bestande
 2. **Maten:** *klein* 512 px en *groot* 1600 px, langste zijde.
 3. **Bestandstype:** JPEG.
 4. **HEIC:** de formaten worden JPEG (via heic-decode); het origineel blijft. Open voor A: past libheif `irot` zelf toe? Zo ja, dan draait een HEIC dubbel (invariant 6). A test met een echte iPhone-HEIC. *Antwoord A: ja, zie A-kernvondst 1.*
+5. **T0:** de app gaat pas open na de backfill en een groene `verify` (2026-11-07).
+6. **Transparantie** wordt wit in de JPEG (2026-11-07).
 
 ## Edge cases en scope
 
@@ -80,7 +82,7 @@ Gemeten op dev in een Node-action (linux arm64, ~1 core), met echte dev-bestande
 |---|---|---|
 | 0 | Spike-sessie | ✅ §Uitkomst spike. |
 | 1 | Wouter | ✅ Optie A, 512/1600, JPEG, HEIC als JPEG (§Besluiten). |
-| 2 | A | Spec-criticus en RED tests. Leest de WP12-tooling, WP7, WP8, WP10 en de cascade-matrix. |
+| 2 | A | ✅ Spec-criticus en RED tests; Wouter besluit 5 en 6. Leest de WP12-tooling, WP7, WP8, WP10 en de cascade-matrix. |
 | 3 | B | Impl, plus de preview-run van de backfill op dev. |
 | 4 | Audit | Op spec, tests en impl. |
 | 5 | Red-team | Op de backfill en de T0-keten: wat als hij halverwege stopt, wat als `prune-storage` erna draait, raakt een formaat ooit iemand zonder toegang. |
@@ -122,12 +124,12 @@ Gelezen: deze spec, WP17a (vraag 2 en 9, kernvondst 4, invarianten 1–5, 10, 16
 15. **De formaten zijn verwezen storage.** `storageInventory` (WP12) en de wees-controle van WP10 rekenen de formaten van elke foto tot de verwezen objecten, naast `photos.storageId` en `users.profilePhotoStorageId`. Een formaat-veld dat naar een gewist object wijst, telt als *dangling*. Een formaat-object waar geen foto naar wijst, is een wees. `prune-storage` haalt zijn lijst uit `storageInventory`, dus wist het na de backfill geen formaat.
 16. **`reset` neemt de formaten mee.** Wist `reset` (via `clearTable`) een foto-rij, dan wist hij ook de twee formaat-objecten van die foto. Het origineel blijft staan, zoals nu. Na `reset` + `load-records` is er dus geen wees.
 17. **Eén set formaten per foto, ook bij een race.** De stap na de upload en de backfill kunnen tegelijk dezelfde foto doen, en een foto kan gewist worden terwijl de stap loopt. De eerste set die vastgelegd wordt, blijft. Een stap die te laat komt (de foto heeft al formaten, of is weg) wist zijn eigen nieuwe objecten. Een crash tussen opslaan en vastleggen laat wezen achter; WP10 meldt die (invariant 9).
-18. **Een formaat bevat alleen pixels.** Een JPEG, met de langste zijde hooguit 512 (*klein*) of 1600 (*groot*), nooit opgeschaald, in sRGB, zonder EXIF (ook geen GPS), zonder ICC-profiel en zonder oriëntatie-tag. Transparantie wordt een witte achtergrond (open vraag 2). Van een animatie alleen het eerste beeld. Een bestand dat niet als beeld te lezen is: geen formaten, de stap meldt "mislukt" en laat de foto ongewijzigd.
+18. **Een formaat bevat alleen pixels.** Een JPEG, met de langste zijde hooguit 512 (*klein*) of 1600 (*groot*), nooit opgeschaald, in sRGB, zonder EXIF (ook geen GPS), zonder ICC-profiel en zonder oriëntatie-tag. Transparantie wordt een witte achtergrond (besluit 6). Van een animatie alleen het eerste beeld. Een bestand dat niet als beeld te lezen is: geen formaten, de stap meldt "mislukt" en laat de foto ongewijzigd.
 
 ### Edge cases
 
 - **Verse upload:** tot de formaten er zijn (seconden), toont het raster het origineel, één keer gedraaid (invariant 12). Daarna, bij het volgende verzoek, *klein* (invariant 13: de terugval is niet bewaard).
-- **Draaien vóór de formaten** (seconden na een upload, of op T0 vóór de backfill): de DB-stand geldt ten opzichte van wat de user zag, het origineel met de tag toegepast. Komen de formaten daarna, dan blijft die DB-stand staan (invariant 12), maar de formaten hebben de ruwe pixels. Bij een bestand met tag ≠ 1 staat zo'n foto dan scheef, en de user draait hem opnieuw. Geaccepteerd: het venster is seconden, en op T0 gaat de app pas open na de backfill (open vraag 1).
+- **Draaien vóór de formaten** (seconden na een upload, of op T0 vóór de backfill): de DB-stand geldt ten opzichte van wat de user zag, het origineel met de tag toegepast. Komen de formaten daarna, dan blijft die DB-stand staan (invariant 12), maar de formaten hebben de ruwe pixels. Bij een bestand met tag ≠ 1 staat zo'n foto dan scheef, en de user draait hem opnieuw. Geaccepteerd: het venster is seconden, en op T0 gaat de app pas open na de backfill (besluit 5).
 - **Klein origineel** (kleiner dan 512 px): beide formaten hebben de maat van het origineel.
 - **Twee foto-rijen met hetzelfde beeld:** elke rij krijgt eigen formaten. Een profielfoto op zo'n beeld toont de formaten van één van die rijen.
 - **Foto gewist terwijl de stap loopt:** invariant 17. Het origineel wist P/U7 al.
@@ -142,7 +144,7 @@ Volgorde op T0 (de runbook-entry levert B, invariant 10):
 2. **`formaten --target prod`** (nieuw): de backfill. Leest alleen foto-rijen en originelen, schrijft formaten en `exifOrientation`. Exitcode 0 alleen als na de run geen foto meer zonder formaten is en niets mislukte. 16–80 minuten.
 3. `verify`: nu ook "geen foto zonder formaten" (via de integriteitsscan, invariant 14). Groen is de gate.
 4. Meldt `verify` wezen van tussen T-2 en T0: `prune-storage`, dan opnieuw `verify`. Formaten staan niet op de lijst (invariant 15); de operator ziet dat in de volledige lijst die `verify` afdrukt (verwacht: een handvol, geen ~3200).
-5. `integrityCheck`-cron weer aan, daarna de app open (open vraag 1).
+5. `integrityCheck`-cron weer aan, daarna de app open (besluit 5).
 
 Waarom de backfill vóór `verify`: dan is er één groene `verify` die alles dekt, en de backfill hangt niet van `verify` af. Een ontbrekend origineel meldt hij zelf als mislukt. Waarom niet vóór `load-records`: er is dan geen foto-rij. Formaten bij T-2 maken kan wel (de bestanden staan er), maar dan moet `load-records` ze aan de rijen koppelen. Dat is een tweede bron van waarheid in de WP12-tooling, voor een winst van hooguit een uur op T0.
 
@@ -191,11 +193,6 @@ Volgens [`data-migration-preflight.md`](../conventions/data-migration-preflight.
 - `internal.photos.attachFormats({ photoId, klein, groot, width?, height?, exifOrientation? })`: legt een set vast volgens invariant 12 en 17. Geeft `"attached" | "alreadyDone" | "gone"`.
 - `internal.photos.formatStatus({})`: `{ photos, withFormats, withoutFormats, withExifOrientation }`.
 - CLI: `npm run migrate -- formaten --target <dev|prod>`.
-
-### Open vragen voor Wouter (advies erbij)
-
-1. **Gaat de app op T0 pas open na de backfill?** Advies: ja. De backfill duurt 16–80 minuten. Daarna zijn er een groene `verify` en snelle albums, en niemand ziet in dat venster een foto die net gedraaid is (§Edge cases). Het kan ook eerder: alles werkt dan, alleen traag en met de originelen. Bij 16 users die op de cutover wachten, kost een uur langer dicht weinig.
-2. **Transparante PNG's: wit of zwart?** Een JPEG heeft geen transparantie. Advies: wit, de achtergrond van de app. Op dev zijn er 6 PNG's (waarschijnlijk schermafdrukken of logo's).
 
 ### Tests (A)
 
