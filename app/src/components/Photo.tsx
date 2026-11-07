@@ -152,7 +152,8 @@ type AvatarProps = {
   // geeft *klein* met ruwe pixels; de avatar draait ze zoals Photo.
   exifOrientation?: number;
   // WP25 A-invariant 26: `profileHasFormats` van hetzelfde object. Wisselt het,
-  // dan bouwt het beeld opnieuw op (de stand alleen laadt geen nieuwe bytes).
+  // of wisselt de stand, dan bouwt het beeld opnieuw op en haalt het de bytes
+  // opnieuw: de URL blijft gelijk, ook na een nieuwe profielfoto.
   hasFormats?: boolean;
 };
 
@@ -205,7 +206,7 @@ function ProfileImage({
     <View style={{ width: size, height: size }} accessible={false} importantForAccessibility="no-hide-descendants">
       {state === "loading" && <View style={StyleSheet.absoluteFill}>{letter}</View>}
       <Image
-        key={hasFormats ? "formaat" : "origineel"}
+        key={`${hasFormats ? "formaat" : "origineel"}-${exifOrientation ?? 1}`}
         source={source}
         // Rond en vierkant: draaien verandert de maat niet, dus geen Oriented-box.
         style={{

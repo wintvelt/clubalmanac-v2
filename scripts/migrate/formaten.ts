@@ -8,10 +8,15 @@
 // hij vóór de eerste batch. Het advies past bij de oorzaak (A-invariant 27):
 // de key, het netwerk, of de bibliotheek.
 //
-// Dan, met `--accept-no-formats <id>[,<id>…]`, het aftekenen (A-invariant 25):
-// die foto's mogen zonder formaten. Dat blijft in de DB staan (besluit 8); de
-// backfill slaat ze over, ook in een run zonder de vlag. Weigert de mutation
-// één id, dan is niets afgetekend en stopt de CLI zonder batch.
+// Aftekenen (A-invariant 25, besluit 8): een foto die blijft mislukken mag
+// zonder formaten. Dat blijft in de DB staan; de backfill slaat hem over, ook
+// in een run zonder de vlag.
+//   - `--unaccept <id>[,<id>…]` draait het terug, na `selfTest` en vóór de
+//     eerste batch: dezelfde run probeert die foto's weer.
+//   - `--accept-no-formats <id>[,<id>…]` tekent af ná de batches, en alleen
+//     een id dat in déze run mislukte of al is afgetekend. Elk ander id (een
+//     typfout, een foto die nu lukte) weigert hij: niets afgetekend, exit 1.
+//   - Alles of niets, en een id in beide lijsten: exit 1 vóór `selfTest`.
 //
 // Daarna batches van `internal.photoFormats.backfill`, één foto tegelijk in de
 // action (512 MB per Node-action). Gemeten op dev: ~50 s per batch van 20.
@@ -26,7 +31,7 @@
 // foto met formaten over (invariant 11). Breekt hij af, start hem opnieuw.
 //
 // Exitcode 0 alleen als na de run elke foto zonder volledige set is
-// afgetekend en niets mislukte. Op T0 lopen deze commando's in een keten; de
+// afgetekend, en elke foto die in deze run mislukte nu is afgetekend. Op T0 lopen deze commando's in een keten; de
 // operator leest de exitcode.
 
 import { internal } from "../../convex/_generated/api.js";
@@ -111,9 +116,17 @@ export async function formaten(
   target: Target,
   batchSize = DEFAULT_BATCH,
   acceptNoFormats: Id<"photos">[] = [],
+  unaccept: Id<"photos">[] = [],
 ): Promise<number> {
   if (!Number.isInteger(batchSize) || batchSize < 1 || batchSize > MAX_BATCH) {
     throw new Error(`[formaten] --batch-size moet 1..${MAX_BATCH} zijn, kreeg ${batchSize}`);
+  }
+  const both = acceptNoFormats.filter((id) => unaccept.includes(id));
+  if (both.length > 0) {
+    console.error(
+      `[formaten] in --accept-no-formats én --unaccept: ${both.join(", ")}. Kies één. Niets gedaan.`,
+    );
+    return 1;
   }
   const admin = makeAdminClient(target, true);
   console.log(`[formaten] doel: ${target} (${admin.url}), batch ${batchSize}`);
@@ -129,14 +142,14 @@ export async function formaten(
     return 1;
   }
 
-  if (acceptNoFormats.length > 0) {
+  if (unaccept.length > 0) {
     try {
-      const n = await runMutation(admin, internal.photos.acceptNoFormats, { photoIds: acceptNoFormats });
-      console.log(`[formaten] afgetekend: ${n} foto('s) mogen zonder formaten (${acceptNoFormats.join(", ")})`);
+      const n = await runMutation(admin, internal.photos.unacceptNoFormats, { photoIds: unaccept });
+      console.log(`[formaten] teruggedraaid: ${n} foto('s) worden weer geprobeerd (${unaccept.join(", ")})`);
     } catch (error) {
       console.error(
-        `[formaten] aftekenen geweigerd: ${message(error)}\n` +
-          `[formaten] gevraagd: ${acceptNoFormats.join(", ")}. Niets afgetekend, geen batch gedraaid.`,
+        `[formaten] terugdraaien geweigerd: ${message(error)}\n` +
+          `[formaten] gevraagd: ${unaccept.join(", ")}. Niets teruggedraaid, geen batch gedraaid.`,
       );
       return 1;
     }
@@ -195,6 +208,32 @@ export async function formaten(
     cursor = r.cursor;
   } while (cursor !== null);
 
+  // Aftekenen ná de batches: alleen wat in deze run mislukte, of al is afgetekend.
+  const acceptedNow = new Set<Id<"photos">>();
+  let refused = false;
+  if (acceptNoFormats.length > 0) {
+    const failed = new Set(total.failed);
+    const already = new Set(await runQuery(admin, internal.photos.acceptedWithoutFormats, {}));
+    const notAllowed = acceptNoFormats.filter((id) => !failed.has(id) && !already.has(id));
+    const toAccept = [...new Set(acceptNoFormats.filter((id) => failed.has(id) && !already.has(id)))];
+    if (notAllowed.length > 0) {
+      refused = true;
+      console.error(
+        `[formaten] aftekenen geweigerd: ${notAllowed.join(", ")} mislukte niet in deze run en is niet ` +
+          `afgetekend (een typfout, of hij heeft nu formaten). Niets afgetekend.`,
+      );
+    } else if (toAccept.length > 0) {
+      try {
+        const n = await runMutation(admin, internal.photos.acceptNoFormats, { photoIds: toAccept });
+        for (const id of toAccept) acceptedNow.add(id);
+        console.log(`[formaten] afgetekend: ${n} foto('s) mogen zonder formaten (${toAccept.join(", ")})`);
+      } catch (error) {
+        refused = true;
+        console.error(`[formaten] aftekenen geweigerd: ${message(error)}\n[formaten] Niets afgetekend.`);
+      }
+    }
+  }
+
   const after = await runQuery(admin, internal.photos.formatStatus, {});
   console.log(
     `\n[formaten] totaal: gemaakt ${total.created}, al klaar ${total.alreadyDone}, weg ${total.gone}, ` +
@@ -217,10 +256,13 @@ export async function formaten(
   );
 
   const missing = after.withoutFormats - after.acceptedWithoutFormats;
-  if (missing > 0 || total.failed.length > 0) {
+  const stillFailed = total.failed.filter((id) => !acceptedNow.has(id));
+  if (missing > 0 || stillFailed.length > 0 || refused) {
     console.error(
       `\n[formaten] NIET KLAAR: ${missing} foto('s) zonder formaten (niet afgetekend), ` +
-        `${total.failed.length} mislukt. Een nieuwe upload tijdens de run krijgt zijn formaten zelf; ` +
+        `${stillFailed.length} mislukt en niet afgetekend` +
+        (refused ? `, aftekenen geweigerd` : ``) +
+        `. Een nieuwe upload tijdens de run krijgt zijn formaten zelf; ` +
         `draai het commando opnieuw en bekijk de mislukte foto's. Blijft dezelfde foto mislukken: ` +
         `runbook §Formaten, "Blijft een foto mislukken".`,
     );

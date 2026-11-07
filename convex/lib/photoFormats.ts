@@ -31,9 +31,14 @@ import type SharpModule from "sharp";
 export const KLEIN_MAX = 512;
 export const GROOT_MAX = 1600;
 /**
- * 4032×3024 (12,2 MP) erdoor, 5712×4284 (24,5 MP) niet. 13 MP en niet 16: ook
- * in een warme action, met het WASM-geheugen van een eerdere HEIC nog bezet,
- * blijft de piek onder 512 MB (A-invariant 20). Gelijk aan scripts/wp25/prod-tel.mjs.
+ * 4032×3024 (12,2 MP) erdoor, 5712×4284 (24,5 MP) niet (A-invariant 20).
+ * Gelijk aan scripts/wp25/prod-tel.mjs.
+ *
+ * Een vangnet, geen garantie: bij een vaste maat blijft een warme action onder
+ * 512 MB, maar komt een grotere HEIC na kleinere in dezelfde action (3× 12 MP,
+ * dan 2× 13 MP), dan loopt hij erboven (~585 MB op Convex). Invariant 21 vangt
+ * dat op (foto voor foto, zo nodig mislukt en afgetekend). Prod heeft 0 HEIC's;
+ * de echte oplossing is JPEG bij de upload (WP18).
  */
 export const HEIC_MAX_PIXELS = 13_000_000;
 const JPEG_OPTIONS = { quality: 80, mozjpeg: true } as const;

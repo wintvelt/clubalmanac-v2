@@ -519,7 +519,8 @@ export const attachFormats = internalMutation({
     for (const id of formatStorageIds(photo)) {
       if ((await ctx.db.system.get(id)) !== null) await ctx.storage.delete(id);
     }
-    const patch: Partial<Doc<"photos">> = { formats: { klein, groot } };
+    // Met formaten is een aftekening voorbij (A-invariant 25).
+    const patch: Partial<Doc<"photos">> = { formats: { klein, groot }, noFormatsAcceptedAt: undefined };
     const orientation = validOrientation(exifOrientation);
     if (photo.exifOrientation === undefined && orientation !== undefined) {
       patch.exifOrientation = orientation;
@@ -542,9 +543,13 @@ export const formatInfo = internalQuery({
   },
 });
 
-/** Afgetekend en (nog) zonder volledige set: de backfill slaat hem over (A-invariant 25). */
-async function acceptedWithoutSet(ctx: QueryCtx, photo: Doc<"photos">): Promise<boolean> {
-  return photo.noFormatsAcceptedAt !== undefined && !(await hasCompleteFormats(ctx, photo));
+/**
+ * Afgetekend (A-invariant 25): het veld gezet én geen `formats`-veld. Een rij
+ * met het veld en een (dangling) set telt als niet afgetekend; de backfill
+ * herstelt die set, en `attachFormats` wist dan het veld.
+ */
+function isAccepted(photo: Doc<"photos">): boolean {
+  return photo.noFormatsAcceptedAt !== undefined && photo.formats === undefined;
 }
 
 /**
@@ -568,7 +573,7 @@ export const formatStatus = internalQuery({
     let acceptedWithoutFormats = 0;
     for (const p of all) {
       if (await hasCompleteFormats(ctx, p)) withFormats += 1;
-      else if (p.noFormatsAcceptedAt !== undefined) acceptedWithoutFormats += 1;
+      else if (isAccepted(p)) acceptedWithoutFormats += 1;
     }
     return {
       photos: all.length,
@@ -587,7 +592,7 @@ export const acceptedWithoutFormats = internalQuery({
   handler: async (ctx) => {
     const ids: Id<"photos">[] = [];
     for (const p of await ctx.db.query("photos").collect()) {
-      if (await acceptedWithoutSet(ctx, p)) ids.push(p._id);
+      if (isAccepted(p)) ids.push(p._id);
     }
     return ids;
   },
@@ -622,6 +627,28 @@ export const acceptNoFormats = internalMutation({
 });
 
 /**
+ * A-invariant 25: draait de aftekening terug (`formaten --unaccept`); de
+ * volgende batch probeert de foto weer. Alles of niets: is één id geen foto,
+ * of niet afgetekend, dan gooit hij met dat id en schrijft niets.
+ */
+export const unacceptNoFormats = internalMutation({
+  args: { photoIds: v.array(v.id("photos")) },
+  returns: v.number(),
+  handler: async (ctx, { photoIds }) => {
+    const unique = [...new Set(photoIds)];
+    for (const id of unique) {
+      const photo = await ctx.db.get(id);
+      if (!photo) throw new ConvexError(`unacceptNoFormats: ${id} is geen foto; niets teruggedraaid`);
+      if (!isAccepted(photo)) {
+        throw new ConvexError(`unacceptNoFormats: ${id} is niet afgetekend; niets teruggedraaid`);
+      }
+    }
+    for (const id of unique) await ctx.db.patch(id, { noFormatsAcceptedAt: undefined });
+    return unique.length;
+  },
+});
+
+/**
  * Eén pagina foto's voor de backfill, in vaste volgorde (`_creationTime`).
  * Alleen het id, of er al een volledige set is, en of hij is afgetekend; de
  * action haalt de rest per foto.
@@ -643,7 +670,7 @@ export const formatBatch = internalQuery({
       photos.push({
         photoId: p._id,
         hasFormats: await hasCompleteFormats(ctx, p),
-        noFormatsAccepted: p.noFormatsAcceptedAt !== undefined,
+        noFormatsAccepted: isAccepted(p),
       });
     }
     return {

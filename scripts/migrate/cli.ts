@@ -45,7 +45,8 @@ opties
   --accept-missing-files     load-records mag doorgaan met ontbrekende S3-objecten
   --batch-size N             formaten: foto's per action (1..50, standaard 20)
   --accept-no-formats ID,…   formaten: teken deze foto's af als "mag zonder formaten"
-                             (blijvend in de DB; alleen foto's zonder formaat-veld)
+                             (blijvend in de DB; alleen wat in deze run mislukte)
+  --unaccept ID,…            formaten: draai de aftekening terug; de run probeert ze weer
 
 omgeving (.env.migrate, gitignored)
   MIGRATE_CONVEX_URL_DEV / _PROD, MIGRATE_CONVEX_ADMIN_KEY_DEV / _PROD
@@ -84,15 +85,21 @@ async function main(): Promise<number> {
       return await loadRecords(parseTarget(argv), has("--accept-missing-files"));
     case "formaten": {
       const index = argv.indexOf("--batch-size");
-      const accept = argv.indexOf("--accept-no-formats");
-      if (accept >= 0 && (argv[accept + 1] === undefined || argv[accept + 1]!.startsWith("--"))) {
-        throw new Error(`[migrate] --accept-no-formats verwacht foto-id's: <id>[,<id>…]`);
-      }
-      const ids =
-        accept >= 0
-          ? (argv[accept + 1]!.split(",").map((x) => x.trim()).filter(Boolean) as Id<"photos">[])
-          : undefined;
-      return await formaten(parseTarget(argv), index >= 0 ? Number(argv[index + 1]) : undefined, ids);
+      const idList = (flag: string): Id<"photos">[] => {
+        const at = argv.indexOf(flag);
+        if (at < 0) return [];
+        const value = argv[at + 1];
+        if (value === undefined || value.startsWith("--")) {
+          throw new Error(`[migrate] ${flag} verwacht foto-id's: <id>[,<id>…]`);
+        }
+        return value.split(",").map((x) => x.trim()).filter(Boolean) as Id<"photos">[];
+      };
+      return await formaten(
+        parseTarget(argv),
+        index >= 0 ? Number(argv[index + 1]) : undefined,
+        idList("--accept-no-formats"),
+        idList("--unaccept"),
+      );
     }
     case "verify":
       return await verify(parseTarget(argv));
