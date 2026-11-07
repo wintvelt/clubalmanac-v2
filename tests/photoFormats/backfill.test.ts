@@ -111,9 +111,12 @@ describe("makeFormats: één foto", () => {
     expect(f).toBeDefined();
     expect(await textOf(t, f!.klein)).toBe("klein:foto-1 tag=6");
     expect(await textOf(t, f!.groot)).toBe("groot:foto-1 tag=6");
+    // convex-test zet geen `contentType` in `_storage` (alleen size en sha256),
+    // maar bewaart de Blob zelf. Het type van die Blob is wat Convex in
+    // productie als `contentType` vastlegt.
     const types = await t.run(async (ctx) => [
-      (await ctx.db.system.get(f!.klein))?.contentType,
-      (await ctx.db.system.get(f!.groot))?.contentType,
+      (await ctx.storage.get(f!.klein))?.type,
+      (await ctx.storage.get(f!.groot))?.type,
     ]);
     expect(types).toEqual(["image/jpeg", "image/jpeg"]);
     expect(await textOf(t, p.storageId), "het origineel blijft ongewijzigd").toBe("foto-1 tag=6");
