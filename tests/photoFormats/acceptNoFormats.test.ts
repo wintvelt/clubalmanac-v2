@@ -213,3 +213,122 @@ describe("formatStatus en de bewaking", () => {
     expect(lines.some((l) => l.includes(b.photoId) && l.includes("formaten ontbreken"))).toBe(true);
   });
 });
+
+// ── fix-cyclus 3 ─────────────────────────────────────────────────────
+//
+// "Afgetekend" is het veld gezet én geen `formats`-veld (A-invariant 25,
+// kernvondst 18). Een rij met het veld en een dangling set (een aftekening
+// van vóór de fix, of het veld met de hand gezet) wordt dus hersteld, en
+// `attachFormats` wist het veld.
+
+/** Een foto met een dangling set én het veld: de toestand die nooit herstelde. */
+async function acceptedDangling(t: T, o: Id<"users">, createdAt = NOW - 2 * HOUR) {
+  const p = await seedPhoto(t, o, { original: "gewoon", withFormats: true, createdAt });
+  await t.run(async (ctx) => {
+    await ctx.storage.delete(p.klein!);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await ctx.db.patch(p.photoId, { noFormatsAcceptedAt: NOW - HOUR } as any);
+  });
+  return p;
+}
+
+describe("een dangling set met het veld wordt hersteld (kernvondst 18)", () => {
+  it("de backfill maakt een nieuwe set, telt hem niet als accepted, en het veld is weg", async () => {
+    const t = convexTest(schema, modules);
+    const o = await owner(t);
+    const p = await acceptedDangling(t, o);
+
+    const total = await fullPass(t);
+
+    expect(total).toMatchObject({ created: 1, accepted: 0, failed: [] });
+    expect(seen).toEqual(["gewoon"]);
+    expect((await formatsOf(t, p.photoId))?.klein).not.toBe(p.klein);
+    expect(await acceptedAt(t, p.photoId)).toBeUndefined();
+  });
+
+  it("formatBatch: noFormatsAccepted is false", async () => {
+    const t = convexTest(schema, modules);
+    const o = await owner(t);
+    const p = await acceptedDangling(t, o);
+
+    const page = (await t.query(I.photos.formatBatch, { cursor: null, batchSize: 10 })) as R;
+
+    expect((page.photos as R[]).find((x) => x.photoId === p.photoId)).toMatchObject({
+      hasFormats: false,
+      noFormatsAccepted: false,
+    });
+  });
+
+  it("formatStatus telt hem niet als afgetekend, en de scan meldt hem als dangling", async () => {
+    const t = convexTest(schema, modules);
+    const o = await owner(t);
+    await t.run((ctx) => ctx.db.patch(o, { photoCount: 1 }));
+    const p = await acceptedDangling(t, o);
+
+    expect(await t.query(I.photos.formatStatus, {})).toMatchObject({
+      withFormats: 0,
+      withoutFormats: 1,
+      acceptedWithoutFormats: 0,
+    });
+    expect(await t.query(I.photos.acceptedWithoutFormats, {})).toEqual([]);
+    const lines = await t.query(internal.migration.integrityReport, {});
+    expect(lines.some((l) => l.includes(p.photoId) && l.includes("formaten dangling"))).toBe(true);
+  });
+
+  it("attachFormats wist het veld: krijgt een afgetekende foto toch formaten, dan is de aftekening voorbij", async () => {
+    const t = convexTest(schema, modules);
+    const o = await owner(t);
+    const a = await seedPhoto(t, o, { original: "toch leesbaar" });
+    await t.mutation(I.photos.acceptNoFormats, { photoIds: [a.photoId] });
+
+    expect(await t.action(I.photoFormats.makeFormats, { photoId: a.photoId })).toBe("created");
+
+    expect(await acceptedAt(t, a.photoId)).toBeUndefined();
+  });
+});
+
+describe("unacceptNoFormats: de aftekening terugdraaien, alles of niets (invariant 25)", () => {
+  it("wist het veld van elke genoemde foto en geeft het aantal; de backfill probeert hem weer", async () => {
+    const t = convexTest(schema, modules);
+    const o = await owner(t);
+    const a = await seedPhoto(t, o, { original: "toch leesbaar" });
+    const b = await seedPhoto(t, o, { original: "kapot" });
+    await t.mutation(I.photos.acceptNoFormats, { photoIds: [a.photoId, b.photoId] });
+
+    const n = await t.mutation(I.photos.unacceptNoFormats, { photoIds: [a.photoId] });
+
+    expect(n).toBe(1);
+    expect(await acceptedAt(t, a.photoId)).toBeUndefined();
+    expect(await acceptedAt(t, b.photoId), "niet genoemd: blijft afgetekend").toBe(NOW);
+    const total = await fullPass(t);
+    expect(total).toMatchObject({ created: 1, accepted: 1 });
+    expect(seen).toEqual(["toch leesbaar"]);
+  });
+
+  it("een foto die niet is afgetekend: gooit, en draait ook de andere niet terug", async () => {
+    const t = convexTest(schema, modules);
+    const o = await owner(t);
+    const a = await seedPhoto(t, o, { original: "kapot" });
+    const typo = await seedPhoto(t, o, { original: "gewoon" });
+    await t.mutation(I.photos.acceptNoFormats, { photoIds: [a.photoId] });
+
+    await expect(
+      t.mutation(I.photos.unacceptNoFormats, { photoIds: [a.photoId, typo.photoId] }),
+    ).rejects.toThrow(new RegExp(typo.photoId));
+    expect(await acceptedAt(t, a.photoId)).toBe(NOW);
+  });
+
+  it("een id dat geen foto (meer) is: gooit, en schrijft niets", async () => {
+    const t = convexTest(schema, modules);
+    const o = await owner(t);
+    const a = await seedPhoto(t, o, { original: "kapot" });
+    const gone = await seedPhoto(t, o);
+    await t.mutation(I.photos.acceptNoFormats, { photoIds: [a.photoId] });
+    await t.run((ctx) => ctx.db.delete(gone.photoId));
+
+    await expect(
+      t.mutation(I.photos.unacceptNoFormats, { photoIds: [a.photoId, gone.photoId] }),
+    ).rejects.toThrow(new RegExp(gone.photoId));
+    expect(await acceptedAt(t, a.photoId)).toBe(NOW);
+  });
+});

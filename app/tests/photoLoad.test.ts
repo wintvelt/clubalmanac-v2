@@ -231,6 +231,15 @@ describe("usePhotoLoad — de cache-sleutel hangt af van hasFormats", () => {
     expect(met.cacheKey).not.toBe(zonder.cacheKey);
   });
 
+  // Fix-cyclus 3 (kernvondst 16, audit S1): builds van vóór WP25 bewaarden het
+  // origineel op schijf onder de kale URL. Die sleutel mag niet meer raken.
+  it("geen van beide sleutels is de kale URL (een oude schijfcache raakt niet)", async () => {
+    const met = await sourceWith(true);
+    const zonder = await sourceWith(false);
+    expect(met.cacheKey, "met formaten").not.toBe(met.uri);
+    expect(zonder.cacheKey, "zonder formaten").not.toBe(zonder.uri);
+  });
+
   it("hasFormats ontbreekt: dezelfde sleutel als zonder formaten", async () => {
     const onbekend = await sourceWith(undefined);
     const zonder = await sourceWith(false);

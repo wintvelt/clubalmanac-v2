@@ -191,6 +191,21 @@ describe("ProfileAvatar — bytes en stand wisselen tegelijk (invariant 26)", ()
     expect(identity(met!)).not.toBe(identity(zonder!));
   });
 
+  // Fix-cyclus 3 (kernvondst 17): een nieuwe profielfoto met een andere stand,
+  // beide met formaten. De URL blijft gelijk; zonder nieuw beeld draait de
+  // nieuwe stand de oude bytes.
+  it("wisselt de stand (beide met formaten), dan is het een ander beeld", async () => {
+    const [oud] = await renderAvatar({ hasFormats: true, exifOrientation: 1 });
+    const [nieuw] = await renderAvatar({ hasFormats: true, exifOrientation: 6 });
+    expect(identity(nieuw!)).not.toBe(identity(oud!));
+  });
+
+  it("niets gewisseld: hetzelfde beeld (geen herlaad bij elke render)", async () => {
+    const [eerst] = await renderAvatar({ hasFormats: true, exifOrientation: 6 });
+    const [daarna] = await renderAvatar({ hasFormats: true, exifOrientation: 6 });
+    expect(identity(daarna!)).toBe(identity(eerst!));
+  });
+
   it("cachePolicy blijft 'none' (WP17a invariant 3), met en zonder formaten", async () => {
     for (const hasFormats of [true, false]) {
       const [found] = await renderAvatar({ hasFormats });
