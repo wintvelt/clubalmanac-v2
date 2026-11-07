@@ -93,7 +93,7 @@ npm run migrate -- inspect                     # kies de 3 chosen users op feite
 npm run migrate -- transform --target dev      # seconden
 npm run migrate -- load-files --target dev     # 3,1 GB, ~15 min (gemeten 2026-10-25); hervatbaar
 npm run migrate -- load-records --target dev   # minuten
-npm run migrate -- formaten --target dev       # WP25; ~1 uur voor ~1000 foto's
+npm run migrate -- formaten --target dev       # WP25; ~45 min voor ~1000 foto's
 npm run migrate -- verify --target dev
 ```
 
@@ -148,7 +148,7 @@ npm run migrate -- extract                      # verse stand, inclusief alles s
 npm run migrate -- transform --target prod
 npm run migrate -- load-files --target prod     # alleen de delta; de rest staat al in de map
 npm run migrate -- load-records --target prod   # minuten
-npm run migrate -- formaten --target prod       # WP25; 16–80 min, hervatbaar
+npm run migrate -- formaten --target prod       # WP25; ~70 min (gemeten op dev), hervatbaar
 npm run migrate -- verify --target prod
 ```
 
@@ -173,7 +173,12 @@ npm run migrate -- verify --target prod
 - **`reset` + `load-records` na `formaten`**: `reset` wist de formaten van de foto's die hij weghaalt (het origineel blijft). Draai daarna `formaten` opnieuw.
 - **Terugrollen** naar code zonder formaten: het optionele veld `photos.formats` moet in het schema blijven staan (Convex weigert een schema-push die bestaande rijen afkeurt). De formaten blijven dan ongebruikt staan.
 
-Meting (dev, preview-run, nog in te vullen na de run): batchgrootte, tijd per batch, piek-RSS (`[photoFormats] batch … peakRssMB=` in de Convex-log), totale duur, en de schatting voor prod (~1600 foto's).
+Meting (dev, preview-run 2026-11-07, 1001 foto's, batch 20):
+
+- Run 1: 51 batches in 42,8 min; 44–54 s per batch van 20 (~2,6 s per foto). Piek-RSS 351–358 MB van de 512 MB per action (`[photoFormats] batch … peakRssMB=` in de Convex-log). Gemaakt 1001, mislukt 0; 589 foto's kregen `exifOrientation`.
+- Run 2: 51 batches in 0,1 min, gemaakt 0, al klaar 1001.
+- Opslag: 1002 → 3004 objecten, +300,5 MB (~300 kB per foto).
+- Schatting prod (~1600 foto's): ~70 min.
 
 #### Storage-orphans tussen T-2 en T-0
 
