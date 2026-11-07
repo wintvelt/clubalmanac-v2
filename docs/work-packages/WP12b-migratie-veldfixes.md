@@ -78,3 +78,97 @@ Na de migratie ziet een lid elk album met de cover die het in de oude app had, e
 ---
 
 ## Spec-criticus aanvullingen (A vult in)
+
+> A, 2026-11-07. Gelezen: v1 op `master` én op de nieuwste branches (zie open vraag 2), de transform, `load-files`, `load-records`, `verify`, `convex/migration.ts`, `convex/monitoring.ts`, de profielfoto-paden (`convex/images.ts`, `convex/lib/profilePhoto.ts`, `convex/lib/photoAccess.ts`) en WP24 A-keuze 2.
+
+### A1. Open vraag 1 — standaardfoto: de keten werkt al, voorstel is niets veranderen
+
+- **Wat de keten nu doet.** De transform neemt `public/img/knorren/knorN.jpg` over als `profilePhotoStorageKey`. `load-files` haalt hem uit dezelfde bucket als de foto's en maakt er per sleutel één storage-object van; users met dezelfde standaardfoto delen dat object (`storage-map.json` is per S3-sleutel). Geen kopie per user, geen fout. Ontbreekt het bestand in de bucket, dan meldt `load-files` dat als ontbrekend bestand, zoals elke andere foto.
+- **Wat de oude app deed.** Hetzelfde bestand tonen: `makeImageUrl` behandelt `public/` net als `protected/` en haalt het via de beeld-proxy uit de bucket. Een lid zag dus de knor.
+- **Wat v2 ermee doet.** Een gedeeld object zonder foto-rij is een "los beeld", en daar is v2 al op gebouwd: het profielpad serveert het origineel (`profileImageInFormat`, `fallback: true`, er zijn geen formaten), `canUseStorage` laat de user zijn huidige losse beeld opnieuw meesturen (WP24 invariant 8), en WP10 telt het als verwezen zolang één user het draagt. Op dev staat al zo'n user (WP17a: "één een los beeld").
+- **Voorstel:** het oude bestand houden, geen eigen standaardbeeld. Het is pariteit met v1, het werkt nu al, en een eigen standaardbeeld is een productkeuze voor een app-WP, geen migratiefix. Invariant 4 wordt daarmee: "landt als los beeld, gedeeld per bestand"; er hoeft niets gebouwd te worden.
+- **Randje, geen blocker.** Kiest de laatste user van een knor een andere profielfoto of verwijdert hij zijn account, dan hangt het object aan niets meer en meldt WP10 het de volgende ochtend als wees. Dat geldt voor elk los beeld; opruimen kan met `prune-storage` of een handmatige delete. Geen test, wel genoemd.
+
+### A2. Open vraag 2 — welke v1-versie draait
+
+Commitdata per repo (laatste commit per branch). De uitgecheckte branch is `master`, behalve bij features (`dev`).
+
+| Repo | `master` | Nieuwste andere branch |
+|---|---|---|
+| blob-images-api | 2020-11-04 | `dev` 2023-02-05 |
+| blob-images-api-features | 2022-09-17 | `dev` 2023-01-24 |
+| blob-images-api-groups | 2023-01-02 | `dev` 2023-02-10 |
+| blob-images-api-invites | 2020-11-01 | `dev` 2020-11-03 |
+| blob-images-api-photos | 2023-08-27 | `hotfix` 2023-12-18 |
+| blob-images-api-user | 2022-10-17 | `hotfixes` 2023-02-05 |
+| blob-images-common | 2023-12-18 | — |
+
+Een Lambda met `LastModified` na de datum van de nieuwste branch draait die branch (of iets nieuwers dat niet in de repo staat); vóór de `master`-datum draait iets ouders. Wat de branches op schrijfpaden verschillen: `groups/dev` schrijft `sortDate` op een album (`updateAlbum`), `api/dev` accepteert bij aanmelding automatisch de uitnodiging, `user/hotfixes` zet een tijd vóór de bestandsnaam en heeft `listInvites`. **Geen van die verschillen verandert de betekenis van een attribuut dat de transform leest.** De mapping hangt af van wat er in de data staat, en dat heeft de telling gemeten. Raakt de `LastModified`-vergelijking dit toch, dan alleen als er een Lambda blijkt te draaien die in geen enkele branch staat; dan meldt A dat.
+
+### A3. Invarianten 1 en 2 kloppen niet met de bron — besluit Wouter nodig
+
+- **Groepscover zonder publicatie bestaat in v1.** De upload-actie `groupcover` (`blob-images-api-photos/handlersPhoto/createPhoto.js:140-158`) maakt een foto en zet hem als groepscover zonder albumfoto. `createGroup`/`updateGroup` accepteren elke foto waar de admin toegang toe heeft, ook een eigen foto in geen enkel album. v1 toonde de cover aan elk lid (een kopie op de groep).
+- **Albumcover uit een ander album.** `updateAlbum` accepteert ook een foto uit een ander album van de groep; alleen de upload-actie `albumcover` zet hem in het eigen album.
+- **Wat v2 daarmee doet.** Een cover is zichtbaar voor wie foto-toegang heeft (WP23 invariant 10). Een albumcover uit een ander album van dezelfde groep ziet dus elk lid; een groepscover die nergens in de groep staat ziet alleen de eigenaar, de rest krijgt `cover: null`. WP24 A-keuze 2 zegt voor bestaande covers: "blijven staan, ook als ze niet meer aan de regel voldoen".
+- **Gevolg van de draft.** Invariant 1 ("in dat album") gooit een albumcover weg die elk lid in v2 gewoon zou zien. Invariant 2 gooit een groepscover weg die de eigenaar nog zou zien; de andere leden zien hem hoe dan ook niet meer. En elke bewuste drop maakt `verify` rood (invariant 6, "elk verschil is een bevinding"), dus T0 wordt dan nooit groen zonder acceptatie-mechanisme.
+- **Voorstel A:** een cover komt mee zodra de foto gemigreerd wordt, zonder publicatie-eis (zoals de groepscover nu al werkt, en in lijn met WP24 "bestaande covers blijven staan"). Een cover die niet in een album van de groep staat krijgt een waarschuwing in het transform-rapport ("alleen de eigenaar ziet hem"), geen drop. Dan is `verify` groen te krijgen en verdwijnt er niets.
+- **Eerst tellen.** Het telscript telt nu per cover waar de foto staat (zie A7). Zijn de afwijkende aantallen 0, dan is de keuze theoretisch en vallen draft en voorstel samen.
+- **Tests:** de gevallen die onder beide lezingen hetzelfde uitkomen zijn gepind; de twee betwiste gevallen niet, tot het besluit er is.
+
+### A4. Invariant 6 — `verify` haalt zijn verwachting uit de bron
+
+- Het gat zat in de transform. Een `verify` die de records naast de deployment legt, was op 2026-11-07 ook groen geweest: records zonder cover, deployment zonder cover. De verwachting komt dus uit `dynamo-extract.json`, de laag vóór de transform (ab-audit-workflow §verificatiestap).
+- **Verwacht:** het aantal groepen en albums dat geladen wordt én in de bron een cover heeft waarvan de foto ook geladen wordt. Een cover naar een niet-bestaande foto of een foto buiten de dev-seed telt niet mee; die wist de transform al met een melding.
+- **Gevonden:** het aantal groepen en albums met een cover in de deployment. De deployment kent geen bron-sleutels, dus een telling per tabel. Die vangt de klasse "cover valt weg"; een cover naar de verkeerde foto vangt hij niet. Contract voor het harnas: `internal.migration.coverCounts` geeft `{ groups, albums }`.
+- **Zonder extract** kan `verify` dit niet controleren en is hij niet groen; de melding noemt het bestand. Op T0 en bij de dev-seed staat het extract er altijd.
+- Elk verschil is een bevinding, met de tabel en "cover" in de melding.
+
+### A5. `userVisits` moet in de bewaakte set van WP10
+
+- `reset`, de leeg-preconditie van `load-records` en de telling van `verify` werken op `MONITORED_TABLES` uit `convex/monitoring.ts` (WP12 fix-cyclus 2). `userVisits` zit daar niet in. Gevolg vandaag al: na een `reset` blijven op dev de `userVisits`-rijen uit app-gebruik staan, met een `userId` naar een user die niet meer bestaat; niemand ziet het. Met WP12b erbij wordt het erger: na `reset` plus `load-records` staan de gemigreerde bezoeken naast de wezen van vóór de reset, en `verify` telt de tabel niet.
+- **Aanvulling:** WP10 bewaakt `userVisits.userId → users` (verplicht). Daarmee valt de tabel vanzelf onder `reset`, de preconditie en de telling, en meldt de dagelijkse scan een wees. `userVisits` komt in de laadvolgorde na `users`. Dit raakt `convex/monitoring.ts` (WP10) en `convex/migration.ts` (de laad-tabellen); valt binnen "load-records en verify waar nodig".
+
+### A6. Invariant 3 en 5 — preciseringen
+
+- **Invariant 3.** Een bezoek is een kalenderdag en wordt UTC-middernacht, zoals elke andere v1-datum. Lege string = geen bezoek. Dev: alleen chosen users. Precies één rij per user. Elke rij draagt een eigen `sourceKey`.
+- **Invariant 5 — de bewuste drops met reden**, voor de lijst in de WP12-spec:
+
+| Bronattribuut | Reden |
+|---|---|
+| `UM` (uitnodiging) `invitation.message`, `user.name` | Geen geldige uitnodigingen meer op prod (telling); v2 heeft er geen veld voor; tokens worden toch vernieuwd. |
+| `UM` (lid) `invitation` | Wie iemand uitnodigde; v1 toonde het niet in de ledenlijst. |
+| `UPstats.deletedFlagged` | Teller van afgewezen bezwaren; v1 schreef hem en las hem nergens. |
+| `UPstats.inviteId` | Alleen voor het automatisch accepteren bij aanmelding; alle users bestaan al. |
+| `UPstats.photoCount` | Wordt herteld uit de foto's (WP12). |
+| `UVvisit.visitDatePrev` | "Laatste bezoek" op het v1-profiel; WP15b maakt het bezoek bewust onzichtbaar. |
+| `UVvisit.cognitoId`; `RK` (elk item); `datePK`, `dateSK` (`PO`, `GP`); `PO.flagged` | Cognito- en indexvelden; geen betekenis in v2. |
+| `UF.prevRating`, `PO.rating` | Hulpveld en afgeleid aggregaat; likes worden herteld. |
+| `user`, `group`, `photo` (kopieën op `UM`, `GA`, `GP`, `PO`, `NFfeature`) en het `USER`-record | Gedenormaliseerde kopieën; de bron is het basisrecord. |
+| `GA.photo`, `GBbase.photo` | Kopie van de cover-foto; de cover gaat via `photoId`. |
+| `UBbase.photoId` | v2 koppelt de profielfoto aan het beeld, niet aan een foto-id. Telling: 0 verouderde sleutels. |
+
+### A7. Telscript uitgebreid
+
+`scripts/.data/veld-tel.mjs` telt nu ook, per albumcover die resolvet: in dat album / in een ander album van de groep / in geen album van de groep; en per groepscover: in een album van die groep / nergens, en daarvan hoeveel van de founder zijn (de upload-route). Alleen tellingen, geen waarden. Voor Wouter, als hij het nog eens draait:
+
+```bash
+node scripts/.data/veld-tel.mjs
+```
+
+### A8. RED tests
+
+| Bestand | Wat |
+|---|---|
+| `tests/migration/wp12bTransform.test.ts` | Invariant 1 (cover in het eigen album komt mee op prod en dev; cover naar een niet-bestaande of weggefilterde foto: leeg plus melding; elke cover resolvet; regressie groepscover) en invariant 3 (rijen, datum, dev-filter, lege string, `users.lastVisitAt` leeg, FK en `sourceKey`). |
+| `tests/migration/wp12bVerify.test.ts` | Invariant 6: groen als alles klopt (ook met covers die terecht wegvielen); niet groen bij een ontbrekende album- of groepscover, bij het oorspronkelijke gat (transform zonder albumcovers), en zonder extract. |
+| `tests/migration/migrationFunctions.test.ts` | `insertRows` op `userVisits`, een wees-`userVisits` is drift, `coverCounts` telt alleen rijen met een cover. |
+| `tests/migration/fkOracle.ts` | `userVisits.userId → users` in de oracle; daardoor rood in `sharedLists.test.ts` en de tel- en leeg-lussen van `migrationFunctions.test.ts` (A5). |
+| Harnas | `buildExtractWithCovers` (fixture), `buildExtractFile`, `buildRecordsFile(target, items)`, nep-`coverCounts`; `verifyAndReset` en `pruneStorage` zetten het extract standaard in de werkmap. |
+
+21 rood, allemaal om de bedoelde reden; de rest van de suite (1341) en de typecheck zijn groen.
+
+### Nog bij Wouter
+
+1. **Covers buiten het eigen album (A3):** voorstel A (meenemen met waarschuwing) of de draft (weglaten)? Eerst de nieuwe telling draaien.
+2. **Standaardfoto (A1):** akkoord met het oude bestand houden?
+3. **`LastModified` van de prod-Lambda's (A2):** regie stuurt ze door; A legt ze naast de tabel.
