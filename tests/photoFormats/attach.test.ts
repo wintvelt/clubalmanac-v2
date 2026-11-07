@@ -195,3 +195,55 @@ describe("formatStatus: de telling (invariant 2, pre-flight)", () => {
     });
   });
 });
+
+describe("attachFormats: een set met een ontbrekend object (fix-cyclus 1, invariant 22)", () => {
+  // R3: `prune-storage` na een Ctrl-C terwijl een action nog loopt, wist de
+  // objecten die die action net opsloeg. Legt hij ze daarna vast, dan wijst de
+  // foto naar niets, en dat herstelde nooit: de backfill zag 'alreadyDone'.
+
+  it("een set waarvan 'klein' weg is: de nieuwe set vervangt hem, het overgebleven oude object gaat weg", async () => {
+    const t = convexTest(schema, modules);
+    const { owner } = await setup(t);
+    const p = await seedPhoto(t, owner, { withFormats: true, exifOrientation: 6 });
+    await t.run((ctx) => ctx.storage.delete(p.klein!));
+    const set = await newObjects(t, "herstel");
+
+    const result = await t.mutation(I.photos.attachFormats, { photoId: p.photoId, ...set, exifOrientation: 3 });
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+
+    expect(result).toBe("attached");
+    expect(await formatsOf(t, p.photoId)).toEqual(set);
+    expect(await exists(t, p.groot!), "wees: groot van de oude set").toBe(false);
+    const photo = await t.run((ctx) => ctx.db.get(p.photoId));
+    expect(photo?.exifOrientation, "de stand die er al stond, blijft (invariant 12)").toBe(6);
+  });
+
+  it("een set waarvan 'groot' weg is: ook vervangen", async () => {
+    const t = convexTest(schema, modules);
+    const { owner } = await setup(t);
+    const p = await seedPhoto(t, owner, { withFormats: true });
+    await t.run((ctx) => ctx.storage.delete(p.groot!));
+    const set = await newObjects(t, "herstel");
+
+    expect(await t.mutation(I.photos.attachFormats, { photoId: p.photoId, ...set })).toBe("attached");
+    expect(await formatsOf(t, p.photoId)).toEqual(set);
+    expect(await exists(t, p.klein!), "wees: klein van de oude set").toBe(false);
+  });
+
+  it("een nieuw object dat niet (meer) bestaat: gooit, en schrijft niets", async () => {
+    const t = convexTest(schema, modules);
+    const { owner } = await setup(t);
+    const p = await seedPhoto(t, owner);
+    const set = await newObjects(t, "al gewist");
+    await t.run((ctx) => ctx.storage.delete(set.klein));
+
+    await expect(
+      t.mutation(I.photos.attachFormats, { photoId: p.photoId, ...set, exifOrientation: 6, width: 10, height: 10 }),
+    ).rejects.toThrow();
+
+    const photo = await t.run((ctx) => ctx.db.get(p.photoId));
+    expect(photo?.formats).toBeUndefined();
+    expect(photo?.exifOrientation).toBeUndefined();
+    expect(photo?.width).toBeUndefined();
+  });
+});

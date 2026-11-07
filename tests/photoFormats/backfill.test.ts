@@ -20,6 +20,8 @@ import { formatsOf, I, seedPhoto, storageCount, textOf } from "./_helpers";
 // met de DB en storage doet. De mock leest het "origineel" als tekst:
 //   - "kapot" erin: gooit, zoals bij bytes die geen beeld zijn;
 //   - "tag=<n>" erin: de stand uit het bestand is n;
+//   - "badmeta" erin: een breedte die geen getal is, zodat het vastleggen
+//     mislukt (de args-validator van attachFormats weigert hem);
 //   - anders: geen stand (geen tag, of HEIC).
 
 vi.mock("../../convex/lib/photoFormats", () => ({
@@ -30,7 +32,7 @@ vi.mock("../../convex/lib/photoFormats", () => ({
     return {
       klein: new TextEncoder().encode(`klein:${text}`),
       groot: new TextEncoder().encode(`groot:${text}`),
-      width: 4000,
+      width: text.includes("badmeta") ? ("geen getal" as unknown as number) : 4000,
       height: 3000,
       ...(tag ? { exifOrientation: Number(tag) } : {}),
     };
@@ -197,6 +199,37 @@ describe("makeFormats: één foto", () => {
   });
 });
 
+describe("makeFormats: herstel en opruimen (fix-cyclus 1)", () => {
+  it("invariant 22: een set waarvan 'klein' weg is, telt als 'geen formaten': 'created', nieuwe set, geen wees", async () => {
+    const t = convexTest(schema, modules);
+    const p = await seedPhoto(t, await owner(t), { original: "foto tag=6", withFormats: true, exifOrientation: 6 });
+    await t.run((ctx) => ctx.storage.delete(p.klein!));
+
+    const result = await t.action(I.photoFormats.makeFormats, { photoId: p.photoId });
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+
+    expect(result).toBe("created");
+    const f = await formatsOf(t, p.photoId);
+    expect(f?.klein).not.toBe(p.klein);
+    expect(await textOf(t, f!.klein)).toBe("klein:foto tag=6");
+    expect(await textOf(t, f!.groot)).toBe("groot:foto tag=6");
+    expect(await storageCount(t), "origineel + de nieuwe set, niets van de oude").toBe(3);
+  });
+
+  it("S2-M16: mislukt het vastleggen, dan gaan de net opgeslagen objecten weer weg: 'failed', geen wees", async () => {
+    const t = convexTest(schema, modules);
+    const p = await seedPhoto(t, await owner(t), { original: "badmeta tag=6" });
+    const before = await storageCount(t);
+
+    const result = await t.action(I.photoFormats.makeFormats, { photoId: p.photoId });
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+
+    expect(result).toBe("failed");
+    expect(await formatsOf(t, p.photoId)).toBeUndefined();
+    expect(await storageCount(t)).toBe(before);
+  });
+});
+
 describe("backfill (invariant 2, 11)", () => {
   it("één doorloop: elke foto krijgt formaten, de tellingen kloppen", async () => {
     const t = convexTest(schema, modules);
@@ -307,6 +340,25 @@ describe("backfill (invariant 2, 11)", () => {
     const inventory = await t.query(I.migration.storageInventory, {});
     expect(inventory.orphanCount).toBe(0);
     expect(inventory.danglingCount).toBe(0);
+  });
+
+  it("invariant 22: de backfill herstelt een set met een ontbrekend object (geen 'alreadyDone')", async () => {
+    const t = convexTest(schema, modules);
+    const o = await owner(t);
+    const ok = await seedPhoto(t, o, { original: "heel", withFormats: true });
+    const broken = await seedPhoto(t, o, { original: "half", withFormats: true });
+    await t.run((ctx) => ctx.storage.delete(broken.groot!));
+
+    const total = await fullPass(t);
+
+    expect(total).toMatchObject({ created: 1, alreadyDone: 1, gone: 0, failed: [] });
+    expect(await formatsOf(t, ok.photoId)).toEqual({ klein: ok.klein, groot: ok.groot });
+    const f = await formatsOf(t, broken.photoId);
+    expect(await textOf(t, f!.groot)).toBe("groot:half");
+    expect(await t.query(I.migration.storageInventory, { sampleSize: 100 })).toMatchObject({
+      orphanCount: 0,
+      danglingCount: 0,
+    });
   });
 
   it("lege deployment: één batch, cursor null, alles nul", async () => {

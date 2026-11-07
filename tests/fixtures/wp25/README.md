@@ -14,3 +14,5 @@ Bedoelde stand (zoals een viewer de JPEG met de tag toont):
 | `g3.heic` | 1200×900, liggend | rechtsonder |
 | `g6.heic` | 900×1200, staand | rechtsboven |
 | `g8.heic` | 900×1200, staand | linksonder |
+
+`groot-17mp.heic` (fix-cyclus 1, A-invariant 20): 4800×3600 = 17,3 MP, net boven de HEIC-grens van 16 MP. Een vlak blauw beeld met een rood vlak linksboven, als JPEG gemaakt met sharp en daarna `sips -s format heic`. 10 kB, zonder EXIF-tag. De test decodeert hem nooit: hij pint dat de grens uit de kop gelezen wordt.

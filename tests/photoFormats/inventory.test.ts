@@ -91,6 +91,15 @@ describe("WP10: ontbrekende formaten zijn zichtbaar (A-invariant 14)", () => {
     expect(await monitorDelta(t)).toBe(1);
   });
 
+  it("S2-M14: een formaat-veld dat naar een gewist object wijst: drift 'formaten dangling', met het foto-id", async () => {
+    const t = convexTest(schema, modules);
+    const p = await seedPhoto(t, await owner(t, 1), { withFormats: true, createdAt: NOW - 2 * HOUR });
+    await t.run((ctx) => ctx.storage.delete(p.klein!));
+    const lines = await t.query(internal.migration.integrityReport, {});
+    expect(lines.some((l) => l.includes(p.photoId) && l.includes("formaten dangling"))).toBe(true);
+    expect(await monitorDelta(t)).toBe(1);
+  });
+
   it("een verse upload (minder dan een uur) zonder formaten: nog geen drift", async () => {
     const t = convexTest(schema, modules);
     await seedPhoto(t, await owner(t, 1), { createdAt: NOW - 10 * 60 * 1000 });
