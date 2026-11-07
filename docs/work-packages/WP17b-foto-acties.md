@@ -6,6 +6,16 @@
 
 Een lid doet met een foto wat in v1 kon: draaien en spiegelen, uit een album halen, verwijderen, en als album- of groepscover of als profielfoto instellen. Hij ziet alleen de acties die hij mag, het resultaat is meteen overal te zien, en niets verdwijnt per ongeluk.
 
+## Besluiten Wouter (2026-11-07, op A's vragen)
+
+1. **Een foto wissen wist ook de profielfoto** van elke user die dat beeld als profielfoto heeft (A-keuze 1), zoals v1.
+2. **Een actie in de selectie geldt per foto** (A-keuze 2): wat mag, gebeurt; wat niet mag, meldt de app met aantal en reden.
+3. **Bevestiging bij uit album halen alleen bij de foto van een ander**: die kan een admin niet terugzetten. Verwijderen vraagt altijd bevestiging (invariant 2).
+4. **"Publicaties" in het detail** (in welke albums staat deze foto) → WP17c.
+5. **Toevoegen aan album in het selectiemenu** → WP17c, met Mijn foto's.
+6. **Draaien vóór de formaten:** geen code in 17b. Het risico ontstaat met uploaden; WP18 kijkt opnieuw.
+7. **Albumcover door het lid dat het album maakte** (ruimer dan v1): zo laten; op prod is iedereen admin.
+
 ## Invarianten
 
 1. **Je ziet alleen wat je mag, en de backend beslist.** Het menu toont per foto alleen de acties die de user mag (eigenaar, admin van de groep, volgens de regels van WP8 en WP24). Het menu is gemak, geen gate: een actie die de backend weigert, geeft een NL-melding en verandert niets.
