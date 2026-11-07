@@ -183,3 +183,34 @@ node scripts/.data/veld-tel.mjs
 ### Nog bij Wouter
 
 Niets. Besluit 4 en 5 zijn verwerkt in invariant 1, 2 en 4.
+
+## Fix-cyclus 1
+
+> Na de audit van B (geen blockers), akkoord Wouter 2026-11-07. A pint, B bouwt. De doc-punten uit de audit staan al in 0c0fc21; de filter in `verify.ts` (N3b) blijft zoals hij is.
+
+### F1. Gemelde foto met een verlopen verwijderdatum: de transform stopt (audit S2)
+
+- **Probleem.** De T0-check leunde op `scripts/.data/veld-tel.mjs`, een bestand dat niet in de repo staat. Ontbreekt het, dan valt de check stil weg, en de FL1-cron wist de foto de eerste nacht na T0. v1 wiste een gemelde foto nooit.
+- **Keuze A:** de transform stopt bij een foto met een verlopen verwijderdatum, tenzij de operator het verlies expliciet accepteert, omdat het gevolg onomkeerbaar is en een waarschuwing tussen tientallen andere meldingen net zo stil kan wegvallen als een ontbrekend script (zelfde patroon als `--accept-missing-files`).
+- **Regel.** "Verlopen" = `flaggedDeleteDate` op of vóór het referentie-"nu" van de transform. Alleen foto's die geladen worden tellen: op dev valt een foto van een niet-chosen eigenaar al weg. Een gewiste datum (lege string, na een bezwaar) is geen datum.
+- **Stop.** De melding noemt elke betrokken foto en de vlag waarmee je verder kunt: `--accept-expired-flags` op `transform` (in de transform-config `acceptExpiredFlags`).
+- **Met de vlag.** De transform gaat door, de foto behoudt zijn datum, en per foto komt er een waarschuwing in het rapport: dat is de bevestiging van verlies, geen stille aftrekpost.
+- **Een datum in de toekomst** stopt niets en geeft geen waarschuwing: de eigenaar ziet de melding in de app en kan in v2 nog bezwaar maken. Telling prod: 0 gemelde foto's.
+- **Runbook.** De T0-stap verwijst naar deze stop in plaats van naar het telscript. Bij een stop beslist Wouter vóór `load-records`: de vlag, of de datum in de bron laten wissen.
+
+### F2. Groepscover uit een andere groep: eigen melding (audit S1)
+
+- Nu geeft de transform dezelfde tekst voor een groepscover die nergens staat en een die alleen in een album van een andere groep staat. Dat worden twee meldingen. De tweede noemt de andere groep (of groepen).
+- Of zo'n cover in v2 zichtbaar wordt, beslist WP27; hier alleen de melding.
+
+### F3. Albumcover: de twee meldingen blijven verschillend (audit N3)
+
+- "In een ander album van de groep" en "in geen album van de groep" zijn al twee teksten, maar een test hield dat niet vast: een mutatie die beide gelijk maakte, viel niet om. Nu wel.
+
+### F4. Tests
+
+| Bestand | Wat | Stand |
+|---|---|---|
+| `tests/migration/wp12bFixcyclus1.test.ts` | F1: stop bij een verlopen datum (ook op de dag zelf), de melding noemt de foto en de vlag; met de vlag door, datum behouden, waarschuwing per foto; een datum in de toekomst, een gewiste datum en een foto buiten de dev-seed stoppen niets. | rood |
+| idem | F2: groepscover die alleen in een andere groep staat noemt die groep; de melding verschilt van "staat nergens". | rood |
+| idem | F3: de twee albumcover-meldingen verschillen. | groen (vastpinnen) |
