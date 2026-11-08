@@ -54,6 +54,16 @@ Uitgangspunt: zoals in v1. A checkt in de oude code of v1 het echt zo deed en me
 3. **Oprichter beschermd:** een admin kan de oprichter niet degraderen of verwijderen.
 4. **Vertrek van de laatste admin of de oprichter:** iemand neemt de rol van oprichter over, zoals v1 dat regelde. A beschrijft hoe v1 dat precies deed (wie wordt het, of moet de oprichter eerst overdragen).
 
+### Besluiten na A's advies (2026-11-08)
+
+4. **Herzien, zoals v1:** de oprichter kan niet vertrekken; de app zegt dat hij eerst moet overdragen (`FOUNDER_MUST_TRANSFER`). Is hij het enige lid, dan verwijdert hij de groep. Een automatische opvolger komt er alleen bij het verwijderen van zijn account (M2-d).
+5. **W5:** album verwijderen alleen door de oprichter. Album wijzigen blijft admin.
+6. **W6:** alleen een admin nodigt uit voor een groep, in WP28a. Uitnodigen zelf (schermen, mails) blijft WP19.
+7. **W7:** geen mails bij verwijderen, vertrekken, rol en oprichter vóór T0; backlog.
+8. **A-keuzes 1–5 bevestigd.**
+9. **Splitsen:** WP28a backend (audit en red-team), daarna WP28b app (gate op TestFlight), op dezelfde branch `wp28`.
+10. **Rollen op prod blijven zoals ze zijn** (iedereen admin, kernvondst 1). Het echte onderscheid is de oprichter.
+
 ## Open vragen voor Wouter (A geeft advies)
 
 1. **Groep verwijderen:** alleen de oprichter (v1) of elke admin (nu)?
