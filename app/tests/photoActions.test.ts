@@ -17,9 +17,9 @@ import {
 // --- Het menu per foto (invariant 1 en 10) -------------------------------------------
 //
 // Orakel met de hand, uit de regels van de backend (WP8, WP24, WP17a
-// invariant 16), niet uit een tabel die de implementatie deelt:
+// invariant 16, WP28 A-keuze 2), niet uit een tabel die de implementatie deelt:
 //   draaien        eigenaar, of admin
-//   albumcover     maker van het album, of admin
+//   albumcover     admin (sinds WP28: de maker van het album heeft geen eigen recht)
 //   groepscover    admin
 //   profielfoto    eigenaar
 //   uit album      wie hem toevoegde, of admin
@@ -54,10 +54,11 @@ describe("photoActions: wat het menu toont", () => {
     );
   });
 
-  it("eigen foto, lid dat het album maakte: ook de albumcover, niet de groepscover", () => {
+  // WP28 A-keuze 2: maker van het album zijn geeft geen recht op de cover.
+  it("eigen foto, lid dat het album maakte: geen albumcover, geen groepscover", () => {
     expect(
       menu({ me: ME, role: "member", ownerId: ME, addedBy: ME, albumCreatedBy: ME }),
-    ).toEqual(sorted(["rotate", "albumCover", "profilePhoto", "removeFromAlbum", "delete"]));
+    ).toEqual(sorted(["rotate", "profilePhoto", "removeFromAlbum", "delete"]));
   });
 
   it("foto van een ander, lid: niets", () => {
@@ -66,10 +67,10 @@ describe("photoActions: wat het menu toont", () => {
     ).toEqual([]);
   });
 
-  it("foto van een ander, lid dat het album maakte: alleen de albumcover", () => {
+  it("foto van een ander, lid dat het album maakte: niets (WP28 A-keuze 2)", () => {
     expect(
       menu({ me: ME, role: "member", ownerId: OTHER, addedBy: OTHER, albumCreatedBy: ME }),
-    ).toEqual(["albumCover"]);
+    ).toEqual([]);
   });
 
   it("foto van een ander, admin: draaien, covers en uit album; geen profielfoto, niet verwijderen", () => {
