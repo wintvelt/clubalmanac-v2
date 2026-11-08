@@ -5,8 +5,8 @@ import { describe, expect, it } from "vitest";
 //
 // 7: de set publieke queries in convex/ ligt vast. Een nieuwe publieke query
 //    faalt hier tot iemand deze lijst bewust bijwerkt (en dus nadenkt over
-//    auth + whitelist). convex/_test.ts valt erbuiten: gegated op
-//    INTEGRATION_TEST_ENABLED, bewust buiten scope.
+//    auth + whitelist). convex/_test.ts valt erbuiten: achter vlag en
+//    testgeheim (WP26, tests/testGate/), bewust buiten scope.
 // 8: elke publieke query declareert een return-validator zonder `any`, zodat
 //    Convex een response met een veld buiten de whitelist weigert (een spread
 //    of een nieuw schema-veld faalt luid in plaats van stil te lekken).

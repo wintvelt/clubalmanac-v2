@@ -23,7 +23,7 @@ const modules = import.meta.glob<Record<string, unknown>>(
   { eager: true },
 );
 
-// Gegated op INTEGRATION_TEST_ENABLED (alleen dev), zoals in WP23.
+// Achter vlag en testgeheim (alleen dev, WP26), zoals in WP23.
 const OUT_OF_SCOPE_MODULES = new Set(["_test"]);
 
 function publicQueries(): Map<string, Registered> {

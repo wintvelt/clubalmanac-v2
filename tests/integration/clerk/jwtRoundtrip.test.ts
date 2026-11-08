@@ -4,6 +4,10 @@ import {
   revokeSessionQuietly,
 } from "../_helpers/clerkAuth";
 import { getConvexSiteBase, requireEnv } from "../_helpers/convexSite";
+import {
+  integrationTestSecret,
+  TEST_SECRET_HEADER,
+} from "../_helpers/testSecret";
 
 // ---------------------------------------------------------------------------
 // Clerk JWT roundtrip — live integration tests (WP4)
@@ -20,8 +24,8 @@ import { getConvexSiteBase, requireEnv } from "../_helpers/convexSite";
 //     test-only `whoami` httpAction op de Convex dev-deployment.
 //   - `whoami` reflecteert subset van `ctx.auth.getUserIdentity()` plus
 //     een `webmaster: boolean` (via try/catch op `requireWebmaster`).
-//   - Env-var-gate `INTEGRATION_TEST_ENABLED === "true"` op dev-deploy,
-//     consistent met WP2 patroon. Zie convex/_test.ts en
+//   - WP26-gate: vlag `INTEGRATION_TEST_ENABLED` en het testgeheim in de
+//     header `X-Test-Secret`, vóór de JWT-check. Zie convex/_test.ts en
 //     docs/conventions/integration-tests.md.
 //
 // Niet in CI. Lokaal: `npm run test:integration`.
@@ -30,7 +34,8 @@ import { getConvexSiteBase, requireEnv } from "../_helpers/convexSite";
 //   1. Twee test-users handmatig in Clerk dev dashboard:
 //      - CLERK_TEST_USER_REGULAR_EMAIL    (zonder webmaster-rol)
 //      - CLERK_TEST_USER_WEBMASTER_EMAIL  (op WEBMASTER_EMAILS lijst)
-//   2. Op Convex dev-deployment: `INTEGRATION_TEST_ENABLED=true` én
+//   2. Op Convex dev-deployment: `INTEGRATION_TEST_ENABLED=true`,
+//      `INTEGRATION_TEST_SECRET` (zelfde waarde als in .env.integration) én
 //      `WEBMASTER_EMAILS` bevat de webmaster-test-user.
 // ---------------------------------------------------------------------------
 
@@ -53,7 +58,10 @@ describe("Clerk JWT roundtrip — live integration", () => {
     const { jwt, userId, sessionId } = await mintTokenForEmail(regularEmail);
     try {
       const res = await fetch(whoamiUrl, {
-        headers: { Authorization: `Bearer ${jwt}` },
+        headers: {
+          Authorization: `Bearer ${jwt}`,
+          [TEST_SECRET_HEADER]: integrationTestSecret(),
+        },
       });
       expect(res.status).toBe(200);
       const body = (await res.json()) as {
@@ -74,7 +82,10 @@ describe("Clerk JWT roundtrip — live integration", () => {
     const { jwt, userId, sessionId } = await mintTokenForEmail(webmasterEmail);
     try {
       const res = await fetch(whoamiUrl, {
-        headers: { Authorization: `Bearer ${jwt}` },
+        headers: {
+          Authorization: `Bearer ${jwt}`,
+          [TEST_SECRET_HEADER]: integrationTestSecret(),
+        },
       });
       expect(res.status).toBe(200);
       const body = (await res.json()) as {
@@ -95,7 +106,9 @@ describe("Clerk JWT roundtrip — live integration", () => {
   });
 
   it("zonder Authorization header → 401 (geen identity)", async () => {
-    const res = await fetch(whoamiUrl);
+    const res = await fetch(whoamiUrl, {
+      headers: { [TEST_SECRET_HEADER]: integrationTestSecret() },
+    });
     expect(res.status).toBe(401);
   });
 
@@ -106,7 +119,10 @@ describe("Clerk JWT roundtrip — live integration", () => {
     // als "invalid token" hetzelfde 401-pad volgen — consistente auth-fail
     // semantiek + geen 500-leak van server-side auth-error-detail.
     const res = await fetch(whoamiUrl, {
-      headers: { Authorization: "Bearer not-a-real-jwt" },
+      headers: {
+        Authorization: "Bearer not-a-real-jwt",
+        [TEST_SECRET_HEADER]: integrationTestSecret(),
+      },
     });
     expect(res.status).toBe(401);
   });

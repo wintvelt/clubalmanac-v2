@@ -89,6 +89,17 @@ Beelden lopen via de httpActions `GET /beeld/foto/<photoId>` en `GET /beeld/prof
 - **Bandbreedte:** Usage, regel **Data egress** (GB, ook het origineel zolang WP25 nog geen verkleinde versies heeft). De beeldpaden tellen daarnaast mee in **Function calls** (HTTP action). Wil je de bytes per verzoek: een log stream geeft `network_egress_bytes` per `function_execution`. Meet een album door Usage vóór en na het openen te vergelijken, op een rustig moment.
 - **Covers en profielfoto's:** per groeps- of albumkaart met een cover loopt `groups:getWithCover` of `albums:getWithCover` (voor de draaiing) zolang het scherm in beeld is. `/beeld/profiel` is openbaar en heeft geen login nodig. De app cachet een profielfoto niet (dezelfde URL geeft na een wissel een ander beeld), dus elke avatar in beeld is één verzoek.
 
+### Test-only functies (WP26)
+
+| Env-var | Dev | Prod | Bij ontbreken |
+|---|---|---|---|
+| `INTEGRATION_TEST_ENABLED` | `true` | nooit | elke `_test`-functie en `/_test/whoami` weigert |
+| `INTEGRATION_TEST_SECRET` | 32 willekeurige bytes, hex | nooit | idem |
+
+- **Waar het geheim staat:** alleen op de dev-deployment (dashboard → Settings → Environment Variables) en in `.env.integration` op de server, onder dezelfde naam. Niet in de repo, niet in een chat.
+- **Roteren:** `openssl rand -hex 32`, de nieuwe waarde op dev en in `.env.integration`. Convex leest env-vars per aanroep, dus direct actief; tussendoor falen de integratietests luid. Roteer ook na een integratietest die een validatiefout gaf (die kan het geheim tonen).
+- **Logs:** een weigering staat als mislukte functie met `Forbidden` (functies) of als 403 op `/_test/whoami`.
+
 ## Auth: Clerk
 
 `picked-quail-97.clerk.accounts.dev` is de dev instance. Free tier vanaf `accounts.clerk.dev` voor signup-mails (geen custom email domain — paid feature, niet nodig voor 16 signups).

@@ -1,4 +1,3 @@
-import { ConvexHttpClient } from "convex/browser";
 import { makeFunctionReference } from "convex/server";
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -7,9 +6,12 @@ import {
   sessionCreatedPayload,
   signSvixHeaders,
 } from "../../_helpers/svix";
-import { makeConvexClient } from "../_helpers/convexClient";
 import { getConvexSiteBase } from "../_helpers/convexSite";
 import { assertNotProd } from "../_helpers/safety";
+import {
+  makeTestFunctionsClient,
+  type TestFunctionsClient,
+} from "../_helpers/testSecret";
 
 // ---------------------------------------------------------------------------
 // WP11 — Clerk onboarding-webhook (live integration, A → B → audit)
@@ -28,7 +30,7 @@ import { assertNotProd } from "../_helpers/safety";
 // pad om (a) een fixture te seeden, (b) DB-state by-subject terug te lezen,
 // of (c) op te ruimen voor een fresh subject zonder Clerk-JWT. Daarom
 // verwijst deze test naar NIEUWE test-only helpers in `convex/_test.ts`
-// (alle `INTEGRATION_TEST_ENABLED`-gated, WP2-precedent). A bepaalt naam +
+// (alle achter de WP26-gate: vlag en testgeheim). A bepaalt naam +
 // return-shape (zie de makeFunctionReference-blokken hieronder); B
 // implementeert tot groen, zonder spec/test-edits.
 //
@@ -131,7 +133,7 @@ describe("WP11 — Clerk onboarding-webhook (live, RED tot convex/_test.ts-helpe
   }
 
   const secret = process.env.CLERK_WEBHOOK_SECRET!;
-  let client: ConvexHttpClient;
+  let client: TestFunctionsClient;
   let webhookUrl: string;
 
   // Fresh per run zodat de INSERT-pad geraakt wordt (niet het idempotency-
@@ -143,7 +145,7 @@ describe("WP11 — Clerk onboarding-webhook (live, RED tot convex/_test.ts-helpe
 
   beforeAll(async () => {
     assertNotProd(requireConvexUrl());
-    client = makeConvexClient();
+    client = makeTestFunctionsClient();
     webhookUrl = `${getConvexSiteBase()}/clerk-webhook`;
     // Seed een pending invite (met group) voor `email` zodat de webhook-flow
     // het invite-accept + membership-create pad daadwerkelijk raakt.

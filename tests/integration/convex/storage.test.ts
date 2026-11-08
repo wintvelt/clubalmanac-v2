@@ -1,7 +1,7 @@
 import { createHash, randomBytes } from "node:crypto";
 import { makeFunctionReference } from "convex/server";
 import { beforeAll, describe, expect, it } from "vitest";
-import { makeConvexClient } from "../_helpers/convexClient";
+import { makeTestFunctionsClient } from "../_helpers/testSecret";
 import { assertNotProd } from "../_helpers/safety";
 
 // ---------------------------------------------------------------------------
@@ -19,8 +19,9 @@ import { assertNotProd } from "../_helpers/safety";
 //       - `storageUpload` (action)       : bytes (+ optionele contentType) → storageId
 //       - `storageDownloadUrl` (query)   : storageId → signed URL | null
 //       - `storageDelete` (mutation)     : cleanup hygiene voor tests
-//   - Elke functie env-var-gated op `INTEGRATION_TEST_ENABLED === "true"`.
-//     Wouter zet de var alleen op de dev-deployment via Convex dashboard.
+//   - Elke functie achter de WP26-gate: vlag `INTEGRATION_TEST_ENABLED` en
+//     het testgeheim `INTEGRATION_TEST_SECRET`, beide alleen op dev. De
+//     client stuurt het geheim mee (`_helpers/testSecret.ts`).
 //   - Geen Clerk-auth: storage-roundtrip is auth-vrij ontkoppeld van
 //     de productie-`/upload` httpAction (die wacht op WP3 Clerk).
 //
@@ -62,7 +63,7 @@ describe("Convex storage — live roundtrip", () => {
   });
 
   it("random 2 KB blob met 0x00 bytes → roundtrip pin't byte-identiteit", async () => {
-    const client = makeConvexClient();
+    const client = makeTestFunctionsClient();
 
     // 2 KB random + expliciet 0x00 byte op vaste positie. Pin't dat
     // null-bytes niet gestript worden in encoding (base64 ↔ binary,
@@ -107,7 +108,7 @@ describe("Convex storage — live roundtrip", () => {
   });
 
   it("leeg blob (0 bytes) → roundtrip levert eveneens leeg blob terug", async () => {
-    const client = makeConvexClient();
+    const client = makeTestFunctionsClient();
 
     const empty = new Uint8Array(0);
     const inputHash = sha256Hex(empty);
@@ -147,7 +148,7 @@ describe("Convex storage — live roundtrip", () => {
   // krijgt het storage-object een lege type-string en verliest de signed
   // URL het Content-Type-header op download.
   it("content-type roundtrip pin't response Content-Type header (image/jpeg)", async () => {
-    const client = makeConvexClient();
+    const client = makeTestFunctionsClient();
 
     const payload = new Uint8Array(randomBytes(512));
     const contentType = "image/jpeg";
@@ -184,7 +185,7 @@ describe("Convex storage — live roundtrip", () => {
   // hardcoded default-MIME terugstuurt — een ander media-type moet óók
   // in de response landen, niet alleen `image/jpeg`.
   it("content-type roundtrip pin't response Content-Type header (application/pdf)", async () => {
-    const client = makeConvexClient();
+    const client = makeTestFunctionsClient();
 
     const payload = new Uint8Array(randomBytes(512));
     const contentType = "application/pdf";
