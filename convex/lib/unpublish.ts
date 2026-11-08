@@ -1,6 +1,6 @@
 import type { MutationCtx } from "../_generated/server";
 import type { Doc, Id } from "../_generated/dataModel";
-import { writeRatingAggregate } from "../ratings";
+import { recomputeRatingAggregate, writeRatingAggregate } from "../ratings";
 import { isPublishedInAlbum, isPublishedInGroup } from "./photoAccess";
 
 // WP28 A-invariant 3: een publicatie die verdwijnt, neemt cover en ratings
@@ -51,6 +51,39 @@ export async function afterUnpublish(
     if (!(await isPublishedInGroup(ctx, cover, groupId))) {
       await ctx.db.patch(groupId, { coverPhotoId: undefined });
     }
+  }
+}
+
+/**
+ * WP28 A-invariant 7 (R1): wie uit een groep verdwijnt, verliest zijn ratings
+ * op de foto's die hij daarna niet meer ziet. Aanroepen ná het wissen van zijn
+ * lidmaatschap. `groupPhotoIds` zijn de foto's die in die groep gepubliceerd
+ * stonden: alleen daar kan zijn toegang veranderd zijn. Een rating op een
+ * eigen foto, of op een foto die hij via een andere groep ziet, blijft.
+ */
+export async function pruneRatingsOfLeaver(
+  ctx: MutationCtx,
+  userId: Id<"users">,
+  groupPhotoIds: Set<Id<"photos">>,
+): Promise<void> {
+  const ratings = await ctx.db
+    .query("ratings")
+    .withIndex("by_user", (q) => q.eq("userId", userId))
+    .collect();
+  const candidates = ratings.filter((r) => groupPhotoIds.has(r.photoId));
+  if (candidates.length === 0) return;
+
+  const groups = await membershipCache(ctx)(userId);
+  for (const r of candidates) {
+    const photo = await ctx.db.get(r.photoId);
+    if (photo?.ownerId === userId) continue;
+    const pubs = await ctx.db
+      .query("albumPhotos")
+      .withIndex("by_photo", (q) => q.eq("photoId", r.photoId))
+      .collect();
+    if (pubs.some((p) => groups.has(p.groupId))) continue;
+    await ctx.db.delete(r._id);
+    if (photo) await recomputeRatingAggregate(ctx, r.photoId);
   }
 }
 

@@ -14,6 +14,7 @@ import { requireCurrentUser } from "./users";
 import {
   getMembership,
   isGroupInviteStillValid,
+  refuse,
   requireAdminForWrite,
 } from "./groups";
 import { normalizeEmail } from "./lib/email";
@@ -157,10 +158,17 @@ export const getByToken = query({
     const invite = await findByToken(ctx, token);
     if (!invite) return null;
     const inviterDoc = await ctx.db.get(invite.invitedBy);
-    const groupDoc = invite.groupId ? await ctx.db.get(invite.groupId) : null;
+    // WP28 A-invariant 9 (red-team R2): de groep alleen bij een open, niet
+    // verlopen uitnodiging. Met een oud token (geaccepteerd, afgewezen,
+    // verlopen) volgt een ex-lid de groep niet; wie lid is, vindt hem in
+    // Mijn groepen.
+    const isExpired = invite.expiresAt <= Date.now();
+    const isOpen = invite.status === "pending" && !isExpired;
+    const groupDoc =
+      isOpen && invite.groupId ? await ctx.db.get(invite.groupId) : null;
     return {
       status: invite.status,
-      isExpired: invite.expiresAt <= Date.now(),
+      isExpired,
       ...(invite.role !== undefined ? { role: invite.role } : {}),
       email: invite.email,
       group: groupDoc ? pick(groupDoc, landingGroupFields) : null,
@@ -191,9 +199,7 @@ export const accept = mutation({
       throw new Error("Invite is verlopen");
     }
     // WP28 A-invariant 4: de groep bestaat nog en de uitnodiger is nog admin.
-    if (!(await isGroupInviteStillValid(ctx, invite))) {
-      throw new Error("Uitnodiging is niet meer geldig");
-    }
+    if (!(await isGroupInviteStillValid(ctx, invite))) refuse("INVITE_INVALID");
 
     await ctx.db.patch(invite._id, {
       status: "accepted",

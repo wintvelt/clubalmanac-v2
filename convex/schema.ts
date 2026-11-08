@@ -199,7 +199,9 @@ export default defineSchema({
     .index("by_email", ["email"])
     .index("by_token", ["token"])
     .index("by_status", ["status"])
-    .index("by_invitedBy", ["invitedBy"]),
+    .index("by_invitedBy", ["invitedBy"])
+    // WP28 A-invariant 8: groep weg → al zijn uitnodigingen weg.
+    .index("by_group", ["groupId"]),
 
   // Dedup-store voor bounce-webhook events. Email-providers retry'en
   // webhooks bij non-2xx response; door providerEventId te tracken

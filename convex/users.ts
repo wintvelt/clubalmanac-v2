@@ -1,4 +1,4 @@
-import { ConvexError, v } from "convex/values";
+import { v } from "convex/values";
 import {
   internalMutation,
   internalQuery,
@@ -9,14 +9,15 @@ import {
 } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import { internalRemovePhoto } from "./photos";
+import { recomputeRatingAggregate } from "./ratings";
 import { internalRemoveMember, isGroupInviteStillValid } from "./groups";
 import { normalizeEmail } from "./lib/email";
 import {
   DEFAULT_PHOTO_LIMIT,
-  NAME_MAX_LENGTH,
   VISIT_PERIOD_MS,
 } from "./lib/constants";
 import { canUseStorage } from "./lib/photoAccess";
+import { validName } from "./lib/names";
 import {
   ownProfile,
   ownProfileFields,
@@ -216,30 +217,6 @@ export const registerFromSession = internalMutation({
   },
 });
 
-// WP15b A-punt 3: tekens die een naam onleesbaar of misleidend maken.
-// Controletekens (C0, DEL, C1), regel- en alineascheiding, tekens die de
-// leesrichting omdraaien, en onzichtbare spaties. U+200C/U+200D (ZWNJ/ZWJ)
-// mogen: die zitten in emoji en in sommige schriften.
-const FORBIDDEN_NAME_CHARS =
-  /[\u0000-\u001f\u007f-\u009f\u2028\u2029\u200e\u200f\u202a-\u202e\u2066-\u2069\u200b\ufeff]/;
-
-type NameErrorCode = "NAME_EMPTY" | "NAME_TOO_LONG" | "NAME_INVALID";
-
-// Geeft de naam zoals hij bewaard wordt, of gooit een ConvexError met een
-// code: een gewone Error komt in productie aan als "Server Error" en de app
-// moet een melding onder het veld kunnen tonen (WP15b invariant 10).
-// `trim` haalt ook vaste spaties (U+00A0, U+3000) en een BOM aan de rand weg.
-function validName(raw: string): string {
-  const name = raw.trim();
-  const fail = (code: NameErrorCode) => {
-    throw new ConvexError({ code });
-  };
-  if (name.length === 0) fail("NAME_EMPTY");
-  if ([...name].length > NAME_MAX_LENGTH) fail("NAME_TOO_LONG");
-  if (FORBIDDEN_NAME_CHARS.test(name)) fail("NAME_INVALID");
-  return name;
-}
-
 export const updateProfile = mutation({
   args: {
     name: v.optional(v.string()),
@@ -251,7 +228,7 @@ export const updateProfile = mutation({
     // WP15b: alleen een meegegeven naam wordt gecheckt; een gemigreerde naam
     // blijft staan tot de user hem zelf wijzigt. Check vóór de patch, zodat
     // een geweigerde naam ook de profielfoto laat staan (invariant 9).
-    if (args.name !== undefined) patch.name = validName(args.name);
+    if (args.name !== undefined) patch.name = validName(args.name, "NAME_EMPTY");
     if (args.profilePhotoStorageId !== undefined) {
       // WP24 invariant 8 / WP17a invariant 16: alleen een eigen beeld (een
       // eigen foto, of de eigen huidige profielfoto). Check vóór de patch,
@@ -341,6 +318,11 @@ export const deleteSelf = mutation({
       .withIndex("by_user", (q) => q.eq("userId", user._id))
       .collect();
     for (const r of ratings) await ctx.db.delete(r._id);
+    // WP28 A-invariant 7: het gemiddelde en het aantal op die foto's kloppen
+    // daarna weer (R1). Een eigen foto gaat hieronder toch weg.
+    for (const photoId of new Set(ratings.map((r) => r.photoId))) {
+      if (await ctx.db.get(photoId)) await recomputeRatingAggregate(ctx, photoId);
+    }
 
     // U7: cascade photos via internalRemovePhoto, dat per photo ook
     // P3 (albumPhotos), P4 (ratings van anderen op deze photo), P5

@@ -23,6 +23,7 @@ import type * as lib_emailTemplates from "../lib/emailTemplates.js";
 import type * as lib_exifOrientation from "../lib/exifOrientation.js";
 import type * as lib_formatSet from "../lib/formatSet.js";
 import type * as lib_mailjet from "../lib/mailjet.js";
+import type * as lib_names from "../lib/names.js";
 import type * as lib_photoAccess from "../lib/photoAccess.js";
 import type * as lib_photoFormats from "../lib/photoFormats.js";
 import type * as lib_profilePhoto from "../lib/profilePhoto.js";
@@ -63,6 +64,7 @@ declare const fullApi: ApiFromModules<{
   "lib/exifOrientation": typeof lib_exifOrientation;
   "lib/formatSet": typeof lib_formatSet;
   "lib/mailjet": typeof lib_mailjet;
+  "lib/names": typeof lib_names;
   "lib/photoAccess": typeof lib_photoAccess;
   "lib/photoFormats": typeof lib_photoFormats;
   "lib/profilePhoto": typeof lib_profilePhoto;

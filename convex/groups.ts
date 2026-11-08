@@ -20,13 +20,15 @@ import {
 } from "./lib/shapes";
 import { avatarFieldsOf } from "./lib/profilePhoto";
 import { photoView } from "./lib/formatSet";
+import { validName } from "./lib/names";
+import { normalizeEmail } from "./lib/email";
 import {
   deleteAlbumLastSeenByAlbum,
   deleteAlbumLastSeenForUserInGroup,
   sumUnreadInGroup,
   upsertAlbumLastSeen,
 } from "./albums";
-import { afterUnpublish } from "./lib/unpublish";
+import { afterUnpublish, pruneRatingsOfLeaver } from "./lib/unpublish";
 
 const ROLE = v.union(v.literal("admin"), v.literal("member"));
 
@@ -72,20 +74,40 @@ export async function requireMemberForRead(
 // onbekende groep, album of doel-lid: NOT_MEMBER, overal dezelfde (geen
 // bestaans-orakel). Wel lid maar het mag niet: een code die de reden draagt.
 // De app zet de code om in een NL-melding (invariant 7).
+// Fix-cyclus 1 (A-invariant 11, A-keuze 1): ook de overige verwachte
+// weigeringen op de WP28-paden dragen een code.
 export type RefusalCode =
   | "NOT_MEMBER"
   | "NOT_ALLOWED"
   | "FOUNDER_PROTECTED"
   | "FOUNDER_MUST_TRANSFER"
-  | "NAME_REQUIRED";
+  | "COVER_NOT_IN_GROUP"
+  | "COVER_NOT_IN_ALBUM"
+  | "NOT_PHOTO_OWNER"
+  | "ALREADY_IN_ALBUM"
+  | "NOT_IN_ALBUM"
+  | "INVITE_INVALID"
+  | "DATE_INVALID";
 
 export function refuse(code: RefusalCode): never {
   throw new ConvexError({ code });
 }
 
-// A-invariant 5: een naam is verplicht, leeg na trimmen telt als leeg.
-export function requireName(name: string | undefined): void {
-  if (name !== undefined && name.trim() === "") refuse("NAME_REQUIRED");
+// A-invariant 5 en 12: een groeps- of albumnaam wordt getrimd bewaard;
+// leeg is NAME_REQUIRED, te lang NAME_TOO_LONG, verboden tekens NAME_INVALID
+// (de regel van WP15b). Alleen een meegegeven naam: een gemigreerde naam
+// blijft staan.
+export function groupOrAlbumName(name: string): string;
+export function groupOrAlbumName(name: string | undefined): string | undefined;
+export function groupOrAlbumName(name: string | undefined): string | undefined {
+  return name === undefined ? undefined : validName(name, "NAME_REQUIRED");
+}
+
+// A-invariant 12: `sortDate` is een eindig getal (epoch-ms; ook vóór 1970).
+export function requireDate(sortDate: number | undefined): void {
+  if (sortDate !== undefined && !Number.isFinite(sortDate)) {
+    refuse("DATE_INVALID");
+  }
 }
 
 /** Lid van een bestaande groep, anders NOT_MEMBER. */
@@ -158,10 +180,10 @@ export const create = mutation({
   returns: v.id("groups"),
   handler: async (ctx, { name, description }) => {
     const user = await requireCurrentUser(ctx);
-    requireName(name);
+    const trimmed = groupOrAlbumName(name);
 
     const groupId = await ctx.db.insert("groups", {
-      name,
+      name: trimmed,
       description,
       createdBy: user._id,
       createdAt: Date.now(),
@@ -289,19 +311,20 @@ export const update = mutation({
   },
   handler: async (ctx, { groupId, ...rest }) => {
     await requireAdminForWrite(ctx, groupId);
-    requireName(rest.name);
+    const name = groupOrAlbumName(rest.name);
+    requireDate(rest.sortDate);
     // WP24 invariant 2 + A-keuze 2: een groep-cover staat in een album van
-    // déze groep. Eén error, ook voor een onbekend photo-id (invariant 3).
+    // déze groep. Eén code, ook voor een onbekend photo-id (invariant 3).
     // Alleen als de cover wordt gezet: een bestaande cover die niet meer in
     // de groep staat, blokkeert geen naamswijziging.
     if (
       rest.coverPhotoId &&
       !(await isPublishedInGroup(ctx, rest.coverPhotoId, groupId))
     ) {
-      throw new Error("Cover moet een foto uit een album van deze groep zijn");
+      refuse("COVER_NOT_IN_GROUP");
     }
     const patch: Partial<Doc<"groups">> = {};
-    if (rest.name !== undefined) patch.name = rest.name;
+    if (name !== undefined) patch.name = name;
     if (rest.description !== undefined) patch.description = rest.description;
     if (rest.coverPhotoId !== undefined) {
       patch.coverPhotoId = rest.coverPhotoId ?? undefined;
@@ -323,7 +346,7 @@ export const remove = mutation({
 // Groep weg, met alles wat eraan hangt. Gedeeld door groups.remove (G3, G4)
 // en het laatste lid dat weggaat (M2-e): beide doen hetzelfde.
 // Volgorde: albumPhotos → albums (+ albumLastSeen, A1/A2) → memberships →
-// open uitnodigingen → groep → ratings op de weggehaalde publicaties (AP3,
+// uitnodigingen → groep → ratings op de weggehaalde publicaties (AP3,
 // WP28 A-invariant 3). Photos blijven (eigendom van users, niet groups).
 // [Cascade matrix G3, G4, A1, A2, AP3, M2-e]
 async function deleteGroupCascade(
@@ -351,16 +374,15 @@ async function deleteGroupCascade(
     .collect();
   for (const m of memberships) await ctx.db.delete(m._id);
 
-  // WP28 invariant 4: open uitnodigingen voor de groep vervallen mee. Ook
-  // zonder deze stap maakt een uitnodiging voor een gewiste groep geen
-  // lidmaatschap (isGroupInviteStillValid).
-  const pending = await ctx.db
+  // WP28 invariant 4 en A-invariant 8: alle uitnodigingen voor de groep
+  // gaan mee, welke status ook, zodat niets naar de gewiste groep wijst
+  // (integriteitscheck invites.groupId). Een uitnodiging die er toch nog
+  // zou zijn, maakt geen lidmaatschap (isGroupInviteStillValid).
+  const invites = await ctx.db
     .query("invites")
-    .withIndex("by_status", (q) => q.eq("status", "pending"))
+    .withIndex("by_group", (q) => q.eq("groupId", groupId))
     .collect();
-  for (const i of pending) {
-    if (i.groupId === groupId) await ctx.db.delete(i._id);
-  }
+  for (const i of invites) await ctx.db.delete(i._id);
 
   await ctx.db.delete(groupId);
 
@@ -409,13 +431,15 @@ export async function internalRemoveMember(
   await ctx.db.delete(target._id);
 
   // WP28 invariant 4, weg (a): open uitnodigingen aan zijn adres voor deze
-  // groep vervallen. Weg (b), een uitnodiging die hij zelf verstuurde, valt
-  // bij accepteren af (isGroupInviteStillValid).
+  // groep vervallen. Op het genormaliseerde adres: uitnodigingen zijn
+  // genormaliseerd, een gemigreerd adres in de users-rij niet altijd
+  // (A-invariant 13). Weg (b) en A-invariant 10: zijn eigen open
+  // uitnodigingen voor deze groep vervallen ook (expireInvitesBy).
   const user = await ctx.db.get(userId);
   if (user) {
     const invites = await ctx.db
       .query("invites")
-      .withIndex("by_email", (q) => q.eq("email", user.email))
+      .withIndex("by_email", (q) => q.eq("email", normalizeEmail(user.email)))
       .collect();
     for (const i of invites) {
       if (i.groupId === groupId && i.status === "pending") {
@@ -423,6 +447,16 @@ export async function internalRemoveMember(
       }
     }
   }
+  await expireInvitesBy(ctx, userId, groupId);
+
+  // WP28 A-invariant 7 (R1): zijn ratings op foto's van deze groep die hij
+  // daarna niet meer ziet, gaan weg, in dezelfde transactie, zodat het
+  // gemiddelde nooit een ex-lid telt.
+  await pruneRatingsOfLeaver(
+    ctx,
+    userId,
+    new Set(groupAps.map((ap) => ap.photoId)),
+  );
 
   // [GAP] zero-member check telt invites niet mee (cascade-matrix.md S1).
   const remaining = await ctx.db
@@ -512,8 +546,33 @@ export const updateMemberRole = mutation({
     if (group.createdBy === userId) refuse("FOUNDER_PROTECTED");
     if (target.role === role) return;
     await ctx.db.patch(target._id, { role });
+    // A-invariant 10 (R3): een admin die lid wordt, verliest zijn open
+    // uitnodigingen voor deze groep; ze herleven niet als hij weer admin wordt.
+    if (role === "member") await expireInvitesBy(ctx, userId, groupId);
   },
 });
+
+/**
+ * WP28 A-invariant 10: open uitnodigingen die `userId` voor deze groep
+ * verstuurde, vervallen (A-keuze 2: B kiest verwijderen, zoals intrekken en
+ * zoals de uitnodigingen aan wie verdwijnt). Uitnodigingen voor andere
+ * groepen blijven.
+ */
+async function expireInvitesBy(
+  ctx: MutationCtx,
+  userId: Id<"users">,
+  groupId: Id<"groups">,
+): Promise<void> {
+  const sent = await ctx.db
+    .query("invites")
+    .withIndex("by_invitedBy", (q) => q.eq("invitedBy", userId))
+    .collect();
+  for (const i of sent) {
+    if (i.groupId === groupId && i.status === "pending") {
+      await ctx.db.delete(i._id);
+    }
+  }
+}
 
 // WP28 A-invariant 1: alleen de oprichter draagt over, aan een ander lid van
 // de groep. Dat lid wordt admin en oprichter; de oude oprichter blijft admin.
