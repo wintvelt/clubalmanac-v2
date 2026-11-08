@@ -27,7 +27,7 @@ export function ImageHostProvider({ convexUrl, children }: { convexUrl: string; 
   return <SiteUrl value={siteUrlOf(convexUrl)}>{children}</SiteUrl>;
 }
 
-function useSiteUrl(): string | null {
+export function useSiteUrl(): string | null {
   return useContext(SiteUrl);
 }
 

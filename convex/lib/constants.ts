@@ -16,3 +16,11 @@ export const VISIT_PERIOD_MS = 3_600_000;
 
 /** WP15b: maximale lengte van een naam, in tekens (code points), na trim. */
 export const NAME_MAX_LENGTH = 50;
+
+/**
+ * WP18 A-keuze 4: grootste bestand dat `POST /upload` aanneemt, in bytes
+ * (15 MiB). Een omgezette foto (JPEG, langste zijde 4032) is een paar MB; de
+ * grens raakt alleen een client die de app omzeilt. Het platform weigert zelf
+ * pas boven ~20 MiB, met een fout die de app niet herkent.
+ */
+export const MAX_UPLOAD_BYTES = 15 * 1024 * 1024;

@@ -278,6 +278,19 @@ export const setProfilePhoto = mutation({
   },
 });
 
+// WP18 invariant 10, A-invariant 16: de profielfoto weghalen. Alleen de
+// koppeling (besluit 1: de profielfoto is een gewone eigen foto); de foto,
+// zijn beeld en de telling blijven. Daarna geeft het profielpad geen beeld en
+// is `profileVersion` "0". Zonder profielfoto: niets, en geen fout.
+export const removeProfilePhoto = mutation({
+  args: {},
+  handler: async (ctx) => {
+    const user = await requireCurrentUser(ctx);
+    if (user.profilePhotoStorageId === undefined) return;
+    await ctx.db.patch(user._id, { profilePhotoStorageId: undefined });
+  },
+});
+
 async function visitRow(ctx: QueryCtx, userId: Id<"users">) {
   return await ctx.db
     .query("userVisits")

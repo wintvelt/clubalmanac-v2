@@ -1,5 +1,6 @@
 import { v } from "convex/values";
-import { internalMutation } from "./_generated/server";
+import { internalMutation, internalQuery } from "./_generated/server";
+import { getMembership } from "./groups";
 
 // Internal helpers voor de POST /upload httpAction (convex/http.ts) en
 // voor de dagelijkse cleanup-cron (convex/crons.ts).
@@ -27,6 +28,11 @@ const RETENTION_COMPLETED_MS = 7 * DAY_MS;
 // retry'd, ziet bij retry de in_progress reservation van de winnaar, en
 // returnt {kind:"conflict"}. Geen race-window meer waarin beide aan
 // photo-creatie toekomen.
+//
+// WP18 A-invariant 12: de limiet komt ná het opzoeken van de upload-id. Een
+// herhaling van een upload waarvan de foto al gemaakt is, geeft die foto
+// terug, ook als de user nu op of over zijn limiet zit. Alleen een nieuwe id
+// op de limiet krijgt {kind:"limit"}, zonder reservering.
 export const reserve = internalMutation({
   args: {
     ownerId: v.id("users"),
@@ -49,6 +55,12 @@ export const reserve = internalMutation({
       }
     }
 
+    const owner = await ctx.db.get(ownerId);
+    if (!owner) throw new Error("User bestaat niet");
+    if (owner.photoCount >= owner.photoLimit) {
+      return { kind: "limit" as const };
+    }
+
     const reservationId = await ctx.db.insert("uploadIdempotency", {
       ownerId,
       clientUploadId,
@@ -56,6 +68,24 @@ export const reserve = internalMutation({
       createdAt: Date.now(),
     });
     return { kind: "reserved" as const, reservationId };
+  },
+});
+
+// WP18 A-invariant 15: het album van een upload met `X-Album-Id`. Alleen een
+// album van een groep waar de uploader lid van is (toestemmingslijst). Geen
+// lid, onbekend, gewist, misvormd of een id van een andere tabel: null, zodat
+// de httpAction één antwoord geeft (geen bestaans-orakel). De transactie in
+// `photos.createFromUploadInternal` toetst het opnieuw.
+export const uploadAlbum = internalQuery({
+  args: { ownerId: v.id("users"), albumId: v.string() },
+  returns: v.union(v.id("albums"), v.null()),
+  handler: async (ctx, { ownerId, albumId }) => {
+    const id = ctx.db.normalizeId("albums", albumId);
+    if (!id) return null;
+    const album = await ctx.db.get(id);
+    if (!album) return null;
+    const membership = await getMembership(ctx, ownerId, album.groupId);
+    return membership ? id : null;
   },
 });
 

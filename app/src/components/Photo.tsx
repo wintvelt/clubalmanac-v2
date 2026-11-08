@@ -175,7 +175,8 @@ export function ProfileAvatar({
   version,
 }: AvatarProps) {
   const letter = <LetterTile name={name} size={size} radius={size / 2} variant={variant} />;
-  if (!userId) return letter;
+  // WP18 invariant 10: versie "0" is geen profielfoto; dan meteen de letter.
+  if (!userId || version === "0") return letter;
   return (
     <ProfileImage
       key={version ?? ""}

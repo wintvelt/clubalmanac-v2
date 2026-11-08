@@ -1,9 +1,10 @@
-import { router } from "expo-router";
+import { router, usePathname } from "expo-router";
 import type { BottomTabBarProps } from "expo-router/js-tabs";
 import { Pressable, StyleSheet, View } from "react-native";
 import { Gradient } from "../components/Gradient";
 import { Icon, type IconName } from "../components/Icon";
 import { Text } from "../components/Text";
+import { albumIdFromPath } from "../lib/upload";
 import { border, plusButton, radius, size, space, useTheme } from "../theme";
 
 // De ingelogde tabbalk (design.md §5, §7; WP15a invarianten 2, 9, 16): Home ·
@@ -104,14 +105,19 @@ function TabItem({
 }
 
 // Verhoogd, in het verloop. Eén modaal, ook bij dubbel tikken: de route is
-// "singular" (src/app/_layout.tsx).
+// "singular" (src/app/_layout.tsx). WP18: op een albumroute (het album, een
+// foto erin) gaat dat album mee als bestemming.
 function PlusButton() {
   const { colors, scheme } = useTheme();
+  const pathname = usePathname();
   return (
     <Pressable
       accessibilityRole="button"
       accessibilityLabel="Foto's toevoegen"
-      onPress={() => router.push("/toevoegen")}
+      onPress={() => {
+        const albumId = albumIdFromPath(pathname);
+        router.push(albumId ? { pathname: "/toevoegen", params: { albumId } } : "/toevoegen");
+      }}
       style={({ pressed }) => [styles.item, { flex: PLUS_WEIGHT }, pressed && styles.pressed]}
     >
       {/* Geen rand en geen achtergrond op dit vlak: een rand verschuift het

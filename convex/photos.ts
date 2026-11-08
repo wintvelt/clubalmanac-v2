@@ -11,7 +11,7 @@ import {
 import type { Doc, Id } from "./_generated/dataModel";
 import { internal } from "./_generated/api";
 import { requireCurrentUser } from "./users";
-import { NOT_MEMBER } from "./groups";
+import { getMembership, NOT_MEMBER } from "./groups";
 import { requireWebmaster } from "./lib/auth";
 import { canAccessPhoto } from "./lib/photoAccess";
 import {
@@ -182,6 +182,18 @@ export const create = internalMutation({
 // P6: increment user.photoCount + photoLimit-gate. Typed sentinel
 // "PHOTO_LIMIT_REACHED" laat de httpAction storage-blob + reservation
 // opruimen.
+//
+// WP18 A-keuze 1: met `albumId` komen de foto en zijn plek in het album in
+// deze ene transactie, of geen van beide. Het lidmaatschap wordt hier
+// opnieuw getoetst (de httpAction toetste vóór reservering en opslag); is het
+// weg, dan de sentinel "NO_ALBUM_ACCESS" en ruimt de httpAction op. De
+// uploader is de toevoeger; `addedAt` laat de teller bij de andere leden
+// oplopen (AP1).
+// WP18 A-keuze 2 en vraag 2: `takenAt`, `latitude` en `longitude` uit de
+// headers. `extractMetadata` overschrijft ze alleen met waarden uit het
+// bestand zelf (`patchMetadata` slaat ontbrekende velden over).
+export const UPLOAD_NO_ALBUM_ACCESS = "NO_ALBUM_ACCESS";
+
 export const createFromUploadInternal = internalMutation({
   args: {
     storageId: v.id("_storage"),
@@ -189,11 +201,25 @@ export const createFromUploadInternal = internalMutation({
     reservationId: v.id("uploadIdempotency"),
     filename: v.optional(v.string()),
     mimeType: v.optional(v.string()),
+    albumId: v.optional(v.id("albums")),
+    takenAt: v.optional(v.number()),
+    latitude: v.optional(v.number()),
+    longitude: v.optional(v.number()),
   },
   returns: v.id("photos"),
   handler: async (
     ctx,
-    { storageId, ownerId, reservationId, filename, mimeType },
+    {
+      storageId,
+      ownerId,
+      reservationId,
+      filename,
+      mimeType,
+      albumId,
+      takenAt,
+      latitude,
+      longitude,
+    },
   ) => {
     const user = await ctx.db.get(ownerId);
     if (!user) throw new Error("User bestaat niet");
@@ -203,21 +229,44 @@ export const createFromUploadInternal = internalMutation({
       throw new Error("PHOTO_LIMIT_REACHED");
     }
 
+    let album: Doc<"albums"> | null = null;
+    if (albumId) {
+      album = await ctx.db.get(albumId);
+      const membership = album
+        ? await getMembership(ctx, ownerId, album.groupId)
+        : null;
+      if (!album || !membership) throw new Error(UPLOAD_NO_ALBUM_ACCESS);
+    }
+
+    const now = Date.now();
     const photoId = await ctx.db.insert("photos", {
       ownerId,
       storageId,
       filename,
       mimeType,
+      takenAt,
+      latitude,
+      longitude,
       ratingCount: 0,
-      createdAt: Date.now(),
+      createdAt: now,
     });
 
     await ctx.db.patch(ownerId, { photoCount: user.photoCount + 1 });
 
+    if (album) {
+      await ctx.db.insert("albumPhotos", {
+        albumId: album._id,
+        photoId,
+        groupId: album.groupId,
+        addedAt: now,
+        addedBy: ownerId,
+      });
+    }
+
     await ctx.db.patch(reservationId, {
       status: "completed",
       photoId,
-      completedAt: Date.now(),
+      completedAt: now,
     });
 
     await ctx.scheduler.runAfter(0, internal.photoMetadata.extractMetadata, {
