@@ -239,3 +239,22 @@ Na de besluiten wijzigt A deze tests in de RED-ronde: `tests/groups/crud.test.ts
 - **data/schema: laag** (was middel). Geen nieuw veld, geen backfill: de oprichter staat er al, `sortDate` ook.
 - **ops: middel.** Groep verwijderen in de grote groep wist ongeveer 1460 publicaties met hun cover- en rating-checks in één transactie. Dat past ruim, maar B meet het met een seed van die grootte.
 - **ops-runbook-impact:** geen nieuwe env-vars of deploy-config.
+
+### RED tests (A, 2026-11-08)
+
+Gepind op besluit 1–3 en de A-invarianten 1–5. Niet getest, want nog open: vertrek van de oprichter (besluit 4, zie hierboven), album verwijderen door een admin die geen oprichter is (W5), de uitnodig-gate (W6), en A-keuze 1, 3 en 4. A-keuze 2 (de maker heeft geen eigen recht) volgt uit de tabel §Acties en is wel getest.
+
+De API die de tests aannemen: `groups.transferFounder({ groupId, userId })`, en `sortDate` (epoch-ms) als optioneel argument van `groups.update` en `albums.update`. Weigeringen: `ConvexError` met `{ code }`, codes zoals in A-invariant 2.
+
+| Bestand | Wat |
+|---|---|
+| `tests/groups/_beheer.ts` | Opzet zonder `addMember` of `albums.create`; `expectRefused` (code én state ongewijzigd) |
+| `tests/groups/beheerGates.test.ts` | Besluit 1 en 3, rol wijzigen en verwijderen, vertrek van wie geen oprichter is, oprichter overdragen, codes en geen orakel (onbekende groep of doel = geen lid) |
+| `tests/albums/beheerGates.test.ts` | Besluit 2, album wijzigen en verwijderen (lid geweigerd, oprichter mag), datum (invariant 6), naam verplicht |
+| `tests/groups/beheerCascade.test.ts` | Invariant 5 en A-invariant 3: groepscover en ratings na album verwijderen; covers en ratings na verwijderd of vertrokken lid |
+| `tests/invites/exLid.test.ts` | Invariant 4: wegen (a), (b), (c), via `accept` en de onboarding; controle dat een geldige uitnodiging werkt |
+| `tests/groups/beheerInventory.test.ts` | Standing rule: de publieke paden met een groep-, album-, lid- of uitnodiging-id (nu alleen `transferFounder` erbij) |
+
+Aangepast aan de besluiten: `tests/albums/crud.test.ts` (een lid maakt geen album meer; een maker zonder admin-rol wijzigt of verwijdert niet), `tests/writeGates/cover.test.ts` (idem voor de cover), `tests/groups/crud.test.ts` (de enige admin is de oprichter), `tests/readWhitelist/coverAccess.test.ts` (de cover van een vertrokken lid wordt gewist), `tests/users/registerFromSession.test.ts` (de uitnodiger in de opzet is admin van de groep).
+
+Stand: 57 rood in 8 bestanden, alleen de bestanden hierboven; de rest (1792) groen. `tsc` faalt alleen op `transferFounder` en `sortDate`. Tegen een wegwerp-referentie in de scratchpad (gewist na afloop) is de hele suite groen, en vijf mutanten vallen om: geen groepscover wissen, uitnodigingen niet laten verlopen, ratings laten staan, oprichter niet beschermen bij rol wijzigen, de uitnodiger niet checken.
