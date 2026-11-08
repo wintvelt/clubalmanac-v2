@@ -199,7 +199,13 @@ Besluit 1–3 (oprichter verwijdert de groep, admin maakt albums, oprichter besc
 
 **Besluit 4, hoe v1 het deed.** De oprichter kon nooit vertrekken en niet verwijderd worden: de app toonde hem geen "Groep verlaten", en de backend weigerde. Hij moest eerst zelf iemand oprichter maken ("Maak founder"); daarna kon hij als gewone admin weg. Een andere admin kon alleen weg als er nog een admin was, en dat was er altijd, want de oprichter is admin. Een automatische opvolger kwam er alleen als het lidmaatschap van de oprichter op een andere manier verdween (account verwijderd): de eerste gevonden admin werd oprichter, of, als er geen admin over was, werd iedereen admin en het eerste gevonden lid oprichter. "Eerste gevonden" was de volgorde van DynamoDB, niet een datum. v2 kiest daar de vroegste `joinedAt` (M2-c, M2-d), en dat blijft.
 
-Voor WP28 betekent dat: de oprichter kan niet vertrekken (`FOUNDER_MUST_TRANSFER`); is hij alleen, dan verwijdert hij de groep. Ieder ander kan altijd vertrekken. M2-c en M2-d blijven alleen voor accountverwijdering.
+**Per besluit (v1-check, voor de tests):**
+1. Groep verwijderen door de oprichter: zo deed de v1-backend het. De v1-app had geen werkende knop. Tests: ja.
+2. Album maken door een admin: zo deed de v1-app het. De v1-backend wilde het, maar de rolcheck sloeg nooit aan, dus elk lid kon het. Het bedoelde gedrag is duidelijk. Tests: ja.
+3. Oprichter beschermd: de v1-app bood geen enkele actie op de oprichter, en de v1-backend weigerde hem te verwijderen. Rol wijzigen weigerde de backend niet. Tests: ja.
+4. **Wijkt af van de tekst van het besluit.** v1 liet de oprichter niet vertrekken en gaf bij vertrek de rol aan niemand: hij droeg eerst zelf over. De laatste admin kon niet vertrekken, maar dat kwam niet voor, want de oprichter is admin. Een automatische opvolger kwam alleen bij een verwijderd account. Tests voor vertrek van de oprichter wachten op regie; vertrek van een gewoon lid of admin is wel getest.
+
+Advies, en wat A test zodra regie het bevestigt: de oprichter kan niet vertrekken (`FOUNDER_MUST_TRANSFER`); is hij alleen, dan verwijdert hij de groep. Ieder ander kan altijd vertrekken. M2-c en M2-d blijven alleen voor accountverwijdering.
 
 Extra vragen voor Wouter, uit de vondsten:
 
