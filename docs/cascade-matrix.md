@@ -43,7 +43,7 @@ Uitzondering: queries zonder trigger (puur read-tests) leven bij de query-owner.
 | Users | 11 | ✅ U3-U8, U10, U11; ❌ U1, U2, U5, U9 eliminated |
 | Groups | 4 | ✅ G1-G4 |
 | Albums | 2 | ✅ A1, A2 |
-| Photos | 8 | ✅ P1-P8 |
+| Photos | 9 | ✅ P1-P9 |
 | Album-photos (publications) | 4 | ✅ AP1-AP4 |
 | Ratings | 1 | ✅ R1 |
 | Memberships | 3 | ✅ M1, M2, M3 |
@@ -98,6 +98,7 @@ Uitzondering: queries zonder trigger (puur read-tests) leven bij de query-owner.
 | P6 | `photoAddToStats` | PO insert | Increment `users.photoCount` | 2 | In `photos.create` mutation | `tests/photos/create.test.ts` | ✅ |
 | P7 | `photoDelToStats` | PO delete | Decrement `users.photoCount` | 2 | In `photos.remove` mutation | `tests/photos/delete.test.ts` | ✅ |
 | P8 | `fixPhotoRotation.js` (Jimp) | rotate-request (owner of group-admin) | **EXIF-only**: `photos.exifOrientation` waarde berekend via 8-staat-arithmetiek-tabel op `(rotation, flipY)`; `width`/`height` geswapt in DB bij 90°/270°; bestand zelf onaangeraakt. **Geen downstream cascade** — ratings/albumPhotos/group-+album-covers/flagging-state ongemoeid. Delta-semantiek (niet call-idempotent); inverse brengt terug. Per cyclus-2 hardening: clients passen CSS-transform toe gebaseerd op `photos.exifOrientation` uit DB (niet file-EXIF), dus DB-update = canonical rotate. Geen pixel-manipulatie nodig | n.v.t. (single-row mutation, geen cascade) | `photos.rotate` mutation (auth owner OR group-admin via `albumPhotos.by_photo`→publicatie-groups→`memberships` role=admin). Atomair: leest huidige `exifOrientation` (default 1), berekent nieuwe via lookup-tabel, patcht `exifOrientation` + (conditioneel) `width`/`height`-swap. Géén scheduled action, géén sharp, géén storage-swap, géén cleanup | `tests/photos/rotate.test.ts` (auth + EXIF-arithmetiek + dim-swap + delta+inverse + pixel-array-oracle op gespiegelde starts) | ✅ |
+| P9 | (nieuw, niet uit AWS) | PO delete | Verwijder de upload-reservering van deze foto (WP18 A-invariant 22, uit de red-team) | 3 | In `internalRemovePhoto` (`photos.remove`, `users.deleteSelf`, FL1-cron) via `uploadIdempotency.by_photo`, zodat alleen de eigen reservering gelezen wordt (A-invariant 26). `users.deleteSelf` wist daarna alle reserveringen van de user, ook `in_progress` | `tests/http/uploadReservation.test.ts`, `tests/http/uploadReservationReads.test.ts` | ✅ |
 
 ### Trigger: Album-photos (Publications)
 
@@ -140,7 +141,7 @@ Uitzondering: queries zonder trigger (puur read-tests) leven bij de query-owner.
 
 | # | Oude handler | Trigger event | Effect | Cat | Convex aanpak | Test locatie | Status |
 |---|---|---|---|---|---|---|---|
-| UI1 | (nieuw, niet uit AWS) | Daily cron | Verwijder `uploadIdempotency` records met **twee thresholds** (audit-cyclus-1, reservation pattern): `status="completed"` ouder dan 7d (retry-safety horizon) én `status="in_progress"` ouder dan 30min (stale-reservation cleanup van gecrashte handlers tussen `reserve` en de atomic completion-patch in `createFromUploadInternal`). Boundary `<=`, consistent met FL1 + invites accept. Photos en storage-blobs blijven onaangetast — UI1 ruimt alleen reservation-state op (storage-orphans → integrity-check, cyclus-2 backlog) | 3 | Convex scheduled cron `cleanupOldUploadIdempotency` (in `convex/crons.ts`) roept `internal.uploads.cleanupOld` aan. Scant `uploadIdempotency.by_status_and_createdAt` voor beide paden: status="completed" + createdAt<=now-7d, en status="in_progress" + createdAt<=now-30min, per match `ctx.db.delete`. Eén cron-run dekt beide thresholds | `tests/uploads/cleanupOld.test.ts` + `tests/crons/registration.test.ts` (statisch pin op cron-registratie zelf — WP4 audit-13 follow-up) | ✅ |
+| UI1 | (nieuw, niet uit AWS) | Daily cron | Verwijder `uploadIdempotency` records met **twee thresholds** (audit-cyclus-1, reservation pattern): `status="completed"` ouder dan 7d (retry-safety horizon) én `status="in_progress"` ouder dan 30min (stale-reservation cleanup van gecrashte handlers tussen `reserve` en de atomic completion-patch in `createFromUploadInternal`). Sinds WP18 verloopt zo'n `in_progress` al bij een herhaling met dezelfde upload-id zodra hij 30 minuten oud is; een reservering van een gewiste foto verdwijnt met de foto (P9). Boundary `<=`, consistent met FL1 + invites accept. Photos en storage-blobs blijven onaangetast — UI1 ruimt alleen reservation-state op (storage-orphans → integrity-check, cyclus-2 backlog) | 3 | Convex scheduled cron `cleanupOldUploadIdempotency` (in `convex/crons.ts`) roept `internal.uploads.cleanupOld` aan. Scant `uploadIdempotency.by_status_and_createdAt` voor beide paden: status="completed" + createdAt<=now-7d, en status="in_progress" + createdAt<=now-30min, per match `ctx.db.delete`. Eén cron-run dekt beide thresholds | `tests/uploads/cleanupOld.test.ts` + `tests/crons/registration.test.ts` (statisch pin op cron-registratie zelf — WP4 audit-13 follow-up) | ✅ |
 
 ### Trigger: Monitoring (system events)
 

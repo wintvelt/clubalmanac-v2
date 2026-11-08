@@ -83,36 +83,40 @@ POST /upload    (Convex httpAction in convex/http.ts)
   Headers:
     Authorization: Bearer <Clerk JWT>
     X-Upload-Id: <client-generated UUID>          (server-side getrimd)
-    Content-Type: image/jpeg | image/heic | image/png | ...
+    X-Album-Id: <optioneel; foto en albumplek in één transactie, WP18>
+    X-Taken-At: <optioneel; EXIF-vorm JJJJ:MM:DD UU:MM:SS, WP18>
+    X-Latitude / X-Longitude: <optioneel; locatie, WP18>
     X-Filename: <optional, client-meegegeven bestandsnaam>
-  Body: file binary (single-file, geen multipart)
+  Body: file binary (single-file, geen multipart); het type komt uit de bytes, niet uit Content-Type
 
-  → 200 { photoId: Id<"photos"> }
-  → 400 { error: "Missing X-Upload-Id" }          (ook bij whitespace-only header)
+  → 200 { photoId: Id<"photos"> }                  (met album: de foto staat in dat album, ook bij een herhaling)
+  → 400 { error: "Missing X-Upload-Id" | "Upload afgebroken" }
   → 401 { error: "Unauthorized" }
-  → 403 { error: "Photo limiet bereikt" }          (was 413; quota = Forbidden, niet Payload Too Large)
-  → 409 { error: "Upload in progress" }            (race-loser tegen lopende reservation, audit-cyclus-1)
+  → 403 { error: "Photo limiet bereikt" }
+  → 404 { error: "Album niet gevonden" }          (geen lid, onbekend, gewist of misvormd: één antwoord)
+  → 409 { error: "Upload in progress" }            (lopende reservering, of RESERVATION_GONE bij een verlopen poging)
+  → 413 { error: "Bestand te groot" }              (> 15 MiB, gemeten op de echte bytes)
+  → 415 { error: "Alleen foto's (JPEG, PNG of HEIC)" }
 ```
 
 **Reservation pattern (state machine).** De `uploadIdempotency`-row wordt nu **vóór** de photo-creatie ingeschreven met `status="in_progress"`, en in dezelfde Convex transactie als de photo-insert ge-patched naar `status="completed"` (zie stap 7). De composite index `by_owner_and_clientUploadId` maakt de lookup atomair per (ownerId, clientUploadId): twee parallelle handlers met dezelfde key triggeren een Convex transaction-conflict; de loser wordt geretry'd en ziet bij retry de in_progress reservation van de winnaar — waaruit een 409 volgt.
 
 **Architectuur-keuze tijdens cyclus 1 implementatie:** completion-patch verschoven van een aparte `markCompleted`-mutation naar `createFromUploadInternal` voor atomicity (geen tussenstaat tussen photo-insert en reservation-completion). Audit-12 §1 documenteert deze keuze expliciet.
 
-Server-side flow:
+Server-side flow (na WP18):
 
-1. `ctx.auth.getUserIdentity()` → null → 401. Convex valideert de Clerk JWT zelf vóór de httpAction draait
-2. Resolve user-record via `subject` lookup (equivalent van `requireCurrentUser`)
-3. Trim `X-Upload-Id`; lege string na trim → 400 (audit-cyclus-1 §3: `"   "` mag niet als geldige idempotency-key door)
-4. `internal.uploads.reserve({ownerId, clientUploadId})` — atomair:
-   - hit `status="completed"` → return `{ kind: "hit", photoId }` (idempotente retry)
-   - hit `status="in_progress"` → return `{ kind: "conflict" }` → 409
-   - miss → insert `{status: "in_progress", createdAt, photoId: undefined, completedAt: undefined}` → return `{ kind: "reserved", reservationId }`
-5. Photo-limit check + storage write + photo-create gaan via `internal.photos.createFromUploadInternal`. Bij quota-fail throwt die de **typed sentinel string** `"PHOTO_LIMIT_REACHED"` — de http handler matcht dat exact en mapt naar **403 Forbidden** met NL-body `"Photo limiet bereikt"`. Geen substring-match meer op een Nederlandse error-message. Limit-check loopt vóór `storage.store`, vóór `reserve` — geen orphan blob, geen phantom in_progress
-6. `ctx.storage.store(await request.blob())` → storageId
-7. `internal.photos.createFromUploadInternal({storageId, ownerId, reservationId, filename, mimeType})` — internal mutation die in **één Convex transactie**: photo record insert + `photoCount++` + reservation patch (`status="completed"`, `photoId`, `completedAt`) + `scheduler.runAfter(0, extractMetadata)`. Atomair: een commit-failure laat geen window open waarin photo bestaat maar reservation nog in_progress is. Geen aparte `markCompleted`-mutation meer (zie architectuur-keuze hierboven, audit-12 §1)
-8. Return `{photoId}`
+1. Auth (401) en user-record; trim `X-Upload-Id` (leeg → 400).
+2. Met `X-Album-Id`: lidmaatschap van de groep van dat album, anders 404.
+3. De body lezen (afgebroken → 400), dan 413 en 415. Dit gebeurt vóór de reservering: een afgebroken of geweigerd verzoek laat niets achter.
+4. `internal.uploads.reserve` — atomair:
+   - `completed` met een bestaande foto → hit, 200 met die foto (met album: zet hem er weer in als hij er niet meer staat, na een nieuwe lidmaatschapscheck). Ook op de limiet.
+   - `completed` met een gewiste foto → telt als miss.
+   - `in_progress` jonger dan 30 minuten → 409. Ouder → de oude reservering verdwijnt en de herhaling krijgt een verse.
+   - limiet bereikt → 403; miss → nieuwe `in_progress`-reservering.
+5. `ctx.storage.store` → storageId.
+6. `internal.photos.createFromUploadInternal`: in één transactie de foto, `photoCount++`, de plek in het album en de reservering op `completed`. Is de reservering inmiddels weg (verlopen en vervangen), dan `RESERVATION_GONE` → beeld opruimen, 409.
 
-Bij failure tussen stap 4 en 7 (server crash, exception in 6/7) blijft de reservation in `in_progress` achter. Stale-cleanup-cron ruimt die op na 30 minuten (zie cron-sectie); een retry met dezelfde clientUploadId binnen die 30 min krijgt dus nog 409 — daarna een schone insert.
+Een foto wissen (`internalRemovePhoto`) wist in dezelfde transactie zijn reservering, via de index `by_photo`. `users.deleteSelf` wist alle reserveringen van de user.
 
 **Idempotency-tabel (audit-cyclus-1 schema):**
 
@@ -126,7 +130,8 @@ uploadIdempotency: defineTable({
   completedAt: v.optional(v.number()),                        // NIEUW: gevuld bij completion-patch in createFromUploadInternal
 })
   .index("by_owner_and_clientUploadId", ["ownerId", "clientUploadId"])  // NIEUW: composite
-  .index("by_status_and_createdAt", ["status", "createdAt"]);           // NIEUW: voor stale cleanup
+  .index("by_status_and_createdAt", ["status", "createdAt"])            // NIEUW: voor stale cleanup
+  .index("by_photo", ["photoId"]);                                       // WP18: foto wissen leest alleen zijn eigen reservering
 ```
 
 Verwijderd t.o.v. cyclus 1: `by_clientUploadId` (vervangen door composite), `by_createdAt` (vervangen door status-aware variant). De composite key levert per-user scope **structureel**: user X kan de upload-id van user Y niet meer "kapen" omdat de DB-key zelf de ownerId bevat. De fallthrough/owner-mismatch defensive-coding uit cyclus 1 vervalt.

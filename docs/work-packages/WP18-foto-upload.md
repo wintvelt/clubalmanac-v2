@@ -1,6 +1,6 @@
 # WP18: Foto's uploaden, en een profielfoto uploaden of verwijderen
 
-> Draft regie 2026-11-08. App-WP (zie [`work-package-specs.md` §App-WP's](../conventions/work-package-specs.md#app-wps-fase-4)), met een stuk backend. De upload zelf bestaat al: `POST /upload` in `convex/http.ts`, met een reservering per upload-id tegen dubbele foto's ([`migratie-plan-convex.md`](../migratie-plan-convex.md) §upload). Na de upload maakt de backend de formaten ([WP25](./WP25-fotoformaten.md)) en leest de metadata. Het zwaartepunt ligt in de app. A → B → audit → red-team op de upload-keten → TestFlight-gate. Eigen branch `wp18`.
+> Landed 2026-11-08 (A → B → audit → red-team, drie fix-cycli, heraudits en herchecks schoon, gate build 57 groen; zie §Closeout). App-WP (zie [`work-package-specs.md` §App-WP's](../conventions/work-package-specs.md#app-wps-fase-4)), met een stuk backend. De upload zelf bestaat al: `POST /upload` in `convex/http.ts`, met een reservering per upload-id tegen dubbele foto's ([`migratie-plan-convex.md`](../migratie-plan-convex.md) §upload). Na de upload maakt de backend de formaten ([WP25](./WP25-fotoformaten.md)) en leest de metadata. Het zwaartepunt ligt in de app. A → B → audit → red-team op de upload-keten → TestFlight-gate. Eigen branch `wp18`.
 
 ## Productdoel
 
@@ -316,3 +316,12 @@ De voor de hand liggende vorm is een index `by_photo` op `["photoId"]` in `uploa
 | Bestand | Pint |
 |---|---|
 | `tests/http/uploadReservationReads.test.ts` | A-invariant 26. convex-test handhaaft de leesgrens niet, dus een recorder om `ctx.db` telt per query op `uploadIdempotency` de documenten in het index-bereik, zoals Convex ze leest. Een filter erna telt niet als kleiner bereik; zonder index telt de hele tabel. De echte `internalRemovePhoto` leest hooguit 1 reservering, of 0 bij een foto zonder reservering. De echte handler van `users.deleteSelf` leest hooguit eigen reserveringen + foto's, bij 40 foto's en 65 reserveringen (nu 1845). Plus twee sanity-tests dat de recorder een scan over de eigenaar met filter als de hele eigenaar telt. |
+
+## Closeout (2026-11-08)
+
+- **Audit:** geen blockers. Fix-cyclus 1: een upload eindigt altijd (termijn van 120 s), en "Opnieuw proberen" bij de profielfoto doet alleen wat nog moet.
+- **Red-team:** M1 (een gewiste foto liet zijn reservering achter: vals integriteitsalarm en een 200 met een gewiste foto), Z1 (een hangende reservering blokkeerde tot de nachtelijke cron) en Z3 (dubbele foto's via "Meer foto's" na "Geen verbinding"). Fix-cyclus 2 (besluit 6). De hercheck vond een gat dat de fix zelf maakte: `deleteSelf` las per foto alle reserveringen van de user. Fix-cyclus 3 (besluit 7, index `by_photo`). Tweede hercheck en heraudit schoon.
+- **Gate (Wouter, build 57, dev):** alle stappen groen. Wat opviel: de opbouw van de profielpagina is onlogisch → WP27, samen met de profielfoto uit elke foto met toegang (besluit 2026-11-08).
+- **Geaccepteerd:** Z2 (vermomde bestanden van een client die de app omzeilt), een in iOS bewerkte foto houdt zijn `assetId`, een los beeld na een gecrashte poging, de nice-to-haves uit de heraudits (de termijn start na het omzetten; een profiel-retry na "uitgelogd" zonder vers token).
+- **Backlog:** `deleteSelf` bij veel foto's (P5-scans) → het WP voor account verwijderen.
+- **Docs:** `migratie-plan-convex.md` §upload (headers, statuscodes, volgorde), `cascade-matrix.md` (P9, UI1).
