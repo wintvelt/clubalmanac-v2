@@ -59,32 +59,57 @@ export async function afterUnpublish(
  * op de foto's die hij daarna niet meer ziet. Aanroepen ná het wissen van zijn
  * lidmaatschap. `groupPhotoIds` zijn de foto's die in die groep gepubliceerd
  * stonden: alleen daar kan zijn toegang veranderd zijn. Een rating op een
- * eigen foto, of op een foto die hij via een andere groep ziet, blijft.
+ * eigen foto (`owned`), of op een foto die hij via een andere groep ziet,
+ * blijft.
+ *
+ * A-invariant 14: binnen de Convex-limieten ook bij een rating op elke foto
+ * van een grote groep. Geen lookup per rating: wat hij nog ziet komt uit de
+ * publicaties van zijn andere groepen (één read per groep), en per foto
+ * waarvan een rating weggaat volgt één read voor het nieuwe aggregaat. Die
+ * foto's bestaan: ze stonden in de groep.
  */
 export async function pruneRatingsOfLeaver(
   ctx: MutationCtx,
   userId: Id<"users">,
   groupPhotoIds: Set<Id<"photos">>,
+  owned: Set<Id<"photos">>,
 ): Promise<void> {
   const ratings = await ctx.db
     .query("ratings")
     .withIndex("by_user", (q) => q.eq("userId", userId))
     .collect();
-  const candidates = ratings.filter((r) => groupPhotoIds.has(r.photoId));
+  const candidates = ratings.filter(
+    (r) => groupPhotoIds.has(r.photoId) && !owned.has(r.photoId),
+  );
   if (candidates.length === 0) return;
 
   const groups = await membershipCache(ctx)(userId);
+  const stillSeen = await photosPublishedIn(ctx, groups);
+  const touched = new Set<Id<"photos">>();
   for (const r of candidates) {
-    const photo = await ctx.db.get(r.photoId);
-    if (photo?.ownerId === userId) continue;
-    const pubs = await ctx.db
-      .query("albumPhotos")
-      .withIndex("by_photo", (q) => q.eq("photoId", r.photoId))
-      .collect();
-    if (pubs.some((p) => groups.has(p.groupId))) continue;
+    if (stillSeen.has(r.photoId)) continue;
     await ctx.db.delete(r._id);
-    if (photo) await recomputeRatingAggregate(ctx, r.photoId);
+    touched.add(r.photoId);
   }
+  for (const photoId of touched) {
+    await recomputeRatingAggregate(ctx, photoId);
+  }
+}
+
+/** De foto's die in een album van een van deze groepen staan, één read per groep. */
+export async function photosPublishedIn(
+  ctx: MutationCtx,
+  groupIds: Iterable<Id<"groups">>,
+): Promise<Set<Id<"photos">>> {
+  const out = new Set<Id<"photos">>();
+  for (const groupId of groupIds) {
+    const aps = await ctx.db
+      .query("albumPhotos")
+      .withIndex("by_group", (q) => q.eq("groupId", groupId))
+      .collect();
+    for (const ap of aps) out.add(ap.photoId);
+  }
+  return out;
 }
 
 type MembershipsOf = (userId: Id<"users">) => Promise<Set<Id<"groups">>>;

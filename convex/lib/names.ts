@@ -4,8 +4,10 @@ import { NAME_MAX_LENGTH } from "./constants";
 // WP15b A-punt 3: tekens die een naam onleesbaar of misleidend maken.
 // Controletekens (C0, DEL, C1), regel- en alineascheiding, tekens die de
 // leesrichting omdraaien, en onzichtbare spaties. U+200C/U+200D (ZWNJ/ZWJ)
-// mogen: die zitten in emoji en in sommige schriften.
+// zitten in emoji en in sommige schriften: zie hasForbiddenChar.
 // WP28 A-invariant 12: dezelfde regel voor groeps- en albumnamen.
+// WP28 A-invariant 17: daarbovenop alles wat onzichtbaar is (zie isInvisible),
+// met ZWJ/ZWNJ en VS15/VS16 alleen in hun context (A-keuze 2).
 const FORBIDDEN_NAME_CHARS =
   /[\u0000-\u001f\u007f-\u009f\u2028\u2029\u200e\u200f\u202a-\u202e\u2066-\u2069\u200b\ufeff]/;
 
@@ -27,6 +29,57 @@ export function validName(
   };
   if (name.length === 0) fail(emptyCode);
   if ([...name].length > NAME_MAX_LENGTH) fail("NAME_TOO_LONG");
-  if (FORBIDDEN_NAME_CHARS.test(name)) fail("NAME_INVALID");
+  if (hasForbiddenChar(name)) fail("NAME_INVALID");
   return name;
+}
+
+const ZWNJ = 0x200c;
+const ZWJ = 0x200d;
+const VS15 = 0xfe0e;
+const VS16 = 0xfe0f;
+const BRAILLE_BLANK = 0x2800;
+
+// Opmaaktekens (Cf) en tekens die een renderer mag negeren
+// (Default_Ignorable_Code_Point): onder meer de zachte afbreekstreep,
+// Hangul-vultekens, variatiekiezers en de tag-tekens.
+const INVISIBLE = /[\p{Cf}\p{Default_Ignorable_Code_Point}]/u;
+const LATIN = /\p{Script=Latin}/u;
+const SPACE = /\p{White_Space}/u;
+// Emoji-tekens, ook 0-9, # en * (keycap).
+const EMOJI = /\p{Emoji}/u;
+
+function isInvisible(c: string): boolean {
+  return (
+    FORBIDDEN_NAME_CHARS.test(c) ||
+    INVISIBLE.test(c) ||
+    c.codePointAt(0) === BRAILLE_BLANK
+  );
+}
+
+// Een zichtbaar teken waar een ZWJ of ZWNJ naast mag: geen ASCII, geen
+// Latijnse letter, geen spatie (emoji, Perzisch, Hindi wel).
+function isJoinable(c: string | undefined): boolean {
+  if (c === undefined) return false;
+  if ((c.codePointAt(0) ?? 0) < 0x80) return false;
+  return !isInvisible(c) && !LATIN.test(c) && !SPACE.test(c);
+}
+
+function hasForbiddenChar(name: string): boolean {
+  const cps = [...name];
+  for (let i = 0; i < cps.length; i++) {
+    const c = cps[i]!;
+    const cp = c.codePointAt(0);
+    const left = cps[i - 1];
+    if (cp === ZWJ || cp === ZWNJ) {
+      const leftOk = left?.codePointAt(0) === VS16 || isJoinable(left);
+      if (!leftOk || !isJoinable(cps[i + 1])) return true;
+      continue;
+    }
+    if (cp === VS15 || cp === VS16) {
+      if (left === undefined || !EMOJI.test(left)) return true;
+      continue;
+    }
+    if (isInvisible(c)) return true;
+  }
+  return false;
 }

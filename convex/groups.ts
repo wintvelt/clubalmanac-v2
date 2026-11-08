@@ -45,16 +45,6 @@ export async function getMembership(
     .unique();
 }
 
-export async function requireMember(
-  ctx: QueryCtx | MutationCtx,
-  groupId: Id<"groups">,
-) {
-  const user = await requireCurrentUser(ctx);
-  const membership = await getMembership(ctx, user._id, groupId);
-  if (!membership) throw new Error("Geen lid van deze groep");
-  return { user, membership };
-}
-
 // WP16 invariant 9: de reads achter het Groep-scherm geven bij geen lid en
 // bij een onbekende groep precies dezelfde ConvexError. De app herkent hem
 // aan de code (een gewone Error heet in productie "Server Error").
@@ -105,7 +95,8 @@ export function groupOrAlbumName(name: string | undefined): string | undefined {
 
 // A-invariant 12: `sortDate` is een eindig getal (epoch-ms; ook vóór 1970).
 export function requireDate(sortDate: number | undefined): void {
-  if (sortDate !== undefined && !Number.isFinite(sortDate)) {
+  // WP28 A-invariant 15: het bereik van een JS-Date, de randen meegerekend.
+  if (sortDate !== undefined && !(Number.isFinite(sortDate) && Math.abs(sortDate) <= 8.64e15)) {
     refuse("DATE_INVALID");
   }
 }
@@ -456,6 +447,7 @@ export async function internalRemoveMember(
     ctx,
     userId,
     new Set(groupAps.map((ap) => ap.photoId)),
+    owned,
   );
 
   // [GAP] zero-member check telt invites niet mee (cascade-matrix.md S1).
@@ -598,7 +590,8 @@ export const transferFounder = mutation({
 export const markAllAlbumsSeen = mutation({
   args: { groupId: v.id("groups") },
   handler: async (ctx, { groupId }) => {
-    const { user } = await requireMember(ctx, groupId);
+    // WP28 A-invariant 16: niet-lid en onbekende groep gelijk, NOT_MEMBER.
+    const { user } = await requireMemberForWrite(ctx, groupId);
     const albums = await ctx.db
       .query("albums")
       .withIndex("by_group", (q) => q.eq("groupId", groupId))

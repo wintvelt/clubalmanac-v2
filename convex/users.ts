@@ -26,6 +26,7 @@ import {
   publicProfileFields,
 } from "./lib/shapes";
 import { avatarFieldsOf } from "./lib/profilePhoto";
+import { photosPublishedIn } from "./lib/unpublish";
 
 // Default upload-limiet voor nieuwe users. Mocht een admin een hogere limiet
 // willen geven, dan kan dat via directe DB patch (geen public mutation in
@@ -320,8 +321,27 @@ export const deleteSelf = mutation({
     for (const r of ratings) await ctx.db.delete(r._id);
     // WP28 A-invariant 7: het gemiddelde en het aantal op die foto's kloppen
     // daarna weer (R1). Een eigen foto gaat hieronder toch weg.
-    for (const photoId of new Set(ratings.map((r) => r.photoId))) {
-      if (await ctx.db.get(photoId)) await recomputeRatingAggregate(ctx, photoId);
+    // A-invariant 14: één read per foto, ook bij een rating op elke foto van
+    // een grote groep. Een foto die in een van zijn groepen gepubliceerd
+    // staat, bestaat; alleen voor een andere foto eerst een get.
+    const photos = await ctx.db
+      .query("photos")
+      .withIndex("by_owner", (q) => q.eq("ownerId", user._id))
+      .collect();
+    const own = new Set(photos.map((p) => p._id));
+    const rated = new Set(ratings.map((r) => r.photoId));
+    const groupIds = (
+      await ctx.db
+        .query("memberships")
+        .withIndex("by_user", (q) => q.eq("userId", user._id))
+        .collect()
+    ).map((m) => m.groupId);
+    const published = rated.size > 0 ? await photosPublishedIn(ctx, groupIds) : new Set();
+    for (const photoId of rated) {
+      if (own.has(photoId)) continue;
+      if (published.has(photoId) || (await ctx.db.get(photoId))) {
+        await recomputeRatingAggregate(ctx, photoId);
+      }
     }
 
     // U7: cascade photos via internalRemovePhoto, dat per photo ook
@@ -333,10 +353,6 @@ export const deleteSelf = mutation({
     // groups/albums vóór een eventuele M2-e group-cascade in U8 loopt;
     // andersom zou M2-e groups/albums hebben gedeleted en dan zou P5
     // proberen patchen op niet-bestaande records.
-    const photos = await ctx.db
-      .query("photos")
-      .withIndex("by_owner", (q) => q.eq("ownerId", user._id))
-      .collect();
     for (const p of photos) await internalRemovePhoto(ctx, p._id);
 
     // WP18 A-invariant 22: alle upload-reserveringen van de user, ook "nog
