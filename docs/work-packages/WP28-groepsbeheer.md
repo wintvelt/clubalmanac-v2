@@ -77,6 +77,17 @@ Uitgangspunt: zoals in v1. A checkt in de oude code of v1 het echt zo deed en me
     - `albumCreatedBy` in de app → WP28b.
     - Het leesbudget bij groep verwijderen met veel ratings → backlog, vóór WP19.
 
+12. **Heraudit en red-team-hercheck fix-cyclus 1 (2026-11-09): fix-cyclus 2.** Heraudit schoon, R1–R5 dicht. Mee:
+    - F1 (moet): wie veel ratings heeft, is niet te verwijderen en kan niet vertrekken. De opruiming bij vertrek doet ongeveer 3 db-aanroepen per rating; bij 1460 ratings 4391, boven de limiet van 4096. `deleteSelf` faalt vanaf ongeveer 2040. Een lid kan zich zo bewust onverwijderbaar maken.
+    - F3: `sortDate` begrensd (een datum als 1e300 wordt nu aangenomen).
+    - F5: onzichtbare tekens die nog ontbreken in de gedeelde naamcheck (onder meer U+200D, U+2800, U+3164, U+00AD, U+061C).
+    - H1: `groups.markAllAlbumsSeen` weigert een niet-lid met `NOT_MEMBER`.
+
+    Niet in deze cyclus:
+    - F2/H4: een uitnodiging van vóór WP28 van een gewoon lid herleeft als hij admin wordt. Geaccepteerd: op prod is iedereen admin.
+    - F4: een gemigreerde naam boven 50 tekens blokkeert opslaan als de app de naam altijd meestuurt → WP28b stuurt de naam alleen mee als hij wijzigde.
+    - H2: `invites.accept` geeft de `groupId` terug → WP19.
+
 ## Open vragen voor Wouter (A geeft advies)
 
 1. **Groep verwijderen:** alleen de oprichter (v1) of elke admin (nu)?
