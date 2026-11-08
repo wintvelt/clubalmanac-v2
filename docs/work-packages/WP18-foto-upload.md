@@ -244,3 +244,43 @@ Uit de audit, op Wouters besluit 5: should-fix 1 en de profielfoto die na een mi
 |---|---|
 | `app/tests/uploadTimeout.test.ts` | Invariant 20 op de echte `useUploader` (`src/data/upload.ts`), met een nagebootste Clerk, manipulator en `fetch` en een nep-klok: een verzoek zonder antwoord en een antwoord dat blijft hangen eindigen met "netwerk" binnen de termijn en niet ervoor; het verzoek wordt gestopt; een snel antwoord blijft gelijk; de herhaling stuurt dezelfde upload-id. |
 | `app/tests/upload.test.ts` | Invariant 20: `UPLOAD_TIMEOUT_MS`. Invariant 21: `profileRetry` per uitkomst, plus een bronscan dat Profiel hem gebruikt. |
+
+---
+
+## Fix-cyclus 2 (A, 2026-11-08)
+
+Uit de red-team, op Wouters besluit 6: M1, Z1 en Z3.
+
+### Kernvondsten
+
+1. **Een gewiste foto laat zijn reservering achter (M1).** `internalRemovePhoto` raakt `uploadIdempotency` niet aan. Elk pad dat een foto wist, loopt daardoor: `photos.remove`, de cron voor gemelde foto's (`cleanupFlaggedPhotos`) en `users.deleteSelf`. Binnen 7 dagen na de upload volgen er twee dingen. De integriteitscheck meldt `photoId dangling` en mailt de webmaster. En een herhaling met die id geeft `200` met het photoId van een foto die niet meer bestaat. `users.deleteSelf` laat bovendien alle reserveringen van de user staan, ook "nog bezig". Hun `ownerId` is verplicht, dus de check meldt ook `ownerId dangling`. Een groep, een album of een lidmaatschap wissen haalt alleen plekken in albums weg, geen foto's, en heeft dit gat dus niet. Het testhulpje `_test.ts` (alleen dev, integratietests) wist een user zonder cascade; dat valt buiten WP18.
+2. **"Nog bezig" verloopt pas bij de cron (Z1).** `reserve` kijkt niet naar de leeftijd van een `in_progress`-reservering. Stopt de server tussen het reserveren en het maken van de foto, dan krijgt elke herhaling 409 tot de cron van 03:30 UTC. Dat kan bijna een dag duren, terwijl de grens van de cron zelf 30 minuten is.
+3. **Een nieuwe ronde kent de vorige niet (Z3).** "Meer foto's" en de modaal opnieuw openen geven dezelfde foto een nieuwe upload-id (A-invariant 18). Kwam de foto na "Geen verbinding" toch binnen, dan maakt de nieuwe ronde een tweede foto, zonder waarschuwing (invariant 1). Een waarschuwing laat de user raden wat de server weet. De ronde bewaren helpt alleen bij "Meer foto's" en niet bij sluiten en opnieuw openen. Keuze: de app onthoudt de upload-id per foto en album, en de server beslist (A-invariant 25).
+4. **Een herhaling zegt niets over het album.** Een hit geeft het bestaande photoId, ook als de foto niet (meer) in het album staat dat de herhaling noemt. Dat gebeurt bijvoorbeeld als iemand hem uit het album haalde. Met A-invariant 25 kan dat ook vanuit de app, dus een 200 met album moet altijd waar zijn (A-invariant 24).
+
+### Aanvullende invarianten
+
+22. **Een gewiste foto neemt zijn reservering mee** (M1). Wist een pad een foto (zelf, de cron voor gemelde foto's, het account), dan verdwijnt in dezelfde transactie elke reservering die naar die foto wijst. Wist de user zijn account, dan gaan al zijn reserveringen mee, ook "nog bezig". Daarna vindt de integriteitscheck geen `uploadIdempotency`-regel, en een herhaling met die id is een gewone nieuwe upload. Er kan al een reservering naar een gewiste foto wijzen, van vóór deze fix. Die telt bij het opzoeken als geen reservering. Nooit een `200` met een photoId dat niet bestaat.
+23. **Een reservering die blijft hangen, verloopt na 30 minuten** (Z1). Is een "nog bezig"-reservering 30 minuten of ouder (de grens van de cron, `STALE_IN_PROGRESS_MS`), dan telt ze bij een herhaling als geen reservering, en de herhaling uploadt. Jonger blijft het 409, want dan loopt het eerste verzoek misschien nog. De herhaling krijgt een nieuwe reservering, niet de oude terug. Komt de oude poging toch nog bij het maken van de foto, dan maakt ze geen tweede foto (invariant 1). Na de herhaling is er één reservering voor die id, en één foto.
+24. **Een 200 met album is waar.** Met `X-Album-Id` betekent een 200 van `/upload` dat de foto bestaat en in dat album staat, ook bij een herhaling. Staat de bestaande foto niet (meer) in dat album, dan zet de herhaling hem erin: de uploader is de toevoeger en de teller van de anderen loopt op (invariant 8). Staat hij er al, dan gebeurt er niets. De toegangstoets van A-invariant 15 gaat eraan vooraf, en de limiet speelt geen rol (geen nieuwe foto, A-invariant 12).
+25. **Dezelfde foto, hetzelfde album: dezelfde upload-id** (Z3). Een foto uit de bibliotheek heeft een `assetId` van de kiezer. Binnen een app-sessie krijgt hij voor hetzelfde album steeds dezelfde upload-id, ook in een nieuwe ronde ("Meer foto's", de modaal opnieuw openen). Was hij al binnen, dan geeft de backend hem terug (A-invariant 12 en 24) en meldt de app "in het album", zonder tweede foto. Was hij gewist, dan is het een nieuwe upload (A-invariant 22). Een ander album of een foto zonder `assetId` (of met een lege) krijgt een nieuwe id, en binnen één ronde heeft elke foto een eigen id. Na een herstart van de app is dat weg (besluit 3). Dit vervangt in A-invariant 18 de zin "Een tweede keuze van dezelfde foto (een nieuwe ronde) krijgt een nieuwe id". AddPhotosScreen maakt elke ronde met de pure functie `albumBatch(picks: readonly { key: string; assetId?: string | null }[], albumId: string): UploadItem[]` in `app/src/lib/upload.ts`, niet meer met `newBatch`. `newBatch` blijft voor de profielfoto.
+
+### Edge cases
+
+- **Opnieuw proberen met dezelfde id en een ander album:** in de app krijgt een ander album een andere id (A-invariant 25), dus dit gebeurt alleen bij een client die de app omzeilt. De backend zet de bestaande foto er dan ook in (A-invariant 24) en haalt hem nergens weg. Dit vervangt de regel "verplaatst niets" in §Edge cases van A.
+- **De foto is na de upload uit het album gehaald, en de user kiest hem opnieuw voor dat album:** dezelfde id, dus de backend geeft de bestaande foto terug en zet hem weer in het album. Zonder A-invariant 25 was het een nieuwe foto in dat album geweest; het resultaat in het album is gelijk.
+- **Een foto zonder `assetId`:** iOS geeft er een met de kiezer die de app gebruikt. Is hij er toch niet, dan blijft het zoals nu (een nieuwe id, kans op een dubbele foto). De gate toetst dat er een is.
+- **Profielfoto:** opnieuw kiezen na "Geen verbinding" kan nog steeds een tweede eigen foto zonder album geven. Fix-cyclus 1 heeft daarvoor "Opnieuw proberen" (A-invariant 21); dat is geaccepteerd.
+- **Herhaling na meer dan 7 dagen:** de cron heeft de reservering dan gewist, en een app die zo lang open blijft, maakt een nieuwe foto. Dat is geaccepteerd.
+
+### Gate (aanvulling)
+
+- Kies een foto voor een album en upload hem. Kies daarna via "Meer foto's" dezelfde foto voor hetzelfde album en upload opnieuw. De tweede keer staat er "1 van 1 foto in het album", en de foto staat één keer in het album (A-invariant 25, en de kiezer geeft een `assetId`).
+
+### Tests
+
+| Bestand | Pint |
+|---|---|
+| `tests/http/uploadReservation.test.ts` | A-invariant 22: na `photos.remove`, de cron voor gemelde foto's en `users.deleteSelf` geen reservering meer naar de foto (of van de user) en geen `uploadIdempotency`-regel in de integriteitscheck; een herhaling daarna is een nieuwe foto; een reservering die al naar een gewiste foto wees, geeft nooit dat photoId. A-invariant 23: na 31 minuten en na 21 uur uploadt de herhaling, na 29 minuten nog 409; een late stap van de oude poging maakt geen tweede foto; de herhaling krijgt een verse reservering, dus een tweede herhaling vlak erna krijgt 409. Echt tegelijk kan convex-test niet (storage buiten de transactie), dus die test loopt in volgorde. |
+| `tests/http/uploadAlbum.test.ts` | A-invariant 24: een herhaling na "uit het album gehaald" zet de foto er weer in (één plek, de uploader als toevoeger); een herhaling met een ander album zet hem ook daar in. |
+| `app/tests/upload.test.ts` | A-invariant 25: `albumBatch` per foto en album, plus een bronscan dat AddPhotosScreen hem gebruikt en `newBatch` niet. |
