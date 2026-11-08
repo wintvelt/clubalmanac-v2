@@ -294,3 +294,53 @@ Aangepast aan de besluiten:
 - `tests/integration/images/exMember.test.ts`: lid worden via een uitnodiging van de eigenaar. Die plant een uitnodigingsmail naar het testadres op dev.
 
 Stand: 74 rood in 10 bestanden, alleen de bestanden hierboven; de rest (1792) groen. `tsc` faalt alleen op `transferFounder`, `sortDate` en `coverPhotoId: null`. Tegen een wegwerp-referentie in de scratchpad (gewist na afloop) is de hele suite groen. Elf mutanten vallen om: geen groepscover wissen, uitnodigingen niet laten verlopen, ratings laten staan, oprichter niet beschermen bij rol wijzigen, de uitnodiger niet checken, de oprichter laten vertrekken, elke admin een album laten wissen, een lid laten uitnodigen, de eigen rol laten wijzigen, de uitnodiger alleen als lid checken, cover weghalen negeren.
+
+## Fix-cyclus 1 (A, 2026-11-08)
+
+Scope: besluit 11. Bewijs uit de red-team-proef (`scripts/.data/wp28-redteam/`, niet overgenomen) en de audit.
+
+### Vondsten
+
+1. **R1: de ratings van wie vertrekt, blijven staan.** De cascade bij vertrek (M1, AP3) kijkt alleen naar de foto's van wie vertrekt. Zijn ratings op de foto's van anderen blijven, en tellen mee in het gemiddelde dat de achterblijvers zien. Ze verdwijnen pas als later een publicatie van die foto wordt weggehaald. v1 deed het ook niet: daar liep AP3 alleen bij een weggehaalde publicatie.
+2. **S1: uitnodigingen van een gewiste groep.** Alleen de open uitnodigingen gaan weg. Geaccepteerde, afgewezen en verlopen houden een `groupId` die nergens meer naar wijst, en de dagelijkse integriteitscheck meldt ze (`MONITORED_FKS`, `invites.groupId`).
+3. **S2: ratings bij groep verwijderen zijn niet gepind.** De gedeelde cascade doet het goed, maar geen test valt om als die stap ontbreekt. Bij het laatste lid dat weggaat (M2-e) loopt dezelfde cascade. Na R1 kan er dan alleen nog een rating van vóór WP28 over zijn (migratie-erfenis).
+4. **R2: een oud token toont de actuele groep.** `invites.getByToken` is anoniem en geeft bij elke status de huidige naam en omschrijving van de groep. Een ex-lid, of wie zijn mail heeft, volgt zo de groep na vertrek.
+5. **R3: een uitnodiging van een ex-admin herleeft.** Een admin nodigt zijn tweede adres uit en wordt verwijderd of gedegradeerd. De uitnodiging blijft open; de check bij accepteren keurt hem pas af zolang hij geen admin is. Wordt hij later weer admin, dan werkt de oude uitnodiging weer, ook via de onboarding.
+6. **Gewone fouten op WP28-paden:** cover niet in de groep of het album, "uitnodiging niet meer geldig", en `albums.addPhoto`, `removePhoto` en `markSeen`. `removePhoto` geeft een niet-lid bij een gewist album een andere fout dan bij een bestaand album (orakel).
+7. **Validatie:** een groeps- of albumnaam mag nu onzichtbare tekens (U+200B), richting-tekens (U+202E) en elke lengte hebben; de red-team zette een naam van 500.000 tekens. `sortDate` neemt NaN en Infinity aan. Op prod is de langste groepsnaam 20 tekens en de langste albumnaam 24; geen naam heeft zulke tekens.
+8. **N5:** de opruiming bij vertrek zoekt uitnodigingen op het adres zoals het in de users-rij staat, zonder `normalizeEmail`. Uitnodigingen zijn genormaliseerd; een gemigreerd adres met een hoofdletter vindt ze niet.
+9. **Nieuw (A): bij accountverwijdering klopt het gemiddelde niet.** `deleteSelf` wist de ratings van de user (U6), maar herrekent het gemiddelde en het aantal op die foto's niet. Valt onder A-invariant 7.
+
+### A-invarianten (fix-cyclus 1)
+
+7. **Wie de toegang tot een foto verliest, verliest zijn rating erop.** Na elke manier waarop iemand uit een groep verdwijnt (verwijderd, vertrokken, groep gewist, account weg), heeft hij geen rating meer op een foto die hij daarna niet mag zien. Een rating op een foto die hij nog ziet (eigen foto, of via een andere groep), blijft. Het gemiddelde en het aantal op de foto kloppen daarna. Dit geldt ook voor ratings van anderen die door zijn vertrek de toegang verliezen (A-invariant 3).
+8. **Na een gewiste groep wijst niets er nog naar.** Na `groups.remove` en na het vertrek van het laatste lid staat er geen uitnodiging meer met die `groupId`, ongeacht de status, en is de integriteitscheck schoon.
+9. **De landing toont een groep alleen bij een open, geldige uitnodiging.** `invites.getByToken` geeft `group` alleen als de uitnodiging open is en niet verlopen. Bij geaccepteerd, afgewezen of verlopen is `group` `null`. Status, rol, adres en uitnodiger blijven. Wie lid is, vindt de groep in Mijn groepen.
+10. **Open uitnodigingen van wie zijn recht verliest, vervallen.** Wordt een admin lid gemaakt, verwijderd, vertrekt hij of verwijdert hij zijn account, dan heeft hij daarna geen open uitnodiging meer voor die groep. Komt hij later terug als admin, dan werkt zijn oude uitnodiging niet: niet via accepteren, niet via de onboarding. Zijn uitnodigingen voor andere groepen blijven.
+11. **Codes op de album-paden.** `addPhoto`, `removePhoto` en `markSeen`: geen lid of onbekend album is `NOT_MEMBER`, voor bestaand en gewist album gelijk.
+12. **Naam en datum.** Een groeps- of albumnaam (maken en wijzigen) wordt getrimd bewaard en geweigerd als hij leeg is (`NAME_REQUIRED`), langer dan 50 tekens (`NAME_TOO_LONG`, net als een user-naam in WP15b) of tekens bevat die WP15b verbiedt (`NAME_INVALID`). Alleen een meegegeven naam wordt gecheckt: een gemigreerde naam blijft staan. `sortDate` is een eindig getal, anders `DATE_INVALID`.
+13. **Uitnodigingen op genormaliseerd adres.** De opruiming bij vertrek vindt de uitnodigingen ook als het adres in de users-rij hoofdletters of spaties heeft.
+
+### A-keuzes (fix-cyclus 1)
+
+1. Nieuwe codes: `COVER_NOT_IN_GROUP`, `COVER_NOT_IN_ALBUM` (cover niet gepubliceerd, ook een onbekend foto-id), `INVITE_INVALID` (groep weg of uitnodiger geen admin), `NOT_PHOTO_OWNER` (`addPhoto`: niet de eigenaar, ook een onbekend foto-id), `ALREADY_IN_ALBUM`, `NOT_IN_ALBUM` (`removePhoto`: niet in dit album, ook een onbekend foto-id), `NAME_TOO_LONG`, `NAME_INVALID`, `DATE_INVALID`. Een lid dat een foto van een ander uit een album haalt zonder admin te zijn: `NOT_ALLOWED`.
+2. Wat "vervallen" is (A-invariant 8 en 10), kiest B: verwijderen of status `expired`. De tests eisen alleen: geen open uitnodiging meer, niet te accepteren, en bij een gewiste groep geen rij met die `groupId`.
+3. R1 hoort bij het vertrek zelf, niet bij een latere opruiming: in dezelfde transactie, zodat het gemiddelde nooit een ex-lid telt.
+4. `INVITE_INVALID` is na R3 en S1 alleen nog te bereiken met een uitnodiging van vóór WP28 (een lid nodigde uit). De test gebruikt zo'n rij.
+
+Niet in deze cyclus: de andere fouten van `invites.accept` en `decline` (niet gevonden, ander adres, niet open, verlopen) blijven gewone fouten (WP19). Een omschrijving heeft ook geen lengtegrens; op prod is de langste 47 tekens (backlog, samen met WP19). De open uitnodigingen zonder groep van een verwijderd account houden een `invitedBy` die nergens naar wijst (account verwijderen, eigen WP).
+
+### RED tests (fix-cyclus 1)
+
+| Bestand | Wat |
+|---|---|
+| `tests/groups/fixRatings.test.ts` | A-invariant 7 (R1) bij verwijderd, vertrokken en account weg; S2 bij groep verwijderen en bij het laatste lid (met een rating van vóór WP28) |
+| `tests/groups/fixGoneGroup.test.ts` | A-invariant 8 (S1): geen uitnodiging met die `groupId`, elke status; integriteitscheck schoon |
+| `tests/invites/fixLanding.test.ts` | A-invariant 9 (R2) |
+| `tests/invites/fixInviterRights.test.ts` | A-invariant 10 (R3) en 13 (N5) |
+| `tests/albums/fixCodes.test.ts` | A-invariant 11 en A-keuze 1: codes en het orakel van `removePhoto` |
+| `tests/groups/fixValidation.test.ts` | A-invariant 12 |
+
+Aangepast: `tests/writeGates/rating.test.ts` (WP24) legde vast dat de rating van een vertrokken lid bleef staan; nu is hij weg, en een nieuwe zetten kan nog steeds niet.
+
+Stand: 62 rood in 7 bestanden (de zes nieuwe en `rating.test.ts`), de rest (1881) groen; app 926 groen; `tsc` schoon. Tegen een wegwerp-referentie op B's code (scratchpad, gewist) is de hele suite groen, en twaalf mutanten vallen om: R1 weg, R1 zonder gemiddelde, S1 alleen open uitnodigingen, de ratingstap bij groep verwijderen weg (S2), R2 weg, R3 bij degraderen weg, R3 bij vertrek weg, N5 weg, het orakel van `removePhoto` terug, de tekencheck op namen weg, Infinity toegestaan, U6 zonder gemiddelde.
