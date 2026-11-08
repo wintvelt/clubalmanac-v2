@@ -18,12 +18,14 @@ jobs:
             package-lock.json
             app/package-lock.json
       - run: npm ci
-      - run: npm run typecheck
-      - run: npm test
       # App (WP13): eigen package + lockfile, geen root-workspace. De
       # typecheck leest convex/ uit de root, dus na de root-`npm ci`.
+      # Vóór de root-tests: tests/photoActions importeert app-code, en
+      # app/tsconfig.json leunt op expo (WP17b).
       - run: npm ci
         working-directory: app
+      - run: npm run typecheck
+      - run: npm test
       - run: npm run typecheck
         working-directory: app
       - run: npm test
