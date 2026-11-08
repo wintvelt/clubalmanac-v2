@@ -205,3 +205,31 @@ De tests staan in een eigen `describe` met "A-keuze n" in de naam.
 | `app/tests/upload.test.ts` | Pure logica in `app/src/lib/upload.ts`: upload-ids (A-invariant 18), het antwoord van `/upload` als uitkomst met reden, opnieuw proberen, limiet stopt de rest, de telling, de maat na omzetten (A-keuze 3) |
 
 `tests/photoFormats/backfill.test.ts` stuurde tekst als foto; die test stuurt nu JPEG-bytes (A-invariant 14), zelfde bedoeling. Geen UI-tests. Kiezer, omzetten, toestemming en schermen toetst de gate.
+
+---
+
+## Fix-cyclus 1 (A, 2026-11-08)
+
+Uit de audit, op Wouters besluit 5: should-fix 1 en de profielfoto die na een mislukking een nieuwe upload maakt.
+
+### Kernvondsten
+
+1. **Een verzoek dat nooit terugkomt, houdt de ronde open.** Het verzoek naar `/upload` heeft geen termijn. Komt er geen antwoord (een verbinding die blijft hangen in plaats van te breken), dan blijft de foto op "bezig", gaat de ronde nooit dicht, en zijn veeggebaar en Sluiten weg. De user zit vast in de modaal. Invariant 2 ("na een ronde weet de user per foto…") haalt hij zo nooit.
+2. **De profielfoto kent geen opnieuw proberen.** Elke keuze krijgt een nieuwe upload-id; na een mislukking kan de user alleen opnieuw kiezen. Ging het antwoord verloren, of mislukte `setProfilePhoto` na een gelukte upload, dan staat er een eigen foto in geen album, die meetelt voor de limiet. Een nieuwe keuze maakt er een tweede.
+
+### Aanvullende invarianten
+
+20. **Een upload eindigt altijd.** Komt het antwoord van `/upload` (versturen én het antwoord lezen) niet binnen een ruime termijn, dan stopt de app het verzoek en is de uitkomst "netwerk". De termijn is `UPLOAD_TIMEOUT_MS` in `app/src/lib/upload.ts`: 120 s, en in elk geval niet korter dan 60 s en niet langer dan 180 s. Een antwoord binnen de termijn verandert niets. Opnieuw proberen gebruikt dezelfde upload-id: liep het verzoek op de server toch door, dan geeft de herhaling die foto, of "nog bezig" zolang hij loopt. Zo komt een ronde altijd tot een eind.
+21. **Profielfoto opnieuw proberen.** Mislukt een profielfoto met een reden waar opnieuw proberen zin heeft, dan biedt Profiel "Opnieuw proberen" voor dezelfde keuze, met dezelfde upload-id: hoogstens één foto. Lukte de upload maar mislukte het opslaan als profielfoto, dan probeert de app alleen het opslaan opnieuw, met de foto die er al is. Bij een vaste reden (limiet, te groot, geen foto) is er geen opnieuw proberen; een andere foto kiezen is een nieuwe keuze, met een nieuwe id. De beslissing staat in een pure functie `profileRetry(item: UploadItem)` in `app/src/lib/upload.ts`: de upload opnieuw (met de id), alleen het opslaan (met het photoId), of niets.
+
+### Edge cases
+
+- **Een trage verbinding en een grote foto:** de termijn kan een upload afbreken die nog liep. De herhaling met dezelfde id geeft de foto als de server hem al had; anders begint hij opnieuw. Bij twee tegelijk delen ze de verbinding. Een omgezette foto is een paar MB, dus dit raakt alleen een heel trage verbinding.
+- **Profiel verlaten na een mislukking:** de melding en "Opnieuw proberen" verdwijnen (zoals de melding nu). De foto zonder album blijft dan bij de eigen foto's; dat is geaccepteerd.
+
+### Tests
+
+| Bestand | Pint |
+|---|---|
+| `app/tests/uploadTimeout.test.ts` | Invariant 20 op de echte `useUploader` (`src/data/upload.ts`), met een nagebootste Clerk, manipulator en `fetch` en een nep-klok: een verzoek zonder antwoord en een antwoord dat blijft hangen eindigen met "netwerk" binnen de termijn en niet ervoor; het verzoek wordt gestopt; een snel antwoord blijft gelijk; de herhaling stuurt dezelfde upload-id. |
+| `app/tests/upload.test.ts` | Invariant 20: `UPLOAD_TIMEOUT_MS`. Invariant 21: `profileRetry` per uitkomst, plus een bronscan dat Profiel hem gebruikt. |
