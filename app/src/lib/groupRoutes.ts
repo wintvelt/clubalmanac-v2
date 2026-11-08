@@ -13,3 +13,8 @@ export function albumPath(groupId: string, albumId: string): string {
 export function photoPath(groupId: string, albumId: string, photoId: string): string {
   return `${albumPath(groupId, albumId)}/foto/${encodeURIComponent(photoId)}`;
 }
+
+// WP17b: het draaischerm van een foto, in dezelfde stack als het detail.
+export function rotatePath(groupId: string, albumId: string, photoId: string): string {
+  return `${albumPath(groupId, albumId)}/draaien/${encodeURIComponent(photoId)}`;
+}

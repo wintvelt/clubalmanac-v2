@@ -3,27 +3,37 @@ import { border, radius, size, space, useTheme } from "../theme";
 import { Icon, type IconName } from "./Icon";
 import { Text } from "./Text";
 
-type Props = { title: string; onPress: () => void; icon?: IconName; disabled?: boolean };
+type Props = {
+  title: string;
+  onPress: () => void;
+  icon?: IconName;
+  disabled?: boolean;
+  // `danger` voor een gevaarlijke actie (Verwijderen), zoals de rij in Profiel.
+  tone?: "primary" | "danger";
+  accessibilityLabel?: string;
+};
 
 // Kleine knop, bv. "Bewerk album". Staat op een eigen regel, nooit naast
 // lange tekst (design.md §3).
-export function SmallButton({ title, onPress, icon, disabled = false }: Props) {
+export function SmallButton({ title, onPress, icon, disabled = false, tone = "primary", accessibilityLabel }: Props) {
   const { colors } = useTheme();
+  const tint = tone === "danger" ? colors.danger : colors.primary;
   return (
     <Pressable
       accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel}
       accessibilityState={{ disabled }}
       disabled={disabled}
       onPress={onPress}
       style={({ pressed }) => [
         styles.button,
-        { borderColor: colors.primary },
+        { borderColor: tint },
         pressed && styles.pressed,
         disabled && styles.disabled,
       ]}
     >
-      {icon && <Icon name={icon} size={18} color={colors.primary} />}
-      <Text variant="smallButton" color="primary">
+      {icon && <Icon name={icon} size={18} color={tint} />}
+      <Text variant="smallButton" color={tone === "danger" ? "danger" : "primary"}>
         {title}
       </Text>
     </Pressable>

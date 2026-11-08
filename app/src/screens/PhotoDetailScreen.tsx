@@ -25,6 +25,15 @@ import { useLiveQuery } from "../data/useLiveQuery";
 import { formatPhotoDate, nextAfterRemoval, sortAlbumPhotos } from "../lib/photos";
 import { size, space, useTheme } from "../theme";
 import { AlbumReadFailed } from "./AlbumParts";
+import {
+  ActionFeedback,
+  ActionsButton,
+  menuActions,
+  useMenuContext,
+  usePhotoMenu,
+  type Feedback,
+  type MenuPhoto,
+} from "./PhotoMenu";
 
 type Entry = FunctionReturnType<typeof api.albums.listPhotos>[number];
 type Shown = Entry & { photo: NonNullable<Entry["photo"]> };
@@ -35,6 +44,10 @@ type Shown = Entry & { photo: NonNullable<Entry["photo"]> };
 // worden geladen. De lijst is dezelfde live query als het album, dus een foto
 // die verdwijnt, verdwijnt hier ook (edge cases); geen toegang meer geeft
 // NOT_MEMBER (invariant 7).
+//
+// WP17b: rechtsboven "Acties" met wat de user op deze foto mag (invariant 1
+// en 10). De melding na een actie staat onder de foto. Na verwijderen of uit
+// het album halen gaat het detail naar de volgende foto (zie hierboven).
 export function PhotoDetailScreen() {
   const { groupId, albumId, photoId } = useLocalSearchParams<{
     groupId: string;
@@ -53,14 +66,26 @@ export function PhotoDetailScreen() {
         </Screen>
       )}
     >
-      <DetailContent albumId={aid} initialPhotoId={String(photoId)} />
+      <DetailContent groupId={gid} albumId={aid} initialPhotoId={String(photoId)} />
     </QueryBoundary>
   );
 }
 
-function DetailContent({ albumId, initialPhotoId }: { albumId: Id<"albums">; initialPhotoId: string }) {
+function DetailContent({
+  groupId,
+  albumId,
+  initialPhotoId,
+}: {
+  groupId: Id<"groups">;
+  albumId: Id<"albums">;
+  initialPhotoId: string;
+}) {
   const { colors } = useTheme();
   const entries = useLiveQuery(api.albums.listPhotos, { albumId });
+  const album = useLiveQuery(api.albums.getWithCover, { albumId });
+  const me = useLiveQuery(api.users.profile, {});
+  const ctx = useMenuContext(groupId, album?.createdBy, me?._id);
+  const [feedback, setFeedback] = useState<Feedback | null>(null);
   const shown = useMemo(() => (entries ? sortAlbumPhotos(entries) : undefined), [entries]);
   const ids = useMemo<string[]>(() => shown?.map((e) => e.albumPhoto.photoId) ?? [], [shown]);
   const [current, setCurrent] = useState(initialPhotoId);
@@ -83,6 +108,13 @@ function DetailContent({ albumId, initialPhotoId }: { albumId: Id<"albums">; ini
 
   const index = Math.max(0, (ids as string[]).indexOf(current));
   const entry = shown?.[index];
+  const menu = usePhotoMenu({ groupId, albumId, ctx, photoIds: ids, onFeedback: setFeedback });
+  const menuPhoto: MenuPhoto | undefined = entry && {
+    photoId: entry.albumPhoto.photoId,
+    ownerId: entry.photo.ownerId,
+    addedBy: entry.albumPhoto.addedBy,
+  };
+  const hasActions = menuActions(ctx, menuPhoto).length > 0;
 
   useEffect(() => {
     if (page && shown && shown.length > 0) list.current?.scrollToIndex({ index, animated: false });
@@ -97,12 +129,20 @@ function DetailContent({ albumId, initialPhotoId }: { albumId: Id<"albums">; ini
     if (!page) return;
     const i = Math.round(e.nativeEvent.contentOffset.x / page.width);
     const id = ids[i];
-    if (id && id !== current) setCurrent(id);
+    if (id && id !== current) {
+      setCurrent(id);
+      setFeedback(null);
+    }
   };
 
   return (
     <SafeAreaView edges={["left", "right", "bottom"]} style={[styles.fill, { backgroundColor: colors.bg }]}>
-      <Stack.Screen options={{ title: entry ? formatPhotoDate(entry.photo) : "Foto" }} />
+      <Stack.Screen
+        options={{
+          title: entry ? formatPhotoDate(entry.photo) : "Foto",
+          headerRight: hasActions && menuPhoto ? () => <ActionsButton onPress={() => menu.open(menuPhoto)} /> : undefined,
+        }}
+      />
       {shown === undefined ? (
         <LoadingState label="Foto laden…" />
       ) : (
@@ -126,6 +166,11 @@ function DetailContent({ albumId, initialPhotoId }: { albumId: Id<"albums">; ini
               />
             )}
           </View>
+          {feedback && (
+            <View style={styles.feedback}>
+              <ActionFeedback feedback={feedback} onClose={() => setFeedback(null)} />
+            </View>
+          )}
           {entry && <PhotoInfo entry={entry} />}
         </>
       )}
@@ -199,6 +244,7 @@ function PhotoInfo({ entry }: { entry: Shown }) {
         name={name}
         size={size.avatar}
         exifOrientation={entry.owner?.profileOrientation}
+        version={entry.owner?.profileVersion}
         hasFormats={entry.owner?.profileHasFormats}
       />
       <View style={styles.infoText}>
@@ -224,4 +270,11 @@ const styles = StyleSheet.create({
     borderTopWidth: StyleSheet.hairlineWidth,
   },
   infoText: { flex: 1, gap: space.xs },
+  feedback: {
+    width: "100%",
+    maxWidth: size.maxTextColumn,
+    alignSelf: "center",
+    paddingHorizontal: size.screenMargin,
+    paddingTop: space.m,
+  },
 });

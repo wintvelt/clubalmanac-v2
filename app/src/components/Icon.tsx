@@ -23,6 +23,11 @@ const IONICONS = {
   refresh: "refresh",
   privacy: "shield-checkmark",
   document: "document-text",
+  more: "ellipsis-horizontal-circle",
+  rotateLeft: "arrow-undo",
+  rotateRight: "arrow-redo",
+  mirror: "swap-horizontal",
+  circle: "ellipse",
 } as const;
 
 export type IconName = keyof typeof IONICONS;

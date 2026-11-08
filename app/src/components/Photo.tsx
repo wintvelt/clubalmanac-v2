@@ -155,6 +155,9 @@ type AvatarProps = {
   // of wisselt de stand, dan bouwt het beeld opnieuw op en haalt het de bytes
   // opnieuw: de URL blijft gelijk, ook na een nieuwe profielfoto.
   hasFormats?: boolean;
+  // WP17b invariant 14: `profileVersion` van hetzelfde object. Een nieuwe
+  // versie is een nieuw beeld: alles bouwt opnieuw op, ook na een fout.
+  version?: string;
 };
 
 // Profielfoto, rond. Geen profielfoto, een gewist beeld of een fout: de
@@ -169,11 +172,13 @@ export function ProfileAvatar({
   variant = "bodyStrong",
   exifOrientation,
   hasFormats,
+  version,
 }: AvatarProps) {
   const letter = <LetterTile name={name} size={size} radius={size / 2} variant={variant} />;
   if (!userId) return letter;
   return (
     <ProfileImage
+      key={version ?? ""}
       userId={userId}
       size={size}
       format={format}

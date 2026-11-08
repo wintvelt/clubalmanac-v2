@@ -1,7 +1,7 @@
 import { useMutation } from "convex/react";
 import type { FunctionReturnType } from "convex/server";
 import { router, Stack, useIsFocused, useLocalSearchParams } from "expo-router";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { FlatList, Pressable, StyleSheet, useWindowDimensions, View } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import type { Id } from "../../../convex/_generated/dataModel";
@@ -9,6 +9,7 @@ import { BackPill } from "../components/BackPill";
 import { Gradient } from "../components/Gradient";
 import { Icon } from "../components/Icon";
 import { LetterTile } from "../components/LetterTile";
+import { SmallButton } from "../components/SmallButton";
 import { CoverScrim, PhotoImage } from "../components/Photo";
 import { QueryBoundary } from "../components/QueryBoundary";
 import { Screen } from "../components/Screen";
@@ -23,6 +24,16 @@ import { displayYear } from "../lib/groups";
 import { formatPhotoDate, keepNewMarkers, shouldMarkSeen, sortAlbumPhotos } from "../lib/photos";
 import { photoLayers, radius, size, space, useTheme } from "../theme";
 import { AlbumReadFailed } from "./AlbumParts";
+import {
+  ActionFeedback,
+  BottomPanel,
+  menuActions,
+  useMenuContext,
+  usePhotoMenu,
+  useSelectionActions,
+  type Feedback,
+  type MenuPhoto,
+} from "./PhotoMenu";
 
 type Entry = FunctionReturnType<typeof api.albums.listPhotos>[number];
 type Album = FunctionReturnType<typeof api.albums.getWithCover>;
@@ -32,6 +43,10 @@ type Album = FunctionReturnType<typeof api.albums.getWithCover>;
 // eerst, met de markeringen "nieuw" en "jouw foto". Het raster laadt alleen de
 // tegels in beeld (FlatList). Geen lid (meer), of het album bestaat niet: de
 // NOT_MEMBER-fout, opgevangen door de grens hieronder (invariant 7).
+//
+// WP17b: lang drukken op een foto opent het foto-menu; "Selecteer" zet vinkjes
+// en een balk onderaan met "Uit album" en "Verwijderen", per foto (invariant 7).
+// De melding na een actie staat onderaan en blijft tot de volgende actie.
 export function AlbumScreen() {
   const { groupId, albumId } = useLocalSearchParams<{ groupId: string; albumId: string }>();
   const gid = String(groupId) as Id<"groups">;
@@ -74,6 +89,34 @@ function AlbumContent({ groupId, albumId }: { groupId: Id<"groups">; albumId: Id
   const newIds = useNewMarkers(entries);
   useMarkSeen(albumId, shown);
 
+  const ctx = useMenuContext(groupId, album?.createdBy, me?._id);
+  const [feedback, setFeedback] = useState<Feedback | null>(null);
+  const [selecting, setSelecting] = useState(false);
+  const [picked, setPicked] = useState<ReadonlySet<string>>(new Set());
+  const photoIds = useMemo(() => shown?.map((e) => e.albumPhoto.photoId as string) ?? [], [shown]);
+  const menu = usePhotoMenu({ groupId, albumId, ctx, photoIds, onFeedback: setFeedback });
+  // Een foto die verdwijnt, valt uit de selectie.
+  const selected = useMemo(() => (shown ?? []).filter((e) => picked.has(e.albumPhoto.photoId)).map(menuPhotoOf), [shown, picked]);
+  const stopSelecting = useCallback(() => {
+    setSelecting(false);
+    setPicked(new Set());
+  }, []);
+  const [selectionBusy, setSelectionBusy] = useState(false);
+  const runSelection = useSelectionActions({
+    albumId,
+    ctx,
+    onFeedback: setFeedback,
+    onDone: stopSelecting,
+    onBusyChange: setSelectionBusy,
+  });
+  const listState = useMemo(() => ({ selecting, picked, ctx }), [selecting, picked, ctx]);
+  const toggle = (photoId: string) =>
+    setPicked((before) => {
+      const next = new Set(before);
+      if (!next.delete(photoId)) next.add(photoId);
+      return next;
+    });
+
   const columns = columnsFor(width);
   const tile = Math.floor((width - GAP * (columns - 1)) / columns);
   const loading = shown === undefined || me === undefined;
@@ -90,7 +133,26 @@ function AlbumContent({ groupId, albumId }: { groupId: Id<"groups">; albumId: Id
         columnWrapperStyle={columns > 1 ? { gap: GAP } : undefined}
         contentContainerStyle={styles.list}
         ItemSeparatorComponent={Separator}
-        ListHeaderComponent={<AlbumHeader groupId={groupId} album={album} count={shown?.length} />}
+        extraData={listState}
+        ListHeaderComponent={
+          <AlbumHeader
+            groupId={groupId}
+            album={album}
+            count={shown?.length}
+            action={
+              ctx && shown && shown.length > 0 && !selecting ? (
+                <SmallButton
+                  title="Selecteer"
+                  icon="check"
+                  onPress={() => {
+                    setFeedback(null);
+                    setSelecting(true);
+                  }}
+                />
+              ) : null
+            }
+          />
+        }
         ListEmptyComponent={
           <View style={styles.column}>
             {loading ? (
@@ -100,20 +162,79 @@ function AlbumContent({ groupId, albumId }: { groupId: Id<"groups">; albumId: Id
             )}
           </View>
         }
-        renderItem={({ item }) => (
-          <Tile
-            entry={item}
-            size={tile}
-            isNew={newIds.has(item.albumPhoto.photoId)}
-            isMine={me !== null && me !== undefined && item.photo.ownerId === me._id}
-            onPress={() => router.push(photoPath(groupId, albumId, item.albumPhoto.photoId))}
-          />
-        )}
+        renderItem={({ item }) => {
+          const photo = menuPhotoOf(item);
+          const hasMenu = !selecting && menuActions(ctx, photo).length > 0;
+          return (
+            <Tile
+              entry={item}
+              size={tile}
+              isNew={newIds.has(item.albumPhoto.photoId)}
+              isMine={me !== null && me !== undefined && item.photo.ownerId === me._id}
+              selected={selecting ? picked.has(item.albumPhoto.photoId) : undefined}
+              onPress={() =>
+                selecting ? toggle(item.albumPhoto.photoId) : router.push(photoPath(groupId, albumId, item.albumPhoto.photoId))
+              }
+              onMenu={hasMenu ? () => menu.open(photo) : undefined}
+            />
+          );
+        }}
         initialNumToRender={columns * 6}
         windowSize={5}
         removeClippedSubviews
       />
+      {selecting ? (
+        <SelectionBar
+          count={selected.length}
+          busy={selectionBusy}
+          onRemoveFromAlbum={() => runSelection("removeFromAlbum", selected)}
+          onDelete={() => runSelection("delete", selected)}
+          onCancel={stopSelecting}
+        />
+      ) : (
+        feedback && (
+          <BottomPanel>
+            <ActionFeedback feedback={feedback} onClose={() => setFeedback(null)} />
+          </BottomPanel>
+        )
+      )}
     </SafeAreaView>
+  );
+}
+
+function menuPhotoOf(entry: Entry & { photo: NonNullable<Entry["photo"]> }): MenuPhoto {
+  return { photoId: entry.albumPhoto.photoId, ownerId: entry.photo.ownerId, addedBy: entry.albumPhoto.addedBy };
+}
+
+// design.md §9: de teller en de acties in een balk onderaan, met tekst. Elke
+// actie geldt per foto; wat niet mag, meldt de app daarna (A-keuze 2).
+function SelectionBar({
+  count,
+  busy,
+  onRemoveFromAlbum,
+  onDelete,
+  onCancel,
+}: {
+  count: number;
+  busy: boolean;
+  onRemoveFromAlbum: () => void;
+  onDelete: () => void;
+  onCancel: () => void;
+}) {
+  const none = count === 0;
+  // Fix-cyclus 1, invariant 15: tijdens een ronde zegt de balk dat hij bezig is.
+  const status = busy ? "Bezig…" : none ? "Tik op foto's om ze te kiezen" : `${count} geselecteerd`;
+  return (
+    <BottomPanel>
+      <Text variant="bodyStrong" accessibilityLiveRegion="polite">
+        {status}
+      </Text>
+      <View style={styles.barRow}>
+        <SmallButton title="Uit album" onPress={onRemoveFromAlbum} disabled={none || busy} />
+        <SmallButton title="Verwijderen" icon="trash" tone="danger" onPress={onDelete} disabled={none || busy} />
+        <SmallButton title="Annuleren" onPress={onCancel} disabled={busy} />
+      </View>
+    </BottomPanel>
   );
 }
 
@@ -157,13 +278,19 @@ function Tile({
   size: tile,
   isNew,
   isMine,
+  selected,
   onPress,
+  onMenu,
 }: {
   entry: Entry & { photo: NonNullable<Entry["photo"]> };
   size: number;
   isNew: boolean;
   isMine: boolean;
+  // Alleen tijdens selecteren: wel of niet gekozen.
+  selected?: boolean;
   onPress: () => void;
+  // Het foto-menu (lang drukken; voor VoiceOver een actie "Acties").
+  onMenu?: () => void;
 }) {
   const label = [`Foto van ${formatPhotoDate(entry.photo)}`, isNew && "nieuw", isMine && "jouw foto"]
     .filter(Boolean)
@@ -172,7 +299,14 @@ function Tile({
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={label}
+      accessibilityState={selected === undefined ? undefined : { selected }}
+      accessibilityHint={onMenu ? "Lang drukken voor acties" : undefined}
+      accessibilityActions={onMenu ? [{ name: "menu", label: "Acties" }] : undefined}
+      onAccessibilityAction={(e) => {
+        if (e.nativeEvent.actionName === "menu") onMenu?.();
+      }}
       onPress={onPress}
+      onLongPress={onMenu}
       style={({ pressed }) => [{ width: tile, height: tile }, pressed && styles.pressed]}
     >
       <PhotoImage
@@ -184,6 +318,7 @@ function Tile({
       />
       {isNew && <NewLabel />}
       {isMine && <MineBadge />}
+      {selected !== undefined && <SelectMark selected={selected} />}
     </Pressable>
   );
 }
@@ -205,6 +340,24 @@ function NewLabel() {
   );
 }
 
+// Een vinkje op de foto (design.md §9); niet gekozen: een lege cirkel.
+function SelectMark({ selected }: { selected: boolean }) {
+  const { colors } = useTheme();
+  return (
+    <View
+      style={[StyleSheet.absoluteFill, selected && styles.selectedLayer, { borderColor: colors.primary }]}
+      pointerEvents="none"
+      accessible={false}
+      importantForAccessibility="no-hide-descendants"
+    >
+      <View style={styles.selectMark}>
+        <View style={[StyleSheet.absoluteFill, styles.mineLayer]} />
+        <Icon name={selected ? "check" : "circle"} size={24} color={photoLayers.text} filled={selected} />
+      </View>
+    </View>
+  );
+}
+
 function MineBadge() {
   return (
     <View style={styles.mine} pointerEvents="none" accessible={false} importantForAccessibility="no-hide-descendants">
@@ -220,10 +373,13 @@ function AlbumHeader({
   groupId,
   album,
   count,
+  action,
 }: {
   groupId: Id<"groups">;
   album: Album | undefined;
   count: number | undefined;
+  // WP17b: "Selecteer", op een eigen regel (design.md §3).
+  action?: ReactNode;
 }) {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
@@ -284,6 +440,7 @@ function AlbumHeader({
               .filter(Boolean)
               .join(" · ")}
           </Text>
+          {action ? <View style={styles.headerAction}>{action}</View> : null}
         </View>
       )}
     </View>
@@ -328,6 +485,20 @@ const styles = StyleSheet.create({
     width: 26,
     height: 26,
     borderRadius: 13,
+    overflow: "hidden",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  headerAction: { paddingTop: space.s },
+  barRow: { flexDirection: "row", flexWrap: "wrap", gap: space.s },
+  selectedLayer: { borderWidth: 3 },
+  selectMark: {
+    position: "absolute",
+    top: space.xs,
+    right: space.xs,
+    width: 30,
+    height: 30,
+    borderRadius: 15,
     overflow: "hidden",
     alignItems: "center",
     justifyContent: "center",

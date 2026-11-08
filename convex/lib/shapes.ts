@@ -64,7 +64,12 @@ export const publicProfileFields = {
  * Geen kolommen van `users`, dus niet in de `pick`-velden; de query zet ze
  * erbij (`avatarFieldsOf`).
  */
-const avatarFields = { profileOrientation: v.optional(v.number()), profileHasFormats: v.boolean() };
+const avatarFields = {
+  profileOrientation: v.optional(v.number()),
+  profileHasFormats: v.boolean(),
+  // WP17b invariant 13: ondoorzichtig, wisselt met het beeld.
+  profileVersion: v.string(),
+};
 
 export const publicProfile = v.object({ ...publicProfileFields, ...avatarFields });
 

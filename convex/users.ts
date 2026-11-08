@@ -262,6 +262,22 @@ export const updateProfile = mutation({
   },
 });
 
+// WP17b invariant 12: de app kent geen storageId (WP17a invariant 10), dus
+// "als profielfoto instellen" gaat op foto-id. Alleen een eigen foto (WP17a
+// invariant 16): een profielfoto is openbaar, foto-toegang is niet genoeg.
+// Eén weigering voor de foto van een ander, een onbekend en een gewist id.
+const NOT_OWN_PHOTO = "Alleen een eigen foto kan je profielfoto worden";
+
+export const setProfilePhoto = mutation({
+  args: { photoId: v.id("photos") },
+  handler: async (ctx, { photoId }) => {
+    const user = await requireCurrentUser(ctx);
+    const photo = await ctx.db.get(photoId);
+    if (!photo || photo.ownerId !== user._id) throw new Error(NOT_OWN_PHOTO);
+    await ctx.db.patch(user._id, { profilePhotoStorageId: photo.storageId });
+  },
+});
+
 async function visitRow(ctx: QueryCtx, userId: Id<"users">) {
   return await ctx.db
     .query("userVisits")

@@ -83,6 +83,7 @@ export function ProfileScreen() {
           size={size.profileAvatar}
           variant="largeTitle"
           exifOrientation={me.profileOrientation}
+          version={me.profileVersion}
           hasFormats={me.profileHasFormats}
         />
         <Text variant="title" accessibilityRole="header" style={styles.headText}>
