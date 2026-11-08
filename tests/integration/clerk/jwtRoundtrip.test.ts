@@ -24,8 +24,8 @@ import {
 //     test-only `whoami` httpAction op de Convex dev-deployment.
 //   - `whoami` reflecteert subset van `ctx.auth.getUserIdentity()` plus
 //     een `webmaster: boolean` (via try/catch op `requireWebmaster`).
-//   - Env-var-gate `INTEGRATION_TEST_ENABLED === "true"` op dev-deploy,
-//     consistent met WP2 patroon. Zie convex/_test.ts en
+//   - WP26-gate: vlag `INTEGRATION_TEST_ENABLED` en het testgeheim in de
+//     header `X-Test-Secret`, vóór de JWT-check. Zie convex/_test.ts en
 //     docs/conventions/integration-tests.md.
 //
 // Niet in CI. Lokaal: `npm run test:integration`.
@@ -34,7 +34,8 @@ import {
 //   1. Twee test-users handmatig in Clerk dev dashboard:
 //      - CLERK_TEST_USER_REGULAR_EMAIL    (zonder webmaster-rol)
 //      - CLERK_TEST_USER_WEBMASTER_EMAIL  (op WEBMASTER_EMAILS lijst)
-//   2. Op Convex dev-deployment: `INTEGRATION_TEST_ENABLED=true` én
+//   2. Op Convex dev-deployment: `INTEGRATION_TEST_ENABLED=true`,
+//      `INTEGRATION_TEST_SECRET` (zelfde waarde als in .env.integration) én
 //      `WEBMASTER_EMAILS` bevat de webmaster-test-user.
 // ---------------------------------------------------------------------------
 

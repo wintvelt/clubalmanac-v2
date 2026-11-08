@@ -38,11 +38,16 @@ const FN_DELETE = makeFunctionReference<
 const WRONG_SECRET = "wp26-integratie-fout-geheim-0000000000000000";
 const VALIDATION_ERROR = /ArgumentValidationError|Validator error|extra field|missing the required field/i;
 
+// Convex zet per aanroep een eigen `[Request ID: …]` in de foutmelding. Dat
+// id zegt niets over de oorzaak; de rest van de melding moet gelijk zijn.
+const REQUEST_ID = /\[Request ID: [^\]]*\]/g;
+
 async function refusal(p: Promise<unknown>): Promise<string> {
   try {
     await p;
   } catch (err) {
-    return err instanceof Error ? err.message : String(err);
+    const message = err instanceof Error ? err.message : String(err);
+    return message.replace(REQUEST_ID, "[Request ID: …]");
   }
   throw new Error("verwacht: geweigerd; kreeg: een antwoord");
 }

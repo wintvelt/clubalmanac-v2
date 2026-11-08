@@ -19,8 +19,9 @@ import { assertNotProd } from "../_helpers/safety";
 //       - `storageUpload` (action)       : bytes (+ optionele contentType) → storageId
 //       - `storageDownloadUrl` (query)   : storageId → signed URL | null
 //       - `storageDelete` (mutation)     : cleanup hygiene voor tests
-//   - Elke functie env-var-gated op `INTEGRATION_TEST_ENABLED === "true"`.
-//     Wouter zet de var alleen op de dev-deployment via Convex dashboard.
+//   - Elke functie achter de WP26-gate: vlag `INTEGRATION_TEST_ENABLED` en
+//     het testgeheim `INTEGRATION_TEST_SECRET`, beide alleen op dev. De
+//     client stuurt het geheim mee (`_helpers/testSecret.ts`).
 //   - Geen Clerk-auth: storage-roundtrip is auth-vrij ontkoppeld van
 //     de productie-`/upload` httpAction (die wacht op WP3 Clerk).
 //

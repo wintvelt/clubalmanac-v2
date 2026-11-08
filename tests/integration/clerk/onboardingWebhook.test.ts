@@ -30,7 +30,7 @@ import {
 // pad om (a) een fixture te seeden, (b) DB-state by-subject terug te lezen,
 // of (c) op te ruimen voor een fresh subject zonder Clerk-JWT. Daarom
 // verwijst deze test naar NIEUWE test-only helpers in `convex/_test.ts`
-// (alle `INTEGRATION_TEST_ENABLED`-gated, WP2-precedent). A bepaalt naam +
+// (alle achter de WP26-gate: vlag en testgeheim). A bepaalt naam +
 // return-shape (zie de makeFunctionReference-blokken hieronder); B
 // implementeert tot groen, zonder spec/test-edits.
 //

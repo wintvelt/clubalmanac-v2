@@ -90,7 +90,7 @@ const convexModules = import.meta.glob<Record<string, unknown>>(
   { eager: true },
 );
 
-// convex/_test.ts: gegated op INTEGRATION_TEST_ENABLED, buiten scope (WP23).
+// convex/_test.ts: achter vlag en testgeheim (WP26), buiten scope (WP23).
 const OUT_OF_SCOPE_MODULES = new Set(["_test"]);
 
 const EXPECTED_PUBLIC_STORAGE_PATHS = ["users:updateProfile"];

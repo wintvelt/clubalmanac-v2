@@ -47,7 +47,7 @@ import { getConvexSiteBase, requireEnv } from "../_helpers/convexSite";
 //        graceful-no-op door extractMetadata, kan deze gate niet
 //        beproeven). Foto < 20 MiB (Convex platform-limit).
 //      - UPLOAD_GATE_PHOTO_MIMETYPE = `image/jpeg` (default als ongezet).
-//   2. Op Convex dev-deployment: `INTEGRATION_TEST_ENABLED=true`.
+//   2. Geen `_test`-functies nodig, dus geen vlag of testgeheim (WP26).
 //   3. Regular test-user heeft Convex users-row (via WP4 setup of WP6
 //      registerFromSession-flow).
 // ---------------------------------------------------------------------------

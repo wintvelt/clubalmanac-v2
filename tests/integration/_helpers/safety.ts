@@ -2,8 +2,8 @@
 //
 // Integration-tests roepen echte Convex deployments aan en kunnen
 // (test-only) data schrijven. Per ongeluk runnen tegen prod = data-pollutie.
-// Het test-only function-bestand op de Convex deployment heeft een
-// env-var-gate (`INTEGRATION_TEST_ENABLED`) als tweede laag, maar deze
+// De test-only functies op de Convex deployment hebben een gate (vlag
+// `INTEGRATION_TEST_ENABLED` plus testgeheim, WP26) als tweede laag, maar deze
 // helper is de eerste laag: weiger zelfs een verbinding richting prod.
 //
 // Hergebruikbaar voor WP2-4 (Convex), WP3 (Clerk), WP4 (Mailjet) — overal

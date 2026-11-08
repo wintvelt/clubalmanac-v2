@@ -13,8 +13,8 @@ import { assertNotProd } from "../_helpers/safety";
 // en print wat de docs niet zeggen: of de URL per aanroep dezelfde is, en
 // welke cache-headers de response draagt (relevant voor vraag 3).
 //
-// Hergebruikt de WP2-functies in convex/_test.ts (gegated op
-// INTEGRATION_TEST_ENABLED, alleen op dev). Niet in CI.
+// Hergebruikt de WP2-functies in convex/_test.ts (achter de WP26-gate:
+// vlag en testgeheim, alleen op dev). Niet in CI.
 //   npm run test:integration -- tests/integration/convex/storageUrl.test.ts
 // ---------------------------------------------------------------------------
 
