@@ -23,6 +23,13 @@ Een lid zet foto's van zijn iPhone in een album van zijn groep. Ze staan rechtop
    - De nits: lengte van `X-Filename` en `X-Upload-Id`, vreemde jaartallen in `X-Taken-At`, de foutmelding bij de profielfoto na terugkeer, en een limiet in foto's in plaats van bytes.
 
    Z4 (een trage upload die "niet meer ingelogd" geeft) wordt een gate-stap met een traag netwerk.
+7. **Hercheck red-team op fix-cyclus 2 (2026-11-08):** fix-cyclus 3 lost het nieuwe moet op. Wissen leest nu alle reserveringen van de eigenaar, per foto. Daardoor kan `users.deleteSelf` na een week met veel uploads over de leesgrens van Convex gaan (32.000 gescande documenten per transactie): ongeveer 45.000 reads bij 400 foto's en 100 uploads.
+
+   Geaccepteerd:
+   - Een in iOS bewerkte foto houdt zijn `assetId`. Wie hem in dezelfde app-sessie opnieuw naar hetzelfde album uploadt, krijgt de oude foto terug.
+   - Het losse beeld van een gecrashte poging blijft staan. De integriteitscheck meldt het.
+
+   Buiten WP18: dat `deleteSelf` ook los hiervan zwaar wordt bij veel foto's (de scans per foto over groepen, albums en users, P5), hoort bij het WP voor account wissen.
 
 ## Invarianten
 
