@@ -45,7 +45,7 @@ describe("WP17a gate-stap 6 — ex-lid en een oude link", () => {
   });
 
   afterAll(async () => {
-    // Best effort: foto en groep weg (de eigenaar is admin van zijn groep).
+    // Best effort: foto en groep weg (de eigenaar is oprichter van zijn groep).
     try {
       if (photoId) await owner.client.mutation(api.photos.remove, { photoId });
     } catch {
@@ -69,7 +69,15 @@ describe("WP17a gate-stap 6 — ex-lid en een oude link", () => {
       groupId = await owner.client.mutation(api.groups.create, {
         name: `WP17a gate 6 ${new Date().toISOString()}`,
       });
-      await owner.client.mutation(api.groups.addMember, { groupId, userId: me!._id });
+      // WP28 A-keuze 1: geen addMember meer. Lid worden gaat via een
+      // uitnodiging van een admin (de eigenaar maakte de groep, dus is admin
+      // en oprichter). Let op: invites.create plant een uitnodigingsmail naar
+      // het testadres op dev.
+      const { token } = await owner.client.mutation(api.invites.create, {
+        email: requireEnv("CLERK_TEST_USER_REGULAR_EMAIL"),
+        groupId,
+      });
+      await member.client.mutation(api.invites.accept, { token });
       const albumId = await owner.client.mutation(api.albums.create, { groupId, name: "Gate 6" });
 
       const up = await fetch(`${site}/upload`, {

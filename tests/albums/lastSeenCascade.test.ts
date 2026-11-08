@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { api , internal } from "../../convex/_generated/api";
 import schema from "../../convex/schema";
 import { modules } from "../_helpers/modules";
+import { seedMember } from "../_helpers/membership";
 
 // Cascade matrix row A2: albums.remove cascadet albumLastSeen records
 // voor dat album. Test leeft bij de trigger (album delete).
@@ -43,7 +44,7 @@ describe("A2: albums.remove cascade albumLastSeen", () => {
       api.groups.create,
       { name: "G" },
     );
-    await withUser(t, "user_alice").mutation(api.groups.addMember, {
+    await seedMember(t, {
       groupId,
       userId: bobId,
     });

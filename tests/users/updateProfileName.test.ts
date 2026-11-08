@@ -7,6 +7,7 @@ import schema from "../../convex/schema";
 import { NAME_MAX_LENGTH } from "../../convex/lib/constants";
 import { registerUser, withUser } from "../_helpers/auth";
 import { modules } from "../_helpers/modules";
+import { seedMember } from "../_helpers/membership";
 
 // WP15b invarianten 1, 9 en 10, A-punt 3: de backend bewaakt de naam. Een
 // ongeldige naam geeft een ConvexError met een code (een gewone Error komt in
@@ -224,7 +225,7 @@ describe("updateProfile — andere leden zien de nieuwe naam (invariant 2)", () 
     await registerUser(t, "user_admin", "admin@x.com", "Admin");
     const aliceId = await registerUser(t, "user_alice", "alice@x.com", "Alice");
     const groupId = await withUser(t, "user_admin").mutation(api.groups.create, { name: "G" });
-    await withUser(t, "user_admin").mutation(api.groups.addMember, { groupId, userId: aliceId });
+    await seedMember(t, { groupId, userId: aliceId });
 
     await withUser(t, "user_alice").mutation(api.users.updateProfile, { name: "  Alice 2 " });
     const seen = await withUser(t, "user_admin").query(api.users.getById, { userId: aliceId });

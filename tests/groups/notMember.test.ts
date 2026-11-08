@@ -6,6 +6,7 @@ import type { Id } from "../../convex/_generated/dataModel";
 import schema from "../../convex/schema";
 import { registerUser, withUser } from "../_helpers/auth";
 import { modules } from "../_helpers/modules";
+import { seedMember } from "../_helpers/membership";
 
 // WP16 invarianten 5 en 9 (A-beslissing 6). De reads achter het Groep-scherm
 // geven bij "geen lid" en bij "groep bestaat niet" precies dezelfde
@@ -53,7 +54,7 @@ async function setup(t: T) {
   const bobId = await registerUser(t, "user_bob", "bob@x.com", "Bob");
   await registerUser(t, "user_eve", "eve@x.com", "Eve");
   const groupId = await withUser(t, "user_admin").mutation(api.groups.create, { name: "G" });
-  await withUser(t, "user_admin").mutation(api.groups.addMember, { groupId, userId: bobId });
+  await seedMember(t, { groupId, userId: bobId });
   await withUser(t, "user_admin").mutation(api.albums.create, { groupId, name: "A" });
   return { adminId, bobId, groupId };
 }

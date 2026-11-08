@@ -6,6 +6,7 @@ import schema from "../../convex/schema";
 import http from "../../convex/http";
 import { registerUser, withUser } from "../_helpers/auth";
 import { modules } from "../_helpers/modules";
+import { seedMember } from "../_helpers/membership";
 
 // WP17a besluit 1 (vorm B), besluit 2 (formaat-contract) en besluit 8
 // (profielfoto openbaar). De toegangsregel zelf staat in
@@ -41,7 +42,7 @@ async function setup(t: T) {
   const mia = await registerUser(t, "user_mia", "mia@x.com", "Mia");
   await registerUser(t, "user_xena", "xena@x.com", "Xena");
   const G = await withUser(t, "user_owen").mutation(api.groups.create, { name: "G" });
-  await withUser(t, "user_owen").mutation(api.groups.addMember, { groupId: G, userId: mia });
+  await seedMember(t, { groupId: G, userId: mia });
   const A = await withUser(t, "user_owen").mutation(api.albums.create, { groupId: G, name: "A" });
   const { photoId, profile } = await t.run(async (ctx) => {
     const storageId = await ctx.storage.store(new Blob([PHOTO_BYTES], { type: "image/jpeg" }));

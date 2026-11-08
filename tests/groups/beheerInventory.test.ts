@@ -10,8 +10,8 @@ import { describe, expect, it } from "vitest";
 // publieke mutations en actions waarvan de args een id van zo'n tabel hebben.
 // convex/_test.ts valt erbuiten: achter vlag en testgeheim (WP26).
 //
-// `groups:addMember` staat er nog in. A-keuze 1 haalt hem uit de publieke API;
-// na Wouters bevestiging past A deze lijst en de opzet in de tests aan.
+// `groups:addMember` staat er niet meer in (A-keuze 1, bevestigd): een account
+// in een groep zetten zonder uitnodiging of instemming is geen publiek pad.
 
 type Registered = {
   isMutation?: boolean;
@@ -36,7 +36,6 @@ const EXPECTED = [
   "albums:remove",
   "albums:removePhoto",
   "albums:update",
-  "groups:addMember",
   "groups:markAllAlbumsSeen",
   "groups:remove",
   "groups:removeMember",
@@ -70,7 +69,7 @@ describe("WP28 inventaris: publieke paden met een groep-, album-, lid- of uitnod
     expect(Object.keys(convexModules).length).toBeGreaterThan(5);
   });
 
-  it("de set is precies de lijst uit de spec (§Vraag 3), met oprichter overdragen erbij", () => {
+  it("de set is precies de lijst uit de spec (§Vraag 3), met oprichter overdragen erbij en addMember eruit", () => {
     expect(publicPathsTakingProtectedIds()).toEqual(EXPECTED);
   });
 });

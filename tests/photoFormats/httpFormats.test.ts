@@ -5,6 +5,7 @@ import schema from "../../convex/schema";
 import { registerUser, withUser } from "../_helpers/auth";
 import { modules } from "../_helpers/modules";
 import { seedPhoto } from "./_helpers";
+import { seedMember } from "../_helpers/membership";
 
 // WP25 — het beeldpad geeft het formaat (invariant 1, 3, 4, 5; A-invariant 13).
 // Het contract van WP17a (besluit 2) blijft: zonder `formaat` het origineel,
@@ -24,7 +25,7 @@ async function setup(t: T) {
   const mia = await registerUser(t, "user_mia", "mia@x.com", "Mia");
   await registerUser(t, "user_xena", "xena@x.com", "Xena");
   const G = await withUser(t, "user_owen").mutation(api.groups.create, { name: "G" });
-  await withUser(t, "user_owen").mutation(api.groups.addMember, { groupId: G, userId: mia });
+  await seedMember(t, { groupId: G, userId: mia });
   const A = await withUser(t, "user_owen").mutation(api.albums.create, { groupId: G, name: "A" });
   const withF = await seedPhoto(t, owen, { original: "ORIGINEEL-F", withFormats: true });
   const without = await seedPhoto(t, owen, { original: "ORIGINEEL-Z" });

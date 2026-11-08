@@ -4,6 +4,7 @@ import { api , internal } from "../../convex/_generated/api";
 import schema from "../../convex/schema";
 import type { Id } from "../../convex/_generated/dataModel";
 import { modules } from "../_helpers/modules";
+import { seedMember } from "../_helpers/membership";
 
 // Fase 2 — Albums domein: CRUD + album-photo relaties.
 
@@ -45,11 +46,11 @@ async function setupGroupWithMembers(t: ReturnType<typeof convexTest>) {
   const groupId = await withUser(t, "user_admin").mutation(api.groups.create, {
     name: "Groep",
   });
-  await withUser(t, "user_admin").mutation(api.groups.addMember, {
+  await seedMember(t, {
     groupId,
     userId: bobId,
   });
-  await withUser(t, "user_admin").mutation(api.groups.addMember, {
+  await seedMember(t, {
     groupId,
     userId: carolId,
   });

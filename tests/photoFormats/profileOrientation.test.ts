@@ -7,6 +7,7 @@ import { registerUser, withUser } from "../_helpers/auth";
 import { modules } from "../_helpers/modules";
 import { expectShape, SHAPE } from "../readWhitelist/_world";
 import { seedPhoto } from "./_helpers";
+import { seedMember } from "../_helpers/membership";
 
 // WP25 fix-cyclus 1 — een avatar staat rechtop (A-invariant 19, kernvondst 7).
 //
@@ -55,7 +56,7 @@ async function setup(t: T) {
   const mia = await registerUser(t, "user_mia", "mia@x.com", "Mia");
   const bob = await registerUser(t, "user_bob", "bob@x.com", "Bob");
   const G = await withUser(t, "user_owen").mutation(api.groups.create, { name: "G" });
-  await withUser(t, "user_owen").mutation(api.groups.addMember, { groupId: G, userId: mia });
+  await seedMember(t, { groupId: G, userId: mia });
   const A = await withUser(t, "user_owen").mutation(api.albums.create, { groupId: G, name: "A" });
   return { owen, mia, bob, G, A };
 }

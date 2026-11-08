@@ -6,6 +6,7 @@ import schema from "../../convex/schema";
 import { registerUser, withUser } from "../_helpers/auth";
 import { modules } from "../_helpers/modules";
 import { seedPhoto } from "../photoFormats/_helpers";
+import { seedMember } from "../_helpers/membership";
 
 // WP17b fix-cyclus 1, invariant 13 (audit B1): een nieuw beeld laadt overal
 // opnieuw, zonder beeld-id.
@@ -32,7 +33,7 @@ async function setup(t: T) {
   const owen = await registerUser(t, "user_owen", "owen@x.com", "Owen");
   const mia = await registerUser(t, "user_mia", "mia@x.com", "Mia");
   const G = await withUser(t, "user_owen").mutation(api.groups.create, { name: "G" });
-  await withUser(t, "user_owen").mutation(api.groups.addMember, { groupId: G, userId: mia });
+  await seedMember(t, { groupId: G, userId: mia });
   const A = await withUser(t, "user_owen").mutation(api.albums.create, { groupId: G, name: "A" });
   const anchor = await seedPhoto(t, owen, { original: "ANKER" });
   await withUser(t, "user_owen").mutation(api.albums.addPhoto, { albumId: A, photoId: anchor.photoId });

@@ -9,7 +9,10 @@ import {
   groupRow,
   membership,
   newT,
+  publish,
+  seedAlbum,
   seedGroup,
+  seedPhoto,
   type T,
 } from "./_beheer";
 
@@ -20,6 +23,12 @@ import {
 //   - wel lid, maar het mag niet: NOT_ALLOWED (rol ontbreekt) of
 //     FOUNDER_PROTECTED (actie op de oprichter).
 // Een geweigerde actie verandert niets.
+//
+// Besluit 4 (herzien, zoals v1): de oprichter vertrekt niet
+// (FOUNDER_MUST_TRANSFER); hij draagt eerst over, of verwijdert de groep als
+// hij het enige lid is. Een opvolger komt alleen bij accountverwijdering.
+// A-keuze 3: een admin wijzigt zijn eigen rol niet. A-keuze 4: wie de cover
+// mag zetten, mag hem ook weghalen (`coverPhotoId: null`).
 //
 // Wereld: oprichter Olga (admin), admin Anna, lid Lex, buitenstaander Eve.
 // Spec: docs/work-packages/WP28-groepsbeheer.md.
@@ -213,7 +222,7 @@ describe("rol wijzigen en lid verwijderen: admin, bij een ander dan de oprichter
   });
 });
 
-describe("groep verlaten door wie geen oprichter is (besluit 4 voor de oprichter wacht op regie)", () => {
+describe("groep verlaten door wie geen oprichter is", () => {
   it("een lid vertrekt; de oprichter blijft oprichter en admin", async () => {
     const t = newT();
     const w = await world(t);
@@ -376,5 +385,133 @@ describe("groep wijzigen: weigeringen met code (A-invariant 2)", () => {
       as(t, "user_eve").mutation(api.groups.update, { groupId: gone, name: "X" }),
     );
     expect(a).toEqual(b);
+  });
+});
+
+describe("besluit 4 — de oprichter vertrekt niet, hij draagt eerst over", () => {
+  it("met andere leden: FOUNDER_MUST_TRANSFER, niets verandert", async () => {
+    const t = newT();
+    const w = await world(t);
+    await expectRefused(t, "FOUNDER_MUST_TRANSFER", () =>
+      as(t, "user_olga").mutation(api.groups.removeMember, {
+        groupId: w.groupId,
+        userId: w.users.olga!,
+      }),
+    );
+  });
+
+  it("als enige lid: ook FOUNDER_MUST_TRANSFER; de groep blijft", async () => {
+    const t = newT();
+    const w = await seedGroup(t, { founder: "olga" });
+    await expectRefused(t, "FOUNDER_MUST_TRANSFER", () =>
+      as(t, "user_olga").mutation(api.groups.removeMember, {
+        groupId: w.groupId,
+        userId: w.users.olga!,
+      }),
+    );
+    expect(await groupRow(t, w.groupId)).not.toBeNull();
+  });
+
+  it("als enige lid verwijdert hij de groep", async () => {
+    const t = newT();
+    const w = await seedGroup(t, { founder: "olga" });
+    await as(t, "user_olga").mutation(api.groups.remove, { groupId: w.groupId });
+    expect(await groupRow(t, w.groupId)).toBeNull();
+    expect(await membership(t, w.groupId, w.users.olga!)).toBeNull();
+  });
+
+  it("na overdragen kan de oude oprichter wel vertrekken; de nieuwe blijft oprichter", async () => {
+    const t = newT();
+    const w = await world(t);
+    await as(t, "user_olga").mutation(api.groups.transferFounder, {
+      groupId: w.groupId,
+      userId: w.users.lex!,
+    });
+    await as(t, "user_olga").mutation(api.groups.removeMember, {
+      groupId: w.groupId,
+      userId: w.users.olga!,
+    });
+    expect(await membership(t, w.groupId, w.users.olga!)).toBeNull();
+    expect((await groupRow(t, w.groupId))?.createdBy).toBe(w.users.lex);
+    expect((await membership(t, w.groupId, w.users.lex!))?.role).toBe("admin");
+    expect((await membership(t, w.groupId, w.users.anna!))?.role).toBe("admin");
+  });
+
+  it("verwijdert de oprichter zijn account, dan volgt de admin met de vroegste joinedAt hem op (M2-d)", async () => {
+    const t = newT();
+    const w = await world(t);
+    await as(t, "user_olga").mutation(api.users.deleteSelf, {});
+    expect((await groupRow(t, w.groupId))?.createdBy).toBe(w.users.anna);
+    expect((await membership(t, w.groupId, w.users.lex!))?.role).toBe("member");
+  });
+
+  it("is hij de enige admin en verwijdert hij zijn account, dan wordt iedereen admin en de vroegste oprichter (M2-c)", async () => {
+    const t = newT();
+    const w = await seedGroup(t, { founder: "olga", members: { lex: "member", mia: "member" } });
+    await as(t, "user_olga").mutation(api.users.deleteSelf, {});
+    expect((await groupRow(t, w.groupId))?.createdBy).toBe(w.users.lex);
+    expect((await membership(t, w.groupId, w.users.lex!))?.role).toBe("admin");
+    expect((await membership(t, w.groupId, w.users.mia!))?.role).toBe("admin");
+  });
+});
+
+describe("A-keuze 3 — een admin wijzigt zijn eigen rol niet", () => {
+  it("een admin die geen oprichter is: NOT_ALLOWED, hij blijft admin", async () => {
+    const t = newT();
+    const w = await world(t);
+    await expectRefused(t, "NOT_ALLOWED", () =>
+      as(t, "user_anna").mutation(api.groups.updateMemberRole, {
+        groupId: w.groupId,
+        userId: w.users.anna!,
+        role: "member",
+      }),
+    );
+  });
+
+  it("de oprichter: geweigerd, hij blijft admin", async () => {
+    const t = newT();
+    const w = await world(t);
+    await expectRejectedNoChange(t, () =>
+      as(t, "user_olga").mutation(api.groups.updateMemberRole, {
+        groupId: w.groupId,
+        userId: w.users.olga!,
+        role: "member",
+      }),
+    );
+  });
+});
+
+describe("A-keuze 4 — de groepscover weghalen", () => {
+  async function withCover(t: T) {
+    const w = await world(t);
+    const P = await seedPhoto(t, w.users.anna!);
+    const A = await seedAlbum(t, w.groupId, w.users.olga!, "A");
+    await publish(t, A, P);
+    await t.run(async (ctx) => ctx.db.patch(w.groupId, { coverPhotoId: P }));
+    return { ...w, P };
+  }
+
+  it("een admin haalt de cover weg met coverPhotoId: null; naam blijft", async () => {
+    const t = newT();
+    const w = await withCover(t);
+    await as(t, "user_anna").mutation(api.groups.update, { groupId: w.groupId, coverPhotoId: null });
+    const g = await groupRow(t, w.groupId);
+    expect(g?.coverPhotoId).toBeUndefined();
+    expect(g?.name).toBe("Club");
+  });
+
+  it("zonder cover weghalen slaagt ook", async () => {
+    const t = newT();
+    const w = await world(t);
+    await as(t, "user_anna").mutation(api.groups.update, { groupId: w.groupId, coverPhotoId: null });
+    expect((await groupRow(t, w.groupId))?.coverPhotoId).toBeUndefined();
+  });
+
+  it("een lid haalt de cover niet weg: NOT_ALLOWED", async () => {
+    const t = newT();
+    const w = await withCover(t);
+    await expectRefused(t, "NOT_ALLOWED", () =>
+      as(t, "user_lex").mutation(api.groups.update, { groupId: w.groupId, coverPhotoId: null }),
+    );
   });
 });

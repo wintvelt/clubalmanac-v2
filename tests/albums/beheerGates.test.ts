@@ -8,15 +8,17 @@ import {
   goneGroupId,
   groupRow,
   newT,
+  publish,
   seedAlbum,
   seedGroup,
+  seedPhoto,
   type T,
 } from "../groups/_beheer";
 
 // WP28 — albums maken en wijzigen (besluit 2), de datum (invariant 6), een
 // verplichte naam (A-invariant 5) en de weigeringen van A-invariant 2.
-// Album verwijderen door een admin die geen oprichter is, hangt aan W5 en is
-// hier niet gepind; alleen wat in beide uitkomsten geldt.
+// Besluit 5 (W5): album verwijderen alleen door de oprichter; wijzigen blijft
+// admin. A-keuze 4: de albumcover weghalen met `coverPhotoId: null`.
 //
 // Wereld: oprichter Olga (admin), admin Anna, lid Lex, buitenstaander Eve.
 // Album A is gemaakt door Lex (bijvoorbeeld uit de tijd dat elk lid mocht);
@@ -99,7 +101,16 @@ describe("album wijzigen: admin", () => {
   });
 });
 
-describe("album verwijderen: weigeringen die los van W5 gelden", () => {
+describe("besluit 5 — album verwijderen: alleen de oprichter", () => {
+  it("een admin die geen oprichter is: NOT_ALLOWED, het album blijft", async () => {
+    const t = newT();
+    const w = await world(t);
+    await expectRefused(t, "NOT_ALLOWED", () =>
+      as(t, "user_anna").mutation(api.albums.remove, { albumId: w.albumId }),
+    );
+    expect(await albumRow(t, w.albumId)).not.toBeNull();
+  });
+
   it("een lid: NOT_ALLOWED, het album blijft", async () => {
     const t = newT();
     const w = await world(t);
@@ -204,6 +215,33 @@ describe("A-invariant 5 — een naam is verplicht", () => {
     const w = await world(t);
     await expectRefused(t, "NAME_REQUIRED", () =>
       as(t, "user_olga").mutation(api.albums.update, { albumId: w.albumId, name }),
+    );
+  });
+});
+
+describe("A-keuze 4 — de albumcover weghalen", () => {
+  async function withCover(t: T) {
+    const w = await world(t);
+    const P = await seedPhoto(t, w.users.lex!);
+    await publish(t, w.albumId, P);
+    await t.run(async (ctx) => ctx.db.patch(w.albumId, { coverPhotoId: P }));
+    return w;
+  }
+
+  it("een admin haalt de cover weg met coverPhotoId: null; de naam blijft", async () => {
+    const t = newT();
+    const w = await withCover(t);
+    await as(t, "user_anna").mutation(api.albums.update, { albumId: w.albumId, coverPhotoId: null });
+    const a = await albumRow(t, w.albumId);
+    expect(a?.coverPhotoId).toBeUndefined();
+    expect(a?.name).toBe("A");
+  });
+
+  it("een lid haalt de cover niet weg: NOT_ALLOWED", async () => {
+    const t = newT();
+    const w = await withCover(t);
+    await expectRefused(t, "NOT_ALLOWED", () =>
+      as(t, "user_lex").mutation(api.albums.update, { albumId: w.albumId, coverPhotoId: null }),
     );
   });
 });

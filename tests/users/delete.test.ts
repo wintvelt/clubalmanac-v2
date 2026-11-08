@@ -4,6 +4,7 @@ import { api , internal } from "../../convex/_generated/api";
 import schema from "../../convex/schema";
 import type { Id } from "../../convex/_generated/dataModel";
 import { modules } from "../_helpers/modules";
+import { seedMember } from "../_helpers/membership";
 
 // Cascade matrix rows U6, U7, U8: cat-3 cascade deletes vanuit users.deleteSelf.
 // U6 = ratings, U7 = photos + queued storage cleanup action, U8 = memberships.
@@ -213,7 +214,7 @@ describe("U9 (eliminated) — albumLastSeen cleanup gedekt door M3 via U8", () =
       api.groups.create,
       { name: "G" },
     );
-    await withUser(t, "user_alice").mutation(api.groups.addMember, {
+    await seedMember(t, {
       groupId,
       userId: (await withUser(t, "user_bob").query(api.users.current, {}))!._id,
     });
@@ -337,11 +338,11 @@ describe("U8: deleteSelf cascade memberships", () => {
     const g2 = await withUser(t, "user_admin").mutation(api.groups.create, {
       name: "G2",
     });
-    await withUser(t, "user_admin").mutation(api.groups.addMember, {
+    await seedMember(t, {
       groupId: g1,
       userId: aliceId,
     });
-    await withUser(t, "user_admin").mutation(api.groups.addMember, {
+    await seedMember(t, {
       groupId: g2,
       userId: aliceId,
     });
@@ -385,7 +386,7 @@ describe("U8 — M2 cascade (transitief vanuit deleteSelf)", () => {
       api.groups.create,
       { name: "G" },
     );
-    await withUser(t, "user_alice").mutation(api.groups.addMember, {
+    await seedMember(t, {
       groupId,
       userId: bobId,
     });
@@ -427,12 +428,12 @@ describe("U8 — M2 cascade (transitief vanuit deleteSelf)", () => {
       api.groups.create,
       { name: "G" },
     );
-    await withUser(t, "user_alice").mutation(api.groups.addMember, {
+    await seedMember(t, {
       groupId,
       userId: bobId,
       role: "admin",
     });
-    await withUser(t, "user_alice").mutation(api.groups.addMember, {
+    await seedMember(t, {
       groupId,
       userId: charlieId,
       role: "admin",
