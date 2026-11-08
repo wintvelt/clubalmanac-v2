@@ -457,9 +457,9 @@ URL's tonen, niet data-corruptie.
 **Architectuur-keuze.** Storage-roundtrip is auth-vrij ontkoppeld van de
 bestaande `/upload` httpAction (die is Clerk-coupled — wacht op WP3). Daarvoor
 staat in `convex/_test.ts` een set test-only Convex functions: public
-action/query/mutation (geen `internal.*`), elk env-var-gated op
-`process.env.INTEGRATION_TEST_ENABLED === "true"`. Wouter zet die env-var
-alleen op de dev-deployment via Convex dashboard; prod krijgt 'm nooit.
+action/query/mutation (geen `internal.*`), elk achter de vlag
+`INTEGRATION_TEST_ENABLED` en sinds WP26 het testgeheim `INTEGRATION_TEST_SECRET`
+(argument `testSecret`). Beide env-vars staan alleen op dev; prod krijgt ze nooit.
 Self-protection redundant naast de prod-URL-blocklist in
 `tests/integration/_helpers/safety.ts`. Conventie staat in
 [`docs/conventions/integration-tests.md`](./conventions/integration-tests.md).
@@ -557,11 +557,8 @@ WP2's `convex/_test.ts`: env-var-gated test-only code, prod krijgt 'm nooit.
   laat Convex zelf afkeuren met 401 voordat de handler triggert (gepind
   in test 4 — als die assumptie niet klopt, valt 't op tijdens RED→GREEN
   van B).
-- **Env-var-gate:** zelfde `INTEGRATION_TEST_ENABLED === "true"` check als
-  `convex/_test.ts`. Bij ontbrekende of false env-var: handler returnt
-  een duidelijke melding met een 4xx-status (B kiest tussen 403 of 503 —
-  beide signaleren "endpoint bestaat maar is uitgeschakeld op deze
-  deployment"). Productie-protection rationale: endpoint exposeert alleen
+- **Gate:** dezelfde als `convex/_test.ts` (vlag plus testgeheim, sinds WP26 via
+  header `X-Test-Secret`, vóór de JWT-check). Elke weigering geeft 403. Productie-protection rationale: endpoint exposeert alleen
   identity van de aanvrager zelf (geen escalatie), maar gate consistent
   met WP2 zodat "test-only" één regel blijft, niet twee.
 - **Response shape (200, JSON):** subset van `ctx.auth.getUserIdentity()`
@@ -600,8 +597,8 @@ prod-URL-blocklist in `_helpers/safety.ts`.
    `clubalmanac-integration-regular@example.com` en
    `clubalmanac-integration-webmaster@example.com`.
 2. Convex dev-deployment env-vars: `WEBMASTER_EMAILS` bevat de
-   webmaster-test-user-email. `INTEGRATION_TEST_ENABLED=true` is al
-   gezet voor WP2.
+   webmaster-test-user-email. `INTEGRATION_TEST_ENABLED=true` en
+   `INTEGRATION_TEST_SECRET` staan al op dev (WP2, WP26).
 3. Voor beide test-users: zorg dat ze ook een `users`-record in Convex
    hebben (audit-7 §3 dubbele gate). Eenvoudigste pad: log één keer in
    via de app of voer de `users.register`-mutation handmatig uit op dev.

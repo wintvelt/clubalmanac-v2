@@ -87,7 +87,8 @@ daarnaast prod-URL's.
 Hetzelfde antwoord voor elke oorzaak, dus bij een weigering zijn er drie
 mogelijkheden: de vlag staat niet op `true`, het geheim ontbreekt op de
 deployment, of het geheim in `.env.integration` wijkt af (ook een spatie of
-hoofdletter telt).
+hoofdletter telt). Uitzondering: bij whoami haalt HTTP de witruimte rond een
+headerwaarde weg, dus daar telt een spatie eromheen niet.
 
 **Nieuwe test-only functie:** spread `testSecretArg` in de args en roep
 `assertTestGate(testSecret)` aan als eerste regel van de handler, vóór elk

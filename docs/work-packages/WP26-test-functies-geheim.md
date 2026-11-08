@@ -1,6 +1,6 @@
 # WP26: `_test`-functies achter een geheim
 
-> Draft regie 2026-11-08. Backend-WP, klein. Uit de WP17a-red-team (R2). Vóór T0. A → B → audit → korte red-team → gate. Eigen branch `wp26`.
+> Landed 2026-11-08 (A → B → audit + red-team, gate op dev groen; zie §Closeout). Backend-WP, klein. Uit de WP17a-red-team (R2). Vóór T0. A → B → audit → korte red-team → gate. Eigen branch `wp26`.
 
 ## Besluiten Wouter (2026-11-08, op A's advies)
 
@@ -163,3 +163,14 @@ De tests staan in een eigen `describe` met "A-keuze n" in de naam.
 | `tests/integration/convex/testGate.test.ts` | Gate-stap 6 op dev: zonder en met fout geheim dezelfde weigering, met het geheim werkt het (niet in CI) |
 
 Het geheim in de tests is een nep-waarde. Rood bij A: 220 tests in `tests/testGate/`, allemaal omdat `testSecret` niet bestaat of de gate ontbreekt; de rest van de suite groen. De integratietests zijn niet gedraaid (eerst B op dev, kernvondst 4). B werkt `integration-tests.md`, `external-services.md` en `tests/integration/README.md` bij (scope).
+
+## Closeout (2026-11-08)
+
+- **Omvang:** groter dan de draft. Zonder geheim kon iedereen met de dev-URL via negen publieke functies users, groepen, invites en beelden wissen, users aanmaken, en namen en e-mailadressen lezen.
+- **Impl:** de gate staat in `convex/lib/testGate.ts`. Hij is de eerste regel van elke `_test`-handler en staat in `/_test/whoami` vóór de JWT-check. Elke oorzaak geeft dezelfde weigering.
+- **Audit:** geen blockers. De should-fix `api.d.ts` heeft regie gecommit. De nice-to-haves over de docs zijn meegenomen.
+- **Red-team:** geen blocker, geen moet. De zou-bevinding was dat de testhelper het geheim naar een productiefunctie kon sturen, waarna een validatiefout het toont. Gefixt door A: het geheim gaat alleen nog naar `_test:`-functies, en pas na een proef met een nep-geheim.
+- **Nit, geaccepteerd:** invariant 4 dekt alleen `convex/_test.ts` en de `/_test`-routes.
+- **Gate (regie, dev):** zonder geheim geweigerd met hetzelfde antwoord; met het geheim groen. Gate-test plus storage-tests: 3 bestanden, 6 tests groen. De Clerk-integratietests zijn niet gedraaid, omdat de Clerk-sleutels niet in `.env.integration` staan.
+- **W3:** `verify` op dev toonde geen sporen van anoniem schrijven of wissen. Het geheim ging pas mee nadat de code op dev stond.
+- **T0:** de check dat beide env-vars niet op prod staan, staat in de cutover-checklist.
