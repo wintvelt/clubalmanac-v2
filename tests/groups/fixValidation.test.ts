@@ -6,7 +6,8 @@ import { albumRow, as, expectRefused, groupRow, newT, seedAlbum, seedGroup, type
 // wordt getrimd bewaard en geweigerd als hij leeg is (NAME_REQUIRED), langer
 // dan 50 tekens (NAME_TOO_LONG) of tekens bevat die WP15b in een user-naam
 // verbiedt (NAME_INVALID). Alleen een meegegeven naam wordt gecheckt.
-// `sortDate` is een eindig getal, anders DATE_INVALID.
+// `sortDate` is een eindig getal binnen het bereik van een JS-Date, anders
+// DATE_INVALID (fix-cyclus 2, A-invariant 15).
 //
 // Tekens via codepunt, zodat ze zichtbaar in de test staan.
 
@@ -113,6 +114,34 @@ describe("A-invariant 12 — sortDate is een eindig getal", () => {
     await expectRefused(t, "DATE_INVALID", () =>
       as(t, "user_olga").mutation(api.albums.update, { albumId: w.A, sortDate }),
     );
+  });
+
+  // Fix-cyclus 2, F3: het bereik van een JS-Date, ±8.64e15 ms (A-invariant 15).
+  it.each([
+    ["1e300", 1e300],
+    ["net boven het Date-bereik", 8.64e15 + 1],
+    ["net onder het Date-bereik", -8.64e15 - 1],
+    ["Number.MAX_VALUE", Number.MAX_VALUE],
+  ])("%s: DATE_INVALID bij groep en album", async (_label, sortDate) => {
+    const t = newT();
+    const w = await world(t);
+    await expectRefused(t, "DATE_INVALID", () =>
+      as(t, "user_olga").mutation(api.groups.update, { groupId: w.groupId, sortDate }),
+    );
+    await expectRefused(t, "DATE_INVALID", () =>
+      as(t, "user_olga").mutation(api.albums.update, { albumId: w.A, sortDate }),
+    );
+  });
+
+  it("de randen van het Date-bereik mogen", async () => {
+    const t = newT();
+    const w = await world(t);
+    for (const day of [8.64e15, -8.64e15]) {
+      await as(t, "user_olga").mutation(api.groups.update, { groupId: w.groupId, sortDate: day });
+      expect((await groupRow(t, w.groupId))?.sortDate).toBe(day);
+      await as(t, "user_olga").mutation(api.albums.update, { albumId: w.A, sortDate: day });
+      expect((await albumRow(t, w.A))?.sortDate).toBe(day);
+    }
   });
 
   it("een gewone dag mag, ook een negatieve epoch (vóór 1970)", async () => {

@@ -4,6 +4,7 @@ import {
   as,
   expectRefused,
   goneAlbumId,
+  goneGroupId,
   membership,
   newT,
   publish,
@@ -154,6 +155,23 @@ describe("albums.markSeen", () => {
     );
     const b = await expectRefused(t, "NOT_MEMBER", () =>
       as(t, "user_eve").mutation(api.albums.markSeen, { albumId: w.gone }),
+    );
+    expect(a).toEqual(b);
+  });
+});
+
+// Fix-cyclus 2, H1 (A-invariant 16): ook groups.markAllAlbumsSeen weigert
+// een niet-lid met NOT_MEMBER, voor bestaande en gewiste groep gelijk.
+describe("groups.markAllAlbumsSeen", () => {
+  it("geen lid en gewiste groep: dezelfde NOT_MEMBER", async () => {
+    const t = newT();
+    const w = await world(t);
+    const gone = await goneGroupId(t);
+    const a = await expectRefused(t, "NOT_MEMBER", () =>
+      as(t, "user_eve").mutation(api.groups.markAllAlbumsSeen, { groupId: w.groupId }),
+    );
+    const b = await expectRefused(t, "NOT_MEMBER", () =>
+      as(t, "user_eve").mutation(api.groups.markAllAlbumsSeen, { groupId: gone }),
     );
     expect(a).toEqual(b);
   });
