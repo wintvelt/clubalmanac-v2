@@ -28,6 +28,7 @@ import type * as lib_photoFormats from "../lib/photoFormats.js";
 import type * as lib_profilePhoto from "../lib/profilePhoto.js";
 import type * as lib_selfTestImages from "../lib/selfTestImages.js";
 import type * as lib_shapes from "../lib/shapes.js";
+import type * as lib_testGate from "../lib/testGate.js";
 import type * as lib_upload from "../lib/upload.js";
 import type * as migration from "../migration.js";
 import type * as monitoring from "../monitoring.js";
@@ -66,6 +67,7 @@ declare const fullApi: ApiFromModules<{
   "lib/profilePhoto": typeof lib_profilePhoto;
   "lib/selfTestImages": typeof lib_selfTestImages;
   "lib/shapes": typeof lib_shapes;
+  "lib/testGate": typeof lib_testGate;
   "lib/upload": typeof lib_upload;
   migration: typeof migration;
   monitoring: typeof monitoring;
