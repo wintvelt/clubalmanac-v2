@@ -135,7 +135,8 @@ describe("users.removeProfilePhoto — vraag 1 (advies: alleen de koppeling)", (
 
     const photo = await t.run(async (ctx) => ctx.db.get(w.pAlice));
     expect(photo).not.toBeNull();
-    expect(await t.run(async (ctx) => ctx.storage.get(w.storageId))).not.toBeNull();
+    // t.run kan geen Blob teruggeven (geen Convex-waarde): alleen of het beeld er nog is.
+    expect(await t.run(async (ctx) => (await ctx.storage.get(w.storageId)) !== null)).toBe(true);
     expect((await userRow(t, w.alice))!.photoCount).toBe(1);
     // De eigenaar ziet zijn foto nog.
     expect(await asAlice(t).query(internal.images.photoImage, { photoId: w.pAlice })).toBe(

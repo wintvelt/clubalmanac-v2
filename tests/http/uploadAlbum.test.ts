@@ -1,5 +1,5 @@
 import { convexTest } from "convex-test";
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
 import schema from "../../convex/schema";
@@ -19,6 +19,20 @@ import { leftovers, upload } from "./_upload";
 
 type T = ReturnType<typeof convexTest>;
 const MINUTE = 60_000;
+
+// Nep-klok: de geplande extractMetadata en makeFormats van een eerdere upload
+// lopen dan niet tussendoor. In convex-test 0.0.50 erven ze via setTimeout de
+// context van de mutation, denken ze dat ze genest zijn en rollen ze de
+// schrijfacties van de volgende upload terug (flaky in de volle suite). Deze
+// file pint de upload zelf, niet die stappen. De tijd staat stil: een upload
+// is strikt later dan album en lidmaatschap (een minuut eerder), en markSeen
+// valt op hetzelfde moment als de upload, dus daarna niet meer ongelezen.
+beforeEach(() => {
+  vi.useFakeTimers();
+});
+afterEach(() => {
+  vi.useRealTimers();
+});
 
 /**
  * G — alice (member), bob (admin). Album A.
