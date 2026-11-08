@@ -1,4 +1,8 @@
+import { readFileSync } from "node:fs";
+import ts from "typescript";
 import { describe, expect, it } from "vitest";
+import * as uploadLib from "../src/lib/upload";
+import { parse } from "./support/sourceScan";
 import {
   UPLOAD_MAX_SIDE,
   applyOutcome,
@@ -297,5 +301,69 @@ describe("fitWithin: de maat na omzetten (A-keuze 3)", () => {
       expect(r.width).toBeGreaterThanOrEqual(1);
       expect(r.height).toBeGreaterThanOrEqual(1);
     }
+  });
+});
+
+// ── Fix-cyclus 1 (spec §Fix-cyclus 1) ─────────────────────────────────────
+
+type ProfileRetry = { step: "upload"; uploadId: string } | { step: "opslaan"; photoId: string } | null;
+const fixLib = uploadLib as unknown as {
+  UPLOAD_TIMEOUT_MS?: number;
+  profileRetry?: (item: UploadItem) => ProfileRetry;
+};
+
+describe("invariant 20: de termijn van een upload", () => {
+  it("UPLOAD_TIMEOUT_MS is 120 s (ruim: niet korter dan 60 s, niet langer dan 180 s)", () => {
+    expect(fixLib.UPLOAD_TIMEOUT_MS).toBe(120_000);
+  });
+});
+
+describe("invariant 21: profielfoto opnieuw proberen (profileRetry)", () => {
+  const retry = (item: UploadItem) => {
+    expect(typeof fixLib.profileRetry, "profileRetry ontbreekt in src/lib/upload.ts").toBe("function");
+    return fixLib.profileRetry!(item);
+  };
+  const failedWith = (reason: FailReason) => {
+    const [item] = newBatch(["profiel"]);
+    return applyOutcome(startItem([item!], "profiel"), "profiel", fail(reason))[0]!;
+  };
+
+  it.each<FailReason>(["netwerk", "bezig", "uitgelogd", "server"])(
+    "na %s: de upload opnieuw, met dezelfde upload-id",
+    (reason) => {
+      const item = failedWith(reason);
+      expect(retry(item)).toEqual({ step: "upload", uploadId: item.uploadId });
+    },
+  );
+
+  it.each<FailReason>(["limiet", "te_groot", "geen_foto", "geen_album"])(
+    "na %s: niets (een andere foto kiezen is een nieuwe keuze)",
+    (reason) => {
+      expect(retry(failedWith(reason))).toBeNull();
+    },
+  );
+
+  it("upload gelukt, opslaan als profielfoto mislukt: alleen het opslaan, met de foto die er is", () => {
+    const [item] = newBatch(["profiel"]);
+    const uploaded = applyOutcome(startItem([item!], "profiel"), "profiel", ok("p9"))[0]!;
+    expect(retry(uploaded)).toEqual({ step: "opslaan", photoId: "p9" });
+  });
+
+  it("zolang de upload wacht of loopt: niets", () => {
+    const [item] = newBatch(["profiel"]);
+    expect(retry(item!)).toBeNull();
+    expect(retry(startItem([item!], "profiel")[0]!)).toBeNull();
+  });
+
+  it("Profiel gebruikt profileRetry (bronscan)", () => {
+    const file = new URL("../src/screens/ProfileScreen.tsx", import.meta.url);
+    const sf = parse(readFileSync(file, "utf8"), "ProfileScreen.tsx");
+    let calls = 0;
+    const visit = (node: ts.Node) => {
+      if (ts.isCallExpression(node) && ts.isIdentifier(node.expression) && node.expression.text === "profileRetry") calls++;
+      ts.forEachChild(node, visit);
+    };
+    visit(sf);
+    expect(calls, "ProfileScreen.tsx roept profileRetry niet aan").toBeGreaterThan(0);
   });
 });
