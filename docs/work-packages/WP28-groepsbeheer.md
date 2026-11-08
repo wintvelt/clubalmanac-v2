@@ -355,3 +355,70 @@ Niet in deze cyclus: de andere fouten van `invites.accept` en `decline` (niet ge
 Aangepast: `tests/writeGates/rating.test.ts` (WP24) legde vast dat de rating van een vertrokken lid bleef staan; nu is hij weg, en een nieuwe zetten kan nog steeds niet.
 
 Stand: 62 rood in 7 bestanden (de zes nieuwe en `rating.test.ts`), de rest (1881) groen; app 926 groen; `tsc` schoon. Tegen een wegwerp-referentie op B's code (scratchpad, gewist) is de hele suite groen, en twaalf mutanten vallen om: R1 weg, R1 zonder gemiddelde, S1 alleen open uitnodigingen, de ratingstap bij groep verwijderen weg (S2), R2 weg, R3 bij degraderen weg, R3 bij vertrek weg, N5 weg, het orakel van `removePhoto` terug, de tekencheck op namen weg, Infinity toegestaan, U6 zonder gemiddelde.
+
+## Fix-cyclus 2 (A, 2026-11-09)
+
+Scope: besluit 12. Bewijs uit de red-team-hercheck (`scripts/.data/wp28-redteam/budget.test.ts`, niet overgenomen).
+
+### Vondsten
+
+1. **F1: de opruiming bij vertrek kost een paar db-aanroepen per rating.** `removeMember` (ook zelf vertrekken) doet er ongeveer drie per rating: de foto, de publicaties van de foto en het gemiddelde opnieuw uitrekenen. Daarmee is de limiet van 4096 bij ongeveer 1365 ratings bereikt. `deleteSelf` doet er twee per rating en haalt de limiet bij ongeveer 2040. Een lid kan elke foto raten die hij ziet, één keer per foto, dus het aantal ratings groeit mee met de groep.
+2. **De tests zagen het niet.** convex-test dwingt de Convex-limieten alleen af met de optie `transactionLimits`, en geen enkele test zette die aan. De nieuwe test doet dat wel.
+3. **Een ondergrens die voor elke bouw geldt:** het aantal en het gemiddelde op een foto bijwerken kost minstens één db-aanroep per foto (ook een `db.get` telt mee). In één transactie past de opruiming dus hooguit bij zo'n 4000 foto's, hoe B hem ook bouwt.
+4. **Groep verwijderen en het laatste lid dat vertrekt (M2-e)** lopen via dezelfde cascade, die per publicatie zo'n drie aanroepen doet als er ratings zijn. Bij de grootste groep op prod (1459 publicaties) zit die met veel ratings boven de limiet. Dat valt onder het leesbudget van groep verwijderen, dat volgens besluit 11 in de backlog staat (vóór WP19). Het laatste lid hoort daar ook bij.
+5. **F3:** `sortDate` neemt elk eindig getal aan, ook 1e300. Buiten ±8.64e15 ms is het geen geldige datum meer: `new Date()` geeft daar een ongeldige datum.
+6. **F5: de naamcheck mist onzichtbare tekens.** WP15b verbiedt een vaste lijst; de red-team vond er vijf die erdoor komen. De lijst is breder:
+   - Unicode-categorie Cf (opmaak): onder meer de zachte afbreekstreep (U+00AD), het Arabische letterteken (U+061C), de Mongoolse klinkerscheiding (U+180E), word joiner en onzichtbare rekentekens (U+2060–U+2064), verouderde opmaaktekens (U+206A–U+206F), annotatietekens (U+FFF9–U+FFFB), Egyptische, steno- en muziek-opmaaktekens, en de tag-tekens (U+E0001, U+E0020–U+E007F, waarmee je onzichtbare tekst in een naam verstopt).
+   - Eigenschap Default_Ignorable_Code_Point: onder meer de combining grapheme joiner (U+034F), Hangul-vultekens (U+115F, U+1160, U+3164, U+FFA0), Khmer-klinkers (U+17B4, U+17B5), Mongoolse variatietekens (U+180B–U+180D, U+180F) en de variatiekiezers (U+FE00–U+FE0F, U+E0100–U+E01EF).
+   - De lege braille-cel (U+2800), die er als een spatie uitziet maar geen spatie is.
+
+   Geen naam in de prod-extract heeft zo'n teken.
+7. **F5 botst met WP15b:** WP15b liet U+200C en U+200D bewust toe, voor emoji en voor schriften als het Perzisch. Besluit 12 noemt U+200D. Ook VS16 (U+FE0F) zit in veel emoji (❤️). A-keuze 2 lost dit op.
+8. **H1:** `groups.markAllAlbumsSeen` weigert een niet-lid met een gewone fout.
+
+### A-invarianten (fix-cyclus 2)
+
+14. **Vertrekken lukt ook met veel ratings.** Verwijderd worden, zelf vertrekken en het account verwijderen lukken binnen de Convex-limieten voor een lid dat elke foto heeft gerated die hij kan zien, in een groep van 3000 publicaties waarin hij ook in een tweede groep zit. A-invariant 7 blijft gelden: de juiste ratings gaan weg, het aantal en het gemiddelde op elke foto kloppen.
+15. **`sortDate` is een geldige datum:** een eindig getal tussen −8.64e15 en 8.64e15, de randen meegerekend. Anders `DATE_INVALID`.
+16. **`markAllAlbumsSeen`:** een niet-lid en een onbekende groep krijgen dezelfde `NOT_MEMBER`.
+17. **Geen onzichtbare tekens in een naam.** De gedeelde naamcheck (user-, groeps- en albumnaam) weigert met `NAME_INVALID` elk teken uit Cf of Default_Ignorable_Code_Point, en U+2800, met de uitzonderingen uit A-keuze 2.
+
+### A-keuzes (fix-cyclus 2)
+
+1. **Schaal: 3000 publicaties,** ruim het dubbele van de grootste groep op prod (1459). Het lid zit ook in een tweede groep, want dat is op prod gewoon (25 lidmaatschappen voor 16 users). Hij ziet een deel van de foto's ook daar en houdt die ratings. De test laat convex-test de limieten afdwingen.
+   - **Geen aparte grens op het aantal ratings.** `ratings.upsert` staat al hooguit één rating per foto toe, en alleen op een foto die het lid ziet. Het aantal ratings volgt dus het aantal zichtbare foto's.
+   - **De echte grens zit bij het aantal foto's dat een lid ziet.** Boven de ongeveer 4000 past de opruiming niet meer in één transactie (vondst 3). Dan moet hij in stukken via de scheduler. Dat hoort in de backlog, bij het leesbudget van groep verwijderen, vóór WP19.
+2. **De uitzonderingen in de naamcheck:**
+   - ZWJ (U+200D) en ZWNJ (U+200C) mogen alleen tussen twee zichtbare tekens die geen Latijnse letter, geen ASCII en geen spatie zijn. Links mag ook een VS16 staan (🏳️‍🌈).
+   - VS15 en VS16 (U+FE0E, U+FE0F) mogen alleen direct na een emoji-teken, ook na 0–9, # en * voor een keycap.
+   - Zo blijven emoji-reeksen, het Perzisch (WP15b) en het Hindi werken. Een ZWJ in "Club", aan de rand of alleen staand wordt geweigerd.
+   - De WP15b-tests blijven groen. Andere variatiekiezers en de tag-tekens zijn altijd verboden, dus ook een vlag van een deelgebied, zoals Engeland.
+3. **Het datumbereik:** dat van een JS-Date, de randen meegerekend.
+
+Niet in deze cyclus:
+- Een naam uit Clerk bij de registratie (`registerFromSession`) gaat niet door de naamcheck (WP15b, registratie).
+- Groep verwijderen en M2-e bij veel ratings: backlog (vondst 4, besluit 11).
+
+### RED tests (fix-cyclus 2)
+
+| Bestand | Wat |
+|---|---|
+| `tests/groups/fixScale.test.ts` | A-invariant 14, met de Convex-limieten aan: verwijderd, vertrokken en account weg, bij 3000 publicaties |
+| `tests/groups/fixValidation.test.ts` | A-invariant 15: 1e300, net buiten het bereik, `Number.MAX_VALUE`, de randen mogen |
+| `tests/albums/fixCodes.test.ts` | A-invariant 16 |
+| `tests/groups/fixNames.test.ts` | A-invariant 17 op alle vijf naampaden: 25 onzichtbare tekens, ZWJ, ZWNJ en VS buiten hun context; emoji, Perzisch en Hindi mogen |
+
+Stand: 233 rood in 4 bestanden, alleen de nieuwe tests; de rest (1994) groen; `tsc` schoon; de app is niet geraakt.
+
+Tegen een wegwerp-referentie op B's code (scratchpad, gewist) is de hele suite groen. Dertien mutanten vallen om:
+- het gemiddelde niet bijwerken;
+- de tweede groep negeren;
+- een lookup per rating;
+- `deleteSelf` met herrekenen per foto;
+- alleen een bovengrens op de datum;
+- de rand van het bereik uitsluiten;
+- ZWJ overal toestaan, en ZWJ nergens toestaan;
+- VS overal toestaan, en VS nergens toestaan;
+- alleen Default_Ignorable checken;
+- U+2800 vergeten;
+- `markAllAlbumsSeen` terug naar de gewone fout.
