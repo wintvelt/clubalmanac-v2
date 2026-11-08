@@ -92,3 +92,143 @@ Uitgangspunt: zoals in v1. A checkt in de oude code of v1 het echt zo deed en me
 
 - Tests: invarianten 1–6 in de backend en de app-logica; bestaande suites groen.
 - Gate (Wouter, TestFlight, dev, Gatetest, twee accounts): een groep en album maken en wijzigen (ook de datum en de cover); een lid admin maken en terug; een lid verwijderen, waarna hij de groep, de foto's en de cover niet meer ziet en een oude uitnodiging hem niet terugbrengt; oprichter overdragen; groep verlaten; album en groep verwijderen. Wat viel op.
+
+## Spec-criticus aanvullingen (A, 2026-11-08)
+
+Bronnen: oude backend `blob-images-api-groups` op tak `dev` (2023-02; `master` is ouder en mist `sortDate`), de streams in `blob-images-api`, `blob-images-api-invites`, de oude app `clubalmanac-app`. Prod-tellingen uit de lokale extractie van 2026-11-06, alleen aantallen.
+
+### Kernvondsten
+
+1. **Op prod is iedereen admin.** Alle 25 lidmaatschappen in de 6 groepen hebben rol admin. De grootste groep heeft 18 leden, 14 albums en 1459 publicaties. Een gate "admin" is in de bestaande groepen dus een gate "lid". Het enige echte onderscheid is de oprichter. Dat weegt mee bij W1, W3 en W5.
+2. **De oprichter is `groups.createdBy`.** De WP12-transform vult hem uit `isFounder` en stopt als die ontbreekt. Op prod is elke oprichter lid en admin. `internalRemoveMember` verhuist hem al (M2-d). `albums.createdBy` is bij de migratie op de oprichter gezet en zegt niets, maar geeft nu wel wijzig- en wisrecht ("maker of admin").
+3. **v1 haalde covers en ratings mee weg, langs elke weg.** Elke weggehaalde publicatie liep in v1 via de stream door AP4 (cover) en AP3 (ratings), ook bij lid weg, album weg en groep weg. In v2 doet alleen `albums.removePhoto` dat. M1, `albums.remove`, `groups.remove` en M2-e niet. Gevolg: een cover die wijst naar een foto van een vertrokken lid blijft staan, en invariant 5 faalt bij album verwijderen.
+4. **Een uitnodiging haalt iemand terug langs drie wegen.** v1 bewaarde een uitnodiging als lidmaatschap-rij: lid weg is uitnodiging weg. In v2 is het een eigen tabel die niemand opruimt. (a) Een open uitnodiging aan het adres van wie verdwijnt (R3). (b) Een open uitnodiging die hij zelf verstuurde, aan een tweede eigen adres (R3-variant). (c) Een uitnodiging voor een gewiste groep: `invites.accept` en de onboarding (`registerFromSession`) maken dan een lidmaatschap van een groep die niet bestaat.
+5. **Elk lid kan een admin uitnodigen.** `invites.create` vraagt alleen lidmaatschap en neemt rol admin aan. Een lid nodigt zijn tweede adres uit als admin en is daarna admin. In v1 nodigde alleen een admin uit. Dit schrijft de rol waar alle beheer-gates op leunen.
+6. **Weigeringen zijn gewone `Error`s.** In productie heet elke `Error` "Server Error" (WP15b). De app kan dan geen reden noemen (invariant 7). Verwachte weigeringen moeten een `ConvexError` met een code zijn, zoals `NOT_MEMBER` bij de reads.
+7. **Invariant 1 en 7 botsen zoals ze er staan.** "Dezelfde weigering als bij een groep die niet bestaat" voor wie de rol mist, tegenover "een weigering noemt de reden". Een lid weet al dat de groep bestaat; daar lekt een eigen reden niets. Zie A-invariant 2.
+8. **v1 kon de datum van een groep niet opslaan.** `updateGroup` leest een veld met een typfout, terwijl het formulier het veld had. Bij albums werkte het. Daarom heeft op prod maar één groep een `sortDate`. Invariant 6 is voor groepen nieuw gedrag.
+9. **Groep verwijderen bestond in de v1-app niet.** De knop (alleen voor de oprichter) deed niets: er was geen API-aanroep. Album verwijderen toonde de app alleen aan de oprichter; de backend liet elke admin toe.
+10. **v1 kon een cover weghalen, v2 niet.** `groups.update` en `albums.update` kennen geen "geen cover". v1 kon ook een nieuwe foto uit de bibliotheek als cover uploaden, en een albumcover kiezen uit alle foto's van de groep. WP24 staat alleen een foto uit een album van de groep (groepscover) of uit dat album (albumcover) toe. Een nieuwe groep heeft geen albums, dus geen cover bij maken.
+11. **`groups.addMember` zet een bestaand account in een groep zonder uitnodiging.** v1 kende dat niet, en de app gebruikt het niet. Wel 20 testbestanden als opzet (75 aanroepen) en één integratietest op dev.
+12. **v1 stuurde mails** bij verwijderen, vertrekken, rol wijzigen en oprichter overdragen (aan dat lid), en bij groep opheffen (aan alle leden). v2 stuurt er geen. Zie W7.
+13. **Naam verplicht.** Het v1-formulier eiste een naam; `groups.create` en `albums.create` nemen nu een lege naam aan.
+
+### Pariteit per actie
+
+| Actie | Oude app | Oude backend | v2 na advies |
+|---|---|---|---|
+| Groep maken | Home, knop "Nieuwe groep". Formulier: cover (bibliotheek of camera), naam (verplicht), omschrijving. Fout: "Niet gelukt om groep aan te maken". Daarna naar de nieuwe groep. | iedereen; maker wordt admin en oprichter | Idem zonder cover (vondst 10). Ingang vanuit Mijn groepen, ook in de lege toestand. |
+| Groep wijzigen | Tab "Cover" (alleen admin). Cover kiezen uit de groepsfoto's, nieuwe foto, of weghalen; naam, omschrijving, datum. Fout: "Niet gelukt om cover aan te passen". | admin; datum ging verloren (vondst 8) | Admin. Cover uit een album van de groep, of weghalen. Datum werkt. |
+| Groep verwijderen | Knop alleen voor de oprichter, zonder werking (vondst 9) | alleen de oprichter | W1. Bevestiging die zegt wat er gebeurt: alle albums weg voor iedereen, eigen foto's blijven in Mijn foto's (zo stond het in de v1-mail). |
+| Album maken | "Nieuw album" onder Albums en bij foto's kiezen, alleen admin. Cover, naam (verplicht). Fout: "Niet gelukt om album te maken". Daarna naar het album. | elk lid (rolcheck stuk) | W2. "Nieuw album" in het uploadpad (WP18) is geen eis voor T0. |
+| Album wijzigen | Potlood in de albumkop, alleen admin. Cover (groepsfoto's of nieuw), titel (verplicht), datum. Fout: "Helaas niet gelukt om aanpassingen op te slaan". | admin | Admin. Cover uit dit album, of weghalen. |
+| Album verwijderen | In Album wijzigen, alleen de oprichter. "Weet je het zeker? Het verwijderen van een album is definitief. Alle foto's in dit album zijn dan niet langer zichtbaar voor leden." Daarna naar Albums. | elke admin | W5. |
+| Rol wijzigen | Ledenmenu: "Maak admin" / "Maak gast", zonder bevestiging. Melding "Het lid is nu admin/gast". Niet bij jezelf, een gewone admin niet bij de oprichter. | de rolcheck op de caller slaat nooit aan (elk lid kon rollen wijzigen), beschermt de oprichter niet, weigert de eigen rol | Admin, niet bij de oprichter, niet bij jezelf (A-keuze 3). "Lid" in plaats van "gast" (WP16). |
+| Oprichter overdragen | Ledenmenu "Maak founder", alleen de oprichter. Bevestiging: het lid wordt ook admin en mag de groep opheffen; jouw oprichterschap vervalt. Melding "Oprichterstatus is succesvol verhuisd". | alleen de oprichter; doel wordt admin en oprichter, oude oprichter blijft admin | Idem. |
+| Lid verwijderen | Ledenmenu "Verban uit groep", admin, niet bij de oprichter. Bevestiging: zijn foto's verdwijnen uit de groep, definitief; opnieuw uitnodigen kan, foto's opnieuw toevoegen. Melding "Lid verwijderd". | admin, niet de oprichter | Idem (W3). |
+| Groep verlaten | Ledenmenu bij jezelf, niet voor de oprichter. Bevestiging: definitief, je foto's verdwijnen uit de groep. Melding "Je hebt de groep verlaten", naar Mijn groepen, Home-groep vergeten. | oprichter nooit; laatste admin niet | W4. Home vergeet de groep (WP16 besluit 4). |
+
+Het ledenmenu toonde alleen de acties die mochten; een lid zonder rechten zag geen menu. Elke fout had een eigen NL-melding (zie invariant 7).
+
+### Vraag 2: de oprichter
+
+De backend kent hem als `groups.createdBy` (vondst 2). Geen schema-wijziging en geen backfill nodig. Bij vertrek of accountverwijdering kiest `internalRemoveMember` nu de admin met de vroegste `joinedAt`, en maakt eerst iedereen admin als er geen admin over is (M2-c, M2-d). Na advies W3/W4 kan de oprichter niet meer vertrekken of verwijderd worden; dan blijven M2-c en M2-d alleen voor accountverwijdering (U8). Het veld blijft heten zoals het heet. Betekenis: de huidige oprichter, niet per se de maker. `albums.createdBy` geeft geen rechten meer (A-keuze 2).
+
+### Vraag 3: inventaris toegangsdefinities
+
+Beschermd: het lidmaatschap van een groep, de rol daarin en de oprichter. Daarop leunen alle reads en foto-toegang (WP23) en alle beheer-gates.
+
+**Waar de id's zichtbaar zijn.** Groep-id: `groups.listMine`, `getById`, `getWithCover`, de album- en publicatievormen, `listMembers`, `invites.getByToken`, `invites.listMine`. Lid-id's: `listMembers`, eigenaars in `albums.listPhotos` en `photos.getWithOwner`. Een id ontsluit niets zonder lidmaatschap: elke read geeft `NOT_MEMBER`.
+
+**Publieke paden die zo'n id aannemen of de state schrijven:**
+
+| Pad | Neemt aan / schrijft | Gate nu | Gat | Doel |
+|---|---|---|---|---|
+| `groups.create` | eigen lidmaatschap (admin) en oprichter | ingelogd | lege naam | naam verplicht |
+| `groups.update` | groep-id | admin | geen datum, geen cover weghalen, gewone `Error` | admin, plus datum en cover weghalen |
+| `groups.remove` | groep-id | admin | W1; uitnodigingen en ratings blijven | W1, volle cascade |
+| `groups.addMember` | groep-id, user-id, rol | admin | lidmaatschap zonder instemming, ook als admin; orakel op user-id | uit de publieke API (A-keuze 1) |
+| `groups.removeMember` | groep-id, user-id | zelf of admin | oprichter niet beschermd; vertrekregel; covers, ratings, uitnodigingen | W3, W4, cascade |
+| `groups.updateMemberRole` | groep-id, user-id, rol | admin | oprichter niet beschermd; eigen rol | W3, A-keuze 3 |
+| nieuw: oprichter overdragen | groep-id, user-id | — | ontbreekt | alleen de oprichter, doel is lid |
+| `groups.markAllAlbumsSeen` | groep-id | lid | — | blijft |
+| groep-reads (`getById`, `getWithCover`, `listMembers`, `listMine`) | groep-id | lid (`NOT_MEMBER`) | — | blijft |
+| `albums.create` | groep-id | lid | W2; lege naam | W2, naam verplicht |
+| `albums.update` | album-id | maker of admin | maker; geen datum; geen cover weghalen | admin |
+| `albums.remove` | album-id | maker of admin; drie verschillende fouten | orakel; covers en ratings (invariant 5) | W5, cascade |
+| `albums.addPhoto`, `/upload` met album | album-id | lid en eigenaar (WP24, WP18) | — | blijft |
+| `albums.removePhoto` | album-id, foto-id | lid; toevoeger of admin | orakel (WP24-backlog) | buiten scope |
+| album-reads, `albums.markSeen` | album-id | lid | — | blijft |
+| `invites.create` | groep-id, rol | lid | rol-escalatie (vondst 5) | W6 |
+| `invites.accept` | token → lidmaatschap, rol omhoog | e-mail, status, vervaldatum | groep weg, uitnodiger weg, ex-lid (vondst 4) | A-invariant 4 |
+| `/clerk-webhook` → `registerFromSession` | accepteert open uitnodigingen | Svix | dezelfde gaten als `accept` | dezelfde regel |
+| `invites.remove`, `decline`, `getByToken`, `listMine` | invite-id, token | afzender of admin; token | een ex-lid kan zijn eigen uitnodiging nog intrekken (onschuldig); de landing toont groepsnaam aan wie het token heeft | blijft |
+| `users.deleteSelf` | via `internalRemoveMember` | zelf | uitnodigingen | gedeelde cascade |
+| `photos.remove`, `decideFlag` (en de cron) | wist foto en publicaties | eigenaar, webmaster | — (P5) | blijft |
+| `_test.*` | lidmaatschappen, uitnodigingen | WP26-geheim | — | blijft |
+
+Geen van de gates is een verbodslijst. De bescherming van de oprichter komt bovenop een toestemmingslijst (admin), en dat is in orde.
+
+### Vraag 4: cascades per manier van verdwijnen
+
+| Manier | Pad | Foto's uit albums (M1) | Covers en ratings (AP3/AP4) | Laatst gezien | Uitnodigingen | Oprichter, admin |
+|---|---|---|---|---|---|---|
+| Verwijderd door admin | `internalRemoveMember` | ✅ | ❌ | ✅ (M3) | ❌ (a), (b) | M2-c/d ✅ |
+| Zelf vertrokken | idem | ✅ | ❌ | ✅ | ❌ | idem |
+| Account verwijderd (U8) | `deleteSelf`, eerst foto's dan lidmaatschappen | ✅ (foto's gewist) | ✅ (P4, P5) | ✅ | ❌ (a) blijft; een nieuw account accepteert hem bij de onboarding | ✅ |
+| Groep verwijderd | `groups.remove` | n.v.t. | ratings ❌ | ✅ (A2) | ❌ (c) | n.v.t. |
+| Laatste lid weg (M2-e) | binnen `internalRemoveMember` | ✅ | ratings ❌ | ✅ | ❌ (c) | n.v.t. |
+| Rol kwijt | `updateMemberRole` | — | — | — | zijn admin-uitnodigingen blijven geldig | — |
+| Album verwijderd | `albums.remove` | n.v.t. | ❌ (invariant 5) | ✅ (A2) | — | — |
+
+Ontbrekend voor invariant 4: alle drie de wegen uit vondst 4, op elk pad hierboven. Ontbrekend voor invariant 5: AP4 (en AP3) bij M1, album verwijderen en M2-e. `groups.remove` en M2-e wissen dezelfde dingen maar zijn twee kopieën; ze horen hetzelfde te doen.
+
+Wat een ex-lid daarna nog kan: zijn eigen foto's (eigenaar), het openbare profiel van ex-medeleden (WP17a besluit 8), de groepsnaam op een landing waarvan hij het token heeft. Beelden die zijn toestel al had, blijven tot een uur in de HTTP-cache en in de schijfcache van de app; de app toont ze niet meer, want elk scherm geeft `NOT_MEMBER`. Dat is geaccepteerd (WP17a besluit 3).
+
+### Vraag 5: splitsen
+
+Advies: splitsen, op dezelfde branch `wp28`, achter elkaar.
+- **WP28a backend**: de gates, oprichter overdragen, de cascades van invariant 3–5, de codes van invariant 7, datum, cover weghalen, naam verplicht, `addMember` en W6. Security hoog: audit en red-team horen hier.
+- **WP28b app**: de schermen en menu's uit de pariteitstabel, met A-tests voor de pure logica (welke acties het menu toont per rol, de datum als dag, code naar NL-reden). Gate op TestFlight.
+
+Waarom: de app-B mag geen backend aanraken (work-package-specs §App-WP's), en heeft een vaste API nodig. De red-team gaat alleen over de backend en hoort te lopen voordat de app erop bouwt. En één B voor 12 backend-wijzigingen plus 7 schermen is te veel voor één audit. De pariteitstabel hierboven is de A-input voor WP28b; daar is geen nieuwe A-ronde op de oude app voor nodig.
+
+### Advies op de vragen voor Wouter
+
+- **W1. Groep verwijderen: alleen de oprichter.** Op prod is iedereen admin (vondst 1). Met "elke admin" kan elk van de 18 leden van de grote groep alle albums van iedereen wissen. v1-backend: oprichter.
+- **W2. Album maken: alleen een admin** (v1-app). Voor de bestaande leden maakt het niets uit, want zij zijn allemaal admin. Nieuwe genodigden zijn standaard lid.
+- **W3. De oprichter beschermen: ja.** Niemand degradeert of verwijdert de oprichter. De rol verhuist alleen door overdragen (door de oprichter) of door accountverwijdering. Gevolg: er is altijd een admin, en de regel "laatste admin" vervalt in de praktijk.
+- **W4. Groep verlaten: de oprichter kan niet vertrekken**; hij draagt eerst over, of verwijdert de groep als hij alleen is. Ieder ander kan altijd vertrekken, want de oprichter blijft admin. Geen "iedereen admin" bij vertrek (M2-c blijft alleen voor accountverwijdering).
+
+Extra vragen uit de vondsten:
+
+- **W5. Album verwijderen: elke admin (nu, v1-backend) of alleen de oprichter (v1-app)?** Advies: alleen de oprichter, om dezelfde reden als W1. Album wijzigen blijft admin.
+- **W6. Rol-escalatie via uitnodigen (vondst 5): in WP28a of in WP19?** Advies: in WP28a, als gate: alleen een admin nodigt uit voor een groep (v1). Uitnodigen zelf (schermen, mails) blijft WP19.
+- **W7. Mails bij verwijderen, vertrekken, rol en oprichter (v1): terug vóór T0?** Advies: nee. Het lid ziet het in de app (de groep verdwijnt, de rol staat in Leden). Backlog.
+
+### A-invarianten (aanscherping, voor de tests)
+
+1. **De oprichter is altijd lid en admin van zijn groep.** Alleen de oprichter draagt over. Het doel is een ander lid van de groep, wordt admin en oprichter; de oude oprichter blijft admin. Daarmee is er altijd een admin (invariant 2). Alleen accountverwijdering kiest zelf een opvolger.
+2. **Weigeringen (vervangt invariant 1 waar ze botsen).** Geen lid, of een onbekende groep, album of doel-lid: één weigering, `ConvexError` met code `NOT_MEMBER`, voor alle beheer-mutations gelijk. Wel lid maar het mag niet: een `ConvexError` met een code die de reden draagt: `NOT_ALLOWED` (rol ontbreekt), `FOUNDER_PROTECTED` (actie op de oprichter), `FOUNDER_MUST_TRANSFER` (oprichter wil vertrekken), `NAME_REQUIRED`. De app zet de code om in een NL-melding.
+3. **Een publicatie die verdwijnt, neemt cover en ratings mee, langs elke weg.** Album verwijderen, lid weg, laatste lid weg en groep verwijderen gedragen zich als `albums.removePhoto`: een albumcover die niet meer in dat album staat, gaat weg; een groepscover die in geen album van de groep meer staat, gaat weg; ratings van wie de foto niet meer mag zien, gaan weg en het gemiddelde klopt weer.
+4. **Uitnodigingen.** Wie uit een groep verdwijnt (elke manier in de tabel hierboven), houdt geen open uitnodiging aan zijn adres voor die groep. Een uitnodiging werkt alleen als de groep nog bestaat en de uitnodiger op het moment van accepteren nog het recht heeft om uit te nodigen (W6). Dat geldt voor `invites.accept` en voor de onboarding. Een geweigerde uitnodiging maakt geen lidmaatschap.
+5. **Naam verplicht.** Een groep of album zonder naam (leeg na trimmen) wordt geweigerd, bij maken en wijzigen.
+6. **Gelijktijdig.** Elke regel over oprichter en admins leest de rijen waar hij op rust in dezelfde mutation. Twee admins die elkaar tegelijk iets aandoen, laten de groep nooit zonder oprichter.
+
+### A-keuzes (Wouter bevestigt)
+
+1. `groups.addMember` gaat uit de publieke API. A zet de 20 testbestanden om naar een seed-helper; de integratietest op dev krijgt een `_test`-functie achter het WP26-geheim, of gaat via een uitnodiging.
+2. `albums.createdBy` geeft geen rechten meer: wijzigen en verwijderen volgen alleen de rol.
+3. Een admin wijzigt zijn eigen rol niet (v1). Wie geen admin meer wil zijn, vraagt een ander, of vertrekt.
+4. Cover weghalen kan, bij groep en album, door wie de cover mag zetten.
+5. De datum is een dag. De app slaat de gekozen dag op als UTC-middernacht, net als de migratie, zodat `yearOf` overal hetzelfde jaar geeft. Weghalen hoeft niet (kon in v1 ook niet).
+
+### Bestaande tests die na de besluiten omgaan
+
+Bij het advies wijzigt A deze tests in de RED-ronde: `tests/groups/crud.test.ts` (addMember, removeMember, updateMemberRole, remove door admin), `tests/albums/crud.test.ts` (maker mag wijzigen en wissen, elk lid maakt een album), `tests/memberships/delete.test.ts` (M2-c en M2-d via vertrek van de oprichter of de laatste admin; die lopen dan via accountverwijdering). Plus de opzet in de 20 bestanden van A-keuze 1.
+
+### Risico-aanvulling
+
+- **data/schema: laag** (was middel). Geen nieuw veld, geen backfill: de oprichter staat er al, `sortDate` ook.
+- **ops: middel.** Groep verwijderen in de grote groep wist ongeveer 1460 publicaties met hun cover- en rating-checks in één transactie. Dat past ruim, maar B meet het met een seed van die grootte.
+- **ops-runbook-impact:** geen nieuwe env-vars of deploy-config.
