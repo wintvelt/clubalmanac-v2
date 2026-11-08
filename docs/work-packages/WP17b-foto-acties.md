@@ -1,6 +1,6 @@
 # WP17b: Acties op foto's — menu, draaien, verwijderen, uit album, als cover of profielfoto
 
-> Draft regie 2026-11-07. App-WP (zie [`work-package-specs.md` §App-WP's](../conventions/work-package-specs.md#app-wps-fase-4)). Bouwt op [WP17a](./WP17a-fotos-bekijken.md). De backend-mutations met hun gates bestaan al ([WP8](./WP8-photo-rotation.md), [WP24](./WP24-write-gates.md)); het zwaartepunt ligt in de app. WP17 is opnieuw gesplitst (besluit Wouter 2026-11-07): Mijn foto's, de kaart, de locatie en delen gaan naar WP17c. A → B → audit, TestFlight-gate.
+> Landed 2026-11-08 (A → B → audit, één fix-cyclus, heraudit groen, gate groen; zie §Closeout). Draft regie 2026-11-07. App-WP (zie [`work-package-specs.md` §App-WP's](../conventions/work-package-specs.md#app-wps-fase-4)). Bouwt op [WP17a](./WP17a-fotos-bekijken.md). De backend-mutations met hun gates bestaan al ([WP8](./WP8-photo-rotation.md), [WP24](./WP24-write-gates.md)); het zwaartepunt ligt in de app. WP17 is opnieuw gesplitst (besluit Wouter 2026-11-07): Mijn foto's, de kaart, de locatie en delen gaan naar WP17c. A → B → audit, TestFlight-gate.
 
 ## Productdoel
 
@@ -33,7 +33,6 @@ Een lid doet met een foto wat in v1 kon: draaien en spiegelen, uit een album hal
 - **In scope:** foto-menu in het detail en in het raster (lang drukken of een knop, pariteit door A), selectiemenu, de vijf acties hierboven, de meldingen.
 - **Draaien vóór de formaten** (seconden na een upload): geaccepteerd in WP25 (§Edge cases): de foto kan scheef komen te staan en de user draait opnieuw. Upload komt pas in WP18; A beoordeelt of 17b hier iets moet doen.
 - **De 3 gemigreerde groepscovers zonder album** (WP12b besluit 4): na T0 kiest een admin een nieuwe cover met deze WP. Geen eigen code nodig.
-- **Gatetest** (WP16) is weg door de `reset` van WP12b. Regie maakt hem opnieuw vóór de gate.
 - **Bewust niet:** Mijn foto's, kaart, locatie wijzigen, delen (→ WP17c). Uploaden (WP18). Album maken, wijzigen of verwijderen (Groepsbeheer). Melden (WP20). Ratings (WP19).
 
 ## Open vragen voor A (oude app en backend, rapporteren aan regie)
@@ -56,11 +55,11 @@ Een lid doet met een foto wat in v1 kon: draaien en spiegelen, uit een album hal
 
 | Stap | Wie | Wat |
 |---|---|---|
-| 1 | A | Spec-criticus (leest de oude app), open vragen, RED tests. |
-| 2 | Wouter | Besluiten op A's vragen. |
-| 3 | B | Impl. |
-| 4 | Audit | Op spec, tests en impl. Red-team alleen als A een nieuw schrijfpad of een ruimere gate vindt. |
-| 5 | Gate | Wouter, TestFlight, met Gatetest opnieuw op dev. |
+| 1 | A | Spec-criticus (leest de oude app), open vragen, RED tests. ✅ |
+| 2 | Wouter | Besluiten op A's vragen. ✅ |
+| 3 | B | Impl. ✅ |
+| 4 | Audit | Op spec, tests en impl. Red-team alleen als A een nieuw schrijfpad of een ruimere gate vindt. ✅ (geen red-team nodig; één fix-cyclus) |
+| 5 | Gate | Wouter, TestFlight, met Gatetest opnieuw op dev. ✅ 2026-11-08 |
 
 ## Cross-refs
 
@@ -253,3 +252,10 @@ Twee bevindingen uit de audit, met akkoord van Wouter. N1–N3 en N5 blijven lig
 | `tests/users/profileVersion.test.ts` | Invariant 13 |
 | `app/tests/profileAvatarVersion.test.ts` | Invariant 14, met een kleine reconciler: een andere key is een nieuw component met nieuwe state, zoals in React |
 | `app/tests/selectionBusy.test.ts` | Invariant 15 |
+
+## Closeout (regie, 2026-11-08)
+
+- **Audit:** één blocker (B1, de avatar ververste niet na een nieuwe profielfoto) en één should-fix (S1, de selectiebalk blokkeerde niet). Fix-cyclus 1 (A pint, B bouwt), heraudit groen. Root 1454 groen (1 skip), app 848 groen, mutanten op de fixes gevangen.
+- **Dev:** backend gedeployed. Gatetest opnieuw aangemaakt met de bestaande mutations: dev1 admin, de users-rij `dev-2@…` lid, album "Gatetest nu" met drie foto's van elk, album- en groepscover gezet. "Gatetest 2019" niet opnieuw gemaakt (`sortDate` zet geen mutation).
+- **Gate:** Wouter op TestFlight, alle acht stappen groen (menu per rol, draaien met groepscover, albumcover, profielfoto twee keer, uit album met en zonder bevestiging, selectie met een deel dat niet mag, verwijderen van de profielfoto).
+- **Rest (nice-to-have, geaccepteerd):** het menu gebruikt `ActionSheetIOS` (geen Android); de bevestiging blijft open als de foto intussen verdwijnt; "Als profielfoto" staat er ook als de foto dat al is. Twee users met hetzelfde beeld krijgen dezelfde `profileVersion`, ook op de openbare uitnodigingspagina; het beeld is daar al openbaar, er lekt niets.
