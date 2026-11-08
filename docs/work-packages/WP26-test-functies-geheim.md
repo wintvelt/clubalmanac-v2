@@ -2,6 +2,14 @@
 
 > Draft regie 2026-11-08. Backend-WP, klein. Uit de WP17a-red-team (R2). Vóór T0. A → B → audit → korte red-team → gate. Eigen branch `wp26`.
 
+## Besluiten Wouter (2026-11-08, op A's advies)
+
+1. **W1:** het geheim gaat als argument `testSecret` mee, en wordt vergeleken met de env-var `INTEGRATION_TEST_SECRET`. Geen deploy key.
+2. **W2:** het restrisico van kernvondst 4 is geaccepteerd. Na een fout argument in een aanroep mét het geheim wordt het geheim vervangen.
+3. **W3:** oude URL's accepteren. Eenmalig `npm run migrate -- verify dev` draaien (regie), en in de Logs filteren op `_test:` (Wouter).
+4. **W4:** de T0-check komt in de cutover-checklist (`migratie-status.md`).
+5. **A-keuze 1 en 2 bevestigd:** één weigering voor elke oorzaak, en `/_test/whoami` met de header `X-Test-Secret`.
+
 ## Productdoel
 
 Alleen wie het testgeheim heeft, kan op dev een `_test`-functie aanroepen. Op prod werkt geen enkele, ook niet met het geheim. De integratietests blijven werken.
