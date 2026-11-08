@@ -7,6 +7,7 @@ import {
 } from "./_generated/server";
 import { requireWebmaster } from "./lib/auth";
 import { normalizeEmail } from "./lib/email";
+import { assertTestFlag, assertTestGate, testSecretArg } from "./lib/testGate";
 
 // Test-only Convex functions voor de integration-suite (WP2 e.v.).
 //
@@ -16,25 +17,20 @@ import { normalizeEmail } from "./lib/email";
 // `ConvexHttpClient`. Zie docs/migratie-plan-convex.md "WP2 — Convex storage
 // roundtrip" en docs/conventions/integration-tests.md.
 //
-// Dubbele safety: elke functie throwt als `INTEGRATION_TEST_ENABLED !== "true"`.
-// Wouter zet die env-var alleen op de dev-deployment (Convex dashboard →
-// Settings → Environment Variables); prod krijgt 'm nooit. Eerste laag is de
-// prod-URL-blocklist in `tests/integration/_helpers/safety.ts`.
-
-function assertIntegrationEnabled(): void {
-  if (process.env.INTEGRATION_TEST_ENABLED !== "true") {
-    throw new Error(
-      "INTEGRATION_TEST_ENABLED is not set to \"true\" on this deployment. " +
-        "Test-only function refused. Zet de env-var alleen op de dev-deployment.",
-    );
-  }
-}
+// WP26: elke publieke functie hier neemt het optionele argument `testSecret`
+// en roept als eerste `assertTestGate` aan (convex/lib/testGate.ts): open
+// alleen met `INTEGRATION_TEST_ENABLED === "true"`, een niet-leeg
+// `INTEGRATION_TEST_SECRET` op de deployment en exact dat geheim in de
+// aanroep. Beide env-vars staan alleen op dev; prod krijgt ze nooit. De gate
+// staat vóór elk effect, dus een weigering laat niets achter.
+// tests/testGate/inventory.test.ts eist het argument (en een recept) voor
+// elke nieuwe publieke export. Interne functies houden alleen de vlag-check.
 
 export const storageUpload = action({
-  args: { bytes: v.bytes(), contentType: v.optional(v.string()) },
+  args: { bytes: v.bytes(), contentType: v.optional(v.string()), ...testSecretArg },
   returns: v.object({ storageId: v.id("_storage") }),
-  handler: async (ctx, { bytes, contentType }) => {
-    assertIntegrationEnabled();
+  handler: async (ctx, { bytes, contentType, testSecret }) => {
+    assertTestGate(testSecret);
     const blob =
       contentType !== undefined
         ? new Blob([bytes], { type: contentType })
@@ -45,19 +41,19 @@ export const storageUpload = action({
 });
 
 export const storageDownloadUrl = query({
-  args: { storageId: v.id("_storage") },
+  args: { storageId: v.id("_storage"), ...testSecretArg },
   returns: v.union(v.null(), v.string()),
-  handler: async (ctx, { storageId }) => {
-    assertIntegrationEnabled();
+  handler: async (ctx, { storageId, testSecret }) => {
+    assertTestGate(testSecret);
     return await ctx.storage.getUrl(storageId);
   },
 });
 
 export const storageDelete = mutation({
-  args: { storageId: v.id("_storage") },
+  args: { storageId: v.id("_storage"), ...testSecretArg },
   returns: v.null(),
-  handler: async (ctx, { storageId }) => {
-    assertIntegrationEnabled();
+  handler: async (ctx, { storageId, testSecret }) => {
+    assertTestGate(testSecret);
     await ctx.storage.delete(storageId);
     return null;
   },
@@ -72,7 +68,7 @@ export const whoamiCheckWebmaster = internalQuery({
   args: {},
   returns: v.boolean(),
   handler: async (ctx) => {
-    assertIntegrationEnabled();
+    assertTestFlag();
     try {
       await requireWebmaster(ctx);
       return true;
@@ -91,8 +87,8 @@ export const whoamiCheckWebmaster = internalQuery({
 // gedeployde DB. `ConvexHttpClient` kan alleen PUBLIC functies aanroepen; er is
 // geen public pad om (a) een pending invite te seeden, (b) DB-state by-subject
 // terug te lezen, of (c) op te ruimen voor een fresh fake subject zonder
-// Clerk-JWT. Deze zes helpers vullen dat gat — allen `INTEGRATION_TEST_ENABLED`-
-// gated (WP2-precedent), dus inert op prod.
+// Clerk-JWT. Deze zes helpers vullen dat gat — allen achter de WP26-gate,
+// dus inert op prod.
 //
 // Cleanup-volgorde (kindrecords vóór ouder, om FK-orphan-blip te vermijden):
 //   - cleanupUserBySubject: albumLastSeen → memberships → users-row
@@ -102,7 +98,7 @@ export const whoamiCheckWebmaster = internalQuery({
 
 // Read-back: users-row voor een gegeven Clerk-subject (insert-pad-verificatie).
 export const getUserBySubject = query({
-  args: { subject: v.string() },
+  args: { subject: v.string(), ...testSecretArg },
   returns: v.union(
     v.null(),
     v.object({
@@ -113,8 +109,8 @@ export const getUserBySubject = query({
       createdAt: v.number(),
     }),
   ),
-  handler: async (ctx, { subject }) => {
-    assertIntegrationEnabled();
+  handler: async (ctx, { subject, testSecret }) => {
+    assertTestGate(testSecret);
     const user = await ctx.db
       .query("users")
       .withIndex("by_subject", (q) => q.eq("subject", subject))
@@ -133,7 +129,7 @@ export const getUserBySubject = query({
 // Read-back: invites voor een email (invite-accept-verificatie). Email wordt
 // genormaliseerd zodat de lookup de invariant uit lib/email volgt.
 export const listInvitesByEmail = query({
-  args: { email: v.string() },
+  args: { email: v.string(), ...testSecretArg },
   returns: v.array(
     v.object({
       _id: v.id("invites"),
@@ -149,8 +145,8 @@ export const listInvitesByEmail = query({
       respondedAt: v.optional(v.number()),
     }),
   ),
-  handler: async (ctx, { email }) => {
-    assertIntegrationEnabled();
+  handler: async (ctx, { email, testSecret }) => {
+    assertTestGate(testSecret);
     const normalized = normalizeEmail(email);
     const invites = await ctx.db
       .query("invites")
@@ -169,7 +165,7 @@ export const listInvitesByEmail = query({
 
 // Read-back: memberships voor een user (membership-create-verificatie).
 export const listMembershipsByUserId = query({
-  args: { userId: v.id("users") },
+  args: { userId: v.id("users"), ...testSecretArg },
   returns: v.array(
     v.object({
       _id: v.id("memberships"),
@@ -179,8 +175,8 @@ export const listMembershipsByUserId = query({
       joinedAt: v.number(),
     }),
   ),
-  handler: async (ctx, { userId }) => {
-    assertIntegrationEnabled();
+  handler: async (ctx, { userId, testSecret }) => {
+    assertTestGate(testSecret);
     const memberships = await ctx.db
       .query("memberships")
       .withIndex("by_user", (q) => q.eq("userId", userId))
@@ -200,14 +196,14 @@ export const listMembershipsByUserId = query({
 // De inviter krijgt een afgeleid e-mailadres dat NIET botst met `email` (anders
 // zou registerFromSession's email-uniqueness-check de onboarding-insert blokkeren).
 export const seedOnboardingFixture = mutation({
-  args: { email: v.string() },
+  args: { email: v.string(), ...testSecretArg },
   returns: v.object({
     inviterUserId: v.id("users"),
     groupId: v.id("groups"),
     inviteId: v.id("invites"),
   }),
-  handler: async (ctx, { email }) => {
-    assertIntegrationEnabled();
+  handler: async (ctx, { email, testSecret }) => {
+    assertTestGate(testSecret);
     const normalized = normalizeEmail(email);
     const now = Date.now();
 
@@ -244,7 +240,7 @@ export const seedOnboardingFixture = mutation({
 // Teardown van de onboarded subject: albumLastSeen → memberships → users-row.
 // Idempotent: reeds-verdwenen state telt als 0.
 export const cleanupUserBySubject = mutation({
-  args: { subject: v.string() },
+  args: { subject: v.string(), ...testSecretArg },
   returns: v.object({
     deleted: v.object({
       albumLastSeen: v.number(),
@@ -253,8 +249,8 @@ export const cleanupUserBySubject = mutation({
     }),
     total: v.number(),
   }),
-  handler: async (ctx, { subject }) => {
-    assertIntegrationEnabled();
+  handler: async (ctx, { subject, testSecret }) => {
+    assertTestGate(testSecret);
     const user = await ctx.db
       .query("users")
       .withIndex("by_subject", (q) => q.eq("subject", subject))
@@ -299,6 +295,7 @@ export const cleanupOnboardingSeed = mutation({
     inviteId: v.id("invites"),
     groupId: v.id("groups"),
     inviterUserId: v.id("users"),
+    ...testSecretArg,
   },
   returns: v.object({
     deleted: v.object({
@@ -308,8 +305,8 @@ export const cleanupOnboardingSeed = mutation({
     }),
     total: v.number(),
   }),
-  handler: async (ctx, { inviteId, groupId, inviterUserId }) => {
-    assertIntegrationEnabled();
+  handler: async (ctx, { inviteId, groupId, inviterUserId, testSecret }) => {
+    assertTestGate(testSecret);
 
     let invites = 0;
     if (await ctx.db.get(inviteId)) {

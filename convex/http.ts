@@ -6,6 +6,11 @@ import type { Id } from "./_generated/dataModel";
 import { parseImageFormat } from "./images";
 import { UPLOAD_NO_ALBUM_ACCESS, UPLOAD_RESERVATION_GONE } from "./photos";
 import { MAX_UPLOAD_BYTES } from "./lib/constants";
+import {
+  TEST_SECRET_HEADER,
+  testGateOpen,
+  testGateRefusalResponse,
+} from "./lib/testGate";
 import { parseLocation, parseTakenAt, uploadImageType } from "./lib/upload";
 
 // Cascade matrix IB1: Mailjet bounce-webhook → internal.invites.handleBounce.
@@ -574,25 +579,19 @@ http.route({
 // over of de Clerk JWT-template "convex" daadwerkelijk de email-claim
 // doorlevert. Deze httpAction reflecteert subset van getUserIdentity()
 // + webmaster-flag, zodat de Clerk-roundtrip-tests pinnen op een echte
-// JWT. Zelfde env-var-gate-patroon als convex/_test.ts.
+// JWT.
 //
-// Status-keuze 503 bij gate-fail (i.p.v. 403): semantisch "endpoint
-// bestaat maar is uitgeschakeld op deze deployment", niet "auth-rejection".
-// 403 zou suggereren dat de caller iets fout doet; 503 maakt duidelijk
-// dat de deployment-config bewust off is. Plan-doc liet de keuze open.
+// WP26: dezelfde gate als convex/_test.ts, met het geheim in de header
+// `X-Test-Secret`. De gate staat vóór de JWT-check: zonder (juist) geheim,
+// met vlag uit of zonder geheim op de deployment krijgt iedereen dezelfde
+// 403, met of zonder geldige JWT. Met het geheim blijft WP4 gelijk (401
+// zonder of met ongeldige JWT, 200 met identity).
 http.route({
   path: "/_test/whoami",
   method: "GET",
-  handler: httpAction(async (ctx) => {
-    if (process.env.INTEGRATION_TEST_ENABLED !== "true") {
-      return Response.json(
-        {
-          error:
-            "Test endpoint disabled (INTEGRATION_TEST_ENABLED != \"true\"). " +
-            "Zet de env-var alleen op de dev-deployment.",
-        },
-        { status: 503 },
-      );
+  handler: httpAction(async (ctx, request) => {
+    if (!testGateOpen(request.headers.get(TEST_SECRET_HEADER))) {
+      return testGateRefusalResponse();
     }
 
     // Convex throwt op invalid JWT (signature/issuer mismatch) i.p.v. null

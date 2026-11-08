@@ -64,20 +64,42 @@ alleen toegevoegd wanneer de pin een productie-code-wijziging vereist
 Bij een groen-passende A-test ligt de waarde in het bestaan van de pin, niet
 in een RED→GREEN cyclus.
 
-## Test-only Convex functions met env-var-gate
+## Test-only Convex functions achter een geheim
 
 Voor werkpakketten die productie-code raken zonder dat we klanten daaraan
 willen blootstellen (bv. WP2 — storage roundtrip moest auth-vrij ontkoppeld
 worden van de bestaande Clerk-gekoppelde upload-httpAction) gebruiken we
 **test-only Convex functions**: een apart bestand `convex/_test.ts` met
-public mutation/query/action's die `ConvexHttpClient` kan aanroepen.
+public mutation/query/action's die `ConvexHttpClient` kan aanroepen, plus de
+route `GET /_test/whoami` in `convex/http.ts`.
 
-Elke test-only function gate't op `process.env.INTEGRATION_TEST_ENABLED ===
-"true"` en throwt anders met een duidelijke melding. De env-var wordt
-alleen op de dev-deployment gezet (Convex dashboard → Settings → Environment
-Variables); prod krijgt 'm nooit. De [safety-helper in tests](../../tests/integration/_helpers/safety.ts)
-blokkeert daarnaast prod-deployment-URLs als eerste laag — twee lagen,
-self-protection redundant by design.
+Gate (WP26, `convex/lib/testGate.ts`): een aanroep werkt alleen als op de
+deployment `INTEGRATION_TEST_ENABLED=true` staat, `INTEGRATION_TEST_SECRET`
+niet leeg is, en de aanroeper exact dat geheim meestuurt: als argument
+`testSecret` (functies) of header `X-Test-Secret` (whoami). Beide env-vars
+staan alleen op dev; prod krijgt ze nooit. De tests sturen het geheim mee
+via [`_helpers/testSecret.ts`](../../tests/integration/_helpers/testSecret.ts),
+dat het uit `.env.integration` leest en luid faalt als het ontbreekt. De
+[safety-helper](../../tests/integration/_helpers/safety.ts) blokkeert
+daarnaast prod-URL's.
+
+**Weigering:** functies gooien `ConvexError("Forbidden")`, whoami geeft 403.
+Hetzelfde antwoord voor elke oorzaak, dus bij een weigering zijn er drie
+mogelijkheden: de vlag staat niet op `true`, het geheim ontbreekt op de
+deployment, of het geheim in `.env.integration` wijkt af (ook een spatie of
+hoofdletter telt).
+
+**Nieuwe test-only functie:** spread `testSecretArg` in de args en roep
+`assertTestGate(testSecret)` aan als eerste regel van de handler, vóór elk
+effect. Voeg een recept toe in `tests/testGate/_recipes.ts`;
+`tests/testGate/inventory.test.ts` is rood zolang een publieke export van
+`_test.ts` het argument of een recept mist. Een nieuwe `/_test`-route komt in
+`HTTP_TEST_ROUTES` en gebruikt `testGateOpen`.
+
+**Draai de tests pas als de code op dev staat.** Kent de deployment
+`testSecret` niet, of klopt een ander argument niet, dan kan Convex' validatiefout
+de waarden van de argumenten tonen, ook het geheim. Gebeurt dat: roteren
+(zie [`external-services.md`](./external-services.md) §Test-only functies).
 
 Deze aanpak triggert een volle A→B→audit cyclus (niet de A+audit norm
 hierboven): A schrijft tests + spec, B implementeert `convex/_test.ts`,

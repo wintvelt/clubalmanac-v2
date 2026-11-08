@@ -25,12 +25,13 @@ Integration suite groeit per werkpakket. Elk werkpakket = aparte sub-folder.
 | WP | Service | Folder | Env-vars |
 |----|---------|--------|----------|
 | WP1 | Photon (Komoot) reverse geocoding | `photon/` | _(geen)_ |
-| WP2 | Convex storage roundtrip via `ConvexHttpClient` | `convex/` | `CONVEX_URL` |
-| WP4 | Clerk JWT validation roundtrip via `whoami` httpAction | `clerk/` | `CLERK_SECRET_KEY`, `CLERK_TEST_USER_*_EMAIL` |
+| WP2 | Convex storage roundtrip via `ConvexHttpClient` | `convex/` | `CONVEX_URL`, `INTEGRATION_TEST_SECRET` |
+| WP4 | Clerk JWT validation roundtrip via `whoami` httpAction | `clerk/` | `CLERK_SECRET_KEY`, `CLERK_TEST_USER_*_EMAIL`, `INTEGRATION_TEST_SECRET` |
 | WP11 | Mailjet Send-API contract (direct) | `mailjet/` | `MAILJET_API_KEY`, `MAILJET_API_SECRET`, `MAILJET_TEST_*_FROM` |
-| WP11 | Clerk onboarding-webhook (atomic, live route) | `clerk/` | `CONVEX_URL`, `CLERK_WEBHOOK_SECRET` |
-| WP17a | Convex storage-URL: zonder auth, na wissen weg, headers (meting) | `convex/storageUrl.test.ts` | `CONVEX_URL` (+ `INTEGRATION_TEST_ENABLED` op dev, zoals WP2) |
+| WP11 | Clerk onboarding-webhook (atomic, live route) | `clerk/` | `CONVEX_URL`, `CLERK_WEBHOOK_SECRET`, `INTEGRATION_TEST_SECRET` |
+| WP17a | Convex storage-URL: zonder auth, na wissen weg, headers (meting) | `convex/storageUrl.test.ts` | `CONVEX_URL`, `INTEGRATION_TEST_SECRET` |
 | WP17a | Gate-stap 6: ex-lid krijgt met een oude beeld-URL 404 | `images/exMember.test.ts` | `CONVEX_URL`, `CLERK_SECRET_KEY`, `CLERK_TEST_USER_WEBMASTER_EMAIL`, `CLERK_TEST_USER_REGULAR_EMAIL` |
+| WP26 | Gate-stap 6: `_test`-functies weigeren zonder geheim | `convex/testGate.test.ts` | `CONVEX_URL`, `INTEGRATION_TEST_SECRET` |
 
 Env-vars voor WP2-4 lopen via `.env.integration` (in `.gitignore`),
 geladen door [`_helpers/setup.ts`](./_helpers/setup.ts) via `dotenv` —
@@ -48,13 +49,15 @@ WP2 vereist eenmalig per dev-machine:
    safety-helper in [`_helpers/safety.ts`](./_helpers/safety.ts) blokkeert
    dat als tweede laag.
 2. Op de Convex dev-deployment zelf (Convex dashboard → Settings →
-   Environment Variables): zet `INTEGRATION_TEST_ENABLED=true`. De
-   test-only functies in `convex/_test.ts` zitten achter deze gate;
-   zonder de var throwen ze met een duidelijke foutmelding. Prod krijgt
-   deze var nooit.
+   Environment Variables): `INTEGRATION_TEST_ENABLED=true` en
+   `INTEGRATION_TEST_SECRET` (WP26), en dezelfde waarde van het geheim in
+   `.env.integration`. De test-only functies in `convex/_test.ts` en
+   `/_test/whoami` weigeren anders, met één antwoord voor elke oorzaak
+   (zie [`integration-tests.md`](../../docs/conventions/integration-tests.md)
+   §Test-only Convex functions). Prod krijgt deze vars nooit.
 
-Beide lagen — client-side prod-URL-check én server-side env-var-gate —
-moeten passeren voordat tests een storage-write kunnen doen. Self-protection
+Beide lagen — client-side prod-URL-check én server-side gate — moeten
+passeren voordat tests een storage-write kunnen doen. Self-protection
 redundant by design: één laag falen ≠ data-pollutie op prod.
 
 ## WP4 — Clerk JWT roundtrip setup
@@ -72,7 +75,7 @@ doorlevert in productie (zie productie-blind-spot in plan-doc r.251 /
 2. Maak in Clerk dev dashboard (`picked-quail-97.clerk.accounts.dev`) twee
    users aan met deze emails (handmatig).
 3. Op de Convex dev-deployment:
-   - `INTEGRATION_TEST_ENABLED=true` (al gezet voor WP2).
+   - `INTEGRATION_TEST_ENABLED` en `INTEGRATION_TEST_SECRET` (al gezet voor WP2).
    - `WEBMASTER_EMAILS` bevat de webmaster-test-user.
 4. Voor beide test-users: zorg dat ze ook een `users`-record in Convex
    hebben (audit-7 §3: webmaster zónder users-record → `requireWebmaster`
