@@ -291,3 +291,27 @@ Uit de red-team, op Wouters besluit 6: M1, Z1 en Z3.
 | `tests/http/uploadReservation.test.ts` | A-invariant 22: na `photos.remove`, de cron voor gemelde foto's en `users.deleteSelf` geen reservering meer naar de foto (of van de user) en geen `uploadIdempotency`-regel in de integriteitscheck; een herhaling daarna is een nieuwe foto; een reservering die al naar een gewiste foto wees, geeft nooit dat photoId. A-invariant 23: na 31 minuten en na 21 uur uploadt de herhaling, na 29 minuten nog 409; een late stap van de oude poging maakt geen tweede foto; de herhaling krijgt een verse reservering, dus een tweede herhaling vlak erna krijgt 409. Echt tegelijk kan convex-test niet (storage buiten de transactie), dus die test loopt in volgorde. |
 | `tests/http/uploadAlbum.test.ts` | A-invariant 24: een herhaling na "uit het album gehaald" zet de foto er weer in (één plek, de uploader als toevoeger); een herhaling met een ander album zet hem ook daar in. |
 | `app/tests/upload.test.ts` | A-invariant 25: `albumBatch` per foto en album, plus een bronscan dat AddPhotosScreen hem gebruikt en `newBatch` niet. |
+
+---
+
+## Fix-cyclus 3 (A, 2026-11-08)
+
+Uit de hercheck van de red-team, op Wouters besluit 7: de leesgrens bij account wissen.
+
+### Kernvondst
+
+**Wissen leest per foto alle reserveringen van de eigenaar.** `internalRemovePhoto` zoekt de reservering van een foto via `by_owner_and_clientUploadId` op de eigenaar, en kiest daarna zelf. Een index op `photoId` is er niet. Convex telt elk document in het index-bereik als gelezen, ook als een filter het daarna afwijst. `users.deleteSelf` wist elke foto van de user, dus hij leest foto's × reserveringen van de laatste 7 dagen. Bij 400 foto's en 100 uploads is dat alleen aan reserveringen al ~40.000 (de red-team telde ~45.000 in totaal), boven de 32.000 gescande documenten per transactie. De user krijgt "Server Error" en zijn account blijft bestaan. De cron voor gemelde foto's betaalt hetzelfde per gemelde foto, met kleinere aantallen.
+
+### Aanvullende invariant
+
+26. **Een foto wissen leest alleen de reservering van die foto.** `internalRemovePhoto` leest uit `uploadIdempotency` alleen de reservering(en) waarvan `photoId` die foto is. Een foto zonder reservering (ouder dan 7 dagen) kost dus geen reads. Daarmee leest `users.deleteSelf` hooguit één keer de eigen reserveringen plus per foto de eigen reservering, en niet meer foto's × uploads. A-invariant 22 blijft gelden: wat naar de foto wijst gaat weg, de rest blijft.
+
+De voor de hand liggende vorm is een index `by_photo` op `["photoId"]` in `uploadIdempotency`. De tests pinnen het gedrag, niet de naam. Een backfill is niet nodig: `photoId` bestaat al, en Convex bouwt een nieuwe index bij de deploy uit de bestaande documenten. Een reservering "nog bezig" heeft geen `photoId` en valt buiten elk bereik op een foto.
+
+**Buiten scope** (besluit 7): de scans per foto over groepen, albums en users (P5) in `internalRemovePhoto`. Die maken `deleteSelf` ook zwaar bij veel foto's en horen bij het WP voor account wissen.
+
+### Tests
+
+| Bestand | Pint |
+|---|---|
+| `tests/http/uploadReservationReads.test.ts` | A-invariant 26. convex-test handhaaft de leesgrens niet, dus een recorder om `ctx.db` telt per query op `uploadIdempotency` de documenten in het index-bereik, zoals Convex ze leest. Een filter erna telt niet als kleiner bereik; zonder index telt de hele tabel. De echte `internalRemovePhoto` leest hooguit 1 reservering, of 0 bij een foto zonder reservering. De echte handler van `users.deleteSelf` leest hooguit eigen reserveringen + foto's, bij 40 foto's en 65 reserveringen (nu 1845). Plus twee sanity-tests dat de recorder een scan over de eigenaar met filter als de hele eigenaar telt. |
