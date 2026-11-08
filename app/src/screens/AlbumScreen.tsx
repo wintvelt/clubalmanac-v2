@@ -101,7 +101,14 @@ function AlbumContent({ groupId, albumId }: { groupId: Id<"groups">; albumId: Id
     setSelecting(false);
     setPicked(new Set());
   }, []);
-  const runSelection = useSelectionActions({ albumId, ctx, onFeedback: setFeedback, onDone: stopSelecting });
+  const [selectionBusy, setSelectionBusy] = useState(false);
+  const runSelection = useSelectionActions({
+    albumId,
+    ctx,
+    onFeedback: setFeedback,
+    onDone: stopSelecting,
+    onBusyChange: setSelectionBusy,
+  });
   const listState = useMemo(() => ({ selecting, picked, ctx }), [selecting, picked, ctx]);
   const toggle = (photoId: string) =>
     setPicked((before) => {
@@ -179,6 +186,7 @@ function AlbumContent({ groupId, albumId }: { groupId: Id<"groups">; albumId: Id
       {selecting ? (
         <SelectionBar
           count={selected.length}
+          busy={selectionBusy}
           onRemoveFromAlbum={() => runSelection("removeFromAlbum", selected)}
           onDelete={() => runSelection("delete", selected)}
           onCancel={stopSelecting}
@@ -202,25 +210,29 @@ function menuPhotoOf(entry: Entry & { photo: NonNullable<Entry["photo"]> }): Men
 // actie geldt per foto; wat niet mag, meldt de app daarna (A-keuze 2).
 function SelectionBar({
   count,
+  busy,
   onRemoveFromAlbum,
   onDelete,
   onCancel,
 }: {
   count: number;
+  busy: boolean;
   onRemoveFromAlbum: () => void;
   onDelete: () => void;
   onCancel: () => void;
 }) {
   const none = count === 0;
+  // Fix-cyclus 1, invariant 15: tijdens een ronde zegt de balk dat hij bezig is.
+  const status = busy ? "Bezig…" : none ? "Tik op foto's om ze te kiezen" : `${count} geselecteerd`;
   return (
     <BottomPanel>
       <Text variant="bodyStrong" accessibilityLiveRegion="polite">
-        {none ? "Tik op foto's om ze te kiezen" : `${count} geselecteerd`}
+        {status}
       </Text>
       <View style={styles.barRow}>
-        <SmallButton title="Uit album" onPress={onRemoveFromAlbum} disabled={none} />
-        <SmallButton title="Verwijderen" icon="trash" tone="danger" onPress={onDelete} disabled={none} />
-        <SmallButton title="Annuleren" onPress={onCancel} />
+        <SmallButton title="Uit album" onPress={onRemoveFromAlbum} disabled={none || busy} />
+        <SmallButton title="Verwijderen" icon="trash" tone="danger" onPress={onDelete} disabled={none || busy} />
+        <SmallButton title="Annuleren" onPress={onCancel} disabled={busy} />
       </View>
     </BottomPanel>
   );

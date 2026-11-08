@@ -244,6 +244,7 @@ function PhotoInfo({ entry }: { entry: Shown }) {
         name={name}
         size={size.avatar}
         exifOrientation={entry.owner?.profileOrientation}
+        version={entry.owner?.profileVersion}
         hasFormats={entry.owner?.profileHasFormats}
       />
       <View style={styles.infoText}>

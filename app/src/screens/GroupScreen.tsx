@@ -238,6 +238,7 @@ function MembersTab({ groupId, founderId }: { groupId: Id<"groups">; founderId: 
                     name={name}
                     size={size.avatar}
                     exifOrientation={m.user?.profileOrientation}
+                    version={m.user?.profileVersion}
                     hasFormats={m.user?.profileHasFormats}
                   />
                   <View style={styles.text}>

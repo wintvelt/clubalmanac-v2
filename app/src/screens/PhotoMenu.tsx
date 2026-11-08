@@ -219,27 +219,38 @@ export function useSelectionActions({
   ctx,
   onFeedback,
   onDone,
+  onBusyChange,
 }: {
   albumId: Id<"albums">;
   ctx: MenuContext | undefined;
   onFeedback: (f: Feedback | null) => void;
   onDone: () => void;
+  // Zodat de balk kan laten zien dat hij bezig is.
+  onBusyChange?: (busy: boolean) => void;
 }) {
   const removeFromAlbum = useMutation(api.albums.removePhoto);
   const removePhoto = useMutation(api.photos.remove);
+  // Fix-cyclus 1, invariant 15: één ronde tegelijk. Een ref, geen state: een
+  // tweede tik vóór de volgende render ziet hem ook.
+  const busy = useRef(false);
 
   return useCallback(
     (action: SelectionAction, selected: readonly MenuPhoto[]) => {
-      if (!ctx || selected.length === 0) return;
+      if (busy.current || !ctx || selected.length === 0) return;
       onFeedback(null);
       const plan = selectionPlan(action, selected, ctx);
       const finish = async () => {
+        if (busy.current) return;
+        busy.current = true;
+        onBusyChange?.(true);
         // Per foto: wat mag, gebeurt; wat de backend daarna nog weigert, telt als mislukt.
         const results = await Promise.allSettled(
           plan.allowed.map((photoId) =>
             action === "delete" ? removePhoto({ photoId }) : removeFromAlbum({ albumId, photoId }),
           ),
         );
+        busy.current = false;
+        onBusyChange?.(false);
         const failed = results.filter((r) => r.status === "rejected").length;
         const done = plan.allowed.length - failed;
         const summary = selectionSummary(action, { done, notAllowed: plan.notAllowed.length, failed });
@@ -274,7 +285,7 @@ export function useSelectionActions({
       }
       void finish();
     },
-    [albumId, ctx, onFeedback, onDone, removeFromAlbum, removePhoto],
+    [albumId, ctx, onFeedback, onDone, onBusyChange, removeFromAlbum, removePhoto],
   );
 }
 
