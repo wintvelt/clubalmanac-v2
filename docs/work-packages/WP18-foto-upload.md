@@ -12,6 +12,7 @@ Een lid zet foto's van zijn iPhone in een album van zijn groep. Ze staan rechtop
 2. **Locatie bewaren**, als aparte headers naast de opnamedatum.
 3. **Achtergrond:** na terugkeer noemt de app wat niet lukte, en de user probeert opnieuw. Het scherm blijft wakker tijdens een ronde. Een ronde onthouden over een herstart heen hoeft niet.
 4. **A-keuzes 1–4 bevestigd:** upload en album in één verzoek, de opnamedatum als header, elke foto JPEG met langste zijde hooguit 4032 zonder EXIF, grens 15 MiB.
+5. **Audit (2026-11-08):** de gate-stap "toestemming eerst weigeren" vervalt, want de iOS-kiezer vraagt geen toestemming (de uitleg met "Instellingen openen" blijft als vangnet). Fix-cyclus 1 neemt should-fix 1 (een verzoek dat nooit terugkomt) en de profielfoto die na een mislukking een nieuwe upload maakt mee, plus een echte ronde in de simulator tegen dev.
 
 ## Invarianten
 
@@ -94,7 +95,8 @@ Een lid zet foto's van zijn iPhone in een album van zijn groep. Ze staan rechtop
   - Een reeks met het netwerk halverwege uit (vliegtuigmodus): de app noemt wat niet lukte; opnieuw proberen geeft geen dubbele foto's.
   - Met een tweede account: de teller van het album loopt op en staat na openen op nul.
   - Profielfoto uploaden (met de melding) en weghalen: de avatar volgt overal.
-  - Toestemming eerst weigeren: uitleg en link naar Instellingen.
+  - Een foto met locatie: de plaatsnaam staat in het detail.
+  - Een staande foto van 24 MP of meer: rechtop, en het verkleinen loopt zonder problemen.
   - Wat viel op.
 
 ---
