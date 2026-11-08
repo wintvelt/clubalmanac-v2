@@ -125,7 +125,8 @@ describe("invites.getByToken — landingspagina lookup", () => {
     // Allow-list: _id + name, plus de stand en het formaat-vlag van de
     // profielfoto (WP25 invariant 19 en 26; geen id, de foto is al openbaar).
     // profileHasFormats is er altijd, profileOrientation alleen met een stand.
-    const allowed = new Set(["_id", "name", "profileHasFormats", "profileOrientation"]);
+    // WP17b invariant 13: plus `profileVersion`, ondoorzichtig.
+    const allowed = new Set(["_id", "name", "profileHasFormats", "profileOrientation", "profileVersion"]);
     expect(inviter.profileHasFormats).toBe(false);
     for (const k of Object.keys(inviter)) {
       expect(allowed.has(k)).toBe(true);

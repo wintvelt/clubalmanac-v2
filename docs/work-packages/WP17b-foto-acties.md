@@ -204,3 +204,52 @@ De tests staan in een eigen `describe` met "A-keuze n" in de naam.
 | `tests/photos/deleteClearsProfile.test.ts` | A-keuze 1, via `photos.remove`, `users.deleteSelf` en de FL1-cron |
 
 Geen UI-tests (app-WP). De schermen, de meldingen en de bevestigingen toetst de gate.
+
+---
+
+## Fix-cyclus 1 (A, 2026-11-08)
+
+Twee bevindingen uit de audit, met akkoord van Wouter. N1–N3 en N5 blijven liggen.
+
+### B1 (blocker): de avatar ververst niet na een nieuwe profielfoto
+
+**Oorzaak.** De profiel-URL is per user altijd gelijk (`/beeld/profiel/<userId>`), en de avatar bouwt alleen opnieuw op als de stand of `hasFormats` wisselt. Kiest een user een nieuwe profielfoto met dezelfde stand en hetzelfde formaat-vlag, dan blijft overal het oude beeld staan: in het detail, op Profiel, in de ledenlijst en bij andere leden. Stond de avatar op de letter (een fout eerder), dan blijft die staan. Hetzelfde gebeurt bij "geen profielfoto" naar een foto zonder stand en zonder formaten, en bij een gewiste profielfoto zonder stand en zonder formaten: de user-vorm verandert dan helemaal niet.
+
+**13. Een nieuw beeld laadt overal opnieuw, zonder beeld-id.**
+- Elke user-vorm met een avatar (de zeven responses van WP25 invariant 19) krijgt `profileVersion`: een string, altijd aanwezig, ook zonder profielfoto.
+- Hij is ondoorzichtig: er staat geen beeld-id, foto-id of formaat-id in, ook niet als deel ervan (WP17a invariant 10).
+- Voor één user is hij op hetzelfde moment in elke response gelijk.
+- Hij verandert als het beeld achter de avatar verandert: een ander beeld, of geen beeld meer.
+- Hij blijft gelijk als er aan het beeld niets verandert. Dat geldt ook bij een andere naam, en bij een nieuwe profielfoto van een ander.
+- Bij draaien mag hij veranderen; de stand wisselt dan al.
+- Hoe B hem maakt, is vrij. Een teller, een tijdstip of een hash van het beeld-id mag allemaal, zolang het id er niet uit terug te halen is.
+
+**14. De avatar volgt `profileVersion`, op de hele avatar.**
+- `ProfileAvatar` krijgt `version`, van hetzelfde object als de stand: `version={X.profileVersion}` naast `exifOrientation={X.profileOrientation}`.
+- Wisselt de versie, dan laadt het beeld opnieuw (een nieuw beeld-element of een andere bron).
+- Stond de avatar op de letter na een fout, dan probeert hij het nieuwe beeld weer.
+- Zelfde versie: geen herlaad, en na een fout blijft de letter staan (geen lus).
+
+### S1 (should-fix): de selectiebalk blokkeert niet tijdens een actie
+
+**Oorzaak.** `useSelectionActions` start bij elke tik opnieuw. Een dubbele tik op "Uit album" stuurt elke foto twee keer. De tweede ronde faalt, en de melding zegt dan dat het mislukte.
+
+**15. Eén selectie-actie tegelijk.**
+- Zolang een selectie-actie loopt (van de eerste mutation tot de melding), doet een nieuwe aanroep niets: geen mutation, geen melding.
+- Dat geldt ook vóór de volgende render. Een tweede tik op de oude functie wordt dus ook genegeerd. Een vlag in state alleen is dan niet genoeg.
+- Na de melding kan een nieuwe actie.
+- Annuleert de user de bevestiging, dan loopt er niets, en kan het meteen opnieuw.
+- De balk laat zien dat hij bezig is. Dat staat op de checklist en wordt getoetst bij de gate.
+
+### Aanpassingen aan bestaande tests
+
+- `tests/readWhitelist/_world.ts`: `profileVersion` in `SHAPE.publicProfile`, `ownProfile` en `landingInviter`.
+- `tests/invites/publicGet.test.ts`: `profileVersion` in de allow-list van de afzender.
+
+### Tests
+
+| Bestand | Pint |
+|---|---|
+| `tests/users/profileVersion.test.ts` | Invariant 13 |
+| `app/tests/profileAvatarVersion.test.ts` | Invariant 14, met een kleine reconciler: een andere key is een nieuw component met nieuwe state, zoals in React |
+| `app/tests/selectionBusy.test.ts` | Invariant 15 |
