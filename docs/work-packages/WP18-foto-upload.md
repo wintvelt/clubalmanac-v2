@@ -6,6 +6,13 @@
 
 Een lid zet foto's van zijn iPhone in een album van zijn groep. Ze staan rechtop, met hun datum, en de andere leden zien ze. Mislukt er iets, dan ziet hij welke foto's, en kan hij die opnieuw proberen zonder dat er een foto dubbel komt. Daarnaast kan hij een eigen profielfoto uploaden of zijn profielfoto weghalen.
 
+## Besluiten Wouter (2026-11-08, op A's advies)
+
+1. **Profielfoto is een gewone eigen foto** (upload zonder album, dan `users.setProfilePhoto`). Weghalen haalt alleen de koppeling weg.
+2. **Locatie bewaren**, als aparte headers naast de opnamedatum.
+3. **Achtergrond:** na terugkeer noemt de app wat niet lukte, en de user probeert opnieuw. Het scherm blijft wakker tijdens een ronde. Een ronde onthouden over een herstart heen hoeft niet.
+4. **A-keuzes 1–4 bevestigd:** upload en album in één verzoek, de opnamedatum als header, elke foto JPEG met langste zijde hooguit 4032 zonder EXIF, grens 15 MiB.
+
 ## Invarianten
 
 1. **Geen dubbele foto's.** Eén keuze van één foto levert hoogstens één foto in de backend en hoogstens één keer in het album, ook na opnieuw proberen, een weggevallen netwerk of een dubbele tik.
