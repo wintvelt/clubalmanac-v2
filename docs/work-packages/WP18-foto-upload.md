@@ -13,6 +13,16 @@ Een lid zet foto's van zijn iPhone in een album van zijn groep. Ze staan rechtop
 3. **Achtergrond:** na terugkeer noemt de app wat niet lukte, en de user probeert opnieuw. Het scherm blijft wakker tijdens een ronde. Een ronde onthouden over een herstart heen hoeft niet.
 4. **A-keuzes 1–4 bevestigd:** upload en album in één verzoek, de opnamedatum als header, elke foto JPEG met langste zijde hooguit 4032 zonder EXIF, grens 15 MiB.
 5. **Audit (2026-11-08):** de gate-stap "toestemming eerst weigeren" vervalt, want de iOS-kiezer vraagt geen toestemming (de uitleg met "Instellingen openen" blijft als vangnet). Fix-cyclus 1 neemt should-fix 1 (een verzoek dat nooit terugkomt) en de profielfoto die na een mislukking een nieuwe upload maakt mee, plus een echte ronde in de simulator tegen dev.
+6. **Red-team (2026-11-08):** fix-cyclus 2 neemt drie bevindingen mee:
+   - **M1:** een gewiste foto laat zijn upload-reservering achter. De integriteitscheck mailt dan een vals alarm, en een herhaling van die upload geeft de gewiste foto als "in het album".
+   - **Z1:** een reservering die "nog bezig" blijft omdat de server halverwege stopte, blokkeert opnieuw proberen tot de nachtelijke cron in plaats van een halfuur.
+   - **Z3:** na "Geen verbinding" kan de foto toch binnen zijn. "Meer foto's" met dezelfde foto's geeft dan dubbele foto's, zonder waarschuwing.
+
+   Geaccepteerd:
+   - Z2: vermomde bestanden van een client die de app omzeilt.
+   - De nits: lengte van `X-Filename` en `X-Upload-Id`, vreemde jaartallen in `X-Taken-At`, de foutmelding bij de profielfoto na terugkeer, en een limiet in foto's in plaats van bytes.
+
+   Z4 (een trage upload die "niet meer ingelogd" geeft) wordt een gate-stap met een traag netwerk.
 
 ## Invarianten
 
@@ -97,6 +107,7 @@ Een lid zet foto's van zijn iPhone in een album van zijn groep. Ze staan rechtop
   - Profielfoto uploaden (met de melding) en weghalen: de avatar volgt overal.
   - Een foto met locatie: de plaatsnaam staat in het detail.
   - Een staande foto van 24 MP of meer: rechtop, en het verkleinen loopt zonder problemen.
+  - Een paar foto's op een traag netwerk (Network Link Conditioner, "3G"): ze komen binnen, zonder "niet meer ingelogd" (red-team Z4).
   - Wat viel op.
 
 ---
