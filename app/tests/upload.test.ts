@@ -367,3 +367,129 @@ describe("invariant 21: profielfoto opnieuw proberen (profileRetry)", () => {
     expect(calls, "ProfileScreen.tsx roept profileRetry niet aan").toBeGreaterThan(0);
   });
 });
+
+// ── Fix-cyclus 2 (spec §Fix-cyclus 2) ─────────────────────────────────────
+//
+// A-invariant 25 (red-team Z3): dezelfde foto (de `assetId` van de kiezer) in
+// hetzelfde album krijgt binnen een app-sessie dezelfde upload-id, ook in een
+// nieuwe ronde. Kwam hij na "Geen verbinding" toch binnen, dan geeft de backend
+// hem terug in plaats van een tweede foto te maken. Ander album of geen
+// assetId: een nieuwe id. Binnen één ronde: elke foto een eigen id.
+//
+// Het geheugen hoort bij de module (een app-sessie). Elke test gebruikt eigen
+// assetIds, zodat de tests elkaar niet raken.
+
+type Pick = { key: string; assetId?: string | null };
+const fix2Lib = uploadLib as unknown as {
+  albumBatch?: (picks: readonly Pick[], albumId: string) => UploadItem[];
+};
+
+describe("A-invariant 25: dezelfde foto, hetzelfde album, dezelfde upload-id (albumBatch)", () => {
+  const batch = (picks: readonly Pick[], albumId: string) => {
+    expect(typeof fix2Lib.albumBatch, "albumBatch ontbreekt in src/lib/upload.ts").toBe("function");
+    return fix2Lib.albumBatch!(picks, albumId);
+  };
+  const idOf = (items: UploadItem[], key: string) => byKey(items, key).uploadId;
+
+  it("elke gekozen foto wacht, met zijn sleutel, in volgorde", () => {
+    const items = batch(
+      [
+        { key: "1-0", assetId: "t1-a" },
+        { key: "1-1", assetId: "t1-b" },
+      ],
+      "album-1",
+    );
+    expect(items.map((i) => [i.key, i.state])).toEqual([
+      ["1-0", "wacht"],
+      ["1-1", "wacht"],
+    ]);
+    for (const i of items) expect(i.uploadId.length).toBeGreaterThan(0);
+  });
+
+  it("een nieuwe ronde met dezelfde foto voor hetzelfde album: dezelfde id", () => {
+    const first = batch([{ key: "1-0", assetId: "t2-a" }], "album-1");
+    const second = batch(
+      [
+        { key: "2-0", assetId: "t2-b" },
+        { key: "2-1", assetId: "t2-a" },
+      ],
+      "album-1",
+    );
+    expect(idOf(second, "2-1")).toBe(idOf(first, "1-0"));
+    expect(idOf(second, "2-0")).not.toBe(idOf(first, "1-0"));
+  });
+
+  it("ook na een mislukte en na een gelukte ronde (de uitkomst maakt niet uit)", () => {
+    const first = batch([{ key: "1-0", assetId: "t3-a" }, { key: "1-1", assetId: "t3-b" }], "album-1");
+    let done = applyOutcome(startItem(first, "1-0"), "1-0", fail("netwerk"));
+    done = applyOutcome(startItem(done, "1-1"), "1-1", ok("p1"));
+    const second = batch([{ key: "2-0", assetId: "t3-a" }, { key: "2-1", assetId: "t3-b" }], "album-1");
+    expect(idOf(second, "2-0")).toBe(byKey(done, "1-0").uploadId);
+    expect(idOf(second, "2-1")).toBe(byKey(done, "1-1").uploadId);
+  });
+
+  it("dezelfde foto voor een ander album: een andere id", () => {
+    const a = batch([{ key: "1-0", assetId: "t4-a" }], "album-1");
+    const b = batch([{ key: "2-0", assetId: "t4-a" }], "album-2");
+    expect(idOf(b, "2-0")).not.toBe(idOf(a, "1-0"));
+    // En terug naar het eerste album: weer de eerste id.
+    const c = batch([{ key: "3-0", assetId: "t4-a" }], "album-1");
+    expect(idOf(c, "3-0")).toBe(idOf(a, "1-0"));
+  });
+
+  it.each<[string, string | null | undefined]>([
+    ["null", null],
+    ["ontbreekt", undefined],
+    ["leeg", ""],
+  ])("zonder assetId (%s): elke ronde een nieuwe id", (_label, assetId) => {
+    const pick = (key: string): Pick => (assetId === undefined ? { key } : { key, assetId });
+    const a = batch([pick("1-0")], "album-1");
+    const b = batch([pick("2-0")], "album-1");
+    expect(idOf(b, "2-0")).not.toBe(idOf(a, "1-0"));
+  });
+
+  it("binnen één ronde heeft elke foto een eigen id, ook bij dezelfde assetId", () => {
+    const items = batch(
+      [
+        { key: "1-0", assetId: "t6-a" },
+        { key: "1-1", assetId: "t6-a" },
+        { key: "1-2", assetId: null },
+        { key: "1-3" },
+      ],
+      "album-1",
+    );
+    expect(new Set(items.map((i) => i.uploadId)).size).toBe(4);
+  });
+
+  it("andere foto's in hetzelfde album: andere ids", () => {
+    const items = batch(
+      Array.from({ length: 20 }, (_, n) => ({ key: `1-${n}`, assetId: `t7-${n}` })),
+      "album-1",
+    );
+    expect(new Set(items.map((i) => i.uploadId)).size).toBe(20);
+  });
+
+  it("newBatch (de profielfoto) blijft elke keer nieuwe ids geven", () => {
+    expect(newBatch(["profiel"])[0]!.uploadId).not.toBe(newBatch(["profiel"])[0]!.uploadId);
+  });
+
+  it("AddPhotosScreen maakt een ronde met albumBatch, met de assetId, en niet met newBatch (bronscan)", () => {
+    const file = new URL("../src/screens/AddPhotosScreen.tsx", import.meta.url);
+    const sf = parse(readFileSync(file, "utf8"), "AddPhotosScreen.tsx");
+    const calls = new Map<string, number>();
+    let assetIdUsed = 0;
+    const visit = (node: ts.Node) => {
+      if (ts.isCallExpression(node) && ts.isIdentifier(node.expression)) {
+        calls.set(node.expression.text, (calls.get(node.expression.text) ?? 0) + 1);
+      }
+      if (ts.isPropertyAccessExpression(node) && node.name.text === "assetId") assetIdUsed++;
+      if (ts.isShorthandPropertyAssignment(node) && node.name.text === "assetId") assetIdUsed++;
+      if (ts.isBindingElement(node) && ts.isIdentifier(node.name) && node.name.text === "assetId") assetIdUsed++;
+      ts.forEachChild(node, visit);
+    };
+    visit(sf);
+    expect(calls.get("albumBatch") ?? 0, "AddPhotosScreen.tsx roept albumBatch niet aan").toBeGreaterThan(0);
+    expect(calls.get("newBatch") ?? 0, "AddPhotosScreen.tsx roept nog newBatch aan").toBe(0);
+    expect(assetIdUsed, "AddPhotosScreen.tsx geeft de assetId van de kiezer niet mee").toBeGreaterThan(0);
+  });
+});

@@ -215,3 +215,82 @@ describe("A-invariant 15: album alleen als lid, één antwoord, niets achter", (
     expect(await rowsOf(t, w.albumB)).toHaveLength(0);
   });
 });
+
+// ── Fix-cyclus 2 (spec §Fix-cyclus 2) ─────────────────────────────────────
+//
+// A-invariant 24: met `X-Album-Id` betekent een 200 dat de foto bestaat en in
+// dat album staat, ook bij een herhaling. De app geeft dezelfde foto voor
+// hetzelfde album dezelfde id (A-invariant 25), dus een herhaling kan komen
+// nadat de foto uit het album is gehaald.
+
+describe("A-invariant 24: een 200 met album is waar, ook bij een herhaling", () => {
+  it("uit het album gehaald, dan de herhaling: dezelfde foto staat er weer in, één plek, de uploader als toevoeger", async () => {
+    const t = convexTest(schema, modules);
+    const w = await world(t);
+    const first = await upload(t, "user_alice", { uploadId: "u-1", headers: toAlbum(w.albumA) });
+    const { photoId } = (await first.json()) as { photoId: Id<"photos"> };
+    await withUser(t, "user_alice").mutation(api.albums.removePhoto, { albumId: w.albumA, photoId });
+    expect(await rowsOf(t, w.albumA)).toHaveLength(0);
+
+    const again = await upload(t, "user_alice", { uploadId: "u-1", headers: toAlbum(w.albumA) });
+    expect(again.status).toBe(200);
+    expect(((await again.json()) as { photoId: string }).photoId).toBe(photoId);
+
+    const rows = await rowsOf(t, w.albumA);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ photoId, groupId: w.g, addedBy: w.alice });
+    const left = await leftovers(t, w.alice);
+    expect(left.photos).toBe(1);
+    expect(left.photoCount).toBe(1);
+  });
+
+  it("de teller van een ander lid loopt weer op", async () => {
+    const t = convexTest(schema, modules);
+    const w = await world(t);
+    const asBob = withUser(t, "user_bob");
+    const unread = async () =>
+      (await asBob.query(api.albums.listByGroupWithUnread, { groupId: w.g })).find((a) => a._id === w.albumA)!
+        .unreadCount;
+    const first = await upload(t, "user_alice", { uploadId: "u-1", headers: toAlbum(w.albumA) });
+    const { photoId } = (await first.json()) as { photoId: Id<"photos"> };
+    await withUser(t, "user_alice").mutation(api.albums.removePhoto, { albumId: w.albumA, photoId });
+    await asBob.mutation(api.albums.markSeen, { albumId: w.albumA });
+    expect(await unread()).toBe(0);
+    vi.advanceTimersByTime(1000);
+
+    await upload(t, "user_alice", { uploadId: "u-1", headers: toAlbum(w.albumA) });
+    expect(await unread()).toBe(1);
+  });
+
+  it("ook op de limiet: geen nieuwe foto, wel weer in het album", async () => {
+    const t = convexTest(schema, modules);
+    const w = await world(t);
+    const first = await upload(t, "user_alice", { uploadId: "u-1", headers: toAlbum(w.albumA) });
+    const { photoId } = (await first.json()) as { photoId: Id<"photos"> };
+    await withUser(t, "user_alice").mutation(api.albums.removePhoto, { albumId: w.albumA, photoId });
+    await t.run((ctx) => ctx.db.patch(w.alice, { photoLimit: 1 }));
+
+    const again = await upload(t, "user_alice", { uploadId: "u-1", headers: toAlbum(w.albumA) });
+    expect(again.status).toBe(200);
+    expect(await rowsOf(t, w.albumA)).toHaveLength(1);
+    expect((await leftovers(t, w.alice)).photos).toBe(1);
+  });
+
+  it("dezelfde id met een ander album van de groep: de foto staat ook daar, en blijft in het eerste", async () => {
+    const t = convexTest(schema, modules);
+    const w = await world(t);
+    const albumA2 = await t.run(async (ctx) =>
+      ctx.db.insert("albums", { groupId: w.g, name: "A2", createdBy: w.bob, createdAt: Date.now() - MINUTE }),
+    );
+    const first = await upload(t, "user_alice", { uploadId: "u-1", headers: toAlbum(w.albumA) });
+    const { photoId } = (await first.json()) as { photoId: Id<"photos"> };
+
+    const again = await upload(t, "user_alice", { uploadId: "u-1", headers: toAlbum(albumA2) });
+    expect(again.status).toBe(200);
+    expect(((await again.json()) as { photoId: string }).photoId).toBe(photoId);
+
+    expect((await rowsOf(t, albumA2)).map((r) => r.photoId)).toEqual([photoId]);
+    expect((await rowsOf(t, w.albumA)).map((r) => r.photoId)).toEqual([photoId]);
+    expect((await leftovers(t, w.alice)).photos).toBe(1);
+  });
+});
