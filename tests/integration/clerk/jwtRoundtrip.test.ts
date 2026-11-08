@@ -4,6 +4,10 @@ import {
   revokeSessionQuietly,
 } from "../_helpers/clerkAuth";
 import { getConvexSiteBase, requireEnv } from "../_helpers/convexSite";
+import {
+  integrationTestSecret,
+  TEST_SECRET_HEADER,
+} from "../_helpers/testSecret";
 
 // ---------------------------------------------------------------------------
 // Clerk JWT roundtrip — live integration tests (WP4)
@@ -53,7 +57,10 @@ describe("Clerk JWT roundtrip — live integration", () => {
     const { jwt, userId, sessionId } = await mintTokenForEmail(regularEmail);
     try {
       const res = await fetch(whoamiUrl, {
-        headers: { Authorization: `Bearer ${jwt}` },
+        headers: {
+          Authorization: `Bearer ${jwt}`,
+          [TEST_SECRET_HEADER]: integrationTestSecret(),
+        },
       });
       expect(res.status).toBe(200);
       const body = (await res.json()) as {
@@ -74,7 +81,10 @@ describe("Clerk JWT roundtrip — live integration", () => {
     const { jwt, userId, sessionId } = await mintTokenForEmail(webmasterEmail);
     try {
       const res = await fetch(whoamiUrl, {
-        headers: { Authorization: `Bearer ${jwt}` },
+        headers: {
+          Authorization: `Bearer ${jwt}`,
+          [TEST_SECRET_HEADER]: integrationTestSecret(),
+        },
       });
       expect(res.status).toBe(200);
       const body = (await res.json()) as {
@@ -95,7 +105,9 @@ describe("Clerk JWT roundtrip — live integration", () => {
   });
 
   it("zonder Authorization header → 401 (geen identity)", async () => {
-    const res = await fetch(whoamiUrl);
+    const res = await fetch(whoamiUrl, {
+      headers: { [TEST_SECRET_HEADER]: integrationTestSecret() },
+    });
     expect(res.status).toBe(401);
   });
 
@@ -106,7 +118,10 @@ describe("Clerk JWT roundtrip — live integration", () => {
     // als "invalid token" hetzelfde 401-pad volgen — consistente auth-fail
     // semantiek + geen 500-leak van server-side auth-error-detail.
     const res = await fetch(whoamiUrl, {
-      headers: { Authorization: "Bearer not-a-real-jwt" },
+      headers: {
+        Authorization: "Bearer not-a-real-jwt",
+        [TEST_SECRET_HEADER]: integrationTestSecret(),
+      },
     });
     expect(res.status).toBe(401);
   });

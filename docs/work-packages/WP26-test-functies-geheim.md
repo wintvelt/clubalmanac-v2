@@ -152,5 +152,6 @@ De tests staan in een eigen `describe` met "A-keuze n" in de naam.
 | `tests/testGate/inventory.test.ts` | Invariant 4: elke publieke export van `_test.ts` heeft `testSecret` en een recept; elke `/_test`-route staat in de lijst |
 | `tests/testGate/whoami.test.ts` | A-keuze 2 |
 | `tests/integration/**` (aangepast) | Invariant 5: het geheim gaat mee (`_helpers/testSecret.ts`); `.env.integration.example` noemt de var |
+| `tests/integration/convex/testGate.test.ts` | Gate-stap 6 op dev: zonder en met fout geheim dezelfde weigering, met het geheim werkt het (niet in CI) |
 
-Het geheim in de tests is een nep-waarde. B werkt `integration-tests.md`, `external-services.md` en `tests/integration/README.md` bij (scope).
+Het geheim in de tests is een nep-waarde. Rood bij A: 220 tests in `tests/testGate/`, allemaal omdat `testSecret` niet bestaat of de gate ontbreekt; de rest van de suite groen. De integratietests zijn niet gedraaid (eerst B op dev, kernvondst 4). B werkt `integration-tests.md`, `external-services.md` en `tests/integration/README.md` bij (scope).

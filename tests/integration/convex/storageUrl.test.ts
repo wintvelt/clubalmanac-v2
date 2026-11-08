@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { makeFunctionReference } from "convex/server";
 import { beforeAll, describe, expect, it } from "vitest";
-import { makeConvexClient } from "../_helpers/convexClient";
+import { makeTestFunctionsClient } from "../_helpers/testSecret";
 import { assertNotProd } from "../_helpers/safety";
 
 // ---------------------------------------------------------------------------
@@ -52,7 +52,7 @@ describe("WP17a — Convex storage-URL op dev", () => {
   });
 
   it("een URL werkt zonder auth, en na wissen niet meer (docs, Serving Files)", async () => {
-    const client = makeConvexClient();
+    const client = makeTestFunctionsClient();
     const payload = new Uint8Array(randomBytes(64 * 1024));
     const { storageId } = await client.action(FN_UPLOAD, {
       bytes: payload.buffer,
