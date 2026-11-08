@@ -152,7 +152,9 @@ export default defineSchema({
     completedAt: v.optional(v.number()),
   })
     .index("by_owner_and_clientUploadId", ["ownerId", "clientUploadId"])
-    .index("by_status_and_createdAt", ["status", "createdAt"]),
+    .index("by_status_and_createdAt", ["status", "createdAt"])
+    // WP18 A-invariant 26: een foto wissen leest alleen zijn eigen reservering.
+    .index("by_photo", ["photoId"]),
 
   // ──────────────────────────────────────────────────────────────────
   // Ratings

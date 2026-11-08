@@ -278,6 +278,19 @@ export const setProfilePhoto = mutation({
   },
 });
 
+// WP18 invariant 10, A-invariant 16: de profielfoto weghalen. Alleen de
+// koppeling (besluit 1: de profielfoto is een gewone eigen foto); de foto,
+// zijn beeld en de telling blijven. Daarna geeft het profielpad geen beeld en
+// is `profileVersion` "0". Zonder profielfoto: niets, en geen fout.
+export const removeProfilePhoto = mutation({
+  args: {},
+  handler: async (ctx) => {
+    const user = await requireCurrentUser(ctx);
+    if (user.profilePhotoStorageId === undefined) return;
+    await ctx.db.patch(user._id, { profilePhotoStorageId: undefined });
+  },
+});
+
 async function visitRow(ctx: QueryCtx, userId: Id<"users">) {
   return await ctx.db
     .query("userVisits")
@@ -338,6 +351,16 @@ export const deleteSelf = mutation({
       .withIndex("by_owner", (q) => q.eq("ownerId", user._id))
       .collect();
     for (const p of photos) await internalRemovePhoto(ctx, p._id);
+
+    // WP18 A-invariant 22: alle upload-reserveringen van de user, ook "nog
+    // bezig" (hun ownerId is verplicht; anders meldt de integriteitscheck ze).
+    const reservations = await ctx.db
+      .query("uploadIdempotency")
+      .withIndex("by_owner_and_clientUploadId", (q) =>
+        q.eq("ownerId", user._id),
+      )
+      .collect();
+    for (const r of reservations) await ctx.db.delete(r._id);
 
     // U8: cascade memberships, transitief via internalRemoveMember zodat
     // de M2-keten (admin/founder-successie + M2-e group-cascade bij

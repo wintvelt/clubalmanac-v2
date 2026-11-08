@@ -6,6 +6,7 @@ import schema from "../../convex/schema";
 import { registerUser, withUser } from "../_helpers/auth";
 import { modules } from "../_helpers/modules";
 import { formatsOf, I, seedPhoto, storageCount, textOf } from "./_helpers";
+import { JPEG } from "../http/_upload";
 
 // WP25 — de formaat-stap na de upload en de backfill (spec §Signaturen,
 // §De T0-keten; invariant 2, 11, 12, 17).
@@ -84,7 +85,8 @@ describe("upload plant de formaat-stap (invariant 2)", () => {
     const init = {
       method: "POST",
       headers: { "Content-Type": "image/jpeg", "X-Upload-Id": "u-1" },
-      body: "jpeg-bytes",
+      // WP18 A-invariant 14: /upload neemt alleen beelden aan.
+      body: JPEG,
     };
 
     const res = await withUser(t, "user_owen").fetch("/upload", init);

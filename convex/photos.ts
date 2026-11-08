@@ -11,7 +11,7 @@ import {
 import type { Doc, Id } from "./_generated/dataModel";
 import { internal } from "./_generated/api";
 import { requireCurrentUser } from "./users";
-import { NOT_MEMBER } from "./groups";
+import { getMembership, NOT_MEMBER } from "./groups";
 import { requireWebmaster } from "./lib/auth";
 import { canAccessPhoto } from "./lib/photoAccess";
 import {
@@ -182,6 +182,24 @@ export const create = internalMutation({
 // P6: increment user.photoCount + photoLimit-gate. Typed sentinel
 // "PHOTO_LIMIT_REACHED" laat de httpAction storage-blob + reservation
 // opruimen.
+//
+// WP18 A-keuze 1: met `albumId` komen de foto en zijn plek in het album in
+// deze ene transactie, of geen van beide. Het lidmaatschap wordt hier
+// opnieuw getoetst (de httpAction toetste vóór reservering en opslag); is het
+// weg, dan de sentinel "NO_ALBUM_ACCESS" en ruimt de httpAction op. De
+// uploader is de toevoeger; `addedAt` laat de teller bij de andere leden
+// oplopen (AP1).
+// WP18 A-keuze 2 en vraag 2: `takenAt`, `latitude` en `longitude` uit de
+// headers. `extractMetadata` overschrijft ze alleen met waarden uit het
+// bestand zelf (`patchMetadata` slaat ontbrekende velden over).
+//
+// WP18 A-invariant 23: de reservering moet er nog zijn en "nog bezig" staan.
+// Een late stap van een poging waarvan de reservering verlopen is (een
+// herhaling kreeg een verse), maakt geen tweede foto: sentinel
+// "RESERVATION_GONE", de httpAction ruimt het beeld op en geeft 409.
+export const UPLOAD_NO_ALBUM_ACCESS = "NO_ALBUM_ACCESS";
+export const UPLOAD_RESERVATION_GONE = "RESERVATION_GONE";
+
 export const createFromUploadInternal = internalMutation({
   args: {
     storageId: v.id("_storage"),
@@ -189,12 +207,35 @@ export const createFromUploadInternal = internalMutation({
     reservationId: v.id("uploadIdempotency"),
     filename: v.optional(v.string()),
     mimeType: v.optional(v.string()),
+    albumId: v.optional(v.id("albums")),
+    takenAt: v.optional(v.number()),
+    latitude: v.optional(v.number()),
+    longitude: v.optional(v.number()),
   },
   returns: v.id("photos"),
   handler: async (
     ctx,
-    { storageId, ownerId, reservationId, filename, mimeType },
+    {
+      storageId,
+      ownerId,
+      reservationId,
+      filename,
+      mimeType,
+      albumId,
+      takenAt,
+      latitude,
+      longitude,
+    },
   ) => {
+    const reservation = await ctx.db.get(reservationId);
+    if (
+      !reservation ||
+      reservation.ownerId !== ownerId ||
+      reservation.status !== "in_progress"
+    ) {
+      throw new Error(UPLOAD_RESERVATION_GONE);
+    }
+
     const user = await ctx.db.get(ownerId);
     if (!user) throw new Error("User bestaat niet");
     if (user.photoCount >= user.photoLimit) {
@@ -203,21 +244,44 @@ export const createFromUploadInternal = internalMutation({
       throw new Error("PHOTO_LIMIT_REACHED");
     }
 
+    let album: Doc<"albums"> | null = null;
+    if (albumId) {
+      album = await ctx.db.get(albumId);
+      const membership = album
+        ? await getMembership(ctx, ownerId, album.groupId)
+        : null;
+      if (!album || !membership) throw new Error(UPLOAD_NO_ALBUM_ACCESS);
+    }
+
+    const now = Date.now();
     const photoId = await ctx.db.insert("photos", {
       ownerId,
       storageId,
       filename,
       mimeType,
+      takenAt,
+      latitude,
+      longitude,
       ratingCount: 0,
-      createdAt: Date.now(),
+      createdAt: now,
     });
 
     await ctx.db.patch(ownerId, { photoCount: user.photoCount + 1 });
 
+    if (album) {
+      await ctx.db.insert("albumPhotos", {
+        albumId: album._id,
+        photoId,
+        groupId: album.groupId,
+        addedAt: now,
+        addedBy: ownerId,
+      });
+    }
+
     await ctx.db.patch(reservationId, {
       status: "completed",
       photoId,
-      completedAt: Date.now(),
+      completedAt: now,
     });
 
     await ctx.scheduler.runAfter(0, internal.photoMetadata.extractMetadata, {
@@ -286,6 +350,17 @@ export async function internalRemovePhoto(
     .withIndex("by_photo", (q) => q.eq("photoId", photoId))
     .collect();
   for (const ap of aps) await ctx.db.delete(ap._id);
+
+  // WP18 A-invariant 22: de upload-reservering die naar deze foto wijst.
+  // Anders meldt de integriteitscheck een dangling photoId, en geeft een
+  // herhaling met die upload-id een foto die niet meer bestaat.
+  // A-invariant 26: alleen de reservering(en) van deze foto lezen, niet alle
+  // van de eigenaar; anders leest `users.deleteSelf` foto's × uploads.
+  const reservations = await ctx.db
+    .query("uploadIdempotency")
+    .withIndex("by_photo", (q) => q.eq("photoId", photoId))
+    .collect();
+  for (const r of reservations) await ctx.db.delete(r._id);
 
   // P4: cascade ratings op deze photo
   const ratings = await ctx.db

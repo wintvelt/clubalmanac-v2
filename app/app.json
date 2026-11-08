@@ -28,7 +28,15 @@
         }
       ],
       "expo-router",
-      "expo-image"
+      "expo-image",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Clubalmanac gebruikt je foto's alleen om de foto's die jij kiest aan een album toe te voegen of als profielfoto te gebruiken.",
+          "cameraPermission": false,
+          "microphonePermission": false
+        }
+      ]
     ],
     "extra": {
       "eas": {

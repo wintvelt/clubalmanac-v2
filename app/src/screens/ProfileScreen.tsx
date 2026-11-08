@@ -1,17 +1,29 @@
 import { useMutation } from "convex/react";
+import * as ImagePicker from "expo-image-picker";
 import { useIsFocused } from "expo-router";
 import { useEffect, useRef, useState } from "react";
-import { StyleSheet, View } from "react-native";
+import { Alert, Linking, StyleSheet, View } from "react-native";
 import { Button } from "../components/Button";
 import { Notice } from "../components/Notice";
+import { SmallButton } from "../components/SmallButton";
 import { ProfileAvatar } from "../components/Photo";
 import { Screen } from "../components/Screen";
 import { LoadingState } from "../components/States";
 import { Text } from "../components/Text";
 import { TextField } from "../components/TextField";
+import type { Id } from "../../../convex/_generated/dataModel";
 import { api } from "../convexApi";
+import { useUploader } from "../data/upload";
 import { useLiveQuery } from "../data/useLiveQuery";
 import { nameErrorText } from "../lib/nameError";
+import {
+  applyOutcome,
+  newBatch,
+  profileRetry,
+  reasonText,
+  startItem,
+  type UploadItem,
+} from "../lib/upload";
 import { size, space } from "../theme";
 
 // WP15b: naam en e-mailadres, en de naam wijzigen. Een eigen live query
@@ -119,12 +131,193 @@ export function ProfileScreen() {
 
       <Button title="Naam opslaan" busyTitle="Opslaan…" onPress={() => void save()} busy={busy} />
       {feedback?.kind === "saved" && <Notice kind="success" message="Je naam is opgeslagen." />}
+
+      <ProfilePhotoActions hasPhoto={me.profileVersion !== "0"} />
     </Screen>
   );
+}
+
+type PhotoFeedback =
+  | { kind: "error"; text: string }
+  | { kind: "success"; text: string }
+  | { kind: "access" }
+  | null;
+
+// WP18 invarianten 9 en 10, besluit 1. Uploaden: een gewone eigen foto (de
+// upload zonder album), daarna `users.setProfilePhoto`. Na het kiezen eerst de
+// melding dat een profielfoto voor iedereen te zien is. Weghalen haalt alleen
+// de koppeling weg (`users.removeProfilePhoto`); daarna toont de app de letter.
+// De avatar volgt overal via `profileVersion`.
+function ProfilePhotoActions({ hasPhoto }: { hasPhoto: boolean }) {
+  const upload = useUploader();
+  const setProfilePhoto = useMutation(api.users.setProfilePhoto);
+  const removeProfilePhoto = useMutation(api.users.removeProfilePhoto);
+  const [busy, setBusy] = useState<"upload" | "remove" | null>(null);
+  const [feedback, setFeedback] = useState<PhotoFeedback>(null);
+  const inFlight = useRef(false);
+  // Fix-cyclus 1, invariant 21: de laatste keuze, met zijn upload-id en hoe
+  // ver hij kwam. "Opnieuw proberen" vraagt profileRetry wat er nog moet.
+  const [attempt, setAttempt] = useState<{ asset: ImagePicker.ImagePickerAsset; item: UploadItem } | null>(null);
+  const focused = useIsFocused();
+  useEffect(() => {
+    if (!focused) {
+      setFeedback(null);
+      setAttempt(null);
+    }
+  }, [focused]);
+
+  async function run(kind: "upload" | "remove", work: () => Promise<PhotoFeedback>) {
+    if (inFlight.current) return;
+    inFlight.current = true;
+    setBusy(kind);
+    setFeedback(null);
+    try {
+      setFeedback(await work());
+    } finally {
+      inFlight.current = false;
+      setBusy(null);
+    }
+  }
+
+  async function choose() {
+    if (inFlight.current) return;
+    setFeedback(null);
+    setAttempt(null);
+    let result: ImagePicker.ImagePickerResult;
+    try {
+      result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ["images"],
+        allowsEditing: true,
+        aspect: [1, 1],
+        // Geen EXIF: met bijsnijden gebruikt iOS de oude kiezer, en die vraagt
+        // voor de EXIF toegang tot de hele bibliotheek (gezien in de
+        // simulator). Zonder vraagt hij niets; een openbare profielfoto krijgt
+        // zo ook geen locatie mee.
+        exif: false,
+        quality: 1,
+      });
+    } catch {
+      setFeedback({ kind: "access" });
+      return;
+    }
+    const asset = result.canceled ? undefined : result.assets[0];
+    if (!asset) return;
+    const ok = await confirm(
+      "Profielfoto is openbaar",
+      "Je profielfoto is voor iedereen te zien, ook voor wie niet in je groepen zit.",
+      "Gebruiken",
+    );
+    if (!ok) return;
+    // Eén upload-id voor deze keuze: een dubbele tik of "Opnieuw proberen"
+    // geeft geen tweede foto.
+    const [item] = newBatch(["profiel"]);
+    await save(asset, item!);
+  }
+
+  // Uploaden (als dat nog moet) en opslaan als profielfoto. Wat lukte, blijft
+  // in `attempt` staan, zodat opnieuw proberen alleen de rest doet.
+  async function save(asset: ImagePicker.ImagePickerAsset, start: UploadItem) {
+    await run("upload", async () => {
+      let item = start;
+      if (item.state !== "klaar") {
+        item = startItem([item], item.key)[0]!;
+        const outcome = await upload({ asset, uploadId: item.uploadId });
+        item = applyOutcome([item], item.key, outcome)[0]!;
+        setAttempt({ asset, item });
+        if (!outcome.ok) {
+          return { kind: "error", text: `Profielfoto niet opgeslagen. ${reasonText(outcome.reason)}.` };
+        }
+      }
+      try {
+        await setProfilePhoto({ photoId: item.photoId as Id<"photos"> });
+      } catch {
+        setAttempt({ asset, item });
+        return { kind: "error", text: "Profielfoto niet opgeslagen. Probeer het opnieuw." };
+      }
+      setAttempt(null);
+      return { kind: "success", text: "Je profielfoto is opgeslagen." };
+    });
+  }
+
+  function retry() {
+    if (!attempt || profileRetry(attempt.item) === null) return;
+    void save(attempt.asset, attempt.item);
+  }
+
+  async function remove() {
+    if (inFlight.current) return;
+    const ok = await confirm(
+      "Profielfoto weghalen?",
+      "Daarna staat overal je letter. De foto zelf blijft bij je eigen foto's.",
+      "Weghalen",
+      true,
+    );
+    if (!ok) return;
+    await run("remove", async () => {
+      try {
+        await removeProfilePhoto({});
+      } catch {
+        return { kind: "error", text: "Profielfoto niet weggehaald. Probeer het opnieuw." };
+      }
+      return { kind: "success", text: "Je profielfoto is weggehaald." };
+    });
+  }
+
+  return (
+    <View style={styles.group}>
+      <Text variant="fieldLabel">Profielfoto</Text>
+      <View style={styles.row}>
+        <SmallButton
+          title={busy === "upload" ? "Opslaan…" : hasPhoto ? "Andere foto kiezen" : "Foto kiezen"}
+          icon="photos"
+          disabled={busy !== null}
+          onPress={() => void choose()}
+        />
+        {hasPhoto && (
+          <SmallButton
+            title={busy === "remove" ? "Weghalen…" : "Weghalen"}
+            icon="trash"
+            tone="danger"
+            disabled={busy !== null}
+            onPress={() => void remove()}
+          />
+        )}
+      </View>
+      {feedback?.kind === "error" && (
+        <Notice kind="error" message={feedback.text}>
+          {attempt && profileRetry(attempt.item) !== null && (
+            <SmallButton title="Opnieuw proberen" icon="refresh" disabled={busy !== null} onPress={retry} />
+          )}
+        </Notice>
+      )}
+      {feedback?.kind === "success" && <Notice kind="success" message={feedback.text} />}
+      {feedback?.kind === "access" && (
+        <Notice kind="error" title="Toegang tot je foto's nodig">
+          <Text variant="meta">Geef in Instellingen toegang tot je foto's, dan kun je er hier een kiezen.</Text>
+          <SmallButton title="Instellingen openen" onPress={() => void Linking.openSettings()} />
+        </Notice>
+      )}
+    </View>
+  );
+}
+
+function confirm(title: string, message: string, action: string, destructive = false): Promise<boolean> {
+  return new Promise((resolve) => {
+    Alert.alert(
+      title,
+      message,
+      [
+        { text: "Annuleren", style: "cancel", onPress: () => resolve(false) },
+        { text: action, style: destructive ? "destructive" : "default", onPress: () => resolve(true) },
+      ],
+      { cancelable: true, onDismiss: () => resolve(false) },
+    );
+  });
 }
 
 const styles = StyleSheet.create({
   group: { gap: space.s },
   head: { flexDirection: "row", alignItems: "center", gap: space.l },
   headText: { flex: 1 },
+  row: { flexDirection: "row", flexWrap: "wrap", gap: space.s },
 });

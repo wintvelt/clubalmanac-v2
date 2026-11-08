@@ -4,6 +4,9 @@ import { httpAction } from "./_generated/server";
 import { internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import { parseImageFormat } from "./images";
+import { UPLOAD_NO_ALBUM_ACCESS, UPLOAD_RESERVATION_GONE } from "./photos";
+import { MAX_UPLOAD_BYTES } from "./lib/constants";
+import { parseLocation, parseTakenAt, uploadImageType } from "./lib/upload";
 
 // Cascade matrix IB1: Mailjet bounce-webhook → internal.invites.handleBounce.
 // Voltooit IB1 cascade per docs/cascade-matrix.md (bounce → status=expired
@@ -183,33 +186,55 @@ http.route({
   }),
 });
 
-// File upload werkpakket — Cyclus 1, gehard in audit-cyclus-1.
+// File upload werkpakket — Cyclus 1, gehard in audit-cyclus-1, uitgebreid in
+// WP18 (album, type en grootte, datum en locatie, de herhaal-gevallen).
 //
 // Backend-mediated 1-step upload met reservation pattern als idempotency
 // state machine. Server-flow:
 //   1. auth check (identity + users-record)
 //   2. trim + valideer X-Upload-Id (whitespace-only → 400)
-//   3. photoLimit-gate vóór reservation (audit-cyclus-1 §1: voorkomt
-//      phantom in_progress + orphan storage bij quota-fail)
-//   4. internal.uploads.reserve({ownerId, clientUploadId}) — atomair:
-//        completed-hit → 200 met bestaande photoId
-//        in_progress   → 409 Conflict (race-loser)
+//   3. WP18 A-invariant 15: met `X-Album-Id` het album toetsen (lid van zijn
+//      groep), vóór body, reservering en opslag. Geen toegang, onbekend,
+//      gewist, misvormd: één antwoord, 404.
+//   4. WP18 A-invariant 13 en 14: de body lezen vóór de reservering. Breekt
+//      het lezen af, dan 400 en er is nog niets gereserveerd. Boven
+//      MAX_UPLOAD_BYTES 413; geen JPEG, PNG of HEIC (aan de bytes) 415.
+//   5. internal.uploads.reserve({ownerId, clientUploadId}) — atomair:
+//        completed-hit → 200 met bestaande photoId (ook op de limiet, WP18
+//                        A-invariant 12); met album staat hij daarna in dat
+//                        album (A-invariant 24). Een hit naar een gewiste
+//                        foto telt als miss (A-invariant 22).
+//        in_progress   → 409 Conflict (race-loser), tot 30 min; ouder telt
+//                        als miss met een verse reservering (A-invariant 23)
+//        limiet        → 403, geen reservering
 //        miss          → insert in_progress, ga door
-//   5. storage.store(blob)
-//   6. internal.photos.createFromUploadInternal({reservationId, ...}) —
-//      atomair: insert photo + patch user.photoCount + patch reservation
-//      naar completed + schedule extractMetadata in één transactie. Throw't
-//      typed sentinel "PHOTO_LIMIT_REACHED" bij gate-fail.
+//   6. storage.store(blob), met het type uit de bytes
+//   7. internal.photos.createFromUploadInternal({reservationId, albumId,
+//      takenAt, latitude, longitude, ...}) — atomair: insert photo + plek in
+//      het album + patch user.photoCount + patch reservation naar completed +
+//      schedule extractMetadata en de formaten in één transactie. Throw't
+//      typed sentinel "PHOTO_LIMIT_REACHED" of "NO_ALBUM_ACCESS".
 //
 // Foutpaden:
 //   401 geen identity / geen users-record (geen reservation, geen photo)
-//   400 ontbrekende/lege/whitespace-only X-Upload-Id (na server-side trim)
+//   400 ontbrekende/lege/whitespace-only X-Upload-Id (na server-side trim),
+//       of een body die niet volledig binnenkwam
 //   403 photo-limit bereikt (typed sentinel, was 413)
+//   404 album zonder toegang (één antwoord)
 //   409 race-loser tegen lopende reservation
+//   413 bestand groter dan MAX_UPLOAD_BYTES
+//   415 geen JPEG, PNG of HEIC
 //
 // Bij failure tussen reserve en createFromUploadInternal ruimen we de
 // reservation + storage best-effort op zodat een retry niet 409't tot
-// stale-cleanup-cron na 5 min.
+// stale-cleanup-cron na 30 min.
+const UPLOAD_ALBUM_NOT_FOUND = () =>
+  Response.json({ error: "Album niet gevonden" }, { status: 404 });
+const UPLOAD_LIMIT = () =>
+  Response.json({ error: "Photo limiet bereikt" }, { status: 403 });
+const UPLOAD_TOO_LARGE = () =>
+  Response.json({ error: "Bestand te groot" }, { status: 413 });
+
 http.route({
   path: "/upload",
   method: "POST",
@@ -248,21 +273,47 @@ http.route({
       );
     }
 
-    // Photo-limit gate vóór reservation + storage.store. Audit-cyclus-1 §1:
-    // bij quota-fail mag er geen reservation zijn (anders phantom in_progress
-    // tot stale-cleanup) en geen orphan storage. Race tussen deze check en
-    // createFromUploadInternal wordt door OCC binnen die mutation gevangen
-    // en valt terug op het PHOTO_LIMIT_REACHED-pad onderaan.
-    if (user.photoCount >= user.photoLimit) {
+    // WP18 A-invariant 15: album vóór alles wat iets achterlaat.
+    const rawAlbumId = request.headers.get("X-Album-Id");
+    let albumId: Id<"albums"> | undefined;
+    if (rawAlbumId !== null) {
+      const found = await ctx.runQuery(internal.uploads.uploadAlbum, {
+        ownerId: user._id,
+        albumId: rawAlbumId.trim(),
+      });
+      if (!found) return UPLOAD_ALBUM_NOT_FOUND();
+      albumId = found;
+    }
+
+    // WP18 A-invariant 14: een opgegeven lengte boven de grens hoeft niet
+    // eerst gelezen te worden.
+    const declared = Number(request.headers.get("Content-Length") ?? "");
+    if (Number.isFinite(declared) && declared > MAX_UPLOAD_BYTES) {
+      return UPLOAD_TOO_LARGE();
+    }
+
+    // WP18 A-invariant 13: de body vóór de reservering lezen. Breekt de
+    // verbinding af tijdens het versturen, dan staat er nog geen reservering
+    // en kan dezelfde upload-id meteen opnieuw.
+    let bytes: Uint8Array;
+    try {
+      bytes = new Uint8Array(await request.arrayBuffer());
+    } catch {
+      return Response.json({ error: "Upload afgebroken" }, { status: 400 });
+    }
+    if (bytes.byteLength > MAX_UPLOAD_BYTES) return UPLOAD_TOO_LARGE();
+    const imageType = uploadImageType(bytes);
+    if (!imageType) {
       return Response.json(
-        { error: "Photo limiet bereikt" },
-        { status: 403 },
+        { error: "Alleen foto's (JPEG, PNG of HEIC)" },
+        { status: 415 },
       );
     }
 
     const reservation = await ctx.runMutation(internal.uploads.reserve, {
       ownerId: user._id,
       clientUploadId,
+      albumId,
     });
 
     if (reservation.kind === "hit") {
@@ -274,17 +325,23 @@ http.route({
         { status: 409 },
       );
     }
+    if (reservation.kind === "limit") return UPLOAD_LIMIT();
+    if (reservation.kind === "noAlbum") return UPLOAD_ALBUM_NOT_FOUND();
 
     const reservationId = reservation.reservationId;
 
-    const blob = await request.blob();
-    const mimeType =
-      request.headers.get("Content-Type") ?? blob.type ?? undefined;
     const filename = request.headers.get("X-Filename") ?? undefined;
+    const takenAt = parseTakenAt(request.headers.get("X-Taken-At"));
+    const location = parseLocation(
+      request.headers.get("X-Latitude"),
+      request.headers.get("X-Longitude"),
+    );
 
     let storageId;
     try {
-      storageId = await ctx.storage.store(blob);
+      storageId = await ctx.storage.store(
+        new Blob([bytes as BlobPart], { type: imageType }),
+      );
     } catch (e) {
       await ctx.runMutation(internal.uploads.deleteReservation, {
         reservationId,
@@ -301,7 +358,11 @@ http.route({
           ownerId: user._id,
           reservationId,
           filename,
-          mimeType,
+          mimeType: imageType,
+          albumId,
+          takenAt,
+          latitude: location?.latitude,
+          longitude: location?.longitude,
         },
       );
     } catch (e) {
@@ -314,10 +375,12 @@ http.route({
         reservationId,
       });
       const message = e instanceof Error ? e.message : "";
-      if (message === "PHOTO_LIMIT_REACHED") {
+      if (message === "PHOTO_LIMIT_REACHED") return UPLOAD_LIMIT();
+      if (message === UPLOAD_NO_ALBUM_ACCESS) return UPLOAD_ALBUM_NOT_FOUND();
+      if (message === UPLOAD_RESERVATION_GONE) {
         return Response.json(
-          { error: "Photo limiet bereikt" },
-          { status: 403 },
+          { error: "Upload in progress" },
+          { status: 409 },
         );
       }
       throw e;
