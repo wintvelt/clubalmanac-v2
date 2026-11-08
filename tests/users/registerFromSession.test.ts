@@ -72,6 +72,16 @@ async function seedInvite(
       photoLimit: 1000,
       createdAt: Date.now(),
     });
+    // WP28 A-invariant 4: een groepsuitnodiging geldt alleen als de
+    // uitnodiger nog lid (admin) van die groep is. De seeder is dat hier.
+    if (args.groupId) {
+      await ctx.db.insert("memberships", {
+        userId: seederId,
+        groupId: args.groupId,
+        role: "admin",
+        joinedAt: Date.now(),
+      });
+    }
     const inviteId = await ctx.db.insert("invites", {
       email: args.email.toLowerCase().trim(),
       invitedBy: seederId,

@@ -377,7 +377,9 @@ describe("groups.updateMemberRole", () => {
     ).rejects.toThrow();
   });
 
-  it("laatste admin kan niet gedemoted worden", async () => {
+  // WP28: de enige admin is hier ook de oprichter; die is beschermd
+  // (besluit 3, code FOUNDER_PROTECTED in tests/groups/beheerGates.test.ts).
+  it("laatste admin (de oprichter) kan niet gedemoted worden", async () => {
     const t = convexTest(schema, modules);
     const { adminId, groupId } = await setupGroup(t);
     await expect(
@@ -386,7 +388,14 @@ describe("groups.updateMemberRole", () => {
         userId: adminId,
         role: "member",
       }),
-    ).rejects.toThrow(/admin/i);
+    ).rejects.toThrow();
+    const m = await t.run(async (ctx) =>
+      ctx.db
+        .query("memberships")
+        .withIndex("by_user_and_group", (q) => q.eq("userId", adminId).eq("groupId", groupId))
+        .unique(),
+    );
+    expect(m?.role).toBe("admin");
   });
 });
 
