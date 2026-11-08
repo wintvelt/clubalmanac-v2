@@ -353,17 +353,14 @@ export async function internalRemovePhoto(
 
   // WP18 A-invariant 22: de upload-reservering die naar deze foto wijst.
   // Anders meldt de integriteitscheck een dangling photoId, en geeft een
-  // herhaling met die upload-id een foto die niet meer bestaat. Via de
-  // eigenaar (reserveringen leven hooguit 7 dagen), geen eigen index nodig.
+  // herhaling met die upload-id een foto die niet meer bestaat.
+  // A-invariant 26: alleen de reservering(en) van deze foto lezen, niet alle
+  // van de eigenaar; anders leest `users.deleteSelf` foto's × uploads.
   const reservations = await ctx.db
     .query("uploadIdempotency")
-    .withIndex("by_owner_and_clientUploadId", (q) =>
-      q.eq("ownerId", photo.ownerId),
-    )
+    .withIndex("by_photo", (q) => q.eq("photoId", photoId))
     .collect();
-  for (const r of reservations) {
-    if (r.photoId === photoId) await ctx.db.delete(r._id);
-  }
+  for (const r of reservations) await ctx.db.delete(r._id);
 
   // P4: cascade ratings op deze photo
   const ratings = await ctx.db
