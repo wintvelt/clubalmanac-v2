@@ -64,6 +64,19 @@ Uitgangspunt: zoals in v1. A checkt in de oude code of v1 het echt zo deed en me
 9. **Splitsen:** WP28a backend (audit en red-team), daarna WP28b app (gate op TestFlight), op dezelfde branch `wp28`.
 10. **Rollen op prod blijven zoals ze zijn** (iedereen admin, kernvondst 1). Het echte onderscheid is de oprichter.
 
+11. **Audit en red-team WP28a (2026-11-08): fix-cyclus 1 neemt alles mee:**
+    - R1: ratings van een ex-lid op foto's die hij niet meer ziet, verdwijnen.
+    - Audit S1: alle uitnodigingen van een gewiste groep verdwijnen, ongeacht status.
+    - Audit S2: een test dat ratings meegaan bij groep verwijderen en bij vertrek van het laatste lid.
+    - R2: een oud uitnodigingstoken toont geen actuele groepsgegevens meer aan een ex-lid.
+    - R3: open uitnodigingen van wie verdwijnt of gedegradeerd wordt, vervallen.
+    - Codes voor de resterende gewone fouten op WP28-paden, en op `albums.addPhoto`, `removePhoto` en `markSeen` (inclusief het orakel van een gewist album).
+    - Naam en datum controleren: onzichtbare tekens, lengte en een eindige datum, zoals WP15b. `normalizeEmail` bij het opruimen van uitnodigingen.
+
+    Niet in deze cyclus:
+    - `albumCreatedBy` in de app → WP28b.
+    - Het leesbudget bij groep verwijderen met veel ratings → backlog, vóór WP19.
+
 ## Open vragen voor Wouter (A geeft advies)
 
 1. **Groep verwijderen:** alleen de oprichter (v1) of elke admin (nu)?
