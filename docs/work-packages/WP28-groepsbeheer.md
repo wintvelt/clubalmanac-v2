@@ -45,6 +45,15 @@ Een admin richt zijn groep en albums zelf in en beheert zijn leden; een lid kan 
 4. **Cascades:** dekken M1–M3, AP4 en G3/G4 alle wegen waarop iemand uit een groep verdwijnt? Wat ontbreekt voor invariant 4 en 5?
 5. **Splitsen:** is dit één WP, of beter backend (WP28a) en app (WP28b)?
 
+## Besluiten Wouter (2026-11-08, vóór A's advies)
+
+Uitgangspunt: zoals in v1. A checkt in de oude code of v1 het echt zo deed en meldt elke afwijking.
+
+1. **Groep verwijderen:** alleen de oprichter.
+2. **Album maken:** alleen een admin.
+3. **Oprichter beschermd:** een admin kan de oprichter niet degraderen of verwijderen.
+4. **Vertrek van de laatste admin of de oprichter:** iemand neemt de rol van oprichter over, zoals v1 dat regelde. A beschrijft hoe v1 dat precies deed (wie wordt het, of moet de oprichter eerst overdragen).
+
 ## Open vragen voor Wouter (A geeft advies)
 
 1. **Groep verwijderen:** alleen de oprichter (v1) of elke admin (nu)?
