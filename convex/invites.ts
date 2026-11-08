@@ -11,7 +11,11 @@ import {
 import type { Doc } from "./_generated/dataModel";
 import { internal } from "./_generated/api";
 import { requireCurrentUser } from "./users";
-import { getMembership } from "./groups";
+import {
+  getMembership,
+  isGroupInviteStillValid,
+  requireAdminForWrite,
+} from "./groups";
 import { normalizeEmail } from "./lib/email";
 import {
   inviteLanding,
@@ -71,12 +75,10 @@ export const create = mutation({
     const user = await requireCurrentUser(ctx);
     const normalizedEmail = normalizeEmail(email);
 
-    // Group-scoped invite: caller moet member zijn van die groep.
+    // WP28 besluit 6 (W6): alleen een admin nodigt uit voor een groep. Geen
+    // lid of onbekende groep: NOT_MEMBER; lid zonder admin-rol: NOT_ALLOWED.
     if (groupId) {
-      const m = await getMembership(ctx, user._id, groupId);
-      if (!m) {
-        throw new Error("Alleen members kunnen invites voor deze groep sturen");
-      }
+      await requireAdminForWrite(ctx, groupId);
 
       // [GAP] Weiger als de email al member is van de group — beter hier
       // catchen dan pas op accept (oude AWS code deed dat in acceptInvite).
@@ -187,6 +189,10 @@ export const accept = mutation({
     // zijn atomair). Markeren als expired gebeurt door cron of bounce-handler.
     if (invite.expiresAt <= Date.now()) {
       throw new Error("Invite is verlopen");
+    }
+    // WP28 A-invariant 4: de groep bestaat nog en de uitnodiger is nog admin.
+    if (!(await isGroupInviteStillValid(ctx, invite))) {
+      throw new Error("Uitnodiging is niet meer geldig");
     }
 
     await ctx.db.patch(invite._id, {

@@ -9,7 +9,7 @@ import {
 } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import { internalRemovePhoto } from "./photos";
-import { internalRemoveMember } from "./groups";
+import { internalRemoveMember, isGroupInviteStillValid } from "./groups";
 import { normalizeEmail } from "./lib/email";
 import {
   DEFAULT_PHOTO_LIMIT,
@@ -181,6 +181,11 @@ export const registerFromSession = internalMutation({
     for (const invite of invites) {
       if (invite.status !== "pending") continue;
       if (invite.expiresAt <= now) continue;
+      // WP28 A-invariant 4: zoals invites.accept. Een uitnodiging voor een
+      // gewiste groep, of van iemand die geen admin meer is, wordt niet
+      // geaccepteerd en maakt geen lidmaatschap; hij blijft staan zoals hij
+      // stond.
+      if (!(await isGroupInviteStillValid(ctx, invite))) continue;
       await ctx.db.patch(invite._id, {
         status: "accepted",
         respondedAt: now,

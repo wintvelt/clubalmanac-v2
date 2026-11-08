@@ -4,7 +4,7 @@ import {
   query,
   type MutationCtx,
 } from "./_generated/server";
-import type { Id } from "./_generated/dataModel";
+import type { Doc, Id } from "./_generated/dataModel";
 import { requireCurrentUser } from "./users";
 import { requirePhotoAccess } from "./photos";
 import { pick, rating, ratingFields } from "./lib/shapes";
@@ -21,7 +21,16 @@ export async function recomputeRatingAggregate(
     .query("ratings")
     .withIndex("by_photo", (q) => q.eq("photoId", photoId))
     .collect();
+  await writeRatingAggregate(ctx, photoId, all);
+}
 
+// Zelfde aggregaat uit ratings die de aanroeper al in handen heeft (WP28: de
+// unpublish-cascade leest ze per foto één keer, zie lib/unpublish.ts).
+export async function writeRatingAggregate(
+  ctx: MutationCtx,
+  photoId: Id<"photos">,
+  all: Array<Doc<"ratings">>,
+): Promise<void> {
   if (all.length === 0) {
     await ctx.db.patch(photoId, {
       ratingCount: 0,
