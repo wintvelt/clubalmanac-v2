@@ -4,7 +4,7 @@ import { httpAction } from "./_generated/server";
 import { internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import { parseImageFormat } from "./images";
-import { UPLOAD_NO_ALBUM_ACCESS } from "./photos";
+import { UPLOAD_NO_ALBUM_ACCESS, UPLOAD_RESERVATION_GONE } from "./photos";
 import { MAX_UPLOAD_BYTES } from "./lib/constants";
 import { parseLocation, parseTakenAt, uploadImageType } from "./lib/upload";
 
@@ -201,8 +201,11 @@ http.route({
 //      MAX_UPLOAD_BYTES 413; geen JPEG, PNG of HEIC (aan de bytes) 415.
 //   5. internal.uploads.reserve({ownerId, clientUploadId}) — atomair:
 //        completed-hit → 200 met bestaande photoId (ook op de limiet, WP18
-//                        A-invariant 12; het album verandert niet)
-//        in_progress   → 409 Conflict (race-loser)
+//                        A-invariant 12); met album staat hij daarna in dat
+//                        album (A-invariant 24). Een hit naar een gewiste
+//                        foto telt als miss (A-invariant 22).
+//        in_progress   → 409 Conflict (race-loser), tot 30 min; ouder telt
+//                        als miss met een verse reservering (A-invariant 23)
 //        limiet        → 403, geen reservering
 //        miss          → insert in_progress, ga door
 //   6. storage.store(blob), met het type uit de bytes
@@ -310,6 +313,7 @@ http.route({
     const reservation = await ctx.runMutation(internal.uploads.reserve, {
       ownerId: user._id,
       clientUploadId,
+      albumId,
     });
 
     if (reservation.kind === "hit") {
@@ -322,6 +326,7 @@ http.route({
       );
     }
     if (reservation.kind === "limit") return UPLOAD_LIMIT();
+    if (reservation.kind === "noAlbum") return UPLOAD_ALBUM_NOT_FOUND();
 
     const reservationId = reservation.reservationId;
 
@@ -372,6 +377,12 @@ http.route({
       const message = e instanceof Error ? e.message : "";
       if (message === "PHOTO_LIMIT_REACHED") return UPLOAD_LIMIT();
       if (message === UPLOAD_NO_ALBUM_ACCESS) return UPLOAD_ALBUM_NOT_FOUND();
+      if (message === UPLOAD_RESERVATION_GONE) {
+        return Response.json(
+          { error: "Upload in progress" },
+          { status: 409 },
+        );
+      }
       throw e;
     }
 

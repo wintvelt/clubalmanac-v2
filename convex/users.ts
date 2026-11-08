@@ -352,6 +352,16 @@ export const deleteSelf = mutation({
       .collect();
     for (const p of photos) await internalRemovePhoto(ctx, p._id);
 
+    // WP18 A-invariant 22: alle upload-reserveringen van de user, ook "nog
+    // bezig" (hun ownerId is verplicht; anders meldt de integriteitscheck ze).
+    const reservations = await ctx.db
+      .query("uploadIdempotency")
+      .withIndex("by_owner_and_clientUploadId", (q) =>
+        q.eq("ownerId", user._id),
+      )
+      .collect();
+    for (const r of reservations) await ctx.db.delete(r._id);
+
     // U8: cascade memberships, transitief via internalRemoveMember zodat
     // de M2-keten (admin/founder-successie + M2-e group-cascade bij
     // laatste lid) per membership draait. M3 binnen internalRemoveMember

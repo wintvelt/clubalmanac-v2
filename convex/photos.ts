@@ -192,7 +192,13 @@ export const create = internalMutation({
 // WP18 A-keuze 2 en vraag 2: `takenAt`, `latitude` en `longitude` uit de
 // headers. `extractMetadata` overschrijft ze alleen met waarden uit het
 // bestand zelf (`patchMetadata` slaat ontbrekende velden over).
+//
+// WP18 A-invariant 23: de reservering moet er nog zijn en "nog bezig" staan.
+// Een late stap van een poging waarvan de reservering verlopen is (een
+// herhaling kreeg een verse), maakt geen tweede foto: sentinel
+// "RESERVATION_GONE", de httpAction ruimt het beeld op en geeft 409.
 export const UPLOAD_NO_ALBUM_ACCESS = "NO_ALBUM_ACCESS";
+export const UPLOAD_RESERVATION_GONE = "RESERVATION_GONE";
 
 export const createFromUploadInternal = internalMutation({
   args: {
@@ -221,6 +227,15 @@ export const createFromUploadInternal = internalMutation({
       longitude,
     },
   ) => {
+    const reservation = await ctx.db.get(reservationId);
+    if (
+      !reservation ||
+      reservation.ownerId !== ownerId ||
+      reservation.status !== "in_progress"
+    ) {
+      throw new Error(UPLOAD_RESERVATION_GONE);
+    }
+
     const user = await ctx.db.get(ownerId);
     if (!user) throw new Error("User bestaat niet");
     if (user.photoCount >= user.photoLimit) {
@@ -335,6 +350,20 @@ export async function internalRemovePhoto(
     .withIndex("by_photo", (q) => q.eq("photoId", photoId))
     .collect();
   for (const ap of aps) await ctx.db.delete(ap._id);
+
+  // WP18 A-invariant 22: de upload-reservering die naar deze foto wijst.
+  // Anders meldt de integriteitscheck een dangling photoId, en geeft een
+  // herhaling met die upload-id een foto die niet meer bestaat. Via de
+  // eigenaar (reserveringen leven hooguit 7 dagen), geen eigen index nodig.
+  const reservations = await ctx.db
+    .query("uploadIdempotency")
+    .withIndex("by_owner_and_clientUploadId", (q) =>
+      q.eq("ownerId", photo.ownerId),
+    )
+    .collect();
+  for (const r of reservations) {
+    if (r.photoId === photoId) await ctx.db.delete(r._id);
+  }
 
   // P4: cascade ratings op deze photo
   const ratings = await ctx.db

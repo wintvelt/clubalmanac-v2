@@ -19,9 +19,9 @@ import { useLiveQuery } from "../data/useLiveQuery";
 import { albumPath } from "../lib/groupRoutes";
 import {
   UPLOAD_PARALLEL,
+  albumBatch,
   applyOutcome,
   batchSummary,
-  newBatch,
   photoCountText,
   reasonText,
   retryBatch,
@@ -166,8 +166,12 @@ export function AddPhotosScreen({ albumId }: { albumId?: string }) {
     }
   }
 
+  // A-invariant 25: dezelfde foto voor hetzelfde album houdt zijn upload-id,
+  // ook in een nieuwe ronde ("Meer foto's", de modaal opnieuw openen).
   function startUpload() {
-    void runRound(newBatch(picked.map((p) => p.key)));
+    if (!album) return;
+    const picks = picked.map((p) => ({ key: p.key, assetId: p.asset.assetId }));
+    void runRound(albumBatch(picks, album.albumId));
   }
 
   function retry() {

@@ -1,8 +1,9 @@
 // WP18: de pure logica achter "Foto's toevoegen" en de profielfoto. Geen React,
 // geen native modules; de schermen en src/data/upload.ts gebruiken dit.
 //
-// Per gekozen foto één upload-id, gelijk bij opnieuw proberen; een nieuwe
-// keuze krijgt nieuwe ids (A-invariant 18, invariant 1). Een 200 van /upload
+// Per gekozen foto één upload-id, gelijk bij opnieuw proberen (A-invariant
+// 18, invariant 1). Dezelfde foto voor hetzelfde album houdt zijn id ook in
+// een nieuwe ronde (A-invariant 25, `albumBatch`). Een 200 van /upload
 // met album betekent "in het album" (A-keuze 1). Na een ronde per reden met
 // aantal wat niet lukte (invariant 2); na "limiet" start er niets meer
 // (invariant 7).
@@ -52,9 +53,42 @@ function newUploadId(): string {
   return `${Date.now().toString(36)}-${counter.toString(36)}-${random}`;
 }
 
-/** Een nieuwe ronde: elk gekozen beeld wacht, met een eigen upload-id. */
+/** Een nieuwe ronde: elk gekozen beeld wacht, met een eigen upload-id. Voor de profielfoto. */
 export function newBatch(keys: readonly string[]): UploadItem[] {
   return keys.map((key) => ({ key, uploadId: newUploadId(), state: "wacht" }));
+}
+
+// Fix-cyclus 2, A-invariant 25: de upload-id per foto (`assetId`) en album,
+// voor de duur van de app-sessie. Na een herstart is hij weg (besluit 3).
+const albumUploadIds = new Map<string, string>();
+
+/**
+ * Een nieuwe ronde voor een album. Dezelfde foto voor hetzelfde album krijgt
+ * dezelfde upload-id als in een eerdere ronde, zodat de backend een foto die
+ * al binnen was teruggeeft in plaats van een tweede te maken. Een ander album
+ * of een foto zonder `assetId` krijgt een nieuwe id; binnen één ronde heeft
+ * elke foto een eigen id.
+ */
+export function albumBatch(
+  picks: readonly { key: string; assetId?: string | null }[],
+  albumId: string,
+): UploadItem[] {
+  const used = new Set<string>();
+  return picks.map(({ key, assetId }) => {
+    let uploadId: string | undefined;
+    if (assetId) {
+      const memo = JSON.stringify([albumId, assetId]);
+      if (!used.has(memo)) {
+        used.add(memo);
+        uploadId = albumUploadIds.get(memo);
+        if (uploadId === undefined) {
+          uploadId = newUploadId();
+          albumUploadIds.set(memo, uploadId);
+        }
+      }
+    }
+    return { key, uploadId: uploadId ?? newUploadId(), state: "wacht" };
+  });
 }
 
 /** Het antwoord van /upload als uitkomst. `status` null: geen antwoord (netwerk). */
