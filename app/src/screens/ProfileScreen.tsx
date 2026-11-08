@@ -16,7 +16,14 @@ import { api } from "../convexApi";
 import { useUploader } from "../data/upload";
 import { useLiveQuery } from "../data/useLiveQuery";
 import { nameErrorText } from "../lib/nameError";
-import { newBatch, reasonText } from "../lib/upload";
+import {
+  applyOutcome,
+  newBatch,
+  profileRetry,
+  reasonText,
+  startItem,
+  type UploadItem,
+} from "../lib/upload";
 import { size, space } from "../theme";
 
 // WP15b: naam en e-mailadres, en de naam wijzigen. Een eigen live query
@@ -148,9 +155,15 @@ function ProfilePhotoActions({ hasPhoto }: { hasPhoto: boolean }) {
   const [busy, setBusy] = useState<"upload" | "remove" | null>(null);
   const [feedback, setFeedback] = useState<PhotoFeedback>(null);
   const inFlight = useRef(false);
+  // Fix-cyclus 1, invariant 21: de laatste keuze, met zijn upload-id en hoe
+  // ver hij kwam. "Opnieuw proberen" vraagt profileRetry wat er nog moet.
+  const [attempt, setAttempt] = useState<{ asset: ImagePicker.ImagePickerAsset; item: UploadItem } | null>(null);
   const focused = useIsFocused();
   useEffect(() => {
-    if (!focused) setFeedback(null);
+    if (!focused) {
+      setFeedback(null);
+      setAttempt(null);
+    }
   }, [focused]);
 
   async function run(kind: "upload" | "remove", work: () => Promise<PhotoFeedback>) {
@@ -169,6 +182,7 @@ function ProfilePhotoActions({ hasPhoto }: { hasPhoto: boolean }) {
   async function choose() {
     if (inFlight.current) return;
     setFeedback(null);
+    setAttempt(null);
     let result: ImagePicker.ImagePickerResult;
     try {
       result = await ImagePicker.launchImageLibraryAsync({
@@ -194,18 +208,40 @@ function ProfilePhotoActions({ hasPhoto }: { hasPhoto: boolean }) {
       "Gebruiken",
     );
     if (!ok) return;
-    // Eén upload-id voor deze keuze: een dubbele tik geeft geen tweede foto.
+    // Eén upload-id voor deze keuze: een dubbele tik of "Opnieuw proberen"
+    // geeft geen tweede foto.
     const [item] = newBatch(["profiel"]);
+    await save(asset, item!);
+  }
+
+  // Uploaden (als dat nog moet) en opslaan als profielfoto. Wat lukte, blijft
+  // in `attempt` staan, zodat opnieuw proberen alleen de rest doet.
+  async function save(asset: ImagePicker.ImagePickerAsset, start: UploadItem) {
     await run("upload", async () => {
-      const outcome = await upload({ asset, uploadId: item!.uploadId });
-      if (!outcome.ok) return { kind: "error", text: `Profielfoto niet opgeslagen. ${reasonText(outcome.reason)}.` };
+      let item = start;
+      if (item.state !== "klaar") {
+        item = startItem([item], item.key)[0]!;
+        const outcome = await upload({ asset, uploadId: item.uploadId });
+        item = applyOutcome([item], item.key, outcome)[0]!;
+        setAttempt({ asset, item });
+        if (!outcome.ok) {
+          return { kind: "error", text: `Profielfoto niet opgeslagen. ${reasonText(outcome.reason)}.` };
+        }
+      }
       try {
-        await setProfilePhoto({ photoId: outcome.photoId as Id<"photos"> });
+        await setProfilePhoto({ photoId: item.photoId as Id<"photos"> });
       } catch {
+        setAttempt({ asset, item });
         return { kind: "error", text: "Profielfoto niet opgeslagen. Probeer het opnieuw." };
       }
+      setAttempt(null);
       return { kind: "success", text: "Je profielfoto is opgeslagen." };
     });
+  }
+
+  function retry() {
+    if (!attempt || profileRetry(attempt.item) === null) return;
+    void save(attempt.asset, attempt.item);
   }
 
   async function remove() {
@@ -247,7 +283,13 @@ function ProfilePhotoActions({ hasPhoto }: { hasPhoto: boolean }) {
           />
         )}
       </View>
-      {feedback?.kind === "error" && <Notice kind="error" message={feedback.text} />}
+      {feedback?.kind === "error" && (
+        <Notice kind="error" message={feedback.text}>
+          {attempt && profileRetry(attempt.item) !== null && (
+            <SmallButton title="Opnieuw proberen" icon="refresh" disabled={busy !== null} onPress={retry} />
+          )}
+        </Notice>
+      )}
       {feedback?.kind === "success" && <Notice kind="success" message={feedback.text} />}
       {feedback?.kind === "access" && (
         <Notice kind="error" title="Toegang tot je foto's nodig">

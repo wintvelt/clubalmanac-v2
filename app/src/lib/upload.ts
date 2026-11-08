@@ -10,6 +10,13 @@
 /** A-keuze 3: langste zijde na omzetten. */
 export const UPLOAD_MAX_SIDE = 4032;
 
+/**
+ * Fix-cyclus 1, invariant 20: zo lang mag één verzoek naar /upload duren,
+ * versturen én het antwoord lezen. Daarna stopt de app het en is de uitkomst
+ * "netwerk"; opnieuw proberen gebruikt dezelfde upload-id.
+ */
+export const UPLOAD_TIMEOUT_MS = 120_000;
+
 /** Hoeveel foto's tegelijk onderweg zijn. */
 export const UPLOAD_PARALLEL = 2;
 
@@ -110,6 +117,26 @@ export function applyOutcome(items: readonly UploadItem[], key: string, outcome:
     }
     return i;
   });
+}
+
+export type ProfileRetry =
+  | { step: "upload"; uploadId: string }
+  | { step: "opslaan"; photoId: string }
+  | null;
+
+/**
+ * Fix-cyclus 1, invariant 21: wat "Opnieuw proberen" bij een profielfoto doet.
+ * Mislukte de upload met een reden waar opnieuw proberen zin heeft: de upload
+ * opnieuw, met dezelfde id. Lukte de upload maar het opslaan als profielfoto
+ * niet (het item is klaar): alleen het opslaan, met de foto die er is. Anders
+ * niets; een andere foto kiezen is een nieuwe keuze.
+ */
+export function profileRetry(item: UploadItem): ProfileRetry {
+  if (item.state === "klaar" && item.photoId) return { step: "opslaan", photoId: item.photoId };
+  if (item.state === "mislukt" && item.reason !== undefined && canRetry(item.reason)) {
+    return { step: "upload", uploadId: item.uploadId };
+  }
+  return null;
 }
 
 /** Opnieuw proberen: de mislukte foto's waar het zin heeft, met dezelfde id. */

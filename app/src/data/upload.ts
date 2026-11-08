@@ -2,7 +2,13 @@ import { useAuth } from "@clerk/expo";
 import type { ImagePickerAsset } from "expo-image-picker";
 import { ImageManipulator, SaveFormat } from "expo-image-manipulator";
 import { useCallback, useRef } from "react";
-import { fitWithin, metadataHeaders, uploadOutcome, type UploadOutcome } from "../lib/upload";
+import {
+  UPLOAD_TIMEOUT_MS,
+  fitWithin,
+  metadataHeaders,
+  uploadOutcome,
+  type UploadOutcome,
+} from "../lib/upload";
 import { useSiteUrl } from "./images";
 
 // WP18: één gekozen foto omzetten en naar POST /upload sturen.
@@ -81,29 +87,48 @@ export function useUploader() {
         return { ok: false, reason: "geen_foto" };
       }
 
-      let response: Response;
+      // Fix-cyclus 1, invariant 20: één termijn voor versturen én het
+      // antwoord lezen. Daarna wordt het verzoek gestopt en is de uitkomst
+      // "netwerk"; een herhaling met dezelfde id geeft de foto als de server
+      // hem toch al had.
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), UPLOAD_TIMEOUT_MS);
+      const aborted = new Promise<never>((_resolve, reject) => {
+        controller.signal.addEventListener("abort", () => reject(new Error("termijn")), { once: true });
+      });
+      aborted.catch(() => {});
       try {
-        response = await fetch(`${site}/upload`, {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${token}`,
-            "Content-Type": "image/jpeg",
-            "X-Upload-Id": uploadId,
-            ...(albumId ? { "X-Album-Id": albumId } : {}),
-            ...metadataHeaders(asset.exif),
-          },
-          body,
-        });
-      } catch {
-        return uploadOutcome(null, null);
+        let response: Response;
+        try {
+          response = await Promise.race([
+            fetch(`${site}/upload`, {
+              method: "POST",
+              headers: {
+                Authorization: `Bearer ${token}`,
+                "Content-Type": "image/jpeg",
+                "X-Upload-Id": uploadId,
+                ...(albumId ? { "X-Album-Id": albumId } : {}),
+                ...metadataHeaders(asset.exif),
+              },
+              body,
+              signal: controller.signal,
+            }),
+            aborted,
+          ]);
+        } catch {
+          return uploadOutcome(null, null);
+        }
+        let json: unknown = null;
+        try {
+          json = await Promise.race([response.json(), aborted]);
+        } catch {
+          // Na de termijn: geen antwoord. Anders geen JSON: de status beslist.
+          if (controller.signal.aborted) return uploadOutcome(null, null);
+        }
+        return uploadOutcome(response.status, json);
+      } finally {
+        clearTimeout(timer);
       }
-      let json: unknown = null;
-      try {
-        json = await response.json();
-      } catch {
-        // Geen JSON: de status beslist.
-      }
-      return uploadOutcome(response.status, json);
     },
     [site],
   );
