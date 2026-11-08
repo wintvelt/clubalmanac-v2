@@ -115,6 +115,7 @@ Een lid zet foto's van zijn iPhone in een album van zijn groep. Ze staan rechtop
   - Een foto met locatie: de plaatsnaam staat in het detail.
   - Een staande foto van 24 MP of meer: rechtop, en het verkleinen loopt zonder problemen.
   - Een paar foto's op een traag netwerk (Network Link Conditioner, "3G"): ze komen binnen, zonder "niet meer ingelogd" (red-team Z4).
+  - Dezelfde foto via "Meer foto's" nog eens in hetzelfde album: "1 van 1 foto in het album", en hij staat er één keer in (fix-cyclus 2).
   - Wat viel op.
 
 ---
