@@ -88,6 +88,11 @@ Uitgangspunt: zoals in v1. A checkt in de oude code of v1 het echt zo deed en me
     - F4: een gemigreerde naam boven 50 tekens blokkeert opslaan als de app de naam altijd meestuurt → WP28b stuurt de naam alleen mee als hij wijzigde.
     - H2: `invites.accept` geeft de `groupId` terug → WP19.
 
+13. **Heraudit en red-team-hercheck fix-cyclus 2 (2026-11-09): WP28a is af.** F1, F3, F5 en H1 dicht; geen blockers of should-fixes. Naar de backlog, vóór WP19, samen met het leesbudget van groep verwijderen (besluit 11):
+    - Red-team N1, audit K1: de grens bij vertrek is 32.000 gescande documenten, niet 4096 aanroepen. Het aggregaat herleest alle ratings van een foto. Bij 18 raters per foto faalt account verwijderen bij 1460 foto's, vertrekken rond 1800 (grootste prod-groep: 1459). Een uploader die vertrekt terwijl 17 anderen zijn foto's ratten, faalt al rond 900 (van vóór deze cyclus). Prod heeft nu 6 ratings.
+    - Audit K3: vertrek faalt met een gewone fout als een publicatie naar een gewiste foto wijst.
+    - Red-team N2, audit K2: kleine gaten in de naamcheck (privébereik zoals U+F8FF, ZWJ tussen accenten of niet-Latijnse letters). Geaccepteerd.
+
 ## Open vragen voor Wouter (A geeft advies)
 
 1. **Groep verwijderen:** alleen de oprichter (v1) of elke admin (nu)?
