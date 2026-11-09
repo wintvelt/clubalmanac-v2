@@ -93,6 +93,8 @@ Uitgangspunt: zoals in v1. A checkt in de oude code of v1 het echt zo deed en me
     - Audit K3: vertrek faalt met een gewone fout als een publicatie naar een gewiste foto wijst.
     - Red-team N2, audit K2: kleine gaten in de naamcheck (privébereik zoals U+F8FF, ZWJ tussen accenten of niet-Latijnse letters). Geaccepteerd.
 
+14. **WP28b (2026-11-09): A-keuzes 1–7 bevestigd.** B kan bouwen.
+
 ## Open vragen voor Wouter (A geeft advies)
 
 1. **Groep verwijderen:** alleen de oprichter (v1) of elke admin (nu)?
