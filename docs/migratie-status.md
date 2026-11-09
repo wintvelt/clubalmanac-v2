@@ -211,7 +211,7 @@ Dus: communicatie en blokkade gaan **buiten de oude app om**.
 - [ ] T-0: `integrityCheck`-cron op prod weer aanzetten, ná een groene `verify`
 - [ ] T-0: backend write-block aan op AWS
 - [ ] T-0: webapp redirect aan
-- [ ] T0: 20 users informeren dat ze nu kunnen overstappen. Instructie: app bijwerken, inloggen met je e-mailadres en de code (of link) uit de mail
+- [ ] T0: 20 users informeren dat ze nu kunnen overstappen. Instructie: app bijwerken, inloggen met je e-mailadres en de code uit de mail
 - [ ] T+1: bevestigen dat alles werkt voor alle 20 users
 - [ ] T+30: AWS resources opschonen (S3 `blob-images` nog even bewaren als backup tot ~T+90). **Uitzondering: bucket `blob-videos` blijft staan** — daar draait de video-weergave van de nieuwe app op tot de R2-overstap. Niet opruimen, ook niet na T+90.
 - [ ] T+30: cutover-group uit Convex verwijderen (was alleen reminder voor oude app)

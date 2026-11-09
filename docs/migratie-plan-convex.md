@@ -675,7 +675,7 @@ URL `https://<deployment>.<region>.convex.site/email-event` configureren in Mail
 Alle NL teksten 1:1 overnemen uit oude SES templates. Tone-of-voice consistent houden. Templates inline in Convex actions (geen aparte template-engine nodig bij dit volume).
 
 **Cognito-mails (Clerk-zijde):**
-Clerk free tier verstuurt vanaf `accounts.clerk.dev`. Custom email domain is paid feature, niet de moeite voor 16 initiële signups. Let op: met code-login stuurt Clerk bij elke nieuwe login een mail; WP22 bepaalt of die via Clerk of via Mailjet gaat. Acceptabel dat users tijdens cutover een mail van `accounts.clerk.dev` krijgen — communicatie hierover via cutover-mailing op clubalmanac.com kanaal.
+Clerk free tier verstuurt vanaf `accounts.clerk.dev`. Custom email domain is paid feature, niet de moeite voor 16 initiële signups. Let op: met code-login stuurt Clerk bij elke nieuwe login een mail; Die blijft via Clerk lopen, zonder link (WP22). Acceptabel dat users tijdens cutover een mail van `accounts.clerk.dev` krijgen — communicatie hierover via cutover-mailing op clubalmanac.com kanaal.
 
 **Beslispunten/risico's:**
 - Mailjet domein-validatie kan paar uur duren — initiate vroeg in fase 2
