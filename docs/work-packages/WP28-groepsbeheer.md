@@ -427,3 +427,135 @@ Tegen een wegwerp-referentie op B's code (scratchpad, gewist) is de hele suite g
 - alleen Default_Ignorable checken;
 - U+2800 vergeten;
 - `markAllAlbumsSeen` terug naar de gewone fout.
+
+## WP28b: app (A, 2026-11-09)
+
+Scope: besluit 9 en §Vraag 5, op de vaste WP28a-API. Bronnen: de pariteitstabel hierboven, besluiten 1–13, de huidige app (WP15b, WP16, WP17a, WP17b), `design.md` §3, §6 en §9, en de WP27-richting voor het profiel. Geen nieuwe ronde op de oude app.
+
+### Vondsten
+
+1. **Geen backend-gat.** Elke actie heeft een mutation met codes (WP28a). Rol en oprichter van wie kijkt staan in `groups.listMine` (`role`, `createdBy`), dus ook op het albumscherm.
+2. **Cover kiezen bestaat al**, in het foto-menu (WP17b: "Als groepscover", "Als albumcover"). Een kiezer uit alle foto's van de groep, zoals v1, vraagt een query die er niet is. Cover weghalen is nieuw (WP28a A-keuze 4).
+3. **`albumCreatedBy` zit nog in het foto-menu** (`photoActions`, `selectionPlan`, `useMenuContext`), maar geen regel gebruikt hem. Het menu wacht er wel op: zolang het album niet geladen is, is er geen menu.
+4. **F4.** `groups.update` en `albums.update` checken een meegegeven naam. Op prod is de langste naam 24 tekens, dus vandaag blokkeert niets. Ook de datum: v1 schreef bij elke opslag `sortDate = createdAt` (WP16 §sortDate). Het formulier stuurt dus alleen wat wijzigde.
+5. **Na vertrekken of verwijderen gooit de open live query `NOT_MEMBER`.** Zonder zorg toont het scherm dan even "Je bent geen lid van deze groep" of "Je kunt dit album niet meer zien".
+6. **De app heeft geen datumkiezer.** Een native pakket vraagt een nieuwe build.
+7. **`albums.create` neemt geen datum.** Een oud album staat na maken eerst in het jaar van nu, tot de admin de datum zet.
+8. **Een code betekent per actie iets anders.** `NOT_ALLOWED`: geen admin, geen oprichter, of je eigen rol. `NOT_MEMBER` bij een actie op een lid: ook dat lid kan net weg zijn.
+
+### Opbouw van de schermen
+
+Uitgangspunt (WP27-richting): elk ding staat één keer, je bewerkt het waar je het ziet, "Bewaar" pas na een wijziging, de melding bij het onderdeel. Kijken en beheren blijven gescheiden: op prod is iedereen admin (kernvondst 1), dus wat een admin ziet, ziet bijna iedereen.
+
+- **Mijn groepen.** "Nieuwe groep" op een eigen regel boven de lijst, ook in de lege toestand.
+- **Nieuwe groep** (modaal). Naam en omschrijving. "Groep maken" kan pas met een naam. Daarna naar de nieuwe groep.
+- **Groep.** De kop zoals nu. Onder naam, omschrijving en jaar: "Bewerk groep" (kleine knop, eigen regel, design §3).
+  - Albums: "Nieuw album" op een eigen regel boven de jaren, ook in de lege toestand.
+  - Leden: tik op een lid opent een menu met wat jij bij dat lid mag. Een rij zonder acties heeft geen pijl en reageert niet. Bij je eigen rij: "Groep verlaten". De oprichter ziet bij de eigen rij niets; onder de lijst staat voor de oprichter: eerst een ander lid oprichter maken, of als enige lid de groep verwijderen.
+- **Groep bewerken** (scherm erboven):
+  1. Bovenaan de cover gecentreerd, of de letter, met een menu: "Cover weghalen" als er een is. Eronder: "Een cover kies je bij een foto in een album: Acties, Als groepscover."
+  2. Naam, omschrijving, datum. Bij de datum: "Bepaalt het jaar en de volgorde in Mijn groepen."
+  3. "Bewaar" alleen actief na een wijziging.
+  4. Onderaan, apart en rood: "Groep verwijderen".
+- **Nieuw album** (modaal). Een naam. Daarna naar het album.
+- **Album.** "Bewerk album" bij "Selecteer".
+- **Album bewerken.** Als Groep bewerken: cover ("Acties, Als albumcover"), naam, datum ("Bepaalt het jaar en de volgorde in de groep"), onderaan "Album verwijderen".
+
+**Wie ziet wat** (de knop of menuregel staat er alleen als hij mag):
+
+| Wat | Lid | Admin | Oprichter |
+|---|---|---|---|
+| Nieuwe groep | ✓ | ✓ | ✓ |
+| Bewerk groep: naam, omschrijving, datum, cover weghalen | – | ✓ | ✓ |
+| Groep verwijderen | – | – | ✓ |
+| Nieuw album, Bewerk album | – | ✓ | ✓ |
+| Album verwijderen | – | – | ✓ |
+| Bij een ander lid: Maak admin, Maak lid | – | ✓, niet bij de oprichter | ✓ |
+| Bij een ander lid: Uit de groep halen | – | ✓, niet bij de oprichter | ✓ |
+| Bij een ander lid: Maak oprichter | – | – | ✓ |
+| Bij jezelf: Groep verlaten | ✓ | ✓ | – (eerst overdragen) |
+
+"Maak admin" alleen bij een lid, "Maak lid" alleen bij een admin. Volgorde in het menu: rol, oprichter, uit de groep halen onderaan.
+
+**Bevestiging en melding per actie.** `<naam>` is de naam van het lid, of "dit lid" zonder naam.
+
+| Actie | Bevestiging (knop) | Melding na succes | Daarna |
+|---|---|---|---|
+| Groep maken, album maken | – | – | naar de groep, het album |
+| Bewaar (groep, album) | – | "Opgeslagen", onder Bewaar | blijft |
+| Cover weghalen | – | "Cover weggehaald", onder de cover | blijft |
+| Groep verwijderen | "Groep verwijderen?" Alle albums verdwijnen, voor iedereen, en niemand is nog lid. De foto's blijven bij hun eigenaar in Mijn foto's. Niet ongedaan te maken. (Verwijderen, rood) | op Mijn groepen: "<groep> is verwijderd" | naar Mijn groepen; Home vergeet de groep |
+| Album verwijderen | "Album verwijderen?" Het album verdwijnt voor alle leden. De foto's blijven bij hun eigenaar, en in andere albums waar ze in staan. Niet ongedaan te maken. (Verwijderen, rood) | in de groep: "<album> is verwijderd" | naar de groep |
+| Maak admin, Maak lid | – (v1) | "<naam> is nu admin", "<naam> is nu lid", bij de ledenlijst | blijft |
+| Maak oprichter | "<naam> oprichter maken?" <naam> wordt admin en oprichter, en kan daarna de groep en albums verwijderen. Jij blijft admin. (Maak oprichter) | "<naam> is nu de oprichter" | blijft |
+| Uit de groep halen | "<naam> uit de groep halen?" <naam> ziet de groep daarna niet meer; de foto's van <naam> verdwijnen uit de albums van deze groep. Opnieuw uitnodigen kan; de foto's moeten dan opnieuw in de albums. (Uit de groep halen, rood) | "<naam> is uit de groep gehaald" | blijft |
+| Groep verlaten | "Groep verlaten?" Je ziet de groep daarna niet meer. Je foto's verdwijnen uit de albums van deze groep en blijven in Mijn foto's. Terugkomen kan alleen met een nieuwe uitnodiging. (Verlaten, rood) | op Mijn groepen: "Je hebt <groep> verlaten" | naar Mijn groepen; Home vergeet de groep |
+
+**Melding per foutcode.** Bij naam en datum onder het veld, anders onder de knop van de actie.
+
+| Code | Wanneer | Melding |
+|---|---|---|
+| `NAME_REQUIRED` | maken, Bewaar | Vul een naam in. |
+| `NAME_TOO_LONG` | idem | De naam is te lang. Gebruik hoogstens 50 tekens. |
+| `NAME_INVALID` | idem | De naam bevat een teken dat niet mag, zoals een tab of een onzichtbaar teken. Haal dat weg en probeer het opnieuw. |
+| `DATE_INVALID` | Bewaar | Deze datum kan niet. Kies een andere dag. |
+| `NOT_ALLOWED` | admin-actie | Dat kan alleen een admin. Misschien ben je net lid gemaakt. |
+| `NOT_ALLOWED` | groep of album verwijderen, oprichter maken | Dat kan alleen de oprichter. |
+| `FOUNDER_PROTECTED` | rol, uit de groep halen | Bij de oprichter kan dat niet. Misschien is dit lid net oprichter geworden. |
+| `FOUNDER_MUST_TRANSFER` | verlaten | Je bent de oprichter. Maak eerst een ander lid oprichter, dan kun je de groep verlaten. Ben je het enige lid, verwijder dan de groep. |
+| `NOT_MEMBER` | groep-actie, verlaten | Je bent geen lid meer van deze groep, of de groep bestaat niet meer. |
+| `NOT_MEMBER` | album-actie | Dit album bestaat niet meer, of je bent geen lid meer van de groep. |
+| `NOT_MEMBER` | actie op een lid | Dit lid zit niet meer in de groep, of je bent zelf geen lid meer. |
+| anders | geen verbinding, "Server Error", onbekende code | Dat lukte niet. Er is niets veranderd. Controleer je verbinding en probeer het opnieuw. |
+
+### A-invarianten (WP28b)
+
+18. **Het menu is de backend.** Elke knop en menuregel uit de tabel staat er precies als de backend de actie toestaat en hij iets verandert, voor elke kijker (lid, admin, oprichter) en elk doel (jezelf, een lid, een admin, de oprichter). Een rol geven die het lid al heeft, telt niet als actie.
+19. **De datum is een dag.**
+    - Het formulier toont de dag van `sortDate` (UTC-kalenderdag, zoals de migratie), anders die van `createdAt` in Nederlandse tijd.
+    - Een gekozen dag wordt UTC-middernacht van die dag. Het jaar in de lijsten is dan het jaar van die dag, ook op 31 december en 1 januari.
+    - De kiezer werkt met de klok van het toestel: de gekozen dag is die op het toestel, niet die in UTC. Hoe het toestel ook is ingesteld, de getoonde dag hangt er niet van af.
+20. **Opslaan stuurt alleen wat wijzigde (F4).** Naam en omschrijving gaan getrimd mee, alleen als ze getrimd anders zijn dan wat er staat; een lege omschrijving telt als geen. De datum alleen als de dag anders is. Niets gewijzigd: niets te bewaren. Een gemigreerde naam boven 50 tekens blokkeert zo geen andere wijziging.
+21. **Elke weigering geeft de NL-melding uit de tabel**, uit de code en nooit uit de tekst van de fout, bij het juiste onderdeel. Nooit een code of Engelse tekst.
+22. **`albumCreatedBy` is weg uit de app** (besluit 11). Het foto-menu hangt af van wie kijkt, zijn rol, de eigenaar en wie de foto toevoegde.
+23. **Geen flits na vertrek of verwijderen** (vondst 5, gate). Na verlaten of groep verwijderen gaat de app direct naar Mijn groepen, na album verwijderen naar de groep, zonder "Je bent geen lid" ertussen.
+
+### A-keuzes (Wouter bevestigt)
+
+1. **Bewerken op een eigen scherm** achter "Bewerk groep" en "Bewerk album", zoals v1 en design §3. Daarbinnen de WP27-opbouw. Niet in de gewone schermen: op prod zou dan bijna iedereen overal invoervelden zien.
+2. **Cover kiezen blijft in het foto-menu.** Bewerken kan hem alleen weghalen, en zegt waar je hem kiest. Een kiezer uit alle groepsfoto's (v1) vraagt een nieuwe query: backlog.
+3. **Leden-acties via een tik op het lid,** zoals v1. "Maak lid" in plaats van "Maak gast" (WP16), "Uit de groep halen" in plaats van "Verban uit groep".
+4. **Formulieren:**
+   - Nieuwe groep: naam en omschrijving.
+   - Nieuw album: alleen een naam, de datum daarna (vondst 7).
+   - Een album heeft geen omschrijving in het formulier: v1 had er geen, en de app toont hem nergens.
+5. **Datum:** geen grenzen in de app behalve die van de kiezer, en niet weg te halen (WP28a A-keuze 5). B kiest de kiezer; een native pakket betekent een nieuwe build.
+6. **Zonder bevestiging:** rol wijzigen (v1) en cover weghalen. Wel een melding.
+7. **Na groep verwijderen of verlaten** staat de melding op Mijn groepen, tot de volgende actie (design §6).
+
+Niet in WP28b: de meldingen van de cover-acties in het foto-menu (WP17b, algemene melding), uitnodigen en intrekken (WP19), mails (W7).
+
+### RED tests WP28b
+
+De tests nemen een module `app/src/lib/groupAdmin.ts` aan met:
+- `groupRights(viewer)` → `{ editGroup, deleteGroup, createAlbum, editAlbum, deleteAlbum }`, met `viewer = { me, role, founderId }`.
+- `memberActions(viewer, target)` → `MemberAction[]` (`makeAdmin`, `makeMember`, `transferFounder`, `removeMember`, `leave`), met `target = { userId, role }`.
+- `dayOf(item)`, `sortDateOf(day)`, `dayFromPicker(date)`, `pickerDate(day)`, `formatDay(day)`, met `Day = { year, month, day }` (maand 1–12).
+- `changedFields(stored, draft)` → `{ name?, description?, sortDate? } | null`; `newGroupArgs(draft)` → `{ name, description? }`.
+- `refusalOf(error, action)` → `{ field: "name" | "date" | "general", text }`, met `action` een `AdminAction`: `createGroup`, `editGroup`, `removeGroupCover`, `deleteGroup`, `createAlbum`, `editAlbum`, `removeAlbumCover`, `deleteAlbum`, of een `MemberAction`.
+
+| Bestand | Wat |
+|---|---|
+| `app/tests/groupAdmin.test.ts` | A-invariant 18 per rol, 19 in drie tijdzones, 20, 21 |
+| `tests/groups/adminMenuMatchesBackend.test.ts` | A-invariant 18 tegen de backend: elke kijker, elk doel, elke actie |
+| `app/tests/albumCreatedBy.test.ts` | A-invariant 22: bronscan op `app/src` |
+
+Aangepast (A-invariant 22): `app/tests/photoActions.test.ts`, `app/tests/selectionBusy.test.ts`, `tests/photoActions/menuMatchesBackend.test.ts` geven het foto-menu geen `albumCreatedBy` meer.
+
+Stand: rood zijn alleen de drie nieuwe bestanden. `groupAdmin.test.ts` (273 tests) en `adminMenuMatchesBackend.test.ts` (18) vallen op de ontbrekende module; de bronscan vindt `albumCreatedBy` in `photoActions.ts` en `PhotoMenu.tsx`. De rest is groen: root 2227, app 924. `tsc` faalt alleen op de ontbrekende module en op `albumCreatedBy`, dat het type nog eist.
+
+Tegen een wegwerp-referentie in de scratchpad (gewist) zijn beide suites groen en is `tsc` schoon. Achttien mutanten vallen om:
+- het menu: een admin bij de oprichter, de oprichter die vertrekt, een admin die overdraagt, beide rolacties tegelijk, een admin die een album wist (ook in de backend-vergelijking);
+- de datum: `createdAt` in UTC, een vaste +1 uur, de kiezer in UTC (heen en terug);
+- opslaan: de naam altijd mee, de naam ongetrimd vergeleken, de datum altijd mee (zoals v1), een omschrijving bij een album, een lege omschrijving bij maken;
+- meldingen: `NOT_ALLOWED` altijd "admin", één tekst voor `NOT_MEMBER`, de tekst van de fout gebruiken, `DATE_INVALID` bij de knop.
