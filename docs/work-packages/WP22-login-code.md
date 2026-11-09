@@ -1,6 +1,6 @@
 # WP22: code uit de login-mail
 
-> Besluit Wouter 2026-11-09. Verplicht vóór T0. Account verwijderen is apart: WP29.
+> Landed 2026-11-09: besluit Wouter, gate op de iPhone groen (build 58, dev). Geen code gewijzigd. Account verwijderen is apart: WP29.
 
 ## Besluit
 
@@ -19,3 +19,5 @@
 Faalt de gate, dan volgt pas een A → B → audit.
 
 **Let op:** Clerk-dev mailt niet naar Apple-adressen (`me.com`, `icloud.com`): fout `dev_email_provider_blocked`. De app toont dan "Controleer je internetverbinding", en dat klopt niet. Test op dev met een ander adres; op prod (eigen domein) speelt dit niet.
+
+**Backlog:** een onbekende Clerk-fout toont nu "Controleer je internetverbinding". Beter een melding die niet naar het internet wijst.
