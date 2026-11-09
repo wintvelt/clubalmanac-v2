@@ -14,5 +14,6 @@
 
 1. Code aanvragen → de code verschijnt als suggestie boven het toetsenbord; één tik logt in.
 2. Verlopen code → een leesbare melding met "Stuur een nieuwe code" (WP13 gate 4a).
+3. Code aanvragen, app hard sluiten en opnieuw openen → het code-scherm staat er nog, voor hetzelfde e-mailadres, en de code uit de mail werkt (WP13 invariant 20).
 
 Faalt de gate, dan volgt pas een A → B → audit.
