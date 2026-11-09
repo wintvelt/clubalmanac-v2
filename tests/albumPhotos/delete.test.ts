@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { api , internal } from "../../convex/_generated/api";
 import schema from "../../convex/schema";
 import { modules } from "../_helpers/modules";
+import { seedMember } from "../_helpers/membership";
 
 // Cascade matrix rows AP3, AP4 — cat-3 selectief vanuit albums.removePhoto
 // (= GP delete trigger). AP1 + AP2 (seenPics) zijn deferred, zie matrix
@@ -44,7 +45,7 @@ describe("AP3: removePhoto cascade ratings van group members", () => {
       api.groups.create,
       { name: "G" },
     );
-    await withUser(t, "user_alice").mutation(api.groups.addMember, {
+    await seedMember(t, {
       groupId,
       userId: bobId,
     });
@@ -94,7 +95,7 @@ describe("AP3: removePhoto cascade ratings van group members", () => {
       api.groups.create,
       { name: "G" },
     );
-    await withUser(t, "user_alice").mutation(api.groups.addMember, {
+    await seedMember(t, {
       groupId,
       userId: bobId,
     });
@@ -146,11 +147,11 @@ describe("AP3: removePhoto cascade ratings van group members", () => {
     const g2 = await withUser(t, "user_alice").mutation(api.groups.create, {
       name: "G2",
     });
-    await withUser(t, "user_alice").mutation(api.groups.addMember, {
+    await seedMember(t, {
       groupId: g1,
       userId: bobId,
     });
-    await withUser(t, "user_alice").mutation(api.groups.addMember, {
+    await seedMember(t, {
       groupId: g2,
       userId: bobId,
     });
@@ -357,7 +358,7 @@ describe("AP3 ruimt ook orphan rating op van ex-member (Convex strikter dan AWS)
       api.groups.create,
       { name: "G" },
     );
-    await withUser(t, "user_alice").mutation(api.groups.addMember, {
+    await seedMember(t, {
       groupId,
       userId: bobId,
     });

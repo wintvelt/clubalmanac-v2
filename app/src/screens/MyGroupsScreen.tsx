@@ -3,15 +3,18 @@ import { router, useIsFocused } from "expo-router";
 import { useEffect, useState } from "react";
 import { Pressable, StyleSheet, View } from "react-native";
 import { Icon } from "../components/Icon";
+import { LinkButton } from "../components/LinkButton";
+import { Notice } from "../components/Notice";
 import { QueryBoundary } from "../components/QueryBoundary";
 import { Screen } from "../components/Screen";
 import { EmptyState, LoadingState } from "../components/States";
 import { Text } from "../components/Text";
 import { UnreadLabel } from "../components/UnreadLabel";
 import { api } from "../convexApi";
+import { forgetDepartedIn, useNoticeUntilBlur } from "../data/adminState";
 import { forgetLastGroup, loadLastGroup } from "../data/lastGroup";
 import { useLiveQuery } from "../data/useLiveQuery";
-import { groupPath } from "../lib/groupRoutes";
+import { groupPath, newGroupPath } from "../lib/groupRoutes";
 import { homeDecisions, homeSessionKey } from "../lib/homeDecision";
 import { displayYear, homeTarget, roleLabel, sortMyGroups, unreadBadge } from "../lib/groups";
 import { radius, size, space, useTheme } from "../theme";
@@ -37,20 +40,37 @@ export function MyGroupsScreen() {
 function MyGroupsList() {
   const groups = useLiveQuery(api.groups.listMine, {});
   const homeReady = useHomeDecision(groups);
+  // WP28b: na verlaten of groep verwijderen (A-keuze 7).
+  const notice = useNoticeUntilBlur("myGroups");
+  // Een groep die hier weer staat (nieuwe uitnodiging), is niet meer vertrokken.
+  useEffect(() => {
+    if (groups) forgetDepartedIn(groups.map((g) => g._id));
+  }, [groups]);
 
   // Invariant 12: tot Home gekozen heeft, geen flits van de lijst.
   if (groups === undefined || !homeReady) return <LoadingState label="Groepen laden…" />;
+  // WP28b: "Nieuwe groep" op een eigen regel boven de lijst, ook als die leeg is.
+  const top = (
+    <>
+      {notice && <Notice kind="success" message={notice} />}
+      <LinkButton title="Nieuwe groep" icon="plus" tone="action" onPress={() => router.push(newGroupPath())} />
+    </>
+  );
   if (groups.length === 0) {
     return (
-      <EmptyState
-        icon="groups"
-        title="Nog geen groepen"
-        text="Je bent nog geen lid van een groep. Word je uitgenodigd, dan staat de groep hier."
-      />
+      <View style={styles.list}>
+        {top}
+        <EmptyState
+          icon="groups"
+          title="Nog geen groepen"
+          text="Je bent nog geen lid van een groep. Word je uitgenodigd, dan staat de groep hier."
+        />
+      </View>
     );
   }
   return (
     <View style={styles.list}>
+      {top}
       {sortMyGroups(groups).map((group) => (
         <GroupCard key={group._id} group={group} />
       ))}

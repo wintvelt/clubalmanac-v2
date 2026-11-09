@@ -9,7 +9,11 @@ import type { Doc, Id } from "./_generated/dataModel";
 import {
   getMembership,
   NOT_MEMBER,
-  requireMember,
+  groupOrAlbumName,
+  refuse,
+  requireAdminForWrite,
+  requireDate,
+  requireFounder,
   requireMemberForRead,
 } from "./groups";
 import { requireCurrentUser } from "./users";
@@ -31,30 +35,12 @@ import {
 } from "./lib/shapes";
 import { avatarFieldsOf } from "./lib/profilePhoto";
 import { photoView } from "./lib/formatSet";
-import { recomputeRatingAggregate } from "./ratings";
+import { afterUnpublish } from "./lib/unpublish";
 
-async function requireAlbum(
-  ctx: { db: { get: (id: Id<"albums">) => Promise<Doc<"albums"> | null> } },
-  albumId: Id<"albums">,
-): Promise<Doc<"albums">> {
-  const album = await ctx.db.get(albumId);
-  if (!album) throw new Error("Album bestaat niet");
-  return album;
-}
-
-// WP23: toegang voor album-reads. Eén error voor "album bestaat niet" en
-// "geen lid van de groep" (invariant 4: geen bestaans-orakel).
-// WP24 invariant 3 + A-keuze 3: ook markSeen, update en addPhoto. remove en
-// removePhoto houden requireAlbum + requireMember (orakel-backlog).
-const NO_ALBUM_ACCESS = "Geen toegang tot dit album";
-
-// WP24 A-keuze 1: alleen de eigenaar zet een foto in een album. Eén error voor
-// onbekend id, geen toegang en wel toegang maar niet eigenaar (invariant 3).
-const NOT_PHOTO_OWNER = "Alleen de eigenaar kan deze foto in een album zetten";
-
-// WP24 A-keuze 2: een album-cover staat in dát album. Ook voor een onbekend id.
-const COVER_NOT_IN_ALBUM = "Cover moet een foto uit dit album zijn";
-
+// WP23: toegang tot een album. Eén weigering voor "album bestaat niet" en
+// "geen lid van de groep" (invariant 4: geen bestaans-orakel). Sinds WP28
+// fix-cyclus 1 (A-invariant 11) de ConvexError NOT_MEMBER, voor markSeen,
+// addPhoto en removePhoto, zoals de reads hieronder en de beheer-paden.
 async function requireAlbumAccess(
   ctx: QueryCtx | MutationCtx,
   albumId: Id<"albums">,
@@ -64,14 +50,14 @@ async function requireAlbumAccess(
   const membership = album
     ? await getMembership(ctx, user._id, album.groupId)
     : null;
-  if (!album || !membership) throw new Error(NO_ALBUM_ACCESS);
+  if (!album || !membership) refuse("NOT_MEMBER");
   return { user, album, membership };
 }
 
 // WP17a invariant 7 (WP16 backlog N3): de reads achter het albumscherm geven
 // bij geen lid en bij een onbekend of gewist album dezelfde ConvexError met
 // code NOT_MEMBER, zoals de groep-reads (requireMemberForRead). De app
-// herkent hem aan de code. Mutations houden requireAlbumAccess.
+// herkent hem aan de code.
 async function requireAlbumAccessForRead(
   ctx: QueryCtx,
   albumId: Id<"albums">,
@@ -93,10 +79,12 @@ export const create = mutation({
   },
   returns: v.id("albums"),
   handler: async (ctx, { groupId, name, description }) => {
-    const { user } = await requireMember(ctx, groupId);
+    // WP28 besluit 2: alleen een admin maakt een album.
+    const { user } = await requireAdminForWrite(ctx, groupId);
+    const trimmed = groupOrAlbumName(name);
     return await ctx.db.insert("albums", {
       groupId,
-      name,
+      name: trimmed,
       description,
       createdBy: user._id,
       createdAt: Date.now(),
@@ -368,51 +356,61 @@ export const listPhotos = query({
   },
 });
 
+// WP28 A-invariant 2: geen lid of onbekend album geeft NOT_MEMBER, voor alle
+// album-beheeracties gelijk. Daarna de gate van de groep.
+async function requireAlbumForWrite(
+  ctx: MutationCtx,
+  albumId: Id<"albums">,
+): Promise<Doc<"albums">> {
+  const album = await ctx.db.get(albumId);
+  if (!album) refuse("NOT_MEMBER");
+  return album;
+}
+
+// Album wijzigen: admin (tabel §Acties). De maker heeft geen eigen recht meer
+// (WP28 A-keuze 2).
 export const update = mutation({
   args: {
     albumId: v.id("albums"),
     name: v.optional(v.string()),
     description: v.optional(v.string()),
-    coverPhotoId: v.optional(v.id("photos")),
+    // WP28 A-keuze 4: `null` haalt de cover weg; weglaten laat hem staan.
+    coverPhotoId: v.optional(v.union(v.id("photos"), v.null())),
+    // WP28 invariant 6: de dag (epoch-ms, UTC-middernacht, A-keuze 5).
+    sortDate: v.optional(v.number()),
   },
   handler: async (ctx, { albumId, ...rest }) => {
-    const { user, album, membership } = await requireAlbumAccess(
-      ctx,
-      albumId,
-    );
-    const isCreator = album.createdBy === user._id;
-    const isAdmin = membership.role === "admin";
-    if (!isCreator && !isAdmin) {
-      throw new Error("Alleen creator of groep-admin kan album wijzigen");
-    }
+    const album = await requireAlbumForWrite(ctx, albumId);
+    await requireAdminForWrite(ctx, album.groupId);
+    const name = groupOrAlbumName(rest.name);
+    requireDate(rest.sortDate);
     // WP24 invariant 2 + A-keuze 2. Alleen als de cover wordt gezet: een
     // bestaande cover die niet meer in het album staat, blokkeert geen
     // naamswijziging.
     if (
-      rest.coverPhotoId !== undefined &&
+      rest.coverPhotoId &&
       !(await isPublishedInAlbum(ctx, rest.coverPhotoId, albumId))
     ) {
-      throw new Error(COVER_NOT_IN_ALBUM);
+      refuse("COVER_NOT_IN_ALBUM");
     }
 
     const patch: Partial<Doc<"albums">> = {};
-    if (rest.name !== undefined) patch.name = rest.name;
+    if (name !== undefined) patch.name = name;
     if (rest.description !== undefined) patch.description = rest.description;
-    if (rest.coverPhotoId !== undefined) patch.coverPhotoId = rest.coverPhotoId;
+    if (rest.coverPhotoId !== undefined) {
+      patch.coverPhotoId = rest.coverPhotoId ?? undefined;
+    }
+    if (rest.sortDate !== undefined) patch.sortDate = rest.sortDate;
     if (Object.keys(patch).length > 0) await ctx.db.patch(albumId, patch);
   },
 });
 
+// WP28 besluit 5 (W5): alleen de oprichter verwijdert een album.
 export const remove = mutation({
   args: { albumId: v.id("albums") },
   handler: async (ctx, { albumId }) => {
-    const album = await requireAlbum(ctx, albumId);
-    const { user, membership } = await requireMember(ctx, album.groupId);
-    const isCreator = album.createdBy === user._id;
-    const isAdmin = membership.role === "admin";
-    if (!isCreator && !isAdmin) {
-      throw new Error("Alleen creator of groep-admin kan album verwijderen");
-    }
+    const album = await requireAlbumForWrite(ctx, albumId);
+    await requireFounder(ctx, album.groupId);
 
     const albumPhotos = await ctx.db
       .query("albumPhotos")
@@ -424,6 +422,10 @@ export const remove = mutation({
     await deleteAlbumLastSeenByAlbum(ctx, albumId);
 
     await ctx.db.delete(albumId);
+
+    // WP28 invariant 5 en A-invariant 3: groepscover en ratings volgen de
+    // weggehaalde publicaties (AP3, AP4).
+    await afterUnpublish(ctx, albumPhotos);
   },
 });
 
@@ -438,16 +440,14 @@ export const addPhoto = mutation({
     // WP24 invariant 2 + A-keuze 1: eigenaar (dus foto-toegang). Vóór de
     // "zit al in album"-check, zodat die niets lekt aan een niet-eigenaar.
     const photo = await ctx.db.get(photoId);
-    if (!photo || photo.ownerId !== user._id) {
-      throw new Error(NOT_PHOTO_OWNER);
-    }
+    if (!photo || photo.ownerId !== user._id) refuse("NOT_PHOTO_OWNER");
 
     const existing = await ctx.db
       .query("albumPhotos")
       .withIndex("by_album", (q) => q.eq("albumId", albumId))
       .filter((q) => q.eq(q.field("photoId"), photoId))
       .unique();
-    if (existing) throw new Error("Foto zit al in dit album");
+    if (existing) refuse("ALREADY_IN_ALBUM");
 
     await ctx.db.insert("albumPhotos", {
       albumId,
@@ -465,87 +465,27 @@ export const removePhoto = mutation({
     photoId: v.id("photos"),
   },
   handler: async (ctx, { albumId, photoId }) => {
-    const album = await requireAlbum(ctx, albumId);
-    const { user, membership } = await requireMember(ctx, album.groupId);
+    // A-invariant 11: geen lid en gewist album geven dezelfde NOT_MEMBER (het
+    // orakel van red-team R4 is weg).
+    const { user, membership } = await requireAlbumAccess(ctx, albumId);
 
     const ap = await ctx.db
       .query("albumPhotos")
       .withIndex("by_album", (q) => q.eq("albumId", albumId))
       .filter((q) => q.eq(q.field("photoId"), photoId))
       .unique();
-    if (!ap) throw new Error("Foto zit niet in dit album");
+    if (!ap) refuse("NOT_IN_ALBUM");
 
     const isAdder = ap.addedBy === user._id;
     const isAdmin = membership.role === "admin";
-    if (!isAdder && !isAdmin) {
-      throw new Error(
-        "Alleen wie de foto toevoegde of een groep-admin kan deze verwijderen",
-      );
-    }
+    if (!isAdder && !isAdmin) refuse("NOT_ALLOWED");
 
     await ctx.db.delete(ap._id);
 
-    // AP3: ruim ratings op van users die toegang verliezen tot deze photo na
-    // publicatie-removal. Iteratie via by_photo (alle ratings), per rater
-    // checken of er nog access bestaat via owner-status of overige memberships.
-    // [GAP] Iteratie-shape verschilt van AWS groupPhotoDelToRating.js (die
-    // itereerde over group-members). Convex-aanpak is strikter: ruimt ook
-    // orphan-ratings op van ex-members wier rating-rows bleven hangen na
-    // membership-delete. Bewuste verbetering, geen functionele regression.
-    const ratingsOnPhoto = await ctx.db
-      .query("ratings")
-      .withIndex("by_photo", (q) => q.eq("photoId", photoId))
-      .collect();
-
-    let deletedAny = false;
-    if (ratingsOnPhoto.length > 0) {
-      const photo = await ctx.db.get(photoId);
-      const remainingPubs = await ctx.db
-        .query("albumPhotos")
-        .withIndex("by_photo", (q) => q.eq("photoId", photoId))
-        .collect();
-
-      for (const r of ratingsOnPhoto) {
-        if (photo && r.userId === photo.ownerId) continue; // owner houdt access
-        const userMemberships = await ctx.db
-          .query("memberships")
-          .withIndex("by_user", (q) => q.eq("userId", r.userId))
-          .collect();
-        const userGroupIds = new Set(userMemberships.map((m) => m.groupId));
-        const stillHasAccess = remainingPubs.some((p) =>
-          userGroupIds.has(p.groupId),
-        );
-        if (stillHasAccess) continue;
-        await ctx.db.delete(r._id);
-        deletedAny = true;
-      }
-    }
-    if (deletedAny) {
-      await recomputeRatingAggregate(ctx, photoId);
-    }
-
-    // AP4: clear album cover als deze publicatie cover was.
-    if (album.coverPhotoId === photoId) {
-      await ctx.db.patch(albumId, { coverPhotoId: undefined });
-    }
-
-    // AP4: clear group cover als de photo group-cover was én er geen
-    // andere publicatie van deze photo in déze group meer overblijft.
-    // Matcht AWS groupPhotoDelToCover.js regel 20-31 (clear cover wanneer
-    // laatste publication weg). by_photo geeft alle resterende publicaties
-    // van deze photo (de huidige ap is hierboven al gedelete); daarvan
-    // filteren we op groupId. Andere groups blijven onaangeroerd.
-    const group = await ctx.db.get(album.groupId);
-    if (group?.coverPhotoId === photoId) {
-      const remainingInGroup = await ctx.db
-        .query("albumPhotos")
-        .withIndex("by_photo", (q) => q.eq("photoId", photoId))
-        .filter((q) => q.eq(q.field("groupId"), album.groupId))
-        .first();
-      if (!remainingInGroup) {
-        await ctx.db.patch(group._id, { coverPhotoId: undefined });
-      }
-    }
+    // AP3 (ratings van wie geen toegang meer heeft, ook een orphan-rating van
+    // een ex-lid) en AP4 (album- en groepscover): de gedeelde cascade, zelfde
+    // als bij album weg, lid weg en groep weg (WP28 A-invariant 3).
+    await afterUnpublish(ctx, [ap]);
   },
 });
 

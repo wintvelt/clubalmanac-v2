@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { api , internal } from "../../convex/_generated/api";
 import schema from "../../convex/schema";
 import { modules } from "../_helpers/modules";
+import { seedMember } from "../_helpers/membership";
 
 // Cascade matrix rows M1, M2, M3: cascades + admin/founder-successie
 // vanuit groups.removeMember (UM delete trigger).
@@ -55,7 +56,7 @@ describe("M1: removeMember cascade albumPhotos in déze group", () => {
       api.groups.create,
       { name: "G" },
     );
-    await withUser(t, "user_alice").mutation(api.groups.addMember, {
+    await seedMember(t, {
       groupId,
       userId: bobId,
     });
@@ -106,11 +107,11 @@ describe("M1: removeMember cascade albumPhotos in déze group", () => {
     const g2 = await withUser(t, "user_alice").mutation(api.groups.create, {
       name: "G2",
     });
-    await withUser(t, "user_alice").mutation(api.groups.addMember, {
+    await seedMember(t, {
       groupId: g1,
       userId: bobId,
     });
-    await withUser(t, "user_alice").mutation(api.groups.addMember, {
+    await seedMember(t, {
       groupId: g2,
       userId: bobId,
     });
@@ -177,11 +178,11 @@ describe("M1: removeMember cascade albumPhotos in déze group", () => {
       api.groups.create,
       { name: "G" },
     );
-    await withUser(t, "user_alice").mutation(api.groups.addMember, {
+    await seedMember(t, {
       groupId,
       userId: bobId,
     });
-    await withUser(t, "user_alice").mutation(api.groups.addMember, {
+    await seedMember(t, {
       groupId,
       userId: carolId,
     });
@@ -240,11 +241,11 @@ describe("M1: removeMember cascade albumPhotos in déze group", () => {
       api.groups.create,
       { name: "G" },
     );
-    await withUser(t, "user_alice").mutation(api.groups.addMember, {
+    await seedMember(t, {
       groupId,
       userId: bobId,
     });
-    await withUser(t, "user_alice").mutation(api.groups.addMember, {
+    await seedMember(t, {
       groupId,
       userId: carolId,
     });
@@ -306,7 +307,7 @@ describe("M2 (a): member vertrekt, geen succession", () => {
       api.groups.create,
       { name: "G" },
     );
-    await withUser(t, "user_alice").mutation(api.groups.addMember, {
+    await seedMember(t, {
       groupId,
       userId: bobId,
     });
@@ -355,12 +356,12 @@ describe("M2 (b): admin vertrekt met andere admin aanwezig", () => {
       { name: "G" },
     );
     // Bob als admin, Carol als gewone member
-    await withUser(t, "user_alice").mutation(api.groups.addMember, {
+    await seedMember(t, {
       groupId,
       userId: bobId,
       role: "admin",
     });
-    await withUser(t, "user_alice").mutation(api.groups.addMember, {
+    await seedMember(t, {
       groupId,
       userId: carolId,
     });
@@ -421,20 +422,19 @@ describe("M2 (c): laatste admin vertrekt met members nog over", () => {
       api.groups.create,
       { name: "G" },
     );
-    await withUser(t, "user_alice").mutation(api.groups.addMember, {
+    await seedMember(t, {
       groupId,
       userId: bobId,
     });
-    await withUser(t, "user_alice").mutation(api.groups.addMember, {
+    await seedMember(t, {
       groupId,
       userId: carolId,
     });
 
     // Alice (enige admin én founder) vertrekt
-    await withUser(t, "user_alice").mutation(api.groups.removeMember, {
-      groupId,
-      userId: aliceId,
-    });
+    // WP28 besluit 4: de oprichter vertrekt niet; zijn opvolging loopt alleen
+    // nog via accountverwijdering (U8 → internalRemoveMember).
+    await withUser(t, "user_alice").mutation(api.users.deleteSelf, {});
 
     const remaining = await t.run((ctx) =>
       ctx.db
@@ -467,15 +467,15 @@ describe("M2 (c-extended): 3+ overgebleven members, willekeurige joinedAt-volgor
       api.groups.create,
       { name: "G" },
     );
-    await withUser(t, "user_alice").mutation(api.groups.addMember, {
+    await seedMember(t, {
       groupId,
       userId: bobId,
     });
-    await withUser(t, "user_alice").mutation(api.groups.addMember, {
+    await seedMember(t, {
       groupId,
       userId: carolId,
     });
-    await withUser(t, "user_alice").mutation(api.groups.addMember, {
+    await seedMember(t, {
       groupId,
       userId: daveId,
     });
@@ -496,10 +496,9 @@ describe("M2 (c-extended): 3+ overgebleven members, willekeurige joinedAt-volgor
       }
     });
 
-    await withUser(t, "user_alice").mutation(api.groups.removeMember, {
-      groupId,
-      userId: aliceId,
-    });
+    // WP28 besluit 4: de oprichter vertrekt niet; zijn opvolging loopt alleen
+    // nog via accountverwijdering (U8 → internalRemoveMember).
+    await withUser(t, "user_alice").mutation(api.users.deleteSelf, {});
 
     const group = await t.run((ctx) => ctx.db.get(groupId));
     expect(group?.createdBy).toBe(carolId);
@@ -520,21 +519,20 @@ describe("M2 (d): founder vertrekt met andere admin aanwezig", () => {
       api.groups.create,
       { name: "G" },
     );
-    await withUser(t, "user_alice").mutation(api.groups.addMember, {
+    await seedMember(t, {
       groupId,
       userId: bobId,
       role: "admin",
     });
-    await withUser(t, "user_alice").mutation(api.groups.addMember, {
+    await seedMember(t, {
       groupId,
       userId: carolId,
     });
 
     // Alice (founder, admin) vertrekt; Bob is ook admin
-    await withUser(t, "user_alice").mutation(api.groups.removeMember, {
-      groupId,
-      userId: aliceId,
-    });
+    // WP28 besluit 4: de oprichter vertrekt niet; zijn opvolging loopt alleen
+    // nog via accountverwijdering (U8 → internalRemoveMember).
+    await withUser(t, "user_alice").mutation(api.users.deleteSelf, {});
 
     const group = await t.run((ctx) => ctx.db.get(groupId));
     expect(group?.createdBy).toBe(bobId);
@@ -576,12 +574,12 @@ describe("M2 (d-extended): founder vertrekt met meerdere admins, oudste wint", (
       api.groups.create,
       { name: "G" },
     );
-    await withUser(t, "user_alice").mutation(api.groups.addMember, {
+    await seedMember(t, {
       groupId,
       userId: bobId,
       role: "admin",
     });
-    await withUser(t, "user_alice").mutation(api.groups.addMember, {
+    await seedMember(t, {
       groupId,
       userId: carolId,
       role: "admin",
@@ -599,10 +597,9 @@ describe("M2 (d-extended): founder vertrekt met meerdere admins, oudste wint", (
       }
     });
 
-    await withUser(t, "user_alice").mutation(api.groups.removeMember, {
-      groupId,
-      userId: aliceId,
-    });
+    // WP28 besluit 4: de oprichter vertrekt niet; zijn opvolging loopt alleen
+    // nog via accountverwijdering (U8 → internalRemoveMember).
+    await withUser(t, "user_alice").mutation(api.users.deleteSelf, {});
 
     const group = await t.run((ctx) => ctx.db.get(groupId));
     expect(group?.createdBy).toBe(carolId);
@@ -621,11 +618,11 @@ describe("M3: removeMember cascade albumLastSeen voor déze group", () => {
     const g2 = await withUser(t, "user_alice").mutation(api.groups.create, {
       name: "G2",
     });
-    await withUser(t, "user_alice").mutation(api.groups.addMember, {
+    await seedMember(t, {
       groupId: g1,
       userId: bobId,
     });
-    await withUser(t, "user_alice").mutation(api.groups.addMember, {
+    await seedMember(t, {
       groupId: g2,
       userId: bobId,
     });
@@ -702,10 +699,9 @@ describe("M2 (e): laatste lid vertrekt → group + albums + albumPhotos cascade"
       photoId,
     });
 
-    await withUser(t, "user_alice").mutation(api.groups.removeMember, {
-      groupId,
-      userId: aliceId,
-    });
+    // WP28 besluit 4: de oprichter vertrekt niet; zijn opvolging loopt alleen
+    // nog via accountverwijdering (U8 → internalRemoveMember).
+    await withUser(t, "user_alice").mutation(api.users.deleteSelf, {});
 
     expect(await t.run((ctx) => ctx.db.get(groupId))).toBeNull();
     expect(await t.run((ctx) => ctx.db.get(albumId))).toBeNull();
@@ -718,8 +714,9 @@ describe("M2 (e): laatste lid vertrekt → group + albums + albumPhotos cascade"
     );
     expect(aps).toHaveLength(0);
 
-    // photo zelf blijft (eigendom alice, niet group)
-    expect(await t.run((ctx) => ctx.db.get(photoId))).not.toBeNull();
+    // De foto gaat hier mee met het account (U7, tests/users/delete.test.ts);
+    // bij groep verwijderen blijven foto's wel (tests/groups/crud.test.ts).
+    expect(await t.run((ctx) => ctx.db.get(photoId))).toBeNull();
   });
 });
 
@@ -737,7 +734,7 @@ describe("M2 (e-dangling): geen residu albumLastSeen na laatste vertrek", () => 
       api.groups.create,
       { name: "G" },
     );
-    await withUser(t, "user_alice").mutation(api.groups.addMember, {
+    await seedMember(t, {
       groupId,
       userId: bobId,
     });
@@ -755,16 +752,14 @@ describe("M2 (e-dangling): geen residu albumLastSeen na laatste vertrek", () => 
     });
 
     // Alice vertrekt: M3 ruimt alice's lastSeen voor deze group.
-    await withUser(t, "user_alice").mutation(api.groups.removeMember, {
-      groupId,
-      userId: aliceId,
-    });
+    // WP28 besluit 4: de oprichter vertrekt niet; zijn opvolging loopt alleen
+    // nog via accountverwijdering (U8 → internalRemoveMember).
+    await withUser(t, "user_alice").mutation(api.users.deleteSelf, {});
 
     // Bob is solo over — vertrekt → (e) cascade.
-    await withUser(t, "user_bob").mutation(api.groups.removeMember, {
-      groupId,
-      userId: bobId,
-    });
+    // WP28 besluit 4: de oprichter vertrekt niet; zijn opvolging loopt alleen
+    // nog via accountverwijdering (U8 → internalRemoveMember).
+    await withUser(t, "user_bob").mutation(api.users.deleteSelf, {});
 
     // Geen enkel albumLastSeen record mag blijven hangen.
     const allLastSeen = await t.run((ctx) =>
@@ -785,11 +780,11 @@ describe("removeMember rejection paths", () => {
       api.groups.create,
       { name: "G" },
     );
-    await withUser(t, "user_alice").mutation(api.groups.addMember, {
+    await seedMember(t, {
       groupId,
       userId: bobId,
     });
-    await withUser(t, "user_alice").mutation(api.groups.addMember, {
+    await seedMember(t, {
       groupId,
       userId: carolId,
     });
@@ -831,7 +826,7 @@ describe("removeMember rejection paths", () => {
       api.groups.create,
       { name: "G" },
     );
-    await withUser(t, "user_alice").mutation(api.groups.addMember, {
+    await seedMember(t, {
       groupId,
       userId: carolId,
     });

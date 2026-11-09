@@ -12,7 +12,7 @@ export function photoDate(photo: PhotoDated): number {
   return photo.takenAt ?? photo.createdAt;
 }
 
-const MONTHS = [
+export const MONTHS = [
   "januari",
   "februari",
   "maart",
@@ -38,7 +38,7 @@ function lastSundayOneUtc(year: number, month: number): number {
 
 // Nederlandse tijd zonder tijdzone-database op het toestel: UTC+2 tussen de
 // laatste zondag van maart en die van oktober (01:00 UTC), anders UTC+1.
-function dutchOffset(ms: number): number {
+export function dutchOffset(ms: number): number {
   const year = new Date(ms).getUTCFullYear();
   const summer = ms >= lastSundayOneUtc(year, 2) && ms < lastSundayOneUtc(year, 9);
   return summer ? 2 * HOUR : HOUR;

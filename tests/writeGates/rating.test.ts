@@ -54,14 +54,15 @@ describe("ratings.upsert — write-gate", () => {
   it("lid vertrekt: een bestaande rating is daarna niet meer te wijzigen", async () => {
     const t = newT();
     const w = await seedWorld(t);
-    // Seed: bob gaf pAlice een 5. Na vertrek blijft die rij staan (buiten
-    // scope, zie spec §Buiten scope), maar bob kan hem niet meer zetten.
+    // Seed: bob gaf pAlice een 5. Sinds WP28 fix-cyclus 1 (A-invariant 7)
+    // gaat die rating weg bij zijn vertrek, en hij kan geen nieuwe zetten.
     await asUser(t, w, "bob").mutation(api.groups.removeMember, {
       groupId: w.groups.G1,
       userId: w.users.bob.id,
     });
+    expect(await ratingOf(t, w.photos.pAlice, w.users.bob.id)).toBeFalsy();
     await expectRejectedNoChange(t, () => rate(t, w, "bob", w.photos.pAlice, 1));
-    expect((await ratingOf(t, w.photos.pAlice, w.users.bob.id))?.value).toBe(5);
+    expect(await ratingOf(t, w.photos.pAlice, w.users.bob.id)).toBeFalsy();
   });
 
   it("lid met toegang via één van twee groepen beoordeelt; aggregaat volgt", async () => {

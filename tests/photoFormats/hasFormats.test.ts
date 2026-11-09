@@ -6,6 +6,7 @@ import schema from "../../convex/schema";
 import { registerUser, withUser } from "../_helpers/auth";
 import { modules } from "../_helpers/modules";
 import { I, seedPhoto } from "./_helpers";
+import { seedMember } from "../_helpers/membership";
 
 // WP25 fix-cyclus 2 — `hasFormats` in de foto-vorm en `profileHasFormats` in de
 // user-vorm (A-invariant 26, kernvondst 14; red-team N1).
@@ -27,7 +28,7 @@ async function setup(t: T) {
   const owen = await registerUser(t, "user_owen", "owen@x.com", "Owen");
   const mia = await registerUser(t, "user_mia", "mia@x.com", "Mia");
   const G = await withUser(t, "user_owen").mutation(api.groups.create, { name: "G" });
-  await withUser(t, "user_owen").mutation(api.groups.addMember, { groupId: G, userId: mia });
+  await seedMember(t, { groupId: G, userId: mia });
   const A = await withUser(t, "user_owen").mutation(api.albums.create, { groupId: G, name: "A" });
   return { owen, mia, G, A };
 }

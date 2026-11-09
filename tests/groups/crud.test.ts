@@ -3,6 +3,8 @@ import { describe, expect, it } from "vitest";
 import { api , internal } from "../../convex/_generated/api";
 import schema from "../../convex/schema";
 import { modules } from "../_helpers/modules";
+import { seedMember } from "../_helpers/membership";
+import { makeFunctionReference } from "convex/server";
 
 // Fase 2 — Groups domein: create, update, remove, list, members.
 
@@ -152,7 +154,7 @@ describe("groups.listMembers", () => {
 
     // voeg tweede member toe
     const bobId = await registerUser(t, "user_b", "b@x.com");
-    await withUser(t, "user_admin").mutation(api.groups.addMember, {
+    await seedMember(t, {
       groupId,
       userId: bobId,
     });
@@ -177,83 +179,32 @@ describe("groups.listMembers", () => {
   });
 });
 
-describe("groups.addMember", () => {
-  it("admin kan member toevoegen, default role 'member'", async () => {
+// WP28 A-keuze 1: een account in een groep zetten zonder uitnodiging of
+// instemming kan niet meer. Het publieke pad is weg; ook een admin krijgt het
+// niet. Lid worden gaat alleen via een uitnodiging (tests/invites/).
+describe("groups.addMember is geen publiek pad (WP28 A-keuze 1)", () => {
+  it("een admin zet niemand direct in zijn groep", async () => {
     const t = convexTest(schema, modules);
     const { groupId } = await setupGroup(t);
     const bobId = await registerUser(t, "user_b", "b@x.com");
 
-    await withUser(t, "user_admin").mutation(api.groups.addMember, {
-      groupId,
-      userId: bobId,
-    });
-
-    const m = await t.run((ctx) =>
-      ctx.db
-        .query("memberships")
-        .withIndex("by_user_and_group", (q) =>
-          q.eq("userId", bobId).eq("groupId", groupId),
-        )
-        .unique(),
-    );
-    expect(m?.role).toBe("member");
-    expect(typeof m?.joinedAt).toBe("number");
-  });
-
-  it("admin kan met role 'admin' toevoegen", async () => {
-    const t = convexTest(schema, modules);
-    const { groupId } = await setupGroup(t);
-    const bobId = await registerUser(t, "user_b", "b@x.com");
-
-    await withUser(t, "user_admin").mutation(api.groups.addMember, {
-      groupId,
-      userId: bobId,
-      role: "admin",
-    });
-
-    const m = await t.run((ctx) =>
-      ctx.db
-        .query("memberships")
-        .withIndex("by_user_and_group", (q) =>
-          q.eq("userId", bobId).eq("groupId", groupId),
-        )
-        .unique(),
-    );
-    expect(m?.role).toBe("admin");
-  });
-
-  it("niet-admin (member) wordt geweigerd", async () => {
-    const t = convexTest(schema, modules);
-    const { groupId } = await setupGroup(t);
-    const bobId = await registerUser(t, "user_b", "b@x.com");
-    await withUser(t, "user_admin").mutation(api.groups.addMember, {
-      groupId,
-      userId: bobId,
-    });
-
-    const carolId = await registerUser(t, "user_c", "c@x.com");
     await expect(
-      withUser(t, "user_b").mutation(api.groups.addMember, {
-        groupId,
-        userId: carolId,
-      }),
-    ).rejects.toThrow();
-  });
-
-  it("weigert dubbel lidmaatschap", async () => {
-    const t = convexTest(schema, modules);
-    const { groupId } = await setupGroup(t);
-    const bobId = await registerUser(t, "user_b", "b@x.com");
-    await withUser(t, "user_admin").mutation(api.groups.addMember, {
-      groupId,
-      userId: bobId,
-    });
-    await expect(
-      withUser(t, "user_admin").mutation(api.groups.addMember, {
+      // Bij naam: na WP28 staat hij niet meer in de gegenereerde api.
+      withUser(t, "user_admin").mutation(makeFunctionReference<"mutation">("groups:addMember"), {
         groupId,
         userId: bobId,
       }),
     ).rejects.toThrow();
+
+    const m = await t.run((ctx) =>
+      ctx.db
+        .query("memberships")
+        .withIndex("by_user_and_group", (q) =>
+          q.eq("userId", bobId).eq("groupId", groupId),
+        )
+        .unique(),
+    );
+    expect(m).toBeNull();
   });
 });
 
@@ -262,7 +213,7 @@ describe("groups.removeMember", () => {
     const t = convexTest(schema, modules);
     const { groupId } = await setupGroup(t);
     const bobId = await registerUser(t, "user_b", "b@x.com");
-    await withUser(t, "user_admin").mutation(api.groups.addMember, {
+    await seedMember(t, {
       groupId,
       userId: bobId,
     });
@@ -287,7 +238,7 @@ describe("groups.removeMember", () => {
     const t = convexTest(schema, modules);
     const { groupId } = await setupGroup(t);
     const bobId = await registerUser(t, "user_b", "b@x.com");
-    await withUser(t, "user_admin").mutation(api.groups.addMember, {
+    await seedMember(t, {
       groupId,
       userId: bobId,
     });
@@ -311,11 +262,11 @@ describe("groups.removeMember", () => {
     const { groupId } = await setupGroup(t);
     const bobId = await registerUser(t, "user_b", "b@x.com");
     const carolId = await registerUser(t, "user_c", "c@x.com");
-    await withUser(t, "user_admin").mutation(api.groups.addMember, {
+    await seedMember(t, {
       groupId,
       userId: bobId,
     });
-    await withUser(t, "user_admin").mutation(api.groups.addMember, {
+    await seedMember(t, {
       groupId,
       userId: carolId,
     });
@@ -337,7 +288,7 @@ describe("groups.updateMemberRole", () => {
     const t = convexTest(schema, modules);
     const { groupId } = await setupGroup(t);
     const bobId = await registerUser(t, "user_b", "b@x.com");
-    await withUser(t, "user_admin").mutation(api.groups.addMember, {
+    await seedMember(t, {
       groupId,
       userId: bobId,
     });
@@ -363,7 +314,7 @@ describe("groups.updateMemberRole", () => {
     const t = convexTest(schema, modules);
     const { groupId } = await setupGroup(t);
     const bobId = await registerUser(t, "user_b", "b@x.com");
-    await withUser(t, "user_admin").mutation(api.groups.addMember, {
+    await seedMember(t, {
       groupId,
       userId: bobId,
     });
@@ -377,7 +328,9 @@ describe("groups.updateMemberRole", () => {
     ).rejects.toThrow();
   });
 
-  it("laatste admin kan niet gedemoted worden", async () => {
+  // WP28: de enige admin is hier ook de oprichter; die is beschermd
+  // (besluit 3, code FOUNDER_PROTECTED in tests/groups/beheerGates.test.ts).
+  it("laatste admin (de oprichter) kan niet gedemoted worden", async () => {
     const t = convexTest(schema, modules);
     const { adminId, groupId } = await setupGroup(t);
     await expect(
@@ -386,7 +339,14 @@ describe("groups.updateMemberRole", () => {
         userId: adminId,
         role: "member",
       }),
-    ).rejects.toThrow(/admin/i);
+    ).rejects.toThrow();
+    const m = await t.run(async (ctx) =>
+      ctx.db
+        .query("memberships")
+        .withIndex("by_user_and_group", (q) => q.eq("userId", adminId).eq("groupId", groupId))
+        .unique(),
+    );
+    expect(m?.role).toBe("admin");
   });
 });
 
@@ -442,7 +402,7 @@ describe("groups.update", () => {
     const t = convexTest(schema, modules);
     const { groupId } = await setupGroup(t);
     const bobId = await registerUser(t, "user_b", "b@x.com");
-    await withUser(t, "user_admin").mutation(api.groups.addMember, {
+    await seedMember(t, {
       groupId,
       userId: bobId,
     });
@@ -461,7 +421,7 @@ describe("groups.remove", () => {
     const t = convexTest(schema, modules);
     const { groupId } = await setupGroup(t);
     const bobId = await registerUser(t, "user_b", "b@x.com");
-    await withUser(t, "user_admin").mutation(api.groups.addMember, {
+    await seedMember(t, {
       groupId,
       userId: bobId,
     });
@@ -544,7 +504,7 @@ describe("groups.remove", () => {
     const t = convexTest(schema, modules);
     const { adminId, groupId } = await setupGroup(t);
     const bobId = await registerUser(t, "user_bob", "b@x.com");
-    await withUser(t, "user_admin").mutation(api.groups.addMember, {
+    await seedMember(t, {
       groupId,
       userId: bobId,
     });
@@ -583,7 +543,7 @@ describe("groups.remove", () => {
     const t = convexTest(schema, modules);
     const { groupId } = await setupGroup(t);
     const bobId = await registerUser(t, "user_b", "b@x.com");
-    await withUser(t, "user_admin").mutation(api.groups.addMember, {
+    await seedMember(t, {
       groupId,
       userId: bobId,
     });

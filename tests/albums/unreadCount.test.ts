@@ -4,6 +4,7 @@ import { api , internal } from "../../convex/_generated/api";
 import schema from "../../convex/schema";
 import type { Id } from "../../convex/_generated/dataModel";
 import { modules } from "../_helpers/modules";
+import { seedMember } from "../_helpers/membership";
 
 // Cascade matrix rows AP1 (eliminated, vervangen door live count) en
 // AP2 (eliminated, count corrigeert vanzelf bij delete).
@@ -56,7 +57,7 @@ async function setup(t: ReturnType<typeof convexTest>): Promise<Setup> {
   const groupId = await withUser(t, "user_admin").mutation(api.groups.create, {
     name: "G",
   });
-  await withUser(t, "user_admin").mutation(api.groups.addMember, {
+  await seedMember(t, {
     groupId,
     userId: bobId,
   });
@@ -187,11 +188,11 @@ describe("albums.listByGroupWithUnread fallback", () => {
       api.groups.create,
       { name: "G" },
     );
-    await withUser(t, "user_admin").mutation(api.groups.addMember, {
+    await seedMember(t, {
       groupId,
       userId: bobId,
     });
-    await withUser(t, "user_admin").mutation(api.groups.addMember, {
+    await seedMember(t, {
       groupId,
       userId: carolId,
     });

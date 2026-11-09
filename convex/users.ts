@@ -1,4 +1,4 @@
-import { ConvexError, v } from "convex/values";
+import { v } from "convex/values";
 import {
   internalMutation,
   internalQuery,
@@ -9,14 +9,15 @@ import {
 } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import { internalRemovePhoto } from "./photos";
-import { internalRemoveMember } from "./groups";
+import { recomputeRatingAggregate } from "./ratings";
+import { internalRemoveMember, isGroupInviteStillValid } from "./groups";
 import { normalizeEmail } from "./lib/email";
 import {
   DEFAULT_PHOTO_LIMIT,
-  NAME_MAX_LENGTH,
   VISIT_PERIOD_MS,
 } from "./lib/constants";
 import { canUseStorage } from "./lib/photoAccess";
+import { validName } from "./lib/names";
 import {
   ownProfile,
   ownProfileFields,
@@ -25,6 +26,7 @@ import {
   publicProfileFields,
 } from "./lib/shapes";
 import { avatarFieldsOf } from "./lib/profilePhoto";
+import { photosPublishedIn } from "./lib/unpublish";
 
 // Default upload-limiet voor nieuwe users. Mocht een admin een hogere limiet
 // willen geven, dan kan dat via directe DB patch (geen public mutation in
@@ -181,6 +183,11 @@ export const registerFromSession = internalMutation({
     for (const invite of invites) {
       if (invite.status !== "pending") continue;
       if (invite.expiresAt <= now) continue;
+      // WP28 A-invariant 4: zoals invites.accept. Een uitnodiging voor een
+      // gewiste groep, of van iemand die geen admin meer is, wordt niet
+      // geaccepteerd en maakt geen lidmaatschap; hij blijft staan zoals hij
+      // stond.
+      if (!(await isGroupInviteStillValid(ctx, invite))) continue;
       await ctx.db.patch(invite._id, {
         status: "accepted",
         respondedAt: now,
@@ -211,30 +218,6 @@ export const registerFromSession = internalMutation({
   },
 });
 
-// WP15b A-punt 3: tekens die een naam onleesbaar of misleidend maken.
-// Controletekens (C0, DEL, C1), regel- en alineascheiding, tekens die de
-// leesrichting omdraaien, en onzichtbare spaties. U+200C/U+200D (ZWNJ/ZWJ)
-// mogen: die zitten in emoji en in sommige schriften.
-const FORBIDDEN_NAME_CHARS =
-  /[\u0000-\u001f\u007f-\u009f\u2028\u2029\u200e\u200f\u202a-\u202e\u2066-\u2069\u200b\ufeff]/;
-
-type NameErrorCode = "NAME_EMPTY" | "NAME_TOO_LONG" | "NAME_INVALID";
-
-// Geeft de naam zoals hij bewaard wordt, of gooit een ConvexError met een
-// code: een gewone Error komt in productie aan als "Server Error" en de app
-// moet een melding onder het veld kunnen tonen (WP15b invariant 10).
-// `trim` haalt ook vaste spaties (U+00A0, U+3000) en een BOM aan de rand weg.
-function validName(raw: string): string {
-  const name = raw.trim();
-  const fail = (code: NameErrorCode) => {
-    throw new ConvexError({ code });
-  };
-  if (name.length === 0) fail("NAME_EMPTY");
-  if ([...name].length > NAME_MAX_LENGTH) fail("NAME_TOO_LONG");
-  if (FORBIDDEN_NAME_CHARS.test(name)) fail("NAME_INVALID");
-  return name;
-}
-
 export const updateProfile = mutation({
   args: {
     name: v.optional(v.string()),
@@ -246,7 +229,7 @@ export const updateProfile = mutation({
     // WP15b: alleen een meegegeven naam wordt gecheckt; een gemigreerde naam
     // blijft staan tot de user hem zelf wijzigt. Check vóór de patch, zodat
     // een geweigerde naam ook de profielfoto laat staan (invariant 9).
-    if (args.name !== undefined) patch.name = validName(args.name);
+    if (args.name !== undefined) patch.name = validName(args.name, "NAME_EMPTY");
     if (args.profilePhotoStorageId !== undefined) {
       // WP24 invariant 8 / WP17a invariant 16: alleen een eigen beeld (een
       // eigen foto, of de eigen huidige profielfoto). Check vóór de patch,
@@ -336,6 +319,30 @@ export const deleteSelf = mutation({
       .withIndex("by_user", (q) => q.eq("userId", user._id))
       .collect();
     for (const r of ratings) await ctx.db.delete(r._id);
+    // WP28 A-invariant 7: het gemiddelde en het aantal op die foto's kloppen
+    // daarna weer (R1). Een eigen foto gaat hieronder toch weg.
+    // A-invariant 14: één read per foto, ook bij een rating op elke foto van
+    // een grote groep. Een foto die in een van zijn groepen gepubliceerd
+    // staat, bestaat; alleen voor een andere foto eerst een get.
+    const photos = await ctx.db
+      .query("photos")
+      .withIndex("by_owner", (q) => q.eq("ownerId", user._id))
+      .collect();
+    const own = new Set(photos.map((p) => p._id));
+    const rated = new Set(ratings.map((r) => r.photoId));
+    const groupIds = (
+      await ctx.db
+        .query("memberships")
+        .withIndex("by_user", (q) => q.eq("userId", user._id))
+        .collect()
+    ).map((m) => m.groupId);
+    const published = rated.size > 0 ? await photosPublishedIn(ctx, groupIds) : new Set();
+    for (const photoId of rated) {
+      if (own.has(photoId)) continue;
+      if (published.has(photoId) || (await ctx.db.get(photoId))) {
+        await recomputeRatingAggregate(ctx, photoId);
+      }
+    }
 
     // U7: cascade photos via internalRemovePhoto, dat per photo ook
     // P3 (albumPhotos), P4 (ratings van anderen op deze photo), P5
@@ -346,10 +353,6 @@ export const deleteSelf = mutation({
     // groups/albums vóór een eventuele M2-e group-cascade in U8 loopt;
     // andersom zou M2-e groups/albums hebben gedeleted en dan zou P5
     // proberen patchen op niet-bestaande records.
-    const photos = await ctx.db
-      .query("photos")
-      .withIndex("by_owner", (q) => q.eq("ownerId", user._id))
-      .collect();
     for (const p of photos) await internalRemovePhoto(ctx, p._id);
 
     // WP18 A-invariant 22: alle upload-reserveringen van de user, ook "nog

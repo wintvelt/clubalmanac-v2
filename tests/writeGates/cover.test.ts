@@ -167,14 +167,25 @@ describe("albums.update coverPhotoId — write-gate", () => {
     expect(await albumCoverId(t, w.albums.A1)).toBe(w.photos.pAlice);
   });
 
-  it("creator zonder admin-rol zet een foto uit zijn album als cover", async () => {
+  // WP28: wijzigen (ook de cover) is een admin-actie; de maker heeft geen
+  // eigen recht meer (tabel §Acties, zoals v1; A-keuze 2). Bob is lid van G1.
+  it("creator zonder admin-rol zet geen cover meer, ook niet met een foto uit zijn album", async () => {
     const t = newT();
     const w = await seedWorld(t);
     const bob = asUser(t, w, "bob");
-    const albumId = await bob.mutation(api.albums.create, { groupId: w.groups.G1, name: "Bobs" });
+    const albumId = await t.run(async (ctx) =>
+      ctx.db.insert("albums", {
+        groupId: w.groups.G1,
+        name: "Bobs",
+        createdBy: w.users.bob.id,
+        createdAt: Date.now(),
+      }),
+    );
     await bob.mutation(api.albums.addPhoto, { albumId, photoId: w.photos.pBobPrivate });
-    await bob.mutation(api.albums.update, { albumId, coverPhotoId: w.photos.pBobPrivate });
-    expect(await albumCoverId(t, albumId)).toBe(w.photos.pBobPrivate);
+    await expectRejectedNoChange(t, () =>
+      bob.mutation(api.albums.update, { albumId, coverPhotoId: w.photos.pBobPrivate }),
+    );
+    expect(await albumCoverId(t, albumId)).not.toBe(w.photos.pBobPrivate);
   });
 
   it("update zonder coverPhotoId slaagt, ook als de huidige cover niet meer in het album staat", async () => {

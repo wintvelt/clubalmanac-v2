@@ -67,7 +67,7 @@ type Photo = { photoId: string; ownerId: string; addedBy: string };
 type Run = (action: Action, selected: readonly Photo[]) => void;
 
 const ME = "u_me";
-const CTX = { me: ME, role: "member", albumCreatedBy: "u_ander" };
+const CTX = { me: ME, role: "member" };
 const MINE: Photo[] = ["p1", "p2", "p3"].map((photoId) => ({ photoId, ownerId: ME, addedBy: ME }));
 
 let feedback: unknown[] = [];

@@ -18,3 +18,21 @@ export function photoPath(groupId: string, albumId: string, photoId: string): st
 export function rotatePath(groupId: string, albumId: string, photoId: string): string {
   return `${albumPath(groupId, albumId)}/draaien/${encodeURIComponent(photoId)}`;
 }
+
+// WP28b: beheer. Nieuwe groep en Nieuw album zijn modaal in de Home-stack;
+// Bewerk groep en Bewerk album liggen boven hun scherm.
+export function newGroupPath(): string {
+  return "/nieuwe-groep";
+}
+
+export function newAlbumPath(groupId: string): string {
+  return `${groupPath(groupId)}/nieuw-album`;
+}
+
+export function editGroupPath(groupId: string): string {
+  return `${groupPath(groupId)}/bewerken`;
+}
+
+export function editAlbumPath(groupId: string, albumId: string): string {
+  return `${albumPath(groupId, albumId)}/bewerken`;
+}

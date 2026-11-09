@@ -32,19 +32,21 @@ async function setCovers(t: T, w: World, photoId: Id<"photos">) {
   });
 }
 
-async function groupCover(t: T, w: World, who: "alice" | "bob") {
+// WP28 (A-invariant 3): een cover die zijn publicatie verliest, wordt gewist.
+// Dan ontbreekt `coverPhotoId` in de vorm; de rest van de vorm blijft gelijk.
+async function groupCover(t: T, w: World, who: "alice" | "bob", coverGone = false) {
   const g = (await asUser(t, w, who).query(api.groups.getWithCover, {
     groupId: w.groups.G1,
   })) as R;
-  expectShape(g, [...SHAPE.group, "cover"]);
+  expectShape(g, [...SHAPE.group.filter((k) => !(coverGone && k === "coverPhotoId")), "cover"]);
   return g.cover as R | null;
 }
 
-async function albumCover(t: T, w: World, who: "alice" | "bob") {
+async function albumCover(t: T, w: World, who: "alice" | "bob", coverGone = false) {
   const a = (await asUser(t, w, who).query(api.albums.getWithCover, {
     albumId: w.albums.A1,
   })) as R;
-  expectShape(a, [...SHAPE.album, "cover"]);
+  expectShape(a, [...SHAPE.album.filter((k) => !(coverGone && k === "coverPhotoId")), "cover"]);
   return a.cover as R | null;
 }
 
@@ -86,8 +88,8 @@ describe("invariant 10 — cover zonder foto-toegang is null", () => {
       userId: w.users.bob.id,
     });
 
-    expect(await groupCover(t, w, "alice")).toBeNull();
-    expect(await albumCover(t, w, "alice")).toBeNull();
+    expect(await groupCover(t, w, "alice", true)).toBeNull();
+    expect(await albumCover(t, w, "alice", true)).toBeNull();
   });
 
   it("controle: cover met foto-toegang blijft gewoon zichtbaar", async () => {

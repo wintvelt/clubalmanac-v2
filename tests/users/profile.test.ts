@@ -4,6 +4,7 @@ import { api , internal } from "../../convex/_generated/api";
 import schema from "../../convex/schema";
 import { assertReactive } from "../_helpers/reactive";
 import { modules } from "../_helpers/modules";
+import { seedMember } from "../_helpers/membership";
 
 // Cascade matrix rows U3, U4: cat-1 (eliminated) + cat-4 (reactive coverage).
 // Verifieert dat join-on-read queries fresh user-data returneren na een
@@ -78,7 +79,7 @@ describe("U4: membership query joint user-data fresh", () => {
       api.groups.create,
       { name: "Groep" },
     );
-    await withUser(t, "user_admin").mutation(api.groups.addMember, {
+    await seedMember(t, {
       groupId,
       userId: aliceId,
     });

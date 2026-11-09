@@ -5,6 +5,7 @@ import type { Id } from "../../convex/_generated/dataModel";
 import schema from "../../convex/schema";
 import { registerUser, withUser } from "../_helpers/auth";
 import { modules } from "../_helpers/modules";
+import { seedMember } from "../_helpers/membership";
 
 // WP17a invariant 11 en vraag 7 (spec §Spec-criticus aanvullingen).
 //
@@ -30,7 +31,7 @@ async function setup(t: T) {
   const adminId = await registerUser(t, "user_admin", "admin@x.com", "Admin");
   const bobId = await registerUser(t, "user_bob", "bob@x.com", "Bob");
   const groupId = await withUser(t, "user_admin").mutation(api.groups.create, { name: "G" });
-  await withUser(t, "user_admin").mutation(api.groups.addMember, { groupId, userId: bobId });
+  await seedMember(t, { groupId, userId: bobId });
   const albumId = await withUser(t, "user_admin").mutation(api.albums.create, {
     groupId,
     name: "A",

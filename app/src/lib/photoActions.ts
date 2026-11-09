@@ -17,7 +17,7 @@ export type Role = "admin" | "member";
 // --- Het menu per foto (invariant 1 en 10) -------------------------------------------
 //
 // Dezelfde regels als de backend, zonder er code mee te delen:
-//   albumcover     maker van het album, of admin       (albums.update, WP24)
+//   albumcover     admin                               (albums.update, WP28 A-keuze 2)
 //   groepscover    admin                               (groups.update, WP24)
 //   profielfoto    eigenaar                            (users.setProfilePhoto)
 //   draaien        eigenaar, of admin                  (photos.rotate, WP8)
@@ -31,11 +31,10 @@ type MenuInput = {
   role: Role;
   ownerId: string;
   addedBy: string;
-  albumCreatedBy: string;
 };
 
 const RULES: Record<PhotoAction, (i: MenuInput) => boolean> = {
-  albumCover: (i) => i.role === "admin" || i.albumCreatedBy === i.me,
+  albumCover: (i) => i.role === "admin",
   groupCover: (i) => i.role === "admin",
   profilePhoto: (i) => i.ownerId === i.me,
   rotate: (i) => i.role === "admin" || i.ownerId === i.me,
@@ -85,7 +84,7 @@ type SelectionItem<P extends string> = { photoId: P; ownerId: string; addedBy: s
 export function selectionPlan<P extends string>(
   action: SelectionAction,
   items: readonly SelectionItem<P>[],
-  ctx: { me: string; role: Role; albumCreatedBy: string },
+  ctx: { me: string; role: Role },
 ): { allowed: P[]; notAllowed: P[] } {
   const allowed: P[] = [];
   const notAllowed: P[] = [];

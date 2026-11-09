@@ -11,7 +11,12 @@ import {
 import type { Doc } from "./_generated/dataModel";
 import { internal } from "./_generated/api";
 import { requireCurrentUser } from "./users";
-import { getMembership } from "./groups";
+import {
+  getMembership,
+  isGroupInviteStillValid,
+  refuse,
+  requireAdminForWrite,
+} from "./groups";
 import { normalizeEmail } from "./lib/email";
 import {
   inviteLanding,
@@ -71,12 +76,10 @@ export const create = mutation({
     const user = await requireCurrentUser(ctx);
     const normalizedEmail = normalizeEmail(email);
 
-    // Group-scoped invite: caller moet member zijn van die groep.
+    // WP28 besluit 6 (W6): alleen een admin nodigt uit voor een groep. Geen
+    // lid of onbekende groep: NOT_MEMBER; lid zonder admin-rol: NOT_ALLOWED.
     if (groupId) {
-      const m = await getMembership(ctx, user._id, groupId);
-      if (!m) {
-        throw new Error("Alleen members kunnen invites voor deze groep sturen");
-      }
+      await requireAdminForWrite(ctx, groupId);
 
       // [GAP] Weiger als de email al member is van de group — beter hier
       // catchen dan pas op accept (oude AWS code deed dat in acceptInvite).
@@ -155,10 +158,17 @@ export const getByToken = query({
     const invite = await findByToken(ctx, token);
     if (!invite) return null;
     const inviterDoc = await ctx.db.get(invite.invitedBy);
-    const groupDoc = invite.groupId ? await ctx.db.get(invite.groupId) : null;
+    // WP28 A-invariant 9 (red-team R2): de groep alleen bij een open, niet
+    // verlopen uitnodiging. Met een oud token (geaccepteerd, afgewezen,
+    // verlopen) volgt een ex-lid de groep niet; wie lid is, vindt hem in
+    // Mijn groepen.
+    const isExpired = invite.expiresAt <= Date.now();
+    const isOpen = invite.status === "pending" && !isExpired;
+    const groupDoc =
+      isOpen && invite.groupId ? await ctx.db.get(invite.groupId) : null;
     return {
       status: invite.status,
-      isExpired: invite.expiresAt <= Date.now(),
+      isExpired,
       ...(invite.role !== undefined ? { role: invite.role } : {}),
       email: invite.email,
       group: groupDoc ? pick(groupDoc, landingGroupFields) : null,
@@ -188,6 +198,8 @@ export const accept = mutation({
     if (invite.expiresAt <= Date.now()) {
       throw new Error("Invite is verlopen");
     }
+    // WP28 A-invariant 4: de groep bestaat nog en de uitnodiger is nog admin.
+    if (!(await isGroupInviteStillValid(ctx, invite))) refuse("INVITE_INVALID");
 
     await ctx.db.patch(invite._id, {
       status: "accepted",

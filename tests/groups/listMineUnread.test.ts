@@ -5,6 +5,7 @@ import type { Id } from "../../convex/_generated/dataModel";
 import schema from "../../convex/schema";
 import { registerUser, withUser } from "../_helpers/auth";
 import { modules } from "../_helpers/modules";
+import { seedMember } from "../_helpers/membership";
 
 // WP16 invariant 10 en open vraag 4 (teller per groep op Mijn groepen).
 // `groups.listMine` geeft per groep `unreadCount`: de som van de tellers die
@@ -44,7 +45,7 @@ async function setup(t: T) {
   const bobId = await registerUser(t, "user_bob", "bob@x.com", "Bob");
   const g1 = await withUser(t, "user_alice").mutation(api.groups.create, { name: "Met albums" });
   const g2 = await withUser(t, "user_alice").mutation(api.groups.create, { name: "Leeg" });
-  await withUser(t, "user_alice").mutation(api.groups.addMember, { groupId: g1, userId: bobId });
+  await seedMember(t, { groupId: g1, userId: bobId });
   const a1 = await withUser(t, "user_alice").mutation(api.albums.create, { groupId: g1, name: "A1" });
   const a2 = await withUser(t, "user_alice").mutation(api.albums.create, { groupId: g1, name: "A2" });
   const later = Date.now() + 60_000;
@@ -132,7 +133,7 @@ describe("groups.listMine: unreadCount per groep", () => {
     const other = await withUser(t, "user_bob").mutation(api.groups.create, { name: "Van Bob" });
     const album = await withUser(t, "user_bob").mutation(api.albums.create, { groupId: other, name: "X" });
     const carolId = await registerUser(t, "user_carol", "carol@x.com", "Carol");
-    await withUser(t, "user_bob").mutation(api.groups.addMember, { groupId: other, userId: carolId });
+    await seedMember(t, { groupId: other, userId: carolId });
     await publish(t, { ownerId: carolId, albumId: album, groupId: other, addedAt: later });
 
     const rows = await mine(t, "user_alice");

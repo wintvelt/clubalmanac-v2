@@ -16,10 +16,12 @@ import { Screen } from "../components/Screen";
 import { EmptyState, LoadingState } from "../components/States";
 import { Text } from "../components/Text";
 import { api } from "../convexApi";
+import { useDeparting } from "../data/adminState";
 import { useAuthState } from "../data/authStateContext";
 import { useAppState } from "../data/useAppState";
 import { useLiveQuery } from "../data/useLiveQuery";
-import { groupPath, photoPath } from "../lib/groupRoutes";
+import { groupRights } from "../lib/groupAdmin";
+import { editAlbumPath, groupPath, photoPath } from "../lib/groupRoutes";
 import { displayYear } from "../lib/groups";
 import { formatPhotoDate, keepNewMarkers, shouldMarkSeen, sortAlbumPhotos } from "../lib/photos";
 import { photoLayers, radius, size, space, useTheme } from "../theme";
@@ -52,6 +54,8 @@ export function AlbumScreen() {
   const gid = String(groupId) as Id<"groups">;
   const aid = String(albumId) as Id<"albums">;
   const reconnecting = useAuthState() === "reconnecting";
+  // WP28b A-invariant 23: na album verwijderen geen "niet meer zien" tussendoor.
+  const departing = useDeparting(aid);
   // In "reconnecting" toont Screen laden of een fout met "Opnieuw" en
   // "Uitloggen" (WP15a F1); de kop blijft staan.
   if (reconnecting) return <Screen header={<AlbumHeader groupId={gid} album={undefined} count={undefined} />}>{null}</Screen>;
@@ -60,7 +64,11 @@ export function AlbumScreen() {
       key={aid}
       fallback={(error, reset) => (
         <Screen header={<AlbumHeader groupId={gid} album={undefined} count={undefined} />}>
-          <AlbumReadFailed groupId={gid} what="album" error={error} reset={reset} />
+          {departing ? (
+            <LoadingState label="Bezig…" />
+          ) : (
+            <AlbumReadFailed groupId={gid} what="album" error={error} reset={reset} />
+          )}
         </Screen>
       )}
     >
@@ -89,7 +97,11 @@ function AlbumContent({ groupId, albumId }: { groupId: Id<"groups">; albumId: Id
   const newIds = useNewMarkers(entries);
   useMarkSeen(albumId, shown);
 
-  const ctx = useMenuContext(groupId, album?.createdBy, me?._id);
+  const ctx = useMenuContext(groupId, me?._id);
+  // WP28b: "Bewerk album" voor een admin (A-invariant 18).
+  const mine = useLiveQuery(api.groups.listMine, {});
+  const founderId = mine?.find((g) => g._id === groupId)?.createdBy;
+  const canEdit = ctx && founderId ? groupRights({ ...ctx, founderId }).editAlbum : false;
   const [feedback, setFeedback] = useState<Feedback | null>(null);
   const [selecting, setSelecting] = useState(false);
   const [picked, setPicked] = useState<ReadonlySet<string>>(new Set());
@@ -140,15 +152,29 @@ function AlbumContent({ groupId, albumId }: { groupId: Id<"groups">; albumId: Id
             album={album}
             count={shown?.length}
             action={
-              ctx && shown && shown.length > 0 && !selecting ? (
-                <SmallButton
-                  title="Selecteer"
-                  icon="check"
-                  onPress={() => {
-                    setFeedback(null);
-                    setSelecting(true);
-                  }}
-                />
+              !selecting && (canEdit || (ctx && shown && shown.length > 0)) ? (
+                <View style={styles.barRow}>
+                  {ctx && shown && shown.length > 0 ? (
+                    <SmallButton
+                      title="Selecteer"
+                      icon="check"
+                      onPress={() => {
+                        setFeedback(null);
+                        setSelecting(true);
+                      }}
+                    />
+                  ) : null}
+                  {canEdit ? (
+                    <SmallButton
+                      title="Bewerk album"
+                      icon="edit"
+                      onPress={() => {
+                        setFeedback(null);
+                        router.push(editAlbumPath(groupId, albumId));
+                      }}
+                    />
+                  ) : null}
+                </View>
               ) : null
             }
           />

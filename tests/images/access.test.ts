@@ -6,6 +6,7 @@ import type { Id } from "../../convex/_generated/dataModel";
 import schema from "../../convex/schema";
 import { registerUser, withUser } from "../_helpers/auth";
 import { modules } from "../_helpers/modules";
+import { seedMember } from "../_helpers/membership";
 
 // WP17a invarianten 1, 2, 3, 13 en 14, besluiten 1, 2 en 8 (spec §Besluiten
 // Wouter 2026-11-06). De toegangsregel voor beeldbytes, los van hoe het beeld
@@ -93,7 +94,7 @@ async function setup(t: T) {
   await registerUser(t, "user_wm", WM_EMAIL, "Webmaster");
 
   const G = await withUser(t, "user_owen").mutation(api.groups.create, { name: "G" });
-  await withUser(t, "user_owen").mutation(api.groups.addMember, { groupId: G, userId: mia });
+  await seedMember(t, { groupId: G, userId: mia });
   const A = await withUser(t, "user_owen").mutation(api.albums.create, { groupId: G, name: "A" });
 
   const P = await insertPhoto(t, owen);
@@ -247,7 +248,7 @@ describe("images.photoImage — wie de toegang verliest, verliest het beeld (inv
     const s = await setup(t);
     // Groep K: Owen en Xena, met P ook in een album daar.
     const K = await withUser(t, "user_owen").mutation(api.groups.create, { name: "K" });
-    await withUser(t, "user_owen").mutation(api.groups.addMember, { groupId: K, userId: s.xena });
+    await seedMember(t, { groupId: K, userId: s.xena });
     const AK = await withUser(t, "user_owen").mutation(api.albums.create, { groupId: K, name: "AK" });
     await withUser(t, "user_owen").mutation(api.albums.addPhoto, { albumId: AK, photoId: s.P.photoId });
     expect(await withUser(t, "user_xena").query(photoImage, { photoId: s.P.photoId })).toBe(
@@ -305,7 +306,7 @@ describe("images.profileImage — een profielfoto is openbaar (invariant 3)", ()
     const s = await setup(t);
     const zed = await registerUser(t, "user_zed", "zed@x.com", "Zed");
     const X = await withUser(t, "user_owen").mutation(api.groups.create, { name: "X" });
-    await withUser(t, "user_owen").mutation(api.groups.addMember, { groupId: X, userId: zed });
+    await seedMember(t, { groupId: X, userId: zed });
     const AX = await withUser(t, "user_owen").mutation(api.albums.create, { groupId: X, name: "AX" });
     const P2 = await insertPhoto(t, s.owen);
     await withUser(t, "user_owen").mutation(api.albums.addPhoto, { albumId: AX, photoId: P2.photoId });

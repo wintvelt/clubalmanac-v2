@@ -133,7 +133,6 @@ function menuFor(w: W, viewer: ViewerKey): PhotoAction[] {
     role: w.roles[viewer],
     ownerId: w.users.owner.id,
     addedBy: w.users.owner.id,
-    albumCreatedBy: w.users.creator.id,
   });
 }
 

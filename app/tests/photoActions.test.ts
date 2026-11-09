@@ -17,9 +17,10 @@ import {
 // --- Het menu per foto (invariant 1 en 10) -------------------------------------------
 //
 // Orakel met de hand, uit de regels van de backend (WP8, WP24, WP17a
-// invariant 16), niet uit een tabel die de implementatie deelt:
+// invariant 16, WP28 A-keuze 2), niet uit een tabel die de implementatie deelt:
 //   draaien        eigenaar, of admin
-//   albumcover     maker van het album, of admin
+//   albumcover     admin (WP28: de maker van het album heeft geen eigen recht;
+//                  WP28b A-invariant 22: het menu kent de maker niet meer)
 //   groepscover    admin
 //   profielfoto    eigenaar
 //   uit album      wie hem toevoegde, of admin
@@ -27,7 +28,6 @@ import {
 
 const ME = "me";
 const OTHER = "other";
-const THIRD = "third";
 
 type Input = Parameters<typeof photoActions>[0];
 
@@ -40,52 +40,40 @@ function sorted(actions: PhotoAction[]): PhotoAction[] {
 }
 
 describe("photoActions: wat het menu toont", () => {
-  it("eigen foto, lid, niet de maker van het album", () => {
+  it("eigen foto, lid", () => {
     expect(
-      menu({ me: ME, role: "member", ownerId: ME, addedBy: ME, albumCreatedBy: OTHER }),
+      menu({ me: ME, role: "member", ownerId: ME, addedBy: ME }),
     ).toEqual(sorted(["rotate", "profilePhoto", "removeFromAlbum", "delete"]));
   });
 
   it("eigen foto, admin: alles", () => {
     expect(
-      menu({ me: ME, role: "admin", ownerId: ME, addedBy: ME, albumCreatedBy: OTHER }),
+      menu({ me: ME, role: "admin", ownerId: ME, addedBy: ME }),
     ).toEqual(
       sorted(["rotate", "albumCover", "groupCover", "profilePhoto", "removeFromAlbum", "delete"]),
     );
   });
 
-  it("eigen foto, lid dat het album maakte: ook de albumcover, niet de groepscover", () => {
-    expect(
-      menu({ me: ME, role: "member", ownerId: ME, addedBy: ME, albumCreatedBy: ME }),
-    ).toEqual(sorted(["rotate", "albumCover", "profilePhoto", "removeFromAlbum", "delete"]));
-  });
-
   it("foto van een ander, lid: niets", () => {
     expect(
-      menu({ me: ME, role: "member", ownerId: OTHER, addedBy: OTHER, albumCreatedBy: THIRD }),
+      menu({ me: ME, role: "member", ownerId: OTHER, addedBy: OTHER }),
     ).toEqual([]);
-  });
-
-  it("foto van een ander, lid dat het album maakte: alleen de albumcover", () => {
-    expect(
-      menu({ me: ME, role: "member", ownerId: OTHER, addedBy: OTHER, albumCreatedBy: ME }),
-    ).toEqual(["albumCover"]);
   });
 
   it("foto van een ander, admin: draaien, covers en uit album; geen profielfoto, niet verwijderen", () => {
     expect(
-      menu({ me: ME, role: "admin", ownerId: OTHER, addedBy: OTHER, albumCreatedBy: THIRD }),
+      menu({ me: ME, role: "admin", ownerId: OTHER, addedBy: OTHER }),
     ).toEqual(sorted(["rotate", "albumCover", "groupCover", "removeFromAlbum"]));
   });
 
   it("foto van een ander die de user zelf toevoegde (oude data): uit album mag", () => {
     expect(
-      menu({ me: ME, role: "member", ownerId: OTHER, addedBy: ME, albumCreatedBy: THIRD }),
+      menu({ me: ME, role: "member", ownerId: OTHER, addedBy: ME }),
     ).toEqual(["removeFromAlbum"]);
   });
 
   it("verwijderen staat als laatste", () => {
-    const shown = photoActions({ me: ME, role: "admin", ownerId: ME, addedBy: ME, albumCreatedBy: ME });
+    const shown = photoActions({ me: ME, role: "admin", ownerId: ME, addedBy: ME });
     expect(shown[shown.length - 1]).toBe("delete");
     expect(new Set(shown).size).toBe(shown.length);
   });
@@ -104,7 +92,7 @@ describe("selectionPlan: per foto, met de regel van het menu", () => {
   it("verwijderen: alleen eigen foto's, ook voor een admin; de rest telt als niet toegestaan", () => {
     for (const role of ["member", "admin"] as const) {
       expect(
-        selectionPlan("delete", items, { me: ME, role, albumCreatedBy: THIRD }),
+        selectionPlan("delete", items, { me: ME, role }),
         role,
       ).toEqual({ allowed: ["p1", "p3"], notAllowed: ["p2", "p4"] });
     }
@@ -112,20 +100,20 @@ describe("selectionPlan: per foto, met de regel van het menu", () => {
 
   it("uit album, lid: wat de user toevoegde", () => {
     expect(
-      selectionPlan("removeFromAlbum", items, { me: ME, role: "member", albumCreatedBy: THIRD }),
+      selectionPlan("removeFromAlbum", items, { me: ME, role: "member" }),
     ).toEqual({ allowed: ["p1", "p3", "p4"], notAllowed: ["p2"] });
   });
 
   it("uit album, admin: alles", () => {
     expect(
-      selectionPlan("removeFromAlbum", items, { me: ME, role: "admin", albumCreatedBy: THIRD }),
+      selectionPlan("removeFromAlbum", items, { me: ME, role: "admin" }),
     ).toEqual({ allowed: ["p1", "p2", "p3", "p4"], notAllowed: [] });
   });
 
   it("de volgorde van de selectie blijft", () => {
     const reversed = [...items].reverse();
     expect(
-      selectionPlan("removeFromAlbum", reversed, { me: ME, role: "admin", albumCreatedBy: THIRD })
+      selectionPlan("removeFromAlbum", reversed, { me: ME, role: "admin" })
         .allowed,
     ).toEqual(["p4", "p3", "p2", "p1"]);
   });
