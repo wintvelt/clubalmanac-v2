@@ -17,3 +17,5 @@
 3. Code aanvragen, app hard sluiten en opnieuw openen → het code-scherm staat er nog, voor hetzelfde e-mailadres, en de code uit de mail werkt (WP13 invariant 20).
 
 Faalt de gate, dan volgt pas een A → B → audit.
+
+**Let op:** Clerk-dev mailt niet naar Apple-adressen (`me.com`, `icloud.com`): fout `dev_email_provider_blocked`. De app toont dan "Controleer je internetverbinding", en dat klopt niet. Test op dev met een ander adres; op prod (eigen domein) speelt dit niet.
