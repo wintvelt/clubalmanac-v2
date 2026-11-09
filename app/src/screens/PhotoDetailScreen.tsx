@@ -82,9 +82,8 @@ function DetailContent({
 }) {
   const { colors } = useTheme();
   const entries = useLiveQuery(api.albums.listPhotos, { albumId });
-  const album = useLiveQuery(api.albums.getWithCover, { albumId });
   const me = useLiveQuery(api.users.profile, {});
-  const ctx = useMenuContext(groupId, album?.createdBy, me?._id);
+  const ctx = useMenuContext(groupId, me?._id);
   const [feedback, setFeedback] = useState<Feedback | null>(null);
   const shown = useMemo(() => (entries ? sortAlbumPhotos(entries) : undefined), [entries]);
   const ids = useMemo<string[]>(() => shown?.map((e) => e.albumPhoto.photoId) ?? [], [shown]);

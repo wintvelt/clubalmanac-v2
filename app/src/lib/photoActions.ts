@@ -31,7 +31,6 @@ type MenuInput = {
   role: Role;
   ownerId: string;
   addedBy: string;
-  albumCreatedBy: string;
 };
 
 const RULES: Record<PhotoAction, (i: MenuInput) => boolean> = {
@@ -85,7 +84,7 @@ type SelectionItem<P extends string> = { photoId: P; ownerId: string; addedBy: s
 export function selectionPlan<P extends string>(
   action: SelectionAction,
   items: readonly SelectionItem<P>[],
-  ctx: { me: string; role: Role; albumCreatedBy: string },
+  ctx: { me: string; role: Role },
 ): { allowed: P[]; notAllowed: P[] } {
   const allowed: P[] = [];
   const notAllowed: P[] = [];

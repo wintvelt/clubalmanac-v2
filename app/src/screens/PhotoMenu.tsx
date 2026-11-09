@@ -32,8 +32,9 @@ export type Feedback = { kind: "error" | "success"; title: string; message?: str
 // Wat het menu over een foto moet weten. Alle velden staan in albums.listPhotos.
 export type MenuPhoto = { photoId: Id<"photos">; ownerId: Id<"users">; addedBy: Id<"users"> };
 
-// Wie kijkt, met welke rol in de groep van dit album, en wie het album maakte.
-export type MenuContext = { me: Id<"users">; role: Role; albumCreatedBy: Id<"users"> };
+// Wie kijkt, en met welke rol in de groep van dit album. De maker van het
+// album telt niet (WP28 A-keuze 2, WP28b A-invariant 22).
+export type MenuContext = { me: Id<"users">; role: Role };
 
 const FAILED: Feedback = {
   kind: "error",
@@ -58,17 +59,10 @@ function deleteWhat(n: number): string {
 
 // De rol in de groep van dit album komt uit groups.listMine (de album-reads
 // geven hem niet). Laden, of geen lid: geen context, dus geen menu.
-export function useMenuContext(
-  groupId: Id<"groups">,
-  albumCreatedBy: Id<"users"> | undefined,
-  me: Id<"users"> | undefined,
-): MenuContext | undefined {
+export function useMenuContext(groupId: Id<"groups">, me: Id<"users"> | undefined): MenuContext | undefined {
   const groups = useLiveQuery(api.groups.listMine, {});
   const role = groups?.find((g) => g._id === groupId)?.role;
-  return useMemo(
-    () => (role && albumCreatedBy && me ? { me, role, albumCreatedBy } : undefined),
-    [role, albumCreatedBy, me],
-  );
+  return useMemo(() => (role && me ? { me, role } : undefined), [role, me]);
 }
 
 export function menuActions(ctx: MenuContext | undefined, photo: MenuPhoto | undefined): PhotoAction[] {
