@@ -1,6 +1,6 @@
 # WP28: Groepsbeheer
 
-> Draft regie 2026-11-08. App-WP met een flink stuk backend. Verplicht vóór T0 (besluit 2026-11-04). A → besluiten Wouter → B → audit → red-team op toegang → TestFlight-gate. Eigen branch `wp28`.
+> Landed 2026-11-09 (WP28a: A → B → audit + red-team, twee fix-cycli; WP28b: A → B → audit, gate in de simulator en op build 58; zie §Closeout). App-WP met een flink stuk backend. Verplicht vóór T0 (besluit 2026-11-04). A → besluiten Wouter → B → audit → red-team op toegang → TestFlight-gate. Eigen branch `wp28`.
 
 ## Productdoel
 
@@ -561,3 +561,11 @@ Tegen een wegwerp-referentie in de scratchpad (gewist) zijn beide suites groen e
 - de datum: `createdAt` in UTC, een vaste +1 uur, de kiezer in UTC (heen en terug);
 - opslaan: de naam altijd mee, de naam ongetrimd vergeleken, de datum altijd mee (zoals v1), een omschrijving bij een album, een lege omschrijving bij maken;
 - meldingen: `NOT_ALLOWED` altijd "admin", één tekst voor `NOT_MEMBER`, de tekst van de fout gebruiken, `DATE_INVALID` bij de knop.
+
+## Closeout (2026-11-09)
+
+- **WP28a (backend):** audit en red-team vonden in de eerste ronde R1–R5 (ratings en uitnodigingen van wie vertrekt, landing met actuele groepsgegevens, codes, validatie). Fix-cyclus 1 dichtte ze, maar de opruiming van ratings bij vertrek ging over de 4096 db-aanroepen (F1). Fix-cyclus 2 dichtte F1 en de nits F3, F5 en H1. De grens van 32.000 gescande documenten bij veel raters staat in de backlog vóór WP19 (besluit 13).
+- **WP28b (app):** audit zonder blockers. De datumkiezer is `@react-native-community/datetimepicker` (native, nieuwe build).
+- **Gate (regie, simulator op dev, 2026-11-09):** maken, bewerken, de datum op 31 december en 1 januari (opgeslagen als UTC-middernacht, juiste jaar in de lijst), rollen, oprichter overdragen, verlaten, album en groep verwijderen: groen, zonder flits na vertrek of verwijderen. Wouter keek op build 58: in orde. Niet in de simulator: cover weghalen en de foutmeldingen (wel in de tests).
+- **Kleine punten, backlog:** na Bewaar staan "Nog niets gewijzigd" en "Opgeslagen" tegelijk (audit B1); een profielfoto springt even naar de letter als een lid van sectie wisselt; de terugknop in een album heet "Groep" in plaats van de groepsnaam.
+- **Buiten scope:** één gate-foto van WP18 op dev heeft geen formaten (de formaat-job meldde "mislukt"); uitzoeken na WP28. Op dev staat de testgroep "Gate WP28b" met Dev Anna als oprichter.
