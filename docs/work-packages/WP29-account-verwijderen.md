@@ -141,7 +141,7 @@ Waarom:
 | Melding "Je account is verwijderd", uitloggen | uitloggen, inlogscherm met de melding (invariant 7) |
 | Melding bij een fout | idem; de app blijft ingelogd en er is niets gewist |
 
-De info-tekst over gegevens (`app/src/content/infoTexts.ts`, "Tot dat in de app kan, stuur je een mail") wordt bijgewerkt. Geen A-tests voor het scherm (geen pure logica van betekenis).
+De info-tekst over gegevens (`app/src/content/infoTexts.ts`, "Tot dat in de app kan, stuur je een mail") wordt bijgewerkt. A-tests voor het scherm en de melding: zie §Fix-cyclus 3 (gate).
 
 ### Ops-runbook-impact (aanvulling)
 
@@ -224,3 +224,36 @@ Twee gaten uit de red-team-hercheck van B's fix-cyclus 1 (`f20c4d7`). Wouter akk
 | `tests/_helpers/deleteAccount.ts`, `tests/users/deleteAccountScale.test.ts` | zetten `CLUBALMANAC_STAGE=dev` als hij ontbreekt; wat ze pinnen blijft gelijk |
 
 Stand: 7 rood, allemaal nieuw en om de bedoelde reden; de rest groen (2295, ook de schaaltest); `tsc` schoon. Niet getoetst tegen een wegwerp-referentie.
+
+## Fix-cyclus 3 (gate) (A, 2026-11-10)
+
+Twee app-punten uit de gate op dev (simulator, release-build). Wouter akkoord. De rest van de gate was groen.
+
+### Besluiten
+
+1. **"Je account is verwijderd." hoort bij de app-sessie, niet bij één exemplaar van het inlogscherm** (invariant 7).
+   - Gate: na het verwijderen logde de app uit en toonde het inlogscherm, maar zonder de melding.
+   - Oorzaak (aannemelijk, niet bewezen op het toestel): `AccountDeletedNotice` zet de vlag op `false` als het scherm wordt weggehaald. Rond het uitloggen haalt de app het inlogscherm weg en zet het opnieuw neer: de poort toont eerst "Laden…" zonder navigator, de guards wisselen, en de poort doet `router.replace("/inloggen")`. Het eerste exemplaar wist de vlag, het tweede toont niets. Een dev-build met StrictMode doet hetzelfde.
+   - Invariant: weghalen en opnieuw neerzetten verandert niets aan de melding. Hij eindigt alleen als het lid een nieuwe login begint: de tik op "Stuur code" of de return-toets in het e-mailveld. Dat doet `LoginScreen` zelf, vóór `login.sendCode` (de test vervangt `useEmailCodeLogin` door een nep). Ook een herstart van de app wist hem, want hij staat alleen in het geheugen. Tussen de tabs Inloggen en Info blijft hij staan.
+   - Waarom bij "Stuur code": anders staat "Je account is verwijderd" boven een login met een ander adres.
+2. **De knop onder het toetsenbord.**
+   - Gate: na het intypen lag de knop onder het toetsenbord. Bovendien verwijderde de return-toets ("Gereed") het account direct (`onSubmitEditing` riep `onDelete` aan), zonder dat de knop in beeld was.
+   - Invariant a (unit): alleen de tik op de knop verwijdert. De return-toets in het bevestigingsveld sluit het toetsenbord en doet verder niets.
+   - Invariant b (gate): met het toetsenbord open en het woord ingetypt staat de knop helemaal boven het toetsenbord, zonder wegtikken. Dat geldt op de kleinste ondersteunde iPhone (SE, 4,7 inch) bij standaardtekstgrootte. Bij de grootste tekstgrootte is de knop met het toetsenbord open bereikbaar door te scrollen.
+   - Waarschijnlijk telt `KeyboardAvoidingView` in `Screen` de navigatiebalk niet mee (`underHeader`), en scrolt de lijst niet mee naar de knop. Een oplossing in `Screen` geldt voor elk formulier; de gate kijkt dan ook naar Inloggen en een ander formulier onder een navigatiebalk.
+
+### RED tests
+
+| Bestand | Wat |
+|---|---|
+| `app/tests/accountDeletedNotice.test.ts` | punt 1: na verwijderen staat de melding op het inlogscherm; na weghalen en opnieuw neerzetten nog steeds; de tik op "Stuur code" en de return-toets in het e-mailveld beëindigen hem, ook na opnieuw neerzetten |
+| `app/tests/deleteAccountKeyboard.test.ts` | punt 2a: de return-toets verwijdert niet en houdt het veld niet vast; de knop verwijdert wel, één keer |
+| `app/tests/support/hookRuntime.ts` | `useSyncExternalStore` en `unmount()` erbij (draait de cleanups); bestaande tests ongewijzigd |
+
+### Gate (release-build)
+
+- Verwijderen: het inlogscherm toont "Je account is verwijderd."; na Info en terug staat hij er nog; na "Stuur code" is hij weg.
+- Verwijderscherm: na het intypen staat de knop boven het toetsenbord (SE; bij de grootste tekst door te scrollen). De return-toets sluit het toetsenbord en verwijdert niets.
+- Inloggen en een ander formulier onder een navigatiebalk: velden en knoppen niet onder het toetsenbord.
+
+Stand: 4 rood, allemaal nieuw en om de bedoelde reden; de rest groen (app 1205); app-`tsc` schoon. Getoetst tegen een wegwerp-referentie (vlag niet wissen bij weghalen, wel bij "Stuur code"; geen `onSubmitEditing` op het bevestigingsveld): alle 8 groen. Punt 2b is niet als unit-test te pinnen.
