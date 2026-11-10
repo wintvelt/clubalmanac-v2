@@ -8,6 +8,7 @@ import schema from "../../convex/schema";
 import { withUser } from "../_helpers/auth";
 import { modules } from "../_helpers/modules";
 import { upload } from "../http/_upload";
+import { TEST_WEBHOOK_SECRET, sessionCreatedPayload, signSvixHeaders } from "../_helpers/svix";
 
 // WP29 — account verwijderen. Spec: docs/work-packages/WP29-account-verwijderen.md
 // §Spec-criticus aanvullingen (A-invarianten 1–7 en 9; 8 staat in
@@ -20,6 +21,10 @@ import { upload } from "../http/_upload";
 // hoe groot ze zijn, pinnen ze niet.
 //
 // Alle tests draaien met de echte Convex-limieten (`transactionLimits`).
+//
+// Fix-cyclus 1 (onderaan): sleutel per omgeving, verwijderde Clerk-users,
+// opnieuw starten tijdens lopende pogingen, uitnodigen tijdens het verwijderen,
+// een hangende Clerk-aanroep en de tekst van de webmaster-mail.
 //
 // Wereld: Rex verwijdert zijn account.
 // - G: oprichter Rex; Olga (admin, eerst), Anna (admin), Lex (lid). Album AG
@@ -57,22 +62,46 @@ const rex = (t: T) => withUser(t, "user_rex");
 
 // ── fetch: Clerk en Mailjet ──────────────────────────────────────────
 
-type ClerkCall = { url: string; method: string; auth: string | null; at: number };
+type ClerkCall = { url: string; method: string; auth: string | null; signal: boolean; at: number };
 type Net = { clerk: ClerkCall[]; mails: Array<{ to: string[]; text: string }> };
 
-/** `clerkStatus(n)` geeft de status voor de n-de Clerk-aanroep (0-based). */
-function stubNet(clerkStatus: (n: number) => number = () => 200): Net {
+/**
+ * `clerkStatus(n)` geeft de status voor de n-de Clerk-aanroep (0-based), of
+ * "hang": dan antwoordt Clerk nooit, en faalt de aanroep pas als het signal
+ * van de aanroep afgaat (zonder signal: meteen een netwerkfout, en de aanroep
+ * staat genoteerd als zonder signal). `onMail` draait vóór elke Mailjet-mail.
+ */
+function stubNet(
+  clerkStatus: (n: number) => number | "hang" = () => 200,
+  opts: { onMail?: () => Promise<void> } = {},
+): Net {
   const net: Net = { clerk: [], mails: [] };
   vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
     const headers = new Headers(init?.headers ?? (input instanceof Request ? input.headers : undefined));
     if (url.startsWith("https://api.clerk.com/")) {
       const status = clerkStatus(net.clerk.length);
-      net.clerk.push({ url, method: (init?.method ?? "GET").toUpperCase(), auth: headers.get("authorization"), at: Date.now() });
+      const signal = init?.signal ?? undefined;
+      net.clerk.push({
+        url,
+        method: (init?.method ?? "GET").toUpperCase(),
+        auth: headers.get("authorization"),
+        signal: signal !== undefined,
+        at: Date.now(),
+      });
+      if (status === "hang") {
+        if (!signal) throw new TypeError("fetch failed (test: aanroep zonder signal)");
+        return await new Promise<Response>((_, reject) => {
+          const fail = () => reject(signal.reason ?? new Error("aborted"));
+          if (signal.aborted) fail();
+          else signal.addEventListener("abort", fail, { once: true });
+        });
+      }
       const body = status === 200 ? { id: "user_rex", object: "user", deleted: true } : { errors: [{ code: "x" }] };
       return new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
     }
     if (url.includes("api.mailjet.com")) {
+      await opts.onMail?.();
       const payload = JSON.parse(typeof init?.body === "string" ? init.body : "{}") as {
         Messages?: Array<{ To?: Array<{ Email?: string }>; Subject?: string; TextPart?: string; HTMLPart?: string }>;
       };
@@ -95,15 +124,17 @@ beforeEach(() => {
   vi.useFakeTimers();
   process.env.CLERK_SECRET_KEY = KEY;
   process.env.WEBMASTER_EMAILS = WEBMASTER;
-  process.env.MAILJET_VERIFIED_SENDERS = INFO_SENDER;
+  process.env.MAILJET_VERIFIED_SENDERS = `${INFO_SENDER},invites@clubalmanac.com`;
   process.env.MAILJET_API_KEY = "k";
   process.env.MAILJET_API_SECRET = "s";
   process.env.CLUBALMANAC_STAGE = "dev";
+  process.env.CLUBALMANAC_APP_URL = "https://app.x.test";
+  process.env.CLERK_WEBHOOK_SECRET = TEST_WEBHOOK_SECRET;
 });
 afterEach(() => {
   vi.useRealTimers();
   vi.unstubAllGlobals();
-  for (const k of ["CLERK_SECRET_KEY", "WEBMASTER_EMAILS", "MAILJET_VERIFIED_SENDERS", "MAILJET_API_KEY", "MAILJET_API_SECRET", "CLUBALMANAC_STAGE"]) {
+  for (const k of ["CLERK_SECRET_KEY", "WEBMASTER_EMAILS", "MAILJET_VERIFIED_SENDERS", "MAILJET_API_KEY", "MAILJET_API_SECRET", "CLUBALMANAC_STAGE", "CLUBALMANAC_APP_URL", "CLERK_WEBHOOK_SECRET"]) {
     delete process.env[k];
   }
 });
@@ -673,4 +704,281 @@ describe("WP29 A-invariant 7 — Clerk mislukt blijvend, of de sleutel ontbreekt
     expect(annaRatings).toHaveLength(2);
     expect(await membershipsOf(t, w.G)).toHaveLength(4);
   });
+});
+
+// ── Fix-cyclus 1 ─────────────────────────────────────────────────────
+// Spec: §Fix-cyclus 1 (audit en red-team, 2026-11-10).
+
+const webhookSession = (t: T, subject: string, email: string) => {
+  const body = sessionCreatedPayload({ subject, email, firstName: "Rex" });
+  return t.fetch("/clerk-webhook", { method: "POST", headers: signSvixHeaders({ body }), body });
+};
+const triesToRegister = async (t: T, subject: string) => {
+  try {
+    await t.mutation(internal.users.registerFromSession, { subject, email: REX_EMAIL, name: "Rex" });
+  } catch {
+    // Weigeren mag; een rij niet.
+  }
+};
+const mailsTo = (net: Net, email: string) => net.mails.filter((m) => m.to.includes(email));
+
+describe("WP29 fix 1a — de sleutel moet bij de omgeving passen (prod: sk_live_, anders sk_test_)", () => {
+  const cases: Array<[string | undefined, string]> = [
+    ["prod", "sk_test_wp29"],
+    ["dev", "sk_live_wp29"],
+    [undefined, "sk_live_wp29"],
+    ["prod", "wp29_zonder_voorvoegsel"],
+  ];
+  for (const [stage, key] of cases) {
+    it(`stage ${stage ?? "(leeg)"} met ${key}: geen aanroep naar Clerk, één mail zonder de sleutel, data weg, rij blijft`, async () => {
+      if (stage === undefined) delete process.env.CLUBALMANAC_STAGE;
+      else process.env.CLUBALMANAC_STAGE = stage;
+      process.env.CLERK_SECRET_KEY = key;
+      const t = newT();
+      const w = await world(t);
+      const net = stubNet();
+      await rex(t).mutation(api.users.deleteSelf, {});
+      await finish(t);
+
+      expect(net.clerk).toEqual([]);
+      expect(net.mails).toHaveLength(1);
+      expect(net.mails[0]!.to).toEqual([WEBMASTER]);
+      expect(net.mails[0]!.text).toContain("user_rex");
+      expect(net.mails[0]!.text).not.toContain(key);
+      expect(await tracesOfRex(t, w)).toEqual([`users/${w.rex}`]);
+      await triesToRegister(t, "user_rex");
+      expect(await usersWithSubject(t, "user_rex")).toHaveLength(1);
+    });
+  }
+
+  it("prod met sk_live_: de Clerk-user wordt verwijderd", async () => {
+    process.env.CLUBALMANAC_STAGE = "prod";
+    process.env.CLERK_SECRET_KEY = "sk_live_wp29";
+    const t = newT();
+    const w = await world(t);
+    const net = stubNet();
+    await rex(t).mutation(api.users.deleteSelf, {});
+    await finish(t);
+
+    expect(net.clerk).toHaveLength(1);
+    expect(net.clerk[0]).toMatchObject({ url: CLERK_URL, method: "DELETE", auth: "Bearer sk_live_wp29" });
+    expect(await get(t, w.rex)).toBeNull();
+  });
+
+  it("na het zetten van de goede sleutel: retryAccountDeletion maakt het af", async () => {
+    process.env.CLUBALMANAC_STAGE = "prod";
+    process.env.CLERK_SECRET_KEY = "sk_test_wp29";
+    const t = newT();
+    const w = await world(t);
+    stubNet();
+    await rex(t).mutation(api.users.deleteSelf, {});
+    await finish(t);
+
+    process.env.CLERK_SECRET_KEY = "sk_live_wp29";
+    const net = stubNet();
+    await t.mutation(retryRef, { userId: w.rex });
+    await finish(t);
+
+    expect(net.clerk.map((c) => c.auth)).toEqual(["Bearer sk_live_wp29"]);
+    expect(await get(t, w.rex)).toBeNull();
+    expect(await tracesOfRex(t, w)).toEqual([]);
+  });
+});
+
+describe("WP29 fix 1b en 2 — een verwijderde Clerk-user maakt nooit meer een users-rij", () => {
+  it("Clerk gaf 404 (bv. sleutel van een andere Clerk-omgeving): een nieuwe sessie van die Clerk-user maakt geen leeg account", async () => {
+    const t = newT();
+    const w = await world(t);
+    stubNet(() => 404);
+    await rex(t).mutation(api.users.deleteSelf, {});
+    await finish(t);
+    expect(await get(t, w.rex)).toBeNull();
+
+    await triesToRegister(t, "user_rex");
+    expect(await usersWithSubject(t, "user_rex")).toEqual([]);
+    expect(await rex(t).query(api.users.current, {})).toBeNull();
+  });
+
+  it("een late of herhaalde session.created ná afloop: de webhook geeft 200 (geen Svix-herhaling) en maakt geen rij", async () => {
+    const t = newT();
+    const w = await world(t);
+    stubNet();
+    await rex(t).mutation(api.users.deleteSelf, {});
+    await finish(t);
+
+    const res = await webhookSession(t, "user_rex", REX_EMAIL);
+    expect(res.status).toBe(200);
+    expect(await usersWithSubject(t, "user_rex")).toEqual([]);
+    // Wat het onthoudt, bevat zijn id, subject en adres niet (A-invariant 3).
+    expect(await tracesOfRex(t, w)).toEqual([]);
+  });
+
+  it("een session.created tijdens het verwijderen: 200, geen tweede rij", async () => {
+    const t = newT();
+    await world(t);
+    stubNet();
+    await rex(t).mutation(api.users.deleteSelf, {});
+
+    const res = await webhookSession(t, "user_rex", REX_EMAIL);
+    expect(res.status).toBe(200);
+    expect(await usersWithSubject(t, "user_rex")).toHaveLength(1);
+  });
+
+  it("een andere Clerk-user blijft gewoon welkom via de webhook", async () => {
+    const t = newT();
+    await world(t);
+    stubNet();
+    await rex(t).mutation(api.users.deleteSelf, {});
+    await finish(t);
+
+    const res = await webhookSession(t, "user_rex_nieuw", REX_EMAIL);
+    expect(res.status).toBe(200);
+    expect(await usersWithSubject(t, "user_rex_nieuw")).toHaveLength(1);
+  });
+});
+
+describe("WP29 fix 3 — retryAccountDeletion terwijl de Clerk-pogingen nog lopen", () => {
+  it("Clerk herstelt: na de retry precies één aanroep naar Clerk, geen mail, rij weg", async () => {
+    const t = newT();
+    const w = await world(t);
+    const net = stubNet((n) => (n < 2 ? 500 : 200));
+    await rex(t).mutation(api.users.deleteSelf, {});
+    await vi.advanceTimersByTimeAsync(2 * 60_000);
+    await t.finishInProgressScheduledFunctions();
+    expect(net.clerk).toHaveLength(2);
+
+    await t.mutation(retryRef, { userId: w.rex });
+    await finish(t);
+
+    expect(net.clerk).toHaveLength(3);
+    expect(net.mails).toEqual([]);
+    expect(await get(t, w.rex)).toBeNull();
+  });
+
+  it("Clerk blijft falen: één mail in totaal, en daarna staat er niets meer gepland", async () => {
+    const t = newT();
+    const w = await world(t);
+    const net = stubNet(() => 500);
+    await rex(t).mutation(api.users.deleteSelf, {});
+    await vi.advanceTimersByTimeAsync(2 * 60_000);
+    await t.finishInProgressScheduledFunctions();
+
+    await t.mutation(retryRef, { userId: w.rex });
+    await finish(t);
+
+    expect(net.mails).toHaveLength(1);
+    expect(net.clerk.length).toBeLessThanOrEqual(20);
+    const pending = await t.run(async (ctx) =>
+      (await ctx.db.system.query("_scheduled_functions").collect()).filter(
+        (f) => f.state.kind === "pending" || f.state.kind === "inProgress",
+      ),
+    );
+    expect(pending).toEqual([]);
+    expect(await tracesOfRex(t, w)).toEqual([`users/${w.rex}`]);
+  });
+});
+
+describe("WP29 fix 4 en 8 — uitnodigen tijdens het verwijderen", () => {
+  it("Clerk hangt, Olga nodigt hem opnieuw uit: geweigerd, met of zonder groep en in elke schrijfwijze; geen uitnodiging, geen mail", async () => {
+    const t = newT();
+    const w = await world(t);
+    const net = stubNet(() => 500);
+    await rex(t).mutation(api.users.deleteSelf, {});
+    await finish(t);
+
+    const olga = withUser(t, "user_olga");
+    await expect(olga.mutation(api.invites.create, { email: REX_EMAIL, groupId: w.H })).rejects.toThrow(/wordt verwijderd/);
+    await expect(olga.mutation(api.invites.create, { email: " REX@x.test " })).rejects.toThrow(/wordt verwijderd/);
+    await finish(t);
+
+    const invites = await t.run(async (ctx) =>
+      ctx.db.query("invites").withIndex("by_email", (q) => q.eq("email", REX_EMAIL)).collect(),
+    );
+    expect(invites).toEqual([]);
+    expect(mailsTo(net, REX_EMAIL)).toEqual([]);
+  });
+
+  it("direct na deleteSelf ook: een losse uitnodiging aan zijn adres wordt geweigerd", async () => {
+    const t = newT();
+    await world(t);
+    stubNet();
+    // Olga's open losse uitnodiging aan hem zou anders als dubbel gelden.
+    await t.run(async (ctx) => {
+      for (const i of await ctx.db.query("invites").withIndex("by_email", (q) => q.eq("email", REX_EMAIL)).collect()) {
+        await ctx.db.delete(i._id);
+      }
+    });
+    await rex(t).mutation(api.users.deleteSelf, {});
+
+    await expect(withUser(t, "user_olga").mutation(api.invites.create, { email: REX_EMAIL })).rejects.toThrow(/wordt verwijderd/);
+  });
+
+  it("R3: na herstel en retry is alles weg; daarna kan Olga hem weer uitnodigen en die uitnodiging blijft", async () => {
+    const t = newT();
+    const w = await world(t);
+    stubNet(() => 500);
+    await rex(t).mutation(api.users.deleteSelf, {});
+    await finish(t);
+    await expect(withUser(t, "user_olga").mutation(api.invites.create, { email: REX_EMAIL, groupId: w.H })).rejects.toThrow();
+
+    const net = stubNet();
+    await t.mutation(retryRef, { userId: w.rex });
+    await finish(t);
+    expect(await tracesOfRex(t, w)).toEqual([]);
+
+    const { inviteId } = await withUser(t, "user_olga").mutation(api.invites.create, { email: REX_EMAIL, groupId: w.H });
+    await finish(t);
+    expect((await get(t, inviteId))?.status).toBe("pending");
+    expect(mailsTo(net, REX_EMAIL)).toHaveLength(1);
+  });
+});
+
+describe("WP29 fix 5 — een Clerk-aanroep die nooit antwoordt", () => {
+  it("elke aanroep heeft een timeout; na de laatste poging één mail aan de webmaster, data weg, rij blijft", { timeout: 60_000 }, async () => {
+    const t = newT();
+    const w = await world(t);
+    const net = stubNet(() => "hang");
+    await rex(t).mutation(api.users.deleteSelf, {});
+    // Vijf uur in stappen van een minuut: ruim de pogingen plus hun timeouts.
+    for (let i = 0; i < 300; i++) await vi.advanceTimersByTimeAsync(60_000);
+    await finish(t);
+
+    expect(net.clerk.length).toBeGreaterThanOrEqual(2);
+    expect(net.clerk.every((c) => c.signal), "een Clerk-aanroep zonder signal (timeout)").toBe(true);
+    expect(net.clerk.length).toBeLessThanOrEqual(20);
+    expect(net.mails).toHaveLength(1);
+    expect(net.mails[0]!.to).toEqual([WEBMASTER]);
+    expect(await tracesOfRex(t, w)).toEqual([`users/${w.rex}`]);
+  });
+});
+
+describe("WP29 fix 6 — de mail aan de webmaster zegt alleen dat de Convex-data weg is als dat zo is", () => {
+  for (const [label, setup] of [
+    ["sleutel ontbreekt", () => void delete process.env.CLERK_SECRET_KEY],
+    ["sleutel past niet bij prod", () => {
+      process.env.CLUBALMANAC_STAGE = "prod";
+      process.env.CLERK_SECRET_KEY = "sk_test_wp29";
+    }],
+    ["Clerk blijft falen", () => undefined],
+  ] as const) {
+    it(label, async () => {
+      setup();
+      const t = newT();
+      const w = await world(t);
+      let tracesAtMail: string[] | null = null;
+      const net = stubNet(() => 500, {
+        onMail: async () => {
+          tracesAtMail = await tracesOfRex(t, w);
+        },
+      });
+      await rex(t).mutation(api.users.deleteSelf, {});
+      await finish(t);
+
+      expect(net.mails).toHaveLength(1);
+      const convexDone = JSON.stringify(tracesAtMail) === JSON.stringify([`users/${w.rex}`]);
+      if (!convexDone) {
+        expect(net.mails[0]!.text.toLowerCase(), `mail terwijl nog over was: ${String(tracesAtMail)}`).not.toMatch(/convex is weg/);
+      }
+    });
+  }
 });

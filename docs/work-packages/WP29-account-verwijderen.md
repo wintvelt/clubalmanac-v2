@@ -103,7 +103,7 @@ Waarom:
 
 1. **Direct afgesloten.** Na `users.deleteSelf` (zelfde naam, geen argumenten) geeft `users.current` voor dit lid `null`. Mutations en `POST /upload` weigeren. Nog een keer `deleteSelf` geeft geen fout en start niets dubbel.
 2. **Geen nieuwe rij tijdens het verwijderen.** Een sessie van dezelfde Clerk-user (webhook, `registerFromSession`) maakt geen users-rij zolang het account wordt verwijderd.
-3. **Alles weg.** Als alle stappen klaar zijn, bevat geen document in een tabel nog zijn id, zijn Clerk-subject of zijn e-mailadres. Zijn beelden (origineel, *klein*, *groot*, een losse profielfoto) zijn uit storage. De integriteitscheck is schoon.
+3. **Alles weg.** Als alle stappen klaar zijn, bevat geen document in een tabel nog zijn id, zijn Clerk-subject of zijn e-mailadres. Zijn beelden (origineel, *klein*, *groot*, een losse profielfoto) zijn uit storage. De integriteitscheck is schoon. Wel mag er een onherleidbare markering van zijn Clerk-subject staan (fix 1b): een hash, zonder id of adres.
 4. **Wat van anderen is, blijft en klopt.**
    - Groepen: M2-c, M2-d en M2-e zoals nu.
    - Een album dat hij maakte in een groep die blijft: maker wordt de oprichter van de groep (na de opvolging).
@@ -113,20 +113,20 @@ Waarom:
    - Uitnodigingen: alle uitnodigingen die hij verstuurde, en alle aan zijn adres (genormaliseerd), welke status ook.
    - Gemelde foto's van een ander: `flaggedBy` weg, de melding blijft (U10).
 5. **Wat tussendoor binnenkomt, gaat mee.** Een foto, rating of publicatie van hem die na stap 1 nog in de database komt, is aan het eind ook weg.
-6. **Clerk.** Precies één geslaagde `DELETE https://api.clerk.com/v1/users/<subject>` met `Authorization: Bearer <CLERK_SECRET_KEY>`. 404 telt als gelukt. Een mislukte poging wordt herhaald; het aantal pogingen is begrensd en ze liggen over minstens een uur.
-7. **Clerk mislukt blijvend, of de sleutel ontbreekt.**
+6. **Clerk.** Precies één geslaagde `DELETE https://api.clerk.com/v1/users/<subject>` met `Authorization: Bearer <CLERK_SECRET_KEY>`, alleen met een sleutel die bij de omgeving past (fix 1a). 404 telt als gelukt. Elke aanroep heeft een timeout (fix 5). Een mislukte poging wordt herhaald; het aantal pogingen is begrensd en ze liggen over minstens een uur. Er loopt hooguit één reeks pogingen (fix 3).
+7. **Clerk mislukt blijvend, of de sleutel ontbreekt of past niet bij de omgeving.**
    - De Convex-data is toch weg (A-invariant 3, behalve de users-rij).
-   - Eén mail aan `WEBMASTER_EMAILS` met de Clerk-subject, zonder het e-mailadres.
+   - Eén mail aan `WEBMASTER_EMAILS` met de Clerk-subject, zonder het e-mailadres en zonder de sleutel. Hij zegt alleen dat de Convex-data weg is als dat op dat moment zo is (fix 6).
    - De users-rij blijft en houdt de login tegen (A-invariant 2).
    - De integriteitscheck meldt de rij als hij langer dan een uur wordt verwijderd; jonger niet.
-   - De internal mutation `users.retryAccountDeletion({ userId })` start het opnieuw. Voor een account dat niet wordt verwijderd doet hij niets.
+   - De internal mutation `users.retryAccountDeletion({ userId })` start het opnieuw. Voor een account dat niet wordt verwijderd doet hij niets. Loopt er nog een reeks Clerk-pogingen, dan komt er geen tweede bij en geen tweede mail (fix 3).
 8. **Op schaal.** Met `transactionLimits` lukt het voor een lid met 1600 eigen foto's (meer dan alle foto's op prod), elk gerated door 17 anderen, dat 1600 foto's van een ander ratede die elk 18 ratings hebben, oprichter is van een groep van 18 leden en het laatste lid van een groep met 1500 publicaties.
 9. **Geen mail bij succes.** Geen mail aan het lid of de webmaster als alles lukt (zoals WP28 W7).
 
 ### A-keuzes
 
 1. **Features gaan mee.** Ook een feature-verzoek waar anderen op stemden: het staat op zijn naam en de rij moet naar een bestaande user wijzen. Een probleemmelding bevat zijn tekst.
-2. **Uitnodigingen aan zijn adres gaan mee, ook open.** Het adres is persoonsgegeven. Wie hem terug wil, nodigt opnieuw uit.
+2. **Uitnodigingen aan zijn adres gaan mee, ook open.** Het adres is persoonsgegeven. Wie hem terug wil, nodigt opnieuw uit, als het verwijderen klaar is; tijdens het verwijderen weigert dat (fix 8).
 3. **Een ander toestel tijdens het verwijderen** ziet heel even het scherm "geen account" (`noUserRow`) tot Clerk de sessie beëindigt. Geaccepteerd: dat duurt normaal seconden.
 4. **Anderen zien hem tijdens het opruimen nog** (naam, foto's), tot de stap die het betreffende deel opruimt. Normaal minuten. Geaccepteerd.
 5. **Bestaande tests op de oude, synchrone vorm** zijn aangepast: ze laten eerst alle geplande stappen lopen (`tests/_helpers/deleteAccount.ts`), met Clerk gestubd. Wat ze pinnen blijft gelijk.
@@ -159,4 +159,49 @@ De info-tekst over gegevens (`app/src/content/infoTexts.ts`, "Tot dat in de app 
 | bestaande tests met `deleteSelf` (13 bestanden) | via de helper (A-keuze 5) |
 | `tests/http/uploadReservationReads.test.ts` | de leesmeting op de handler van `deleteSelf` vervangen door een run met `transactionLimits` (400 foto's × 500 reserveringen) |
 
-Stand: 20 rood in 2 bestanden, alleen nieuwe tests; de rest groen (2255); `tsc` schoon; de app is niet geraakt. De schaaltest faalt nu op de leesgrens in `recomputeRatingAggregate` vanuit `deleteSelf` en duurt ±40 s. Niet getoetst tegen een wegwerp-referentie-implementatie.
+## Fix-cyclus 1 (A, 2026-11-10)
+
+Bevindingen van audit en red-team op B's eerste implementatie (`c43741a`). Wouter akkoord.
+
+### Besluiten
+
+1. **Een sleutel van de verkeerde Clerk-omgeving** gaf 404, en dat telde als gelukt: de rij ging weg, de Clerk-user bleef, en de volgende login maakte stil een leeg account. Beide fixes:
+   - **a. De sleutel moet bij de omgeving passen.** `CLUBALMANAC_STAGE=prod` vraagt `sk_live_`; elke andere waarde, ook leeg, vraagt `sk_test_`. Past hij niet, dan zoals "sleutel ontbreekt": geen aanroep naar Clerk, één mail aan de webmaster met de reden (zonder de sleutel), de rij blijft, en na herstel maakt `retryAccountDeletion` het af. 404 blijft gelukt: een tweede poging na een geslaagde `DELETE` geeft ook 404.
+   - **b. Een verwijderde Clerk-user maakt nooit meer een users-rij.** Bij het afsluiten wordt een markering van zijn Clerk-subject bewaard: een SHA-256-hash, met de tijd, zonder id of adres. Hij blijft staan (Clerk hergebruikt geen ids; een paar rijen per jaar). `registerFromSession` maakt voor zo'n subject geen rij, en de webhook geeft 200, anders herhaalt Svix dagenlang. Een andere Clerk-user met hetzelfde adres begint gewoon als nieuw.
+   - Een hash en niet de ruwe subject: zolang de Clerk-user bestaat, leidt de subject via Clerk naar de persoon. De hash volstaat om te vergelijken, en de generieke scan van A-invariant 3 blijft geldig.
+   - Wat a niet vangt (een `sk_test_` van een andere dev-omgeving): de Clerk-user blijft, en wie daarmee inlogt, ziet "Je account is nog niet klaar", geen leeg account. Geaccepteerd: alleen op dev, en runbook-punt 9a checkt prod.
+2. **Een late of herhaalde `session.created` ná afloop** maakte een spookrij met zijn adres en naam. Gedekt door 1b.
+3. **`retryAccountDeletion` terwijl de Clerk-pogingen nog lopen** startte een tweede reeks, met bij blijvend falen twee mails. Nu loopt er hooguit één reeks: een retry start er geen tweede naast, en een poging nadat Clerk al gelukt is, doet niets. Een reeks die niet meer loopt (bv. na een crash), start hij wel opnieuw; bv. met een volgnummer per reeks, waarbij een poging van een oude reeks stopt.
+4. **Een retry gooide een intussen verstuurde nieuwe uitnodiging aan zijn adres weg.** Juist is: tijdens het verwijderen kan niemand hem uitnodigen (punt 8). Alles wat bij een retry aan zijn adres staat, is dan van vóór het afsluiten en hoort weg (A-keuze 2). Als het verwijderen klaar is, kan iedereen hem weer uitnodigen.
+   - Afgewezen: uitnodigingen van na het afsluiten laten staan. Dan gaat er een mail naar iemand die net gevraagd heeft om verwijderd te worden. Die uitnodiging werkt bovendien pas als het verwijderen klaar is: tot dan faalt het aanmelden op "Email is al in gebruik".
+5. **Een Clerk-aanroep die nooit antwoordt** stopte de herhaling zonder mail. Nu heeft elke aanroep een timeout van hooguit 30 s. Een timeout telt als mislukte poging: opnieuw proberen, en na de laatste poging de mail. De timeout moet op `setTimeout` lopen (bv. met `AbortController`). `AbortSignal.timeout` loopt in vitest op de echte klok, en dan hangt de test (gecheckt).
+6. **De mail aan de webmaster zei altijd "De data in Convex is weg"**, ook als het opruimen nog liep (bij een ontbrekende sleutel komt de mail al bij de eerste poging) of vastzat. Nu staat die zin er alleen in als het opruimen op dat moment klaar is. Anders bv. "Het opruimen in Convex loopt nog. Loopt het vast, dan meldt de integriteitscheck het."
+7. **Lukt het uitloggen na het verwijderen niet** (`signOutAndWipe` geeft `false`), dan bleef het lid op "Je account is nog niet klaar" staan. Nu toont de poort "Je account is verwijderd", met de melding "Uitloggen lukte niet. Probeer het opnieuw." en de knop Uitloggen. Welk scherm, kiest een pure functie: `noUserRowView({ deleting, deleted }): "loading" | "accountDeleted" | "notReady"` in `app/src/lib/noUserRowView.ts`, met de twee vlaggen uit `app/src/data/accountDeletion.ts`.
+8. **Een admin kon het lid uitnodigen terwijl zijn account werd verwijderd**, en dan ging er nog een mail naar zijn adres. Nu weigert `invites.create` een adres dat bij een account hoort dat wordt verwijderd, met of zonder groep, vóór de andere checks. De melding bevat "wordt verwijderd", bv. "Dit adres hoort bij een account dat wordt verwijderd. Probeer het later opnieuw."
+   - Vergelijk op het genormaliseerde adres. Een gemigreerde users-rij kan hoofdletters hebben; bv. het adres bij het afsluiten normaliseren.
+   - De admin leert zo dat het adres bij een account hoort dat wordt verwijderd. Geaccepteerd: hij ziet nu ook al "al lid van de groep".
+9. **Runbook.** Voor B, in `external-services.md` en de cutover-checklist:
+   - a. Na het zetten van `sk_live_` op prod: één keer een wegwerp-account uitnodigen, in de app Account verwijderen, en in het Clerk-dashboard van de prod-omgeving checken dat de user weg is.
+   - b. Heeft de webmaster na de mail de Clerk-user zelf in het dashboard verwijderd, dan toch altijd `retryAccountDeletion` draaien. Anders blijft de users-rij staan, en faalt het aanmelden na een nieuwe uitnodiging op "Email is al in gebruik".
+   - c. In de rij van `CLERK_SECRET_KEY`: een sleutel die niet bij de omgeving past, geeft hetzelfde als een ontbrekende sleutel (1a).
+10. **Voor B:** `convex/_generated/api.d.ts` is met de hand bijgewerkt; draai `npx convex codegen`.
+
+Niet in deze cyclus: de M2-e-stap die bij een groep met veel gemigreerde publicaties van niet-leden op 4096 index-reads kan vastlopen (`convex/lib/unpublish.ts`). Regie meet dat eerst op dev-data.
+
+### RED tests
+
+| Bestand | Wat |
+|---|---|
+| `tests/users/deleteAccount.test.ts` §fix 1a | vier combinaties van omgeving en sleutel: geen aanroep, één mail zonder de sleutel, rij blijft; prod met `sk_live_` werkt; retry na herstel van de sleutel |
+| idem §fix 1b en 2 | na 404 maakt dezelfde Clerk-user geen rij; een late `session.created` via de webhook: 200, geen rij, geen sporen; tijdens het verwijderen: 200, geen tweede rij; een andere Clerk-user blijft welkom |
+| idem §fix 3 | een retry tijdens lopende pogingen: bij herstel precies één aanroep erna; bij blijvend falen één mail en niets meer gepland |
+| idem §fix 4 en 8 | uitnodigen tijdens het verwijderen geweigerd (met en zonder groep, andere schrijfwijze, direct na het afsluiten), geen mail; na retry kan Olga hem weer uitnodigen en blijft die uitnodiging staan |
+| idem §fix 5 | een Clerk die nooit antwoordt: elke aanroep met een signal, begrensd aantal, één mail |
+| idem §fix 6 | de mail zegt alleen "Convex is weg" als dat op het moment van de mail zo is (sleutel ontbreekt, past niet, Clerk blijft falen) |
+| `app/tests/noUserRowView.test.ts` | punt 7 |
+
+Gewijzigd in het bestaande testbestand: de fetch-stub noteert of een Clerk-aanroep een signal heeft en kan Clerk laten hangen. De env zet ook de afzender van uitnodigingen, `CLUBALMANAC_APP_URL` en het webhook-secret.
+
+In fix 6 met "Clerk blijft falen" komt de mail vóór het einde van het opruimen. Dat komt door de test, niet door de code: `runAllTimers` loopt de wachttijden van Clerk af, terwijl het opruimen stap voor stap gaat. De test checkt alleen of de mail klopt met de stand.
+
+Stand: 16 rood in `deleteAccount.test.ts` en 1 rood testbestand in de app (de module bestaat nog niet), allemaal nieuw en om de bedoelde reden. Verder alles groen: backend 2278, app 1198. `tsc` is schoon in de root; in de app faalt hij alleen op de nog ontbrekende `noUserRowView`. Niet getoetst tegen een wegwerp-referentie.
