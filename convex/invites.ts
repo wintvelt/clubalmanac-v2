@@ -78,18 +78,22 @@ export const create = mutation({
     const normalizedEmail = normalizeEmail(email);
 
     // WP29 fix 8: geen uitnodiging (en geen mail) aan iemand wiens account
-    // nu wordt verwijderd. Vóór de andere checks; als het verwijderen klaar
-    // is, kan iedereen hem weer uitnodigen.
-    if (await isEmailBeingDeleted(ctx.db, normalizedEmail)) {
-      throw new Error(
-        "Dit adres hoort bij een account dat wordt verwijderd. Probeer het later opnieuw.",
-      );
-    }
+    // nu wordt verwijderd. Als het verwijderen klaar is, kan iedereen hem
+    // weer uitnodigen. Fix-cyclus 2: met groep pas na de admin-check (geen
+    // e-mail-orakel voor niet-admins), maar vóór de check op "al lid".
+    const rejectIfBeingDeleted = async () => {
+      if (await isEmailBeingDeleted(ctx.db, normalizedEmail)) {
+        throw new Error(
+          "Dit adres hoort bij een account dat wordt verwijderd. Probeer het later opnieuw.",
+        );
+      }
+    };
 
     // WP28 besluit 6 (W6): alleen een admin nodigt uit voor een groep. Geen
     // lid of onbekende groep: NOT_MEMBER; lid zonder admin-rol: NOT_ALLOWED.
     if (groupId) {
       await requireAdminForWrite(ctx, groupId);
+      await rejectIfBeingDeleted();
 
       // [GAP] Weiger als de email al member is van de group — beter hier
       // catchen dan pas op accept (oude AWS code deed dat in acceptInvite).
@@ -107,6 +111,10 @@ export const create = mutation({
           throw new Error("Deze gebruiker is al lid van de groep");
         }
       }
+    } else {
+      // Zonder groep mag elke ingelogde user uitnodigen (fix-cyclus 2,
+      // geaccepteerd: zoals de melding over een dubbele open invite).
+      await rejectIfBeingDeleted();
     }
 
     // [GAP] Dedup: voorkom dubbele pending invite voor (email, groupId).

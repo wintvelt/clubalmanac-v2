@@ -448,17 +448,27 @@ const PHASES: Phase[] = [
 
 // ── Stap 3: de Clerk-user ────────────────────────────────────────────
 
+/** Fix 1a en fix-cyclus 2: de bekende omgevingen, exact zo geschreven. */
+const CLERK_KEY_PREFIX_BY_STAGE: Record<string, string> = {
+  prod: "sk_live_",
+  dev: "sk_test_",
+};
+
 /**
- * Fix 1a: de sleutel moet bij de omgeving passen. Prod vraagt `sk_live_`,
- * elke andere stage (ook leeg) `sk_test_`. Een sleutel van de verkeerde
- * Clerk-omgeving geeft 404, en dat telt als gelukt. Geeft de reden voor de
- * mail (zonder de sleutel), of null als de sleutel bruikbaar is.
+ * Fix 1a: de sleutel moet bij de omgeving passen. Prod vraagt `sk_live_`, dev
+ * `sk_test_`. Een sleutel van de verkeerde Clerk-omgeving geeft 404, en dat
+ * telt als gelukt. Fix-cyclus 2: een ontbrekende of onbekende stage is ook
+ * een sleutelprobleem. Geeft de reden voor de mail (zonder de sleutel), of
+ * null als de sleutel bruikbaar is.
  */
-function clerkKeyProblem(key: string | undefined, stage: string): string | null {
+function clerkKeyProblem(key: string | undefined, stage: string | undefined): string | null {
+  const prefix = stage === undefined ? undefined : CLERK_KEY_PREFIX_BY_STAGE[stage];
+  if (prefix === undefined) {
+    return `CLUBALMANAC_STAGE ontbreekt of is onbekend (${stage === undefined ? "niet gezet" : JSON.stringify(stage)}; verwacht prod of dev)`;
+  }
   if (!key) return "CLERK_SECRET_KEY ontbreekt";
-  const prefix = stage === "prod" ? "sk_live_" : "sk_test_";
   if (!key.startsWith(prefix)) {
-    return `CLERK_SECRET_KEY past niet bij de ${stage || "(lege)"} omgeving (verwacht ${prefix}…)`;
+    return `CLERK_SECRET_KEY past niet bij de ${stage} omgeving (verwacht ${prefix}…)`;
   }
   return null;
 }
@@ -483,7 +493,7 @@ export const deleteClerkUser = internalAction({
     const current = await ctx.runQuery(internal.accountDeletion.clerkRunIsCurrent, { userId, run });
     if (!current) return null;
 
-    const stage = process.env.CLUBALMANAC_STAGE ?? "";
+    const stage = process.env.CLUBALMANAC_STAGE;
     const key = process.env.CLERK_SECRET_KEY;
     const keyProblem = clerkKeyProblem(key, stage);
     if (keyProblem !== null || key === undefined) {
