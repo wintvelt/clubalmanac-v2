@@ -5,6 +5,7 @@ import type { QueryCtx } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { getWebmasterEmails } from "./lib/auth";
 import { INFO_SENDER, sendMailjetMessage } from "./lib/mailjet";
+import { ACCOUNT_DELETION_REPORT_AFTER_MS } from "./lib/constants";
 import {
   monitorDriftAlertTemplate,
   monitorHeartbeatTemplate,
@@ -208,6 +209,19 @@ export async function collectDriftLines(ctx: {
         table: "users",
         id: u._id,
         detail: `photoCount stored=${u.photoCount} recompute=${actual}`,
+      });
+    }
+  }
+
+  // ── WP29 A-invariant 7: een account dat blijft hangen in verwijderen ──
+  // Normaal is de rij binnen minuten weg. Staat hij er na een uur nog, dan is
+  // Clerk (of een opruimstap) blijvend mislukt; jonger is geen melding.
+  for (const u of allUsers) {
+    if (u.deletion && now - u.deletion.startedAt > ACCOUNT_DELETION_REPORT_AFTER_MS) {
+      driftRows.push({
+        table: "users",
+        id: u._id,
+        detail: `wordt verwijderd sinds ${new Date(u.deletion.startedAt).toISOString()} (users:retryAccountDeletion)`,
       });
     }
   }

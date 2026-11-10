@@ -8,6 +8,7 @@ import {
 import type { Doc, Id } from "./_generated/dataModel";
 import { internal } from "./_generated/api";
 import { requireCurrentUser } from "./users";
+import { activeUserBySubject } from "./lib/accountState";
 import {
   getWebmasterEmails,
   isWebmaster,
@@ -205,10 +206,7 @@ export const hasUpvoted = query({
   handler: async (ctx, { featureId }) => {
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) return false;
-    const user = await ctx.db
-      .query("users")
-      .withIndex("by_subject", (q) => q.eq("subject", identity.subject))
-      .unique();
+    const user = await activeUserBySubject(ctx.db, identity.subject);
     if (!user) return false;
     const existing = await ctx.db
       .query("featureUpvotes")

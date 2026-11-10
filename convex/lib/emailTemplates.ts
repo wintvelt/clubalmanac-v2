@@ -301,6 +301,42 @@ ${SIGNATURE_TEXT}`;
   return { subject, htmlPart, textPart };
 }
 
+// ---------------------------------------------------------------------------
+// kind = "account-deletion-clerk-failed" (naar webmaster) — WP29
+// ---------------------------------------------------------------------------
+// A-invariant 7: de Clerk-user kon niet worden verwijderd. PII-grens: alleen
+// de Clerk-subject en het Convex-id, geen naam of e-mailadres.
+export function accountDeletionClerkFailedTemplate(opts: {
+  subject: string;
+  userId: string;
+  reason: string;
+  stage: string;
+  timestamp: string;
+}): TemplateBlock {
+  const mailSubject = `Account verwijderen: Clerk-user niet verwijderd (${opts.stage})`;
+  const command = `npx convex run users:retryAccountDeletion '{"userId":"${opts.userId}"}'`;
+
+  const htmlPart = `
+<p>Hi Admin,</p>
+<p>Een lid heeft zijn account verwijderd op de ${escapeHtml(opts.stage)} omgeving. De data in Convex is weg, maar de Clerk-user <strong>${escapeHtml(opts.subject)}</strong> kon niet worden verwijderd (${escapeHtml(opts.reason)}, ${escapeHtml(opts.timestamp)}).</p>
+<p>Tot dat lukt, blijft de users-rij staan en houdt hij elke login tegen. Herstel de oorzaak (bv. <code>CLERK_SECRET_KEY</code>) en start het opnieuw:</p>
+<p><code>${escapeHtml(command)}</code> (op prod met <code>--prod</code>)</p>
+${SIGNATURE_HTML}
+`.trim();
+
+  const textPart = `Hi Admin,
+
+Een lid heeft zijn account verwijderd op de ${opts.stage} omgeving. De data in Convex is weg, maar de Clerk-user ${opts.subject} kon niet worden verwijderd (${opts.reason}, ${opts.timestamp}).
+
+Tot dat lukt, blijft de users-rij staan en houdt hij elke login tegen. Herstel de oorzaak (bv. CLERK_SECRET_KEY) en start het opnieuw:
+
+${command}   (op prod met --prod)
+
+${SIGNATURE_TEXT}`;
+
+  return { subject: mailSubject, htmlPart, textPart };
+}
+
 // Helper: NL-style date format voor invite-expiry. Output bv. "31-12-2026".
 export function formatNlDate(timestamp: number): string {
   const d = new Date(timestamp);

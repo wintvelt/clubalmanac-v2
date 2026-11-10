@@ -9,6 +9,7 @@
  */
 
 import type * as _test from "../_test.js";
+import type * as accountDeletion from "../accountDeletion.js";
 import type * as albums from "../albums.js";
 import type * as crons from "../crons.js";
 import type * as features from "../features.js";
@@ -16,6 +17,7 @@ import type * as groups from "../groups.js";
 import type * as http from "../http.js";
 import type * as images from "../images.js";
 import type * as invites from "../invites.js";
+import type * as lib_accountState from "../lib/accountState.js";
 import type * as lib_auth from "../lib/auth.js";
 import type * as lib_constants from "../lib/constants.js";
 import type * as lib_email from "../lib/email.js";
@@ -50,6 +52,7 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   _test: typeof _test;
+  accountDeletion: typeof accountDeletion;
   albums: typeof albums;
   crons: typeof crons;
   features: typeof features;
@@ -57,6 +60,7 @@ declare const fullApi: ApiFromModules<{
   http: typeof http;
   images: typeof images;
   invites: typeof invites;
+  "lib/accountState": typeof lib_accountState;
   "lib/auth": typeof lib_auth;
   "lib/constants": typeof lib_constants;
   "lib/email": typeof lib_email;

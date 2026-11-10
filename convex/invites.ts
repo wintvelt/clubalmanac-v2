@@ -11,6 +11,7 @@ import {
 import type { Doc } from "./_generated/dataModel";
 import { internal } from "./_generated/api";
 import { requireCurrentUser } from "./users";
+import { activeUserBySubject } from "./lib/accountState";
 import {
   getMembership,
   isGroupInviteStillValid,
@@ -288,10 +289,7 @@ export const listMine = query({
   handler: async (ctx) => {
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) return [];
-    const user = await ctx.db
-      .query("users")
-      .withIndex("by_subject", (q) => q.eq("subject", identity.subject))
-      .unique();
+    const user = await activeUserBySubject(ctx.db, identity.subject);
     if (!user) return [];
     const rows = await ctx.db
       .query("invites")

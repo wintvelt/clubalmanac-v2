@@ -51,7 +51,7 @@ const PRIVACY: readonly InfoBlock[] = [
     kind: "paragraph",
     text: "Je naam en je foto's zien alleen jij, de andere leden van je groepen, en de beheerder van de app (Wouter). Je e-mailadres ziet alleen jij en de beheerder. Verder deelt niemand je gegevens.",
   },
-  { kind: "paragraph", text: "Zeg je je lidmaatschap op, dan worden al je gegevens verwijderd." },
+  { kind: "paragraph", text: "Verwijder je je account (op Profiel), dan worden al je gegevens verwijderd." },
   { kind: "heading", text: "De officiële versie" },
   {
     kind: "paragraph",
@@ -82,7 +82,7 @@ const PRIVACY: readonly InfoBlock[] = [
   {
     kind: "paragraph",
     lead: "Hoe lang.",
-    text: "Zolang je account bestaat. Verwijder je je account, dan verwijderen we ook je gegevens. Tot dat in de app kan, stuur je een mail.",
+    text: "Zolang je account bestaat. Verwijder je je account op Profiel, dan verwijderen we al je gegevens en je login, meestal binnen een paar minuten.",
   },
   {
     kind: "paragraph",

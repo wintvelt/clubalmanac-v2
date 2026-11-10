@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Image, StyleSheet, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useClerkWipeFailed, wipeClerkStorage } from "../auth/deviceClerkStorage";
@@ -14,6 +14,7 @@ import { Notice } from "../components/Notice";
 import { Screen } from "../components/Screen";
 import { Text } from "../components/Text";
 import { TextField } from "../components/TextField";
+import { setAccountDeleted, useAccountDeleted } from "../data/accountDeletion";
 import { wipeRetryShown } from "../lib/wipeRetry";
 import { size, space, useTheme } from "../theme";
 
@@ -34,6 +35,7 @@ export function LoginScreen() {
       </Text>
 
       <TokenWipeNotice step={login.step.step} busy={login.busy} />
+      <AccountDeletedNotice />
 
       {login.step.step === "email" ? (
         <>
@@ -105,6 +107,15 @@ export function LoginScreen() {
       )}
     </Screen>
   );
+}
+
+// WP29 invariant 7: na Account verwijderen de korte bevestiging. Eén keer:
+// verlaat het inlogscherm (inloggen), dan is hij weg.
+function AccountDeletedNotice() {
+  const deleted = useAccountDeleted();
+  useEffect(() => () => setAccountDeleted(false), []);
+  if (!deleted) return null;
+  return <Notice kind="success" message="Je account is verwijderd." />;
 }
 
 // Zachte tint achter het app-icoon, tot onder de statusbalk.

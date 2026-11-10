@@ -9,6 +9,7 @@ import { SignOutButton } from "./auth/SignOutButton";
 import { Button } from "./components/Button";
 import { Text } from "./components/Text";
 import { api } from "./convexApi";
+import { useAccountDeleting } from "./data/accountDeletion";
 import { AuthStateContext, ReconnectContext } from "./data/authStateContext";
 import { restartClerk } from "./data/clerkRestart";
 import { useConvexConnection } from "./data/convexConnection";
@@ -92,6 +93,9 @@ export function AuthGate({ children }: { children: ReactNode }) {
 
   const pathname = usePathname();
   const access = routeAccess(pathname, state);
+  // WP29: na Account verwijderen is users.current `null` tot het uitloggen
+  // klaar is; dan geen "Je account is nog niet klaar" tussendoor.
+  const accountDeleting = useAccountDeleting();
 
   // "login" en "home": de poort leidt zelf om, en wacht niet op de guard.
   useEffect(() => {
@@ -121,7 +125,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
         </StatusScreen>
       );
     case "noUserRow":
-      return <NoUserRowScreen />;
+      return accountDeleting ? <Loading /> : <NoUserRowScreen />;
     case "show":
     case "login":
     case "home":

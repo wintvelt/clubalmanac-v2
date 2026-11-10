@@ -112,6 +112,15 @@ Webmaster-rol via env-var `WEBMASTER_EMAILS` met case-insensitive match (audit-7
 |---|---|---|---|
 | `WEBMASTER_EMAILS` | comma-sep, bv. `clubalmanac-integration-webmaster@example.com` | comma-sep, bv. `wintvelt@me.com` | webmaster-bypass werkt niet; bootstrap onmogelijk |
 | `CLERK_WEBHOOK_SECRET` | `whsec_<base64>` uit Clerk dashboard (Webhooks → Add endpoint → Signing secret) | aparte prod-`whsec_<base64>` | `/clerk-webhook` retourneert 503 voor élk POST (fail-closed, geen accidenteel-open endpoint) |
+| `CLERK_SECRET_KEY` (WP29) | `sk_test_…` (Clerk → API keys, dev-instance) | `sk_live_…` van de prod-instance, **vóór de App Store-build** | Account verwijderen ruimt de Convex-data wel op, maar de Clerk-user blijft; de webmaster krijgt één mail en de users-rij houdt de login tegen (zie hieronder) |
+
+**Account verwijderen (WP29).** `users.deleteSelf` sluit het account af, ruimt Convex in stappen op en verwijdert de Clerk-user met `DELETE https://api.clerk.com/v1/users/{subject}` (Backend API, gratis plan; 404 telt als gelukt). Mislukt Clerk, dan zes pogingen over 111 minuten; daarna, of meteen zonder sleutel, één mail aan `WEBMASTER_EMAILS` met de Clerk-subject. De integriteitscheck meldt de rij zolang hij langer dan een uur wordt verwijderd. Na herstel (sleutel gezet) opnieuw starten, met het Convex-id uit de mail:
+
+```bash
+npx convex run users:retryAccountDeletion '{"userId":"<id>"}'
+```
+
+Op prod met `--prod`. Een lid kan daarna alleen terug met een nieuwe uitnodiging.
 
 Webhook-config Clerk dashboard:
 - **URL**: `https://<deployment>.<region>.convex.site/clerk-webhook` (region-suffix verplicht, zelfde discipline als Mailjet — zie [`work-packages/WP5-email.md`](../work-packages/WP5-email.md) §Webhook-auth correctie 2026-05-18)

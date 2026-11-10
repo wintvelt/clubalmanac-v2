@@ -1,5 +1,6 @@
 import type { MutationCtx, QueryCtx } from "../_generated/server";
 import type { Doc } from "../_generated/dataModel";
+import { activeUserBySubject } from "./accountState";
 
 // Webmaster RBAC. Env-var `WEBMASTER_EMAILS` (comma-separated) per Convex
 // deployment; helper matcht `ctx.auth.getUserIdentity().email` case-insensitive
@@ -39,10 +40,8 @@ export async function requireWebmaster(
 
   // Audit-7 §3: óók requireCurrentUser-equivalent. Inline ipv import
   // (users.ts → photos.ts → lib/auth.ts zou circular zijn).
-  const user = await ctx.db
-    .query("users")
-    .withIndex("by_subject", (q) => q.eq("subject", identity.subject))
-    .unique();
+  // WP29: een account dat wordt verwijderd, telt niet.
+  const user = await activeUserBySubject(ctx.db, identity.subject);
   if (!user) throw new Error("User record bestaat niet");
   return user;
 }
@@ -58,9 +57,5 @@ export async function isWebmaster(ctx: QueryCtx | MutationCtx): Promise<boolean>
   if (!identity || !email || !getWebmasterEmails().includes(email)) {
     return false;
   }
-  const user = await ctx.db
-    .query("users")
-    .withIndex("by_subject", (q) => q.eq("subject", identity.subject))
-    .unique();
-  return user !== null;
+  return (await activeUserBySubject(ctx.db, identity.subject)) !== null;
 }
