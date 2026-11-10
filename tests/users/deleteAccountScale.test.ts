@@ -36,11 +36,13 @@ type T = ReturnType<typeof newLimitedT>;
 beforeEach(() => {
   vi.useFakeTimers();
   process.env.CLERK_SECRET_KEY = "sk_test_wp29";
+  process.env.CLUBALMANAC_STAGE = "dev";
 });
 afterEach(() => {
   vi.useRealTimers();
   vi.unstubAllGlobals();
   delete process.env.CLERK_SECRET_KEY;
+  delete process.env.CLUBALMANAC_STAGE;
 });
 
 async function bigWorld(t: T) {

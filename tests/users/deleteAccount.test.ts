@@ -982,3 +982,104 @@ describe("WP29 fix 6 — de mail aan de webmaster zegt alleen dat de Convex-data
     });
   }
 });
+
+// ── Fix-cyclus 2 ─────────────────────────────────────────────────────
+// Spec: §Fix-cyclus 2 (red-team-hercheck, 2026-11-10).
+
+describe("WP29 fix-cyclus 2, punt 1 — een ontbrekende of onbekende omgeving is een sleutelprobleem", () => {
+  const cases: Array<[string | undefined, string]> = [
+    [undefined, "sk_test_wp29"],
+    ["", "sk_test_wp29"],
+    ["staging", "sk_test_wp29"],
+    ["Prod", "sk_live_wp29"],
+  ];
+  for (const [stage, key] of cases) {
+    const label = stage === undefined ? "(ontbreekt)" : JSON.stringify(stage);
+    it(`stage ${label} met ${key}: geen aanroep naar Clerk, één mail die de stage noemt, data weg, rij blijft`, async () => {
+      if (stage === undefined) delete process.env.CLUBALMANAC_STAGE;
+      else process.env.CLUBALMANAC_STAGE = stage;
+      process.env.CLERK_SECRET_KEY = key;
+      const t = newT();
+      const w = await world(t);
+      // 404 zoals een sk_test_ van een andere omgeving: mag nooit als gelukt tellen.
+      const net = stubNet(() => 404);
+      await rex(t).mutation(api.users.deleteSelf, {});
+      await finish(t);
+
+      expect(net.clerk).toEqual([]);
+      expect(net.mails).toHaveLength(1);
+      expect(net.mails[0]!.to).toEqual([WEBMASTER]);
+      expect(net.mails[0]!.text).toContain("user_rex");
+      expect(net.mails[0]!.text).toContain("CLUBALMANAC_STAGE");
+      expect(net.mails[0]!.text).not.toContain(key);
+      expect(await tracesOfRex(t, w)).toEqual([`users/${w.rex}`]);
+      expect(await rex(t).query(api.users.current, {})).toBeNull();
+    });
+  }
+
+  it("na het zetten van de stage: retryAccountDeletion maakt het af", async () => {
+    delete process.env.CLUBALMANAC_STAGE;
+    const t = newT();
+    const w = await world(t);
+    stubNet();
+    await rex(t).mutation(api.users.deleteSelf, {});
+    await finish(t);
+
+    process.env.CLUBALMANAC_STAGE = "dev";
+    const net = stubNet();
+    await t.mutation(retryRef, { userId: w.rex });
+    await finish(t);
+
+    expect(net.clerk.map((c) => c.auth)).toEqual([`Bearer ${KEY}`]);
+    expect(await get(t, w.rex)).toBeNull();
+    expect(await tracesOfRex(t, w)).toEqual([]);
+  });
+});
+
+describe("WP29 fix-cyclus 2, punt 2 — geen e-mail-orakel in invites.create", () => {
+  /** De uitkomst van een poging, zonder het id van de aanroep. */
+  async function outcome(p: Promise<unknown>): Promise<string> {
+    try {
+      await p;
+      return "ok";
+    } catch (e) {
+      const err = e as Error & { data?: unknown };
+      return JSON.stringify({ message: err.message, data: err.data ?? null });
+    }
+  }
+
+  async function deleting() {
+    const t = newT();
+    const w = await world(t);
+    await t.run(async (ctx) =>
+      ctx.db.insert("users", { subject: "user_eve", email: "eve@x.test", name: "eve", photoCount: 0, photoLimit: 1000, createdAt: Date.now() }),
+    );
+    stubNet(() => 500);
+    await rex(t).mutation(api.users.deleteSelf, {});
+    return { t, w };
+  }
+
+  it("een niet-lid krijgt voor zijn adres dezelfde fout als voor elk ander adres", async () => {
+    const { t, w } = await deleting();
+    const eve = withUser(t, "user_eve");
+    const forRex = await outcome(eve.mutation(api.invites.create, { email: REX_EMAIL, groupId: w.H }));
+    const forOther = await outcome(eve.mutation(api.invites.create, { email: "niemand@x.test", groupId: w.H }));
+    expect(forRex).not.toBe("ok");
+    expect(forRex).toBe(forOther);
+  });
+
+  it("een lid zonder admin-rol idem", async () => {
+    const { t, w } = await deleting();
+    const lex = withUser(t, "user_lex");
+    const forRex = await outcome(lex.mutation(api.invites.create, { email: REX_EMAIL, groupId: w.G }));
+    const forOther = await outcome(lex.mutation(api.invites.create, { email: "niemand@x.test", groupId: w.G }));
+    expect(forRex).not.toBe("ok");
+    expect(forRex).toBe(forOther);
+  });
+
+  it("een admin hoort het wel, ook als hij nog lid is van de groep (vóór de check op 'al lid')", async () => {
+    const { t, w } = await deleting();
+    // Direct na deleteSelf is Rex nog lid van G.
+    await expect(withUser(t, "user_olga").mutation(api.invites.create, { email: REX_EMAIL, groupId: w.G })).rejects.toThrow(/wordt verwijderd/);
+  });
+});

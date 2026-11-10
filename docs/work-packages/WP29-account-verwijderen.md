@@ -166,7 +166,7 @@ Bevindingen van audit en red-team op B's eerste implementatie (`c43741a`). Woute
 ### Besluiten
 
 1. **Een sleutel van de verkeerde Clerk-omgeving** gaf 404, en dat telde als gelukt: de rij ging weg, de Clerk-user bleef, en de volgende login maakte stil een leeg account. Beide fixes:
-   - **a. De sleutel moet bij de omgeving passen.** `CLUBALMANAC_STAGE=prod` vraagt `sk_live_`; elke andere waarde, ook leeg, vraagt `sk_test_`. Past hij niet, dan zoals "sleutel ontbreekt": geen aanroep naar Clerk, één mail aan de webmaster met de reden (zonder de sleutel), de rij blijft, en na herstel maakt `retryAccountDeletion` het af. 404 blijft gelukt: een tweede poging na een geslaagde `DELETE` geeft ook 404.
+   - **a. De sleutel moet bij de omgeving passen.** `CLUBALMANAC_STAGE=prod` vraagt `sk_live_`, `dev` vraagt `sk_test_`. Een ontbrekende of andere stage is ook een sleutelprobleem (fix-cyclus 2). Past hij niet, dan zoals "sleutel ontbreekt": geen aanroep naar Clerk, één mail aan de webmaster met de reden (zonder de sleutel), de rij blijft, en na herstel maakt `retryAccountDeletion` het af. 404 blijft gelukt: een tweede poging na een geslaagde `DELETE` geeft ook 404.
    - **b. Een verwijderde Clerk-user maakt nooit meer een users-rij.** Bij het afsluiten wordt een markering van zijn Clerk-subject bewaard: een SHA-256-hash, met de tijd, zonder id of adres. Hij blijft staan (Clerk hergebruikt geen ids; een paar rijen per jaar). `registerFromSession` maakt voor zo'n subject geen rij, en de webhook geeft 200, anders herhaalt Svix dagenlang. Een andere Clerk-user met hetzelfde adres begint gewoon als nieuw.
    - Een hash en niet de ruwe subject: zolang de Clerk-user bestaat, leidt de subject via Clerk naar de persoon. De hash volstaat om te vergelijken, en de generieke scan van A-invariant 3 blijft geldig.
    - Wat a niet vangt (een `sk_test_` van een andere dev-omgeving): de Clerk-user blijft, en wie daarmee inlogt, ziet "Je account is nog niet klaar", geen leeg account. Geaccepteerd: alleen op dev, en runbook-punt 9a checkt prod.
@@ -177,7 +177,7 @@ Bevindingen van audit en red-team op B's eerste implementatie (`c43741a`). Woute
 5. **Een Clerk-aanroep die nooit antwoordt** stopte de herhaling zonder mail. Nu heeft elke aanroep een timeout van hooguit 30 s. Een timeout telt als mislukte poging: opnieuw proberen, en na de laatste poging de mail. De timeout moet op `setTimeout` lopen (bv. met `AbortController`). `AbortSignal.timeout` loopt in vitest op de echte klok, en dan hangt de test (gecheckt).
 6. **De mail aan de webmaster zei altijd "De data in Convex is weg"**, ook als het opruimen nog liep (bij een ontbrekende sleutel komt de mail al bij de eerste poging) of vastzat. Nu staat die zin er alleen in als het opruimen op dat moment klaar is. Anders bv. "Het opruimen in Convex loopt nog. Loopt het vast, dan meldt de integriteitscheck het."
 7. **Lukt het uitloggen na het verwijderen niet** (`signOutAndWipe` geeft `false`), dan bleef het lid op "Je account is nog niet klaar" staan. Nu toont de poort "Je account is verwijderd", met de melding "Uitloggen lukte niet. Probeer het opnieuw." en de knop Uitloggen. Welk scherm, kiest een pure functie: `noUserRowView({ deleting, deleted }): "loading" | "accountDeleted" | "notReady"` in `app/src/lib/noUserRowView.ts`, met de twee vlaggen uit `app/src/data/accountDeletion.ts`.
-8. **Een admin kon het lid uitnodigen terwijl zijn account werd verwijderd**, en dan ging er nog een mail naar zijn adres. Nu weigert `invites.create` een adres dat bij een account hoort dat wordt verwijderd, met of zonder groep, vóór de andere checks. De melding bevat "wordt verwijderd", bv. "Dit adres hoort bij een account dat wordt verwijderd. Probeer het later opnieuw."
+8. **Een admin kon het lid uitnodigen terwijl zijn account werd verwijderd**, en dan ging er nog een mail naar zijn adres. Nu weigert `invites.create` een adres dat bij een account hoort dat wordt verwijderd, met of zonder groep. Met groep ná de admin-check en vóór de check op "al lid" (fix-cyclus 2). De melding bevat "wordt verwijderd", bv. "Dit adres hoort bij een account dat wordt verwijderd. Probeer het later opnieuw."
    - Vergelijk op het genormaliseerde adres. Een gemigreerde users-rij kan hoofdletters hebben; bv. het adres bij het afsluiten normaliseren.
    - De admin leert zo dat het adres bij een account hoort dat wordt verwijderd. Geaccepteerd: hij ziet nu ook al "al lid van de groep".
 9. **Runbook.** Voor B, in `external-services.md` en de cutover-checklist:
@@ -205,3 +205,22 @@ Gewijzigd in het bestaande testbestand: de fetch-stub noteert of een Clerk-aanro
 In fix 6 met "Clerk blijft falen" komt de mail vóór het einde van het opruimen. Dat komt door de test, niet door de code: `runAllTimers` loopt de wachttijden van Clerk af, terwijl het opruimen stap voor stap gaat. De test checkt alleen of de mail klopt met de stand.
 
 Stand: 16 rood in `deleteAccount.test.ts` en 1 rood testbestand in de app (de module bestaat nog niet), allemaal nieuw en om de bedoelde reden. Verder alles groen: backend 2278, app 1198. `tsc` is schoon in de root; in de app faalt hij alleen op de nog ontbrekende `noUserRowView`. Niet getoetst tegen een wegwerp-referentie.
+
+## Fix-cyclus 2 (A, 2026-11-10)
+
+Twee gaten uit de red-team-hercheck van B's fix-cyclus 1 (`f20c4d7`). Wouter akkoord.
+
+1. **Een ontbrekende of onbekende stage is een sleutelprobleem.** Alleen `prod` (vraagt `sk_live_`) en `dev` (vraagt `sk_test_`) zijn bekend, exact zo geschreven. Een ontbrekende, lege of andere stage (bv. `staging`, `Prod`) gaat zoals een ontbrekende sleutel: geen aanroep naar Clerk, één mail aan de webmaster, de rij blijft. De mail noemt `CLUBALMANAC_STAGE` als reden. Na het zetten van de stage maakt `retryAccountDeletion` het af.
+   - Waarom: zonder stage op prod vond de check een `sk_test_` goed. Clerk gaf 404, dat telde als gelukt, er ging geen mail uit, en de Clerk-user bleef. Het lid zag daarna voor altijd "Je account is nog niet klaar".
+2. **Geen e-mail-orakel in `invites.create`.** De check "dit adres hoort bij een account dat wordt verwijderd" komt bij een groep ná `requireAdminForWrite`. Een niet-lid of een lid zonder admin-rol krijgt voor zijn adres dezelfde fout als voor elk ander adres (`NOT_MEMBER`, `NOT_ALLOWED`), zoals WP23 en WP24 dat voor bestaans-orakels vragen. Een admin krijgt "wordt verwijderd", ook als het lid nog lid van de groep is (de check staat vóór "al lid").
+   - Geaccepteerd: een uitnodiging zonder groep mag elke ingelogde user maken. Daar blijft de melding een orakel, net als de bestaande "Er staat al een open invite voor dit emailadres". Alleen voor ingelogde leden, zonder bijwerking.
+
+### RED tests
+
+| Bestand | Wat |
+|---|---|
+| `tests/users/deleteAccount.test.ts` §fix-cyclus 2, punt 1 | stage ontbreekt, is leeg, `staging` of `Prod`, met Clerk op 404: geen aanroep, één mail die `CLUBALMANAC_STAGE` noemt, rij blijft; retry na het zetten van de stage |
+| idem, punt 2 | niet-lid en lid zonder admin-rol: dezelfde fout voor zijn adres als voor een ander; een admin hoort "wordt verwijderd", ook als het lid nog lid is |
+| `tests/_helpers/deleteAccount.ts`, `tests/users/deleteAccountScale.test.ts` | zetten `CLUBALMANAC_STAGE=dev` als hij ontbreekt; wat ze pinnen blijft gelijk |
+
+Stand: 7 rood, allemaal nieuw en om de bedoelde reden; de rest groen (2295, ook de schaaltest); `tsc` schoon. Niet getoetst tegen een wegwerp-referentie.

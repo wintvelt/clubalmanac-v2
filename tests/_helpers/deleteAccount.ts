@@ -7,7 +7,7 @@ import { api } from "../../convex/_generated/api";
 // `users.deleteSelf` pinnen, roepen deze helper aan: `deleteSelf`, daarna alle
 // geplande stappen, met de Clerk Backend API gestubd (200). Andere fetches
 // (bv. een Mailjet-stub van de test zelf) gaan door naar de fetch die er al
-// stond.
+// stond. Zonder `CLUBALMANAC_STAGE` zet hij `dev` (fix-cyclus 2).
 //
 // Spec: docs/work-packages/WP29-account-verwijderen.md §A-invarianten.
 
@@ -21,6 +21,9 @@ export async function deleteAccount(t: T, client: Client): Promise<void> {
   if (!wasFake) vi.useFakeTimers();
   const hadKey = process.env.CLERK_SECRET_KEY;
   if (hadKey === undefined) process.env.CLERK_SECRET_KEY = "sk_test_helper";
+  // Fix-cyclus 2: zonder bekende omgeving wordt de Clerk-user niet verwijderd.
+  const hadStage = process.env.CLUBALMANAC_STAGE;
+  if (hadStage === undefined) process.env.CLUBALMANAC_STAGE = "dev";
   const previous = globalThis.fetch;
   vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
@@ -35,6 +38,7 @@ export async function deleteAccount(t: T, client: Client): Promise<void> {
   } finally {
     vi.stubGlobal("fetch", previous);
     if (hadKey === undefined) delete process.env.CLERK_SECRET_KEY;
+    if (hadStage === undefined) delete process.env.CLUBALMANAC_STAGE;
     if (!wasFake) vi.useRealTimers();
   }
 }
