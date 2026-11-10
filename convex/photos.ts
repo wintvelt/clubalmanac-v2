@@ -237,7 +237,8 @@ export const createFromUploadInternal = internalMutation({
     }
 
     const user = await ctx.db.get(ownerId);
-    if (!user) throw new Error("User bestaat niet");
+    // WP29 A-invariant 1: geen nieuwe foto als het account wordt verwijderd.
+    if (!user || user.deletion) throw new Error("User bestaat niet");
     if (user.photoCount >= user.photoLimit) {
       // Audit-cyclus-1: typed sentinel string i.p.v. Nederlandstalige
       // "limiet"-substring match in de http handler.

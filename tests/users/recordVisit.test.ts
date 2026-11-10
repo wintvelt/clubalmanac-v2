@@ -6,6 +6,7 @@ import schema from "../../convex/schema";
 import { VISIT_PERIOD_MS } from "../../convex/lib/constants";
 import { registerUser, withUser } from "../_helpers/auth";
 import { modules } from "../_helpers/modules";
+import { deleteAccount } from "../_helpers/deleteAccount";
 
 // WP15b invarianten 5 en 6, A-punt 1 en 2. De client roept users.recordVisit
 // aan bij een terugkeer naar de app. De backend is de garantie: hoogstens één
@@ -152,7 +153,7 @@ describe("users.deleteSelf ruimt het bezoek op (cascade U11)", () => {
   it("na het verwijderen is er geen bezoek meer", async () => {
     const { t, id, as } = await setup();
     await as.mutation(api.users.recordVisit, {});
-    await as.mutation(api.users.deleteSelf, {});
+    await deleteAccount(t, as);
     await t.finishAllScheduledFunctions(vi.runAllTimers);
     expect(await lastVisit(t, id)).toBeNull();
   });
@@ -162,7 +163,7 @@ describe("users.deleteSelf ruimt het bezoek op (cascade U11)", () => {
     const bobId = await registerUser(t, "user_bob", "bob@x.com", "Bob");
     await withUser(t, "user_bob").mutation(api.users.recordVisit, {});
     await as.mutation(api.users.recordVisit, {});
-    await as.mutation(api.users.deleteSelf, {});
+    await deleteAccount(t, as);
     await t.finishAllScheduledFunctions(vi.runAllTimers);
     expect(await lastVisit(t, bobId)).toBe(START);
   });

@@ -340,7 +340,7 @@ export const remove = mutation({
 // uitnodigingen → groep → ratings op de weggehaalde publicaties (AP3,
 // WP28 A-invariant 3). Photos blijven (eigendom van users, niet groups).
 // [Cascade matrix G3, G4, A1, A2, AP3, M2-e]
-async function deleteGroupCascade(
+export async function deleteGroupCascade(
   ctx: MutationCtx,
   groupId: Id<"groups">,
 ): Promise<void> {

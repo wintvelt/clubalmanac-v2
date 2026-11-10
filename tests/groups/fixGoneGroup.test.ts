@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { api, internal } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
 import { as, newT, seedAlbum, seedGroup, type T } from "./_beheer";
+import { deleteAccount } from "../_helpers/deleteAccount";
 
 // WP28 fix-cyclus 1, A-invariant 8 (audit S1): na een gewiste groep wijst
 // niets er nog naar. Geen uitnodiging met die groupId, ongeacht de status, en
@@ -88,7 +89,7 @@ describe("A-invariant 8 — het laatste lid gaat weg (M2-e)", () => {
     // (Anna bestaat nog, zodat invitedBy niets meldt).
     await seedInvites(t, w.groupId, w.users.anna!);
 
-    await as(t, "user_olga").mutation(api.users.deleteSelf, {});
+    await deleteAccount(t, as(t, "user_olga"));
 
     expect(await invitesFor(t, w.groupId)).toEqual([]);
     expect(await t.query(internal.migration.integrityReport, {})).toEqual([]);

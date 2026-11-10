@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { api, internal } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
 import { as, membership, newT, seedGroup, type T } from "../groups/_beheer";
+import { deleteAccount } from "../_helpers/deleteAccount";
 
 // WP28 fix-cyclus 1, A-invariant 10 (red-team R3, audit N3): open
 // uitnodigingen van wie zijn recht verliest, vervallen. Een admin die lid
@@ -136,7 +137,7 @@ describe("A-invariant 10: account verwijderd", () => {
   it("de onboarding van het tweede adres geeft geen lidmaatschap", async () => {
     const t = newT();
     const w = await world(t);
-    await as(t, "user_rex").mutation(api.users.deleteSelf, {});
+    await deleteAccount(t, as(t, "user_rex"));
     const nieuw = await t.mutation(internal.users.registerFromSession, {
       subject: "user_tweede",
       email: "alt-tweede@x.test",

@@ -27,9 +27,36 @@ export default defineSchema({
     // vult ook de migratie dit veld niet meer; opruimen staat op de backlog.
     lastVisitAt: v.optional(v.number()),
     createdAt: v.number(),
+    // WP29: het account wordt verwijderd (convex/accountDeletion.ts). Vanaf
+    // `startedAt` is het lid voor elke publieke functie niet meer ingelogd en
+    // maakt een nieuwe sessie geen nieuwe rij. De rij gaat als laatste weg,
+    // als de Convex-data (`convexDoneAt`) én de Clerk-user (`clerkDoneAt`)
+    // weg zijn. `clerkFailedAt`: Clerk blijvend mislukt, de webmaster is
+    // gemaild (`users.retryAccountDeletion` start het opnieuw). Er loopt
+    // hooguit één reeks Clerk-pogingen: `clerkRun` is het volgnummer van de
+    // lopende reeks, `clerkJobId` de geplande poging ervan (fix 3).
+    deletion: v.optional(
+      v.object({
+        startedAt: v.number(),
+        convexDoneAt: v.optional(v.number()),
+        clerkDoneAt: v.optional(v.number()),
+        clerkFailedAt: v.optional(v.number()),
+        clerkRun: v.optional(v.number()),
+        clerkJobId: v.optional(v.id("_scheduled_functions")),
+      }),
+    ),
   })
     .index("by_subject", ["subject"])
     .index("by_email", ["email"]),
+
+  // WP29 fix 1b: Clerk-users waarvan het account is verwijderd. Alleen een
+  // SHA-256-hash van de subject, zonder id of adres; blijft staan (Clerk
+  // hergebruikt geen ids). `registerFromSession` maakt voor zo'n subject
+  // nooit meer een users-rij.
+  deletedClerkSubjects: defineTable({
+    subjectHash: v.string(),
+    deletedAt: v.number(),
+  }).index("by_subjectHash", ["subjectHash"]),
 
   // ──────────────────────────────────────────────────────────────────
   // Groups
@@ -70,7 +97,10 @@ export default defineSchema({
     sortDate: v.optional(v.number()),
     createdBy: v.id("users"),
     createdAt: v.number(),
-  }).index("by_group", ["groupId"]),
+  })
+    .index("by_group", ["groupId"])
+    // WP29: de albums van wie zijn account verwijdert.
+    .index("by_createdBy", ["createdBy"]),
 
   // Photo ↔ album koppeling (many-to-many). Vervangt GP records.
   albumPhotos: defineTable({
@@ -84,7 +114,9 @@ export default defineSchema({
     .index("by_photo", ["photoId"])
     .index("by_group", ["groupId"])
     // Range scan voor unread count per album (AP1).
-    .index("by_album_added", ["albumId", "addedAt"]),
+    .index("by_album_added", ["albumId", "addedAt"])
+    // WP29: publicaties die iemand toevoegde (gemigreerd: ook andermans foto).
+    .index("by_addedBy", ["addedBy"]),
 
   // ──────────────────────────────────────────────────────────────────
   // Photos
@@ -239,7 +271,9 @@ export default defineSchema({
     createdAt: v.number(),
   })
     .index("by_feature", ["featureId"])
-    .index("by_feature_and_user", ["featureId", "userId"]),
+    .index("by_feature_and_user", ["featureId", "userId"])
+    // WP29: de upvotes van wie zijn account verwijdert.
+    .index("by_user", ["userId"]),
 
   // ──────────────────────────────────────────────────────────────────
   // Album last-seen (per user × album)

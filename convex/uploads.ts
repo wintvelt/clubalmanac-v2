@@ -88,7 +88,8 @@ export const reserve = internalMutation({
     }
 
     const owner = await ctx.db.get(ownerId);
-    if (!owner) throw new Error("User bestaat niet");
+    // WP29 A-invariant 1: ook niet tijdens het verwijderen van het account.
+    if (!owner || owner.deletion) throw new Error("User bestaat niet");
     if (owner.photoCount >= owner.photoLimit) {
       return { kind: "limit" as const };
     }

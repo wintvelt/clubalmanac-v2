@@ -24,3 +24,10 @@ export const NAME_MAX_LENGTH = 50;
  * pas boven ~20 MiB, met een fout die de app niet herkent.
  */
 export const MAX_UPLOAD_BYTES = 15 * 1024 * 1024;
+
+/**
+ * WP29 A-invariant 7: zo lang mag een account "wordt verwijderd" staan voordat
+ * de integriteitscheck het meldt. Normaal is het binnen minuten weg; blijft
+ * het staan, dan is Clerk blijvend mislukt.
+ */
+export const ACCOUNT_DELETION_REPORT_AFTER_MS = 60 * 60 * 1000;

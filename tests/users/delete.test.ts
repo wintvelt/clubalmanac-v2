@@ -5,6 +5,7 @@ import schema from "../../convex/schema";
 import type { Id } from "../../convex/_generated/dataModel";
 import { modules } from "../_helpers/modules";
 import { seedMember } from "../_helpers/membership";
+import { deleteAccount } from "../_helpers/deleteAccount";
 
 // Cascade matrix rows U6, U7, U8: cat-3 cascade deletes vanuit users.deleteSelf.
 // U6 = ratings, U7 = photos + queued storage cleanup action, U8 = memberships.
@@ -68,7 +69,7 @@ describe("U6: deleteSelf cascade ratings", () => {
       });
     });
 
-    await withUser(t, "user_alice").mutation(api.users.deleteSelf, {});
+    await deleteAccount(t, withUser(t, "user_alice"));
 
     const remaining = await t.run((ctx) =>
       ctx.db
@@ -103,7 +104,7 @@ describe("U6: deleteSelf cascade ratings", () => {
       });
     });
 
-    await withUser(t, "user_alice").mutation(api.users.deleteSelf, {});
+    await deleteAccount(t, withUser(t, "user_alice"));
 
     const carolRatings = await t.run((ctx) =>
       ctx.db
@@ -123,9 +124,9 @@ describe("U7: deleteSelf cascade photos + queued storage cleanup", () => {
       const aliceId = await registerUser(t, "user_alice", "a@x.com");
       const { photoId, storageId } = await insertPhoto(t, aliceId);
 
-      await withUser(t, "user_alice").mutation(api.users.deleteSelf, {});
+      await deleteAccount(t, withUser(t, "user_alice"));
 
-      // Photo record meteen weg (transactioneel)
+      // Photo record weg (WP29: na alle stappen, zie de helper)
       const photo = await t.run((ctx) => ctx.db.get(photoId));
       expect(photo).toBeNull();
 
@@ -139,33 +140,21 @@ describe("U7: deleteSelf cascade photos + queued storage cleanup", () => {
     }
   });
 
-  it("queue scheduled action per photo met juiste storage IDs", async () => {
-    vi.useFakeTimers();
-    try {
-      const t = convexTest(schema, modules);
-      const aliceId = await registerUser(t, "user_alice", "a@x.com");
-      const { storageId: s1 } = await insertPhoto(t, aliceId);
-      const { storageId: s2 } = await insertPhoto(t, aliceId);
+  it("de beelden van al zijn foto's zijn uit storage (WP29 A-invariant 3)", async () => {
+    // WP29: het opruimen loopt in stappen via de scheduler; hoeveel acties
+    // daarvoor gepland worden, is niet gepind. Wel het eindresultaat.
+    const t = convexTest(schema, modules);
+    const aliceId = await registerUser(t, "user_alice", "a@x.com");
+    const bobId = await registerUser(t, "user_bob", "b@x.com");
+    const { storageId: s1 } = await insertPhoto(t, aliceId);
+    const { storageId: s2 } = await insertPhoto(t, aliceId);
+    const { storageId: bobs } = await insertPhoto(t, bobId);
 
-      await withUser(t, "user_alice").mutation(api.users.deleteSelf, {});
+    await deleteAccount(t, withUser(t, "user_alice"));
 
-      // internalRemovePhoto schedulet één action per photo (i.p.v. batch).
-      const scheduled = await t.run((ctx) =>
-        ctx.db.system.query("_scheduled_functions").collect(),
-      );
-      expect(scheduled).toHaveLength(2);
-      for (const entry of scheduled) {
-        expect(entry.name).toContain("photos");
-        expect(entry.name).toContain("cleanupStorage");
-      }
-      const allStorageIds = scheduled.flatMap(
-        (entry) =>
-          (entry.args as { storageIds: string[] }[])[0]?.storageIds ?? [],
-      );
-      expect(new Set(allStorageIds)).toEqual(new Set([s1, s2]));
-    } finally {
-      vi.useRealTimers();
-    }
+    expect(await t.run((ctx) => ctx.storage.getUrl(s1))).toBeNull();
+    expect(await t.run((ctx) => ctx.storage.getUrl(s2))).toBeNull();
+    expect(await t.run((ctx) => ctx.storage.getUrl(bobs))).not.toBeNull();
   });
 
   it("photos van andere users blijven", async () => {
@@ -175,22 +164,24 @@ describe("U7: deleteSelf cascade photos + queued storage cleanup", () => {
     const { photoId: alicePhoto } = await insertPhoto(t, aliceId);
     const { photoId: bobPhoto } = await insertPhoto(t, bobId);
 
-    await withUser(t, "user_alice").mutation(api.users.deleteSelf, {});
+    await deleteAccount(t, withUser(t, "user_alice"));
 
     expect(await t.run((ctx) => ctx.db.get(alicePhoto))).toBeNull();
     expect(await t.run((ctx) => ctx.db.get(bobPhoto))).not.toBeNull();
   });
 
-  it("geen scheduled action wanneer user geen photos heeft", async () => {
+  it("zonder foto's lukt het ook, en blijft er niets gepland staan", async () => {
     const t = convexTest(schema, modules);
     await registerUser(t, "user_alice", "a@x.com");
 
-    await withUser(t, "user_alice").mutation(api.users.deleteSelf, {});
+    await deleteAccount(t, withUser(t, "user_alice"));
 
-    const scheduled = await t.run((ctx) =>
-      ctx.db.system.query("_scheduled_functions").collect(),
+    const pending = await t.run(async (ctx) =>
+      (await ctx.db.system.query("_scheduled_functions").collect()).filter(
+        (f) => f.state.kind === "pending" || f.state.kind === "inProgress",
+      ),
     );
-    expect(scheduled).toHaveLength(0);
+    expect(pending).toHaveLength(0);
   });
 });
 
@@ -231,7 +222,7 @@ describe("U9 (eliminated) — albumLastSeen cleanup gedekt door M3 via U8", () =
       {},
     ))!._id;
 
-    await withUser(t, "user_alice").mutation(api.users.deleteSelf, {});
+    await deleteAccount(t, withUser(t, "user_alice"));
 
     const aliceRecords = await t.run((ctx) =>
       ctx.db
@@ -286,7 +277,7 @@ describe("U10: deleteSelf clear flaggedBy refs", () => {
     const originalFlaggedAt = before?.flaggedAt;
     const originalDeleteDate = before?.flaggedDeleteDate;
 
-    await withUser(t, "user_alice").mutation(api.users.deleteSelf, {});
+    await deleteAccount(t, withUser(t, "user_alice"));
 
     const after = await t.run((ctx) => ctx.db.get(flaggedPhoto));
     expect(after).not.toBeNull();
@@ -317,7 +308,7 @@ describe("U10: deleteSelf clear flaggedBy refs", () => {
       });
     });
 
-    await withUser(t, "user_alice").mutation(api.users.deleteSelf, {});
+    await deleteAccount(t, withUser(t, "user_alice"));
 
     const after = await t.run((ctx) => ctx.db.get(carolFlagged));
     expect(after?.flaggedBy).toBe(carolId);
@@ -347,7 +338,7 @@ describe("U8: deleteSelf cascade memberships", () => {
       userId: aliceId,
     });
 
-    await withUser(t, "user_alice").mutation(api.users.deleteSelf, {});
+    await deleteAccount(t, withUser(t, "user_alice"));
 
     const remaining = await t.run((ctx) =>
       ctx.db
@@ -391,7 +382,7 @@ describe("U8 — M2 cascade (transitief vanuit deleteSelf)", () => {
       userId: bobId,
     });
 
-    await withUser(t, "user_alice").mutation(api.users.deleteSelf, {});
+    await deleteAccount(t, withUser(t, "user_alice"));
 
     const aliceMem = await t.run((ctx) =>
       ctx.db
@@ -452,7 +443,7 @@ describe("U8 — M2 cascade (transitief vanuit deleteSelf)", () => {
       }
     });
 
-    await withUser(t, "user_alice").mutation(api.users.deleteSelf, {});
+    await deleteAccount(t, withUser(t, "user_alice"));
 
     const aliceMem = await t.run((ctx) =>
       ctx.db
@@ -498,7 +489,7 @@ describe("U8 — M2 cascade (transitief vanuit deleteSelf)", () => {
       photoId,
     });
 
-    await withUser(t, "user_alice").mutation(api.users.deleteSelf, {});
+    await deleteAccount(t, withUser(t, "user_alice"));
 
     const aliceMem = await t.run((ctx) =>
       ctx.db

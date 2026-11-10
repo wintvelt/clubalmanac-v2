@@ -10,7 +10,9 @@
 //   deps), met de cleanup van de vorige keer. Zoals React: na de render.
 // - createContext/useContext: de standaardwaarde, of wat de test met
 //   `provide()` zet.
-// - useRef, useMemo, useCallback: genoeg voor componenten in de app.
+// - useRef, useMemo, useCallback, useSyncExternalStore: genoeg voor componenten
+//   in de app.
+// - unmount(): draait de cleanups, zoals React bij het weghalen van een boom.
 //
 // Bewust beperkt: één boom tegelijk, geen kinderen die zelf renderen. Een
 // component geeft een element terug; de test zoekt daarin met `findAll`.
@@ -81,6 +83,10 @@ export function createHookRuntime() {
     useCallback<T>(fn: T, deps?: Deps) {
       return react.useMemo(() => fn, deps);
     },
+    // Geen abonnement: de test rendert zelf opnieuw (`settle`).
+    useSyncExternalStore<T>(_subscribe: (l: () => void) => () => void, getSnapshot: () => T) {
+      return getSnapshot();
+    },
   };
   // `import React from "react"` en `import { x } from "react"` allebei.
   const module = { ...react, default: react };
@@ -124,6 +130,16 @@ export function createHookRuntime() {
       outputs.length = 0;
       current = fn;
       return rerender<T>();
+    },
+    /** Haal de boom weg: elke cleanup van een effect draait, zoals bij unmount in React. */
+    unmount() {
+      const run = cleanups;
+      cleanups = [];
+      slots = [];
+      effectDeps = [];
+      pending = [];
+      current = null;
+      for (const cleanup of run) if (typeof cleanup === "function") cleanup();
     },
     /** Na een setter of een opgeloste promise: render tot alles stil is. */
     async settle<T>(): Promise<T> {

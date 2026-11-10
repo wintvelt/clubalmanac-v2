@@ -4,6 +4,7 @@ import { api , internal } from "../../convex/_generated/api";
 import schema from "../../convex/schema";
 import { modules } from "../_helpers/modules";
 import { seedMember } from "../_helpers/membership";
+import { deleteAccount } from "../_helpers/deleteAccount";
 
 // Cascade matrix rows M1, M2, M3: cascades + admin/founder-successie
 // vanuit groups.removeMember (UM delete trigger).
@@ -434,7 +435,7 @@ describe("M2 (c): laatste admin vertrekt met members nog over", () => {
     // Alice (enige admin én founder) vertrekt
     // WP28 besluit 4: de oprichter vertrekt niet; zijn opvolging loopt alleen
     // nog via accountverwijdering (U8 → internalRemoveMember).
-    await withUser(t, "user_alice").mutation(api.users.deleteSelf, {});
+    await deleteAccount(t, withUser(t, "user_alice"));
 
     const remaining = await t.run((ctx) =>
       ctx.db
@@ -498,7 +499,7 @@ describe("M2 (c-extended): 3+ overgebleven members, willekeurige joinedAt-volgor
 
     // WP28 besluit 4: de oprichter vertrekt niet; zijn opvolging loopt alleen
     // nog via accountverwijdering (U8 → internalRemoveMember).
-    await withUser(t, "user_alice").mutation(api.users.deleteSelf, {});
+    await deleteAccount(t, withUser(t, "user_alice"));
 
     const group = await t.run((ctx) => ctx.db.get(groupId));
     expect(group?.createdBy).toBe(carolId);
@@ -532,7 +533,7 @@ describe("M2 (d): founder vertrekt met andere admin aanwezig", () => {
     // Alice (founder, admin) vertrekt; Bob is ook admin
     // WP28 besluit 4: de oprichter vertrekt niet; zijn opvolging loopt alleen
     // nog via accountverwijdering (U8 → internalRemoveMember).
-    await withUser(t, "user_alice").mutation(api.users.deleteSelf, {});
+    await deleteAccount(t, withUser(t, "user_alice"));
 
     const group = await t.run((ctx) => ctx.db.get(groupId));
     expect(group?.createdBy).toBe(bobId);
@@ -599,7 +600,7 @@ describe("M2 (d-extended): founder vertrekt met meerdere admins, oudste wint", (
 
     // WP28 besluit 4: de oprichter vertrekt niet; zijn opvolging loopt alleen
     // nog via accountverwijdering (U8 → internalRemoveMember).
-    await withUser(t, "user_alice").mutation(api.users.deleteSelf, {});
+    await deleteAccount(t, withUser(t, "user_alice"));
 
     const group = await t.run((ctx) => ctx.db.get(groupId));
     expect(group?.createdBy).toBe(carolId);
@@ -701,7 +702,7 @@ describe("M2 (e): laatste lid vertrekt → group + albums + albumPhotos cascade"
 
     // WP28 besluit 4: de oprichter vertrekt niet; zijn opvolging loopt alleen
     // nog via accountverwijdering (U8 → internalRemoveMember).
-    await withUser(t, "user_alice").mutation(api.users.deleteSelf, {});
+    await deleteAccount(t, withUser(t, "user_alice"));
 
     expect(await t.run((ctx) => ctx.db.get(groupId))).toBeNull();
     expect(await t.run((ctx) => ctx.db.get(albumId))).toBeNull();
@@ -754,12 +755,12 @@ describe("M2 (e-dangling): geen residu albumLastSeen na laatste vertrek", () => 
     // Alice vertrekt: M3 ruimt alice's lastSeen voor deze group.
     // WP28 besluit 4: de oprichter vertrekt niet; zijn opvolging loopt alleen
     // nog via accountverwijdering (U8 → internalRemoveMember).
-    await withUser(t, "user_alice").mutation(api.users.deleteSelf, {});
+    await deleteAccount(t, withUser(t, "user_alice"));
 
     // Bob is solo over — vertrekt → (e) cascade.
     // WP28 besluit 4: de oprichter vertrekt niet; zijn opvolging loopt alleen
     // nog via accountverwijdering (U8 → internalRemoveMember).
-    await withUser(t, "user_bob").mutation(api.users.deleteSelf, {});
+    await deleteAccount(t, withUser(t, "user_bob"));
 
     // Geen enkel albumLastSeen record mag blijven hangen.
     const allLastSeen = await t.run((ctx) =>

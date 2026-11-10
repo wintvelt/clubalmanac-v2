@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { api, internal } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
 import { as, newT, type T } from "../readWhitelist/_world";
+import { deleteAccount } from "../_helpers/deleteAccount";
 
 // WP17b A-keuze 1 (kernvondst 2): een foto wissen wist ook elke profielfoto
 // die het beeld van die foto is, in dezelfde transactie. v1 deed dat via
@@ -95,7 +96,7 @@ describe("A-keuze 1: een foto wissen wist de profielfoto die dat beeld is", () =
     const t = newT();
     const w = await world(t);
     const before = await profiles(t, w);
-    await as(t, "user_alice", "alice@x.com").mutation(api.users.deleteSelf, {});
+    await deleteAccount(t, as(t, "user_alice", "alice@x.com"));
     const after = await profiles(t, w);
     expect(after.bob).toBeUndefined();
     expect(after.carol).toBe(before.carol);

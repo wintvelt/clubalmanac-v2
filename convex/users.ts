@@ -8,9 +8,9 @@ import {
   type QueryCtx,
 } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
-import { internalRemovePhoto } from "./photos";
-import { recomputeRatingAggregate } from "./ratings";
-import { internalRemoveMember, isGroupInviteStillValid } from "./groups";
+import { isGroupInviteStillValid } from "./groups";
+import { restartAccountDeletion, startAccountDeletion } from "./accountDeletion";
+import { activeUserBySubject, isDeletedClerkSubject, userBySubject } from "./lib/accountState";
 import { normalizeEmail } from "./lib/email";
 import {
   DEFAULT_PHOTO_LIMIT,
@@ -26,7 +26,6 @@ import {
   publicProfileFields,
 } from "./lib/shapes";
 import { avatarFieldsOf } from "./lib/profilePhoto";
-import { photosPublishedIn } from "./lib/unpublish";
 
 // Default upload-limiet voor nieuwe users. Mocht een admin een hogere limiet
 // willen geven, dan kan dat via directe DB patch (geen public mutation in
@@ -34,14 +33,13 @@ import { photosPublishedIn } from "./lib/unpublish";
 // Gedeeld met scripts/migrate (WP12) via convex/lib/constants.ts.
 export { DEFAULT_PHOTO_LIMIT };
 
+// WP29 A-invariant 1: een account dat wordt verwijderd, is niet ingelogd. Alle
+// publieke gates (requireCurrentUser, current, upload) lopen hierlangs.
 export async function getBySubject(
   ctx: QueryCtx,
   subject: string,
 ): Promise<Doc<"users"> | null> {
-  return await ctx.db
-    .query("users")
-    .withIndex("by_subject", (q) => q.eq("subject", subject))
-    .unique();
+  return await activeUserBySubject(ctx.db, subject);
 }
 
 // Callable van httpAction (POST /upload) — actions kunnen geen plain
@@ -155,8 +153,16 @@ export const registerFromSession = internalMutation({
   },
   returns: v.id("users"),
   handler: async (ctx, { subject, email, name }) => {
-    const existing = await getBySubject(ctx, subject);
+    // WP29 A-invariant 2: ook een account dat wordt verwijderd telt als
+    // bestaand, zodat een nieuwe sessie geen nieuwe, lege rij maakt.
+    const existing = await userBySubject(ctx.db, subject);
     if (existing) return existing._id;
+    // WP29 fix 1b: een Clerk-user waarvan het account is verwijderd, krijgt
+    // nooit meer een rij (ook niet als de Clerk-user nog bestaat). De webhook
+    // kijkt dit vooraf na (isDeletedSubject) en geeft dan gewoon 200.
+    if (await isDeletedClerkSubject(ctx.db, subject)) {
+      throw new Error("Dit account is verwijderd");
+    }
 
     const normalizedEmail = normalizeEmail(email);
 
@@ -308,101 +314,40 @@ export const getLastVisit = internalQuery({
   },
 });
 
+// WP29: account verwijderen. Deze mutation sluit het account alleen af, in één
+// kleine transactie (A-invariant 1); het opruimen van Convex in stappen en het
+// verwijderen van de Clerk-user staan in convex/accountDeletion.ts. Wordt het
+// account al verwijderd, dan doet een tweede aanroep niets. Cascade U6–U11.
 export const deleteSelf = mutation({
   args: {},
+  returns: v.null(),
   handler: async (ctx) => {
-    const user = await requireCurrentUser(ctx);
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) throw new Error("Niet ingelogd");
+    const user = await userBySubject(ctx.db, identity.subject);
+    if (!user) throw new Error("User record bestaat niet");
+    await startAccountDeletion(ctx, user);
+    return null;
+  },
+});
 
-    // U6: cascade ratings die deze user gegeven heeft.
-    const ratings = await ctx.db
-      .query("ratings")
-      .withIndex("by_user", (q) => q.eq("userId", user._id))
-      .collect();
-    for (const r of ratings) await ctx.db.delete(r._id);
-    // WP28 A-invariant 7: het gemiddelde en het aantal op die foto's kloppen
-    // daarna weer (R1). Een eigen foto gaat hieronder toch weg.
-    // A-invariant 14: één read per foto, ook bij een rating op elke foto van
-    // een grote groep. Een foto die in een van zijn groepen gepubliceerd
-    // staat, bestaat; alleen voor een andere foto eerst een get.
-    const photos = await ctx.db
-      .query("photos")
-      .withIndex("by_owner", (q) => q.eq("ownerId", user._id))
-      .collect();
-    const own = new Set(photos.map((p) => p._id));
-    const rated = new Set(ratings.map((r) => r.photoId));
-    const groupIds = (
-      await ctx.db
-        .query("memberships")
-        .withIndex("by_user", (q) => q.eq("userId", user._id))
-        .collect()
-    ).map((m) => m.groupId);
-    const published = rated.size > 0 ? await photosPublishedIn(ctx, groupIds) : new Set();
-    for (const photoId of rated) {
-      if (own.has(photoId)) continue;
-      if (published.has(photoId) || (await ctx.db.get(photoId))) {
-        await recomputeRatingAggregate(ctx, photoId);
-      }
-    }
+/** WP29 fix 1b: is het account van deze Clerk-user verwijderd? Voor de webhook. */
+export const isDeletedSubject = internalQuery({
+  args: { subject: v.string() },
+  returns: v.boolean(),
+  handler: async (ctx, { subject }) => await isDeletedClerkSubject(ctx.db, subject),
+});
 
-    // U7: cascade photos via internalRemovePhoto, dat per photo ook
-    // P3 (albumPhotos), P4 (ratings van anderen op deze photo), P5
-    // (cover-refs) afhandelt + storage cleanup queueet. Voorkomt dat
-    // user-delete orphans achterlaat in downstream tabellen.
-    //
-    // Volgorde: photos vóór memberships. P5 cleart cover-refs op
-    // groups/albums vóór een eventuele M2-e group-cascade in U8 loopt;
-    // andersom zou M2-e groups/albums hebben gedeleted en dan zou P5
-    // proberen patchen op niet-bestaande records.
-    for (const p of photos) await internalRemovePhoto(ctx, p._id);
-
-    // WP18 A-invariant 22: alle upload-reserveringen van de user, ook "nog
-    // bezig" (hun ownerId is verplicht; anders meldt de integriteitscheck ze).
-    const reservations = await ctx.db
-      .query("uploadIdempotency")
-      .withIndex("by_owner_and_clientUploadId", (q) =>
-        q.eq("ownerId", user._id),
-      )
-      .collect();
-    for (const r of reservations) await ctx.db.delete(r._id);
-
-    // U8: cascade memberships, transitief via internalRemoveMember zodat
-    // de M2-keten (admin/founder-successie + M2-e group-cascade bij
-    // laatste lid) per membership draait. M3 binnen internalRemoveMember
-    // ruimt albumLastSeen voor (user × albums in déze group) op — daardoor
-    // is U9 als aparte cascade vervallen (cat-1 eliminated). Audit-bevinding
-    // 2026-04-30: pure record-delete liet productie achter met groepen
-    // zonder admin / orphan createdBy / orphan groups+albums.
-    const memberships = await ctx.db
-      .query("memberships")
-      .withIndex("by_user", (q) => q.eq("userId", user._id))
-      .collect();
-    for (const m of memberships) {
-      await internalRemoveMember(ctx, {
-        userId: user._id,
-        groupId: m.groupId,
-      });
-    }
-
-    // U10: clear flaggedBy refs op photos die deze user heeft geflagd.
-    // Default keuze: flag-state blijft (content-inappropriateness staat
-    // los van flagger-bestaan), alleen flaggedBy wordt undefined zodat
-    // we geen orphan ref hebben. by_flagged is sparse op flaggedAt:
-    // alleen geflagde photos zitten erin.
-    const flagged = await ctx.db
-      .query("photos")
-      .withIndex("by_flagged")
-      .collect();
-    for (const p of flagged) {
-      if (p.flaggedBy === user._id) {
-        await ctx.db.patch(p._id, { flaggedBy: undefined });
-      }
-    }
-
-    // U11 (WP15b): het bezoek van deze user.
-    const visit = await visitRow(ctx, user._id);
-    if (visit) await ctx.db.delete(visit._id);
-
-    await ctx.db.delete(user._id);
+// WP29 A-invariant 7: de webmaster start het verwijderen opnieuw, bv. na het
+// herstellen van CLERK_SECRET_KEY. Voor een account dat niet wordt verwijderd
+// doet hij niets.
+//   npx convex run users:retryAccountDeletion '{"userId":"..."}'
+export const retryAccountDeletion = internalMutation({
+  args: { userId: v.id("users") },
+  returns: v.null(),
+  handler: async (ctx, { userId }) => {
+    await restartAccountDeletion(ctx, userId);
+    return null;
   },
 });
 

@@ -1,9 +1,10 @@
 import { useMutation } from "convex/react";
 import * as ImagePicker from "expo-image-picker";
-import { useIsFocused } from "expo-router";
+import { router, useIsFocused } from "expo-router";
 import { useEffect, useRef, useState } from "react";
 import { Alert, Linking, StyleSheet, View } from "react-native";
 import { Button } from "../components/Button";
+import { ListRow, ListSection } from "../components/ListRow";
 import { Notice } from "../components/Notice";
 import { SmallButton } from "../components/SmallButton";
 import { ProfileAvatar } from "../components/Photo";
@@ -133,6 +134,19 @@ export function ProfileScreen() {
       {feedback?.kind === "saved" && <Notice kind="success" message="Je naam is opgeslagen." />}
 
       <ProfilePhotoActions hasPhoto={me.profileVersion !== "0"} />
+
+      {/* WP29: gevaarlijke rij, in een eigen blok onderaan. */}
+      <View style={styles.dangerBlock}>
+        <ListSection>
+          <ListRow
+            title="Account verwijderen"
+            icon="trash"
+            danger
+            chevron
+            onPress={() => router.push("/profiel/verwijderen")}
+          />
+        </ListSection>
+      </View>
     </Screen>
   );
 }
@@ -320,4 +334,5 @@ const styles = StyleSheet.create({
   head: { flexDirection: "row", alignItems: "center", gap: space.l },
   headText: { flex: 1 },
   row: { flexDirection: "row", flexWrap: "wrap", gap: space.s },
+  dangerBlock: { marginTop: space.xl },
 });
