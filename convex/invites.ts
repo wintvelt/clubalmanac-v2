@@ -11,7 +11,7 @@ import {
 import type { Doc } from "./_generated/dataModel";
 import { internal } from "./_generated/api";
 import { requireCurrentUser } from "./users";
-import { activeUserBySubject } from "./lib/accountState";
+import { activeUserBySubject, isEmailBeingDeleted } from "./lib/accountState";
 import {
   getMembership,
   isGroupInviteStillValid,
@@ -76,6 +76,15 @@ export const create = mutation({
   handler: async (ctx, { email, groupId, role }) => {
     const user = await requireCurrentUser(ctx);
     const normalizedEmail = normalizeEmail(email);
+
+    // WP29 fix 8: geen uitnodiging (en geen mail) aan iemand wiens account
+    // nu wordt verwijderd. Vóór de andere checks; als het verwijderen klaar
+    // is, kan iedereen hem weer uitnodigen.
+    if (await isEmailBeingDeleted(ctx.db, normalizedEmail)) {
+      throw new Error(
+        "Dit adres hoort bij een account dat wordt verwijderd. Probeer het later opnieuw.",
+      );
+    }
 
     // WP28 besluit 6 (W6): alleen een admin nodigt uit voor een groep. Geen
     // lid of onbekende groep: NOT_MEMBER; lid zonder admin-rol: NOT_ALLOWED.

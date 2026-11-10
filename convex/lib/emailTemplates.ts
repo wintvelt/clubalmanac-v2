@@ -310,15 +310,20 @@ export function accountDeletionClerkFailedTemplate(opts: {
   subject: string;
   userId: string;
   reason: string;
+  /** Fix 6: is het opruimen in Convex op het moment van de mail klaar? */
+  convexDone: boolean;
   stage: string;
   timestamp: string;
 }): TemplateBlock {
   const mailSubject = `Account verwijderen: Clerk-user niet verwijderd (${opts.stage})`;
   const command = `npx convex run users:retryAccountDeletion '{"userId":"${opts.userId}"}'`;
+  const convexState = opts.convexDone
+    ? "De data in Convex is weg"
+    : "Het opruimen in Convex loopt nog (loopt het vast, dan meldt de integriteitscheck het)";
 
   const htmlPart = `
 <p>Hi Admin,</p>
-<p>Een lid heeft zijn account verwijderd op de ${escapeHtml(opts.stage)} omgeving. De data in Convex is weg, maar de Clerk-user <strong>${escapeHtml(opts.subject)}</strong> kon niet worden verwijderd (${escapeHtml(opts.reason)}, ${escapeHtml(opts.timestamp)}).</p>
+<p>Een lid heeft zijn account verwijderd op de ${escapeHtml(opts.stage)} omgeving. ${escapeHtml(convexState)}, maar de Clerk-user <strong>${escapeHtml(opts.subject)}</strong> kon niet worden verwijderd (${escapeHtml(opts.reason)}, ${escapeHtml(opts.timestamp)}).</p>
 <p>Tot dat lukt, blijft de users-rij staan en houdt hij elke login tegen. Herstel de oorzaak (bv. <code>CLERK_SECRET_KEY</code>) en start het opnieuw:</p>
 <p><code>${escapeHtml(command)}</code> (op prod met <code>--prod</code>)</p>
 ${SIGNATURE_HTML}
@@ -326,7 +331,7 @@ ${SIGNATURE_HTML}
 
   const textPart = `Hi Admin,
 
-Een lid heeft zijn account verwijderd op de ${opts.stage} omgeving. De data in Convex is weg, maar de Clerk-user ${opts.subject} kon niet worden verwijderd (${opts.reason}, ${opts.timestamp}).
+Een lid heeft zijn account verwijderd op de ${opts.stage} omgeving. ${convexState}, maar de Clerk-user ${opts.subject} kon niet worden verwijderd (${opts.reason}, ${opts.timestamp}).
 
 Tot dat lukt, blijft de users-rij staan en houdt hij elke login tegen. Herstel de oorzaak (bv. CLERK_SECRET_KEY) en start het opnieuw:
 

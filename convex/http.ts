@@ -181,6 +181,12 @@ http.route({
     }
     const name = resolveName(user);
 
+    // WP29 fix 1b: een Clerk-user waarvan het account is verwijderd, krijgt
+    // geen rij. 200, anders herhaalt Svix het dagenlang.
+    if (await ctx.runQuery(internal.users.isDeletedSubject, { subject })) {
+      return new Response(null, { status: 200 });
+    }
+
     await ctx.runMutation(internal.users.registerFromSession, {
       subject,
       email,

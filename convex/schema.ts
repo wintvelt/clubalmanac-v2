@@ -32,18 +32,31 @@ export default defineSchema({
     // maakt een nieuwe sessie geen nieuwe rij. De rij gaat als laatste weg,
     // als de Convex-data (`convexDoneAt`) én de Clerk-user (`clerkDoneAt`)
     // weg zijn. `clerkFailedAt`: Clerk blijvend mislukt, de webmaster is
-    // gemaild (`users.retryAccountDeletion` start het opnieuw).
+    // gemaild (`users.retryAccountDeletion` start het opnieuw). Er loopt
+    // hooguit één reeks Clerk-pogingen: `clerkRun` is het volgnummer van de
+    // lopende reeks, `clerkJobId` de geplande poging ervan (fix 3).
     deletion: v.optional(
       v.object({
         startedAt: v.number(),
         convexDoneAt: v.optional(v.number()),
         clerkDoneAt: v.optional(v.number()),
         clerkFailedAt: v.optional(v.number()),
+        clerkRun: v.optional(v.number()),
+        clerkJobId: v.optional(v.id("_scheduled_functions")),
       }),
     ),
   })
     .index("by_subject", ["subject"])
     .index("by_email", ["email"]),
+
+  // WP29 fix 1b: Clerk-users waarvan het account is verwijderd. Alleen een
+  // SHA-256-hash van de subject, zonder id of adres; blijft staan (Clerk
+  // hergebruikt geen ids). `registerFromSession` maakt voor zo'n subject
+  // nooit meer een users-rij.
+  deletedClerkSubjects: defineTable({
+    subjectHash: v.string(),
+    deletedAt: v.number(),
+  }).index("by_subjectHash", ["subjectHash"]),
 
   // ──────────────────────────────────────────────────────────────────
   // Groups

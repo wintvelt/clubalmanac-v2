@@ -7,6 +7,8 @@ import { useSyncExternalStore } from "react";
 //    `null`; de poort zou dan even "Je account is nog niet klaar" tonen tot het
 //    uitloggen klaar is. Zolang dit staat, toont de poort alleen "Laden…".
 // 2. "Verwijderd": het inlogscherm toont één keer "Je account is verwijderd."
+//    Lukt het uitloggen niet, dan toont de poort dat scherm, met Uitloggen
+//    (lib/noUserRowView.ts).
 
 type Listener = () => void;
 

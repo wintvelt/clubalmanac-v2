@@ -10,7 +10,7 @@ import {
 import type { Doc, Id } from "./_generated/dataModel";
 import { isGroupInviteStillValid } from "./groups";
 import { restartAccountDeletion, startAccountDeletion } from "./accountDeletion";
-import { activeUserBySubject, userBySubject } from "./lib/accountState";
+import { activeUserBySubject, isDeletedClerkSubject, userBySubject } from "./lib/accountState";
 import { normalizeEmail } from "./lib/email";
 import {
   DEFAULT_PHOTO_LIMIT,
@@ -157,6 +157,12 @@ export const registerFromSession = internalMutation({
     // bestaand, zodat een nieuwe sessie geen nieuwe, lege rij maakt.
     const existing = await userBySubject(ctx.db, subject);
     if (existing) return existing._id;
+    // WP29 fix 1b: een Clerk-user waarvan het account is verwijderd, krijgt
+    // nooit meer een rij (ook niet als de Clerk-user nog bestaat). De webhook
+    // kijkt dit vooraf na (isDeletedSubject) en geeft dan gewoon 200.
+    if (await isDeletedClerkSubject(ctx.db, subject)) {
+      throw new Error("Dit account is verwijderd");
+    }
 
     const normalizedEmail = normalizeEmail(email);
 
@@ -323,6 +329,13 @@ export const deleteSelf = mutation({
     await startAccountDeletion(ctx, user);
     return null;
   },
+});
+
+/** WP29 fix 1b: is het account van deze Clerk-user verwijderd? Voor de webhook. */
+export const isDeletedSubject = internalQuery({
+  args: { subject: v.string() },
+  returns: v.boolean(),
+  handler: async (ctx, { subject }) => await isDeletedClerkSubject(ctx.db, subject),
 });
 
 // WP29 A-invariant 7: de webmaster start het verwijderen opnieuw, bv. na het

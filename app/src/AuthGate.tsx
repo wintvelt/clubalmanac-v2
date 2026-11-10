@@ -7,9 +7,10 @@ import { wipeClerkStorage } from "./auth/deviceClerkStorage";
 import { useLoginRequestRunning } from "./auth/loginRequest";
 import { SignOutButton } from "./auth/SignOutButton";
 import { Button } from "./components/Button";
+import { Notice } from "./components/Notice";
 import { Text } from "./components/Text";
 import { api } from "./convexApi";
-import { useAccountDeleting } from "./data/accountDeletion";
+import { useAccountDeleted, useAccountDeleting } from "./data/accountDeletion";
 import { AuthStateContext, ReconnectContext } from "./data/authStateContext";
 import { restartClerk } from "./data/clerkRestart";
 import { useConvexConnection } from "./data/convexConnection";
@@ -17,6 +18,7 @@ import { useAppState } from "./data/useAppState";
 import { useSessionQuery } from "./data/useLiveQuery";
 import { useOnline } from "./data/online";
 import { useRecordVisit } from "./data/useRecordVisit";
+import { noUserRowView, type NoUserRowView } from "./lib/noUserRowView";
 import { RECONNECT_TIMEOUT_MS } from "./lib/reconnectView";
 import { routeAccess } from "./lib/routeAccess";
 import {
@@ -94,8 +96,10 @@ export function AuthGate({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const access = routeAccess(pathname, state);
   // WP29: na Account verwijderen is users.current `null` tot het uitloggen
-  // klaar is; dan geen "Je account is nog niet klaar" tussendoor.
+  // klaar is; dan geen "Je account is nog niet klaar" tussendoor, en als het
+  // uitloggen mislukt "Je account is verwijderd" (noUserRowView).
   const accountDeleting = useAccountDeleting();
+  const accountDeleted = useAccountDeleted();
 
   // "login" en "home": de poort leidt zelf om, en wacht niet op de guard.
   useEffect(() => {
@@ -125,7 +129,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
         </StatusScreen>
       );
     case "noUserRow":
-      return accountDeleting ? <Loading /> : <NoUserRowScreen />;
+      return <NoUserRow view={noUserRowView({ deleting: accountDeleting, deleted: accountDeleted })} />;
     case "show":
     case "login":
     case "home":
@@ -258,6 +262,27 @@ function StartupFailedScreen({
 
 function Loading() {
   return <StatusScreen spinner spinnerLabel="Laden…" />;
+}
+
+function NoUserRow({ view }: { view: NoUserRowView }) {
+  switch (view) {
+    case "loading":
+      return <Loading />;
+    case "accountDeleted":
+      return <AccountDeletedScreen />;
+    case "notReady":
+      return <NoUserRowScreen />;
+  }
+}
+
+// WP29 fix 7: het account is verwijderd, maar het uitloggen daarna lukte niet.
+function AccountDeletedScreen() {
+  return (
+    <StatusScreen title="Je account is verwijderd">
+      <Notice kind="error" message="Uitloggen lukte niet. Probeer het opnieuw." />
+      <SignOutButton />
+    </StatusScreen>
+  );
 }
 
 function NoUserRowScreen() {

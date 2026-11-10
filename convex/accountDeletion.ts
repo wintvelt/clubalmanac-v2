@@ -2,6 +2,7 @@ import { v } from "convex/values";
 import {
   internalAction,
   internalMutation,
+  internalQuery,
   type ActionCtx,
   type MutationCtx,
 } from "./_generated/server";
@@ -14,6 +15,7 @@ import { normalizeEmail } from "./lib/email";
 import { getWebmasterEmails } from "./lib/auth";
 import { INFO_SENDER, sendMailjetMessage } from "./lib/mailjet";
 import { accountDeletionClerkFailedTemplate } from "./lib/emailTemplates";
+import { clerkSubjectHash } from "./lib/accountState";
 
 // WP29 — account verwijderen. Spec: docs/work-packages/WP29-account-verwijderen.md
 // §Advies open vraag 2 en §A-invarianten.
@@ -27,7 +29,8 @@ import { accountDeletionClerkFailedTemplate } from "./lib/emailTemplates";
 //    binnenkwam (een upload die net klaar was) ook meegaat (A-invariant 5).
 // 3. Clerk: `deleteClerkUser` direct na stap 1, los van stap 2. 404 telt als
 //    gelukt; anders opnieuw volgens CLERK_RETRY_DELAYS_MS (samen ruim een uur).
-//    Na de laatste poging, of zonder sleutel: één mail aan de webmaster.
+//    Na de laatste poging, of zonder passende sleutel: één mail aan de
+//    webmaster. Er loopt hooguit één reeks pogingen (`deletion.clerkRun`).
 // 4. De users-rij gaat als laatste weg, als 2 én 3 klaar zijn. Wie als tweede
 //    klaar is, ruimt hem op: `step` als Clerk al klaar was, anders
 //    `clerkDeleted` via een laatste `step` (die ook nog een keer alles nakijkt).
@@ -51,27 +54,72 @@ export const CLERK_RETRY_DELAYS_MS = [1, 5, 15, 30, 60].map((m) => m * 60_000);
 
 const CLERK_API = "https://api.clerk.com/v1/users/";
 
-/** Stap 1: het account afsluiten. Een tweede keer doet niets. */
+/** Fix 5: een Clerk-aanroep die langer duurt, telt als mislukte poging. */
+export const CLERK_TIMEOUT_MS = 30_000;
+
+/**
+ * Stap 1: het account afsluiten. Een tweede keer doet niets.
+ *
+ * Fix 1b: een hash van de Clerk-subject blijft bewaard, zodat deze Clerk-user
+ * nooit meer een rij krijgt. Fix 8: het adres wordt genormaliseerd, zodat
+ * `invites.create` het vindt (een gemigreerde rij kan hoofdletters hebben).
+ */
 export async function startAccountDeletion(
   ctx: MutationCtx,
   user: Doc<"users">,
 ): Promise<void> {
   if (user.deletion) return;
-  await ctx.db.patch(user._id, { deletion: { startedAt: Date.now() } });
+  const now = Date.now();
+  const subjectHash = await clerkSubjectHash(user.subject);
+  const marker = await ctx.db
+    .query("deletedClerkSubjects")
+    .withIndex("by_subjectHash", (q) => q.eq("subjectHash", subjectHash))
+    .first();
+  if (!marker) await ctx.db.insert("deletedClerkSubjects", { subjectHash, deletedAt: now });
+
   await ctx.scheduler.runAfter(0, internal.accountDeletion.step, { userId: user._id });
-  await ctx.scheduler.runAfter(0, internal.accountDeletion.deleteClerkUser, {
-    userId: user._id,
-    subject: user.subject,
-    attempt: 0,
+  const clerk = await scheduleClerkRun(ctx, user._id, user.subject, 1);
+  await ctx.db.patch(user._id, {
+    email: normalizeEmail(user.email),
+    deletion: { startedAt: now, ...clerk },
   });
+}
+
+/** Plant poging 1 van Clerk-reeks `run`; geeft de velden voor `deletion`. */
+async function scheduleClerkRun(
+  ctx: MutationCtx,
+  userId: Id<"users">,
+  subject: string,
+  run: number,
+): Promise<{ clerkRun: number; clerkJobId: Id<"_scheduled_functions"> }> {
+  const clerkJobId = await ctx.scheduler.runAfter(0, internal.accountDeletion.deleteClerkUser, {
+    userId,
+    subject,
+    attempt: 0,
+    run,
+  });
+  return { clerkRun: run, clerkJobId };
+}
+
+/**
+ * Loopt er nog een reeks Clerk-pogingen? Ja als de laatst geplande poging nog
+ * gepland staat of bezig is, en de reeks niet al heeft opgegeven. Een reeks
+ * die gecrasht is, loopt niet meer.
+ */
+async function clerkRunActive(
+  ctx: MutationCtx,
+  deletion: NonNullable<Doc<"users">["deletion"]>,
+): Promise<boolean> {
+  if (deletion.clerkFailedAt !== undefined || deletion.clerkJobId === undefined) return false;
+  const job = await ctx.db.system.get(deletion.clerkJobId);
+  return job?.state.kind === "pending" || job?.state.kind === "inProgress";
 }
 
 /**
  * A-invariant 7: opnieuw starten (webmaster). Clerk opnieuw als die nog niet
- * gelukt is, en een opruimstap die alles nakijkt en de rij weghaalt als alles
- * klaar is. Een account dat niet wordt verwijderd: niets. Loopt er nog een
- * keten, dan lopen er even twee: dubbel werk, geen fout (een tweede DELETE
- * geeft 404, en de stappen lezen elk de actuele stand).
+ * gelukt is en er geen reeks pogingen meer loopt (fix 3: hooguit één reeks,
+ * dus ook hooguit één mail), en een opruimstap die alles nakijkt en de rij
+ * weghaalt als alles klaar is. Een account dat niet wordt verwijderd: niets.
  */
 export async function restartAccountDeletion(
   ctx: MutationCtx,
@@ -79,14 +127,11 @@ export async function restartAccountDeletion(
 ): Promise<void> {
   const user = await ctx.db.get(userId);
   if (!user?.deletion) return;
-  if (user.deletion.clerkDoneAt === undefined) {
-    const { clerkFailedAt: _failed, ...rest } = user.deletion;
-    await ctx.db.patch(userId, { deletion: rest });
-    await ctx.scheduler.runAfter(0, internal.accountDeletion.deleteClerkUser, {
-      userId,
-      subject: user.subject,
-      attempt: 0,
-    });
+  const deletion = user.deletion;
+  if (deletion.clerkDoneAt === undefined && !(await clerkRunActive(ctx, deletion))) {
+    const { clerkFailedAt: _failed, ...rest } = deletion;
+    const clerk = await scheduleClerkRun(ctx, userId, user.subject, (deletion.clerkRun ?? 1) + 1);
+    await ctx.db.patch(userId, { deletion: { ...rest, ...clerk } });
   }
   await ctx.scheduler.runAfter(0, internal.accountDeletion.step, { userId });
 }
@@ -404,26 +449,58 @@ const PHASES: Phase[] = [
 // ── Stap 3: de Clerk-user ────────────────────────────────────────────
 
 /**
+ * Fix 1a: de sleutel moet bij de omgeving passen. Prod vraagt `sk_live_`,
+ * elke andere stage (ook leeg) `sk_test_`. Een sleutel van de verkeerde
+ * Clerk-omgeving geeft 404, en dat telt als gelukt. Geeft de reden voor de
+ * mail (zonder de sleutel), of null als de sleutel bruikbaar is.
+ */
+function clerkKeyProblem(key: string | undefined, stage: string): string | null {
+  if (!key) return "CLERK_SECRET_KEY ontbreekt";
+  const prefix = stage === "prod" ? "sk_live_" : "sk_test_";
+  if (!key.startsWith(prefix)) {
+    return `CLERK_SECRET_KEY past niet bij de ${stage || "(lege)"} omgeving (verwacht ${prefix}…)`;
+  }
+  return null;
+}
+
+/**
  * A-invariant 6: `DELETE /v1/users/{subject}` op de Clerk Backend API. 2xx en
  * 404 (bestaat al niet) tellen als gelukt. Elke andere uitkomst, ook een
- * netwerkfout, wordt herhaald tot de pogingen op zijn; dan, of meteen als de
- * sleutel ontbreekt, één mail aan de webmaster (A-invariant 7).
+ * netwerkfout of een timeout (fix 5), wordt herhaald tot de pogingen op zijn;
+ * dan, of meteen zonder passende sleutel, één mail aan de webmaster
+ * (A-invariant 7). Een poging van een oude reeks, of nadat Clerk al gelukt
+ * is, doet niets (fix 3).
  */
 export const deleteClerkUser = internalAction({
-  args: { userId: v.id("users"), subject: v.string(), attempt: v.number() },
+  args: {
+    userId: v.id("users"),
+    subject: v.string(),
+    attempt: v.number(),
+    run: v.optional(v.number()),
+  },
   returns: v.null(),
-  handler: async (ctx, { userId, subject, attempt }) => {
+  handler: async (ctx, { userId, subject, attempt, run = 1 }) => {
+    const current = await ctx.runQuery(internal.accountDeletion.clerkRunIsCurrent, { userId, run });
+    if (!current) return null;
+
+    const stage = process.env.CLUBALMANAC_STAGE ?? "";
     const key = process.env.CLERK_SECRET_KEY;
-    if (!key) {
-      await giveUp(ctx, userId, subject, "CLERK_SECRET_KEY ontbreekt");
+    const keyProblem = clerkKeyProblem(key, stage);
+    if (keyProblem !== null || key === undefined) {
+      await giveUp(ctx, userId, subject, run, keyProblem ?? "CLERK_SECRET_KEY ontbreekt");
       return null;
     }
 
     let reason: string;
+    // Fix 5: op setTimeout, niet AbortSignal.timeout (dat loopt in vitest op
+    // de echte klok).
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(new Error("Clerk timeout")), CLERK_TIMEOUT_MS);
     try {
       const res = await fetch(`${CLERK_API}${encodeURIComponent(subject)}`, {
         method: "DELETE",
         headers: { Authorization: `Bearer ${key}` },
+        signal: controller.signal,
       });
       if (res.ok || res.status === 404) {
         await ctx.runMutation(internal.accountDeletion.clerkDeleted, { userId });
@@ -431,20 +508,64 @@ export const deleteClerkUser = internalAction({
       }
       reason = `Clerk status ${res.status}`;
     } catch {
-      reason = "Clerk niet bereikbaar";
+      reason = controller.signal.aborted
+        ? `Clerk gaf na ${CLERK_TIMEOUT_MS / 1000} s geen antwoord`
+        : "Clerk niet bereikbaar";
+    } finally {
+      clearTimeout(timer);
     }
 
     const delay = CLERK_RETRY_DELAYS_MS[attempt];
     if (delay !== undefined) {
       console.log(`[accountDeletion] ${reason}, poging ${attempt + 1}; opnieuw over ${delay / 60_000} min`);
-      await ctx.scheduler.runAfter(delay, internal.accountDeletion.deleteClerkUser, {
+      await ctx.runMutation(internal.accountDeletion.clerkRetryLater, {
         userId,
         subject,
+        run,
         attempt: attempt + 1,
+        delayMs: delay,
       });
       return null;
     }
-    await giveUp(ctx, userId, subject, `${reason} na ${attempt + 1} pogingen`);
+    await giveUp(ctx, userId, subject, run, `${reason} na ${attempt + 1} pogingen`);
+    return null;
+  },
+});
+
+/** Hoort een poging van reeks `run` nog te lopen? */
+export const clerkRunIsCurrent = internalQuery({
+  args: { userId: v.id("users"), run: v.number() },
+  returns: v.boolean(),
+  handler: async (ctx, { userId, run }) => {
+    const user = await ctx.db.get(userId);
+    const deletion = user?.deletion;
+    if (!deletion || deletion.clerkDoneAt !== undefined) return false;
+    return (deletion.clerkRun ?? 1) === run;
+  },
+});
+
+/** Plant de volgende poging van reeks `run` en onthoudt hem (fix 3). */
+export const clerkRetryLater = internalMutation({
+  args: {
+    userId: v.id("users"),
+    subject: v.string(),
+    run: v.number(),
+    attempt: v.number(),
+    delayMs: v.number(),
+  },
+  returns: v.null(),
+  handler: async (ctx, { userId, subject, run, attempt, delayMs }) => {
+    const user = await ctx.db.get(userId);
+    const deletion = user?.deletion;
+    if (!deletion || deletion.clerkDoneAt !== undefined) return null;
+    if ((deletion.clerkRun ?? 1) !== run) return null;
+    const clerkJobId = await ctx.scheduler.runAfter(delayMs, internal.accountDeletion.deleteClerkUser, {
+      userId,
+      subject,
+      attempt,
+      run,
+    });
+    await ctx.db.patch(userId, { deletion: { ...deletion, clerkJobId } });
     return null;
   },
 });
@@ -453,10 +574,13 @@ async function giveUp(
   ctx: ActionCtx,
   userId: Id<"users">,
   subject: string,
+  run: number,
   reason: string,
 ): Promise<void> {
   console.log(`[accountDeletion] Clerk-user niet verwijderd: ${reason}`);
-  await ctx.runMutation(internal.accountDeletion.clerkFailed, { userId });
+  const state = await ctx.runMutation(internal.accountDeletion.clerkFailed, { userId, run });
+  // Een andere reeks heeft het intussen overgenomen, of Clerk is al gelukt.
+  if (state === null) return;
 
   const webmasters = getWebmasterEmails();
   if (webmasters.length === 0) {
@@ -467,6 +591,7 @@ async function giveUp(
     subject,
     userId,
     reason,
+    convexDone: state.convexDone,
     // Geen fail-loud op de stage-label hier: de mail is het signaal.
     stage: process.env.CLUBALMANAC_STAGE || "onbekende",
     timestamp: new Date().toISOString(),
@@ -503,13 +628,19 @@ export const clerkDeleted = internalMutation({
   },
 });
 
+/**
+ * Reeks `run` geeft op. Geeft voor de mail of de Convex-data nu weg is
+ * (fix 6), of null als deze reeks niet meer de lopende is.
+ */
 export const clerkFailed = internalMutation({
-  args: { userId: v.id("users") },
-  returns: v.null(),
-  handler: async (ctx, { userId }) => {
+  args: { userId: v.id("users"), run: v.number() },
+  returns: v.union(v.object({ convexDone: v.boolean() }), v.null()),
+  handler: async (ctx, { userId, run }) => {
     const user = await ctx.db.get(userId);
-    if (!user?.deletion) return null;
-    await ctx.db.patch(userId, { deletion: { ...user.deletion, clerkFailedAt: Date.now() } });
-    return null;
+    const deletion = user?.deletion;
+    if (!deletion || deletion.clerkDoneAt !== undefined) return null;
+    if ((deletion.clerkRun ?? 1) !== run) return null;
+    await ctx.db.patch(userId, { deletion: { ...deletion, clerkFailedAt: Date.now() } });
+    return { convexDone: deletion.convexDoneAt !== undefined };
   },
 });
