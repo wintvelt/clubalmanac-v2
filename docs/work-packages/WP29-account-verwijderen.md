@@ -1,6 +1,15 @@
 # WP29: account verwijderen
 
-> Draft 2026-11-10 (regie). Verplicht vóór de App Store-indiening: Apple eist dat een account in de app te verwijderen is. A → B → audit + red-team, gate op dev. Eigen branch `wp29`.
+> Landed 2026-11-10: A → B → audit + red-team, drie fix-cycli, gate op dev groen (simulator, release-build). Verplicht vóór de App Store-indiening: Apple eist dat een account in de app te verwijderen is.
+
+## Gate (dev, 2026-11-10)
+
+- Dev Anna (191 foto's, laatste lid van een eigen groep, lid van twee andere): data, beelden en de eigen groep weg; de andere groepen werken.
+- De eerste Clerk-poging gaf op: `CLERK_SECRET_KEY` was leeg gezet. De rij bleef en hield de login tegen. Na het zetten van de sleutel maakte `users:retryAccountDeletion` het af.
+- Dev Bram (354 foto's): in één keer weg, ook bij Clerk. Het inlogscherm toont "Je account is verwijderd."; de knop blijft boven het toetsenbord.
+- Daarna: integriteitscheck schoon (op de bekende foto zonder formaten na), opnieuw inloggen faalt.
+- Niet in de gate: ratings (de app heeft nog geen rate-knop; wel in de tests). De webmaster-mail ging naar Mailjet; `WEBMASTER_EMAILS` op dev is een testadres.
+- Het vastlopen bij een groep met veel publicaties van niet-leden is niet gefixt: op de prod-export heeft geen groep zulke publicaties, en in v2 kan het niet ontstaan.
 
 ## Productdoel
 
