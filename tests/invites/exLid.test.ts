@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { api, internal } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
 import { as, membership, newT, seedGroup, type T } from "../groups/_beheer";
+import { deleteAccount } from "../_helpers/deleteAccount";
 
 // WP28 invariant 4 en A-invariant 4 (WP17a-red-team R3): wie uit een groep
 // verdwijnt, haalt zichzelf niet terug met een uitnodiging. Drie wegen
@@ -91,7 +92,7 @@ describe("(a) open uitnodiging aan het eigen adres, account verwijderd", () => {
     const w = await seedGroup(t, { founder: "olga", members: { anna: "admin", lex: "member" } });
     await seedInvite(t, { email: "lex@x.test", groupId: w.groupId, invitedBy: w.users.olga! });
 
-    await as(t, "user_lex").mutation(api.users.deleteSelf, {});
+    await deleteAccount(t, as(t, "user_lex"));
     const again = await onboard(t, "user_lex_nieuw", "lex@x.test");
 
     expect(await membership(t, w.groupId, again)).toBeNull();

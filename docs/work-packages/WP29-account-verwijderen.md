@@ -119,7 +119,7 @@ Waarom:
    - Eén mail aan `WEBMASTER_EMAILS` met de Clerk-subject, zonder het e-mailadres.
    - De users-rij blijft en houdt de login tegen (A-invariant 2).
    - De integriteitscheck meldt de rij als hij langer dan een uur wordt verwijderd; jonger niet.
-   - `internal.users.retryAccountDeletion({ userId })` start het opnieuw. Voor een account dat niet wordt verwijderd doet hij niets.
+   - De internal mutation `users.retryAccountDeletion({ userId })` start het opnieuw. Voor een account dat niet wordt verwijderd doet hij niets.
 8. **Op schaal.** Met `transactionLimits` lukt het voor een lid met 1600 eigen foto's (meer dan alle foto's op prod), elk gerated door 17 anderen, dat 1600 foto's van een ander ratede die elk 18 ratings hebben, oprichter is van een groep van 18 leden en het laatste lid van een groep met 1500 publicaties.
 9. **Geen mail bij succes.** Geen mail aan het lid of de webmaster als alles lukt (zoals WP28 W7).
 
@@ -157,3 +157,6 @@ De info-tekst over gegevens (`app/src/content/infoTexts.ts`, "Tot dat in de app 
 | `tests/users/deleteAccountScale.test.ts` | A-invariant 8, met `transactionLimits` |
 | `tests/_helpers/deleteAccount.ts` | helper: `deleteSelf` plus alle geplande stappen, Clerk gestubd |
 | bestaande tests met `deleteSelf` (13 bestanden) | via de helper (A-keuze 5) |
+| `tests/http/uploadReservationReads.test.ts` | de leesmeting op de handler van `deleteSelf` vervangen door een run met `transactionLimits` (400 foto's × 500 reserveringen) |
+
+Stand: 20 rood in 2 bestanden, alleen nieuwe tests; de rest groen (2255); `tsc` schoon; de app is niet geraakt. De schaaltest faalt nu op de leesgrens in `recomputeRatingAggregate` vanuit `deleteSelf` en duurt ±40 s. Niet getoetst tegen een wegwerp-referentie-implementatie.

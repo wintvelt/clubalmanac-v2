@@ -7,6 +7,7 @@ import schema from "../../convex/schema";
 import { withUser } from "../_helpers/auth";
 import { modules } from "../_helpers/modules";
 import { upload } from "./_upload";
+import { deleteAccount } from "../_helpers/deleteAccount";
 
 // WP18 fix-cyclus 2 (red-team M1 en Z1): de upload-reservering.
 //
@@ -161,7 +162,7 @@ describe("A-invariant 22: een gewiste foto neemt zijn reservering mee", () => {
     const pending = await t.mutation(internal.uploads.reserve, { ownerId: w.alice, clientUploadId: "a3" });
     expect(pending.kind).toBe("reserved");
 
-    await withUser(t, "user_alice").mutation(api.users.deleteSelf, {});
+    await deleteAccount(t, withUser(t, "user_alice"));
 
     const left = await reservations(t);
     expect(left.filter((r) => r.ownerId === w.alice)).toEqual([]);

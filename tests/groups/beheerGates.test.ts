@@ -15,6 +15,7 @@ import {
   seedPhoto,
   type T,
 } from "./_beheer";
+import { deleteAccount } from "../_helpers/deleteAccount";
 
 // WP28 — rol-gates op de groep (besluit 1 en 3), oprichter overdragen, en de
 // weigeringen van A-invariant 2:
@@ -440,7 +441,7 @@ describe("besluit 4 — de oprichter vertrekt niet, hij draagt eerst over", () =
   it("verwijdert de oprichter zijn account, dan volgt de admin met de vroegste joinedAt hem op (M2-d)", async () => {
     const t = newT();
     const w = await world(t);
-    await as(t, "user_olga").mutation(api.users.deleteSelf, {});
+    await deleteAccount(t, as(t, "user_olga"));
     expect((await groupRow(t, w.groupId))?.createdBy).toBe(w.users.anna);
     expect((await membership(t, w.groupId, w.users.lex!))?.role).toBe("member");
   });
@@ -448,7 +449,7 @@ describe("besluit 4 — de oprichter vertrekt niet, hij draagt eerst over", () =
   it("is hij de enige admin en verwijdert hij zijn account, dan wordt iedereen admin en de vroegste oprichter (M2-c)", async () => {
     const t = newT();
     const w = await seedGroup(t, { founder: "olga", members: { lex: "member", mia: "member" } });
-    await as(t, "user_olga").mutation(api.users.deleteSelf, {});
+    await deleteAccount(t, as(t, "user_olga"));
     expect((await groupRow(t, w.groupId))?.createdBy).toBe(w.users.lex);
     expect((await membership(t, w.groupId, w.users.lex!))?.role).toBe("admin");
     expect((await membership(t, w.groupId, w.users.mia!))?.role).toBe("admin");

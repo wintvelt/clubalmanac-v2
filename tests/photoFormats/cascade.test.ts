@@ -5,6 +5,7 @@ import schema from "../../convex/schema";
 import { registerUser, withUser } from "../_helpers/auth";
 import { modules } from "../_helpers/modules";
 import { exists, formatsOf, seedPhoto, storageCount } from "./_helpers";
+import { deleteAccount } from "../_helpers/deleteAccount";
 
 // WP25 — wissen neemt de formaten mee, draaien raakt ze niet
 // (invariant 7 en 8; cascade-matrix P3, U7, FL1; A-kernvondst 5).
@@ -46,7 +47,7 @@ describe("wissen neemt de formaten mee (invariant 8)", () => {
     await t.run((ctx) => ctx.db.patch(owen, { photoCount: 2 }));
     await t.run((ctx) => ctx.db.patch(bob, { photoCount: 1 }));
 
-    await withUser(t, "user_owen").mutation(api.users.deleteSelf, {});
+    await deleteAccount(t, withUser(t, "user_owen"));
     await t.finishAllScheduledFunctions(vi.runAllTimers);
 
     for (const p of mine) {

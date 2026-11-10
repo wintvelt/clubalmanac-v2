@@ -11,6 +11,7 @@ import {
   seedRating,
   type T,
 } from "./_beheer";
+import { deleteAccount } from "../_helpers/deleteAccount";
 
 // WP28 fix-cyclus 1, A-invariant 7 (red-team R1) en S2 (audit): wie de
 // toegang tot een foto verliest, verliest zijn rating erop, langs elke weg
@@ -101,7 +102,7 @@ describe("A-invariant 7 (R1): Rex verwijdert zijn account", () => {
   it("zijn ratings zijn weg; het gemiddelde klopt", async () => {
     const t = newT();
     const w = await world(t);
-    await as(t, "user_rex").mutation(api.users.deleteSelf, {});
+    await deleteAccount(t, as(t, "user_rex"));
     expect(await ratingState(t, w.P)).toEqual({ raters: [w.users.mia], count: 1, average: 5 });
   });
 });
@@ -138,7 +139,7 @@ describe("S2: het laatste lid gaat weg (M2-e), met een rating van vóór WP28", 
     await seedRating(t, Q, w.users.eve!, 2);
     await seedRating(t, Q, w.users.kees!, 4);
 
-    await as(t, "user_olga").mutation(api.users.deleteSelf, {});
+    await deleteAccount(t, as(t, "user_olga"));
 
     expect(await ratingState(t, Q)).toEqual({ raters: [w.users.kees], count: 1, average: 4 });
   });

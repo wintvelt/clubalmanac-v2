@@ -4,6 +4,7 @@ import { api, internal } from "../../convex/_generated/api";
 import schema from "../../convex/schema";
 import { DEFAULT_PHOTO_LIMIT } from "../../convex/users";
 import { modules } from "../_helpers/modules";
+import { deleteAccount } from "../_helpers/deleteAccount";
 
 // Fase 2 — Users domein. Tests-first volgens migratieplan.
 // Authenticatie via Clerk wordt geïmpersoneerd met t.withIdentity.
@@ -133,7 +134,7 @@ describe("users.deleteSelf", () => {
   it("verwijdert eigen record", async () => {
     const t = convexTest(schema, modules);
     const id = await seedUser(t, "user_alice", "alice@x.com");
-    await withUser(t, "user_alice").mutation(api.users.deleteSelf, {});
+    await deleteAccount(t, withUser(t, "user_alice"));
     const got = await t.run((ctx) => ctx.db.get(id));
     expect(got).toBeNull();
   });

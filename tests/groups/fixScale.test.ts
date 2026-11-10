@@ -5,6 +5,7 @@ import type { Id } from "../../convex/_generated/dataModel";
 import schema from "../../convex/schema";
 import { modules } from "../_helpers/modules";
 import { as, seedGroup, type T } from "./_beheer";
+import { deleteAccount } from "../_helpers/deleteAccount";
 
 // WP28 fix-cyclus 2, A-invariant 14 (red-team F1): verwijderen, vertrekken
 // en het account verwijderen lukken voor een lid dat elke foto heeft gerated
@@ -190,7 +191,7 @@ describe(`A-invariant 14 — een lid met ${PUBLICATIONS} ratings`, () => {
   it("hij verwijdert zijn account", { timeout: 120_000 }, async () => {
     const t = newLimitedT();
     const w = await bigWorld(t);
-    await as(t, "user_rex").mutation(api.users.deleteSelf, {});
+    await deleteAccount(t, as(t, "user_rex"));
 
     const s = await state(t);
     expect(ratingsOf(s, w.users.rex!)).toHaveLength(0);

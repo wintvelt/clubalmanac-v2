@@ -4,8 +4,8 @@ import type { Doc, Id } from "../../convex/_generated/dataModel";
 import type { MutationCtx } from "../../convex/_generated/server";
 import { internalRemovePhoto } from "../../convex/photos";
 import schema from "../../convex/schema";
-import { deleteSelf } from "../../convex/users";
-import { ISSUER } from "../_helpers/auth";
+import { withUser } from "../_helpers/auth";
+import { deleteAccount } from "../_helpers/deleteAccount";
 import { modules } from "../_helpers/modules";
 
 // WP18 fix-cyclus 3 (hercheck red-team, besluit 7): A-invariant 26.
@@ -21,8 +21,8 @@ import { modules } from "../_helpers/modules";
 // index-bereik, en telt de documenten in dat bereik zoals Convex ze leest. Een
 // `.filter` erna maakt het bereik niet kleiner; zonder index is het bereik de
 // hele tabel. `.first()`, `.unique()` en `.take(n)` zonder filter lezen er
-// hooguit 1, 2 of n. De echte `internalRemovePhoto` en de echte handler van
-// `deleteSelf` lopen met die recorder.
+// hooguit 1, 2 of n. De echte `internalRemovePhoto` loopt met die recorder. `deleteSelf`
+// loopt sinds WP29 in stappen; daar dwingt de test de echte limieten af.
 //
 // Spec: docs/work-packages/WP18-foto-upload.md §Fix-cyclus 3.
 
@@ -267,30 +267,18 @@ describe("A-invariant 26: een foto wissen leest alleen de reservering van die fo
     expect(await reservations(t)).toHaveLength(10 + 5 + 3);
   });
 
-  it("users.deleteSelf: de reserveringen die hij leest groeien niet met foto's × uploads", async () => {
-    const photos = 40;
-    const pending = 25;
-    const t = convexTest(schema, modules);
+  it("users.deleteSelf: lukt binnen de Convex-limieten, ook als foto's × uploads erboven zit", { timeout: 120_000 }, async () => {
+    // WP29: account verwijderen loopt in stappen; per stap meten zegt niets
+    // meer over het geheel. Wat telt: met de echte limieten lukt het, ook als
+    // per foto alle reserveringen lezen (400 × 500) ver boven de 32.000 zou
+    // zitten, en alles van alice is weg, bob blijft (A-invariant 22).
+    const photos = 400;
+    const pending = 100;
+    const t = convexTest({ schema, modules, transactionLimits: true });
     const w = await world(t, photos, pending);
-    const scans: Scan[] = [];
 
-    await t.run(async (ctx) => {
-      const auth = {
-        getUserIdentity: async () => ({
-          subject: "user_alice",
-          issuer: ISSUER,
-          tokenIdentifier: `${ISSUER}|user_alice`,
-        }),
-      };
-      const handler = (deleteSelf as unknown as { _handler: (c: MutationCtx, a: object) => Promise<unknown> })._handler;
-      await handler({ ...ctx, auth, db: recordingDb(ctx.db, scans) } as unknown as MutationCtx, {});
-    });
+    await deleteAccount(t, withUser(t, "user_alice"));
 
-    // Eén keer de eigen reserveringen (65) plus per foto hooguit de eigen (40).
-    // Per foto alle reserveringen van de eigenaar zou 40 × 65 zijn.
-    const own = photos + pending;
-    expect(totalRead(scans), `gelezen: ${totalRead(scans)} in ${scans.length} queries`).toBeLessThanOrEqual(own + photos);
-    // En hij doet nog steeds zijn werk (A-invariant 22): alles van alice weg, bob blijft.
     const left = await reservations(t);
     expect(left.filter((r) => r.ownerId === w.alice)).toEqual([]);
     expect(left.filter((r) => r.ownerId === w.bob).map((r) => r.photoId).sort()).toEqual([...w.bobPhotos].sort());
