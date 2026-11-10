@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Image, StyleSheet, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useClerkWipeFailed, wipeClerkStorage } from "../auth/deviceClerkStorage";
@@ -28,6 +28,12 @@ export function LoginScreen() {
   );
   const [code, setCode] = useState("");
 
+  // WP29 fix-cyclus 3: een nieuwe login beëindigt "Je account is verwijderd."
+  function startLogin() {
+    setAccountDeleted(false);
+    void login.sendCode(email);
+  }
+
   return (
     <Screen background="surface" header={<WashHeader />}>
       <Text variant="largeTitle" accessibilityRole="header">
@@ -50,13 +56,13 @@ export function LoginScreen() {
             autoCapitalize="none"
             autoCorrect={false}
             returnKeyType="send"
-            onSubmitEditing={() => login.sendCode(email)}
+            onSubmitEditing={() => startLogin()}
             editable={!login.busy}
           />
           <Button
             title="Stuur code"
             busyTitle="Code versturen…"
-            onPress={() => login.sendCode(email)}
+            onPress={() => startLogin()}
             busy={login.busy}
           />
           <Feedback feedback={login.feedback} action="send" />
@@ -109,11 +115,12 @@ export function LoginScreen() {
   );
 }
 
-// WP29 invariant 7: na Account verwijderen de korte bevestiging. Eén keer:
-// verlaat het inlogscherm (inloggen), dan is hij weg.
+// WP29 invariant 7: na Account verwijderen de korte bevestiging. Hij hoort bij
+// de app-sessie, niet bij dit exemplaar van het scherm: rond het uitloggen
+// wordt het inlogscherm weggehaald en opnieuw neergezet (fix-cyclus 3). Hij
+// eindigt pas bij een nieuwe login (startLogin) of een herstart van de app.
 function AccountDeletedNotice() {
   const deleted = useAccountDeleted();
-  useEffect(() => () => setAccountDeleted(false), []);
   if (!deleted) return null;
   return <Notice kind="success" message="Je account is verwijderd." />;
 }

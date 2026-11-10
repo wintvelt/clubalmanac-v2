@@ -1,5 +1,6 @@
-import type { ReactNode } from "react";
-import { KeyboardAvoidingView, ScrollView, StyleSheet, View } from "react-native";
+import { useContext, useEffect, useRef, type ReactNode } from "react";
+import { KeyboardAvoidingView, ScrollView, StyleSheet, View, type ScrollViewInstance } from "react-native";
+import { HeaderHeightContext } from "expo-router/react-navigation";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { SignOutButton } from "../auth/SignOutButton";
 import { useAuthState, useReconnect } from "../data/authStateContext";
@@ -19,6 +20,9 @@ type Props = {
   centered?: boolean;
   // Onder een navigatiebalk: die regelt de bovenste safe area al.
   underHeader?: boolean;
+  // Houdt het einde van de inhoud in beeld, ook als het toetsenbord opengaat
+  // (bv. de knop onder het laatste veld van een formulier).
+  keepEndInView?: boolean;
 };
 
 // Scrolt altijd, zodat bij de grootste tekststand en met het toetsenbord open
@@ -33,16 +37,34 @@ export function Screen({
   header,
   centered = false,
   underHeader = false,
+  keepEndInView = false,
 }: Props) {
   const { colors } = useTheme();
   const reconnecting = useAuthState() === "reconnecting";
+  // WP29 fix-cyclus 3: KeyboardAvoidingView meet zijn plek ten opzichte van
+  // zijn ouder, niet van het venster. Onder een navigatiebalk telt hij die dan
+  // niet mee, en bleef de onderkant van het formulier onder het toetsenbord.
+  const headerHeight = useContext(HeaderHeightContext) ?? 0;
+  const scrollRef = useRef<ScrollViewInstance>(null);
+  useEffect(() => {
+    if (keepEndInView) scrollRef.current?.scrollToEnd({ animated: true });
+  }, [keepEndInView]);
   return (
     <SafeAreaView
       edges={header || underHeader ? ["left", "right", "bottom"] : ["top", "left", "right", "bottom"]}
       style={[styles.fill, { backgroundColor: colors[background] }]}
     >
-      <KeyboardAvoidingView behavior="padding" style={styles.fill}>
+      <KeyboardAvoidingView
+        behavior="padding"
+        keyboardVerticalOffset={underHeader ? headerHeight : 0}
+        style={styles.fill}
+      >
         <ScrollView
+          ref={scrollRef}
+          // Het toetsenbord maakt de lijst kleiner: dan opnieuw naar het einde.
+          onLayout={() => {
+            if (keepEndInView) scrollRef.current?.scrollToEnd({ animated: true });
+          }}
           keyboardShouldPersistTaps="handled"
           contentContainerStyle={[styles.scroll, centered && styles.centered]}
         >

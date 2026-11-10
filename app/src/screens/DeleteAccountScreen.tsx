@@ -37,6 +37,10 @@ export function DeleteAccountScreen() {
   const [typed, setTyped] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(false);
+  // Fix-cyclus 3: met het veld actief (toetsenbord open) houdt het scherm de
+  // knop eronder in beeld. De return-toets sluit alleen het toetsenbord; alleen
+  // de tik op de knop verwijdert.
+  const [focused, setFocused] = useState(false);
   const inFlight = useRef(false);
   const ready = confirmWordTyped(typed);
 
@@ -63,7 +67,7 @@ export function DeleteAccountScreen() {
   }
 
   return (
-    <Screen underHeader>
+    <Screen underHeader keepEndInView={focused}>
       <Text>
         Je account verwijderen is definitief. Het kan niet ongedaan worden gemaakt. Dit gaat weg:
       </Text>
@@ -92,7 +96,8 @@ export function DeleteAccountScreen() {
         autoComplete="off"
         returnKeyType="done"
         editable={!busy}
-        onSubmitEditing={() => void onDelete()}
+        onFocus={() => setFocused(true)}
+        onBlur={() => setFocused(false)}
       />
       <Button
         title="Account verwijderen"
