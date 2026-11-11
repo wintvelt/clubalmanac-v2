@@ -10,6 +10,7 @@ import { Text } from "../components/Text";
 import { api } from "../convexApi";
 import { useLiveQuery } from "../data/useLiveQuery";
 import { rotatePath } from "../lib/groupRoutes";
+import { profilePhotoNotice } from "../lib/profileEdit";
 import {
   photoActionLabel,
   photoActions,
@@ -30,7 +31,13 @@ import { size, space, useTheme } from "../theme";
 export type Feedback = { kind: "error" | "success"; title: string; message?: string };
 
 // Wat het menu over een foto moet weten. Alle velden staan in albums.listPhotos.
-export type MenuPhoto = { photoId: Id<"photos">; ownerId: Id<"users">; addedBy: Id<"users"> };
+// `ownerName`: voor de melding bij "Als profielfoto" (WP27 vraag 3).
+export type MenuPhoto = {
+  photoId: Id<"photos">;
+  ownerId: Id<"users">;
+  addedBy: Id<"users">;
+  ownerName?: string;
+};
 
 // Wie kijkt, en met welke rol in de groep van dit album. De maker van het
 // album telt niet (WP28 A-keuze 2, WP28b A-invariant 22).
@@ -130,11 +137,14 @@ export function usePhotoMenu({
         case "groupCover":
           void attempt(() => updateGroup({ groupId, coverPhotoId: photoId }), SUCCESS.groupCover);
           return;
-        case "profilePhoto":
-          // Invariant 6: eerst zeggen dat een profielfoto openbaar is.
+        case "profilePhoto": {
+          // Invariant 6, WP27 invariant 2: eerst zeggen dat een profielfoto
+          // openbaar is; bij de foto van een ander ook van wie hij is, en dat
+          // die er geen bericht van krijgt (besluit 5).
+          const notice = profilePhotoNotice({ isMe: ctx?.me === photo.ownerId, name: photo.ownerName });
           Alert.alert(
-            "Als profielfoto instellen?",
-            "Je profielfoto is voor iedereen te zien, ook buiten de groep.",
+            notice.title,
+            notice.message,
             [
               { text: "Annuleren", style: "cancel" },
               {
@@ -144,6 +154,7 @@ export function usePhotoMenu({
             ],
           );
           return;
+        }
         case "removeFromAlbum": {
           const run = () => void attempt(() => removeFromAlbum({ albumId, photoId }), SUCCESS.removeFromAlbum);
           // Besluit 3: alleen bij de foto van een ander; die zet alleen de eigenaar terug.

@@ -112,6 +112,7 @@ function DetailContent({
     photoId: entry.albumPhoto.photoId,
     ownerId: entry.photo.ownerId,
     addedBy: entry.albumPhoto.addedBy,
+    ownerName: entry.owner?.name,
   };
   const hasActions = menuActions(ctx, menuPhoto).length > 0;
 

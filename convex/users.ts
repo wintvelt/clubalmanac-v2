@@ -16,7 +16,7 @@ import {
   DEFAULT_PHOTO_LIMIT,
   VISIT_PERIOD_MS,
 } from "./lib/constants";
-import { canUseStorage } from "./lib/photoAccess";
+import { canAccessPhoto, canUseStorage } from "./lib/photoAccess";
 import { validName } from "./lib/names";
 import {
   ownProfile,
@@ -252,17 +252,20 @@ export const updateProfile = mutation({
 });
 
 // WP17b invariant 12: de app kent geen storageId (WP17a invariant 10), dus
-// "als profielfoto instellen" gaat op foto-id. Alleen een eigen foto (WP17a
-// invariant 16): een profielfoto is openbaar, foto-toegang is niet genoeg.
-// Eén weigering voor de foto van een ander, een onbekend en een gewist id.
-const NOT_OWN_PHOTO = "Alleen een eigen foto kan je profielfoto worden";
+// "als profielfoto instellen" gaat op foto-id. WP27 invariant 1 (draait WP17a
+// invariant 16 terug): elke foto waar de caller foto-toegang toe heeft, ook
+// de foto van een ander in een album van een gedeelde groep. Eén weigering
+// voor een foto zonder toegang, een onbekend en een gewist id (A-invariant 8).
+// De eigenaar van de foto hoort het niet (besluit 5). Of de profielfoto later
+// nog te zien is, bepaalt `visibleProfilePhoto` bij elke lezing.
+const NO_PHOTO_ACCESS = "Deze foto kan niet je profielfoto worden";
 
 export const setProfilePhoto = mutation({
   args: { photoId: v.id("photos") },
   handler: async (ctx, { photoId }) => {
     const user = await requireCurrentUser(ctx);
     const photo = await ctx.db.get(photoId);
-    if (!photo || photo.ownerId !== user._id) throw new Error(NOT_OWN_PHOTO);
+    if (!photo || !(await canAccessPhoto(ctx, user._id, photo))) throw new Error(NO_PHOTO_ACCESS);
     await ctx.db.patch(user._id, { profilePhotoStorageId: photo.storageId });
   },
 });

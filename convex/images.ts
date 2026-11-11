@@ -3,7 +3,7 @@ import { internalQuery, type QueryCtx } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import { getBySubject } from "./users";
 import { canAccessPhoto } from "./lib/photoAccess";
-import { profilePhotoRow } from "./lib/profilePhoto";
+import { visibleProfilePhoto } from "./lib/profilePhoto";
 
 // WP17a: de toegangsregel voor beeldbytes (invariant 1, 2, 3, 13, 14).
 // Het beeldpad (`GET /beeld/...`, convex/http.ts, besluit 1: vorm B) vraagt
@@ -80,7 +80,9 @@ export const photoImageInFormat = internalQuery({
  * Profiel (besluit 8): openbaar, ook uitgelogd. Alleen het beeld dat nú de
  * profielfoto van die user is; een vorige profielfoto of een ander beeld van
  * die user levert dit pad nooit op. Geen profielfoto, een gewist beeld en een
- * onbekend of misvormd user-id: `null` (invariant 14).
+ * onbekend of misvormd user-id: `null` (invariant 14). WP27: ook `null` als
+ * de user geen toegang meer heeft tot een foto met dat beeld
+ * (`visibleProfilePhoto`).
  */
 export const profileImage = internalQuery({
   args: { userId: v.string() },
@@ -90,7 +92,7 @@ export const profileImage = internalQuery({
     if (!id) return null;
     const user = await ctx.db.get(id);
     if (!user) return null;
-    return await storedImage(ctx, user.profilePhotoStorageId);
+    return (await visibleProfilePhoto(ctx, user))?.storageId ?? null;
   },
 });
 
@@ -109,10 +111,11 @@ export const profileImageInFormat = internalQuery({
     if (!id) return null;
     const user = await ctx.db.get(id);
     if (!user) return null;
-    const original = await storedImage(ctx, user.profilePhotoStorageId);
-    if (!original) return null;
-    // Dezelfde rij als de stand in de user-vormen (A-invariant 19).
-    const chosen = await profilePhotoRow(ctx, user);
+    // Dezelfde regel en dezelfde rij als de avatar-velden (A-invariant 19,
+    // WP27 A-invariant 1).
+    const visible = await visibleProfilePhoto(ctx, user);
+    if (!visible) return null;
+    const { storageId: original, chosen } = visible;
     if (!chosen?.row.formats) return { storageId: original, fallback: true };
     return await chooseFormat(ctx, chosen.row, formaat, original);
   },

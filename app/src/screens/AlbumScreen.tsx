@@ -229,7 +229,12 @@ function AlbumContent({ groupId, albumId }: { groupId: Id<"groups">; albumId: Id
 }
 
 function menuPhotoOf(entry: Entry & { photo: NonNullable<Entry["photo"]> }): MenuPhoto {
-  return { photoId: entry.albumPhoto.photoId, ownerId: entry.photo.ownerId, addedBy: entry.albumPhoto.addedBy };
+  return {
+    photoId: entry.albumPhoto.photoId,
+    ownerId: entry.photo.ownerId,
+    addedBy: entry.albumPhoto.addedBy,
+    ownerName: entry.owner?.name,
+  };
 }
 
 // design.md §9: de teller en de acties in een balk onderaan, met tekst. Elke
