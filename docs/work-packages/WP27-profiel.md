@@ -14,6 +14,8 @@ Een lid ziet op Profiel in één oogopslag zijn foto, zijn naam en zijn e-mailad
 4. **Wie de toegang tot de foto kwijt is, krijgt de letter.**
 5. **De eigenaar van de foto hoort het niet** (2026-11-11), net als in v1.
 6. **Een standaard-knor blijft** (2026-11-11, A-keuze 1). Een los beeld zonder foto blijft zichtbaar; dat geldt voor 9 van de 20 prod-users.
+7. **Toegang kwijt wist de koppeling** (2026-11-11, red-team punt 1). Een foto die de eigenaar terugtrok, wordt niet vanzelf weer openbaar. Dit vervangt "toegang terug, foto terug" (A-advies vraag 1).
+8. **Een gemelde foto wordt geen profielfoto** (2026-11-11, red-team punt 2). Kiezen wordt geweigerd, en zolang de melding loopt is hij niet te zien.
 
 ## Invarianten (draft)
 
