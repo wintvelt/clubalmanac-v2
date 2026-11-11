@@ -16,6 +16,7 @@ Een lid ziet op Profiel in één oogopslag zijn foto, zijn naam en zijn e-mailad
 6. **Een standaard-knor blijft** (2026-11-11, A-keuze 1). Een los beeld zonder foto blijft zichtbaar; dat geldt voor 9 van de 20 prod-users.
 7. **Toegang kwijt wist de koppeling** (2026-11-11, red-team punt 1). Een foto die de eigenaar terugtrok, wordt niet vanzelf weer openbaar. Dit vervangt "toegang terug, foto terug" (A-advies vraag 1).
 8. **Een gemelde foto wordt geen profielfoto** (2026-11-11, red-team punt 2). Kiezen wordt geweigerd, en zolang de melding loopt is hij niet te zien.
+9. **Na een goedgekeurd bezwaar komt de profielfoto terug** (2026-11-11, A-keuze 4). Een melding is nog geen besluit.
 
 ## Invarianten (draft)
 
