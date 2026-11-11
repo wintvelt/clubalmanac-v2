@@ -94,6 +94,99 @@ Een lid ziet op Profiel in één oogopslag zijn foto, zijn naam en zijn e-mailad
 
 ---
 
-## Spec-criticus aanvullingen (A vult in)
+## Spec-criticus aanvullingen (A, 2026-11-11)
 
-(Leeg in draft.)
+Bronnen: v1 `blob-images-api-user` (`updateUser.js`, `getPhotoById`), de streams `photoDelToCover` en `memberDelToAlbumPhoto` in `blob-images-api`, en `Profile.jsx`, `ProfileEditForm.jsx` en `PhotoMenu.jsx` in de oude app. De huidige `convex/users.ts`, `convex/images.ts` en `convex/lib/profilePhoto.ts`. Telling: `scripts/wp27/profiel-tel.mjs` op het prod-extract van 2026-11-06.
+
+### Kernvondsten
+
+1. **v1 keek alleen bij het kiezen naar de toegang.** `updateUser` nam een foto als de user de eigenaar was of lid van een groep waarin de foto in een album stond. Daarna keek v1 nooit meer. Na vertrek of na uit album halen bleef de profielfoto staan. Alleen het wissen van de foto haalde hem weg. Besluit 4 is dus strenger dan v1.
+2. **v1 bood "Profielfoto" in het foto-menu aan iedereen**, ook bij de foto van een ander. Er kwam geen melding vooraf, alleen "Je profielfoto is aangepast" na afloop.
+3. **9 van de 20 prod-users hebben een standaard-knor als profielfoto.** Dat zijn 7 verschillende plaatjes en geen foto's. Een strikte regel ("alleen een beeld met toegang tot een foto") geeft hun vanaf T0 de letter. Zie A-keuze 1.
+4. **De toegangscheck moet op drie plekken tegelijk.** Het gaat om het profielpad (`profileImage`), het profielpad met een formaat (`profileImageInFormat`) en de avatar-velden in elke user-vorm (`profileVersion`, `profileHasFormats`, `profileOrientation`). Mist er één, dan verraadt de vorm een verborgen foto (een versie die niet "0" is, met een letter in beeld), of geeft het formaat-pad toch de bytes.
+5. **Bestaande tests pinden "alleen een eigen foto"** (WP17b invariant 12). Ze zijn aangepast: `tests/users/setProfilePhoto.test.ts`, `app/tests/photoActions.test.ts`, en drie gevallen in `tests/photoFormats/profileOrientation.test.ts` waar de rij van een ander nu in een gedeeld album staat.
+
+### Advies open vraag 1: de koppeling blijft staan
+
+**Advies: de koppeling niet wissen. De backend kijkt bij elke keer lezen of de toegang er nog is.**
+
+- **Eén plek in plaats van zes cascades.** Toegang valt weg via lid verwijderen, vertrekken (ook M1: de foto's van de eigenaar gaan uit de albums), uit album halen, album wissen, groep wissen, foto wissen en account verwijderen. Vergeet een cascade er één, dan lekt het beeld. Een check bij het lezen kan niets vergeten.
+- **Toegang terug, foto terug.** Dat staat zo in het productdoel.
+- **Geen race.** Elke lezing ziet de stand van dat moment.
+- **Kosten:** nul. Wel wat meer lezen per avatar (lidmaatschap en albums van één foto). Met 16 users merk je dat niet.
+- Wissen van de foto blijft de koppeling wissen (P5, zoals v1).
+
+### Advies open vraag 2: de foto van een ander kies je alleen in het foto-menu
+
+**Advies: alleen via "Als profielfoto" in het foto-menu.** Het menu op Profiel houdt uploaden (WP18) en weghalen. Zo werkte v1 ook. Een kiezer over al je foto's hoort bij WP17c.
+
+### Advies open vraag 3: de tekst van de melding
+
+- **Eigen foto** (zoals nu): *"Je profielfoto is voor iedereen te zien, ook buiten de groep."*
+- **Foto van een ander:** *"Deze foto is van Bob. Als profielfoto is hij voor iedereen te zien, ook buiten de groep. Bob krijgt daar geen bericht van."*
+  - Zonder naam: "een ander lid".
+  - De laatste zin volgt uit besluit 5, zodat het lid zelf kan beslissen of hij het vraagt.
+
+### Telling op prod (extract 2026-11-06, 20 users)
+
+| Profielfoto | Users | Vanaf T0 |
+|---|---|---|
+| geen | 1 | letter |
+| standaard-knor (7 plaatjes, geen foto) | 9 | knor (A-keuze 1) |
+| eigen foto | 9 | foto |
+| foto van een ander, in een album van een gedeelde groep | 1 | foto (invariant 7) |
+| foto van een ander, zonder toegang | 0 | — |
+
+Bij alle 10 foto's wijst de v1-`photoId` naar precies die foto, en geen beeld zit onder meer dan één foto. Een verwijzing naar de foto zou dus netjes over te zetten zijn, maar de knorren hebben geen foto. **Advies: de verwijzing blijft het beeld.** Er verandert niets aan het schema, aan de WP12-transform, aan dev en aan de runbook. Zie A-keuze 2.
+
+### A-invarianten (aanvulling op de draft)
+
+1. **Eén regel voor alles wat een avatar toont.** Het profielpad, het profielpad met een formaat (ook over http) en de avatar-velden volgen dezelfde regel. De uitkomst hangt niet af van wie kijkt: uitgelogd, een medelid en iemand buiten de groep zien hetzelfde.
+2. **Verborgen is hetzelfde als geen.** Is de toegang weg, dan is alles gelijk aan een user zonder profielfoto: hetzelfde 404-antwoord, `profileVersion` "0", `profileHasFormats` false, geen `profileOrientation`. Zo is er geen orakel tussen "geen foto" en "verborgen foto".
+3. **Toegang terug, beeld terug.** Het beeld komt terug met dezelfde `profileVersion` als ervoor.
+4. **Toegang via een andere groep telt.** Gaat een lid uit groep A, maar staat de foto ook in een album van groep B waar hij lid van is, dan blijft het beeld.
+5. **Een eigen foto blijft altijd**, ook in geen album en zonder groep (de eigenaar heeft altijd toegang).
+6. **Hoe de koppeling is gezet, maakt niet uit.** Gemigreerd, via `setProfilePhoto` of via `updateProfile`: dezelfde regel.
+7. **Geen terugval.** Verborgen betekent de letter, nooit de vorige profielfoto of een andere foto.
+8. **`setProfilePhoto` weigert met één uitkomst en verandert dan niets.** Dat geldt voor:
+   - een foto zonder toegang;
+   - een foto van een ander die in geen album staat;
+   - een onbekend id en een gewist id;
+   - uitgelogd.
+9. **`updateProfile` met een beeld blijft alleen voor een eigen beeld** (WP24 invariant 8). De app kent geen beeld-ids. De foto van een ander gaat alleen via `setProfilePhoto` op foto-id.
+10. **App:**
+    - "Als profielfoto" staat bij elke foto in een album, voor elke rol.
+    - Bij de foto van een ander noemt de melding de eigenaar (vraag 3).
+    - Het menu op Profiel heeft "uploaden" en, als er een beeld is, "weghalen" (vraag 2).
+    - "Bewaar" verschijnt pas als de naam anders is dan de bewaarde naam. Spaties aan het begin of eind tellen niet mee, zoals in de backend (WP15b).
+
+### A-keuzes
+
+1. **Een los beeld blijft zichtbaar.** Een beeld zonder foto (de knorren, of een ander los gemigreerd beeld) is van niemand, dus is er geen toegang die wegvalt. Nieuwe losse koppelingen kunnen niet ontstaan: `setProfilePhoto` en `updateProfile` nemen alleen een beeld met een foto, en een gewiste foto wist de koppeling (P5). *Wouter beslist.* Het alternatief is dat 9 users vanaf T0 de letter krijgen.
+2. **Toegang tot minstens één foto met dat beeld is genoeg.** In v2 ontstaan geen twee foto's met hetzelfde beeld (alleen een upload maakt een foto, met een nieuw beeld), en op prod is het er 0 keer. Dit vraagt geen schema-wijziging.
+3. **Een verborgen koppeling geeft op Profiel geen "weghalen".** Het lid ziet de letter. Een nieuwe upload vervangt de koppeling. Krijgt hij de toegang terug, dan is de foto er weer (vraag 1).
+
+### Scherm Profiel (pariteit)
+
+| v1 | v2 (besluit 1) |
+|---|---|
+| Lijst: e-mailadres, laatste bezoek, webmaster-label | Foto gecentreerd bovenaan met een menu, de naam één keer (bewerkbaar), het e-mailadres alleen te lezen met de zin over inloggen |
+| Apart scherm "Profiel bewerken": foto (bibliotheek of camera, of weghalen), naam, knop "Naam en foto opslaan" | Op Profiel zelf. "Bewaar" alleen na een wijziging. Geen camera (scope). Een melding bij het onderdeel, geen pop-up |
+| Rijen: Mijn groepen, Uitnodigingen, Meldingen, Wachtwoord | Niet op Profiel. Wachtwoord bestaat niet (Clerk-code). Groepen en uitnodigingen staan elders in de app |
+| Uitloggen | Instellingen (WP15b), niet op Profiel |
+| Account verwijderen (rood) | Gevaarlijke rij in een eigen blok (WP29) |
+| Foto-menu "Profielfoto" voor iedereen, zonder melding | "Als profielfoto" bij elke foto in een album, met de melding (vraag 3) |
+
+"Laatste bezoek" en het webmaster-label staan in v2 niet op Profiel. Dat is buiten WP27 gelaten.
+
+### Tests (RED)
+
+- `tests/users/profileAccess.test.ts` (nieuw): de toegangsregel, na elke manier van toegang verliezen, met terugkomst, een andere groep, een eigen foto, een knor, een gemigreerde foto en het http-pad.
+- `tests/users/setProfilePhoto.test.ts`: herschreven op invariant 8.
+- `tests/photoFormats/profileOrientation.test.ts`: drie gevallen geven Owen toegang tot de rij van een ander (wat ze pinnen, blijft gelijk).
+- `app/tests/photoActions.test.ts`: "Als profielfoto" voor elke rol.
+- `app/tests/profileEdit.test.ts` (nieuw, module `app/src/lib/profileEdit.ts`): naam gewijzigd, de melding en het menu op Profiel.
+
+### Voor de red-team
+
+Het beeld verdwijnt voor iedereen. Een buitenstaander ziet dus dat een lid de toegang kwijt is. Dat volgt uit besluit 3 en 4 samen, en zegt niet welke groep. Er is geen orakel tussen "geen foto" en "verborgen" (invariant 2).
