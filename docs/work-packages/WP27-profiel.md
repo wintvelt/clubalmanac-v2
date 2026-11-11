@@ -13,6 +13,7 @@ Een lid ziet op Profiel in één oogopslag zijn foto, zijn naam en zijn e-mailad
 3. **De profielfoto blijft openbaar** (WP17a besluit 8): ook voor wie is uitgelogd en voor wie buiten de groep staat.
 4. **Wie de toegang tot de foto kwijt is, krijgt de letter.**
 5. **De eigenaar van de foto hoort het niet** (2026-11-11), net als in v1.
+6. **Een standaard-knor blijft** (2026-11-11, A-keuze 1). Een los beeld zonder foto blijft zichtbaar; dat geldt voor 9 van de 20 prod-users.
 
 ## Invarianten (draft)
 
