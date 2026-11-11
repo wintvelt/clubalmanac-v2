@@ -109,15 +109,9 @@ Bronnen: v1 `blob-images-api-user` (`updateUser.js`, `getPhotoById`), de streams
 4. **De toegangscheck moet op drie plekken tegelijk.** Het gaat om het profielpad (`profileImage`), het profielpad met een formaat (`profileImageInFormat`) en de avatar-velden in elke user-vorm (`profileVersion`, `profileHasFormats`, `profileOrientation`). Mist er één, dan verraadt de vorm een verborgen foto (een versie die niet "0" is, met een letter in beeld), of geeft het formaat-pad toch de bytes.
 5. **Bestaande tests pinden "alleen een eigen foto"** (WP17b invariant 12). Ze zijn aangepast: `tests/users/setProfilePhoto.test.ts`, `app/tests/photoActions.test.ts`, en drie gevallen in `tests/photoFormats/profileOrientation.test.ts` waar de rij van een ander nu in een gedeeld album staat.
 
-### Advies open vraag 1: de koppeling blijft staan
+### Advies open vraag 1
 
-**Advies: de koppeling niet wissen. De backend kijkt bij elke keer lezen of de toegang er nog is.**
-
-- **Eén plek in plaats van zes cascades.** Toegang valt weg via lid verwijderen, vertrekken (ook M1: de foto's van de eigenaar gaan uit de albums), uit album halen, album wissen, groep wissen, foto wissen en account verwijderen. Vergeet een cascade er één, dan lekt het beeld. Een check bij het lezen kan niets vergeten.
-- **Toegang terug, foto terug.** Dat staat zo in het productdoel.
-- **Geen race.** Elke lezing ziet de stand van dat moment.
-- **Kosten:** nul. Wel wat meer lezen per avatar (lidmaatschap en albums van één foto). Met 16 users merk je dat niet.
-- Wissen van de foto blijft de koppeling wissen (P5, zoals v1).
+Vervangen door besluit 7: zie §Fix-cyclus 1.
 
 ### Advies open vraag 2: de foto van een ander kies je alleen in het foto-menu
 
@@ -146,7 +140,7 @@ Bij alle 10 foto's wijst de v1-`photoId` naar precies die foto, en geen beeld zi
 
 1. **Eén regel voor alles wat een avatar toont.** Het profielpad, het profielpad met een formaat (ook over http) en de avatar-velden volgen dezelfde regel. De uitkomst hangt niet af van wie kijkt: uitgelogd, een medelid en iemand buiten de groep zien hetzelfde.
 2. **Verborgen is hetzelfde als geen.** Is de toegang weg, dan is alles gelijk aan een user zonder profielfoto: hetzelfde 404-antwoord, `profileVersion` "0", `profileHasFormats` false, geen `profileOrientation`. Zo is er geen orakel tussen "geen foto" en "verborgen foto".
-3. **Toegang terug, beeld terug.** Het beeld komt terug met dezelfde `profileVersion` als ervoor.
+3. Vervallen (besluit 7): toegang terug geeft het beeld niet terug. Zie A-invariant 12.
 4. **Toegang via een andere groep telt.** Gaat een lid uit groep A, maar staat de foto ook in een album van groep B waar hij lid van is, dan blijft het beeld.
 5. **Een eigen foto blijft altijd**, ook in geen album en zonder groep (de eigenaar heeft altijd toegang).
 6. **Hoe de koppeling is gezet, maakt niet uit.** Gemigreerd, via `setProfilePhoto` of via `updateProfile`: dezelfde regel.
@@ -167,7 +161,7 @@ Bij alle 10 foto's wijst de v1-`photoId` naar precies die foto, en geen beeld zi
 
 1. **Een los beeld blijft zichtbaar.** Een beeld zonder foto (de knorren, of een ander los gemigreerd beeld) is van niemand, dus is er geen toegang die wegvalt. Nieuwe losse koppelingen kunnen niet ontstaan: `setProfilePhoto` en `updateProfile` nemen alleen een beeld met een foto, en een gewiste foto wist de koppeling (P5). *Wouter beslist.* Het alternatief is dat 9 users vanaf T0 de letter krijgen.
 2. **Toegang tot minstens één foto met dat beeld is genoeg.** In v2 ontstaan geen twee foto's met hetzelfde beeld (alleen een upload maakt een foto, met een nieuw beeld), en op prod is het er 0 keer. Dit vraagt geen schema-wijziging.
-3. **Een verborgen koppeling geeft op Profiel geen "weghalen".** Het lid ziet de letter. Een nieuwe upload vervangt de koppeling. Krijgt hij de toegang terug, dan is de foto er weer (vraag 1).
+3. **Een verborgen koppeling geeft op Profiel geen "weghalen".** Het lid ziet de letter. Een nieuwe upload vervangt de koppeling. Na besluit 7 is dat alleen nog een gemelde profielfoto (A-keuze 4) en een gemigreerde koppeling zonder toegang (0 op prod).
 
 ### Scherm Profiel (pariteit)
 
@@ -184,7 +178,7 @@ Bij alle 10 foto's wijst de v1-`photoId` naar precies die foto, en geen beeld zi
 
 ### Tests (RED)
 
-- `tests/users/profileAccess.test.ts` (nieuw): de toegangsregel, na elke manier van toegang verliezen, met terugkomst, een andere groep, een eigen foto, een knor, een gemigreerde foto en het http-pad.
+- `tests/users/profileAccess.test.ts` (nieuw): de toegangsregel, na elke manier van toegang verliezen, een andere groep, een eigen foto, een knor, een gemigreerde foto en het http-pad.
 - `tests/users/setProfilePhoto.test.ts`: herschreven op invariant 8.
 - `tests/photoFormats/profileOrientation.test.ts`: drie gevallen geven Owen toegang tot de rij van een ander (wat ze pinnen, blijft gelijk).
 - `app/tests/photoActions.test.ts`: "Als profielfoto" voor elke rol.
@@ -193,3 +187,69 @@ Bij alle 10 foto's wijst de v1-`photoId` naar precies die foto, en geen beeld zi
 ### Voor de red-team
 
 Het beeld verdwijnt voor iedereen. Een buitenstaander ziet dus dat een lid de toegang kwijt is. Dat volgt uit besluit 3 en 4 samen, en zegt niet welke groep. Er is geen orakel tussen "geen foto" en "verborgen" (invariant 2).
+
+---
+
+## Fix-cyclus 1 (A, 2026-11-11)
+
+Aanleiding: besluit 7 en 8 (red-team punt 1 en 2) en twee audit-nits. Bronnen: de huidige `convex/groups.ts`, `convex/albums.ts`, `convex/lib/unpublish.ts`, `convex/photos.ts` (melden, bezwaar, de meldregel), `convex/accountDeletion.ts`, en `scripts/.data/wp27-redteam/redteam.test.ts`.
+
+### Besluit 7: waar de koppeling wegvalt
+
+Toegang tot de foto van een ander valt alleen weg als een publicatie (`albumPhotos`) of een lidmaatschap verdwijnt, of de foto zelf. Twee nieuwe plekken dekken alles wat nog niet gedekt was:
+
+| Manier | Flow | Wat de koppeling wist |
+|---|---|---|
+| lid verwijderd, of zelf vertrokken | `internalRemoveMember` | **nieuw:** een check op de vertrekker, na het wissen van zijn lidmaatschap |
+| de eigenaar vertrekt (M1) | `internalRemoveMember` → `afterUnpublish` | **nieuw** in `afterUnpublish`: een check op wie een van de weggehaalde foto's als profielfoto heeft |
+| foto uit album | `albums.removePhoto` → `afterUnpublish` | idem |
+| album verwijderd | `albums.remove` → `afterUnpublish` | idem |
+| groep verwijderd, ook als het laatste lid weggaat (M2-e) | `deleteGroupCascade` → `afterUnpublish` | idem |
+| foto gewist, ook door de meldregel | `internalRemovePhoto` | P5, bestaat al |
+| eigenaar verwijdert zijn account | fotofase (P5), lidmaatschapsfase (`internalRemoveMember`) | bestaat al; het gat ervoor: A-invariant 13 |
+
+`afterUnpublish` is al de ene cascade voor elke publicatie die verdwijnt (WP28 A-invariant 3). Daar hoort de profielfoto bij, naast covers en ratings.
+
+### A-invarianten (fix-cyclus 1)
+
+11. **Wissen in dezelfde transactie.** Direct na de mutation die de toegang wegneemt, is `profilePhotoStorageId` leeg, zonder geplande functie. Anders kan de eigenaar de foto in het gat terugzetten, en blijft de koppeling.
+12. **Terug geeft niets terug.** Zet de eigenaar de foto weer in een album, komt hij in een nieuwe groep, of wordt het lid opnieuw lid: de letter blijft. Alleen opnieuw kiezen, met de melding, maakt hem weer de profielfoto.
+13. **Account verwijderen: de letter vanaf het verwijderen.** Direct na `deleteSelf` van de eigenaar, nog voordat de stappen lopen, ziet iedereen de letter bij wie zijn foto had. Na de stappen is de koppeling leeg (P5). B kiest hoe: bij het lezen een eigenaar met `deletion` tellen als geen toegang, of direct wissen in `startAccountDeletion`.
+14. **Alleen wissen waar de toegang echt weg is.** De koppeling blijft bij toegang via een andere groep, bij een eigen foto, bij een standaard-knor (besluit 6), en bij elke user die geen toegang verloor. Een eigenaar die zijn eigen foto uit het album haalt, houdt hem als profielfoto.
+15. **De check bij het lezen blijft, als vangnet.** `visibleProfilePhoto` blijft. Die verbergt een gemigreerde koppeling zonder toegang (0 op prod) en wat een flow die later bijkomt vergeet. Een query kan niet schrijven: het vangnet verbergt, het wist niet.
+16. **Binnen de Convex-limieten.** Getest met `transactionLimits`, in een groep van 18 leden met 3000 publicaties (prod: 1459), elk lid met een foto van de eigenaar als profielfoto: album weg, groep weg, en de eigenaar die vertrekt. Advies voor B: per mutation één keer de users met een profielfoto lezen (op prod 19) en per user één `by_storage`-lookup. Dus niet per weggehaalde foto alle users. Geen schema-wijziging nodig; een index op `profilePhotoStorageId` pas bij groei, net als bij P5.
+
+### Besluit 8: een gemelde foto
+
+"Gemeld" betekent `flaggedAt` is gezet: vanaf de melding, tijdens het bezwaar, en na een afgewezen bezwaar tot de meldregel de foto wist.
+
+17. **Kiezen weigert een gemelde foto.**
+    - `setProfilePhoto` weigert, met dezelfde weigering als zonder toegang. Er verandert niets.
+    - Dat geldt ook voor een eigen foto.
+    - `updateProfile` weigert het beeld van een gemelde foto, en laat dan ook de naam staan (zoals nu bij een geweigerd beeld).
+    - Zo verraadt de weigering niet dat een foto gemeld is (WP24 A-keuze 4).
+18. **Een gemelde profielfoto is niet te zien zolang de melding loopt.** Het maakt niet uit of het een eigen foto is, de foto van een ander, of een gemigreerde koppeling. Alles is gelijk aan geen profielfoto (A-invariant 2).
+19. **Verborgen is iets anders dan geen toegang.** Een wijziging tijdens de melding wist de koppeling alleen als de toegang echt weg is (besluit 7). Een melding wist hem niet.
+
+### A-keuzes (fix-cyclus 1)
+
+4. **Na een goedgekeurd bezwaar komt de profielfoto terug**, met dezelfde `profileVersion`. Is het bezwaar afgewezen, dan wist de meldregel de foto, en P5 de koppeling.
+   - **Waarom:** een melding is een beschuldiging, geen besluit. Elk lid met toegang kan melden. Wist een melding de koppeling, dan kan elk lid met één tik andermans profielfoto voorgoed weghalen.
+   - Na een goedkeuring staat de foto ook weer gewoon in de albums. De eigenaar trok niets terug, dus dit botst niet met besluit 7.
+   - *Wouter beslist.* Het alternatief is de koppeling wissen bij de melding.
+
+### Audit-nits
+
+20. **Het commentaar bij `canUseStorage`** (`convex/lib/photoAccess.ts`) zegt nog dat foto-toegang tot de foto van een ander niet genoeg is. Het moet zeggen: `updateProfile` neemt alleen een eigen beeld, en de foto van een ander gaat via `setProfilePhoto` op foto-id, met foto-toegang (besluit 2). Een bronscan pint dat.
+21. **De hulptekst op Profiel:** *"Een foto uit een album kiezen? Houd hem in het album ingedrukt en kies Als profielfoto."* Dat is het kortste pad: in het album opent lang drukken het foto-menu. De tekst komt als `PROFILE_PHOTO_HINT` uit `app/src/lib/profileEdit.ts`. Een bronscan kijkt of Profiel die gebruikt.
+
+### Tests (RED, fix-cyclus 1)
+
+| Bestand | Wat |
+|---|---|
+| `tests/users/profileAccess.test.ts` | A-invariant 11–14 (elke manier, wissen direct na de mutation, terug geeft niets terug, wat blijft), 17–19 en A-keuze 4. "Toegang terug, beeld terug" is eruit. |
+| `tests/users/profileWipeScale.test.ts` (nieuw) | A-invariant 16, met `transactionLimits` |
+| `tests/users/setProfilePhoto.test.ts` | bronscan audit-nit 1 |
+| `app/tests/profileEdit.test.ts` | `PROFILE_PHOTO_HINT` en de bronscan op Profiel (audit-nit 2) |
+
+Tegen een wegwerp-versie (weer gewist) was alles groen: de backend 2361 tests, de app 1227. Twee mutanten zijn gevangen: zonder de check op de vertrekker, en wissen bij een melding.

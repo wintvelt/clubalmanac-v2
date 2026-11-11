@@ -1,4 +1,6 @@
 /// <reference types="vite/client" />
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { api, internal } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
@@ -255,5 +257,23 @@ describe("users.setProfilePhoto: geweigerd, één uitkomst, niets veranderd (A-i
     const old = (await userRow(t, w.alice))!.profilePhotoStorageId;
     await outcome(() => setProfilePhoto(t, w.pCarol));
     expect(await t.query(internal.images.profileImage, { userId: w.alice })).toBe(old);
+  });
+});
+
+// WP27 fix-cyclus 1, audit-nit 1 (A-invariant 20): het commentaar bij
+// canUseStorage beschrijft de regel van nu. updateProfile neemt alleen een
+// eigen beeld; de foto van een ander gaat via setProfilePhoto op foto-id, met
+// foto-toegang (besluit 2). De oude zin ("foto-toegang is niet genoeg") is weg.
+describe("bronscan: het commentaar bij canUseStorage", () => {
+  const src = readFileSync(join(__dirname, "../../convex/lib/photoAccess.ts"), "utf8");
+  const start = src.lastIndexOf("\n\n", src.indexOf("export async function canUseStorage"));
+  const comment = src.slice(start, src.indexOf("export async function canUseStorage"));
+
+  it("zegt niet meer dat foto-toegang tot de foto van een ander niet genoeg is", () => {
+    expect(comment).not.toMatch(/niet genoeg/);
+  });
+
+  it("verwijst voor de foto van een ander naar setProfilePhoto", () => {
+    expect(comment).toMatch(/setProfilePhoto/);
   });
 });

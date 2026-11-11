@@ -20,9 +20,11 @@ import { seedMember } from "../_helpers/membership";
 // elke vergelijking hieronder legt alice naast nora, die nooit een
 // profielfoto had.
 //
-// De tests pinnen gedrag, niet de vorm: of de koppeling blijft staan en de
-// backend bij het lezen kijkt (advies vraag 1), toetst "toegang terug, beeld
-// terug" (invariant 3 van A).
+// Fix-cyclus 1 (besluit 7 en 8; A-invariant 11 t/m 19): wie de toegang
+// kwijtraakt, verliest de koppeling in dezelfde mutation, en toegang terug
+// geeft de foto niet terug. Een gemelde foto wordt geen profielfoto en is niet
+// te zien zolang de melding loopt. De check bij het lezen blijft als vangnet
+// (A-invariant 15).
 
 type T = ReturnType<typeof convexTest>;
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -284,29 +286,189 @@ describe("invariant 3: geen toegang meer, dan de letter — voor iedereen", () =
   });
 });
 
-describe("invariant 5 en A-invariant 3: toegang terug, beeld terug", () => {
-  it("pBob weer in het album: hetzelfde beeld, dezelfde versie", async () => {
+/** De koppeling zoals hij in de users-rij staat. */
+async function linkOf(t: T, userId: Id<"users">): Promise<Id<"_storage"> | null> {
+  return await t.run(async (ctx) => (await ctx.db.get(userId))?.profilePhotoStorageId ?? null);
+}
+
+/** Bob zet pBob in een nieuw album van G1, "alleen voor de groep" (red-team punt 1). */
+async function bobPublishesAgain(t: T, s: S, groupId: Id<"groups"> = s.G1) {
+  const A = await asBob(t).mutation(api.albums.create, { groupId, name: "Alleen voor ons" });
+  await asBob(t).mutation(api.albums.addPhoto, { albumId: A, photoId: s.pBob.photoId });
+  return A;
+}
+
+describe("besluit 7, A-invariant 11 en 12: toegang kwijt wist de koppeling, terug geeft niets terug", () => {
+  // Elke test kijkt direct na de mutation naar de users-rij, zonder geplande
+  // functies te draaien: het wissen hoort in dezelfde transactie (A-invariant
+  // 11). Daarna komt de toegang terug, en blijft het de letter (A-invariant 12).
+
+  it("alice wordt uit de groep gehaald, en later weer lid", async () => {
     const t = convexTest(schema, modules);
     const s = await setup(t);
     await setAliceProfile(t, s.pBob.photoId);
-    const before = await expectShows(t, s, s.pBob, "vooraf");
-    await asBob(t).mutation(api.albums.removePhoto, { albumId: s.A1, photoId: s.pBob.photoId });
-    await expectHidden(t, s, "tussendoor");
-    await asBob(t).mutation(api.albums.addPhoto, { albumId: s.A1, photoId: s.pBob.photoId });
-    const after = await expectShows(t, s, s.pBob, "terug");
-    expect(after.fields).toEqual(before.fields);
+    await asBob(t).mutation(api.groups.removeMember, { groupId: s.G1, userId: s.alice });
+    expect(await linkOf(t, s.alice), "koppeling na verwijderen").toBeNull();
+    await seedMember(t, { groupId: s.G1, userId: s.alice });
+    await expectHidden(t, s, "weer lid");
   });
 
-  it("alice weer lid: het beeld komt terug", async () => {
+  it("alice vertrekt zelf, en wordt later weer lid", async () => {
     const t = convexTest(schema, modules);
     const s = await setup(t);
     await setAliceProfile(t, s.pBob.photoId);
-    const before = await expectShows(t, s, s.pBob, "vooraf");
-    await asBob(t).mutation(api.groups.removeMember, { groupId: s.G1, userId: s.alice });
-    await expectHidden(t, s, "tussendoor");
+    await asAlice(t).mutation(api.groups.removeMember, { groupId: s.G1, userId: s.alice });
+    expect(await linkOf(t, s.alice), "koppeling na vertrek").toBeNull();
     await seedMember(t, { groupId: s.G1, userId: s.alice });
-    const after = await expectShows(t, s, s.pBob, "terug");
-    expect(after.fields.profileVersion).toBe(before.fields.profileVersion);
+    await expectHidden(t, s, "weer lid");
+  });
+
+  it("bob haalt pBob uit het album, en zet hem weken later in een nieuw album (red-team punt 1)", async () => {
+    const t = convexTest(schema, modules);
+    const s = await setup(t);
+    await setAliceProfile(t, s.pBob.photoId);
+    await asBob(t).mutation(api.albums.removePhoto, { albumId: s.A1, photoId: s.pBob.photoId });
+    expect(await linkOf(t, s.alice), "koppeling na uit album").toBeNull();
+    await bobPublishesAgain(t, s);
+    await expectHidden(t, s, "weer in een album");
+  });
+
+  it("het album wordt verwijderd, en pBob komt in een nieuw album", async () => {
+    const t = convexTest(schema, modules);
+    const s = await setup(t);
+    await setAliceProfile(t, s.pBob.photoId);
+    await asBob(t).mutation(api.albums.remove, { albumId: s.A1 });
+    expect(await linkOf(t, s.alice), "koppeling na album weg").toBeNull();
+    await bobPublishesAgain(t, s);
+    await expectHidden(t, s, "nieuw album");
+  });
+
+  it("de groep wordt verwijderd, en bob deelt pBob later in een nieuwe groep met alice", async () => {
+    const t = convexTest(schema, modules);
+    const s = await setup(t);
+    await setAliceProfile(t, s.pBob.photoId);
+    await asBob(t).mutation(api.groups.remove, { groupId: s.G1 });
+    expect(await linkOf(t, s.alice), "koppeling na groep weg").toBeNull();
+    const G3 = await asBob(t).mutation(api.groups.create, { name: "G3" });
+    await seedMember(t, { groupId: G3, userId: s.alice });
+    await bobPublishesAgain(t, s, G3);
+    await expectHidden(t, s, "nieuwe groep");
+  });
+
+  it("de eigenaar vertrekt (M1), en komt later terug met pBob", async () => {
+    const t = convexTest(schema, modules);
+    const s = await setup(t);
+    const dora = await registerUser(t, "user_dora", "dora@x.com", "Dora");
+    await seedMember(t, { groupId: s.G1, userId: dora, role: "admin" });
+    await asBob(t).mutation(api.groups.transferFounder, { groupId: s.G1, userId: dora });
+    await setAliceProfile(t, s.pBob.photoId);
+    await asBob(t).mutation(api.groups.removeMember, { groupId: s.G1, userId: s.bob });
+    expect(await linkOf(t, s.alice), "koppeling na vertrek eigenaar").toBeNull();
+    await seedMember(t, { groupId: s.G1, userId: s.bob, role: "admin" });
+    await bobPublishesAgain(t, s);
+    await expectHidden(t, s, "eigenaar terug");
+  });
+
+  it("een gemigreerde koppeling valt onder dezelfde regel (A-invariant 6)", async () => {
+    const t = convexTest(schema, modules);
+    const s = await setup(t);
+    await t.run((ctx) => ctx.db.patch(s.alice, { profilePhotoStorageId: s.pBob.storageId }));
+    await asBob(t).mutation(api.albums.removePhoto, { albumId: s.A1, photoId: s.pBob.photoId });
+    expect(await linkOf(t, s.alice)).toBeNull();
+    await bobPublishesAgain(t, s);
+    await expectHidden(t, s, "gemigreerd, weer in een album");
+  });
+
+  it("de foto wordt gewist: de koppeling is leeg (P5, zoals al)", async () => {
+    const t = convexTest(schema, modules);
+    const s = await setup(t);
+    await setAliceProfile(t, s.pBob.photoId);
+    await asBob(t).mutation(api.photos.remove, { photoId: s.pBob.photoId });
+    expect(await linkOf(t, s.alice)).toBeNull();
+  });
+
+  it("A-invariant 13: de eigenaar verwijdert zijn account — de letter vanaf het verwijderen, niet pas na de stappen", async () => {
+    const t = convexTest(schema, modules);
+    const s = await setup(t);
+    await setAliceProfile(t, s.pBob.photoId);
+    // Nep-timers: de geplande stappen (en de Clerk-aanroep) draaien niet.
+    vi.useFakeTimers();
+    await asBob(t).mutation(api.users.deleteSelf, {});
+    await expectHidden(t, s, "direct na deleteSelf");
+  });
+
+  it("A-invariant 13: na de stappen van account verwijderen is de koppeling leeg", async () => {
+    const t = convexTest(schema, modules);
+    const s = await setup(t);
+    await setAliceProfile(t, s.pBob.photoId);
+    await deleteAccount(t, asBob(t));
+    expect(await linkOf(t, s.alice)).toBeNull();
+  });
+});
+
+describe("A-invariant 14: alleen wissen waar de toegang echt weg is", () => {
+  it("toegang via G2: alice uit G1 houdt de koppeling", async () => {
+    const t = convexTest(schema, modules);
+    const s = await setup(t);
+    await secondGroupWithPBob(t, s);
+    await setAliceProfile(t, s.pBob.photoId);
+    await asBob(t).mutation(api.groups.removeMember, { groupId: s.G1, userId: s.alice });
+    expect(await linkOf(t, s.alice)).toBe(s.pBob.storageId);
+  });
+
+  it("toegang via G2: pBob uit A1, album weg, groep weg — de koppeling blijft", async () => {
+    const t = convexTest(schema, modules);
+    const s = await setup(t);
+    await secondGroupWithPBob(t, s);
+    await setAliceProfile(t, s.pBob.photoId);
+    await asBob(t).mutation(api.albums.removePhoto, { albumId: s.A1, photoId: s.pBob.photoId });
+    expect(await linkOf(t, s.alice), "uit A1").toBe(s.pBob.storageId);
+    await asBob(t).mutation(api.groups.remove, { groupId: s.G1 });
+    expect(await linkOf(t, s.alice), "G1 weg").toBe(s.pBob.storageId);
+    await expectShows(t, s, s.pBob, "via G2");
+  });
+
+  it("een eigen foto: uit het album en uit de groep, de koppeling blijft", async () => {
+    const t = convexTest(schema, modules);
+    const s = await setup(t);
+    await asAlice(t).mutation(api.albums.addPhoto, { albumId: s.A1, photoId: s.pAlice.photoId });
+    await setAliceProfile(t, s.pAlice.photoId);
+    await asAlice(t).mutation(api.albums.removePhoto, { albumId: s.A1, photoId: s.pAlice.photoId });
+    await asAlice(t).mutation(api.groups.removeMember, { groupId: s.G1, userId: s.alice });
+    expect(await linkOf(t, s.alice)).toBe(s.pAlice.storageId);
+  });
+
+  it("de eigenaar die zijn foto uit het album haalt, houdt hem zelf als profielfoto; alice niet", async () => {
+    const t = convexTest(schema, modules);
+    const s = await setup(t);
+    await asBob(t).mutation(api.users.setProfilePhoto, { photoId: s.pBob.photoId });
+    await setAliceProfile(t, s.pBob.photoId);
+    await asBob(t).mutation(api.albums.removePhoto, { albumId: s.A1, photoId: s.pBob.photoId });
+    expect(await linkOf(t, s.bob), "bob").toBe(s.pBob.storageId);
+    expect(await linkOf(t, s.alice), "alice").toBeNull();
+  });
+
+  it("een andere foto uit het album: alice houdt pBob", async () => {
+    const t = convexTest(schema, modules);
+    const s = await setup(t);
+    await setAliceProfile(t, s.pBob.photoId);
+    await asBob(t).mutation(api.albums.removePhoto, { albumId: s.A1, photoId: s.pBob2.photoId });
+    expect(await linkOf(t, s.alice)).toBe(s.pBob.storageId);
+  });
+
+  it("een standaard-knor blijft, ook als zijn groep weg is en hij eruit gaat (besluit 6)", async () => {
+    const t = convexTest(schema, modules);
+    const s = await setup(t);
+    const knor = await t.run(async (ctx) => {
+      const id = await ctx.storage.store(jpeg("KNOR"));
+      await ctx.db.patch(s.alice, { profilePhotoStorageId: id });
+      return id;
+    });
+    await asBob(t).mutation(api.albums.removePhoto, { albumId: s.A1, photoId: s.pBob.photoId });
+    await asAlice(t).mutation(api.groups.removeMember, { groupId: s.G1, userId: s.alice });
+    expect(await linkOf(t, s.alice), "na vertrek").toBe(knor);
+    await asBob(t).mutation(api.groups.remove, { groupId: s.G1 });
+    expect(await linkOf(t, s.alice), "na groep weg").toBe(knor);
   });
 });
 
@@ -413,5 +575,233 @@ describe("invariant 1: kiezen zonder toegang verandert niets aan het profielpad"
     expect(o, "had moeten falen").not.toBeNull();
     expect(o).not.toMatch(MISSING_FUNCTION);
     await expectShows(t, s, s.pBob, "na weigering");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Besluit 8: een gemelde foto wordt geen profielfoto (A-invariant 17 t/m 19).
+
+const WEBMASTER_EMAIL = "webmaster@x.com";
+
+/** Dora, lid van G1, meldt foto's. Een webmaster beslist over een bezwaar. */
+async function withFlagger(t: T, s: S) {
+  const dora = await registerUser(t, "user_dora", "dora@x.com", "Dora");
+  await seedMember(t, { groupId: s.G1, userId: dora });
+  await registerUser(t, "user_web", WEBMASTER_EMAIL, "Web");
+  return dora;
+}
+
+const asDora = (t: T) => withUser(t, "user_dora");
+const asWebmaster = (t: T) => withUser(t, "user_web", WEBMASTER_EMAIL);
+
+async function flag(t: T, photoId: Id<"photos">) {
+  await asDora(t).mutation(api.photos.flag, { photoId, reason: "ongepast" });
+}
+
+/** De foutmelding, of null als het lukte. */
+async function errorOf(p: Promise<unknown>): Promise<string | null> {
+  return await p.then(
+    () => null,
+    (e: unknown) => (e instanceof Error ? e.message : String(e)),
+  );
+}
+
+describe("besluit 8, A-invariant 17: kiezen weigert een gemelde foto, met de weigering van geen toegang", () => {
+  it("de foto van een ander, gemeld: geweigerd zoals pBobPrivate, en er verandert niets (red-team punt 2)", async () => {
+    const t = convexTest(schema, modules);
+    const s = await setup(t);
+    await withFlagger(t, s);
+    await flag(t, s.pBob.photoId);
+    const noAccess = await errorOf(
+      asAlice(t).mutation(api.users.setProfilePhoto, { photoId: s.pBobPrivate.photoId }),
+    );
+    const flagged = await errorOf(asAlice(t).mutation(api.users.setProfilePhoto, { photoId: s.pBob.photoId }));
+    expect(flagged, "had moeten falen").not.toBeNull();
+    expect(flagged).not.toMatch(MISSING_FUNCTION);
+    expect(flagged).toBe(noAccess);
+    expect(await linkOf(t, s.alice)).toBeNull();
+    await expectHidden(t, s, "na weigering");
+  });
+
+  it("een eigen gemelde foto: ook geweigerd", async () => {
+    const t = convexTest(schema, modules);
+    const s = await setup(t);
+    await withFlagger(t, s);
+    await asAlice(t).mutation(api.albums.addPhoto, { albumId: s.A1, photoId: s.pAlice.photoId });
+    await flag(t, s.pAlice.photoId);
+    const o = await errorOf(asAlice(t).mutation(api.users.setProfilePhoto, { photoId: s.pAlice.photoId }));
+    expect(o, "had moeten falen").not.toBeNull();
+    expect(o).not.toMatch(MISSING_FUNCTION);
+    expect(await linkOf(t, s.alice)).toBeNull();
+  });
+
+  it("een geweigerde gemelde foto laat de huidige profielfoto staan", async () => {
+    const t = convexTest(schema, modules);
+    const s = await setup(t);
+    await withFlagger(t, s);
+    await setAliceProfile(t, s.pBob2.photoId);
+    await flag(t, s.pBob.photoId);
+    expect(await errorOf(asAlice(t).mutation(api.users.setProfilePhoto, { photoId: s.pBob.photoId }))).not.toBeNull();
+    expect(await linkOf(t, s.alice)).toBe(s.pBob2.storageId);
+  });
+
+  it("tijdens het bezwaar en na een afgewezen bezwaar: nog steeds geweigerd", async () => {
+    const t = convexTest(schema, modules);
+    const s = await setup(t);
+    await withFlagger(t, s);
+    process.env.WEBMASTER_EMAILS = WEBMASTER_EMAIL;
+    try {
+      await flag(t, s.pBob.photoId);
+      await asBob(t).mutation(api.photos.appeal, { photoId: s.pBob.photoId });
+      expect(
+        await errorOf(asAlice(t).mutation(api.users.setProfilePhoto, { photoId: s.pBob.photoId })),
+        "tijdens bezwaar",
+      ).not.toBeNull();
+      vi.useFakeTimers();
+      await asWebmaster(t).mutation(api.photos.decideFlag, { photoId: s.pBob.photoId, approve: false });
+      expect(
+        await errorOf(asAlice(t).mutation(api.users.setProfilePhoto, { photoId: s.pBob.photoId })),
+        "na afwijzing",
+      ).not.toBeNull();
+      expect(await linkOf(t, s.alice)).toBeNull();
+    } finally {
+      delete process.env.WEBMASTER_EMAILS;
+    }
+  });
+
+  it("na een goedgekeurd bezwaar is de foto weer vrij: kiezen lukt", async () => {
+    const t = convexTest(schema, modules);
+    const s = await setup(t);
+    await withFlagger(t, s);
+    process.env.WEBMASTER_EMAILS = WEBMASTER_EMAIL;
+    try {
+      await flag(t, s.pBob.photoId);
+      await asBob(t).mutation(api.photos.appeal, { photoId: s.pBob.photoId });
+      await asWebmaster(t).mutation(api.photos.decideFlag, { photoId: s.pBob.photoId, approve: true });
+    } finally {
+      delete process.env.WEBMASTER_EMAILS;
+    }
+    await setAliceProfile(t, s.pBob.photoId);
+    await expectShows(t, s, s.pBob, "na goedkeuring");
+  });
+
+  it("updateProfile met het beeld van een eigen gemelde foto: geweigerd, en de naam blijft ook", async () => {
+    const t = convexTest(schema, modules);
+    const s = await setup(t);
+    await withFlagger(t, s);
+    await asAlice(t).mutation(api.albums.addPhoto, { albumId: s.A1, photoId: s.pAlice.photoId });
+    await flag(t, s.pAlice.photoId);
+    const o = await errorOf(
+      asAlice(t).mutation(api.users.updateProfile, {
+        name: "Alice Nieuw",
+        profilePhotoStorageId: s.pAlice.storageId,
+      }),
+    );
+    expect(o, "had moeten falen").not.toBeNull();
+    const row = await t.run((ctx) => ctx.db.get(s.alice));
+    expect(row!.profilePhotoStorageId).toBeUndefined();
+    expect(row!.name).toBe("Alice");
+  });
+});
+
+describe("besluit 8, A-invariant 18: een gemelde profielfoto is niet te zien zolang de melding loopt", () => {
+  it("de foto van een ander als profielfoto, daarna gemeld: de letter", async () => {
+    const t = convexTest(schema, modules);
+    const s = await setup(t);
+    await withFlagger(t, s);
+    await setAliceProfile(t, s.pBob.photoId);
+    await flag(t, s.pBob.photoId);
+    await expectHidden(t, s, "gemeld");
+  });
+
+  it("een eigen foto als profielfoto, daarna gemeld: ook de letter", async () => {
+    const t = convexTest(schema, modules);
+    const s = await setup(t);
+    await withFlagger(t, s);
+    await asAlice(t).mutation(api.albums.addPhoto, { albumId: s.A1, photoId: s.pAlice.photoId });
+    await setAliceProfile(t, s.pAlice.photoId);
+    await flag(t, s.pAlice.photoId);
+    await expectHidden(t, s, "eigen, gemeld");
+  });
+
+  it("een gemigreerde koppeling met een gemelde foto: de letter", async () => {
+    const t = convexTest(schema, modules);
+    const s = await setup(t);
+    await withFlagger(t, s);
+    await flag(t, s.pBob.photoId);
+    await t.run((ctx) => ctx.db.patch(s.alice, { profilePhotoStorageId: s.pBob.storageId }));
+    await expectHidden(t, s, "gemigreerd, gemeld");
+  });
+
+  it("tijdens het bezwaar en na een afgewezen bezwaar: de letter; na het wissen is de koppeling leeg", async () => {
+    const t = convexTest(schema, modules);
+    const s = await setup(t);
+    await withFlagger(t, s);
+    await setAliceProfile(t, s.pBob.photoId);
+    process.env.WEBMASTER_EMAILS = WEBMASTER_EMAIL;
+    try {
+      await flag(t, s.pBob.photoId);
+      await asBob(t).mutation(api.photos.appeal, { photoId: s.pBob.photoId });
+      await expectHidden(t, s, "tijdens bezwaar");
+      vi.useFakeTimers();
+      await asWebmaster(t).mutation(api.photos.decideFlag, { photoId: s.pBob.photoId, approve: false });
+      await expectHidden(t, s, "na afwijzing");
+      vi.setSystemTime(Date.now() + 8 * 24 * 60 * 60 * 1000);
+      await t.mutation(internal.photos.cleanupFlaggedPhotos, {});
+      expect(await linkOf(t, s.alice)).toBeNull();
+    } finally {
+      delete process.env.WEBMASTER_EMAILS;
+    }
+  });
+
+  it("A-keuze 4: na een goedgekeurd bezwaar komt de profielfoto terug, met dezelfde versie", async () => {
+    const t = convexTest(schema, modules);
+    const s = await setup(t);
+    await withFlagger(t, s);
+    await setAliceProfile(t, s.pBob.photoId);
+    const before = await expectShows(t, s, s.pBob, "vooraf");
+    process.env.WEBMASTER_EMAILS = WEBMASTER_EMAIL;
+    try {
+      await flag(t, s.pBob.photoId);
+      await expectHidden(t, s, "gemeld");
+      await asBob(t).mutation(api.photos.appeal, { photoId: s.pBob.photoId });
+      await asWebmaster(t).mutation(api.photos.decideFlag, { photoId: s.pBob.photoId, approve: true });
+    } finally {
+      delete process.env.WEBMASTER_EMAILS;
+    }
+    const after = await expectShows(t, s, s.pBob, "na goedkeuring");
+    expect(after.fields).toEqual(before.fields);
+  });
+
+  it("A-keuze 4: tijdens de melding wist een andere wijziging de koppeling niet (verborgen is niet hetzelfde als geen toegang)", async () => {
+    const t = convexTest(schema, modules);
+    const s = await setup(t);
+    const dora = await withFlagger(t, s);
+    const { G2, A2 } = await secondGroupWithPBob(t, s);
+    await setAliceProfile(t, s.pBob.photoId);
+    await flag(t, s.pBob.photoId);
+    // Wijzigingen rond pBob en alice, maar alice houdt toegang (via G1).
+    await asBob(t).mutation(api.albums.removePhoto, { albumId: A2, photoId: s.pBob.photoId });
+    await asBob(t).mutation(api.groups.removeMember, { groupId: G2, userId: s.alice });
+    await asDora(t).mutation(api.groups.removeMember, { groupId: s.G1, userId: dora });
+    expect(await linkOf(t, s.alice)).toBe(s.pBob.storageId);
+    process.env.WEBMASTER_EMAILS = WEBMASTER_EMAIL;
+    try {
+      await asBob(t).mutation(api.photos.appeal, { photoId: s.pBob.photoId });
+      await asWebmaster(t).mutation(api.photos.decideFlag, { photoId: s.pBob.photoId, approve: true });
+    } finally {
+      delete process.env.WEBMASTER_EMAILS;
+    }
+    await expectShows(t, s, s.pBob, "na goedkeuring");
+  });
+
+  it("toegang kwijt tijdens de melding: de koppeling is weg, ook na goedkeuring (besluit 7)", async () => {
+    const t = convexTest(schema, modules);
+    const s = await setup(t);
+    await withFlagger(t, s);
+    await setAliceProfile(t, s.pBob.photoId);
+    await flag(t, s.pBob.photoId);
+    await asBob(t).mutation(api.groups.removeMember, { groupId: s.G1, userId: s.alice });
+    expect(await linkOf(t, s.alice)).toBeNull();
   });
 });

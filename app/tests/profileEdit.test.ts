@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { nameIsDirty, profilePhotoMenu, profilePhotoNotice } from "../src/lib/profileEdit";
+import { PROFILE_PHOTO_HINT, nameIsDirty, profilePhotoMenu, profilePhotoNotice } from "../src/lib/profileEdit";
 
 // WP27: pure logica achter de pagina Profiel en de melding bij "Als
 // profielfoto". Spec: docs/work-packages/WP27-profiel.md, besluit 1 en 5,
@@ -101,6 +101,17 @@ describe("profilePhotoMenu: het menu bij de foto op Profiel (vraag 2)", () => {
   });
 });
 
+// WP27 fix-cyclus 1, audit-nit 2 (A-invariant 21): de hulptekst onder het
+// menu op Profiel zegt hoe je in het album bij "Als profielfoto" komt. In het
+// album open je het foto-menu door de foto ingedrukt te houden.
+describe("PROFILE_PHOTO_HINT: de hulptekst op Profiel", () => {
+  it("noemt het kortste pad, in woorden van de gebruiker", () => {
+    expect(PROFILE_PHOTO_HINT).toBe(
+      "Een foto uit een album kiezen? Houd hem in het album ingedrukt en kies Als profielfoto.",
+    );
+  });
+});
+
 // Dat de schermen deze logica gebruiken, en niet een eigen kopie.
 describe("bronscan: de schermen gebruiken deze module", () => {
   const src = (file: string) => readFileSync(join(__dirname, "../src/screens", file), "utf8");
@@ -110,6 +121,12 @@ describe("bronscan: de schermen gebruiken deze module", () => {
     expect(text).toMatch(/from "\.\.\/lib\/profileEdit"/);
     expect(text).toMatch(/\bnameIsDirty\(/);
     expect(text).toMatch(/\bprofilePhotoMenu\(/);
+  });
+
+  it("Profiel: de hulptekst uit de module, niet meer de oude", () => {
+    const text = src("ProfileScreen.tsx");
+    expect(text).toMatch(/\bPROFILE_PHOTO_HINT\b/);
+    expect(text).not.toMatch(/Acties, Als profielfoto/);
   });
 
   it("Foto-menu: profilePhotoNotice, en niet meer de vaste tekst", () => {
