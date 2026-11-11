@@ -61,6 +61,25 @@ async function setup(t: T) {
   return { owen, mia, bob, G, A };
 }
 
+/**
+ * WP27 (A-invariant 1, A-keuze 2): een beeld dat alleen onder foto's van
+ * anderen zit, toont het profielpad alleen als de user toegang heeft tot
+ * minstens één van die foto's. Zet de rij in album A van groep G, waar Owen
+ * lid van is.
+ */
+async function shareWithOwen(t: T, s: { G: Id<"groups">; A: Id<"albums"> }, photoId: Id<"photos">) {
+  await t.run(async (ctx) => {
+    const photo = await ctx.db.get(photoId);
+    await ctx.db.insert("albumPhotos", {
+      albumId: s.A,
+      photoId,
+      groupId: s.G,
+      addedAt: Date.now(),
+      addedBy: photo!.ownerId,
+    });
+  });
+}
+
 const profileUrl = (id: string, formaat = "klein") => `/beeld/profiel/${id}?formaat=${formaat}`;
 
 async function servedText(t: T, userId: string): Promise<string> {
@@ -166,8 +185,10 @@ describe("de stand hoort bij de rij waarvan het profielpad de bytes geeft", () =
     const t = convexTest(schema, modules);
     const s = await setup(t);
     const storageId = await t.run((ctx) => ctx.storage.store(new Blob(["BEELD"], { type: "image/jpeg" })));
-    await addRow(t, s.bob, storageId, { label: "EERSTE", withFormats: true, exifOrientation: 3 });
-    await addRow(t, s.mia, storageId, { label: "TWEEDE", withFormats: true, exifOrientation: 6 });
+    const eerste = await addRow(t, s.bob, storageId, { label: "EERSTE", withFormats: true, exifOrientation: 3 });
+    const tweede = await addRow(t, s.mia, storageId, { label: "TWEEDE", withFormats: true, exifOrientation: 6 });
+    await shareWithOwen(t, s, eerste);
+    await shareWithOwen(t, s, tweede);
     await t.run((ctx) => ctx.db.patch(s.owen, { profilePhotoStorageId: storageId }));
 
     const served = await servedText(t, s.owen);
@@ -272,8 +293,10 @@ describe("fix-cyclus 2: binnen een stap de oudste rij (P2)", () => {
     const t = convexTest(schema, modules);
     const s = await setup(t);
     const storageId = await t.run((ctx) => ctx.storage.store(new Blob(["BEELD"], { type: "image/jpeg" })));
-    await addRow(t, s.bob, storageId, { label: "NIEUW", withFormats: true, exifOrientation: 6 });
+    const nieuw = await addRow(t, s.bob, storageId, { label: "NIEUW", withFormats: true, exifOrientation: 6 });
     const old = await addRow(t, s.mia, storageId, { label: "OUD", withFormats: true, exifOrientation: 3 });
+    await shareWithOwen(t, s, nieuw);
+    await shareWithOwen(t, s, old);
     await t.run(async (ctx) => {
       await ctx.db.patch(old, { createdAt: Date.now() - 30 * DAY });
       await ctx.db.patch(s.owen, { profilePhotoStorageId: storageId });
@@ -289,6 +312,8 @@ describe("fix-cyclus 2: binnen een stap de oudste rij (P2)", () => {
     const storageId = await t.run((ctx) => ctx.storage.store(new Blob(["BEELD"], { type: "image/jpeg" })));
     const first = await addRow(t, s.bob, storageId, { label: "EERSTE", withFormats: true, exifOrientation: 8 });
     const second = await addRow(t, s.mia, storageId, { label: "TWEEDE", withFormats: true, exifOrientation: 6 });
+    await shareWithOwen(t, s, first);
+    await shareWithOwen(t, s, second);
     await t.run(async (ctx) => {
       const at = Date.now() - DAY;
       await ctx.db.patch(first, { createdAt: at });

@@ -22,7 +22,8 @@ import {
 //   albumcover     admin (WP28: de maker van het album heeft geen eigen recht;
 //                  WP28b A-invariant 22: het menu kent de maker niet meer)
 //   groepscover    admin
-//   profielfoto    eigenaar
+//   profielfoto    iedereen die de foto in het album ziet (WP27 besluit 2,
+//                  A-invariant 10: foto-toegang, niet alleen de eigenaar)
 //   uit album      wie hem toevoegde, of admin
 //   verwijderen    eigenaar
 
@@ -54,22 +55,22 @@ describe("photoActions: wat het menu toont", () => {
     );
   });
 
-  it("foto van een ander, lid: niets", () => {
+  it("foto van een ander, lid: alleen als profielfoto (WP27 besluit 2)", () => {
     expect(
       menu({ me: ME, role: "member", ownerId: OTHER, addedBy: OTHER }),
-    ).toEqual([]);
+    ).toEqual(["profilePhoto"]);
   });
 
-  it("foto van een ander, admin: draaien, covers en uit album; geen profielfoto, niet verwijderen", () => {
+  it("foto van een ander, admin: draaien, covers, profielfoto en uit album; niet verwijderen", () => {
     expect(
       menu({ me: ME, role: "admin", ownerId: OTHER, addedBy: OTHER }),
-    ).toEqual(sorted(["rotate", "albumCover", "groupCover", "removeFromAlbum"]));
+    ).toEqual(sorted(["rotate", "albumCover", "groupCover", "profilePhoto", "removeFromAlbum"]));
   });
 
-  it("foto van een ander die de user zelf toevoegde (oude data): uit album mag", () => {
+  it("foto van een ander die de user zelf toevoegde (oude data): profielfoto en uit album", () => {
     expect(
       menu({ me: ME, role: "member", ownerId: OTHER, addedBy: ME }),
-    ).toEqual(["removeFromAlbum"]);
+    ).toEqual(sorted(["profilePhoto", "removeFromAlbum"]));
   });
 
   it("verwijderen staat als laatste", () => {
