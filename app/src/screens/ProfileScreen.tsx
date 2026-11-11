@@ -19,6 +19,7 @@ import { useUploader } from "../data/upload";
 import { useLiveQuery } from "../data/useLiveQuery";
 import { nameErrorText } from "../lib/nameError";
 import {
+  PROFILE_PHOTO_HINT,
   nameIsDirty,
   profilePhotoMenu,
   profilePhotoNotice,
@@ -335,7 +336,7 @@ function ProfilePhotoBlock({ me }: { me: Me }) {
         </Notice>
       )}
       <Text variant="meta" color="muted" style={styles.centerText}>
-        Een foto uit een album kies je daar: Acties, Als profielfoto.
+        {PROFILE_PHOTO_HINT}
       </Text>
     </View>
   );

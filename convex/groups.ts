@@ -29,6 +29,7 @@ import {
   upsertAlbumLastSeen,
 } from "./albums";
 import { afterUnpublish, pruneRatingsOfLeaver } from "./lib/unpublish";
+import { wipeIfLost } from "./lib/profilePhoto";
 
 const ROLE = v.union(v.literal("admin"), v.literal("member"));
 
@@ -449,6 +450,10 @@ export async function internalRemoveMember(
     new Set(groupAps.map((ap) => ap.photoId)),
     owned,
   );
+
+  // WP27 besluit 7 (A-invariant 11): had hij de foto van een ander als
+  // profielfoto en ziet hij die nu niet meer, dan krijgt hij de letter.
+  await wipeIfLost(ctx, userId);
 
   // [GAP] zero-member check telt invites niet mee (cascade-matrix.md S1).
   const remaining = await ctx.db

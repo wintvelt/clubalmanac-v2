@@ -2,9 +2,11 @@ import type { MutationCtx } from "../_generated/server";
 import type { Doc, Id } from "../_generated/dataModel";
 import { recomputeRatingAggregate, writeRatingAggregate } from "../ratings";
 import { isPublishedInAlbum, isPublishedInGroup } from "./photoAccess";
+import { wipeLostForPhotos } from "./profilePhoto";
 
 // WP28 A-invariant 3: een publicatie die verdwijnt, neemt cover en ratings
-// mee, langs elke weg. Eén cascade voor albums.removePhoto, albums.remove,
+// mee, langs elke weg. WP27 besluit 7: en de profielfoto van wie daarna geen
+// toegang meer heeft tot die foto. Eén cascade voor albums.removePhoto, albums.remove,
 // lid weg (M1), laatste lid weg (M2-e) en groups.remove. Cascade-matrix AP3
 // en AP4.
 //
@@ -52,6 +54,10 @@ export async function afterUnpublish(
       await ctx.db.patch(groupId, { coverPhotoId: undefined });
     }
   }
+
+  // WP27 besluit 7 (A-invariant 11): wie een van deze foto's als profielfoto
+  // had en er geen toegang meer toe heeft, krijgt de letter.
+  await wipeLostForPhotos(ctx, photoIds);
 }
 
 /**

@@ -25,7 +25,7 @@ import {
   publicProfile,
   publicProfileFields,
 } from "./lib/shapes";
-import { avatarFieldsOf } from "./lib/profilePhoto";
+import { avatarFieldsOf, isFlaggedImage } from "./lib/profilePhoto";
 
 // Default upload-limiet voor nieuwe users. Mocht een admin een hogere limiet
 // willen geven, dan kan dat via directe DB patch (geen public mutation in
@@ -240,7 +240,11 @@ export const updateProfile = mutation({
       // WP24 invariant 8 / WP17a invariant 16: alleen een eigen beeld (een
       // eigen foto, of de eigen huidige profielfoto). Check vóór de patch,
       // zodat een geweigerd beeld ook de naam laat staan.
-      if (!(await canUseStorage(ctx, user, args.profilePhotoStorageId))) {
+      // WP27 besluit 8: ook geen beeld van een gemelde foto.
+      if (
+        !(await canUseStorage(ctx, user, args.profilePhotoStorageId)) ||
+        (await isFlaggedImage(ctx, args.profilePhotoStorageId))
+      ) {
         throw new Error("Geen toegang tot dit beeld");
       }
       patch.profilePhotoStorageId = args.profilePhotoStorageId;
@@ -256,8 +260,10 @@ export const updateProfile = mutation({
 // invariant 16 terug): elke foto waar de caller foto-toegang toe heeft, ook
 // de foto van een ander in een album van een gedeelde groep. Eén weigering
 // voor een foto zonder toegang, een onbekend en een gewist id (A-invariant 8).
-// De eigenaar van de foto hoort het niet (besluit 5). Of de profielfoto later
-// nog te zien is, bepaalt `visibleProfilePhoto` bij elke lezing.
+// De eigenaar van de foto hoort het niet (besluit 5). Besluit 8 (A-invariant
+// 17): een gemelde foto, ook een eigen, krijgt dezelfde weigering, zodat die
+// niet verraadt dat hij gemeld is. Raakt de user de toegang later kwijt, dan
+// wist die mutation de koppeling (besluit 7).
 const NO_PHOTO_ACCESS = "Deze foto kan niet je profielfoto worden";
 
 export const setProfilePhoto = mutation({
@@ -265,7 +271,13 @@ export const setProfilePhoto = mutation({
   handler: async (ctx, { photoId }) => {
     const user = await requireCurrentUser(ctx);
     const photo = await ctx.db.get(photoId);
-    if (!photo || !(await canAccessPhoto(ctx, user._id, photo))) throw new Error(NO_PHOTO_ACCESS);
+    if (
+      !photo ||
+      !(await canAccessPhoto(ctx, user._id, photo)) ||
+      (await isFlaggedImage(ctx, photo.storageId))
+    ) {
+      throw new Error(NO_PHOTO_ACCESS);
+    }
     await ctx.db.patch(user._id, { profilePhotoStorageId: photo.storageId });
   },
 });

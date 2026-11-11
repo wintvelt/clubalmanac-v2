@@ -31,6 +31,11 @@ export function profilePhotoNotice(owner: { isMe: boolean; name?: string }): Pro
   };
 }
 
+// WP27 A-invariant 21: de hulptekst onder het menu op Profiel. In het album
+// opent lang drukken op een foto het foto-menu, met "Als profielfoto".
+export const PROFILE_PHOTO_HINT =
+  "Een foto uit een album kiezen? Houd hem in het album ingedrukt en kies Als profielfoto.";
+
 export type ProfilePhotoMenuItem = "upload" | "remove";
 
 // Het menu bij de foto op Profiel (vraag 2): uploaden, en weghalen als er een
