@@ -12,11 +12,12 @@ Een lid ziet op Profiel in één oogopslag zijn foto, zijn naam en zijn e-mailad
 2. **Elke foto met toegang kan profielfoto worden (2026-11-08).** Dit draait WP17a besluit 10 en WP17b invariant 12 (alleen een eigen foto) terug. Zo werkte het ook in v1.
 3. **De profielfoto blijft openbaar** (WP17a besluit 8): ook voor wie is uitgelogd en voor wie buiten de groep staat.
 4. **Wie de toegang tot de foto kwijt is, krijgt de letter.**
+5. **De eigenaar van de foto hoort het niet** (2026-11-11), net als in v1.
 
 ## Invarianten (draft)
 
 1. **Kiezen met toegang.** `users.setProfilePhoto` neemt elke foto waar de caller foto-toegang toe heeft (`canAccessPhoto`). Zonder toegang, bij een onbekend id en bij een gewiste foto komt dezelfde weigering en verandert er niets. Zo is er geen bestaans-orakel.
-2. **Eerst de melding.** Vóór het instellen zegt de app dat een profielfoto voor iedereen te zien is, ook buiten de groep. Bij de foto van een ander geldt dat ook voor die foto (de tekst: open vraag 4).
+2. **Eerst de melding.** Vóór het instellen zegt de app dat een profielfoto voor iedereen te zien is, ook buiten de groep. Bij de foto van een ander geldt dat ook voor die foto (de tekst: open vraag 3).
 3. **Geen toegang meer, dan geen beeld, en dat regelt de backend.** Zodra de user geen foto-toegang meer heeft, geeft het openbare profielpad geen beeld meer en ziet iedereen de letter. Een filter in de app is niet genoeg. Toegang verlies je zo:
    - je bent geen lid meer van de groep;
    - de foto gaat uit het album;
@@ -58,8 +59,7 @@ Een lid ziet op Profiel in één oogopslag zijn foto, zijn naam en zijn e-mailad
 
 1. **Toegang kwijt: blijft de koppeling staan?** Krijgt het lid de toegang terug, dan komt de foto terug. Het alternatief is de koppeling wissen, als cascade in elke flow die toegang wegneemt. A adviseert, op grond van v1 en de cascade-matrix.
 2. **Waar kies je de foto van een ander?** Alleen via het foto-menu ("Als profielfoto"), of ook vanuit het menu op Profiel?
-3. **Hoort de eigenaar van de foto het?** In v1 niet. Het advies van regie is niet (pariteit). Dit beslist Wouter.
-4. **De tekst van de melding** bij de foto van een ander.
+3. **De tekst van de melding** bij de foto van een ander.
 
 ## Cross-refs
 
@@ -75,8 +75,8 @@ Een lid ziet op Profiel in één oogopslag zijn foto, zijn naam en zijn e-mailad
 
 | Stap | Wie | Wat |
 |---|---|---|
-| 1 | regie | deze draft; Wouter beantwoordt vraag 3 |
-| 2 | A (`wp-a`) | spec-aanvulling (vraag 1, 2 en 4, de pariteit van het scherm, de telling) en RED tests voor de backend en de pure app-logica |
+| 1 | regie | deze draft |
+| 2 | A (`wp-a`) | spec-aanvulling (vraag 1 t/m 3, de pariteit van het scherm, de telling) en RED tests voor de backend en de pure app-logica |
 | 3 | B (`wp-b`) | implementatie tot groen |
 | 4 | audit | toetst B tegen spec en tests |
 | 5 | red-team | zoekt een beeld via het openbare profielpad terwijl de user er geen toegang meer toe heeft: na vertrek, na uit album, na wissen, in een race en met een oud beeld. Zoekt ook een orakel voor toegang of groep. Krijgt alleen het productdoel en de diff. Het rapport gaat verbatim naar Wouter. |
