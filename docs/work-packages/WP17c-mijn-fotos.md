@@ -1,6 +1,16 @@
 # WP17c: Mijn foto's, toevoegen aan album, en in welke albums een foto staat
 
-> Draft (regie, 2026-11-12). App-WP met een klein backend-deel. Gesplitst uit de oude WP17c (besluit 2026-11-12): de kaart, locatie wijzigen en delen gaan naar WP17d.
+> Landed 2026-11-12: A → B → audit, één fix-cyclus (alleen test en spectekst), gate op dev groen (simulator, release-build). App-WP met een klein backend-deel. Gesplitst uit de oude WP17c (besluit 2026-11-12): de kaart, locatie wijzigen en delen gaan naar WP17d.
+
+## Gate (dev, 2026-11-12)
+
+- Mijn foto's als Dev Wouter (473 foto's): het raster laadt, de nieuwste upload staat bovenaan.
+- "Niet in een album" toont 7 foto's.
+- Een foto stond in "Gatetest nu" én in "Food we like" (Test group). De eigenaar ziet in het detail beide albums. Het tweede lid (lid van Gatetest, niet van Test group) krijgt van `albums.listForPhoto` alleen "Gatetest nu". Dat is met zijn identiteit via de CLI gecontroleerd, niet in de app.
+- "Naar album" met een losse foto en een foto die er al in stond: "1 foto toegevoegd aan het album. 1 foto stond al in het album." De album-keuze toont de albums per groep.
+- Daarna zijn beide wijzigingen teruggedraaid. De integriteitscheck meldt alleen de bekende foto zonder formaten.
+- Wat opviel: in het raster is die foto zonder formaten voor de helft grijs. Dat is de bekende drift, niet nieuw.
+- Backlog: echt bladeren per pagina (besluit 4), en `photos.listByOwner` opruimen (A-kernvondst 7).
 
 ## Productdoel
 
