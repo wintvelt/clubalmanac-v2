@@ -17,6 +17,10 @@ Een lid ziet op Profiel in één oogopslag zijn foto, zijn naam en zijn e-mailad
 7. **Toegang kwijt wist de koppeling** (2026-11-11, red-team punt 1). Een foto die de eigenaar terugtrok, wordt niet vanzelf weer openbaar. Dit vervangt "toegang terug, foto terug" (A-advies vraag 1).
 8. **Een gemelde foto wordt geen profielfoto** (2026-11-11, red-team punt 2). Kiezen wordt geweigerd, en zolang de melding loopt is hij niet te zien.
 9. **Na een goedgekeurd bezwaar komt de profielfoto terug** (2026-11-11, A-keuze 4). Een melding is nog geen besluit.
+10. **Het meld-orakel is geaccepteerd** (2026-11-12, red-team hercheck). Wie een foto ziet en hem niet als profielfoto mag kiezen, weet daardoor dat hij gemeld is, maar niet door wie. Met besluit 8 is dat niet helemaal te voorkomen. Ook de nits van de hercheck zijn geaccepteerd:
+    - een melding verbergt ook iemands eigen profielfoto;
+    - het vangnet verbergt wel, maar wist niets (op prod 0 keer);
+    - er wordt wat extra gelezen.
 
 ## Invarianten (draft)
 
