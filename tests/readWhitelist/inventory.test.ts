@@ -33,6 +33,8 @@ const EXPECTED_PUBLIC_QUERIES = [
   "albums:getWithGroup",
   "albums:listByGroup",
   "albums:listByGroupWithUnread",
+  // WP17c A-invariant 9: "in welke albums" in het foto-detail.
+  "albums:listForPhoto",
   "albums:listPhotos",
   "features:getById",
   "features:hasUpvoted",
@@ -47,6 +49,8 @@ const EXPECTED_PUBLIC_QUERIES = [
   "photos:getWithOwner",
   "photos:listAllFlagged",
   "photos:listByOwner",
+  // WP17c invariant 1, 2: Mijn foto's, bladerend.
+  "photos:listMine",
   "photos:listMyFlagged",
   "ratings:listForPhoto",
   "smoke:ping",
