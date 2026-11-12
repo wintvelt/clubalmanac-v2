@@ -122,22 +122,22 @@ describe("photos.getById / listByOwner", () => {
 });
 
 describe("photos.update", () => {
-  it("eigenaar kan locationLabel wijzigen", async () => {
+  it("eigenaar kan takenAt wijzigen (WP17d A-invariant 4: geen plaatsnaam meer)", async () => {
     const t = convexTest(schema, modules);
     await registerUser(t, "user_alice", "a@x.com");
     const storageId = await uploadStorage(t);
     const photoId = await withUser(t, "user_alice").mutation(
       internal.photos.create,
-      { storageId, locationLabel: "Oud" },
+      { storageId, takenAt: 1_000 },
     );
 
     await withUser(t, "user_alice").mutation(api.photos.update, {
       photoId,
-      locationLabel: "Nieuw",
+      takenAt: 2_000,
     });
 
     const got = await t.run((ctx) => ctx.db.get(photoId));
-    expect(got?.locationLabel).toBe("Nieuw");
+    expect(got?.takenAt).toBe(2_000);
   });
 
   it("niet-eigenaar wordt geweigerd", async () => {
@@ -153,7 +153,7 @@ describe("photos.update", () => {
     await expect(
       withUser(t, "user_bob").mutation(api.photos.update, {
         photoId,
-        locationLabel: "Hijack",
+        takenAt: 3_000,
       }),
     ).rejects.toThrow();
   });

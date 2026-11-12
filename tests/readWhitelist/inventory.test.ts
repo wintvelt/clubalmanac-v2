@@ -35,6 +35,8 @@ const EXPECTED_PUBLIC_QUERIES = [
   "albums:listByGroupWithUnread",
   // WP17c A-invariant 9: "in welke albums" in het foto-detail.
   "albums:listForPhoto",
+  // WP17d A-invariant 1: de kaart van een album (A-keuze 1: afgerond voor anderen).
+  "albums:listLocations",
   "albums:listPhotos",
   "features:getById",
   "features:hasUpvoted",
@@ -46,6 +48,8 @@ const EXPECTED_PUBLIC_QUERIES = [
   "invites:getByToken",
   "invites:listMine",
   "photos:getById",
+  // WP17d A-invariant 2: de exacte plek van een eigen foto, alleen de eigenaar.
+  "photos:getLocation",
   "photos:getWithOwner",
   "photos:listAllFlagged",
   "photos:listByOwner",

@@ -59,10 +59,12 @@ describe("GET /beeld/foto — een foto met formaten", () => {
     expect(cc).not.toMatch(/\bno-store\b/);
   });
 
-  it("zonder formaat: nog steeds het origineel (WP17a besluit 2)", async () => {
+  // WP17d A-keuze 1: alleen voor de eigenaar; een ander lid krijgt groot
+  // (tests/location/originalImage.test.ts).
+  it("zonder formaat: de eigenaar krijgt nog steeds het origineel (WP17a besluit 2)", async () => {
     const t = convexTest(schema, modules);
     const s = await setup(t);
-    const res = await withUser(t, "user_mia").fetch(photoUrl(s.withF.photoId), { method: "GET" });
+    const res = await withUser(t, "user_owen").fetch(photoUrl(s.withF.photoId), { method: "GET" });
     expect(await res.text()).toBe("ORIGINEEL-F");
   });
 
