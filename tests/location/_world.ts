@@ -108,6 +108,3 @@ export async function refusal(p: Promise<unknown>): Promise<unknown> {
   }
   return "geen weigering";
 }
-
-/** Afgerond op 2 decimalen (A-keuze 1). */
-export const round2 = (x: number) => Math.round(x * 100) / 100;

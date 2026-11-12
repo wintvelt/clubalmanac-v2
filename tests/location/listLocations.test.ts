@@ -8,14 +8,14 @@ import {
   MIA_SPOT,
   OWEN_SPOT,
   refusal,
-  round2,
   schema,
   world,
 } from "./_world";
 
 // WP17d A-invariant 1 en 5: de kaart-read `albums.listLocations({ albumId })`.
 // Spec: docs/work-packages/WP17d-kaart-locatie-delen.md §Spec-criticus
-// aanvullingen. Geeft per foto precies { photoId, latitude, longitude }.
+// aanvullingen. Geeft per foto precies { photoId, latitude, longitude },
+// exact voor iedereen met toegang (besluit 1).
 
 type Spot = { photoId: string; latitude: number; longitude: number };
 
@@ -122,72 +122,23 @@ describe("albums.listLocations — welke foto's (A-invariant 1)", () => {
   });
 });
 
-describe("A-keuze 1: andere leden zien de plek afgerond op 2 decimalen", () => {
-  it("Mia ziet Owens foto afgerond, haar eigen foto exact", async () => {
+describe("besluit 1: iedereen die de foto mag zien, ziet de exacte plek", () => {
+  it("Mia ziet Owens foto exact, en haar eigen foto", async () => {
     const t = convexTest(schema, modules);
     const w = await world(t);
     const rows = byId(
       (await withUser(t, "user_mia").query(A.albums.listLocations, { albumId: w.A1 })) as Spot[],
     );
-    expect(rows.get(w.owenSpot)).toEqual({
-      photoId: w.owenSpot,
-      latitude: round2(OWEN_SPOT.latitude),
-      longitude: round2(OWEN_SPOT.longitude),
-    });
+    expect(rows.get(w.owenSpot)).toEqual({ photoId: w.owenSpot, ...OWEN_SPOT });
     expect(rows.get(w.miaSpot)).toEqual({ photoId: w.miaSpot, ...MIA_SPOT });
   });
 
-  it("Owen ziet Mia's foto afgerond", async () => {
+  it("Owen ziet Mia's foto exact", async () => {
     const t = convexTest(schema, modules);
     const w = await world(t);
     const rows = byId(
       (await withUser(t, "user_owen").query(A.albums.listLocations, { albumId: w.A1 })) as Spot[],
     );
-    expect(rows.get(w.miaSpot)).toEqual({
-      photoId: w.miaSpot,
-      latitude: round2(MIA_SPOT.latitude),
-      longitude: round2(MIA_SPOT.longitude),
-    });
-  });
-
-  it("twee plekken binnen hetzelfde vak geven een ander lid exact dezelfde coördinaten", async () => {
-    const t = convexTest(schema, modules);
-    const w = await world(t);
-    // Ca. 50 m van Owens plek, in hetzelfde vak van 0,01°.
-    const near = await t.run(async (ctx) => {
-      const storageId = await ctx.storage.store(new Blob(["x"]));
-      const id = await ctx.db.insert("photos", {
-        ownerId: w.owen,
-        storageId,
-        ratingCount: 0,
-        createdAt: Date.now(),
-        latitude: OWEN_SPOT.latitude + 0.0004,
-        longitude: OWEN_SPOT.longitude - 0.0004,
-      });
-      await ctx.db.insert("albumPhotos", {
-        albumId: w.A1,
-        photoId: id,
-        groupId: w.G,
-        addedAt: Date.now(),
-        addedBy: w.owen,
-      });
-      return id;
-    });
-    const rows = byId(
-      (await withUser(t, "user_mia").query(A.albums.listLocations, { albumId: w.A1 })) as Spot[],
-    );
-    const a = rows.get(w.owenSpot)!;
-    const b = rows.get(near)!;
-    expect([b.latitude, b.longitude]).toEqual([a.latitude, a.longitude]);
-  });
-
-  it("negatieve coördinaten worden ook afgerond", async () => {
-    const t = convexTest(schema, modules);
-    const w = await world(t);
-    await t.run((ctx) => ctx.db.patch(w.owenSpot, { latitude: -33.868812, longitude: -151.209345 }));
-    const rows = byId(
-      (await withUser(t, "user_mia").query(A.albums.listLocations, { albumId: w.A1 })) as Spot[],
-    );
-    expect(rows.get(w.owenSpot)).toEqual({ photoId: w.owenSpot, latitude: -33.87, longitude: -151.21 });
+    expect(rows.get(w.miaSpot)).toEqual({ photoId: w.miaSpot, ...MIA_SPOT });
   });
 });

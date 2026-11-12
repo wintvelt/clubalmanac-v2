@@ -6,7 +6,7 @@ import { mapRegion, placeShareActions, shareEdits, shareNotice } from "../src/li
 
 // WP17d: pure logica achter de albumkaart, "Locatie wijzigen" en delen.
 // Spec: docs/work-packages/WP17d-kaart-locatie-delen.md §Spec-criticus
-// aanvullingen (A-invariant 6 en 7; A-keuze 3 en 4; kernvondst 5). De
+// aanvullingen (A-invariant 6 en 7; besluit 3; kernvondst 5). De
 // schermen, de kaart zelf en het deelmenu toetst de gate.
 
 const ME = "user_me";
@@ -25,7 +25,7 @@ describe("placeShareActions: Locatie wijzigen alleen bij een eigen foto (A-invar
   });
 });
 
-describe("A-keuze 4: delen bij elke foto die je ziet, alleen met formaten", () => {
+describe("besluit 3: delen bij elke foto die je ziet, alleen met formaten", () => {
   it("eigen en andermans foto met formaten: delen", () => {
     expect(placeShareActions({ me: ME, ownerId: ME, hasFormats: true })).toContain("share");
     expect(placeShareActions({ me: ME, ownerId: OTHER, hasFormats: true })).toContain("share");
@@ -37,9 +37,9 @@ describe("A-keuze 4: delen bij elke foto die je ziet, alleen met formaten", () =
   });
 });
 
-// --- Melding vóór delen (A-keuze 3) -----------------------------------------------------
+// --- Melding vóór delen (besluit 3) -----------------------------------------------------
 
-describe("A-keuze 3: melding vóór het delen van andermans foto", () => {
+describe("besluit 3: melding vóór het delen van andermans foto", () => {
   it("eigen foto: geen melding", () => {
     expect(shareNotice({ me: ME, ownerId: ME, ownerName: "Ik" })).toBeNull();
   });
