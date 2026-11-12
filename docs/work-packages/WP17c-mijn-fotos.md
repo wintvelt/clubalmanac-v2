@@ -6,6 +6,12 @@
 
 Een lid vindt al zijn eigen foto's op één plek, ook de foto's die in geen album staan, en zet ze in een album van zijn groep. Bij elke foto die hij ziet, ziet hij in welke albums die staat, maar alleen albums die hij zelf mag zien.
 
+## Besluiten Wouter
+
+1. **Eén lijst in Mijn foto's, nieuwste upload eerst** (2026-11-12, A-keuze 1).
+2. **Schakelaar "Alle / Niet in een album"** (2026-11-12, A-keuze 2).
+3. **"In welke albums" bij elke foto, zonder mini-cover en niet aantikbaar** (2026-11-12, open vraag 3).
+
 ## Invarianten (draft)
 
 1. **Mijn foto's toont alleen je eigen foto's.** Dat zijn alle foto's waarvan jij de eigenaar bent: in een album of in geen album, en ook een geüploade profielfoto (WP18). Nooit de foto van een ander.
