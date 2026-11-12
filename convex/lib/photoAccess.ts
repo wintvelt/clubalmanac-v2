@@ -80,13 +80,13 @@ export async function isPublishedInAlbum(
   return ap !== null;
 }
 
-// WP24 invariant 8, aangescherpt door WP17a besluit 10 / invariant 16: een
-// publieke mutation koppelt een beeld (storageId) alleen aan de caller als dat
-// beeld al van de caller is. Toegestaan: het beeld van minstens één foto
-// waarvan de caller de eigenaar is (een eigen upload inbegrepen; een beeld aan
-// foto's van twee eigenaren mag elk van beide gebruiken), of de eigen huidige
-// profielfoto (ook een los, gemigreerd v1-beeld). Foto-toegang tot de foto van
-// een ander is niet genoeg: een profielfoto is openbaar (WP17a besluit 8).
+// WP24 invariant 8 / WP17a invariant 16: users.updateProfile koppelt een
+// beeld (storageId) alleen aan de caller als dat beeld al van de caller is.
+// Toegestaan: het beeld van minstens één foto waarvan de caller de eigenaar is
+// (een eigen upload inbegrepen; een beeld aan foto's van twee eigenaren mag
+// elk van beide gebruiken), of de eigen huidige profielfoto (ook een los,
+// gemigreerd v1-beeld). De foto van een ander wordt profielfoto via
+// users.setProfilePhoto, op foto-id en met foto-toegang (WP27 besluit 2).
 // Geweigerd: al het andere, ook andermans profielbeeld en een los beeld. Een
 // onbekend beeld-id heeft geen foto-rij en valt in dezelfde tak (één uitkomst,
 // geen orakel).

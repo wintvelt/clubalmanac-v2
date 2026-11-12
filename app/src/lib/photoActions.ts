@@ -19,7 +19,8 @@ export type Role = "admin" | "member";
 // Dezelfde regels als de backend, zonder er code mee te delen:
 //   albumcover     admin                               (albums.update, WP28 A-keuze 2)
 //   groepscover    admin                               (groups.update, WP24)
-//   profielfoto    eigenaar                            (users.setProfilePhoto)
+//   profielfoto    iedereen die de foto in het album ziet (users.setProfilePhoto,
+//                  WP27 besluit 2: foto-toegang, niet alleen de eigenaar)
 //   draaien        eigenaar, of admin                  (photos.rotate, WP8)
 //   uit album      wie hem toevoegde, of admin         (albums.removePhoto)
 //   verwijderen    eigenaar                            (photos.remove)
@@ -36,7 +37,7 @@ type MenuInput = {
 const RULES: Record<PhotoAction, (i: MenuInput) => boolean> = {
   albumCover: (i) => i.role === "admin",
   groupCover: (i) => i.role === "admin",
-  profilePhoto: (i) => i.ownerId === i.me,
+  profilePhoto: () => true,
   rotate: (i) => i.role === "admin" || i.ownerId === i.me,
   removeFromAlbum: (i) => i.role === "admin" || i.addedBy === i.me,
   delete: (i) => i.ownerId === i.me,

@@ -1,17 +1,21 @@
 /// <reference types="vite/client" />
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { api, internal } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
 import { as, newT, outcome, type T } from "../readWhitelist/_world";
 
-// WP17b invariant 12 (kernvondst 1, vraag 4): de app kent geen storageId meer
-// (WP17a invariant 10), dus "als profielfoto instellen" loopt via het foto-id.
-// Dezelfde regel als WP17a invariant 16: alleen een eigen foto. Een profielfoto
-// is openbaar (WP17a besluit 8), dus foto-toegang tot de foto van een ander is
-// niet genoeg. Geweigerd: één uitkomst voor een foto van een ander (met of
-// zonder toegang), een onbekend en een gewist id, en niets verandert.
+// WP27 invariant 1 en A-invariant 8 (draait WP17b invariant 12 terug, besluit
+// 2): "als profielfoto instellen" loopt via het foto-id (de app kent geen
+// storageId, WP17a invariant 10) en neemt elke foto waar de caller
+// foto-toegang toe heeft: een eigen foto, of de foto van een ander in een
+// album van een groep waar hij lid van is. Geweigerd: één uitkomst voor een
+// foto zonder toegang, een foto van een ander in geen album, een onbekend en
+// een gewist id, en niets verandert. Wat er daarna op het profielpad gebeurt
+// als de toegang wegvalt: tests/users/profileAccess.test.ts.
 //
-// Spec: docs/work-packages/WP17b-foto-acties.md §Spec-criticus aanvullingen.
+// Spec: docs/work-packages/WP27-profiel.md §Spec-criticus aanvullingen.
 
 const MISSING_FUNCTION =
   /could not find|no such export|exported from module|no function named|not a function|not registered/i;
@@ -20,6 +24,7 @@ const MISSING_FUNCTION =
  * Wereld:
  *   G — alice (member), bob (admin). Album A met pAlice en pBob.
  *   pAlicePrivate — van alice, in geen album.
+ *   pBobPrivate — van bob, in geen album.
  *   pCarol — van carol, geen groep met alice.
  *   Elke user heeft een los profielbeeld (zoals een gemigreerde v1-profielfoto).
  */
@@ -51,6 +56,7 @@ async function world(t: T) {
     const pAlice = await photo(alice, 6);
     const pAlicePrivate = await photo(alice, 3);
     const pBob = await photo(bob, 8);
+    const pBobPrivate = await photo(bob, 2);
     const pCarol = await photo(carol, 1);
     const groupId = await ctx.db.insert("groups", { name: "G", createdBy: bob, createdAt: now });
     await ctx.db.insert("memberships", { userId: alice, groupId, role: "member", joinedAt: now });
@@ -62,7 +68,7 @@ async function world(t: T) {
     ] as const) {
       await ctx.db.insert("albumPhotos", { albumId, photoId, groupId, addedAt: now, addedBy });
     }
-    return { alice, bob, carol, pAlice, pAlicePrivate, pBob, pCarol };
+    return { alice, bob, carol, pAlice, pAlicePrivate, pBob, pBobPrivate, pCarol };
   });
 }
 
@@ -158,32 +164,81 @@ describe("users.setProfilePhoto: een eigen foto", () => {
   });
 });
 
-describe("users.setProfilePhoto: geweigerd, één uitkomst, niets veranderd", () => {
-  it("de foto van een groepsgenoot (met foto-toegang)", async () => {
+describe("users.setProfilePhoto: de foto van een ander met foto-toegang (besluit 2)", () => {
+  it("de foto van een groepsgenoot in een gedeeld album wordt de profielfoto", async () => {
     const t = newT();
     const w = await world(t);
-    await expectRefusedNoChange(t, () => setProfilePhoto(t, w.pBob), "pBob");
-  });
-
-  it("ook als admin: de foto van een ander lid", async () => {
-    const t = newT();
-    const w = await world(t);
-    await expectRefusedNoChange(
-      t,
-      () => as(t, "user_bob", "bob@x.com").mutation(api.users.setProfilePhoto, { photoId: w.pAlice }),
-      "bob op pAlice",
+    await setProfilePhoto(t, w.pBob);
+    expect((await userRow(t, w.alice))!.profilePhotoStorageId).toBe(await storageOf(t, w.pBob));
+    expect(await t.query(internal.images.profileImage, { userId: w.alice })).toBe(
+      await storageOf(t, w.pBob),
     );
   });
 
-  it("geen orakel: andermans foto met toegang, zonder toegang, onbekend en gewist geven dezelfde uitkomst", async () => {
+  it("de avatar volgt de stand van die foto", async () => {
     const t = newT();
     const w = await world(t);
-    const withAccess = await expectRefusedNoChange(t, () => setProfilePhoto(t, w.pBob), "met toegang");
+    await setProfilePhoto(t, w.pBob);
+    const me = await asAlice(t).query(api.users.profile, {});
+    expect(me!.profileOrientation).toBe(8);
+  });
+
+  it("ook een admin: de foto van een ander lid", async () => {
+    const t = newT();
+    const w = await world(t);
+    await as(t, "user_bob", "bob@x.com").mutation(api.users.setProfilePhoto, { photoId: w.pAlice });
+    expect((await userRow(t, w.bob))!.profilePhotoStorageId).toBe(await storageOf(t, w.pAlice));
+  });
+
+  it("raakt de foto, de eigenaar en zijn telling niet (besluit 5: de eigenaar hoort het niet)", async () => {
+    const t = newT();
+    const w = await world(t);
+    const before = await t.run(async (ctx) => ({
+      bob: await ctx.db.get(w.bob),
+      photo: await ctx.db.get(w.pBob),
+    }));
+    await setProfilePhoto(t, w.pBob);
+    const after = await t.run(async (ctx) => ({
+      bob: await ctx.db.get(w.bob),
+      photo: await ctx.db.get(w.pBob),
+    }));
+    expect(after).toEqual(before);
+    // Geen mail of andere geplande actie.
+    const scheduled = await t.run(async (ctx) => ctx.db.system.query("_scheduled_functions").collect());
+    expect(scheduled).toEqual([]);
+  });
+});
+
+describe("users.setProfilePhoto: geweigerd, één uitkomst, niets veranderd (A-invariant 8)", () => {
+  it("de foto van een ander buiten elke gedeelde groep", async () => {
+    const t = newT();
+    const w = await world(t);
+    await expectRefusedNoChange(t, () => setProfilePhoto(t, w.pCarol), "pCarol");
+  });
+
+  it("de foto van een groepsgenoot die in geen album staat", async () => {
+    const t = newT();
+    const w = await world(t);
+    await expectRefusedNoChange(t, () => setProfilePhoto(t, w.pBobPrivate), "pBobPrivate");
+  });
+
+  it("geen orakel: zonder toegang, buiten album, onbekend en gewist geven dezelfde uitkomst", async () => {
+    const t = newT();
+    const w = await world(t);
     const noAccess = await expectRefusedNoChange(t, () => setProfilePhoto(t, w.pCarol), "zonder toegang");
+    const notInAlbum = await expectRefusedNoChange(t, () => setProfilePhoto(t, w.pBobPrivate), "buiten album");
     const gone = await goneId(t, w);
     const unknown = await expectRefusedNoChange(t, () => setProfilePhoto(t, gone), "gewist");
-    expect(noAccess).toEqual(withAccess);
-    expect(unknown).toEqual(withAccess);
+    expect(notInAlbum).toEqual(noAccess);
+    expect(unknown).toEqual(noAccess);
+  });
+
+  it("na vertrek uit de groep: de foto van een ex-groepsgenoot", async () => {
+    const t = newT();
+    const w = await world(t);
+    const groupId = await t.run(async (ctx) => (await ctx.db.query("groups").first())!._id);
+    await asAlice(t).mutation(api.groups.removeMember, { groupId, userId: w.alice });
+    await expectRefusedNoChange(t, () => setProfilePhoto(t, w.pBob), "ex-lid");
   });
 
   it("uitgelogd", async () => {
@@ -200,7 +255,25 @@ describe("users.setProfilePhoto: geweigerd, één uitkomst, niets veranderd", ()
     const t = newT();
     const w = await world(t);
     const old = (await userRow(t, w.alice))!.profilePhotoStorageId;
-    await outcome(() => setProfilePhoto(t, w.pBob));
+    await outcome(() => setProfilePhoto(t, w.pCarol));
     expect(await t.query(internal.images.profileImage, { userId: w.alice })).toBe(old);
+  });
+});
+
+// WP27 fix-cyclus 1, audit-nit 1 (A-invariant 20): het commentaar bij
+// canUseStorage beschrijft de regel van nu. updateProfile neemt alleen een
+// eigen beeld; de foto van een ander gaat via setProfilePhoto op foto-id, met
+// foto-toegang (besluit 2). De oude zin ("foto-toegang is niet genoeg") is weg.
+describe("bronscan: het commentaar bij canUseStorage", () => {
+  const src = readFileSync(join(__dirname, "../../convex/lib/photoAccess.ts"), "utf8");
+  const start = src.lastIndexOf("\n\n", src.indexOf("export async function canUseStorage"));
+  const comment = src.slice(start, src.indexOf("export async function canUseStorage"));
+
+  it("zegt niet meer dat foto-toegang tot de foto van een ander niet genoeg is", () => {
+    expect(comment).not.toMatch(/niet genoeg/);
+  });
+
+  it("verwijst voor de foto van een ander naar setProfilePhoto", () => {
+    expect(comment).toMatch(/setProfilePhoto/);
   });
 });

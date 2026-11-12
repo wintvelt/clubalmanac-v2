@@ -1,8 +1,9 @@
 import { useMutation } from "convex/react";
+import type { FunctionReturnType } from "convex/server";
 import * as ImagePicker from "expo-image-picker";
 import { router, useIsFocused } from "expo-router";
 import { useEffect, useRef, useState } from "react";
-import { Alert, Linking, StyleSheet, View } from "react-native";
+import { ActionSheetIOS, Alert, Linking, StyleSheet, View } from "react-native";
 import { Button } from "../components/Button";
 import { ListRow, ListSection } from "../components/ListRow";
 import { Notice } from "../components/Notice";
@@ -18,6 +19,13 @@ import { useUploader } from "../data/upload";
 import { useLiveQuery } from "../data/useLiveQuery";
 import { nameErrorText } from "../lib/nameError";
 import {
+  PROFILE_PHOTO_HINT,
+  nameIsDirty,
+  profilePhotoMenu,
+  profilePhotoNotice,
+  type ProfilePhotoMenuItem,
+} from "../lib/profileEdit";
+import {
   applyOutcome,
   newBatch,
   profileRetry,
@@ -31,6 +39,11 @@ import { size, space } from "../theme";
 // (users.profile, niet users.current van de poort): zo stopt hij bij een
 // tabwissel en is dat in het dashboard te zien (invariant 7). De backend
 // bewaakt de naam; de melding komt uit de code van de fout (invariant 10).
+//
+// WP27 besluit 1: de opbouw van de bewerkschermen van WP28. De foto staat
+// gecentreerd bovenaan met een menu, de naam staat er één keer en is
+// bewerkbaar, "Bewaar" verschijnt pas na een wijziging (`nameIsDirty`), het
+// e-mailadres is alleen te lezen. Een melding staat bij het onderdeel.
 
 type Feedback = { kind: "error"; text: string } | { kind: "saved" } | null;
 
@@ -64,10 +77,11 @@ export function ProfileScreen() {
   }
 
   const value = draft ?? me.name ?? "";
+  const dirty = nameIsDirty(draft, me.name);
 
   async function save() {
-    // Eén aanroep tegelijk, ook bij dubbel tikken.
-    if (inFlight.current) return;
+    // Eén aanroep tegelijk, ook bij dubbel tikken. Zonder wijziging niets.
+    if (inFlight.current || !dirty) return;
     inFlight.current = true;
     const startedIn = visit.current;
     setBusy(true);
@@ -88,29 +102,7 @@ export function ProfileScreen() {
 
   return (
     <Screen underHeader>
-      <View style={styles.head}>
-        {/* WP17a: de eigen profielfoto via het openbare profielpad, anders de letter. */}
-        <ProfileAvatar
-          userId={me._id}
-          name={me.name}
-          size={size.profileAvatar}
-          variant="largeTitle"
-          exifOrientation={me.profileOrientation}
-          version={me.profileVersion}
-          hasFormats={me.profileHasFormats}
-        />
-        <Text variant="title" accessibilityRole="header" style={styles.headText}>
-          {me.name || "Nog geen naam"}
-        </Text>
-      </View>
-
-      <View style={styles.group}>
-        <Text variant="fieldLabel">E-mailadres</Text>
-        <Text>{me.email}</Text>
-        <Text variant="meta" color="muted">
-          Met dit adres log je in.
-        </Text>
-      </View>
+      <ProfilePhotoBlock me={me} />
 
       <View style={styles.group}>
         <TextField
@@ -128,12 +120,19 @@ export function ProfileScreen() {
           onSubmitEditing={() => void save()}
         />
         {feedback?.kind === "error" && <Notice kind="error" message={feedback.text} />}
+        {(dirty || busy) && (
+          <Button title="Bewaar" busyTitle="Bewaren…" onPress={() => void save()} busy={busy} />
+        )}
+        {feedback?.kind === "saved" && <Notice kind="success" message="Je naam is opgeslagen." />}
       </View>
 
-      <Button title="Naam opslaan" busyTitle="Opslaan…" onPress={() => void save()} busy={busy} />
-      {feedback?.kind === "saved" && <Notice kind="success" message="Je naam is opgeslagen." />}
-
-      <ProfilePhotoActions hasPhoto={me.profileVersion !== "0"} />
+      <View style={styles.group}>
+        <Text variant="fieldLabel">E-mailadres</Text>
+        <Text>{me.email}</Text>
+        <Text variant="meta" color="muted">
+          Met dit adres log je in.
+        </Text>
+      </View>
 
       {/* WP29: gevaarlijke rij, in een eigen blok onderaan. */}
       <View style={styles.dangerBlock}>
@@ -157,12 +156,20 @@ type PhotoFeedback =
   | { kind: "access" }
   | null;
 
+type Me = NonNullable<FunctionReturnType<typeof api.users.profile>>;
+
 // WP18 invarianten 9 en 10, besluit 1. Uploaden: een gewone eigen foto (de
 // upload zonder album), daarna `users.setProfilePhoto`. Na het kiezen eerst de
 // melding dat een profielfoto voor iedereen te zien is. Weghalen haalt alleen
 // de koppeling weg (`users.removeProfilePhoto`); daarna toont de app de letter.
 // De avatar volgt overal via `profileVersion`.
-function ProfilePhotoActions({ hasPhoto }: { hasPhoto: boolean }) {
+//
+// WP27: de foto gecentreerd bovenaan, met een menu (`profilePhotoMenu`, vraag
+// 2). De foto van een ander kies je in het foto-menu van een album. Een
+// verborgen profielfoto (geen toegang meer) heeft versie "0": dan toont de
+// app de letter en is er niets weg te halen (A-keuze 3).
+function ProfilePhotoBlock({ me }: { me: Me }) {
+  const hasPhoto = me.profileVersion !== "0";
   const upload = useUploader();
   const setProfilePhoto = useMutation(api.users.setProfilePhoto);
   const removeProfilePhoto = useMutation(api.users.removeProfilePhoto);
@@ -216,11 +223,8 @@ function ProfilePhotoActions({ hasPhoto }: { hasPhoto: boolean }) {
     }
     const asset = result.canceled ? undefined : result.assets[0];
     if (!asset) return;
-    const ok = await confirm(
-      "Profielfoto is openbaar",
-      "Je profielfoto is voor iedereen te zien, ook voor wie niet in je groepen zit.",
-      "Gebruiken",
-    );
+    const notice = profilePhotoNotice({ isMe: true });
+    const ok = await confirm(notice.title, notice.message, "Gebruiken");
     if (!ok) return;
     // Eén upload-id voor deze keuze: een dubbele tik of "Opnieuw proberen"
     // geeft geen tweede foto.
@@ -277,25 +281,45 @@ function ProfilePhotoActions({ hasPhoto }: { hasPhoto: boolean }) {
     });
   }
 
+  function openMenu() {
+    if (inFlight.current) return;
+    setFeedback(null);
+    const items = profilePhotoMenu({ hasPhoto });
+    const options = [...items.map((i) => MENU_LABEL[i](hasPhoto)), "Annuleren"];
+    const destructive = items.indexOf("remove");
+    ActionSheetIOS.showActionSheetWithOptions(
+      {
+        options,
+        cancelButtonIndex: options.length - 1,
+        ...(destructive >= 0 ? { destructiveButtonIndex: destructive } : {}),
+      },
+      (index) => {
+        const item = items[index];
+        if (item === "upload") void choose();
+        if (item === "remove") void remove();
+      },
+    );
+  }
+
   return (
-    <View style={styles.group}>
-      <Text variant="fieldLabel">Profielfoto</Text>
-      <View style={styles.row}>
+    <View style={styles.photo}>
+      <ProfileAvatar
+        userId={me._id}
+        name={me.name}
+        size={size.profileAvatar}
+        variant="largeTitle"
+        exifOrientation={me.profileOrientation}
+        version={me.profileVersion}
+        hasFormats={me.profileHasFormats}
+      />
+      <View style={styles.center}>
         <SmallButton
-          title={busy === "upload" ? "Opslaan…" : hasPhoto ? "Andere foto kiezen" : "Foto kiezen"}
-          icon="photos"
+          title={busy === "upload" ? "Opslaan…" : busy === "remove" ? "Weghalen…" : "Profielfoto"}
+          icon="more"
+          accessibilityLabel="Acties voor je profielfoto"
           disabled={busy !== null}
-          onPress={() => void choose()}
+          onPress={openMenu}
         />
-        {hasPhoto && (
-          <SmallButton
-            title={busy === "remove" ? "Weghalen…" : "Weghalen"}
-            icon="trash"
-            tone="danger"
-            disabled={busy !== null}
-            onPress={() => void remove()}
-          />
-        )}
       </View>
       {feedback?.kind === "error" && (
         <Notice kind="error" message={feedback.text}>
@@ -311,9 +335,17 @@ function ProfilePhotoActions({ hasPhoto }: { hasPhoto: boolean }) {
           <SmallButton title="Instellingen openen" onPress={() => void Linking.openSettings()} />
         </Notice>
       )}
+      <Text variant="meta" color="muted" style={styles.centerText}>
+        {PROFILE_PHOTO_HINT}
+      </Text>
     </View>
   );
 }
+
+const MENU_LABEL: Record<ProfilePhotoMenuItem, (hasPhoto: boolean) => string> = {
+  upload: (hasPhoto) => (hasPhoto ? "Andere foto kiezen" : "Foto kiezen"),
+  remove: () => "Profielfoto weghalen",
+};
 
 function confirm(title: string, message: string, action: string, destructive = false): Promise<boolean> {
   return new Promise((resolve) => {
@@ -331,8 +363,8 @@ function confirm(title: string, message: string, action: string, destructive = f
 
 const styles = StyleSheet.create({
   group: { gap: space.s },
-  head: { flexDirection: "row", alignItems: "center", gap: space.l },
-  headText: { flex: 1 },
-  row: { flexDirection: "row", flexWrap: "wrap", gap: space.s },
+  photo: { alignItems: "center", gap: space.s },
+  center: { alignItems: "center" },
+  centerText: { textAlign: "center" },
   dangerBlock: { marginTop: space.xl },
 });
