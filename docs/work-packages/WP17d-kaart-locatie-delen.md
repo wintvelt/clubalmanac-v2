@@ -96,9 +96,9 @@ Bronnen: de oude app (`screens/AlbumMap.jsx`, `PhotoMap.jsx`, `components/PhotoM
 
 ### Kernvondsten
 
-1. **De plaatsnaam is vaak een adres.** De foto-vorm toont `locationLabel` aan elk lid. Bij gemigreerde foto's is dat het adres van Apple, met straat en vaak een huisnummer ("8 Dorpsstraat - Plaats - Land"). Bij een nieuwe upload maakt Photon er "straat, plaats, land" van. De draft gaat uit van alleen een plaatsnaam. Afronden van de coördinaten helpt dus pas als de plaatsnaam ook grover wordt (A-keuze 2).
-2. **Het origineel draagt de GPS.** v1 zette de bytes ongewijzigd in S3, met EXIF (WP18). Het beeldpad geeft *zonder* `formaat` het origineel, ook aan een lid dat niet de eigenaar is. Daarin staat de exacte plek. Afronden op de kaart is dan schijn (A-keuze 1). De app vraagt het origineel nooit op.
-3. **Het openbare profielpad geeft zonder formaat ook het origineel**, zonder login. Een profielfoto kan andermans foto zijn (WP27). Een plek gaat dan naar iedereen met een user-id. Dat botst met invariant 1, los van de keuze over precisie (A-invariant 8).
+1. **De plaatsnaam is vaak een adres.** De foto-vorm toont `locationLabel` aan elk lid. Bij gemigreerde foto's is dat het adres van Apple, met straat en vaak een huisnummer ("8 Dorpsstraat - Plaats - Land"). Bij een nieuwe upload maakt Photon er "straat, plaats, land" van. Besluit 1: zo laten, zoals v1.
+2. **Het origineel draagt de GPS.** v1 zette de bytes ongewijzigd in S3, met EXIF (WP18). Het beeldpad geeft *zonder* `formaat` het origineel aan elk lid met toegang. Na besluit 1 is dat geen lek: die leden zien de exacte plek toch.
+3. **Het openbare profielpad geeft zonder formaat ook het origineel**, zonder login. Een profielfoto kan andermans foto zijn (WP27). Een plek gaat dan naar iedereen met een user-id. Op prod zijn er 17 profielbeelden: 10 zijn een foto, 7 zijn een los beeld (alle 7 JPEG) zonder foto-rij en dus zonder formaten. Besluit 2: dicht (A-invariant 8).
 4. **`photos.update` zet een plek zonder plaatsnaam, en een plaatsnaam naar keuze.** De eigenaar kan zo de coördinaten wijzigen zonder Photon, en elke tekst als plaatsnaam neerzetten. Weghalen kan er niet mee. De app gebruikt hem niet. Na 17d zet alleen `photos.setLocation` een plek of plaatsnaam (A-invariant 4).
 5. **Een formaat staat niet rechtop.** *groot* bevat de ruwe pixels; de app draait ze met `exifOrientation` (WP25). Deel je de bytes zoals ze zijn, dan krijgt de ontvanger een scheve foto. Op dev hebben 589 van de 1001 foto's een stand-tag (niet elke tag draait).
 6. **v1 had geen weghalen en geen zoeken.** Locatie wijzigen was een speld op de kaart slepen. Het startpunt zonder plek lag bij Hilversum. De plaatsnaam kwam van Apple op het toestel.
@@ -114,15 +114,14 @@ Bronnen: de oude app (`screens/AlbumMap.jsx`, `PhotoMap.jsx`, `components/PhotoM
   - 89 foto's van 7 eigenaren hebben een plaatsnaam die met een huisnummer begint;
   - 35 foto's liggen op een plek (vak van ca. 100 m) waar dezelfde eigenaar op 3 of meer dagen fotografeerde: 2 plekken van 2 eigenaren;
   - samen 90 foto's, in 11 albums. Bijna alle "vaste plekken" hebben ook een huisnummer (34 van 35).
-- **Afronden:** 526 verschillende plekken; op ca. 1 km blijven er 150 over, op ca. 10 km 60.
 
-### Antwoorden op de open vragen (advies)
+### Open vragen: v1 en besluit
 
-1. **Precisie.** v1: de exacte plek op de kaart, voor elk lid, plus het volle adres van Apple bij het tikken. Advies: andere leden zien de plek afgerond op 0,01° (ongeveer 1 km), de eigenaar exact (A-keuze 1). Dat werkt alleen samen met A-keuze 2 (plaatsnaam zonder straat) en het dichtzetten van het origineel (A-keuze 1, kernvondst 2). Kies je exact (v1), dan vervallen die drie.
-2. **Locatie wijzigen.** v1: een speld slepen, geen zoeken, geen weghalen. Advies: een speld slepen, plus "Locatie weghalen". Geen zoeken: dat vraagt een tweede Photon-aanroep met tekst van het lid, en v1 had het niet. Startpunt: de huidige plek, anders midden-Nederland. De plaatsnaam maakt de backend (A-invariant 3).
-3. **Melding vóór delen.** v1: geen. Advies: alleen bij een foto van een ander, één regel: "Deze foto van <naam> verlaat de app." Bij je eigen foto geen melding (A-keuze 3).
-4. **Wat deel je.** v1: één foto, 800 px, elke foto die je ziet. Advies: één foto, het formaat *groot*, rechtop gedraaid en zonder EXIF, elke foto die je ziet (A-keuze 4). Een foto zonder formaten kan nog niet gedeeld worden (dan zou het origineel met GPS gaan).
-5. **Kaart.** v1: alleen per album (knop in de albumkop). Advies: alleen per album.
+1. **Precisie.** v1: de exacte plek voor elk lid, plus het volle adres. Besluit 1: zo.
+2. **Locatie wijzigen.** v1: een speld slepen, geen zoeken, geen weghalen. Besluit 3: een speld slepen, plus "Locatie weghalen", geen zoeken. Startpunt: de huidige plek, anders midden-Nederland. De plaatsnaam maakt de backend (A-invariant 3).
+3. **Melding vóór delen.** v1: geen. Besluit 3: alleen bij een foto van een ander, één regel: "Deze foto van <naam> verlaat de app." Bij je eigen foto geen melding.
+4. **Wat deel je.** v1: één foto, 800 px, elke foto die je ziet. Besluit 3: één foto, *groot*, rechtop en zonder EXIF, elke foto die je ziet. Een foto zonder formaten nog niet: dan zou het origineel met GPS de app verlaten (draft invariant 5).
+5. **Kaart.** v1: alleen per album. Besluit 3: zo.
 
 ### Pariteit per scherm
 
@@ -138,7 +137,7 @@ Bronnen: de oude app (`screens/AlbumMap.jsx`, `PhotoMap.jsx`, `components/PhotoM
 | Tik op een speld: detail, swipen door die foto's | Zo |
 | Tik op een speld: adres van Apple onderaan | Niet: de plaatsnaam staat al in het detail |
 | Knop "N zonder locatie" opent die foto's | Zo, alleen als er zulke foto's zijn |
-| Exacte plek voor elk lid | Afgerond voor andere leden (A-keuze 1) |
+| Exacte plek voor elk lid | Zo (besluit 1) |
 | Geen eigen locatie van het toestel | Zo (invariant 6) |
 
 **Locatie wijzigen**
@@ -158,21 +157,18 @@ Bronnen: de oude app (`screens/AlbumMap.jsx`, `PhotoMap.jsx`, `components/PhotoM
 
 | Oude app | Nieuw (17d) |
 |---|---|
-| "Delen" in het foto-menu, elke foto | Zo, alleen met formaten (A-keuze 4) |
+| "Delen" in het foto-menu, elke foto | Zo, alleen met formaten (besluit 3) |
 | 800 px via de image handler | *groot*, rechtop, zonder EXIF |
-| Geen melding | Melding bij andermans foto (A-keuze 3) |
+| Geen melding | Melding bij andermans foto (besluit 3) |
 | Bezig: "Delen..." grijs | Zo |
 | Fout: "Helaas niet gelukt…" | Zo |
 | Eén foto | Zo; niet in de selectie |
 
-### A-keuzes ter bevestiging
+### Besluiten verwerkt (A, 2026-11-12)
 
-De tests staan in een eigen `describe` met "A-keuze n" in de naam.
-
-1. **Afgerond voor andere leden.** De kaart-read geeft een lid dat niet de eigenaar is de coördinaten afgerond op 2 decimalen. De eigenaar krijgt ze exact. Het beeldpad geeft zonder `formaat` aan een niet-eigenaar het formaat *groot* (met de bestaande terugval), nooit het origineel naast een formaat. De eigenaar krijgt zonder `formaat` het origineel.
-2. **De plaatsnaam zonder straat.** In de foto-vorm, voor iedereen: bestaat de plaatsnaam uit drie of meer delen (gescheiden door " - ", ", " of " · "), dan alleen de laatste twee (plaats, land). Met één of twee delen: zoals hij is. De data blijft gelijk; dit gebeurt bij het lezen.
-3. **Melding bij andermans foto.** Vóór het delen van een foto van een ander één regel dat de foto de app verlaat, met annuleren. Eigen foto: geen melding.
-4. **Delen: *groot*, één foto, elke foto die je ziet.** Alleen als de foto formaten heeft. De app draait de pixels rechtop en schrijft een nieuwe JPEG zonder EXIF (`expo-image-manipulator`, er al).
+- A-keuze 1 en 2 vervallen (besluit 1): geen afronding, de plaatsnaam blijft heel, en een lid met toegang krijgt het origineel. De tests ervoor zijn weg; `listLocations` pint nu exact voor iedereen.
+- A-keuze 3 en 4 zijn besluit 3. De tests heten nu "besluit 3".
+- Besluit 2 is A-invariant 8.
 
 ### Aanvullende invarianten
 
@@ -196,11 +192,15 @@ De tests staan in een eigen `describe` met "A-keuze n" in de naam.
 5. **Geen coördinaten in de foto-vorm** (blijft, WP23). Alleen de twee nieuwe reads geven ze.
 6. **Delen in het menu:** voor elke foto met formaten. "Locatie wijzigen": alleen bij een eigen foto.
 7. **Geen locatie van het toestel:** de app heeft geen `expo-location`, geen `NSLocation…`-tekst en geen `showsUserLocation`.
-8. **Het openbare profielpad geeft zonder formaat het formaat *groot*** als er een is (met de bestaande terugval). Nooit het origineel naast een formaat, voor niemand.
+8. **De openbare profielfoto draagt geen locatie** (besluit 2). Het profielpad, met en zonder formaat, voor iedereen:
+   - geeft 200 en een beeld; de profielfoto blijft zichtbaar, ook als los beeld zonder formaten;
+   - het bestand bevat geen GPS in de EXIF; een JPEG blijft een JPEG;
+   - geen kop met coördinaten of een plaatsnaam.
+   B kiest hoe, bijvoorbeeld: zonder formaat *groot*, en bij de terugval de EXIF uit de JPEG halen (de 7 losse beelden zijn JPEG). Haalt B alle EXIF weg, dan valt ook de stand-tag weg: B kijkt in de gate of een los profielbeeld rechtop blijft.
 
 ### Toegangsdefinities (standing rule)
 
-- **`albums.listLocations({ albumId })`** neemt een album-id aan. Poort: lidmaatschap van de groep (zoals `listPhotos`). Toestemmingslijst: de foto's van dat album. Geeft foto-ids die de caller al ziet via `listPhotos`, met coördinaten (A-keuze 1).
+- **`albums.listLocations({ albumId })`** neemt een album-id aan. Poort: lidmaatschap van de groep (zoals `listPhotos`). Toestemmingslijst: de foto's van dat album. Geeft foto-ids die de caller al ziet via `listPhotos`, exact, met coördinaten (besluit 1).
 - **`photos.getLocation({ photoId })`** neemt een foto-id aan. Poort: eigenaar. Geeft alleen de eigen exacte plek.
 - **Schrijven:** `photos.setLocation({ photoId, location: { latitude, longitude } | null })`, alleen de eigenaar.
 - **Inventaris:** beide reads staan in `tests/readWhitelist/inventory.test.ts`, met een return-validator.
@@ -209,8 +209,7 @@ De tests staan in een eigen `describe` met "A-keuze n" in de naam.
 
 - **De eigenaar wijzigt de plek terwijl een ander de kaart open heeft:** de kaart volgt live (Convex), de oude plek verdwijnt.
 - **Twee keer snel wijzigen:** de plaatsnaam hoort bij de laatste plek (A-invariant 3).
-- **Een foto zonder formaten** gaat naar een lid nog als origineel (terugval). Op dev hebben alle 1001 foto's formaten; een nieuwe upload is een JPEG zonder EXIF (WP18). Geaccepteerd.
-- **Labels in drie vormen:** Apple met " - " (2 of 3 delen) of " · " (4 delen), en Photon met ", ". A-keuze 2 behandelt ze gelijk.
+- **Een profielfoto zonder formaten** (los beeld, of een foto vlak na de upload) gaat via de terugval; ook dan geen GPS (A-invariant 8).
 - **Een album met 327 plekken:** één read, ruim binnen de limieten.
 
 ### Bibliotheken (Expo SDK 58, EAS-build, geen kosten, geen sleutels)
@@ -229,15 +228,14 @@ Geen `expo-location`. Na het toevoegen een nieuwe EAS-build (native code).
 
 | Bestand | Pint |
 |---|---|
-| `tests/location/listLocations.test.ts` | A-invariant 1 en 5; A-keuze 1 (afronden) |
+| `tests/location/listLocations.test.ts` | A-invariant 1 en 5; besluit 1 (exact) |
 | `tests/location/getLocation.test.ts` | A-invariant 2 |
 | `tests/location/setLocation.test.ts` | A-invariant 3 en 4 |
-| `tests/location/placeName.test.ts` | A-keuze 2 |
-| `tests/location/originalImage.test.ts` | A-invariant 8; A-keuze 1 (beeldpad) |
+| `tests/location/originalImage.test.ts` | A-invariant 8 (besluit 2), met `tests/fixtures/wp17d/gps.jpg` |
 | `tests/readWhitelist/inventory.test.ts` | de twee nieuwe reads |
-| `app/tests/placeShare.test.ts` | A-invariant 6 en 7; A-keuze 3 en 4; de kaartregio |
+| `app/tests/placeShare.test.ts` | A-invariant 6 en 7; besluit 3; de kaartregio |
 
-Aangepast: `tests/photos/crud.test.ts` en `tests/photos/update.test.ts` gebruikten `photos.update` voor de plaatsnaam en gebruiken nu `takenAt` (A-invariant 4). `tests/photoFormats/httpFormats.test.ts`: "zonder formaat het origineel" geldt nu voor de eigenaar (A-keuze 1).
+Aangepast: `tests/photos/crud.test.ts` en `tests/photos/update.test.ts` gebruikten `photos.update` voor de plaatsnaam en gebruiken nu `takenAt` (A-invariant 4).
 
 Aangenomen API (B kiest de interne vorm, niet de namen):
 - `albums.listLocations({ albumId })` geeft `{ photoId, latitude, longitude }[]`.
@@ -245,12 +243,3 @@ Aangenomen API (B kiest de interne vorm, niet de namen):
 - `photos.setLocation({ photoId, location })`; de plaatsnaam via de scheduler.
 - Refusal-code `LOCATION_INVALID` erbij in `RefusalCode`.
 - In de app een nieuwe module `app/src/lib/placeShare.ts` met `placeShareActions`, `shareNotice`, `shareEdits` en `mapRegion`.
-
-### Open vragen voor Wouter (met advies)
-
-1. **A-keuze 1: andere leden zien ca. 1 km, en geen origineel meer.** Advies: ja. Anders exact zoals v1; dan vervallen A-keuze 1 en 2.
-2. **A-keuze 2: plaatsnaam zonder straat en huisnummer.** Advies: ja; 89 foto's tonen nu een huisnummer.
-3. **Locatie wijzigen: speld slepen en weghalen, geen zoeken.** Advies: ja.
-4. **A-keuze 3: melding alleen bij andermans foto.** Advies: ja.
-5. **A-keuze 4: *groot*, één foto, elke foto die je ziet.** Advies: ja (v1 deelde ook elke foto).
-6. **Kaart alleen per album.** Advies: ja (v1).
