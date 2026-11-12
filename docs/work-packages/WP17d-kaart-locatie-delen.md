@@ -6,6 +6,16 @@
 
 Een lid ziet op een kaart waar de foto's van een album zijn gemaakt. Als eigenaar past hij de locatie van zijn foto aan of haalt hij die weg. Hij kan een foto delen met iemand buiten de app, en weet daarbij dat het beeld de app verlaat. Een plek waar een foto is gemaakt, ziet alleen wie die foto mag zien.
 
+## Besluiten Wouter
+
+1. **Groepsleden zien de exacte plek, met straat en huisnummer** (2026-11-12). Dat geldt voor iedereen die de foto mag zien, zoals in v1. Er komt geen afronding en de plaatsnaam wordt niet ingekort (A-keuze 1 en 2 vervallen).
+2. **Een openbare profielfoto draagt geen locatie** (2026-11-12). Het openbare profielpad geeft nooit een bestand met GPS en nooit coördinaten of een plaatsnaam.
+3. **A-keuze 3 tot en met 6 volgens het advies van A** (2026-11-12):
+   - locatie wijzigen met een speld, plus "Locatie weghalen", zonder zoeken;
+   - een melding vóór het delen, alleen bij de foto van een ander;
+   - delen in het grote formaat, per foto;
+   - de kaart alleen per album.
+
 ## Invarianten (draft)
 
 1. **De kaart volgt de foto-toegang.** De kaart van een album toont alleen foto's met een locatie, en alleen aan wie het album mag zien. Coördinaten verlaten de backend alleen voor foto's waar de caller toegang toe heeft. Er komt een nieuwe read met een whitelist, en de standing rule [Toegangsdefinities](../conventions/work-package-specs.md#toegangsdefinities-verplicht-bij-wps-die-er-een-invoeren) geldt. Nu toont de foto-vorm alleen de plaatsnaam, geen coördinaten.
