@@ -18,6 +18,7 @@ import {
 } from "./groups";
 import { requireCurrentUser } from "./users";
 import {
+  canAccessPhoto,
   getAccessiblePhoto,
   isPublishedInAlbum,
 } from "./lib/photoAccess";
@@ -353,6 +354,46 @@ export const listPhotos = query({
         };
       }),
     );
+  },
+});
+
+// WP17c A-invariant 9 en 10: "in welke albums" in het foto-detail. De poort
+// is foto-toegang (dezelfde NOT_MEMBER als photos.getById voor geen toegang,
+// onbekend en gewist). Daarna een toestemmingslijst: alleen albums uit
+// groepen waar de caller nu lid van is, elk één keer; een album dat weg is,
+// telt niet. Van andere publicaties komt niets terug, ook geen aantal.
+export const listForPhoto = query({
+  args: { photoId: v.id("photos") },
+  returns: v.array(
+    v.object({
+      albumId: v.id("albums"),
+      albumName: v.string(),
+      groupId: v.id("groups"),
+      groupName: v.string(),
+    }),
+  ),
+  handler: async (ctx, { photoId }) => {
+    const user = await requireCurrentUser(ctx);
+    const photo = await ctx.db.get(photoId);
+    if (!photo || !(await canAccessPhoto(ctx, user._id, photo))) {
+      throw new ConvexError(NOT_MEMBER);
+    }
+    const publications = await ctx.db
+      .query("albumPhotos")
+      .withIndex("by_photo", (q) => q.eq("photoId", photoId))
+      .collect();
+    const albumIds = [...new Set(publications.map((ap) => ap.albumId))];
+    const entries = await Promise.all(
+      albumIds.map(async (albumId) => {
+        const a = await ctx.db.get(albumId);
+        if (!a) return null;
+        if (!(await getMembership(ctx, user._id, a.groupId))) return null;
+        const g = await ctx.db.get(a.groupId);
+        if (!g) return null;
+        return { albumId: a._id, albumName: a.name, groupId: g._id, groupName: g.name };
+      }),
+    );
+    return entries.filter((e) => e !== null);
   },
 });
 

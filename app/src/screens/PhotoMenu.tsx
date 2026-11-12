@@ -9,7 +9,8 @@ import { SmallButton } from "../components/SmallButton";
 import { Text } from "../components/Text";
 import { api } from "../convexApi";
 import { useLiveQuery } from "../data/useLiveQuery";
-import { rotatePath } from "../lib/groupRoutes";
+import { myRotatePath, rotatePath } from "../lib/groupRoutes";
+import { addOutcome, myPhotoActions } from "../lib/myPhotos";
 import { profilePhotoNotice } from "../lib/profileEdit";
 import {
   photoActionLabel,
@@ -64,6 +65,10 @@ function deleteWhat(n: number): string {
     : `De ${n} foto's verdwijnen uit elk album, met hun likes. Zijn ze een cover of een profielfoto, dan zijn ze dat niet meer. Dit kun je niet ongedaan maken.`;
 }
 
+// WP17c: waar het menu hoort. Een album (met zijn groep), of Mijn foto's
+// (null): daar is elke foto van jou en kent het menu geen album (A-invariant 13).
+export type MenuPlace = { groupId: Id<"groups">; albumId: Id<"albums"> } | null;
+
 // De rol in de groep van dit album komt uit groups.listMine (de album-reads
 // geven hem niet). Laden, of geen lid: geen context, dus geen menu.
 export function useMenuContext(groupId: Id<"groups">, me: Id<"users"> | undefined): MenuContext | undefined {
@@ -72,8 +77,13 @@ export function useMenuContext(groupId: Id<"groups">, me: Id<"users"> | undefine
   return useMemo(() => (role && me ? { me, role } : undefined), [role, me]);
 }
 
-export function menuActions(ctx: MenuContext | undefined, photo: MenuPhoto | undefined): PhotoAction[] {
+export function menuActions(
+  ctx: MenuContext | undefined,
+  photo: MenuPhoto | undefined,
+  place: MenuPlace = null,
+): PhotoAction[] {
   if (!ctx || !photo) return [];
+  if (place === null) return photo.ownerId === ctx.me ? myPhotoActions() : [];
   return photoActions({ ...ctx, ownerId: photo.ownerId, addedBy: photo.addedBy });
 }
 
@@ -85,14 +95,12 @@ function confirm(title: string, message: string, verb: string, onConfirm: () => 
 }
 
 export function usePhotoMenu({
-  groupId,
-  albumId,
+  place,
   ctx,
   photoIds,
   onFeedback,
 }: {
-  groupId: Id<"groups">;
-  albumId: Id<"albums">;
+  place: MenuPlace;
   ctx: MenuContext | undefined;
   // De foto's die nu in het album staan: verdwijnt de foto van een open menu, dan sluit het.
   photoIds: readonly string[];
@@ -127,10 +135,15 @@ export function usePhotoMenu({
   const perform = useCallback(
     (action: PhotoAction, photo: MenuPhoto) => {
       const { photoId } = photo;
+      if (action === "rotate") {
+        router.push(place ? rotatePath(place.groupId, place.albumId, photoId) : myRotatePath(photoId));
+        return;
+      }
+      // Wat bij een album hoort, kan alleen in een album (A-invariant 13).
+      if (place === null && (action === "albumCover" || action === "groupCover" || action === "removeFromAlbum")) return;
+      const groupId = place?.groupId as Id<"groups">;
+      const albumId = place?.albumId as Id<"albums">;
       switch (action) {
-        case "rotate":
-          router.push(rotatePath(groupId, albumId, photoId));
-          return;
         case "albumCover":
           void attempt(() => updateAlbum({ albumId, coverPhotoId: photoId }), SUCCESS.albumCover);
           return;
@@ -178,12 +191,12 @@ export function usePhotoMenu({
           return;
       }
     },
-    [groupId, albumId, ctx, attempt, updateAlbum, updateGroup, setProfilePhoto, removeFromAlbum, removePhoto],
+    [place, ctx, attempt, updateAlbum, updateGroup, setProfilePhoto, removeFromAlbum, removePhoto],
   );
 
   const open = useCallback(
     (photo: MenuPhoto) => {
-      const actions = menuActions(ctx, photo);
+      const actions = menuActions(ctx, photo, place);
       if (actions.length === 0) return;
       onFeedback(null);
       const options = [...actions.map(photoActionLabel), "Annuleren"];
@@ -202,7 +215,7 @@ export function usePhotoMenu({
         },
       );
     },
-    [ctx, onFeedback, perform],
+    [ctx, place, onFeedback, perform],
   );
 
   return { open };
@@ -217,6 +230,7 @@ function photos(n: number): string {
 const DONE: Record<SelectionAction, string> = {
   delete: "verwijderd",
   removeFromAlbum: "uit het album gehaald",
+  addToAlbum: "toegevoegd aan het album",
 };
 
 export function useSelectionActions({
@@ -226,7 +240,8 @@ export function useSelectionActions({
   onDone,
   onBusyChange,
 }: {
-  albumId: Id<"albums">;
+  // Het album van de selectie; in Mijn foto's geen (dan geen "uit album").
+  albumId?: Id<"albums">;
   ctx: MenuContext | undefined;
   onFeedback: (f: Feedback | null) => void;
   onDone: () => void;
@@ -235,13 +250,17 @@ export function useSelectionActions({
 }) {
   const removeFromAlbum = useMutation(api.albums.removePhoto);
   const removePhoto = useMutation(api.photos.remove);
+  const addToAlbum = useMutation(api.albums.addPhoto);
   // Fix-cyclus 1, invariant 15: één ronde tegelijk. Een ref, geen state: een
   // tweede tik vóór de volgende render ziet hem ook.
   const busy = useRef(false);
 
   return useCallback(
-    (action: SelectionAction, selected: readonly MenuPhoto[]) => {
+    // WP17c: bij "addToAlbum" is `target` het gekozen album.
+    (action: SelectionAction, selected: readonly MenuPhoto[], target?: Id<"albums">) => {
       if (busy.current || !ctx || selected.length === 0) return;
+      if (action === "removeFromAlbum" && !albumId) return;
+      if (action === "addToAlbum" && !target) return;
       onFeedback(null);
       const plan = selectionPlan(action, selected, ctx);
       const finish = async () => {
@@ -251,18 +270,34 @@ export function useSelectionActions({
         // Per foto: wat mag, gebeurt; wat de backend daarna nog weigert, telt als mislukt.
         const results = await Promise.allSettled(
           plan.allowed.map((photoId) =>
-            action === "delete" ? removePhoto({ photoId }) : removeFromAlbum({ albumId, photoId }),
+            action === "delete"
+              ? removePhoto({ photoId })
+              : action === "addToAlbum"
+                ? addToAlbum({ albumId: target!, photoId })
+                : removeFromAlbum({ albumId: albumId!, photoId }),
           ),
         );
         busy.current = false;
         onBusyChange?.(false);
-        const failed = results.filter((r) => r.status === "rejected").length;
-        const done = plan.allowed.length - failed;
-        const summary = selectionSummary(action, { done, notAllowed: plan.notAllowed.length, failed });
+        // Invariant 3: "stond er al in" is geen fout; elke andere weigering wel.
+        let failed = 0;
+        let alreadyIn = 0;
+        for (const r of results) {
+          if (r.status === "fulfilled") continue;
+          if (action === "addToAlbum" && addOutcome(r.reason) === "alreadyIn") alreadyIn++;
+          else failed++;
+        }
+        const done = plan.allowed.length - failed - alreadyIn;
+        const summary = selectionSummary(action, { done, notAllowed: plan.notAllowed.length, failed, alreadyIn });
         onFeedback(
           summary === null
             ? { kind: "success", title: `${photos(done)} ${DONE[action]}` }
-            : { kind: "error", title: done > 0 ? `${photos(done)} ${DONE[action]}` : "Er is niets veranderd", message: summary },
+            : {
+                // Alleen "stond er al in": geen fout.
+                kind: failed > 0 || plan.notAllowed.length > 0 ? "error" : "success",
+                title: done > 0 ? `${photos(done)} ${DONE[action]}` : "Er is niets veranderd",
+                message: summary,
+              },
         );
         onDone();
       };
@@ -271,6 +306,10 @@ export function useSelectionActions({
         return;
       }
       const notMine = plan.notAllowed.length;
+      if (action === "addToAlbum") {
+        void finish();
+        return;
+      }
       if (action === "delete") {
         const rest = notMine > 0 ? ` ${photos(notMine)} van anderen blijven staan.` : "";
         const n = plan.allowed.length;
@@ -290,7 +329,7 @@ export function useSelectionActions({
       }
       void finish();
     },
-    [albumId, ctx, onFeedback, onDone, onBusyChange, removeFromAlbum, removePhoto],
+    [albumId, ctx, onFeedback, onDone, onBusyChange, removeFromAlbum, removePhoto, addToAlbum],
   );
 }
 

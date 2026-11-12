@@ -25,6 +25,7 @@ import { editAlbumPath, groupPath, photoPath } from "../lib/groupRoutes";
 import { displayYear } from "../lib/groups";
 import { formatPhotoDate, keepNewMarkers, shouldMarkSeen, sortAlbumPhotos } from "../lib/photos";
 import { photoLayers, radius, size, space, useTheme } from "../theme";
+import { AlbumChoiceSheet } from "./AlbumChoice";
 import { AlbumReadFailed } from "./AlbumParts";
 import {
   ActionFeedback,
@@ -78,7 +79,7 @@ export function AlbumScreen() {
 }
 
 // Kolommen: 3 staand op een telefoon, 4 liggend, 5 tot 6 op een iPad (pariteit).
-function columnsFor(width: number): number {
+export function columnsFor(width: number): number {
   if (width < 600) return 3;
   if (width < 900) return 4;
   if (width < 1100) return 5;
@@ -106,7 +107,8 @@ function AlbumContent({ groupId, albumId }: { groupId: Id<"groups">; albumId: Id
   const [selecting, setSelecting] = useState(false);
   const [picked, setPicked] = useState<ReadonlySet<string>>(new Set());
   const photoIds = useMemo(() => shown?.map((e) => e.albumPhoto.photoId as string) ?? [], [shown]);
-  const menu = usePhotoMenu({ groupId, albumId, ctx, photoIds, onFeedback: setFeedback });
+  const place = useMemo(() => ({ groupId, albumId }), [groupId, albumId]);
+  const menu = usePhotoMenu({ place, ctx, photoIds, onFeedback: setFeedback });
   // Een foto die verdwijnt, valt uit de selectie.
   const selected = useMemo(() => (shown ?? []).filter((e) => picked.has(e.albumPhoto.photoId)).map(menuPhotoOf), [shown, picked]);
   const stopSelecting = useCallback(() => {
@@ -114,6 +116,8 @@ function AlbumContent({ groupId, albumId }: { groupId: Id<"groups">; albumId: Id
     setPicked(new Set());
   }, []);
   const [selectionBusy, setSelectionBusy] = useState(false);
+  // WP17c: de album-keuze voor "Toevoegen aan album".
+  const [choosing, setChoosing] = useState(false);
   const runSelection = useSelectionActions({
     albumId,
     ctx,
@@ -209,10 +213,20 @@ function AlbumContent({ groupId, albumId }: { groupId: Id<"groups">; albumId: Id
         windowSize={5}
         removeClippedSubviews
       />
+      <AlbumChoiceSheet
+        visible={choosing}
+        fromAlbumId={albumId}
+        onClose={() => setChoosing(false)}
+        onChoose={(target) => {
+          setChoosing(false);
+          runSelection("addToAlbum", selected, target);
+        }}
+      />
       {selecting ? (
         <SelectionBar
           count={selected.length}
           busy={selectionBusy}
+          onAddToAlbum={() => setChoosing(true)}
           onRemoveFromAlbum={() => runSelection("removeFromAlbum", selected)}
           onDelete={() => runSelection("delete", selected)}
           onCancel={stopSelecting}
@@ -242,12 +256,14 @@ function menuPhotoOf(entry: Entry & { photo: NonNullable<Entry["photo"]> }): Men
 function SelectionBar({
   count,
   busy,
+  onAddToAlbum,
   onRemoveFromAlbum,
   onDelete,
   onCancel,
 }: {
   count: number;
   busy: boolean;
+  onAddToAlbum: () => void;
   onRemoveFromAlbum: () => void;
   onDelete: () => void;
   onCancel: () => void;
@@ -261,6 +277,13 @@ function SelectionBar({
         {status}
       </Text>
       <View style={styles.barRow}>
+        <SmallButton
+          title="Naar album"
+          icon="plus"
+          accessibilityLabel="Toevoegen aan een ander album"
+          onPress={onAddToAlbum}
+          disabled={none || busy}
+        />
         <SmallButton title="Uit album" onPress={onRemoveFromAlbum} disabled={none || busy} />
         <SmallButton title="Verwijderen" icon="trash" tone="danger" onPress={onDelete} disabled={none || busy} />
         <SmallButton title="Annuleren" onPress={onCancel} disabled={busy} />
@@ -372,7 +395,7 @@ function NewLabel() {
 }
 
 // Een vinkje op de foto (design.md §9); niet gekozen: een lege cirkel.
-function SelectMark({ selected }: { selected: boolean }) {
+export function SelectMark({ selected }: { selected: boolean }) {
   const { colors } = useTheme();
   return (
     <View

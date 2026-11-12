@@ -75,8 +75,17 @@ export function photoActionLabel(action: PhotoAction): string {
 }
 
 // --- Selectie (invariant 7, A-keuze 2) ------------------------------------------------
+//
+// WP17c: "Toevoegen aan album" volgt albums.addPhoto (WP24 A-keuze 1): alleen
+// de eigenaar, los van de rol en van wie de foto ergens anders toevoegde.
 
-export type SelectionAction = "delete" | "removeFromAlbum";
+export type SelectionAction = "delete" | "removeFromAlbum" | "addToAlbum";
+
+const SELECTION_RULES: Record<SelectionAction, (i: MenuInput) => boolean> = {
+  delete: RULES.delete,
+  removeFromAlbum: RULES.removeFromAlbum,
+  addToAlbum: (i) => i.ownerId === i.me,
+};
 
 type SelectionItem<P extends string> = { photoId: P; ownerId: string; addedBy: string };
 
@@ -90,7 +99,7 @@ export function selectionPlan<P extends string>(
   const allowed: P[] = [];
   const notAllowed: P[] = [];
   for (const item of items) {
-    const ok = RULES[action]({ ...ctx, ownerId: item.ownerId, addedBy: item.addedBy });
+    const ok = SELECTION_RULES[action]({ ...ctx, ownerId: item.ownerId, addedBy: item.addedBy });
     (ok ? allowed : notAllowed).push(item.photoId);
   }
   return { allowed, notAllowed };
@@ -100,20 +109,26 @@ function photos(n: number): string {
   return n === 1 ? "1 foto" : `${n} foto's`;
 }
 
+const NOT_ALLOWED: Record<SelectionAction, (n: number) => string> = {
+  delete: (n) => `${photos(n)} niet verwijderd: alleen de eigenaar kan een foto verwijderen.`,
+  removeFromAlbum: (n) =>
+    `${photos(n)} niet uit het album gehaald: dat kan alleen wie de foto toevoegde, of een admin.`,
+  addToAlbum: (n) => `${photos(n)} niet toegevoegd: alleen de eigenaar kan een foto in een album zetten.`,
+};
+
 // Na afloop: hoeveel niet, en waarom. Alles gelukt: geen melding (null).
 // "Niet toegestaan" weet de app vooraf; "mislukt" is wat de backend daarna
-// nog weigerde of wat niet aankwam.
+// nog weigerde of wat niet aankwam. WP17c: "stond er al in" (alleen bij
+// toevoegen) is geen fout, maar wel een melding.
 export function selectionSummary(
   action: SelectionAction,
-  counts: { done: number; notAllowed: number; failed: number },
+  counts: { done: number; notAllowed: number; failed: number; alreadyIn?: number },
 ): string | null {
   const parts: string[] = [];
-  if (counts.notAllowed > 0) {
-    parts.push(
-      action === "delete"
-        ? `${photos(counts.notAllowed)} niet verwijderd: alleen de eigenaar kan een foto verwijderen.`
-        : `${photos(counts.notAllowed)} niet uit het album gehaald: dat kan alleen wie de foto toevoegde, of een admin.`,
-    );
+  if (counts.notAllowed > 0) parts.push(NOT_ALLOWED[action](counts.notAllowed));
+  const already = counts.alreadyIn ?? 0;
+  if (already > 0) {
+    parts.push(already === 1 ? "1 foto stond al in het album." : `${already} foto's stonden al in het album.`);
   }
   if (counts.failed > 0) {
     parts.push(`Bij ${photos(counts.failed)} lukte het niet. Probeer het later opnieuw.`);

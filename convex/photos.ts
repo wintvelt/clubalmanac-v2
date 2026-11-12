@@ -1,4 +1,5 @@
 import { ConvexError, v } from "convex/values";
+import { paginationOptsValidator } from "convex/server";
 import {
   internalAction,
   internalMutation,
@@ -107,6 +108,56 @@ export const listByOwner = query({
       .withIndex("by_owner", (q) => q.eq("ownerId", ownerId))
       .collect();
     return await Promise.all(rows.map((p) => photoView(ctx, p)));
+  },
+});
+
+// WP17c: Mijn foto's. Alleen foto's van de caller (geen user-id als arg),
+// nieuwste upload eerst (A-keuze 1); bij dezelfde uploaddatum de vaste
+// volgorde van de index. Met `withoutAlbum` alleen de foto's zonder enige
+// publicatie (A-keuze 2): dat filter loopt ná het bladeren, dus een pagina
+// kan kleiner zijn dan gevraagd (nooit groter), en bladeren blijft volledig.
+export const listMine = query({
+  args: {
+    paginationOpts: paginationOptsValidator,
+    withoutAlbum: v.optional(v.boolean()),
+  },
+  returns: v.object({
+    page: v.array(photoShape),
+    isDone: v.boolean(),
+    continueCursor: v.string(),
+    splitCursor: v.optional(v.union(v.string(), v.null())),
+    pageStatus: v.optional(
+      v.union(
+        v.literal("SplitRecommended"),
+        v.literal("SplitRequired"),
+        v.null(),
+      ),
+    ),
+  }),
+  handler: async (ctx, { paginationOpts, withoutAlbum }) => {
+    const user = await requireCurrentUser(ctx);
+    const result = await ctx.db
+      .query("photos")
+      .withIndex("by_owner_and_createdAt", (q) => q.eq("ownerId", user._id))
+      .order("desc")
+      .paginate(paginationOpts);
+    const rows = withoutAlbum
+      ? (
+          await Promise.all(
+            result.page.map(async (p) => {
+              const ap = await ctx.db
+                .query("albumPhotos")
+                .withIndex("by_photo", (q) => q.eq("photoId", p._id))
+                .first();
+              return ap ? null : p;
+            }),
+          )
+        ).filter((p): p is Doc<"photos"> => p !== null)
+      : result.page;
+    return {
+      ...result,
+      page: await Promise.all(rows.map((p) => photoView(ctx, p))),
+    };
   },
 });
 
