@@ -6,19 +6,30 @@ import schema from "../../convex/schema";
 import { withUser } from "../_helpers/auth";
 import { modules } from "../_helpers/modules";
 
-// WP17c invariant 2 / A-invariant 14: Mijn foto's laadt en bladert voor het
-// grootste account, met marge, binnen de Convex-limieten. convex-test dwingt
-// de limieten alleen af met `transactionLimits` (les WP28).
+// WP17c invariant 2 / A-invariant 14, besluit 4 (audit S1): Mijn foto's laadt
+// voor het grootste account, met marge, binnen de Convex-limieten. convex-test
+// dwingt de limieten alleen af met `transactionLimits` (les WP28).
+//
+// Zo laadt de app (MyPhotosScreen): één live query die groeit, steeds vanaf
+// het begin (`cursor: null`), tot alles er staat; met de schakelaar "Niet in
+// een album" groeit hij door tot alles bekeken is. De test doet dus één
+// aanroep die alles leest, in beide standen, met foto's die formaten hebben
+// (twee leesacties per foto extra voor `hasFormats`).
 //
 // Prod (export 2026-11-06): de grootste eigenaar heeft 456 foto's, 5 in geen
 // album; 6 groepen met samen 17 albums. Hier PHOTOS foto's (ruim 3×), elk in
 // een album, verspreid over 17 albums in 6 groepen, plus LOOSE foto's in geen
-// album. Spec: docs/work-packages/WP17c-mijn-fotos.md.
+// album. Rond 2000 foto's raakt één aanroep de grens (audit S1); echt bladeren
+// staat in de backlog. Spec: docs/work-packages/WP17c-mijn-fotos.md.
 
 const PHOTOS = 1500;
 const LOOSE = 5;
 const CHUNK = 500;
-const PAGE = 100;
+// De app groeit in stappen van 60 ("Alle") en 300 ("Niet in een album"),
+// vanaf 60. Dit is de eerste stap die alle PHOTOS + LOOSE foto's dekt.
+const ALL_STEP = 60;
+const LOOSE_STEP = 300;
+const firstCovering = (step: number) => Math.ceil((PHOTOS + LOOSE - ALL_STEP) / step) * step + ALL_STEP;
 
 const newLimitedT = () => convexTest({ schema, modules, transactionLimits: true });
 type T = ReturnType<typeof newLimitedT>;
@@ -45,7 +56,13 @@ async function bigWorld(t: T) {
       }
     }
     const storageId = await ctx.storage.store(new Blob(["beeld"], { type: "image/jpeg" }));
-    return { olga, albums, storageId };
+    // Eén setje formaten voor alle foto's: de leesacties per foto tellen
+    // even zwaar als met eigen formaten.
+    const formats = {
+      klein: await ctx.storage.store(new Blob(["klein"], { type: "image/jpeg" })),
+      groot: await ctx.storage.store(new Blob(["groot"], { type: "image/jpeg" })),
+    };
+    return { olga, albums, storageId, formats };
   });
 
   const loose: Array<Id<"photos">> = [];
@@ -57,6 +74,7 @@ async function bigWorld(t: T) {
         const photoId = await ctx.db.insert("photos", {
           ownerId: base.olga,
           storageId: base.storageId,
+          formats: base.formats,
           width: 4000,
           height: 3000,
           takenAt: Date.UTC(2020, 0, 1) + i * 60_000,
@@ -83,46 +101,41 @@ async function bigWorld(t: T) {
   return { ...base, loose };
 }
 
-type Page = { page: Array<{ _id: string }>; isDone: boolean; continueCursor: string };
+type Page = { page: Array<{ _id: string; hasFormats: boolean }>; isDone: boolean; continueCursor: string };
 
-async function loadAll(t: T, extra: Record<string, unknown> = {}): Promise<string[]> {
-  const ids: string[] = [];
-  let cursor: string | null = null;
-  for (let guard = 0; guard < 1000; guard++) {
-    const res = (await withUser(t, "user_olga").query(api.photos.listMine, {
-      paginationOpts: { numItems: PAGE, cursor },
-      ...extra,
-    })) as Page;
-    expect(res.page.length).toBeLessThanOrEqual(PAGE);
-    ids.push(...res.page.map((p) => p._id));
-    if (res.isDone) return ids;
-    cursor = res.continueCursor;
-  }
-  throw new Error("bladeren stopt niet");
+/** Eén aanroep vanaf het begin, zoals de app: `numItems` foto's of minder. */
+async function loadOnce(t: T, numItems: number, extra: Record<string, unknown> = {}): Promise<Page> {
+  return (await withUser(t, "user_olga").query(api.photos.listMine, {
+    paginationOpts: { numItems, cursor: null },
+    ...extra,
+  })) as Page;
 }
 
-describe("invariant 2: het grootste account, met marge, binnen de limieten", () => {
-  it(`${PHOTOS + LOOSE} eigen foto's: elke pagina binnen de limieten, elke foto één keer`, async () => {
+describe("invariant 2, besluit 4: het grootste account, met marge, in één aanroep zoals de app", () => {
+  it(`"Alle": ${PHOTOS + LOOSE} eigen foto's met formaten in één aanroep, binnen de limieten`, async () => {
     const t = newLimitedT();
     await bigWorld(t);
-    const ids = await loadAll(t);
+    const res = await loadOnce(t, firstCovering(ALL_STEP));
+    expect(res.isDone).toBe(true);
+    const ids = res.page.map((p) => p._id);
     expect(ids).toHaveLength(PHOTOS + LOOSE);
     expect(new Set(ids).size).toBe(PHOTOS + LOOSE);
+    expect(res.page.every((p) => p.hasFormats)).toBe(true);
   }, 300_000);
 
-  it(`A-keuze 2: de schakelaar vindt de ${LOOSE} foto's in geen album, binnen de limieten`, async () => {
+  it(`"Niet in een album": alle ${PHOTOS + LOOSE} foto's bekeken in één aanroep, de ${LOOSE} losse gevonden`, async () => {
     const t = newLimitedT();
     const w = await bigWorld(t);
-    const ids = await loadAll(t, { withoutAlbum: true });
-    expect([...ids].sort()).toEqual([...w.loose].sort());
+    const res = await loadOnce(t, firstCovering(LOOSE_STEP), { withoutAlbum: true });
+    expect(res.isDone).toBe(true);
+    expect(res.page.map((p) => p._id).sort()).toEqual([...w.loose].sort());
+    expect(res.page.every((p) => p.hasFormats)).toBe(true);
   }, 300_000);
 
   it("\"in welke albums\" voor een foto van het grootste account, binnen de limieten", async () => {
     const t = newLimitedT();
     await bigWorld(t);
-    const first = (await withUser(t, "user_olga").query(api.photos.listMine, {
-      paginationOpts: { numItems: 1, cursor: null },
-    })) as Page;
+    const first = await loadOnce(t, 1);
     const res = (await withUser(t, "user_olga").query(api.albums.listForPhoto, {
       photoId: first.page[0]!._id as Id<"photos">,
     })) as unknown[];

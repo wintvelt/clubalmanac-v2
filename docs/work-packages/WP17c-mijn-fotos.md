@@ -16,7 +16,7 @@ Een lid vindt al zijn eigen foto's op één plek, ook de foto's die in geen albu
 ## Invarianten (draft)
 
 1. **Mijn foto's toont alleen je eigen foto's.** Dat zijn alle foto's waarvan jij de eigenaar bent: in een album of in geen album, en ook een geüploade profielfoto (WP18). Nooit de foto van een ander.
-2. **Ook voor het grootste account.** Mijn foto's laadt en bladert voor het lid met de meeste foto's op prod, met marge, binnen de Convex-limieten. Er wordt niet alles in één keer geladen. A telt op de prod-export hoeveel foto's dat lid heeft.
+2. **Ook voor het grootste account.** Mijn foto's laadt voor het lid met de meeste foto's op prod (456), met marge, binnen de Convex-limieten. De app laadt in één query die groeit en steeds vanaf het begin leest (besluit 4). Die query loopt vast rond 2000 foto's met formaten bij "Alle", en rond 4000 met de schakelaar "Niet in een album". Wie scrolt tot het eind, of de schakelaar aanzet, laadt alles in één keer. Echt bladeren per pagina staat in de backlog.
 3. **Toevoegen aan album.** Vanuit een selectie kies je een album uit een groep waar je lid van bent. Per foto geldt de bestaande gate (`albums.addPhoto`, WP24). Wat niet mocht, meldt de app per foto, zoals de selectie in WP17b. Een foto die al in het album staat, is geen fout: hij wordt overgeslagen en verschijnt niet dubbel.
 4. **In welke albums staat deze foto.** Het detail van een foto toont de albums (met de groep) waarin hij staat. Je ziet alleen albums uit groepen waar je lid van bent. Van andere albums verraadt de app niets: geen aantal, geen naam en geen "en nog 2".
 5. **Alles op één toegangsregel.** De nieuwe read volgt de standing rule [Toegangsdefinities](../conventions/work-package-specs.md#toegangsdefinities-verplicht-bij-wps-die-er-een-invoeren). Hij geeft alleen een whitelist van velden terug, geen `storageId`.
@@ -164,10 +164,10 @@ De tests staan in een eigen `describe` met "A-keuze n" in de naam.
    - Eigen foto zonder album: een lege lijst.
    - Een publicatie waarvan het album weg is, telt niet.
 10. **Na vertrek** staat het album van die groep niet meer in de lijst.
-11. **Toevoegen aan album, per foto.** Vooraf mag alleen een eigen foto (zelfde regel als `addPhoto`). `ALREADY_IN_ALBUM` telt als "stond er al in", niet als mislukt. Elke andere weigering (album weg, geen lid meer, foto gewist) telt als mislukt. Na afloop één melding met de aantallen; alles gelukt: geen melding.
+11. **Toevoegen aan album, per foto.** Vooraf mag alleen een eigen foto (zelfde regel als `addPhoto`). `ALREADY_IN_ALBUM` telt als "stond er al in", niet als mislukt. Elke andere weigering (album weg, geen lid meer, foto gewist) telt als mislukt. Na afloop één melding. Alles gelukt: "5 foto's toegevoegd aan het album", net als bij verwijderen (WP17b). Anders zegt de melding hoeveel er niet mochten, al in het album stonden of mislukten.
 12. **Album-keuze.** Alleen albums van groepen waar je lid van bent, in de volgorde van Mijn groepen en het groepsscherm. Een groep zonder album valt weg. Het album waar je vandaan komt, staat er niet in.
 13. **Menu in Mijn foto's:** profielfoto, draaien, verwijderen. Geen covers en geen "uit album halen".
-14. **Ook voor het grootste account** (invariant 2): 1500 eigen foto's (ruim 3× 456), elk in een album, bladeren binnen de Convex-limieten, ook met de schakelaar.
+14. **Ook voor het grootste account** (invariant 2, besluit 4): 1505 eigen foto's met formaten (ruim 3× 456), 1500 in een album en 5 los. De test laadt ze zoals de app: één aanroep vanaf het begin, in beide standen, binnen de Convex-limieten. Bij 2505 foto's loopt "Alle" vast (4096 leesacties per query). Dat is de grens, geen fout; echt bladeren staat in de backlog.
 
 ### Toegangsdefinities (standing rule)
 
@@ -195,7 +195,7 @@ De tests staan in een eigen `describe` met "A-keuze n" in de naam.
 | Bestand | Pint |
 |---|---|
 | `tests/myPhotos/listMine.test.ts` | `photos.listMine`: invariant 1, 7, 8, A-keuze 1 en 2, de foto-vorm |
-| `tests/myPhotos/listMineScale.test.ts` | invariant 2 / A-invariant 14, met `transactionLimits` |
+| `tests/myPhotos/listMineScale.test.ts` | invariant 2 / A-invariant 14 en besluit 4: één aanroep zoals de app, foto's met formaten, beide standen, met `transactionLimits` |
 | `tests/myPhotos/listForPhoto.test.ts` | `albums.listForPhoto`: A-invariant 9 en 10 |
 | `tests/myPhotos/addSelection.test.ts` | A-invariant 11 tegen de echte `addPhoto` (plan en uitkomst per foto) |
 | `tests/readWhitelist/inventory.test.ts` | de twee nieuwe reads |
@@ -206,3 +206,10 @@ Aangenomen API (B mag de interne vorm kiezen, niet de namen):
 - `photos.listMine({ paginationOpts, withoutAlbum? })`, een Convex-pagina met de foto-vorm.
 - `albums.listForPhoto({ photoId })` geeft `{ albumId, albumName, groupId, groupName }[]`.
 - In de app: `SelectionAction` krijgt `"addToAlbum"`; `selectionSummary` krijgt een optioneel aantal `alreadyIn`. Een nieuwe module `app/src/lib/myPhotos.ts` met `myPhotoActions`, `albumChoices`, `addOutcome` en `photoAlbumLines`.
+
+### Fix-cyclus 1 (A, 2026-11-12)
+
+- **S1 (audit), besluit 4:** `listMineScale` laadt nu zoals de app (één aanroep, foto's met formaten, "Alle" en "Niet in een album"). Groen op de huidige code, dus B hoeft niets te doen. Invariant 2 en A-invariant 14 noemen de grens.
+- **N2 (audit):** A-invariant 11 volgt nu de app: ook bij alles gelukt een melding met het aantal.
+- **N1 (audit), geaccepteerd:** de koppeling in het scherm (welke mutation bij welke knop, de tellingen naar de melding) heeft geen test. De gate dekt dat.
+- **N3 (audit), geaccepteerd:** staat de aangetikte foto niet (meer) in de geladen lijst, dan opent het detail op de eerste foto.
