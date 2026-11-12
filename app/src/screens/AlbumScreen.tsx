@@ -19,9 +19,10 @@ import { api } from "../convexApi";
 import { useDeparting } from "../data/adminState";
 import { useAuthState } from "../data/authStateContext";
 import { useAppState } from "../data/useAppState";
+import { useSharePhoto } from "../data/share";
 import { useLiveQuery } from "../data/useLiveQuery";
 import { groupRights } from "../lib/groupAdmin";
-import { editAlbumPath, groupPath, photoPath } from "../lib/groupRoutes";
+import { albumMapPath, editAlbumPath, groupPath, photoPath } from "../lib/groupRoutes";
 import { displayYear } from "../lib/groups";
 import { formatPhotoDate, keepNewMarkers, shouldMarkSeen, sortAlbumPhotos } from "../lib/photos";
 import { photoLayers, radius, size, space, useTheme } from "../theme";
@@ -108,7 +109,7 @@ function AlbumContent({ groupId, albumId }: { groupId: Id<"groups">; albumId: Id
   const [picked, setPicked] = useState<ReadonlySet<string>>(new Set());
   const photoIds = useMemo(() => shown?.map((e) => e.albumPhoto.photoId as string) ?? [], [shown]);
   const place = useMemo(() => ({ groupId, albumId }), [groupId, albumId]);
-  const menu = usePhotoMenu({ place, ctx, photoIds, onFeedback: setFeedback });
+  const menu = usePhotoMenu({ place, ctx, photoIds, onFeedback: setFeedback , sharePhoto: useSharePhoto() });
   // Een foto die verdwijnt, valt uit de selectie.
   const selected = useMemo(() => (shown ?? []).filter((e) => picked.has(e.albumPhoto.photoId)).map(menuPhotoOf), [shown, picked]);
   const stopSelecting = useCallback(() => {
@@ -165,6 +166,16 @@ function AlbumContent({ groupId, albumId }: { groupId: Id<"groups">; albumId: Id
                       onPress={() => {
                         setFeedback(null);
                         setSelecting(true);
+                      }}
+                    />
+                  ) : null}
+                  {ctx && shown && shown.length > 0 ? (
+                    <SmallButton
+                      title="Kaart"
+                      icon="map"
+                      onPress={() => {
+                        setFeedback(null);
+                        router.push(albumMapPath(groupId, albumId));
                       }}
                     />
                   ) : null}
@@ -248,6 +259,8 @@ function menuPhotoOf(entry: Entry & { photo: NonNullable<Entry["photo"]> }): Men
     ownerId: entry.photo.ownerId,
     addedBy: entry.albumPhoto.addedBy,
     ownerName: entry.owner?.name,
+    hasFormats: entry.photo.hasFormats,
+    exifOrientation: entry.photo.exifOrientation,
   };
 }
 

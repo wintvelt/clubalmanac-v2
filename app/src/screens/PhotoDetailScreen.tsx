@@ -21,6 +21,7 @@ import { LoadingState } from "../components/States";
 import { Text } from "../components/Text";
 import { api } from "../convexApi";
 import { useAuthState } from "../data/authStateContext";
+import { useSharePhoto } from "../data/share";
 import { useLiveQuery } from "../data/useLiveQuery";
 import { photoAlbumLines } from "../lib/myPhotos";
 import { formatPhotoDate, nextAfterRemoval, sortAlbumPhotos } from "../lib/photos";
@@ -50,10 +51,11 @@ type Shown = Entry & { photo: NonNullable<Entry["photo"]> };
 // en 10). De melding na een actie staat onder de foto. Na verwijderen of uit
 // het album halen gaat het detail naar de volgende foto (zie hierboven).
 export function PhotoDetailScreen() {
-  const { groupId, albumId, photoId } = useLocalSearchParams<{
+  const { groupId, albumId, photoId, ids } = useLocalSearchParams<{
     groupId: string;
     albumId: string;
     photoId: string;
+    ids?: string;
   }>();
   const gid = String(groupId) as Id<"groups">;
   const aid = String(albumId) as Id<"albums">;
@@ -67,26 +69,35 @@ export function PhotoDetailScreen() {
         </Screen>
       )}
     >
-      <DetailContent groupId={gid} albumId={aid} initialPhotoId={String(photoId)} />
+      <DetailContent groupId={gid} albumId={aid} initialPhotoId={String(photoId)} subset={ids} />
     </QueryBoundary>
   );
 }
 
+// WP17d: `subset` (komma-gescheiden foto-ids, van een speld op de kaart of
+// "zonder locatie"): swipen alleen door die foto's.
 function DetailContent({
   groupId,
   albumId,
   initialPhotoId,
+  subset,
 }: {
   groupId: Id<"groups">;
   albumId: Id<"albums">;
   initialPhotoId: string;
+  subset?: string;
 }) {
   const { colors } = useTheme();
   const entries = useLiveQuery(api.albums.listPhotos, { albumId });
   const me = useLiveQuery(api.users.profile, {});
   const ctx = useMenuContext(groupId, me?._id);
   const [feedback, setFeedback] = useState<Feedback | null>(null);
-  const shown = useMemo(() => (entries ? sortAlbumPhotos(entries) : undefined), [entries]);
+  const only = useMemo(() => (subset ? new Set(subset.split(",").filter(Boolean)) : null), [subset]);
+  const shown = useMemo(() => {
+    if (!entries) return undefined;
+    const sorted = sortAlbumPhotos(entries);
+    return only ? sorted.filter((e) => only.has(e.albumPhoto.photoId)) : sorted;
+  }, [entries, only]);
   const ids = useMemo<string[]>(() => shown?.map((e) => e.albumPhoto.photoId) ?? [], [shown]);
   const [current, setCurrent] = useState(initialPhotoId);
   const [page, setPage] = useState<{ width: number; height: number } | null>(null);
@@ -109,12 +120,14 @@ function DetailContent({
   const index = Math.max(0, (ids as string[]).indexOf(current));
   const entry = shown?.[index];
   const place = useMemo(() => ({ groupId, albumId }), [groupId, albumId]);
-  const menu = usePhotoMenu({ place, ctx, photoIds: ids, onFeedback: setFeedback });
+  const menu = usePhotoMenu({ place, ctx, photoIds: ids, onFeedback: setFeedback , sharePhoto: useSharePhoto() });
   const menuPhoto: MenuPhoto | undefined = entry && {
     photoId: entry.albumPhoto.photoId,
     ownerId: entry.photo.ownerId,
     addedBy: entry.albumPhoto.addedBy,
     ownerName: entry.owner?.name,
+    hasFormats: entry.photo.hasFormats,
+    exifOrientation: entry.photo.exifOrientation,
   };
   const hasActions = menuActions(ctx, menuPhoto).length > 0;
 

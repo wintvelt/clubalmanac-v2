@@ -9,7 +9,8 @@ import { SmallButton } from "../components/SmallButton";
 import { Text } from "../components/Text";
 import { api } from "../convexApi";
 import { useLiveQuery } from "../data/useLiveQuery";
-import { myRotatePath, rotatePath } from "../lib/groupRoutes";
+import { locationPath, myLocationPath, myRotatePath, rotatePath } from "../lib/groupRoutes";
+import { placeShareActions, placeShareLabel, shareNotice, type PlaceShareAction } from "../lib/placeShare";
 import { addOutcome, myPhotoActions } from "../lib/myPhotos";
 import { profilePhotoNotice } from "../lib/profileEdit";
 import {
@@ -33,11 +34,27 @@ export type Feedback = { kind: "error" | "success"; title: string; message?: str
 
 // Wat het menu over een foto moet weten. Alle velden staan in albums.listPhotos.
 // `ownerName`: voor de melding bij "Als profielfoto" (WP27 vraag 3).
+// WP17d: `hasFormats` (delen alleen met formaten) en `exifOrientation` (rechtop delen).
 export type MenuPhoto = {
   photoId: Id<"photos">;
   ownerId: Id<"users">;
   addedBy: Id<"users">;
   ownerName?: string;
+  hasFormats?: boolean;
+  exifOrientation?: number;
+};
+
+// WP17d: "Delen" en "Locatie wijzigen" bij de acties van WP17b.
+export type MenuAction = PhotoAction | PlaceShareAction;
+
+function menuActionLabel(action: MenuAction): string {
+  return action === "share" || action === "location" ? placeShareLabel(action) : photoActionLabel(action);
+}
+
+const SHARE_FAILED: Feedback = {
+  kind: "error",
+  title: "Helaas, delen is niet gelukt",
+  message: "Probeer het later opnieuw.",
 };
 
 // Wie kijkt, en met welke rol in de groep van dit album. De maker van het
@@ -81,10 +98,13 @@ export function menuActions(
   ctx: MenuContext | undefined,
   photo: MenuPhoto | undefined,
   place: MenuPlace = null,
-): PhotoAction[] {
+): MenuAction[] {
   if (!ctx || !photo) return [];
-  if (place === null) return photo.ownerId === ctx.me ? myPhotoActions() : [];
-  return photoActions({ ...ctx, ownerId: photo.ownerId, addedBy: photo.addedBy });
+  // WP17d A-invariant 6: delen bij elke foto met formaten, locatie bij een
+  // eigen foto. Bovenaan; verwijderen (rood) blijft onderaan.
+  const placeShare = placeShareActions({ me: ctx.me, ownerId: photo.ownerId, hasFormats: photo.hasFormats === true });
+  if (place === null) return photo.ownerId === ctx.me ? [...placeShare, ...myPhotoActions()] : [];
+  return [...placeShare, ...photoActions({ ...ctx, ownerId: photo.ownerId, addedBy: photo.addedBy })];
 }
 
 function confirm(title: string, message: string, verb: string, onConfirm: () => void) {
@@ -94,14 +114,20 @@ function confirm(title: string, message: string, verb: string, onConfirm: () => 
   ]);
 }
 
+// WP17d: het delen zelf (src/data/share.ts, useSharePhoto) geeft het scherm
+// mee; zo laadt dit menu geen native module.
+export type SharePhoto = (photo: MenuPhoto) => Promise<"shared" | "unavailable">;
+
 export function usePhotoMenu({
   place,
   ctx,
   photoIds,
   onFeedback,
+  sharePhoto,
 }: {
   place: MenuPlace;
   ctx: MenuContext | undefined;
+  sharePhoto: SharePhoto;
   // De foto's die nu in het album staan: verdwijnt de foto van een open menu, dan sluit het.
   photoIds: readonly string[];
   onFeedback: (f: Feedback | null) => void;
@@ -112,6 +138,7 @@ export function usePhotoMenu({
   const removeFromAlbum = useMutation(api.albums.removePhoto);
   const removePhoto = useMutation(api.photos.remove);
   const openFor = useRef<string | null>(null);
+  const sharing = useRef(false);
 
   useEffect(() => {
     if (openFor.current !== null && !photoIds.includes(openFor.current)) {
@@ -132,9 +159,45 @@ export function usePhotoMenu({
     [onFeedback],
   );
 
+  // WP17d besluit 3: bij andermans foto eerst één regel dat hij de app verlaat.
+  const share = useCallback(
+    (photo: MenuPhoto) => {
+      const run = async () => {
+        if (sharing.current) return;
+        sharing.current = true;
+        try {
+          const outcome = await sharePhoto(photo);
+          if (outcome === "unavailable") onFeedback(SHARE_FAILED);
+        } catch {
+          onFeedback(SHARE_FAILED);
+        } finally {
+          sharing.current = false;
+        }
+      };
+      const notice = ctx ? shareNotice({ me: ctx.me, ownerId: photo.ownerId, ownerName: photo.ownerName }) : null;
+      if (notice === null) {
+        void run();
+        return;
+      }
+      Alert.alert("Foto delen?", notice, [
+        { text: "Annuleren", style: "cancel" },
+        { text: "Delen", onPress: () => void run() },
+      ]);
+    },
+    [ctx, sharePhoto, onFeedback],
+  );
+
   const perform = useCallback(
-    (action: PhotoAction, photo: MenuPhoto) => {
+    (action: MenuAction, photo: MenuPhoto) => {
       const { photoId } = photo;
+      if (action === "share") {
+        share(photo);
+        return;
+      }
+      if (action === "location") {
+        router.push(place ? locationPath(place.groupId, place.albumId, photoId) : myLocationPath(photoId));
+        return;
+      }
       if (action === "rotate") {
         router.push(place ? rotatePath(place.groupId, place.albumId, photoId) : myRotatePath(photoId));
         return;
@@ -191,7 +254,7 @@ export function usePhotoMenu({
           return;
       }
     },
-    [place, ctx, attempt, updateAlbum, updateGroup, setProfilePhoto, removeFromAlbum, removePhoto],
+    [place, ctx, share, attempt, updateAlbum, updateGroup, setProfilePhoto, removeFromAlbum, removePhoto],
   );
 
   const open = useCallback(
@@ -199,7 +262,7 @@ export function usePhotoMenu({
       const actions = menuActions(ctx, photo, place);
       if (actions.length === 0) return;
       onFeedback(null);
-      const options = [...actions.map(photoActionLabel), "Annuleren"];
+      const options = [...actions.map(menuActionLabel), "Annuleren"];
       const destructive = actions.indexOf("delete");
       openFor.current = photo.photoId;
       ActionSheetIOS.showActionSheetWithOptions(

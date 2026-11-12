@@ -13,6 +13,7 @@ import { EmptyState, LoadingState } from "../components/States";
 import { Text } from "../components/Text";
 import { api } from "../convexApi";
 import { useAuthState } from "../data/authStateContext";
+import { useSharePhoto } from "../data/share";
 import { useLiveQuery } from "../data/useLiveQuery";
 import { myPhotoPath } from "../lib/groupRoutes";
 import { formatPhotoDate } from "../lib/photos";
@@ -123,7 +124,7 @@ function MyPhotosContent() {
   const [selectionBusy, setSelectionBusy] = useState(false);
   const photos = list.photos;
   const photoIds = useMemo(() => photos?.map((p) => p._id as string) ?? [], [photos]);
-  const menu = usePhotoMenu({ place: null, ctx, photoIds, onFeedback: setFeedback });
+  const menu = usePhotoMenu({ place: null, ctx, photoIds, onFeedback: setFeedback , sharePhoto: useSharePhoto() });
   const selected = useMemo(() => (photos ?? []).filter((p) => picked.has(p._id)).map(menuPhotoOf), [photos, picked]);
   const stopSelecting = useCallback(() => {
     setSelecting(false);
@@ -250,7 +251,13 @@ function MyPhotosContent() {
 
 export function menuPhotoOf(photo: MyPhoto): MenuPhoto {
   // Geen album: "toegevoegd door" is hier niet van toepassing.
-  return { photoId: photo._id, ownerId: photo.ownerId, addedBy: photo.ownerId };
+  return {
+    photoId: photo._id,
+    ownerId: photo.ownerId,
+    addedBy: photo.ownerId,
+    hasFormats: photo.hasFormats,
+    exifOrientation: photo.exifOrientation,
+  };
 }
 
 function SelectionBar({

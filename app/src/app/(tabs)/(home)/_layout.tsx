@@ -15,6 +15,8 @@ export default function Layout() {
       <Stack.Screen name="groep/[groupId]/album/[albumId]/index" options={{ title: "Album", headerShown: false }} />
       <Stack.Screen name="groep/[groupId]/album/[albumId]/foto/[photoId]" options={{ title: "Foto" }} />
       <Stack.Screen name="groep/[groupId]/album/[albumId]/draaien/[photoId]" options={{ title: "Draaien" }} />
+      <Stack.Screen name="groep/[groupId]/album/[albumId]/kaart" options={{ title: "Kaart" }} />
+      <Stack.Screen name="groep/[groupId]/album/[albumId]/locatie/[photoId]" options={{ title: "Locatie wijzigen" }} />
       <Stack.Screen name="groep/[groupId]/bewerken" options={{ title: "Bewerk groep" }} />
       <Stack.Screen name="groep/[groupId]/album/[albumId]/bewerken" options={{ title: "Bewerk album" }} />
       <Stack.Screen

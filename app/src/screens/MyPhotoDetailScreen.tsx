@@ -15,6 +15,7 @@ import { LoadingState } from "../components/States";
 import { Text } from "../components/Text";
 import { api } from "../convexApi";
 import { useAuthState } from "../data/authStateContext";
+import { useSharePhoto } from "../data/share";
 import { useLiveQuery } from "../data/useLiveQuery";
 import { formatPhotoDate, nextAfterRemoval } from "../lib/photos";
 import { size, space, useTheme } from "../theme";
@@ -90,7 +91,7 @@ function DetailContent({
 
   const index = Math.max(0, ids.indexOf(current));
   const photo = shown?.[index];
-  const menu = usePhotoMenu({ place: null, ctx, photoIds: ids, onFeedback: setFeedback });
+  const menu = usePhotoMenu({ place: null, ctx, photoIds: ids, onFeedback: setFeedback , sharePhoto: useSharePhoto() });
   const menuPhoto = photo ? menuPhotoOf(photo) : undefined;
   const hasActions = menuActions(ctx, menuPhoto, null).length > 0;
 

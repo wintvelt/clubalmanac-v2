@@ -8,6 +8,7 @@ export default function Layout() {
       <Stack.Screen name="index" options={{ title: "Mijn foto's" }} />
       <Stack.Screen name="foto/[photoId]" options={{ title: "Foto" }} />
       <Stack.Screen name="draaien/[photoId]" options={{ title: "Draaien" }} />
+      <Stack.Screen name="locatie/[photoId]" options={{ title: "Locatie wijzigen" }} />
     </Stack>
   );
 }

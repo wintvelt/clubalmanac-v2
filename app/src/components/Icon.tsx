@@ -28,6 +28,9 @@ const IONICONS = {
   rotateRight: "arrow-redo",
   mirror: "swap-horizontal",
   circle: "ellipse",
+  map: "map",
+  pin: "location",
+  share: "share",
 } as const;
 
 export type IconName = keyof typeof IONICONS;

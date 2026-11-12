@@ -12,7 +12,7 @@ import {
 import type { Doc, Id } from "./_generated/dataModel";
 import { internal } from "./_generated/api";
 import { requireCurrentUser } from "./users";
-import { getMembership, NOT_MEMBER } from "./groups";
+import { getMembership, NOT_MEMBER, refuse } from "./groups";
 import { requireWebmaster } from "./lib/auth";
 import { canAccessPhoto } from "./lib/photoAccess";
 import {
@@ -349,17 +349,15 @@ export const createFromUploadInternal = internalMutation({
   },
 });
 
-// Owner-only update — gebruikt voor manuele EXIF/locatie correctie of
-// async geocoding-action. Strict subset van velden, owner check binnen.
+// Owner-only update — manuele EXIF-correctie. Strict subset van velden, owner
+// check binnen. WP17d A-invariant 4: geen plek en geen plaatsnaam meer; die
+// zet alleen `setLocation` (de validator weigert de velden).
 export const update = mutation({
   args: {
     photoId: v.id("photos"),
     width: v.optional(v.number()),
     height: v.optional(v.number()),
     takenAt: v.optional(v.number()),
-    latitude: v.optional(v.number()),
-    longitude: v.optional(v.number()),
-    locationLabel: v.optional(v.string()),
   },
   handler: async (ctx, { photoId, ...rest }) => {
     const user = await requireCurrentUser(ctx);
@@ -370,17 +368,116 @@ export const update = mutation({
     }
 
     const patch: Partial<Doc<"photos">> = {};
-    for (const k of [
-      "width",
-      "height",
-      "takenAt",
-      "latitude",
-      "longitude",
-      "locationLabel",
-    ] as const) {
+    for (const k of ["width", "height", "takenAt"] as const) {
       if (rest[k] !== undefined) (patch[k] as unknown) = rest[k];
     }
     if (Object.keys(patch).length > 0) await ctx.db.patch(photoId, patch);
+  },
+});
+
+// ── WP17d: de plek van een foto ──────────────────────────────────────
+
+const spot = v.object({ latitude: v.number(), longitude: v.number() });
+
+/** Beide coördinaten, of null. Een halve plek telt niet als plek. */
+function spotOf(photo: Doc<"photos">): { latitude: number; longitude: number } | null {
+  return photo.latitude !== undefined && photo.longitude !== undefined
+    ? { latitude: photo.latitude, longitude: photo.longitude }
+    : null;
+}
+
+// Eigenaar-poort voor de plek (A-invariant 2 en 3): een foto van een ander,
+// ook met toegang, een onbekende en een gewiste foto geven dezelfde
+// NOT_PHOTO_OWNER. Geen bestaans-orakel.
+async function requirePhotoOwner(
+  ctx: QueryCtx,
+  photoId: Id<"photos">,
+): Promise<Doc<"photos">> {
+  const user = await requireCurrentUser(ctx);
+  const photo = await ctx.db.get(photoId);
+  if (!photo || photo.ownerId !== user._id) refuse("NOT_PHOTO_OWNER");
+  return photo;
+}
+
+// WP17d A-invariant 2: de exacte plek van een eigen foto, voor "Locatie
+// wijzigen" (ook vanuit Mijn foto's, waar geen album is).
+export const getLocation = query({
+  args: { photoId: v.id("photos") },
+  returns: v.union(spot, v.null()),
+  handler: async (ctx, { photoId }) => {
+    const photo = await requirePhotoOwner(ctx, photoId);
+    return spotOf(photo);
+  },
+});
+
+function validSpot(s: { latitude: number; longitude: number }): boolean {
+  return (
+    Number.isFinite(s.latitude) &&
+    Number.isFinite(s.longitude) &&
+    s.latitude >= -90 &&
+    s.latitude <= 90 &&
+    s.longitude >= -180 &&
+    s.longitude <= 180
+  );
+}
+
+// WP17d A-invariant 3: het enige pad voor de plek. Alleen de eigenaar, en die
+// check komt vóór de waarden. Een nieuwe plek wist meteen de oude plaatsnaam;
+// de nieuwe komt van Photon, na deze mutation. `null` haalt plek en
+// plaatsnaam weg.
+export const setLocation = mutation({
+  args: { photoId: v.id("photos"), location: v.union(spot, v.null()) },
+  returns: v.null(),
+  handler: async (ctx, { photoId, location }) => {
+    await requirePhotoOwner(ctx, photoId);
+    if (location === null) {
+      await ctx.db.patch(photoId, {
+        latitude: undefined,
+        longitude: undefined,
+        locationLabel: undefined,
+      });
+      return null;
+    }
+    if (!validSpot(location)) refuse("LOCATION_INVALID");
+    const { latitude, longitude } = location;
+    await ctx.db.patch(photoId, { latitude, longitude, locationLabel: undefined });
+    await ctx.scheduler.runAfter(0, internal.photos.labelLocation, {
+      photoId,
+      latitude,
+      longitude,
+    });
+    return null;
+  },
+});
+
+// De plaatsnaam bij een gewijzigde plek. Photon faalt: geen plaatsnaam, geen
+// fout (de plek blijft).
+export const labelLocation = internalAction({
+  args: { photoId: v.id("photos"), latitude: v.number(), longitude: v.number() },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const label = await photonLabel(args.latitude, args.longitude);
+    if (label === null) return null;
+    await ctx.runMutation(internal.photos.applyLocationLabel, { ...args, label });
+    return null;
+  },
+});
+
+// Een late plaatsnaam hoort bij een plek die niet meer geldt (gewijzigd,
+// weggehaald, of de foto is weg): niet bewaren.
+export const applyLocationLabel = internalMutation({
+  args: {
+    photoId: v.id("photos"),
+    latitude: v.number(),
+    longitude: v.number(),
+    label: v.string(),
+  },
+  returns: v.null(),
+  handler: async (ctx, { photoId, latitude, longitude, label }) => {
+    const photo = await ctx.db.get(photoId);
+    if (!photo || photo.latitude !== latitude || photo.longitude !== longitude) return null;
+    await ctx.db.patch(photoId, { locationLabel: label });
+    return null;
   },
 });
 
@@ -838,58 +935,60 @@ export const getByIdInternal = internalQuery({
 export const reverseGeocode = internalAction({
   args: { latitude: v.number(), longitude: v.number() },
   returns: v.union(v.string(), v.null()),
-  handler: async (_ctx, { latitude, longitude }) => {
-    const url = `https://photon.komoot.io/reverse?lat=${latitude}&lon=${longitude}&lang=en`;
-
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 2000);
-
-    try {
-      const response = await fetch(url, {
-        headers: { "User-Agent": "Clubalmanac/2.0" },
-        signal: controller.signal,
-      });
-
-      if (!response.ok) return null;
-
-      const body = (await response.json()) as {
-        features?: Array<{
-          properties?: {
-            street?: string;
-            name?: string;
-            city?: string;
-            country?: string;
-          };
-        }>;
-      };
-
-      const props = body?.features?.[0]?.properties;
-      if (!props) return null;
-
-      // street → name fallback: POIs zonder street (Rijksmuseum etc.) krijgen
-      // alsnog een herkenbaar label. Nullish-coalescing valt niet door op lege
-      // string, dus expliciete length-check (audit-13 §1).
-      const streetLabel =
-        typeof props.street === "string" && props.street.length > 0
-          ? props.street
-          : props.name;
-      const parts = [streetLabel, props.city, props.country].filter(
-        (p): p is string => typeof p === "string" && p.length > 0,
-      );
-      if (parts.length === 0) return null;
-      return parts.join(", ");
-    } catch (e) {
-      // network error, AbortError (timeout), of JSON-parse fail.
-      console.error(
-        `[reverseGeocode] Photon request failed lat=${latitude} lon=${longitude}`,
-        e,
-      );
-      return null;
-    } finally {
-      clearTimeout(timer);
-    }
-  },
+  handler: async (_ctx, { latitude, longitude }) => photonLabel(latitude, longitude),
 });
+
+async function photonLabel(latitude: number, longitude: number): Promise<string | null> {
+  const url = `https://photon.komoot.io/reverse?lat=${latitude}&lon=${longitude}&lang=en`;
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 2000);
+
+  try {
+    const response = await fetch(url, {
+      headers: { "User-Agent": "Clubalmanac/2.0" },
+      signal: controller.signal,
+    });
+
+    if (!response.ok) return null;
+
+    const body = (await response.json()) as {
+      features?: Array<{
+        properties?: {
+          street?: string;
+          name?: string;
+          city?: string;
+          country?: string;
+        };
+      }>;
+    };
+
+    const props = body?.features?.[0]?.properties;
+    if (!props) return null;
+
+    // street → name fallback: POIs zonder street (Rijksmuseum etc.) krijgen
+    // alsnog een herkenbaar label. Nullish-coalescing valt niet door op lege
+    // string, dus expliciete length-check (audit-13 §1).
+    const streetLabel =
+      typeof props.street === "string" && props.street.length > 0
+        ? props.street
+        : props.name;
+    const parts = [streetLabel, props.city, props.country].filter(
+      (p): p is string => typeof p === "string" && p.length > 0,
+    );
+    if (parts.length === 0) return null;
+    return parts.join(", ");
+  } catch (e) {
+    // network error, AbortError (timeout), of JSON-parse fail.
+    console.error(
+      `[reverseGeocode] Photon request failed lat=${latitude} lon=${longitude}`,
+      e,
+    );
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 // FL2: non-owner kan andermans photo flaggen. Idempotent — tweede flag
 // op al-geflagde photo is no-op (eerste flagger en timestamps blijven).

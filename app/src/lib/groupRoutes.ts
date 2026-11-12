@@ -19,6 +19,26 @@ export function rotatePath(groupId: string, albumId: string, photoId: string): s
   return `${albumPath(groupId, albumId)}/draaien/${encodeURIComponent(photoId)}`;
 }
 
+// WP17d: de kaart van een album, en "Locatie wijzigen" van een foto (in het
+// album en in Mijn foto's). `ids`: het detail toont alleen die foto's (een
+// speld op de kaart, of "zonder locatie").
+export function albumMapPath(groupId: string, albumId: string): string {
+  return `${albumPath(groupId, albumId)}/kaart`;
+}
+
+export function locationPath(groupId: string, albumId: string, photoId: string): string {
+  return `${albumPath(groupId, albumId)}/locatie/${encodeURIComponent(photoId)}`;
+}
+
+export function myLocationPath(photoId: string): string {
+  return `/mijn-fotos/locatie/${encodeURIComponent(photoId)}`;
+}
+
+export function photoSubsetPath(groupId: string, albumId: string, photoIds: readonly string[]): string {
+  const first = photoIds[0] ?? "";
+  return `${photoPath(groupId, albumId, first)}?ids=${photoIds.map(encodeURIComponent).join(",")}`;
+}
+
 // WP28b: beheer. Nieuwe groep en Nieuw album zijn modaal in de Home-stack;
 // Bewerk groep en Bewerk album liggen boven hun scherm.
 export function newGroupPath(): string {

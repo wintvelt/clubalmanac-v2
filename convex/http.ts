@@ -12,6 +12,7 @@ import {
   testGateRefusalResponse,
 } from "./lib/testGate";
 import { parseLocation, parseTakenAt, uploadImageType } from "./lib/upload";
+import { isJpeg, stripJpegMetadata } from "./lib/jpegMeta";
 
 // Cascade matrix IB1: Mailjet bounce-webhook → internal.invites.handleBounce.
 // Voltooit IB1 cascade per docs/cascade-matrix.md (bounce → status=expired
@@ -563,22 +564,55 @@ http.route({
     );
     if (format === "ongeldig") return BAD_FORMAT();
 
+    // WP17d besluit 2: zonder formaat het formaat *groot*, niet het origineel.
     const userId = idFromPath(request, PROFILE_PREFIX);
-    if (format === "origineel") {
-      const storageId = await ctx.runQuery(internal.images.profileImage, { userId });
-      return await imageResponse(ctx, storageId, "public, no-cache");
-    }
     const choice = await ctx.runQuery(internal.images.profileImageInFormat, {
       userId,
-      formaat: format,
+      formaat: format === "origineel" ? "groot" : format,
     });
-    return await imageResponse(
+    return await publicProfileResponse(
       ctx,
-      choice?.storageId ?? null,
+      choice,
       choice?.fallback ? FALLBACK_CACHE_PROFILE : "public, no-cache",
     );
   }),
 });
+
+// WP17d besluit 2 (A-invariant 8): het openbare profielpad geeft nooit een
+// bestand met GPS. Zonder formaat geeft het pad *groot*; zonder formaten de
+// terugval. Een JPEG gaat zonder metadata mee, met alleen de stand
+// (lib/jpegMeta). De gemigreerde losse profielbeelden zijn alle JPEG (telling
+// A). Een ander type gaat ongewijzigd mee, zoals voorheen (WP17a invariant 17):
+// een nieuwe upload draagt geen EXIF (WP18) en krijgt kort daarna formaten.
+async function publicProfileResponse(
+  ctx: { storage: { get: (id: Id<"_storage">) => Promise<Blob | null> } },
+  choice: { storageId: Id<"_storage">; fallback: boolean } | null,
+  cacheControl: string,
+): Promise<Response> {
+  if (!choice) return NOT_FOUND();
+  const blob = await ctx.storage.get(choice.storageId);
+  if (!blob) return NOT_FOUND();
+  const bytes = new Uint8Array(await blob.arrayBuffer());
+  let body: Uint8Array<ArrayBuffer>;
+  let type: string;
+  if (isJpeg(bytes)) {
+    const stripped = stripJpegMetadata(bytes);
+    if (!stripped) return NOT_FOUND();
+    body = new Uint8Array(stripped);
+    type = "image/jpeg";
+  } else {
+    body = bytes;
+    type = storedRasterType(blob.type) ?? sniffImageType(bytes.subarray(0, 12)) ?? "application/octet-stream";
+  }
+  return new Response(body, {
+    status: 200,
+    headers: {
+      "Content-Type": type,
+      "Cache-Control": cacheControl,
+      "X-Content-Type-Options": "nosniff",
+    },
+  });
+}
 
 // WP4: `whoami` httpAction. Productie-blind-spot uit plan-doc r.251:
 // vitest's `t.withIdentity({ email })` mockt de identity en zegt niets
