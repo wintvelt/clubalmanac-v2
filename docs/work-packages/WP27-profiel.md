@@ -1,6 +1,20 @@
 # WP27: Profiel — opbouw, en een profielfoto uit elke foto
 
-> Draft (regie, 2026-11-11). Vóór T0. Uit de WP18-gate; richting akkoord 2026-11-08.
+> Landed 2026-11-12: A → B → audit + red-team, één fix-cyclus, gate op dev groen (simulator, release-build). Vóór T0. Uit de WP18-gate; richting akkoord 2026-11-08.
+
+## Gate (dev, 2026-11-12)
+
+- Een tweede lid ("Wouter DEV test", `dev3+clerk_test`) in Gatetest koos via het foto-menu een foto van Dev Wouter. De melding noemt Dev Wouter, en dat die er geen bericht van krijgt. Uitgelogd gaf het openbare profielpad het beeld.
+- Dev Wouter haalde de foto uit het album: het pad gaf 404, de koppeling was weg en Profiel toonde de letter. Na het terugzetten bleef het 404 (besluit 7).
+- Opnieuw gekozen, daarna het lid uit de groep gehaald: 404, ook met `?formaat=klein`, en de koppeling was weg. De eigen profielfoto van Dev Wouter bleef zichtbaar.
+- Profiel in donker bij de grootste tekst: leesbaar, en woorden breken niet. Het naamveld kort af met "…"; het e-mailadres breekt midden in het adres.
+- Integriteitscheck: alleen de bekende foto zonder formaten.
+- Niet in de gate (wel in de tests):
+  - melden en bezwaar;
+  - de eigenaar die zijn account verwijdert;
+  - uploaden en weghalen van een eigen profielfoto;
+  - de avatar in de ledenlijst van een ander lid.
+- Wat opviel: een uitnodiging naar `example.com` bounce't binnen seconden en verloopt dan. Voor de gate is hij aangemaakt en direct geaccepteerd met `invites.accept`.
 
 ## Productdoel
 
