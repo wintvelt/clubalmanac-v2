@@ -11,6 +11,7 @@ Een lid vindt al zijn eigen foto's op één plek, ook de foto's die in geen albu
 1. **Eén lijst in Mijn foto's, nieuwste upload eerst** (2026-11-12, A-keuze 1).
 2. **Schakelaar "Alle / Niet in een album"** (2026-11-12, A-keuze 2).
 3. **"In welke albums" bij elke foto, zonder mini-cover en niet aantikbaar** (2026-11-12, open vraag 3).
+4. **De laadgrens vastleggen in een test, niet ombouwen** (2026-11-12, audit S1). Mijn foto's laadt in één query die groeit; rond 2000 foto's met formaten loopt die vast (prod-maximum 456). Een test laadt zoals de app, met 1500 foto's met formaten. Echt bladeren per pagina gaat naar de backlog.
 
 ## Invarianten (draft)
 
