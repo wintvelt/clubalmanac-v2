@@ -270,3 +270,69 @@ describe("previewOrientation: de stand van de foto na bewaren", () => {
     expect(previewOrientation(1, { rotation: 90, flipY: false })).toBe(6);
   });
 });
+
+// --- WP17c: toevoegen aan album in de selectie (invariant 3, A-invariant 11) ------------
+//
+// Zelfde regel als albums.addPhoto (WP24 A-keuze 1): alleen de eigenaar, los
+// van de rol en van wie de foto ergens anders toevoegde. Of het plan klopt met
+// de backend, pint tests/myPhotos/addSelection.test.ts (root).
+
+describe("WP17c selectionPlan addToAlbum: alleen eigen foto's", () => {
+  const items = [
+    { photoId: "p1", ownerId: ME, addedBy: ME },
+    { photoId: "p2", ownerId: OTHER, addedBy: OTHER },
+    { photoId: "p3", ownerId: ME, addedBy: OTHER },
+    { photoId: "p4", ownerId: OTHER, addedBy: ME },
+  ];
+
+  for (const role of ["admin", "member"] as const) {
+    it(`${role}: eigen foto's mogen, de rest niet`, () => {
+      expect(selectionPlan("addToAlbum", items, { me: ME, role })).toEqual({
+        allowed: ["p1", "p3"],
+        notAllowed: ["p2", "p4"],
+      });
+    });
+  }
+
+  it("de volgorde van de selectie blijft", () => {
+    expect(selectionPlan("addToAlbum", [...items].reverse(), { me: ME, role: "admin" }).allowed).toEqual([
+      "p3",
+      "p1",
+    ]);
+  });
+});
+
+describe("WP17c selectionSummary addToAlbum: wat niet mocht, wat er al in stond, wat mislukte", () => {
+  it("alles gelukt geeft geen melding, ook met alreadyIn 0", () => {
+    expect(selectionSummary("addToAlbum", { done: 5, notAllowed: 0, failed: 0 })).toBeNull();
+    expect(selectionSummary("addToAlbum", { done: 5, notAllowed: 0, failed: 0, alreadyIn: 0 })).toBeNull();
+  });
+
+  it("niet toegestaan noemt het aantal, met een eigen reden (niet die van verwijderen)", () => {
+    const msg = selectionSummary("addToAlbum", { done: 3, notAllowed: 2, failed: 0 });
+    expect(msg).toMatch(/\b2\b/);
+    expect(msg).not.toEqual(selectionSummary("delete", { done: 3, notAllowed: 2, failed: 0 }));
+    expect(msg).not.toEqual(selectionSummary("removeFromAlbum", { done: 3, notAllowed: 2, failed: 0 }));
+  });
+
+  it("al in het album: een melding met het aantal, anders dan mislukt en niet toegestaan", () => {
+    const already = selectionSummary("addToAlbum", { done: 3, notAllowed: 0, failed: 0, alreadyIn: 2 });
+    expect(already).not.toBeNull();
+    expect(already).toMatch(/\b2\b/);
+    expect(already).not.toEqual(selectionSummary("addToAlbum", { done: 3, notAllowed: 0, failed: 2 }));
+    expect(already).not.toEqual(selectionSummary("addToAlbum", { done: 3, notAllowed: 2, failed: 0 }));
+  });
+
+  it("één foto al in het album: enkelvoud", () => {
+    const one = selectionSummary("addToAlbum", { done: 0, notAllowed: 0, failed: 0, alreadyIn: 1 });
+    expect(one).toMatch(/\b1 foto\b/);
+    expect(one).not.toMatch(/foto's/);
+  });
+
+  it("alle drie tegelijk: alle drie de aantallen", () => {
+    const msg = selectionSummary("addToAlbum", { done: 1, notAllowed: 2, failed: 3, alreadyIn: 4 });
+    expect(msg).toMatch(/\b2\b/);
+    expect(msg).toMatch(/\b3\b/);
+    expect(msg).toMatch(/\b4\b/);
+  });
+});

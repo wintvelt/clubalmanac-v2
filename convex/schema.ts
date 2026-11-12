@@ -162,6 +162,8 @@ export default defineSchema({
     createdAt: v.number(),
   })
     .index("by_owner", ["ownerId"])
+    // WP17c A-keuze 1: Mijn foto's bladert per eigenaar, nieuwste upload eerst.
+    .index("by_owner_and_createdAt", ["ownerId", "createdAt"])
     // WP24 invariant 8: welke foto's horen bij een beeld
     // (users.updateProfile accepteert alleen een beeld van de caller).
     .index("by_storage", ["storageId"])

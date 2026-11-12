@@ -36,3 +36,15 @@ export function editGroupPath(groupId: string): string {
 export function editAlbumPath(groupId: string, albumId: string): string {
   return `${albumPath(groupId, albumId)}/bewerken`;
 }
+
+// WP17c: Mijn foto's heeft een eigen stack in zijn tab, met het detail (swipen
+// door je eigen foto's) en het draaischerm. Het detail kent de stand van de
+// lijst: de schakelaar en hoeveel er geladen is.
+export function myPhotoPath(photoId: string, opts: { withoutAlbum: boolean; loaded: number }): string {
+  const q = `n=${opts.loaded}${opts.withoutAlbum ? "&los=1" : ""}`;
+  return `/mijn-fotos/foto/${encodeURIComponent(photoId)}?${q}`;
+}
+
+export function myRotatePath(photoId: string): string {
+  return `/mijn-fotos/draaien/${encodeURIComponent(photoId)}`;
+}

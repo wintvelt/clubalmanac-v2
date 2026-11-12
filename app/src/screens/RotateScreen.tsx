@@ -49,16 +49,61 @@ export function RotateScreen() {
 }
 
 function RotateContent({ albumId, photoId }: { albumId: Id<"albums">; photoId: string }) {
-  const { colors } = useTheme();
   const entries = useLiveQuery(api.albums.listPhotos, { albumId });
+  const entry = entries?.find((e) => e.albumPhoto.photoId === photoId);
+  return (
+    <RotateView
+      photoId={entry?.albumPhoto.photoId}
+      photo={entries === undefined ? undefined : (entry?.photo ?? null)}
+      goneTitle="Deze foto staat niet meer in het album"
+    />
+  );
+}
+
+// WP17c: het draaischerm vanuit Mijn foto's. De foto komt live uit
+// photos.getById; is hij weg, dan de melding van de grens.
+export function MyRotateScreen() {
+  const { photoId } = useLocalSearchParams<{ photoId: string }>();
+  const pid = String(photoId) as Id<"photos">;
+  if (useAuthState() === "reconnecting") return <Screen underHeader>{null}</Screen>;
+  return (
+    <QueryBoundary
+      key={pid}
+      fallback={() => (
+        <Screen underHeader>
+          <RotateView photoId={undefined} photo={null} goneTitle="Deze foto is er niet meer" />
+        </Screen>
+      )}
+    >
+      <MyRotateContent photoId={pid} />
+    </QueryBoundary>
+  );
+}
+
+function MyRotateContent({ photoId }: { photoId: Id<"photos"> }) {
+  const photo = useLiveQuery(api.photos.getById, { photoId });
+  return <RotateView photoId={photoId} photo={photo} goneTitle="Deze foto is er niet meer" />;
+}
+
+type RotatePhoto = { exifOrientation?: number; hasFormats: boolean };
+
+// Het scherm zelf: `photo` undefined is laden, null is weg.
+function RotateView({
+  photoId,
+  photo,
+  goneTitle,
+}: {
+  photoId: Id<"photos"> | undefined;
+  photo: RotatePhoto | null | undefined;
+  goneTitle: string;
+}) {
+  const { colors } = useTheme();
   const rotate = useMutation(api.photos.rotate);
   const [steps, setSteps] = useState<RotateStep[]>([]);
   const [box, setBox] = useState<{ width: number; height: number } | null>(null);
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState(false);
 
-  const entry = entries?.find((e) => e.albumPhoto.photoId === photoId);
-  const photo = entry?.photo ?? null;
   const edit = composeRotation(steps);
 
   const onLayout = (e: LayoutChangeEvent) => {
@@ -72,11 +117,11 @@ function RotateContent({ albumId, photoId }: { albumId: Id<"albums">; photoId: s
   };
 
   const save = async () => {
-    if (!edit || !entry) return;
+    if (!edit || !photoId) return;
     setBusy(true);
     setFailed(false);
     try {
-      await rotate({ photoId: entry.albumPhoto.photoId, ...edit });
+      await rotate({ photoId, ...edit });
       // De live stand is nu de nieuwe; zonder dit staat het voorbeeld even dubbel gedraaid.
       setSteps([]);
       router.back();
@@ -87,14 +132,14 @@ function RotateContent({ albumId, photoId }: { albumId: Id<"albums">; photoId: s
   };
 
   let body;
-  if (entries === undefined) {
+  if (photo === undefined) {
     body = <LoadingState label="Foto laden…" />;
-  } else if (!entry || !photo) {
+  } else if (!photoId || !photo) {
     body = (
       <View style={styles.column}>
         <Notice
           kind="error"
-          title="Deze foto staat niet meer in het album"
+          title={goneTitle}
           message="Misschien heeft iemand hem weggehaald of verwijderd."
         />
         <Button title="Terug" variant="secondary" icon="back" onPress={() => router.back()} />
@@ -111,7 +156,7 @@ function RotateContent({ albumId, photoId }: { albumId: Id<"albums">; photoId: s
         <View style={styles.fill} onLayout={onLayout}>
           {box && (
             <PhotoImage
-              photoId={entry.albumPhoto.photoId}
+              photoId={photoId}
               format="groot"
               exifOrientation={preview.exifOrientation}
               hasFormats={preview.hasFormats}

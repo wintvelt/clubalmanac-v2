@@ -22,6 +22,7 @@ import { Text } from "../components/Text";
 import { api } from "../convexApi";
 import { useAuthState } from "../data/authStateContext";
 import { useLiveQuery } from "../data/useLiveQuery";
+import { photoAlbumLines } from "../lib/myPhotos";
 import { formatPhotoDate, nextAfterRemoval, sortAlbumPhotos } from "../lib/photos";
 import { size, space, useTheme } from "../theme";
 import { AlbumReadFailed } from "./AlbumParts";
@@ -107,7 +108,8 @@ function DetailContent({
 
   const index = Math.max(0, (ids as string[]).indexOf(current));
   const entry = shown?.[index];
-  const menu = usePhotoMenu({ groupId, albumId, ctx, photoIds: ids, onFeedback: setFeedback });
+  const place = useMemo(() => ({ groupId, albumId }), [groupId, albumId]);
+  const menu = usePhotoMenu({ place, ctx, photoIds: ids, onFeedback: setFeedback });
   const menuPhoto: MenuPhoto | undefined = entry && {
     photoId: entry.albumPhoto.photoId,
     ownerId: entry.photo.ownerId,
@@ -162,7 +164,7 @@ function DetailContent({
                 windowSize={3}
                 maxToRenderPerBatch={2}
                 onMomentumScrollEnd={onMomentumEnd}
-                renderItem={({ item }) => <ZoomablePhoto entry={item} box={page} />}
+                renderItem={({ item }) => <ZoomablePhoto photoId={item.albumPhoto.photoId} photo={item.photo} box={page} />}
               />
             )}
           </View>
@@ -181,8 +183,19 @@ function DetailContent({
 const MAX_ZOOM = 3;
 const DOUBLE_TAP_MS = 280;
 
+type ZoomPhoto = Shown["photo"];
+
 // Knijpen zoomt (iOS-ScrollView), dubbeltikken wisselt tussen 1× en 2,5×.
-function ZoomablePhoto({ entry, box }: { entry: Shown; box: { width: number; height: number } }) {
+// WP17c: ook voor het detail in Mijn foto's.
+export function ZoomablePhoto({
+  photoId,
+  photo,
+  box,
+}: {
+  photoId: Id<"photos">;
+  photo: ZoomPhoto;
+  box: { width: number; height: number };
+}) {
   const [zoom, setZoom] = useState(1);
   const lastTap = useRef(0);
   const onPress = () => {
@@ -212,14 +225,14 @@ function ZoomablePhoto({ entry, box }: { entry: Shown; box: { width: number; hei
       <Pressable
         onPress={onPress}
         accessibilityRole="image"
-        accessibilityLabel={`Foto van ${formatPhotoDate(entry.photo)}`}
+        accessibilityLabel={`Foto van ${formatPhotoDate(photo)}`}
         accessibilityHint="Dubbeltik om in of uit te zoomen"
       >
         <PhotoImage
-          photoId={entry.albumPhoto.photoId}
+          photoId={photoId}
           format="groot"
-          exifOrientation={entry.photo.exifOrientation}
-          hasFormats={entry.photo.hasFormats}
+          exifOrientation={photo.exifOrientation}
+          hasFormats={photo.hasFormats}
           box={box}
           fit="contain"
         />
@@ -234,8 +247,9 @@ function PhotoInfo({ entry }: { entry: Shown }) {
   const name = entry.owner?.name ?? null;
   const date = formatPhotoDate(entry.photo);
   return (
+    <View style={[styles.infoBlock, { borderTopColor: colors.line }]}>
     <View
-      style={[styles.info, { borderTopColor: colors.line }]}
+      style={styles.info}
       accessible
       accessibilityLabel={[name ? `Foto van ${name}` : null, date, entry.photo.locationLabel].filter(Boolean).join(", ")}
     >
@@ -256,19 +270,56 @@ function PhotoInfo({ entry }: { entry: Shown }) {
         </Text>
       </View>
     </View>
+    <PhotoAlbums photoId={entry.albumPhoto.photoId} />
+    </View>
+  );
+}
+
+// WP17c invariant 4, open vraag 3: bij elke foto in welke albums hij staat,
+// alleen albums uit je eigen groepen; staand, niet aantikbaar. Geen albums:
+// niets. Een eigen grens: verdwijnt de foto of de toegang, dan valt alleen
+// deze regel weg, niet het detail.
+export function PhotoAlbums({ photoId, inset = true }: { photoId: Id<"photos">; inset?: boolean }) {
+  return (
+    <QueryBoundary key={photoId} fallback={() => null}>
+      <PhotoAlbumsContent photoId={photoId} inset={inset} />
+    </QueryBoundary>
+  );
+}
+
+function PhotoAlbumsContent({ photoId, inset }: { photoId: Id<"photos">; inset: boolean }) {
+  const list = useLiveQuery(api.albums.listForPhoto, { photoId });
+  const lines = useMemo(() => (list ? photoAlbumLines(list) : []), [list]);
+  if (lines.length === 0) return null;
+  return (
+    <View
+      style={[styles.albums, inset && styles.albumsInset]}
+      accessible
+      accessibilityLabel={`In ${lines.length === 1 ? "album" : "albums"}: ${lines.join(", ")}`}
+    >
+      <Text variant="albumMeta" color="muted">
+        {lines.length === 1 ? "In album:" : "In albums:"}
+      </Text>
+      {lines.map((line) => (
+        <Text key={line} variant="albumMeta">
+          {line}
+        </Text>
+      ))}
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   fill: { flex: 1 },
+  infoBlock: { borderTopWidth: StyleSheet.hairlineWidth, paddingVertical: space.m, gap: space.s },
   info: {
     flexDirection: "row",
     alignItems: "center",
     gap: space.m,
     paddingHorizontal: size.screenMargin,
-    paddingVertical: space.m,
-    borderTopWidth: StyleSheet.hairlineWidth,
   },
+  albums: { gap: space.xs / 2 },
+  albumsInset: { paddingHorizontal: size.screenMargin },
   infoText: { flex: 1, gap: space.xs },
   feedback: {
     width: "100%",
