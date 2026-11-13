@@ -74,7 +74,7 @@ async function snapshot(res: Response) {
 const holds = (body: string, bytes: Uint8Array) => body.includes(Array.from(bytes).join(","));
 
 describe("routes (inventaris http-paden)", () => {
-  it("de bestaande routes blijven, plus alleen de twee beeldpaden", () => {
+  it("de bestaande routes blijven, plus alleen de drie beeldpaden (WP19b: uitnodiging)", () => {
     const routes = http.getRoutes().map(([path, method]) => `${method} ${path}`);
     const others = routes.filter((r) => !r.includes("/beeld/")).sort();
     expect(others).toEqual(
@@ -87,6 +87,10 @@ describe("routes (inventaris http-paden)", () => {
     );
     expect(http.lookup(photoPath("abc"), "GET")).not.toBeNull();
     expect(http.lookup(profilePath("abc"), "GET")).not.toBeNull();
+    // WP19b A-invariant 15: de cover voor een genodigde, op invite-id.
+    expect(http.lookup("/beeld/uitnodiging/abc", "GET")).not.toBeNull();
+    const beeld = routes.filter((r) => r.includes("/beeld/")).sort();
+    expect(beeld).toEqual(["GET /beeld/foto/*", "GET /beeld/profiel/*", "GET /beeld/uitnodiging/*"]);
     // Alleen lezen: geen andere methode op de beeldpaden.
     for (const method of ["POST", "PUT", "PATCH", "DELETE"] as const) {
       expect(http.lookup(photoPath("abc"), method)).toBeNull();

@@ -178,6 +178,28 @@ describe("/clerk-webhook — Svix-headers validation", () => {
 
   it("geldige Svix-headers + session.created → 200, users-row aangemaakt", async () => {
     const t = convexTest(schema, modules);
+    // WP19b A-invariant 1: alleen met een accepteerbare uitnodiging een rij.
+    await t.run(async (ctx) => {
+      const now = Date.now();
+      const inviter = await ctx.db.insert("users", {
+        subject: "user_inviter",
+        email: "inviter@x.com",
+        photoCount: 0,
+        photoLimit: 1000,
+        createdAt: now,
+      });
+      const groupId = await ctx.db.insert("groups", { name: "G", createdBy: inviter, createdAt: now });
+      await ctx.db.insert("memberships", { userId: inviter, groupId, role: "admin", joinedAt: now });
+      await ctx.db.insert("invites", {
+        email: "alice@x.com",
+        invitedBy: inviter,
+        groupId,
+        token: crypto.randomUUID(),
+        status: "pending",
+        expiresAt: now + 60_000,
+        createdAt: now,
+      });
+    });
     const body = sessionCreatedPayload({
       subject: "user_alice",
       email: "alice@x.com",
@@ -193,9 +215,13 @@ describe("/clerk-webhook — Svix-headers validation", () => {
     });
 
     expect(res.status).toBe(200);
-    const users = await t.run((ctx) => ctx.db.query("users").collect());
+    const users = await t.run((ctx) =>
+      ctx.db
+        .query("users")
+        .withIndex("by_subject", (q) => q.eq("subject", "user_alice"))
+        .collect(),
+    );
     expect(users).toHaveLength(1);
-    expect(users[0]?.subject).toBe("user_alice");
     expect(users[0]?.email).toBe("alice@x.com");
   });
 });

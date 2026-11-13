@@ -101,6 +101,8 @@ describe("de stand komt mee in elke user-vorm met een avatar", () => {
     const p = await seedPhoto(t, s.owen, { original: "OWEN", withFormats: true, exifOrientation: 6 });
     await withUser(t, "user_owen").mutation(api.albums.addPhoto, { albumId: s.A, photoId: p.photoId });
     await t.run((ctx) => ctx.db.patch(s.owen, { profilePhotoStorageId: p.storageId }));
+    // WP19b: de genodigde Nina (account, geen lid) ziet Owen in listReceived.
+    await registerUser(t, "user_nina", "nieuw@x.com", "Nina");
     await t.run((ctx) =>
       ctx.db.insert("invites", {
         email: "nieuw@x.com",
@@ -127,7 +129,7 @@ describe("de stand komt mee in elke user-vorm met een avatar", () => {
     const byId = (await mia.query(api.users.getById, { userId: s.owen })) as R;
     const current = (await owen.query(api.users.current, {})) as R;
     const profile = (await owen.query(api.users.profile, {})) as R;
-    const landing = (await t.query(api.invites.getByToken, { token: "tok-owen" })) as R;
+    const received = ((await withUser(t, "user_nina").query(api.invites.listReceived, {})) as R[])[0]!;
 
     const cases: [string, R, readonly string[]][] = [
       ["photos.getWithOwner", withOwner.owner, publicKeys],
@@ -136,7 +138,7 @@ describe("de stand komt mee in elke user-vorm met een avatar", () => {
       ["users.getById", byId, publicKeys],
       ["users.current", current, [...SHAPE.ownProfile, "profileOrientation"]],
       ["users.profile", profile, [...SHAPE.ownProfile, "profileOrientation"]],
-      ["invites.getByToken", landing.inviter, [...SHAPE.landingInviter, "profileOrientation"]],
+      ["invites.listReceived", received.inviter, [...SHAPE.receivedInviter, "profileOrientation"]],
     ];
     for (const [name, value, keys] of cases) {
       expect(value?.profileOrientation, name).toBe(6);

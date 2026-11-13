@@ -54,13 +54,19 @@ async function registerUser(
   );
 }
 
+// WP19b A-keuze 1: een uitnodiging heeft altijd een groep. Elke aanroep maakt
+// een eigen groep van de afzender (hij is daar admin).
+async function newGroup(t: ReturnType<typeof convexTest>, subject: string) {
+  return await withUser(t, subject).mutation(api.groups.create, { name: `G-${crypto.randomUUID()}` });
+}
+
 describe("invites.handleBounce — happy path", () => {
   it("markeert pending invite voor email als expired + zet bouncedAt", async () => {
     const t = convexTest(schema, modules);
     await registerUser(t, "user_alice", "a@x.com");
     const { inviteId } = await withUser(t, "user_alice").mutation(
       api.invites.create,
-      { email: "bouncer@x.com" },
+      { name: "Genodigde", groupId: await newGroup(t, "user_alice"), email: "bouncer@x.com" },
     );
 
     const before = Date.now();
@@ -90,11 +96,11 @@ describe("invites.handleBounce — happy path", () => {
     });
     const { inviteId: i1 } = await withUser(t, "user_alice").mutation(
       api.invites.create,
-      { email: "bouncer@x.com", groupId: groupA, role: "member" },
+      { name: "Genodigde", email: "bouncer@x.com", groupId: groupA, role: "member" },
     );
     const { inviteId: i2 } = await withUser(t, "user_dan").mutation(
       api.invites.create,
-      { email: "bouncer@x.com", groupId: groupD, role: "member" },
+      { name: "Genodigde", email: "bouncer@x.com", groupId: groupD, role: "member" },
     );
 
     const before = Date.now();
@@ -116,7 +122,7 @@ describe("invites.handleBounce — happy path", () => {
   it("plant notify-email naar inviter per gebouncde invite", async () => {
     const t = convexTest(schema, modules);
     await registerUser(t, "user_alice", "a@x.com");
-    await withUser(t, "user_alice").mutation(api.invites.create, {
+    await withUser(t, "user_alice").mutation(api.invites.create, { name: "Genodigde", groupId: await newGroup(t, "user_alice"),
       email: "bouncer@x.com",
     });
 
@@ -140,12 +146,12 @@ describe("invites.handleBounce — guards & filtering", () => {
   it("laat reeds accepted invite ongewijzigd", async () => {
     const t = convexTest(schema, modules);
     await registerUser(t, "user_alice", "a@x.com");
-    const { inviteId, token } = await withUser(t, "user_alice").mutation(
+    const { inviteId } = await withUser(t, "user_alice").mutation(
       api.invites.create,
-      { email: "bob@x.com" },
+      { name: "Genodigde", groupId: await newGroup(t, "user_alice"), email: "bob@x.com" },
     );
     await registerUser(t, "user_bob", "bob@x.com");
-    await withUser(t, "user_bob").mutation(api.invites.accept, { token });
+    await withUser(t, "user_bob").mutation(api.invites.accept, { inviteId });
 
     const result = await t.mutation(internal.invites.handleBounce, {
       email: "bob@x.com",
@@ -160,12 +166,12 @@ describe("invites.handleBounce — guards & filtering", () => {
   it("laat reeds declined invite ongewijzigd", async () => {
     const t = convexTest(schema, modules);
     await registerUser(t, "user_alice", "a@x.com");
-    const { inviteId, token } = await withUser(t, "user_alice").mutation(
+    const { inviteId } = await withUser(t, "user_alice").mutation(
       api.invites.create,
-      { email: "bob@x.com" },
+      { name: "Genodigde", groupId: await newGroup(t, "user_alice"), email: "bob@x.com" },
     );
     await registerUser(t, "user_bob", "bob@x.com");
-    await withUser(t, "user_bob").mutation(api.invites.decline, { token });
+    await withUser(t, "user_bob").mutation(api.invites.decline, { inviteId });
 
     await t.mutation(internal.invites.handleBounce, {
       email: "bob@x.com",
@@ -219,7 +225,7 @@ describe("invites.handleBounce — guards & filtering", () => {
     await registerUser(t, "user_alice", "a@x.com");
     const { inviteId } = await withUser(t, "user_alice").mutation(
       api.invites.create,
-      { email: "Bouncer@X.com" },
+      { name: "Genodigde", groupId: await newGroup(t, "user_alice"), email: "Bouncer@X.com" },
     );
     const before = Date.now();
     const result = await t.mutation(internal.invites.handleBounce, {
@@ -244,7 +250,7 @@ describe("invites.handleBounce — idempotency (dedup op providerEventId)", () =
     await registerUser(t, "user_alice", "a@x.com");
     const { inviteId } = await withUser(t, "user_alice").mutation(
       api.invites.create,
-      { email: "bouncer@x.com" },
+      { name: "Genodigde", groupId: await newGroup(t, "user_alice"), email: "bouncer@x.com" },
     );
 
     const before = Date.now();
@@ -283,7 +289,7 @@ describe("invites.handleBounce — idempotency (dedup op providerEventId)", () =
   it("nieuwe bounce-event op zelfde email (andere providerEventId, latere invite) gaat wel door", async () => {
     const t = convexTest(schema, modules);
     await registerUser(t, "user_alice", "a@x.com");
-    await withUser(t, "user_alice").mutation(api.invites.create, {
+    await withUser(t, "user_alice").mutation(api.invites.create, { name: "Genodigde", groupId: await newGroup(t, "user_alice"),
       email: "bouncer@x.com",
     });
 
@@ -295,7 +301,7 @@ describe("invites.handleBounce — idempotency (dedup op providerEventId)", () =
     // Inviter probeert opnieuw
     const { inviteId: i2 } = await withUser(t, "user_alice").mutation(
       api.invites.create,
-      { email: "bouncer@x.com" },
+      { name: "Genodigde", groupId: await newGroup(t, "user_alice"), email: "bouncer@x.com" },
     );
     // Bounce komt opnieuw
     const before = Date.now();
@@ -329,7 +335,7 @@ describe("invites.handleBounce — interactie met onboarding", () => {
     );
     const { inviteId } = await withUser(t, "user_alice").mutation(
       api.invites.create,
-      { email: "bouncer@x.com", groupId },
+      { name: "Genodigde", email: "bouncer@x.com", groupId },
     );
 
     await t.mutation(internal.invites.handleBounce, {
@@ -337,21 +343,21 @@ describe("invites.handleBounce — interactie met onboarding", () => {
       providerEventId: "evt_signupgate",
     });
 
+    // WP19b A-invariant 1: zonder accepteerbare uitnodiging geen account.
     const newUserId = await t.mutation(internal.users.registerFromSession, {
       subject: "user_bouncer",
       email: "bouncer@x.com",
     });
+    expect(newUserId).toBeNull();
 
     const invite = await t.run((ctx) => ctx.db.get(inviteId));
     expect(invite?.status).toBe("expired");
-    const membership = await t.run((ctx) =>
+    const memberships = await t.run((ctx) =>
       ctx.db
         .query("memberships")
-        .withIndex("by_user_and_group", (q) =>
-          q.eq("userId", newUserId).eq("groupId", groupId),
-        )
-        .unique(),
+        .withIndex("by_group", (q) => q.eq("groupId", groupId))
+        .collect(),
     );
-    expect(membership).toBeNull();
+    expect(memberships).toHaveLength(1);
   });
 });

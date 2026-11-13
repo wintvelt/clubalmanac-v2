@@ -32,7 +32,7 @@ describe("besluit 6 — alleen een admin nodigt uit voor een groep", () => {
   it("een admin nodigt uit, ook als admin", async () => {
     const t = newT();
     const w = await world(t);
-    await as(t, "user_anna").mutation(api.invites.create, {
+    await as(t, "user_anna").mutation(api.invites.create, { name: "Genodigde",
       email: "nieuw@x.test",
       groupId: w.groupId,
       role: "admin",
@@ -44,7 +44,7 @@ describe("besluit 6 — alleen een admin nodigt uit voor een groep", () => {
     const t = newT();
     const w = await world(t);
     await expectRefused(t, "NOT_ALLOWED", () =>
-      as(t, "user_lex").mutation(api.invites.create, { email: "nieuw@x.test", groupId: w.groupId }),
+      as(t, "user_lex").mutation(api.invites.create, { name: "Genodigde", email: "nieuw@x.test", groupId: w.groupId }),
     );
     expect(await inviteCount(t)).toBe(0);
   });
@@ -53,7 +53,7 @@ describe("besluit 6 — alleen een admin nodigt uit voor een groep", () => {
     const t = newT();
     const w = await world(t);
     await expectRefused(t, "NOT_ALLOWED", () =>
-      as(t, "user_lex").mutation(api.invites.create, {
+      as(t, "user_lex").mutation(api.invites.create, { name: "Genodigde",
         email: "lex-tweede@x.test",
         groupId: w.groupId,
         role: "admin",
@@ -66,10 +66,10 @@ describe("besluit 6 — alleen een admin nodigt uit voor een groep", () => {
     const w = await world(t);
     const gone = await goneGroupId(t);
     const a = await expectRefused(t, "NOT_MEMBER", () =>
-      as(t, "user_eve").mutation(api.invites.create, { email: "nieuw@x.test", groupId: w.groupId }),
+      as(t, "user_eve").mutation(api.invites.create, { name: "Genodigde", email: "nieuw@x.test", groupId: w.groupId }),
     );
     const b = await expectRefused(t, "NOT_MEMBER", () =>
-      as(t, "user_eve").mutation(api.invites.create, { email: "nieuw@x.test", groupId: gone }),
+      as(t, "user_eve").mutation(api.invites.create, { name: "Genodigde", email: "nieuw@x.test", groupId: gone }),
     );
     expect(a).toEqual(b);
   });
@@ -83,7 +83,7 @@ describe("besluit 6 — alleen een admin nodigt uit voor een groep", () => {
       role: "member",
     });
     await expectRefused(t, "NOT_ALLOWED", () =>
-      as(t, "user_anna").mutation(api.invites.create, { email: "nieuw@x.test", groupId: w.groupId }),
+      as(t, "user_anna").mutation(api.invites.create, { name: "Genodigde", email: "nieuw@x.test", groupId: w.groupId }),
     );
   });
 });
@@ -92,7 +92,7 @@ describe("A-invariant 4 met besluit 6 — de uitnodiger moet bij accepteren nog 
   it("een admin nodigt uit en wordt daarna lid gemaakt: accepteren geeft geen lidmaatschap", async () => {
     const t = newT();
     const w = await world(t);
-    const { token } = await as(t, "user_anna").mutation(api.invites.create, {
+    const { inviteId } = await as(t, "user_anna").mutation(api.invites.create, { name: "Genodigde",
       email: "eve@x.test",
       groupId: w.groupId,
       role: "admin",
@@ -103,7 +103,7 @@ describe("A-invariant 4 met besluit 6 — de uitnodiger moet bij accepteren nog 
       role: "member",
     });
     try {
-      await as(t, "user_eve").mutation(api.invites.accept, { token });
+      await as(t, "user_eve").mutation(api.invites.accept, { inviteId });
     } catch {
       // de fout zelf is vrij
     }

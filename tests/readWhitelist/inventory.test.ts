@@ -45,8 +45,11 @@ const EXPECTED_PUBLIC_QUERIES = [
   "groups:getWithCover",
   "groups:listMembers",
   "groups:listMine",
-  "invites:getByToken",
+  // WP19b: getByToken weg (A-invariant 5); ontvangen uitnodigingen
+  // (A-invariant 6) en de open uitnodigingen van een groep (A-invariant 12).
+  "invites:listForGroup",
   "invites:listMine",
+  "invites:listReceived",
   "photos:getById",
   // WP17d A-invariant 2: de exacte plek van een eigen foto, alleen de eigenaar.
   "photos:getLocation",
@@ -62,6 +65,8 @@ const EXPECTED_PUBLIC_QUERIES = [
   "users:getById",
   // WP15b: eigen live query voor Profiel (invariant 7), vorm ownProfile.
   "users:profile",
+  // WP19b A-invariant 3: waarom er (nog) geen account is.
+  "users:signupState",
 ].sort();
 
 function publicQueries(): Map<string, Registered> {

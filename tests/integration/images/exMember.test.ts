@@ -73,11 +73,11 @@ describe("WP17a gate-stap 6 — ex-lid en een oude link", () => {
       // uitnodiging van een admin (de eigenaar maakte de groep, dus is admin
       // en oprichter). Let op: invites.create plant een uitnodigingsmail naar
       // het testadres op dev.
-      const { token } = await owner.client.mutation(api.invites.create, {
+      const { inviteId } = await owner.client.mutation(api.invites.create, { name: "Genodigde",
         email: requireEnv("CLERK_TEST_USER_REGULAR_EMAIL"),
         groupId,
       });
-      await member.client.mutation(api.invites.accept, { token });
+      await member.client.mutation(api.invites.accept, { inviteId });
       const albumId = await owner.client.mutation(api.albums.create, { groupId, name: "Gate 6" });
 
       const up = await fetch(`${site}/upload`, {

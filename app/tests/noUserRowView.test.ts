@@ -21,3 +21,23 @@ describe("noUserRowView", () => {
     expect(noUserRowView({ deleting: false, deleted: false })).toBe("notReady");
   });
 });
+
+// WP19b A-invariant 3: zonder rij en zonder uitnodiging zegt de app dat je
+// eerst een uitnodiging nodig hebt (met uitloggen), niet "nog niet klaar".
+// `signupState` komt uit users.signupState. Verwijderen gaat voor.
+describe("noUserRowView — WP19b, geen uitnodiging", () => {
+  it("signupState noInvite: het scherm 'eerst een uitnodiging'", () => {
+    expect(noUserRowView({ deleting: false, deleted: false, signupState: "noInvite" })).toBe("noInvite");
+  });
+
+  it("waiting, account of nog onbekend: 'nog niet klaar'", () => {
+    for (const signupState of ["waiting", "account", null, undefined] as const) {
+      expect(noUserRowView({ deleting: false, deleted: false, signupState })).toBe("notReady");
+    }
+  });
+
+  it("verwijderen gaat voor: laden of 'account verwijderd', ook bij noInvite", () => {
+    expect(noUserRowView({ deleting: true, deleted: false, signupState: "noInvite" })).toBe("loading");
+    expect(noUserRowView({ deleting: false, deleted: true, signupState: "noInvite" })).toBe("accountDeleted");
+  });
+});

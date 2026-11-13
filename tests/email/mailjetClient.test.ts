@@ -43,13 +43,8 @@ function setEnv(opts: {
   else process.env.MAILJET_API_SECRET = opts.apiSecret;
 }
 
-// Audit-follow-up 2026-05-17: `buildInviteUrl` throwt nu fail-loud bij
-// ontbrekende `CLUBALMANAC_APP_URL`. Voor tests die `kind:"invite"` gebruiken
-// moet de env-var gezet zijn anders firet de APP_URL_MISSING-throw vóór de
-// gate-check die deze suite probeert te pinnen.
-beforeEach(() => {
-  process.env.CLUBALMANAC_APP_URL = "https://app.example.com";
-});
+// WP19b A-invariant 4: de uitnodigingsmail kent geen CLUBALMANAC_APP_URL meer;
+// deze suite zet hem dus ook niet.
 
 afterEach(() => {
   delete process.env.MAILJET_VERIFIED_SENDERS;
@@ -59,13 +54,19 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+// WP19b A-keuze 1: een uitnodiging heeft altijd een groep. Elke aanroep maakt
+// een eigen groep van de afzender (hij is daar admin).
+async function newGroup(t: ReturnType<typeof convexTest>, subject: string) {
+  return await withUser(t, subject).mutation(api.groups.create, { name: `G-${crypto.randomUUID()}` });
+}
+
 async function seedInvite(
   t: ReturnType<typeof convexTest>,
 ): Promise<{ inviteId: string }> {
   await registerUserWithInvite(t, "user_alice", "alice@x.com", "Alice");
   const { inviteId } = await withUser(t, "user_alice").mutation(
     api.invites.create,
-    { email: "bob@x.com" },
+    { name: "Genodigde", groupId: await newGroup(t, "user_alice"), email: "bob@x.com" },
   );
   return { inviteId };
 }

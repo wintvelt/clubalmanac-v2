@@ -5,7 +5,8 @@
 //     accepted/declined/bounced) via FK-walk
 //   - from-address `invites@clubalmanac.com` (spec-aanvulling)
 //   - subject + body NL-tekst rendert die 1:1 spiegelt aan oude AWS-templates
-//   - PII-guard: invite-token alleen in `invite`-kind, NIET in
+//   - PII-guard: het invite-token staat in geen enkele mail (WP19b: ook niet
+//     meer in `invite`, zie inviteMailNoLink.test.ts), dus ook niet in
 //     accepted/declined/bounced (die gaan naar inviter, niet ontvanger)
 //   - no-"undefined"-leak in subject of body (placeholder-fill)
 //   - skip-gracefully wanneer inviter/owner inmiddels verwijderd is
@@ -28,16 +29,14 @@ beforeEach(() => {
   process.env.MAILJET_VERIFIED_SENDERS = INVITES_SENDER;
   process.env.MAILJET_API_KEY = "k";
   process.env.MAILJET_API_SECRET = "s";
-  // Audit-follow-up 2026-05-17: buildInviteUrl is nu fail-loud bij missing
-  // CLUBALMANAC_APP_URL — kind="invite"-pad in de action gebruikt 'm.
-  process.env.CLUBALMANAC_APP_URL = "https://app.example.com";
+  // WP19b A-invariant 4: de uitnodigingsmail heeft geen link meer, dus ook
+  // geen CLUBALMANAC_APP_URL (tests/invites/inviteMailNoLink.test.ts).
 });
 
 afterEach(() => {
   delete process.env.MAILJET_VERIFIED_SENDERS;
   delete process.env.MAILJET_API_KEY;
   delete process.env.MAILJET_API_SECRET;
-  delete process.env.CLUBALMANAC_APP_URL;
   vi.unstubAllGlobals();
 });
 
@@ -88,10 +87,13 @@ async function seedInviteFlow(
     api.groups.create,
     { name: "De Fotoclub" },
   );
-  const { inviteId, token } = await withUser(t, "user_alice").mutation(
+  const { inviteId } = await withUser(t, "user_alice").mutation(
     api.invites.create,
-    { email: "Bob@x.com", groupId, role: "member" },
+    { name: "Genodigde", email: "Bob@x.com", groupId, role: "member" },
   );
+  // Het token verlaat de backend niet meer (WP19b A-invariant 5); de
+  // PII-guard hieronder leest hem uit de rij.
+  const token = (await t.run((ctx) => ctx.db.get(inviteId)))!.token;
   return { inviteId, token, inviterId, groupId };
 }
 
@@ -102,7 +104,7 @@ async function seedInviteFlow(
 describe("sendInviteEmail kind=invite — recipient = invitee, from = invites@", () => {
   it("verstuurt naar invite.email (normalizeEmail-vorm), from = invites-sender", async () => {
     const t = convexTest(schema, modules);
-    const { inviteId } = await seedInviteFlow(t);
+    const { inviteId, token } = await seedInviteFlow(t);
     const fetchSpy = mockMailjet2xx();
 
     await t.action(internal.invites.sendInviteEmail, {
@@ -117,7 +119,7 @@ describe("sendInviteEmail kind=invite — recipient = invitee, from = invites@",
 
   it("subject + body bevatten inviter-name én group-name; geen 'undefined'-leak", async () => {
     const t = convexTest(schema, modules);
-    const { inviteId } = await seedInviteFlow(t);
+    const { inviteId, token } = await seedInviteFlow(t);
     const fetchSpy = mockMailjet2xx();
 
     await t.action(internal.invites.sendInviteEmail, {
@@ -136,49 +138,6 @@ describe("sendInviteEmail kind=invite — recipient = invitee, from = invites@",
     expect(msg.HTMLPart).not.toMatch(/undefined/i);
     expect(msg.TextPart).not.toMatch(/undefined/i);
   });
-
-  it("body bevat de invite-token (zodat ontvanger op de invite-landingpagina kan)", async () => {
-    // Token IS de payload van deze specifieke mail; we pinnen presence in
-    // body zodat een refactor 'm niet per ongeluk weglaat.
-    const t = convexTest(schema, modules);
-    const { inviteId, token } = await seedInviteFlow(t);
-    const fetchSpy = mockMailjet2xx();
-
-    await t.action(internal.invites.sendInviteEmail, {
-      kind: "invite",
-      inviteId,
-    });
-
-    const msg = lastMessage(fetchSpy);
-    const inBody =
-      (msg.HTMLPart ?? "").includes(token) ||
-      (msg.TextPart ?? "").includes(token);
-    expect(inBody).toBe(true);
-  });
-
-  it("invite zonder groupId (account-wide invite) → subject/body refereert 'clubalmanac' i.p.v. group-name, geen 'undefined'", async () => {
-    const t = convexTest(schema, modules);
-    await registerUserWithInvite(t, "user_alice", "alice@x.com", "Alice");
-    const { inviteId } = await withUser(t, "user_alice").mutation(
-      api.invites.create,
-      { email: "carla@x.com" },
-    );
-    const fetchSpy = mockMailjet2xx();
-
-    await t.action(internal.invites.sendInviteEmail, {
-      kind: "invite",
-      inviteId,
-    });
-
-    const msg = lastMessage(fetchSpy);
-    expect(msg.Subject).not.toMatch(/undefined/i);
-    expect(msg.HTMLPart).not.toMatch(/undefined/i);
-    expect(msg.TextPart).not.toMatch(/undefined/i);
-    // 'clubalmanac' moet ergens vallen — fallback voor group-name in copy.
-    expect(`${msg.Subject ?? ""}${msg.HTMLPart ?? ""}`.toLowerCase()).toContain(
-      "clubalmanac",
-    );
-  });
 });
 
 // ---------------------------------------------------------------------------
@@ -193,7 +152,7 @@ describe("sendInviteEmail kind=accepted — recipient = inviter, PII-guard", () 
     // door accept gequeue'd, maar we roepen 'm hier expliciet aan om de
     // recipient-resolutie te pinnen.
     await registerUserWithInvite(t, "user_bob", "bob@x.com", "Bob B");
-    await withUser(t, "user_bob").mutation(api.invites.accept, { token });
+    await withUser(t, "user_bob").mutation(api.invites.accept, { inviteId });
 
     const fetchSpy = mockMailjet2xx();
     await t.action(internal.invites.sendInviteEmail, {
@@ -211,7 +170,7 @@ describe("sendInviteEmail kind=accepted — recipient = inviter, PII-guard", () 
     const t = convexTest(schema, modules);
     const { inviteId, token } = await seedInviteFlow(t);
     await registerUserWithInvite(t, "user_bob", "bob@x.com", "Bob B");
-    await withUser(t, "user_bob").mutation(api.invites.accept, { token });
+    await withUser(t, "user_bob").mutation(api.invites.accept, { inviteId });
 
     const fetchSpy = mockMailjet2xx();
     await t.action(internal.invites.sendInviteEmail, {
@@ -240,7 +199,7 @@ describe("sendInviteEmail kind=declined — recipient = inviter, PII-guard", () 
     const t = convexTest(schema, modules);
     const { inviteId, token } = await seedInviteFlow(t);
     await registerUserWithInvite(t, "user_bob", "bob@x.com", "Bob B");
-    await withUser(t, "user_bob").mutation(api.invites.decline, { token });
+    await withUser(t, "user_bob").mutation(api.invites.decline, { inviteId });
 
     const fetchSpy = mockMailjet2xx();
     await t.action(internal.invites.sendInviteEmail, {
@@ -260,7 +219,7 @@ describe("sendInviteEmail kind=declined — recipient = inviter, PII-guard", () 
     const t = convexTest(schema, modules);
     const { inviteId, token } = await seedInviteFlow(t);
     await registerUserWithInvite(t, "user_bob", "bob@x.com", "Bob B");
-    await withUser(t, "user_bob").mutation(api.invites.decline, { token });
+    await withUser(t, "user_bob").mutation(api.invites.decline, { inviteId });
 
     const fetchSpy = mockMailjet2xx();
     await t.action(internal.invites.sendInviteEmail, {
@@ -281,7 +240,7 @@ describe("sendInviteEmail kind=declined — recipient = inviter, PII-guard", () 
 describe("sendInviteEmail kind=bounced — recipient = inviter, new template", () => {
   it("verstuurt naar inviter, body bevat bounced-email + group-name", async () => {
     const t = convexTest(schema, modules);
-    const { inviteId } = await seedInviteFlow(t);
+    const { inviteId, token } = await seedInviteFlow(t);
 
     const fetchSpy = mockMailjet2xx();
     await t.action(internal.invites.sendInviteEmail, {
@@ -325,7 +284,7 @@ describe("sendInviteEmail — graceful skip wanneer FK-walk-target weg is", () =
     // Race-scenario: scheduled-action draait nadat sender de invite heeft
     // verwijderd. Action mag dat niet hard-failen (scheduler retry-loop).
     const t = convexTest(schema, modules);
-    const { inviteId } = await seedInviteFlow(t);
+    const { inviteId, token } = await seedInviteFlow(t);
     await t.run((ctx) => ctx.db.delete(inviteId));
 
     const fetchSpy = mockMailjet2xx();

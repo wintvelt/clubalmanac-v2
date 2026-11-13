@@ -30,9 +30,9 @@ afterEach(() => {
 async function seedInvite(
   t: T,
   args: { email: string; groupId: Id<"groups">; invitedBy: Id<"users"> },
-): Promise<string> {
+): Promise<Id<"invites">> {
   const token = crypto.randomUUID();
-  await t.run(async (ctx) =>
+  return await t.run(async (ctx) =>
     ctx.db.insert("invites", {
       email: args.email,
       invitedBy: args.invitedBy,
@@ -44,12 +44,11 @@ async function seedInvite(
       createdAt: Date.now(),
     }),
   );
-  return token;
 }
 
-async function tryAccept(t: T, subject: string, token: string): Promise<void> {
+async function tryAccept(t: T, subject: string, inviteId: Id<"invites">): Promise<void> {
   try {
-    await as(t, subject).mutation(api.invites.accept, { token });
+    await as(t, subject).mutation(api.invites.accept, { inviteId });
   } catch {
     // De weigering zelf is vrij; wat telt is het lidmaatschap hieronder.
   }
@@ -64,7 +63,9 @@ async function membershipsOf(t: T, userId: Id<"users">) {
   );
 }
 
-async function onboard(t: T, subject: string, email: string): Promise<Id<"users">> {
+// WP19b A-invariant 1: zonder accepteerbare uitnodiging maakt de onboarding
+// geen account (`null`).
+async function onboard(t: T, subject: string, email: string): Promise<Id<"users"> | null> {
   return await t.mutation(internal.users.registerFromSession, { subject, email });
 }
 
@@ -77,10 +78,10 @@ describe.each(REMOVALS)("(a) open uitnodiging aan het eigen adres, lid %s", (_la
   it("accepteren maakt hem geen lid meer", async () => {
     const t = newT();
     const w = await seedGroup(t, { founder: "olga", members: { anna: "admin", lex: "member" } });
-    const token = await seedInvite(t, { email: "lex@x.test", groupId: w.groupId, invitedBy: w.users.olga! });
+    const inviteId = await seedInvite(t, { email: "lex@x.test", groupId: w.groupId, invitedBy: w.users.olga! });
 
     await as(t, actor).mutation(api.groups.removeMember, { groupId: w.groupId, userId: w.users.lex! });
-    await tryAccept(t, "user_lex", token);
+    await tryAccept(t, "user_lex", inviteId);
 
     expect(await membership(t, w.groupId, w.users.lex!)).toBeNull();
   });
@@ -95,7 +96,7 @@ describe("(a) open uitnodiging aan het eigen adres, account verwijderd", () => {
     await deleteAccount(t, as(t, "user_lex"));
     const again = await onboard(t, "user_lex_nieuw", "lex@x.test");
 
-    expect(await membership(t, w.groupId, again)).toBeNull();
+    expect(again).toBeNull();
   });
 });
 
@@ -107,13 +108,13 @@ describe.each(REMOVALS)("(b) uitnodiging die hij zelf verstuurde, lid %s", (_lab
       members: { anna: "admin", lex: "admin" },
       outsiders: ["alt"],
     });
-    const { token } = await as(t, "user_lex").mutation(api.invites.create, {
+    const { inviteId } = await as(t, "user_lex").mutation(api.invites.create, { name: "Genodigde",
       email: "alt@x.test",
       groupId: w.groupId,
     });
 
     await as(t, actor).mutation(api.groups.removeMember, { groupId: w.groupId, userId: w.users.lex! });
-    await tryAccept(t, "user_alt", token);
+    await tryAccept(t, "user_alt", inviteId);
 
     expect(await membership(t, w.groupId, w.users.alt!)).toBeNull();
   });
@@ -121,12 +122,12 @@ describe.each(REMOVALS)("(b) uitnodiging die hij zelf verstuurde, lid %s", (_lab
   it("het tweede adres wordt via de onboarding geen lid", async () => {
     const t = newT();
     const w = await seedGroup(t, { founder: "olga", members: { anna: "admin", lex: "admin" } });
-    await as(t, "user_lex").mutation(api.invites.create, { email: "nieuw@x.test", groupId: w.groupId });
+    await as(t, "user_lex").mutation(api.invites.create, { name: "Genodigde", email: "nieuw@x.test", groupId: w.groupId });
 
     await as(t, actor).mutation(api.groups.removeMember, { groupId: w.groupId, userId: w.users.lex! });
     const nieuw = await onboard(t, "user_nieuw", "nieuw@x.test");
 
-    expect(await membership(t, w.groupId, nieuw)).toBeNull();
+    expect(nieuw).toBeNull();
   });
 });
 
@@ -134,10 +135,10 @@ describe("(c) uitnodiging voor een groep die niet meer bestaat", () => {
   it("accepteren maakt geen lidmaatschap", async () => {
     const t = newT();
     const w = await seedGroup(t, { founder: "olga", members: { anna: "admin" }, outsiders: ["carol"] });
-    const token = await seedInvite(t, { email: "carol@x.test", groupId: w.groupId, invitedBy: w.users.anna! });
+    const inviteId = await seedInvite(t, { email: "carol@x.test", groupId: w.groupId, invitedBy: w.users.anna! });
 
     await as(t, "user_olga").mutation(api.groups.remove, { groupId: w.groupId });
-    await tryAccept(t, "user_carol", token);
+    await tryAccept(t, "user_carol", inviteId);
 
     expect(await membershipsOf(t, w.users.carol!)).toEqual([]);
   });
@@ -150,7 +151,7 @@ describe("(c) uitnodiging voor een groep die niet meer bestaat", () => {
     await as(t, "user_olga").mutation(api.groups.remove, { groupId: w.groupId });
     const dirk = await onboard(t, "user_dirk", "dirk@x.test");
 
-    expect(await membershipsOf(t, dirk)).toEqual([]);
+    expect(dirk).toBeNull();
   });
 });
 
@@ -160,11 +161,11 @@ describe("controle: een uitnodiging van een huidig lid werkt gewoon", () => {
     const w = await seedGroup(t, { founder: "olga", members: { anna: "admin", lex: "member" } });
     await as(t, "user_anna").mutation(api.groups.removeMember, { groupId: w.groupId, userId: w.users.lex! });
 
-    const { token } = await as(t, "user_olga").mutation(api.invites.create, {
+    const { inviteId } = await as(t, "user_olga").mutation(api.invites.create, { name: "Genodigde",
       email: "lex@x.test",
       groupId: w.groupId,
     });
-    await as(t, "user_lex").mutation(api.invites.accept, { token });
+    await as(t, "user_lex").mutation(api.invites.accept, { inviteId });
 
     expect((await membership(t, w.groupId, w.users.lex!))?.role).toBe("member");
   });
@@ -172,10 +173,10 @@ describe("controle: een uitnodiging van een huidig lid werkt gewoon", () => {
   it("de onboarding accepteert een uitnodiging van een huidig lid", async () => {
     const t = newT();
     const w = await seedGroup(t, { founder: "olga", members: { anna: "admin" } });
-    await as(t, "user_anna").mutation(api.invites.create, { email: "nieuw@x.test", groupId: w.groupId });
+    await as(t, "user_anna").mutation(api.invites.create, { name: "Genodigde", email: "nieuw@x.test", groupId: w.groupId });
 
     const nieuw = await onboard(t, "user_nieuw", "nieuw@x.test");
 
-    expect(await membership(t, w.groupId, nieuw)).not.toBeNull();
+    expect(await membership(t, w.groupId, nieuw!)).not.toBeNull();
   });
 });

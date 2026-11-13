@@ -11,15 +11,14 @@
 //   - Idempotent-on-subject: 2e call zelfde subject = no-op (returns existing id)
 //   - Re-login pad: idempotent-on-subject + nieuwe invite tussen calls →
 //     2e call accepteert die nieuwe invite NIET (re-login ≠ onboarding)
-//   - Zero-invite fallback: geen invite, geen webmaster-email → users-row only
-//     (terminal "registered-no-membership"); spec §invarianten staat dit toe
-//   - Webmaster-bypass: webmaster-email zonder invite → users-row only
+//   - WP19b A-invariant 1 (draait WP6 Gate 3 om): geen accepteerbare invite →
+//     `null`, geen users-row. Ook niet voor de webmaster (A-keuze 2), ook niet
+//     bij een verlopen invite of een invite zonder groep (A-invariant 16).
+//     Meer gevallen in tests/invites/wp19bOnboarding.test.ts.
 //   - Email-normalization: case-insensitive invite-match
-//   - Expired invite: behandeld als zero-invite (geen accept, geen membership)
 //   - Name uit Clerk-payload: first+last samengevoegd, beide null = undefined
 //   - Email-uniqueness met andere subject → throw (mutation rollback)
-//   - Group-less invite (groupId undefined): invite-status patched, geen
-//     membership-insert (mirror `invites.accept`-gedrag)
+//   - Group-less invite (groupId undefined): telt niet (WP19b A-invariant 16)
 //
 // RED tot B `internal.users.registerFromSession` toevoegt. Codegen pakt 'm
 // dan op en de `(internal as any).users.registerFromSession`-cast hieronder
@@ -152,7 +151,7 @@ describe("registerFromSession — happy path", () => {
 
   it("name uit two velden samengevoegd (first + last)", async () => {
     const t = convexTest(schema, modules);
-    await seedInvite(t, { email: "alice@x.com" });
+    await seedInvite(t, { email: "alice@x.com", groupId: (await seedGroup(t)).groupId });
     const userId = await t.mutation(registerFromSession, {
       subject: "user_alice",
       email: "alice@x.com",
@@ -164,7 +163,7 @@ describe("registerFromSession — happy path", () => {
 
   it("name optional: undefined gestopt → users-row.name is undefined", async () => {
     const t = convexTest(schema, modules);
-    await seedInvite(t, { email: "alice@x.com" });
+    await seedInvite(t, { email: "alice@x.com", groupId: (await seedGroup(t)).groupId });
     const userId = await t.mutation(registerFromSession, {
       subject: "user_alice",
       email: "alice@x.com",
@@ -219,7 +218,7 @@ describe("registerFromSession — multi-invite atomic", () => {
 describe("registerFromSession — idempotent op subject", () => {
   it("tweede call zelfde subject → returned id is bestaande row, geen extra inserts", async () => {
     const t = convexTest(schema, modules);
-    await seedInvite(t, { email: "alice@x.com" });
+    await seedInvite(t, { email: "alice@x.com", groupId: (await seedGroup(t)).groupId });
 
     const firstId = await t.mutation(registerFromSession, {
       subject: "user_alice",
@@ -293,28 +292,25 @@ describe("registerFromSession — idempotent op subject", () => {
   });
 });
 
-describe("registerFromSession — zero-invite fallback", () => {
-  it("signup zonder enige invite (en geen webmaster) → users-row aangemaakt, geen membership", async () => {
-    // Spec §invarianten: "Zero-invite fallback acceptabel" — terminal state
-    // "registered-no-membership". Pin't dat dit géén throw is.
+describe("registerFromSession — geen account zonder accepteerbare invite (WP19b A-invariant 1)", () => {
+  async function noRow(t: ReturnType<typeof convexTest>, email: string) {
+    const users = await t.run(async (ctx) =>
+      (await ctx.db.query("users").collect()).filter((u) => u.email === email),
+    );
+    expect(users).toHaveLength(0);
+  }
+
+  it("signup zonder enige invite → null, geen users-row (was: WP6 zero-invite fallback)", async () => {
     const t = convexTest(schema, modules);
     const userId = await t.mutation(registerFromSession, {
       subject: "user_orphan",
       email: "orphan@x.com",
     });
-    const user = await t.run((ctx) => ctx.db.get(userId));
-    expect(user?.subject).toBe("user_orphan");
-    expect(user?.email).toBe("orphan@x.com");
-    const memberships = await t.run((ctx) =>
-      ctx.db
-        .query("memberships")
-        .withIndex("by_user", (q) => q.eq("userId", userId))
-        .collect(),
-    );
-    expect(memberships).toHaveLength(0);
+    expect(userId).toBeNull();
+    await noRow(t, "orphan@x.com");
   });
 
-  it("expired invite → behandeld als zero-invite (geen accept, geen membership)", async () => {
+  it("expired invite → null, geen row; de invite blijft expired", async () => {
     const t = convexTest(schema, modules);
     const { groupId } = await seedGroup(t);
     const { inviteId } = await seedInvite(t, {
@@ -323,26 +319,14 @@ describe("registerFromSession — zero-invite fallback", () => {
       status: "expired",
       expiresAt: Date.now() - DAY_MS,
     });
-
-    const userId = await t.mutation(registerFromSession, {
-      subject: "user_alice",
-      email: "alice@x.com",
-    });
-
-    const user = await t.run((ctx) => ctx.db.get(userId));
-    expect(user).not.toBeNull();
-    const invite = await t.run((ctx) => ctx.db.get(inviteId));
-    expect(invite?.status).toBe("expired"); // niet geaccepteerd
-    const memberships = await t.run((ctx) =>
-      ctx.db
-        .query("memberships")
-        .withIndex("by_user", (q) => q.eq("userId", userId))
-        .collect(),
-    );
-    expect(memberships).toHaveLength(0);
+    expect(
+      await t.mutation(registerFromSession, { subject: "user_alice", email: "alice@x.com" }),
+    ).toBeNull();
+    await noRow(t, "alice@x.com");
+    expect((await t.run((ctx) => ctx.db.get(inviteId)))?.status).toBe("expired");
   });
 
-  it("pending-maar-verlopen invite (expiresAt in verleden) → zero-invite pad", async () => {
+  it("pending-maar-verlopen invite (expiresAt in verleden) → null, geen row", async () => {
     const t = convexTest(schema, modules);
     const { groupId } = await seedGroup(t);
     await seedInvite(t, {
@@ -351,23 +335,14 @@ describe("registerFromSession — zero-invite fallback", () => {
       status: "pending",
       expiresAt: Date.now() - DAY_MS,
     });
-
-    const userId = await t.mutation(registerFromSession, {
-      subject: "user_alice",
-      email: "alice@x.com",
-    });
-
-    const memberships = await t.run((ctx) =>
-      ctx.db
-        .query("memberships")
-        .withIndex("by_user", (q) => q.eq("userId", userId))
-        .collect(),
-    );
-    expect(memberships).toHaveLength(0);
+    expect(
+      await t.mutation(registerFromSession, { subject: "user_alice", email: "alice@x.com" }),
+    ).toBeNull();
+    await noRow(t, "alice@x.com");
   });
 });
 
-describe("registerFromSession — webmaster bootstrap", () => {
+describe("registerFromSession — geen webmaster-uitzondering (WP19b A-keuze 2)", () => {
   beforeEach(() => {
     process.env.WEBMASTER_EMAILS = WEBMASTER_EMAIL;
   });
@@ -375,21 +350,20 @@ describe("registerFromSession — webmaster bootstrap", () => {
     delete process.env.WEBMASTER_EMAILS;
   });
 
-  it("webmaster-email zonder invite → users-row created (cold-start bypass), geen membership", async () => {
+  it("webmaster-email zonder invite → null, geen row", async () => {
     const t = convexTest(schema, modules);
     const userId = await t.mutation(registerFromSession, {
       subject: "user_webmaster",
       email: WEBMASTER_EMAIL,
     });
-    const user = await t.run((ctx) => ctx.db.get(userId));
-    expect(user?.email).toBe(WEBMASTER_EMAIL);
-    const memberships = await t.run((ctx) =>
+    expect(userId).toBeNull();
+    const users = await t.run((ctx) =>
       ctx.db
-        .query("memberships")
-        .withIndex("by_user", (q) => q.eq("userId", userId))
+        .query("users")
+        .withIndex("by_email", (q) => q.eq("email", WEBMASTER_EMAIL))
         .collect(),
     );
-    expect(memberships).toHaveLength(0);
+    expect(users).toHaveLength(0);
   });
 });
 
@@ -429,6 +403,9 @@ describe("registerFromSession — email-uniqueness clash", () => {
     // levert nieuwe subject + email-collision. Spec-aanvulling §open-vraag-4
     // koos voor fail-loud throw → webhook 500 → Clerk-retry → ops-zichtbaar.
     const t = convexTest(schema, modules);
+    // WP19b: met een accepteerbare invite, anders komt de clash niet aan bod.
+    const { groupId } = await seedGroup(t);
+    await seedInvite(t, { email: "alice@x.com", groupId });
     await t.run(async (ctx) => {
       await ctx.db.insert("users", {
         subject: "user_old_subject",
@@ -458,30 +435,18 @@ describe("registerFromSession — email-uniqueness clash", () => {
   });
 });
 
-describe("registerFromSession — group-less invite", () => {
-  it("invite zonder groupId → status patched naar accepted, geen membership-insert", async () => {
-    // `invites.accept` patcht status maar slaat membership-insert over als
-    // `invite.groupId === undefined`. Pin't dat registerFromSession dezelfde
-    // discipline volgt; geen mystery-membership-insert.
+describe("registerFromSession — group-less invite (WP19b A-invariant 16)", () => {
+  it("invite zonder groupId telt niet: null, geen row, de invite blijft pending", async () => {
     const t = convexTest(schema, modules);
     const { inviteId } = await seedInvite(t, {
       email: "alice@x.com",
-      // groupId weggelaten → invite zonder groep
+      // groupId weggelaten → invite zonder groep (bv. gemigreerd)
     });
-
     const userId = await t.mutation(registerFromSession, {
       subject: "user_alice",
       email: "alice@x.com",
     });
-
-    const invite = await t.run((ctx) => ctx.db.get(inviteId));
-    expect(invite?.status).toBe("accepted");
-    const memberships = await t.run((ctx) =>
-      ctx.db
-        .query("memberships")
-        .withIndex("by_user", (q) => q.eq("userId", userId))
-        .collect(),
-    );
-    expect(memberships).toHaveLength(0);
+    expect(userId).toBeNull();
+    expect((await t.run((ctx) => ctx.db.get(inviteId)))?.status).toBe("pending");
   });
 });
