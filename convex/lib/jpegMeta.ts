@@ -1,19 +1,22 @@
-// WP17d besluit 2 (A-invariant 8): een JPEG zonder metadata voor het openbare
-// profielpad. Een gemigreerd origineel draagt EXIF, met GPS (WP18). We halen
-// elk segment weg dat een plek kan dragen: APP1 (EXIF en XMP), APP3–APP13
-// (o.a. IPTC in APP13), APP15 en commentaar. Wat het beeld nodig heeft om goed
-// te decoderen blijft: APP0 (JFIF), APP2 (ICC-profiel), APP14 (Adobe, voor de
-// kleurtransformatie) en alle tabellen en beelddata.
+// WP17d: een JPEG zonder metadata voor de beeldpaden (besluit 2 en 4,
+// A-invariant 8, 9 en 10). Een gemigreerd origineel draagt EXIF, met GPS
+// (WP18). We houden alleen wat het beeld nodig heeft om goed te decoderen:
+// APP0 (JFIF/JFXX), APP2 met een ICC-profiel, APP14 (Adobe, voor de
+// kleurtransformatie) en alle tabellen en beelddata. Weg: APP1 (EXIF en XMP),
+// APP2 met iets anders (o.a. MPF), APP3–APP13 (o.a. IPTC in APP13), APP15 en
+// commentaar.
 //
 // De stand (EXIF-tag 0x0112) gaat niet verloren: staat hij op 2..8, dan komt er
 // een nieuw, minimaal EXIF-segment met alleen die tag. Zo blijft een los
-// profielbeeld rechtop (A's waarschuwing in de spec).
+// profielbeeld rechtop.
 //
-// Pure functie zonder bibliotheek (Convex isolate-runtime). Een bestand dat
-// niet met SOI begint, geeft `null`. Klopt de structuur verderop niet (een
-// lengte buiten het bestand, geen marker waar er een hoort), dan gaat de rest
-// ongewijzigd mee: een decoder leest daar ook geen segment meer, en de bekende
-// metadata-segmenten staan bij echte camera- en telefoonbeelden ervoor.
+// Fail-closed (besluit 4, A-invariant 10): de schoonmaker volgt elk segment en
+// elke scan tot de EOI van het eerste beeld. Wat daarna komt (een tweede beeld,
+// het MPF-beeld, een motion-photo-trailer) gaat niet mee. Klopt de structuur
+// niet (geen SOI, een byte waar een marker hoort, een lengte buiten het
+// bestand, geen EOI), dan geeft hij `null`: dan gaat er niets naar buiten.
+//
+// Pure functie zonder bibliotheek (Convex isolate-runtime).
 
 const SOI = 0xd8;
 const SOS = 0xda;
@@ -28,15 +31,33 @@ export function isJpeg(bytes: Uint8Array): boolean {
   return bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === SOI && bytes[2] === 0xff;
 }
 
-function keepSegment(marker: number): boolean {
+function startsWith(seg: Uint8Array, text: string): boolean {
+  if (seg.length < text.length) return false;
+  for (let k = 0; k < text.length; k++) if (seg[k] !== text.charCodeAt(k)) return false;
+  return true;
+}
+
+/** Blijft dit segment staan? `payload` is de inhoud zonder marker en lengte. */
+function keepSegment(marker: number, payload: Uint8Array): boolean {
   if (marker === COM) return false;
   if (marker >= APP0 && marker <= 0xef) {
-    return marker === APP0 || marker === APP2 || marker === APP14;
+    if (marker === APP0) return startsWith(payload, "JFIF\0") || startsWith(payload, "JFXX\0");
+    if (marker === APP2) return startsWith(payload, "ICC_PROFILE\0");
+    if (marker === APP14) return startsWith(payload, "Adobe");
+    return false;
   }
   return true;
 }
 
-/** De JPEG zonder metadata-segmenten, met alleen de stand terug. `null` = geen JPEG. */
+/** RST0–RST7 en TEM: markers zonder lengte. */
+function standalone(marker: number): boolean {
+  return marker === 0x01 || (marker >= 0xd0 && marker <= 0xd7);
+}
+
+/**
+ * Het eerste beeld van de JPEG zonder metadata-segmenten, met alleen de stand
+ * terug. `null` als het geen JPEG is of de structuur niet te volgen is.
+ */
 export function stripJpegMetadata(bytes: Uint8Array): Uint8Array | null {
   if (bytes.length < 4 || bytes[0] !== 0xff || bytes[1] !== SOI) return null;
   const kept: Uint8Array[] = [];
@@ -44,45 +65,51 @@ export function stripJpegMetadata(bytes: Uint8Array): Uint8Array | null {
   let afterApp0 = 0; // index in `kept` waar het stand-segment komt
   let i = 2;
   for (;;) {
-    if (i >= bytes.length) break;
-    const rest = () => kept.push(bytes.subarray(i));
-    if (bytes[i] !== 0xff) {
-      rest();
-      break;
-    }
+    if (i >= bytes.length || bytes[i] !== 0xff) return null;
     // Opvulbytes (0xFF 0xFF …) vóór een marker zijn toegestaan.
     let m = i + 1;
     while (m < bytes.length && bytes[m] === 0xff) m++;
-    if (m >= bytes.length) {
-      rest();
-      break;
-    }
+    if (m >= bytes.length) return null;
     const marker = bytes[m]!;
     if (marker === EOI) {
       kept.push(bytes.subarray(m - 1, m + 1));
       break;
     }
-    if (marker === SOS) {
-      // Vanaf hier beelddata (en eventuele latere tabellen): ongewijzigd mee.
-      kept.push(bytes.subarray(m - 1));
-      break;
-    }
-    if (marker === 0x01 || (marker >= 0xd0 && marker <= 0xd7)) {
-      // Losse marker zonder lengte.
+    if (marker === 0x00 || marker === SOI) return null;
+    if (standalone(marker)) {
       kept.push(bytes.subarray(m - 1, m + 1));
       i = m + 1;
       continue;
     }
-    const len = m + 2 < bytes.length ? (bytes[m + 1]! << 8) | bytes[m + 2]! : 0;
+    if (m + 2 >= bytes.length) return null;
+    const len = (bytes[m + 1]! << 8) | bytes[m + 2]!;
     const end = m + 1 + len;
-    if (len < 2 || end > bytes.length) {
-      rest();
-      break;
-    }
+    if (len < 2 || end > bytes.length) return null;
+    const payload = bytes.subarray(m + 3, end);
     if (marker === APP1 && orientation === undefined) {
-      orientation = exifOrientation(bytes.subarray(m + 3, end));
+      orientation = exifOrientation(payload);
     }
-    if (keepSegment(marker)) {
+    if (marker === SOS) {
+      // Kop van de scan, daarna de beelddata tot de volgende echte marker. In
+      // de beelddata is 0xFF gestuft (FF 00) of een RST-marker (FF D0–D7).
+      let k = end;
+      for (;;) {
+        if (k + 1 >= bytes.length) return null;
+        if (bytes[k] === 0xff) {
+          const n = bytes[k + 1]!;
+          if (n === 0x00 || (n >= 0xd0 && n <= 0xd7)) {
+            k += 2;
+            continue;
+          }
+          break;
+        }
+        k++;
+      }
+      kept.push(bytes.subarray(m - 1, k));
+      i = k;
+      continue;
+    }
+    if (keepSegment(marker, payload)) {
       kept.push(bytes.subarray(m - 1, end));
       if (marker === APP0) afterApp0 = kept.length;
     }
@@ -92,7 +119,7 @@ export function stripJpegMetadata(bytes: Uint8Array): Uint8Array | null {
     kept.splice(afterApp0, 0, orientationSegment(orientation));
   }
   const total = 2 + kept.reduce((n, s) => n + s.length, 0);
-  const out = new Uint8Array(total);
+  const out = new Uint8Array(new ArrayBuffer(total));
   out[0] = 0xff;
   out[1] = SOI;
   let o = 2;
@@ -105,8 +132,7 @@ export function stripJpegMetadata(bytes: Uint8Array): Uint8Array | null {
 
 /** De stand uit IFD0 van een EXIF-segment (zonder marker en lengte), of undefined. */
 function exifOrientation(seg: Uint8Array): number | undefined {
-  const header = [0x45, 0x78, 0x69, 0x66, 0x00, 0x00]; // "Exif\0\0"
-  if (seg.length < 14 || header.some((v, k) => seg[k] !== v)) return undefined;
+  if (seg.length < 14 || !startsWith(seg, "Exif\0\0")) return undefined;
   const tiff = seg.subarray(6);
   const t = (k: number) => tiff[k] ?? 0;
   const little = t(0) === 0x49 && t(1) === 0x49;
@@ -122,10 +148,7 @@ function exifOrientation(seg: Uint8Array): number | undefined {
   for (let k = 0; k < n; k++) {
     const entry = ifd0 + 2 + k * 12;
     if (entry + 12 > tiff.length) return undefined;
-    if (u16(entry) === 0x0112) {
-      const value = u16(entry + 8);
-      return Number.isInteger(value) ? value : undefined;
-    }
+    if (u16(entry) === 0x0112) return u16(entry + 8);
   }
   return undefined;
 }

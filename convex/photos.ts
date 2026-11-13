@@ -663,6 +663,12 @@ export const cleanupStorage = internalAction({
 // ctx.db.patch doen, dus delegate via een internal mutation. No-op als
 // photo intussen verwijderd is (cleanup-race). Geen `exifOrientation`: die
 // zet alleen `attachFormats`, samen met de formaten (WP25 A-invariant 12).
+//
+// WP17d besluit 4 (A-invariant 3): `seen` is de plek die extractMetadata op de
+// rij las, vóór de Photon-vraag. Heeft de eigenaar de plek in dat venster
+// gewijzigd of weggehaald, dan schrijft deze patch geen plek en geen
+// plaatsnaam: die horen bij een plek die niet meer geldt. `setLocation` vraagt
+// zelf de plaatsnaam van de nieuwe plek aan.
 export const patchMetadata = internalMutation({
   args: {
     photoId: v.id("photos"),
@@ -672,10 +678,19 @@ export const patchMetadata = internalMutation({
     latitude: v.optional(v.number()),
     longitude: v.optional(v.number()),
     locationLabel: v.optional(v.string()),
+    seen: v.optional(
+      v.object({
+        latitude: v.optional(v.number()),
+        longitude: v.optional(v.number()),
+      }),
+    ),
   },
-  handler: async (ctx, { photoId, ...rest }) => {
+  handler: async (ctx, { photoId, seen, ...rest }) => {
     const photo = await ctx.db.get(photoId);
     if (!photo) return;
+    const placeMoved =
+      seen !== undefined &&
+      (photo.latitude !== seen.latitude || photo.longitude !== seen.longitude);
     const patch: Partial<Doc<"photos">> = {};
     for (const k of [
       "width",
@@ -685,6 +700,7 @@ export const patchMetadata = internalMutation({
       "longitude",
       "locationLabel",
     ] as const) {
+      if (placeMoved && (k === "latitude" || k === "longitude" || k === "locationLabel")) continue;
       if (rest[k] !== undefined) (patch[k] as unknown) = rest[k];
     }
     if (Object.keys(patch).length > 0) {

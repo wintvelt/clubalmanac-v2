@@ -1,7 +1,7 @@
 import { useMutation } from "convex/react";
 import { router } from "expo-router";
-import { useCallback, useEffect, useMemo, useRef, type ReactNode } from "react";
-import { ActionSheetIOS, Alert, Pressable, StyleSheet, View } from "react-native";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { ActionSheetIOS, ActivityIndicator, Alert, Pressable, StyleSheet, View } from "react-native";
 import type { Id } from "../../../convex/_generated/dataModel";
 import { Icon } from "../components/Icon";
 import { Notice } from "../components/Notice";
@@ -138,7 +138,10 @@ export function usePhotoMenu({
   const removeFromAlbum = useMutation(api.albums.removePhoto);
   const removePhoto = useMutation(api.photos.remove);
   const openFor = useRef<string | null>(null);
-  const sharing = useRef(false);
+  // WP17d A-invariant 12: de ref houdt een tweede tik tegen (ook binnen één
+  // render), de state laat het scherm zien dat het delen bezig is.
+  const shareBusy = useRef(false);
+  const [sharing, setSharing] = useState(false);
 
   useEffect(() => {
     if (openFor.current !== null && !photoIds.includes(openFor.current)) {
@@ -163,17 +166,21 @@ export function usePhotoMenu({
   const share = useCallback(
     (photo: MenuPhoto) => {
       const run = async () => {
-        if (sharing.current) return;
-        sharing.current = true;
+        if (shareBusy.current) return;
+        shareBusy.current = true;
+        setSharing(true);
         try {
           const outcome = await sharePhoto(photo);
           if (outcome === "unavailable") onFeedback(SHARE_FAILED);
         } catch {
           onFeedback(SHARE_FAILED);
         } finally {
-          sharing.current = false;
+          shareBusy.current = false;
+          setSharing(false);
         }
       };
+      // Tijdens het delen doet een nieuwe tik op "Delen" niets, ook niet bij een andere foto.
+      if (shareBusy.current) return;
       const notice = ctx ? shareNotice({ me: ctx.me, ownerId: photo.ownerId, ownerName: photo.ownerName }) : null;
       if (notice === null) {
         void run();
@@ -281,7 +288,7 @@ export function usePhotoMenu({
     [ctx, place, onFeedback, perform],
   );
 
-  return { open };
+  return { open, sharing };
 }
 
 // --- Selectie (invariant 7, A-keuze 2) -------------------------------------------------
@@ -416,6 +423,36 @@ export function ActionsButton({ onPress }: { onPress: () => void }) {
     </Pressable>
   );
 }
+
+// WP17d A-invariant 12: zolang *groot* wordt opgehaald en klaargemaakt, staat
+// er dat het delen bezig is (op 4G een paar seconden).
+export function SharingProgress() {
+  const { colors } = useTheme();
+  return (
+    <View
+      accessibilityRole="progressbar"
+      accessibilityLabel="Foto klaarmaken om te delen"
+      accessibilityLiveRegion="polite"
+      style={[progress.row, { backgroundColor: colors.surface, borderColor: colors.line }]}
+    >
+      <ActivityIndicator color={colors.primary} />
+      <Text variant="body">Foto klaarmaken om te delen…</Text>
+    </View>
+  );
+}
+
+const progress = StyleSheet.create({
+  row: {
+    minHeight: size.touchMin,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: space.s,
+    paddingHorizontal: space.m,
+    paddingVertical: space.s,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: 12, // radius.listBlock; de theme-mocks in de tests kennen geen radius
+  },
+});
 
 // De melding na een actie, met "Oké" om hem weg te halen.
 export function ActionFeedback({ feedback, onClose }: { feedback: Feedback; onClose: () => void }) {

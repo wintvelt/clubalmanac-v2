@@ -24,6 +24,7 @@ import { MY_PHOTOS_STEP, menuPhotoOf, useMyPhotos, type MyPhoto } from "./MyPhot
 import { PhotoAlbums, ZoomablePhoto } from "./PhotoDetailScreen";
 import {
   ActionFeedback,
+  SharingProgress,
   ActionsButton,
   menuActions,
   usePhotoMenu,
@@ -147,10 +148,16 @@ function DetailContent({
               />
             )}
           </View>
-          {feedback && (
+          {menu.sharing ? (
             <View style={styles.feedback}>
-              <ActionFeedback feedback={feedback} onClose={() => setFeedback(null)} />
+              <SharingProgress />
             </View>
+          ) : (
+            feedback && (
+              <View style={styles.feedback}>
+                <ActionFeedback feedback={feedback} onClose={() => setFeedback(null)} />
+              </View>
+            )
           )}
           {photo && <PhotoInfo photo={photo} />}
         </>

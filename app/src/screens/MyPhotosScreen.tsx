@@ -23,6 +23,7 @@ import { columnsFor, SelectMark } from "./AlbumScreen";
 import { LoadError } from "./GroupParts";
 import {
   ActionFeedback,
+  SharingProgress,
   BottomPanel,
   menuActions,
   usePhotoMenu,
@@ -239,10 +240,16 @@ function MyPhotosContent() {
           onCancel={stopSelecting}
         />
       ) : (
-        feedback && (
+        menu.sharing ? (
           <BottomPanel>
-            <ActionFeedback feedback={feedback} onClose={() => setFeedback(null)} />
+            <SharingProgress />
           </BottomPanel>
+        ) : (
+          feedback && (
+            <BottomPanel>
+              <ActionFeedback feedback={feedback} onClose={() => setFeedback(null)} />
+            </BottomPanel>
+          )
         )
       )}
     </SafeAreaView>

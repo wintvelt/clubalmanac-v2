@@ -30,6 +30,7 @@ import { AlbumChoiceSheet } from "./AlbumChoice";
 import { AlbumReadFailed } from "./AlbumParts";
 import {
   ActionFeedback,
+  SharingProgress,
   BottomPanel,
   menuActions,
   useMenuContext,
@@ -243,10 +244,16 @@ function AlbumContent({ groupId, albumId }: { groupId: Id<"groups">; albumId: Id
           onCancel={stopSelecting}
         />
       ) : (
-        feedback && (
+        menu.sharing ? (
           <BottomPanel>
-            <ActionFeedback feedback={feedback} onClose={() => setFeedback(null)} />
+            <SharingProgress />
           </BottomPanel>
+        ) : (
+          feedback && (
+            <BottomPanel>
+              <ActionFeedback feedback={feedback} onClose={() => setFeedback(null)} />
+            </BottomPanel>
+          )
         )
       )}
     </SafeAreaView>

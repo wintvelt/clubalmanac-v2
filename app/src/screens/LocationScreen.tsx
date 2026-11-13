@@ -16,6 +16,7 @@ import { Text } from "../components/Text";
 import { api } from "../convexApi";
 import { useAuthState } from "../data/authStateContext";
 import { useLiveQuery } from "../data/useLiveQuery";
+import { useLocationDraft } from "../lib/locationDraft";
 import { MIDDLE_NL, spotRegion, type Point } from "../lib/placeShare";
 import { size, space, useTheme } from "../theme";
 
@@ -23,8 +24,9 @@ import { size, space, useTheme } from "../theme";
 // speld op de kaart; slepen of op de kaart tikken verplaatst hem. "Opslaan"
 // stuurt de plek naar photos.setLocation; de plaatsnaam maakt de backend
 // (Photon). "Locatie weghalen" wist plek en plaatsnaam, na een bevestiging.
-// Zonder plek staat de speld in midden-Nederland. Geen locatie van het
-// toestel (A-invariant 7). Hetzelfde scherm in een album en in Mijn foto's.
+// Zonder plek staat de speld in midden-Nederland; Opslaan pas na een tik of
+// sleep (A-invariant 11, lib/locationDraft). Geen locatie van het toestel
+// (A-invariant 7). Hetzelfde scherm in een album en in Mijn foto's.
 export function LocationScreen() {
   const { photoId } = useLocalSearchParams<{ photoId: string }>();
   const pid = String(photoId) as Id<"photos">;
@@ -76,14 +78,14 @@ function LocationEditor({
   const { colors } = useTheme();
   const setLocation = useMutation(api.photos.setLocation);
   const map = useRef<MapView>(null);
-  const [pin, setPin] = useState<Point>(() => saved ?? { latitude: MIDDLE_NL.latitude, longitude: MIDDLE_NL.longitude });
+  const draft = useLocationDraft(saved);
+  const pin = draft.pin;
   const [busy, setBusy] = useState(false);
   const [feedback, setFeedback] = useState<Feedback | null>(null);
-  const changed = saved === null || saved.latitude !== pin.latitude || saved.longitude !== pin.longitude;
 
   const move = (p: Point) => {
     setFeedback(null);
-    setPin(p);
+    draft.move(p);
   };
 
   const run = async (location: Point | null, done: Feedback): Promise<boolean> => {
@@ -113,8 +115,7 @@ function LocationEditor({
           onPress: () => {
             void run(null, { kind: "success", title: "Locatie is weggehaald" }).then((ok) => {
               if (!ok) return;
-              // Zonder plek staat de speld weer in midden-Nederland; de kaart gaat mee.
-              setPin({ latitude: MIDDLE_NL.latitude, longitude: MIDDLE_NL.longitude });
+              // Zonder plek begint de speld in midden-Nederland (useLocationDraft); de kaart gaat mee.
               map.current?.animateToRegion(MIDDLE_NL, 300);
             });
           },
@@ -167,7 +168,7 @@ function LocationEditor({
             onPress={() => void run(pin, { kind: "success", title: "Locatie is bijgewerkt" })}
             busy={busy}
             busyTitle="Opslaan…"
-            disabled={!changed}
+            disabled={!draft.canSave}
           />
           <View style={styles.row}>
             <SmallButton

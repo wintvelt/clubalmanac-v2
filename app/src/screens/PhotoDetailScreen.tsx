@@ -29,6 +29,7 @@ import { size, space, useTheme } from "../theme";
 import { AlbumReadFailed } from "./AlbumParts";
 import {
   ActionFeedback,
+  SharingProgress,
   ActionsButton,
   menuActions,
   useMenuContext,
@@ -181,10 +182,16 @@ function DetailContent({
               />
             )}
           </View>
-          {feedback && (
+          {menu.sharing ? (
             <View style={styles.feedback}>
-              <ActionFeedback feedback={feedback} onClose={() => setFeedback(null)} />
+              <SharingProgress />
             </View>
+          ) : (
+            feedback && (
+              <View style={styles.feedback}>
+                <ActionFeedback feedback={feedback} onClose={() => setFeedback(null)} />
+              </View>
+            )
           )}
           {entry && <PhotoInfo entry={entry} />}
         </>
