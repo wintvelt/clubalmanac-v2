@@ -341,6 +341,15 @@ function dropLines(warnings: string[]): string[] {
   return warnings.filter((w) => /like/i.test(w) && /geschrapt/i.test(w));
 }
 
+/**
+ * Het aantal in die regel: alleen het getal vlak vóór "like(s) geschrapt".
+ * Andere getallen in de regel (zoals de 19 uit "WP19a") tellen niet mee.
+ */
+function droppedCount(line: string | undefined): number | undefined {
+  const m = line?.match(/(\d+)\s+like(?:s|\(s\))?\s+geschrapt/i);
+  return m ? Number(m[1]) : undefined;
+}
+
 describe("WP19a: likes worden geschrapt en gemeld", () => {
   test("de uitvoer heeft geen tabel ratings meer", () => {
     const { records } = runProd();
@@ -361,7 +370,7 @@ describe("WP19a: likes worden geschrapt en gemeld", () => {
     expect(expected, "de fixture heeft likes").toBeGreaterThan(0);
     const lines = dropLines(warnings);
     expect(lines, "één regel met 'like' en 'geschrapt'").toHaveLength(1);
-    expect(lines[0]!.match(/\d+/g) ?? []).toContain(String(expected));
+    expect(droppedCount(lines[0])).toBe(expected);
   });
 
   test("dev: de regel telt alleen de likes binnen de dev-subset", () => {
@@ -371,7 +380,7 @@ describe("WP19a: likes worden geschrapt en gemeld", () => {
     expect(expectedDev, "de dev-subset laat likes vallen").toBeLessThan(likesThatWouldLoad(prod.records));
     const lines = dropLines(dev.warnings);
     expect(lines).toHaveLength(1);
-    expect(lines[0]!.match(/\d+/g) ?? []).toContain(String(expectedDev));
+    expect(droppedCount(lines[0])).toBe(expectedDev);
   });
 
   test("een ingetrokken like of een record zonder waarde telt niet mee", () => {
@@ -387,9 +396,16 @@ describe("WP19a: likes worden geschrapt en gemeld", () => {
     ).length;
     const expected = likesThatWouldLoad(records);
     expect(expected, "de fixture heeft ingetrokken likes op geladen foto's").toBeLessThan(allOnLoaded);
-    const numbers = dropLines(warnings)[0]?.match(/\d+/g) ?? [];
-    expect(numbers).toContain(String(expected));
-    expect(numbers).not.toContain(String(allOnLoaded));
+    const count = droppedCount(dropLines(warnings)[0]);
+    expect(count).toBe(expected);
+    expect(count).not.toBe(allOnLoaded);
+  });
+
+  test("[sanity] het aantal komt alleen uit het getal vóór 'like(s) geschrapt'", () => {
+    expect(droppedCount("3 like(s) geschrapt: ratings gaan niet mee (WP19a)")).toBe(3);
+    expect(droppedCount("12 likes geschrapt")).toBe(12);
+    expect(droppedCount("1 like geschrapt")).toBe(1);
+    expect(droppedCount("likes geschrapt (WP19a), 2026-11-06")).toBeUndefined();
   });
 });
 
