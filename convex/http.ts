@@ -12,6 +12,7 @@ import {
   testGateRefusalResponse,
 } from "./lib/testGate";
 import { parseLocation, parseTakenAt, uploadImageType } from "./lib/upload";
+import { stripJpegMetadata } from "./lib/jpegMeta";
 
 // Cascade matrix IB1: Mailjet bounce-webhook → internal.invites.handleBounce.
 // Voltooit IB1 cascade per docs/cascade-matrix.md (bounce → status=expired
@@ -534,10 +535,13 @@ http.route({
     }
     if (!identity) return new Response("Unauthorized", { status: 401 });
 
+    // WP17d besluit 4 (A-invariant 9): een origineel gaat alleen door de
+    // schoonmaker naar buiten, voor elk lid en ook voor de eigenaar. Een
+    // formaat (door ons gemaakt, zonder EXIF) gaat ongewijzigd mee.
     const photoId = idFromPath(request, PHOTO_PREFIX);
     if (format === "origineel") {
       const storageId = await ctx.runQuery(internal.images.photoImage, { photoId });
-      return await imageResponse(ctx, storageId, "private, max-age=3600", {
+      return await cleanOriginalResponse(ctx, storageId, "private, max-age=3600", {
         Vary: "Authorization",
       });
     }
@@ -545,12 +549,15 @@ http.route({
       photoId,
       formaat: format,
     });
-    return await imageResponse(
-      ctx,
-      choice?.storageId ?? null,
-      choice?.fallback ? FALLBACK_CACHE_PHOTO : "private, max-age=3600",
-      { Vary: "Authorization" },
-    );
+    if (!choice) return NOT_FOUND();
+    if (choice.fallback) {
+      return await cleanOriginalResponse(ctx, choice.storageId, FALLBACK_CACHE_PHOTO, {
+        Vary: "Authorization",
+      });
+    }
+    return await imageResponse(ctx, choice.storageId, "private, max-age=3600", {
+      Vary: "Authorization",
+    });
   }),
 });
 
@@ -563,22 +570,47 @@ http.route({
     );
     if (format === "ongeldig") return BAD_FORMAT();
 
+    // WP17d besluit 2: zonder formaat het formaat *groot*, niet het origineel.
     const userId = idFromPath(request, PROFILE_PREFIX);
-    if (format === "origineel") {
-      const storageId = await ctx.runQuery(internal.images.profileImage, { userId });
-      return await imageResponse(ctx, storageId, "public, no-cache");
-    }
     const choice = await ctx.runQuery(internal.images.profileImageInFormat, {
       userId,
-      formaat: format,
+      formaat: format === "origineel" ? "groot" : format,
     });
-    return await imageResponse(
-      ctx,
-      choice?.storageId ?? null,
-      choice?.fallback ? FALLBACK_CACHE_PROFILE : "public, no-cache",
-    );
+    if (!choice) return NOT_FOUND();
+    if (choice.fallback) {
+      return await cleanOriginalResponse(ctx, choice.storageId, FALLBACK_CACHE_PROFILE);
+    }
+    return await imageResponse(ctx, choice.storageId, "public, no-cache");
   }),
 });
+
+// WP17d besluit 2 en 4 (A-invariant 8, 9 en 10): een origineel gaat nooit
+// ongewijzigd naar buiten. Een JPEG gaat zonder metadata en zonder wat na het
+// eerste beeld staat mee, met alleen de stand (lib/jpegMeta). Een JPEG die de
+// schoonmaker niet kan volgen, en elk ander type (PNG, WebP, HEIC, onbekend):
+// 404, tot er formaten zijn. Op prod hebben de niet-JPEG-originelen formaten
+// (WP25-backfill); zie de spec, §Fix-cyclus 1: rest-risico.
+async function cleanOriginalResponse(
+  ctx: { storage: { get: (id: Id<"_storage">) => Promise<Blob | null> } },
+  storageId: Id<"_storage"> | null,
+  cacheControl: string,
+  extraHeaders: Record<string, string> = {},
+): Promise<Response> {
+  if (!storageId) return NOT_FOUND();
+  const blob = await ctx.storage.get(storageId);
+  if (!blob) return NOT_FOUND();
+  const clean = stripJpegMetadata(new Uint8Array(await blob.arrayBuffer()));
+  if (!clean) return NOT_FOUND();
+  return new Response(new Uint8Array(clean), {
+    status: 200,
+    headers: {
+      "Content-Type": "image/jpeg",
+      "Cache-Control": cacheControl,
+      "X-Content-Type-Options": "nosniff",
+      ...extraHeaders,
+    },
+  });
+}
 
 // WP4: `whoami` httpAction. Productie-blind-spot uit plan-doc r.251:
 // vitest's `t.withIdentity({ email })` mockt de identity en zegt niets

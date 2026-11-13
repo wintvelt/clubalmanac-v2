@@ -357,6 +357,38 @@ export const listPhotos = query({
   },
 });
 
+// WP17d A-invariant 1 en 5: de kaart van een album. Poort zoals listPhotos
+// (geen lid, onbekend of gewist album: NOT_MEMBER). Toestemmingslijst: de
+// foto's van dit album met beide coördinaten, elke foto één keer; een
+// publicatie zonder foto-rij telt niet. Per foto alleen id en exacte plek
+// (besluit 1), geen plaatsnaam of andere velden.
+export const listLocations = query({
+  args: { albumId: v.id("albums") },
+  returns: v.array(
+    v.object({
+      photoId: v.id("photos"),
+      latitude: v.number(),
+      longitude: v.number(),
+    }),
+  ),
+  handler: async (ctx, { albumId }) => {
+    await requireAlbumAccessForRead(ctx, albumId);
+    const albumPhotos = await ctx.db
+      .query("albumPhotos")
+      .withIndex("by_album", (q) => q.eq("albumId", albumId))
+      .collect();
+    const photoIds = [...new Set(albumPhotos.map((ap) => ap.photoId))];
+    const rows = await Promise.all(
+      photoIds.map(async (photoId) => {
+        const p = await ctx.db.get(photoId);
+        if (!p || p.latitude === undefined || p.longitude === undefined) return null;
+        return { photoId: p._id, latitude: p.latitude, longitude: p.longitude };
+      }),
+    );
+    return rows.filter((r) => r !== null);
+  },
+});
+
 // WP17c A-invariant 9 en 10: "in welke albums" in het foto-detail. De poort
 // is foto-toegang (dezelfde NOT_MEMBER als photos.getById voor geen toegang,
 // onbekend en gewist). Daarna een toestemmingslijst: alleen albums uit

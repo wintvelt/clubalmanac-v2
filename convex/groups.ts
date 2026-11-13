@@ -78,7 +78,8 @@ export type RefusalCode =
   | "ALREADY_IN_ALBUM"
   | "NOT_IN_ALBUM"
   | "INVITE_INVALID"
-  | "DATE_INVALID";
+  | "DATE_INVALID"
+  | "LOCATION_INVALID";
 
 export function refuse(code: RefusalCode): never {
   throw new ConvexError({ code });

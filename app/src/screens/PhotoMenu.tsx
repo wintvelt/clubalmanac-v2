@@ -1,7 +1,7 @@
 import { useMutation } from "convex/react";
 import { router } from "expo-router";
-import { useCallback, useEffect, useMemo, useRef, type ReactNode } from "react";
-import { ActionSheetIOS, Alert, Pressable, StyleSheet, View } from "react-native";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { ActionSheetIOS, ActivityIndicator, Alert, Pressable, StyleSheet, View } from "react-native";
 import type { Id } from "../../../convex/_generated/dataModel";
 import { Icon } from "../components/Icon";
 import { Notice } from "../components/Notice";
@@ -9,7 +9,8 @@ import { SmallButton } from "../components/SmallButton";
 import { Text } from "../components/Text";
 import { api } from "../convexApi";
 import { useLiveQuery } from "../data/useLiveQuery";
-import { myRotatePath, rotatePath } from "../lib/groupRoutes";
+import { locationPath, myLocationPath, myRotatePath, rotatePath } from "../lib/groupRoutes";
+import { placeShareActions, placeShareLabel, shareNotice, type PlaceShareAction } from "../lib/placeShare";
 import { addOutcome, myPhotoActions } from "../lib/myPhotos";
 import { profilePhotoNotice } from "../lib/profileEdit";
 import {
@@ -33,11 +34,27 @@ export type Feedback = { kind: "error" | "success"; title: string; message?: str
 
 // Wat het menu over een foto moet weten. Alle velden staan in albums.listPhotos.
 // `ownerName`: voor de melding bij "Als profielfoto" (WP27 vraag 3).
+// WP17d: `hasFormats` (delen alleen met formaten) en `exifOrientation` (rechtop delen).
 export type MenuPhoto = {
   photoId: Id<"photos">;
   ownerId: Id<"users">;
   addedBy: Id<"users">;
   ownerName?: string;
+  hasFormats?: boolean;
+  exifOrientation?: number;
+};
+
+// WP17d: "Delen" en "Locatie wijzigen" bij de acties van WP17b.
+export type MenuAction = PhotoAction | PlaceShareAction;
+
+function menuActionLabel(action: MenuAction): string {
+  return action === "share" || action === "location" ? placeShareLabel(action) : photoActionLabel(action);
+}
+
+const SHARE_FAILED: Feedback = {
+  kind: "error",
+  title: "Helaas, delen is niet gelukt",
+  message: "Probeer het later opnieuw.",
 };
 
 // Wie kijkt, en met welke rol in de groep van dit album. De maker van het
@@ -80,11 +97,16 @@ export function useMenuContext(groupId: Id<"groups">, me: Id<"users"> | undefine
 export function menuActions(
   ctx: MenuContext | undefined,
   photo: MenuPhoto | undefined,
-  place: MenuPlace = null,
-): PhotoAction[] {
+  // WP17d besluit 5 (A-invariant 13): geen standaard-plek. Een album, of null
+  // voor Mijn foto's; wie hem vergeet, krijgt een typefout.
+  place: MenuPlace,
+): MenuAction[] {
   if (!ctx || !photo) return [];
-  if (place === null) return photo.ownerId === ctx.me ? myPhotoActions() : [];
-  return photoActions({ ...ctx, ownerId: photo.ownerId, addedBy: photo.addedBy });
+  // WP17d A-invariant 6: delen bij elke foto met formaten, locatie bij een
+  // eigen foto. Bovenaan; verwijderen (rood) blijft onderaan.
+  const placeShare = placeShareActions({ me: ctx.me, ownerId: photo.ownerId, hasFormats: photo.hasFormats === true });
+  if (place === null) return photo.ownerId === ctx.me ? [...placeShare, ...myPhotoActions()] : [];
+  return [...placeShare, ...photoActions({ ...ctx, ownerId: photo.ownerId, addedBy: photo.addedBy })];
 }
 
 function confirm(title: string, message: string, verb: string, onConfirm: () => void) {
@@ -94,14 +116,20 @@ function confirm(title: string, message: string, verb: string, onConfirm: () => 
   ]);
 }
 
+// WP17d: het delen zelf (src/data/share.ts, useSharePhoto) geeft het scherm
+// mee; zo laadt dit menu geen native module.
+export type SharePhoto = (photo: MenuPhoto) => Promise<"shared" | "unavailable">;
+
 export function usePhotoMenu({
   place,
   ctx,
   photoIds,
   onFeedback,
+  sharePhoto,
 }: {
   place: MenuPlace;
   ctx: MenuContext | undefined;
+  sharePhoto: SharePhoto;
   // De foto's die nu in het album staan: verdwijnt de foto van een open menu, dan sluit het.
   photoIds: readonly string[];
   onFeedback: (f: Feedback | null) => void;
@@ -112,6 +140,10 @@ export function usePhotoMenu({
   const removeFromAlbum = useMutation(api.albums.removePhoto);
   const removePhoto = useMutation(api.photos.remove);
   const openFor = useRef<string | null>(null);
+  // WP17d A-invariant 12: de ref houdt een tweede tik tegen (ook binnen één
+  // render), de state laat het scherm zien dat het delen bezig is.
+  const shareBusy = useRef(false);
+  const [sharing, setSharing] = useState(false);
 
   useEffect(() => {
     if (openFor.current !== null && !photoIds.includes(openFor.current)) {
@@ -132,9 +164,49 @@ export function usePhotoMenu({
     [onFeedback],
   );
 
+  // WP17d besluit 3: bij andermans foto eerst één regel dat hij de app verlaat.
+  const share = useCallback(
+    (photo: MenuPhoto) => {
+      const run = async () => {
+        if (shareBusy.current) return;
+        shareBusy.current = true;
+        setSharing(true);
+        try {
+          const outcome = await sharePhoto(photo);
+          if (outcome === "unavailable") onFeedback(SHARE_FAILED);
+        } catch {
+          onFeedback(SHARE_FAILED);
+        } finally {
+          shareBusy.current = false;
+          setSharing(false);
+        }
+      };
+      // Tijdens het delen doet een nieuwe tik op "Delen" niets, ook niet bij een andere foto.
+      if (shareBusy.current) return;
+      const notice = ctx ? shareNotice({ me: ctx.me, ownerId: photo.ownerId, ownerName: photo.ownerName }) : null;
+      if (notice === null) {
+        void run();
+        return;
+      }
+      Alert.alert("Foto delen?", notice, [
+        { text: "Annuleren", style: "cancel" },
+        { text: "Delen", onPress: () => void run() },
+      ]);
+    },
+    [ctx, sharePhoto, onFeedback],
+  );
+
   const perform = useCallback(
-    (action: PhotoAction, photo: MenuPhoto) => {
+    (action: MenuAction, photo: MenuPhoto) => {
       const { photoId } = photo;
+      if (action === "share") {
+        share(photo);
+        return;
+      }
+      if (action === "location") {
+        router.push(place ? locationPath(place.groupId, place.albumId, photoId) : myLocationPath(photoId));
+        return;
+      }
       if (action === "rotate") {
         router.push(place ? rotatePath(place.groupId, place.albumId, photoId) : myRotatePath(photoId));
         return;
@@ -191,7 +263,7 @@ export function usePhotoMenu({
           return;
       }
     },
-    [place, ctx, attempt, updateAlbum, updateGroup, setProfilePhoto, removeFromAlbum, removePhoto],
+    [place, ctx, share, attempt, updateAlbum, updateGroup, setProfilePhoto, removeFromAlbum, removePhoto],
   );
 
   const open = useCallback(
@@ -199,7 +271,7 @@ export function usePhotoMenu({
       const actions = menuActions(ctx, photo, place);
       if (actions.length === 0) return;
       onFeedback(null);
-      const options = [...actions.map(photoActionLabel), "Annuleren"];
+      const options = [...actions.map(menuActionLabel), "Annuleren"];
       const destructive = actions.indexOf("delete");
       openFor.current = photo.photoId;
       ActionSheetIOS.showActionSheetWithOptions(
@@ -218,7 +290,13 @@ export function usePhotoMenu({
     [ctx, place, onFeedback, perform],
   );
 
-  return { open };
+  // WP17d A-invariant 13: "is er een menu?" met dezelfde plek als `open`.
+  const hasActions = useCallback(
+    (photo: MenuPhoto | undefined) => menuActions(ctx, photo, place).length > 0,
+    [ctx, place],
+  );
+
+  return { open, sharing, hasActions };
 }
 
 // --- Selectie (invariant 7, A-keuze 2) -------------------------------------------------
@@ -353,6 +431,36 @@ export function ActionsButton({ onPress }: { onPress: () => void }) {
     </Pressable>
   );
 }
+
+// WP17d A-invariant 12: zolang *groot* wordt opgehaald en klaargemaakt, staat
+// er dat het delen bezig is (op 4G een paar seconden).
+export function SharingProgress() {
+  const { colors } = useTheme();
+  return (
+    <View
+      accessibilityRole="progressbar"
+      accessibilityLabel="Foto klaarmaken om te delen"
+      accessibilityLiveRegion="polite"
+      style={[progress.row, { backgroundColor: colors.surface, borderColor: colors.line }]}
+    >
+      <ActivityIndicator color={colors.primary} />
+      <Text variant="body">Foto klaarmaken om te delen…</Text>
+    </View>
+  );
+}
+
+const progress = StyleSheet.create({
+  row: {
+    minHeight: size.touchMin,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: space.s,
+    paddingHorizontal: space.m,
+    paddingVertical: space.s,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: 12, // radius.listBlock; de theme-mocks in de tests kennen geen radius
+  },
+});
 
 // De melding na een actie, met "Oké" om hem weg te halen.
 export function ActionFeedback({ feedback, onClose }: { feedback: Feedback; onClose: () => void }) {

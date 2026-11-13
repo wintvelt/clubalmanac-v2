@@ -4,12 +4,16 @@ import { api } from "../../convex/_generated/api";
 import schema from "../../convex/schema";
 import { registerUser, withUser } from "../_helpers/auth";
 import { modules } from "../_helpers/modules";
+import { bytesOf, sameBytes, SCHOON, SCHOON_B } from "../_helpers/jpeg";
 import { seedPhoto } from "./_helpers";
 import { seedMember } from "../_helpers/membership";
 
 // WP25 — het beeldpad geeft het formaat (invariant 1, 3, 4, 5; A-invariant 13).
-// Het contract van WP17a (besluit 2) blijft: zonder `formaat` het origineel,
-// een onbekende waarde 400, en het formaat verandert niets aan de toegang.
+// Het contract van WP17a (besluit 2) blijft: een onbekende waarde 400, en het
+// formaat verandert niets aan de toegang. WP17d besluit 4: zonder `formaat`
+// het origineel zonder metadata, of *groot* (B kiest); nooit meer het
+// ongewijzigde origineel. De originelen hier zijn echte JPEG's zonder
+// metadata (tests/_helpers/jpeg.ts): die gaan ongewijzigd mee.
 // tests/images/httpRoute.test.ts pint dat voor een foto zónder formaten; hier
 // de foto mét formaten, en de terugval.
 //
@@ -27,8 +31,8 @@ async function setup(t: T) {
   const G = await withUser(t, "user_owen").mutation(api.groups.create, { name: "G" });
   await seedMember(t, { groupId: G, userId: mia });
   const A = await withUser(t, "user_owen").mutation(api.albums.create, { groupId: G, name: "A" });
-  const withF = await seedPhoto(t, owen, { original: "ORIGINEEL-F", withFormats: true });
-  const without = await seedPhoto(t, owen, { original: "ORIGINEEL-Z" });
+  const withF = await seedPhoto(t, owen, { original: "ORIGINEEL-F", originalBytes: SCHOON, withFormats: true });
+  const without = await seedPhoto(t, owen, { original: "ORIGINEEL-Z", originalBytes: SCHOON_B });
   for (const p of [withF, without]) {
     await withUser(t, "user_owen").mutation(api.albums.addPhoto, { albumId: A, photoId: p.photoId });
   }
@@ -59,11 +63,14 @@ describe("GET /beeld/foto — een foto met formaten", () => {
     expect(cc).not.toMatch(/\bno-store\b/);
   });
 
-  it("zonder formaat: nog steeds het origineel (WP17a besluit 2)", async () => {
+  it("zonder formaat: het origineel zonder metadata, of groot (WP17d besluit 4)", async () => {
     const t = convexTest(schema, modules);
     const s = await setup(t);
     const res = await withUser(t, "user_mia").fetch(photoUrl(s.withF.photoId), { method: "GET" });
-    expect(await res.text()).toBe("ORIGINEEL-F");
+    expect(res.status).toBe(200);
+    const bytes = await bytesOf(res);
+    const groot = new TextDecoder().decode(bytes) === "groot van ORIGINEEL-F";
+    expect(groot || sameBytes(bytes, SCHOON), "groot, of het (schone) origineel").toBe(true);
   });
 
   it("invariant 4: geen toegang tot de foto, dan ook geen formaat; zelfde antwoord als een onbekend id", async () => {
@@ -114,7 +121,7 @@ describe("GET /beeld/foto — terugval (invariant 3, A-invariant 13)", () => {
       const s = await setup(t);
       const res = await withUser(t, "user_mia").fetch(photoUrl(s.without.photoId, formaat), { method: "GET" });
       expect(res.status).toBe(200);
-      expect(await res.text()).toBe("ORIGINEEL-Z");
+      expect(sameBytes(await bytesOf(res), SCHOON_B)).toBe(true);
       expect(res.headers.get("Cache-Control") ?? "").toMatch(/\bno-store\b/);
     },
   );
@@ -125,7 +132,7 @@ describe("GET /beeld/foto — terugval (invariant 3, A-invariant 13)", () => {
     await t.run((ctx) => ctx.storage.delete(s.withF.klein!));
     const res = await withUser(t, "user_mia").fetch(photoUrl(s.withF.photoId, "klein"), { method: "GET" });
     expect(res.status).toBe(200);
-    expect(await res.text()).toBe("ORIGINEEL-F");
+    expect(sameBytes(await bytesOf(res), SCHOON)).toBe(true);
     expect(res.headers.get("Cache-Control") ?? "").toMatch(/\bno-store\b/);
   });
 
@@ -161,18 +168,18 @@ describe("GET /beeld/profiel — het formaat van een profielfoto (invariant 4, A
     });
     const res = await t.fetch(profileUrl(s.owen, "klein"), { method: "GET" });
     expect(res.status).toBe(200);
-    expect(await res.text()).toBe("ORIGINEEL-Z");
+    expect(sameBytes(await bytesOf(res), SCHOON_B)).toBe(true);
     expect(res.headers.get("Cache-Control") ?? "").toMatch(/\bno-store\b/);
   });
 
   it("een los gemigreerd beeld zonder foto-rij: het origineel (no-store)", async () => {
     const t = convexTest(schema, modules);
     const s = await setup(t);
-    const loose = await t.run((ctx) => ctx.storage.store(new Blob(["LOS-BEELD"], { type: "image/jpeg" })));
+    const loose = await t.run((ctx) => ctx.storage.store(new Blob([SCHOON_B], { type: "image/jpeg" })));
     await t.run((ctx) => ctx.db.patch(s.mia, { profilePhotoStorageId: loose }));
     const res = await t.fetch(profileUrl(s.mia, "klein"), { method: "GET" });
     expect(res.status).toBe(200);
-    expect(await res.text()).toBe("LOS-BEELD");
+    expect(sameBytes(await bytesOf(res), SCHOON_B)).toBe(true);
     expect(res.headers.get("Cache-Control") ?? "").toMatch(/\bno-store\b/);
   });
 

@@ -8,7 +8,8 @@ import { modules } from "../_helpers/modules";
 // Cascade matrix rows P1, P2: cat-1 (eliminated) + cat-4 (reactive coverage).
 // Verifieert dat join-on-read queries fresh photo-data returneren na een
 // photos.update mutation. Vervangt `photoChangeToPub` (P1) en
-// `photoChangeToCover` (P2).
+// `photoChangeToCover` (P2). WP17d A-invariant 4: photos.update zet geen
+// plaatsnaam meer, dus deze tests gebruiken takenAt.
 
 const ISSUER = "https://picked-quail-97.clerk.accounts.dev";
 
@@ -41,7 +42,7 @@ async function uploadStorage(t: ReturnType<typeof convexTest>) {
 }
 
 describe("P1: albumPhoto query joint photo-data fresh", () => {
-  it("albums.listPhotos toont nieuwe locationLabel direct na update", async () => {
+  it("albums.listPhotos toont nieuwe takenAt direct na update", async () => {
     const t = convexTest(schema, modules);
     await registerUser(t, "user_admin", "admin@x.com");
     const groupId = await withUser(t, "user_admin").mutation(
@@ -56,7 +57,7 @@ describe("P1: albumPhoto query joint photo-data fresh", () => {
     const storageId = await uploadStorage(t);
     const photoId = await withUser(t, "user_admin").mutation(
       internal.photos.create,
-      { storageId, locationLabel: "Oud" },
+      { storageId, takenAt: 1_000 },
     );
     await withUser(t, "user_admin").mutation(api.albums.addPhoto, {
       albumId,
@@ -69,17 +70,17 @@ describe("P1: albumPhoto query joint photo-data fresh", () => {
       () =>
         withUser(t, "user_admin").mutation(api.photos.update, {
           photoId,
-          locationLabel: "Nieuw",
+          takenAt: 2_000,
         }),
     );
 
-    expect(before[0]?.photo?.locationLabel).toBe("Oud");
-    expect(after[0]?.photo?.locationLabel).toBe("Nieuw");
+    expect(before[0]?.photo?.takenAt).toBe(1_000);
+    expect(after[0]?.photo?.takenAt).toBe(2_000);
   });
 });
 
 describe("P2: cover query joint photo-data fresh", () => {
-  it("groups.getWithCover toont nieuwe locationLabel direct na update", async () => {
+  it("groups.getWithCover toont nieuwe takenAt direct na update", async () => {
     const t = convexTest(schema, modules);
     await registerUser(t, "user_admin", "admin@x.com");
     const groupId = await withUser(t, "user_admin").mutation(
@@ -90,7 +91,7 @@ describe("P2: cover query joint photo-data fresh", () => {
     const storageId = await uploadStorage(t);
     const photoId = await withUser(t, "user_admin").mutation(
       internal.photos.create,
-      { storageId, locationLabel: "Oud" },
+      { storageId, takenAt: 1_000 },
     );
     // WP24 (A-keuze 2): een groep-cover staat in een album van die groep.
     const albumId = await withUser(t, "user_admin").mutation(
@@ -112,15 +113,15 @@ describe("P2: cover query joint photo-data fresh", () => {
       () =>
         withUser(t, "user_admin").mutation(api.photos.update, {
           photoId,
-          locationLabel: "Nieuw",
+          takenAt: 2_000,
         }),
     );
 
-    expect(before?.cover?.locationLabel).toBe("Oud");
-    expect(after?.cover?.locationLabel).toBe("Nieuw");
+    expect(before?.cover?.takenAt).toBe(1_000);
+    expect(after?.cover?.takenAt).toBe(2_000);
   });
 
-  it("albums.getWithCover toont nieuwe locationLabel direct na update", async () => {
+  it("albums.getWithCover toont nieuwe takenAt direct na update", async () => {
     const t = convexTest(schema, modules);
     await registerUser(t, "user_admin", "admin@x.com");
     const groupId = await withUser(t, "user_admin").mutation(
@@ -135,7 +136,7 @@ describe("P2: cover query joint photo-data fresh", () => {
     const storageId = await uploadStorage(t);
     const photoId = await withUser(t, "user_admin").mutation(
       internal.photos.create,
-      { storageId, locationLabel: "Oud" },
+      { storageId, takenAt: 1_000 },
     );
     // WP24 (A-keuze 2): een album-cover staat in dat album.
     await withUser(t, "user_admin").mutation(api.albums.addPhoto, {
@@ -153,11 +154,11 @@ describe("P2: cover query joint photo-data fresh", () => {
       () =>
         withUser(t, "user_admin").mutation(api.photos.update, {
           photoId,
-          locationLabel: "Nieuw",
+          takenAt: 2_000,
         }),
     );
 
-    expect(before?.cover?.locationLabel).toBe("Oud");
-    expect(after?.cover?.locationLabel).toBe("Nieuw");
+    expect(before?.cover?.takenAt).toBe(1_000);
+    expect(after?.cover?.takenAt).toBe(2_000);
   });
 });

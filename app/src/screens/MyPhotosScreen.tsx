@@ -13,6 +13,7 @@ import { EmptyState, LoadingState } from "../components/States";
 import { Text } from "../components/Text";
 import { api } from "../convexApi";
 import { useAuthState } from "../data/authStateContext";
+import { useSharePhoto } from "../data/share";
 import { useLiveQuery } from "../data/useLiveQuery";
 import { myPhotoPath } from "../lib/groupRoutes";
 import { formatPhotoDate } from "../lib/photos";
@@ -22,8 +23,8 @@ import { columnsFor, SelectMark } from "./AlbumScreen";
 import { LoadError } from "./GroupParts";
 import {
   ActionFeedback,
+  SharingProgress,
   BottomPanel,
-  menuActions,
   usePhotoMenu,
   useSelectionActions,
   type Feedback,
@@ -123,7 +124,7 @@ function MyPhotosContent() {
   const [selectionBusy, setSelectionBusy] = useState(false);
   const photos = list.photos;
   const photoIds = useMemo(() => photos?.map((p) => p._id as string) ?? [], [photos]);
-  const menu = usePhotoMenu({ place: null, ctx, photoIds, onFeedback: setFeedback });
+  const menu = usePhotoMenu({ place: null, ctx, photoIds, onFeedback: setFeedback , sharePhoto: useSharePhoto() });
   const selected = useMemo(() => (photos ?? []).filter((p) => picked.has(p._id)).map(menuPhotoOf), [photos, picked]);
   const stopSelecting = useCallback(() => {
     setSelecting(false);
@@ -202,7 +203,7 @@ function MyPhotosContent() {
         ListFooterComponent={hasPhotos && list.loadingMore ? <LoadingState /> : undefined}
         renderItem={({ item }) => {
           const photo = menuPhotoOf(item);
-          const hasMenu = !selecting && menuActions(ctx, photo, null).length > 0;
+          const hasMenu = !selecting && menu.hasActions(photo);
           return (
             <MyTile
               photo={item}
@@ -238,10 +239,16 @@ function MyPhotosContent() {
           onCancel={stopSelecting}
         />
       ) : (
-        feedback && (
+        menu.sharing ? (
           <BottomPanel>
-            <ActionFeedback feedback={feedback} onClose={() => setFeedback(null)} />
+            <SharingProgress />
           </BottomPanel>
+        ) : (
+          feedback && (
+            <BottomPanel>
+              <ActionFeedback feedback={feedback} onClose={() => setFeedback(null)} />
+            </BottomPanel>
+          )
         )
       )}
     </SafeAreaView>
@@ -250,7 +257,13 @@ function MyPhotosContent() {
 
 export function menuPhotoOf(photo: MyPhoto): MenuPhoto {
   // Geen album: "toegevoegd door" is hier niet van toepassing.
-  return { photoId: photo._id, ownerId: photo.ownerId, addedBy: photo.ownerId };
+  return {
+    photoId: photo._id,
+    ownerId: photo.ownerId,
+    addedBy: photo.ownerId,
+    hasFormats: photo.hasFormats,
+    exifOrientation: photo.exifOrientation,
+  };
 }
 
 function SelectionBar({

@@ -15,6 +15,7 @@ import { LoadingState } from "../components/States";
 import { Text } from "../components/Text";
 import { api } from "../convexApi";
 import { useAuthState } from "../data/authStateContext";
+import { useSharePhoto } from "../data/share";
 import { useLiveQuery } from "../data/useLiveQuery";
 import { formatPhotoDate, nextAfterRemoval } from "../lib/photos";
 import { size, space, useTheme } from "../theme";
@@ -23,8 +24,8 @@ import { MY_PHOTOS_STEP, menuPhotoOf, useMyPhotos, type MyPhoto } from "./MyPhot
 import { PhotoAlbums, ZoomablePhoto } from "./PhotoDetailScreen";
 import {
   ActionFeedback,
+  SharingProgress,
   ActionsButton,
-  menuActions,
   usePhotoMenu,
   type Feedback,
   type MenuContext,
@@ -90,9 +91,9 @@ function DetailContent({
 
   const index = Math.max(0, ids.indexOf(current));
   const photo = shown?.[index];
-  const menu = usePhotoMenu({ place: null, ctx, photoIds: ids, onFeedback: setFeedback });
+  const menu = usePhotoMenu({ place: null, ctx, photoIds: ids, onFeedback: setFeedback , sharePhoto: useSharePhoto() });
   const menuPhoto = photo ? menuPhotoOf(photo) : undefined;
-  const hasActions = menuActions(ctx, menuPhoto, null).length > 0;
+  const hasActions = menu.hasActions(menuPhoto);
 
   useEffect(() => {
     if (page && shown && shown.length > 0) flatList.current?.scrollToIndex({ index, animated: false });
@@ -146,10 +147,16 @@ function DetailContent({
               />
             )}
           </View>
-          {feedback && (
+          {menu.sharing ? (
             <View style={styles.feedback}>
-              <ActionFeedback feedback={feedback} onClose={() => setFeedback(null)} />
+              <SharingProgress />
             </View>
+          ) : (
+            feedback && (
+              <View style={styles.feedback}>
+                <ActionFeedback feedback={feedback} onClose={() => setFeedback(null)} />
+              </View>
+            )
           )}
           {photo && <PhotoInfo photo={photo} />}
         </>

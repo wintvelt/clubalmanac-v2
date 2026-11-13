@@ -174,6 +174,9 @@ export const extractMetadata = internalAction({
         typeof locationLabel === "string" && locationLabel.length > 0
           ? locationLabel
           : undefined,
+      // WP17d A-invariant 3: plek en plaatsnaam alleen als de rij deze plek
+      // nog heeft.
+      seen: { latitude: photo.latitude, longitude: photo.longitude },
     });
   },
 });

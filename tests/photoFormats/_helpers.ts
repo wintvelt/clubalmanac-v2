@@ -26,13 +26,19 @@ export type SeededPhoto = {
 /**
  * Eén foto-rij met een origineel in storage, en desgewenst al een set formaten.
  * De inhoud van het origineel is tekst: de gemockte beeldbibliotheek leest hem
- * terug (backfill.test.ts), en het beeldpad stuurt hem ongewijzigd door.
+ * terug (backfill.test.ts). De formaten zijn tekst ("klein van <original>").
+ *
+ * WP17d besluit 4: een beeldpad stuurt een origineel nooit meer ongewijzigd
+ * door; tekst is geen JPEG en gaat dus niet mee. Een test die het origineel
+ * over een beeldpad haalt, geeft `originalBytes` (een echte JPEG, zie
+ * tests/_helpers/jpeg.ts); `original` blijft dan het label van de formaten.
  */
 export async function seedPhoto(
   t: T,
   ownerId: Id<"users">,
   opts: {
     original?: string;
+    originalBytes?: Uint8Array<ArrayBuffer>;
     withFormats?: boolean;
     createdAt?: number;
     exifOrientation?: number;
@@ -42,7 +48,7 @@ export async function seedPhoto(
 ): Promise<SeededPhoto> {
   return await t.run(async (ctx) => {
     const original = opts.original ?? "origineel";
-    const storageId = await ctx.storage.store(new Blob([original], { type: "image/jpeg" }));
+    const storageId = await ctx.storage.store(new Blob([opts.originalBytes ?? original], { type: "image/jpeg" }));
     let formats: { klein: Id<"_storage">; groot: Id<"_storage"> } | undefined;
     if (opts.withFormats) {
       formats = {
