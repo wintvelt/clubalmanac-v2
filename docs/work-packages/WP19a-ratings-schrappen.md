@@ -17,6 +17,13 @@
    - Bij T0 verdwijnen ze. De nieuwe webapp (Track B) krijgt geen likes.
    - A's dev-volgorde (vraag 3) is akkoord.
 
+3. **Fix-cyclus 1 (2026-11-13, na de audit).** Er waren geen blockers.
+   - Should-fix 1: de bevestiging bij foto verwijderen noemt nog likes. Invariant 6 is nu ruimer.
+   - A breidt de app-scan uit naar "like" en "likes" (`app/src`), en laat de telling-test in `transform.test.ts` alleen het getal vóór "like(s) geschrapt" lezen (audit-punt 4).
+   - B haalt de tekst weg.
+   - Regie checkt het resultaat; er volgt geen nieuwe audit.
+   - Verouderde docs (audit-punt 2) gaan mee in de closeout.
+
 ## Productdoel
 
 Er bestaan geen ratings meer: een lid kan er geen geven en ziet er geen. Vertrekken, een lid verwijderen, een groep of album verwijderen en je account verwijderen hangen niet meer af van hoeveel ratings er ooit gegeven zijn.
@@ -38,7 +45,7 @@ Er bestaan geen ratings meer: een lid kan er geen geven en ziet er geen. Vertrek
    - `inspect`, `load-records`, `verify` en `reset` kennen geen ratings-tabel meer.
    - Een extract met likes laadt zonder fout.
 5. **Integriteitscheck.** De dagelijkse check controleert geen rating-aggregaat en geen rating-verwijzingen meer. De andere categorieën blijven ongewijzigd en op dev schoon.
-6. **App.** Account verwijderen noemt geen ratings meer. Verder verandert er niets zichtbaars.
+6. **App.** Geen tekst in de app noemt nog ratings of likes. Dat geldt voor Account verwijderen, voor de bevestiging bij foto verwijderen en voor elke andere tekst (fix-cyclus 1). Verder verandert er niets zichtbaars.
 7. **Dev blijft bruikbaar.** Na de wijziging is dev herladen of schoongemaakt, en `verify dev` is groen.
 
 ## Edge cases + scope-uitsluitingen
