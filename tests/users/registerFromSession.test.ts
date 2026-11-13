@@ -113,6 +113,13 @@ async function seedGroup(
   return { groupId, founderId };
 }
 
+// WP19b: registerFromSession geeft `null` als hij weigert (A-invariant 1). Op
+// de paden hieronder die een rij verwachten, is `null` een fout.
+function expectId(id: Id<"users"> | null): Id<"users"> {
+  expect(id, "registerFromSession weigerde (null)").not.toBeNull();
+  return id!;
+}
+
 describe("registerFromSession — happy path", () => {
   it("één pending invite → users-row + invite.accepted + membership in één run", async () => {
     const t = convexTest(schema, modules);
@@ -123,11 +130,11 @@ describe("registerFromSession — happy path", () => {
       role: "member",
     });
 
-    const userId = await t.mutation(registerFromSession, {
+    const userId = expectId(await t.mutation(registerFromSession, {
       subject: "user_alice",
       email: "alice@x.com",
       name: "Alice",
-    });
+    }));
 
     const user = await t.run((ctx) => ctx.db.get(userId));
     expect(user?.subject).toBe("user_alice");
@@ -152,11 +159,11 @@ describe("registerFromSession — happy path", () => {
   it("name uit two velden samengevoegd (first + last)", async () => {
     const t = convexTest(schema, modules);
     await seedInvite(t, { email: "alice@x.com", groupId: (await seedGroup(t)).groupId });
-    const userId = await t.mutation(registerFromSession, {
+    const userId = expectId(await t.mutation(registerFromSession, {
       subject: "user_alice",
       email: "alice@x.com",
       name: "Alice Anderson",
-    });
+    }));
     const user = await t.run((ctx) => ctx.db.get(userId));
     expect(user?.name).toBe("Alice Anderson");
   });
@@ -164,10 +171,10 @@ describe("registerFromSession — happy path", () => {
   it("name optional: undefined gestopt → users-row.name is undefined", async () => {
     const t = convexTest(schema, modules);
     await seedInvite(t, { email: "alice@x.com", groupId: (await seedGroup(t)).groupId });
-    const userId = await t.mutation(registerFromSession, {
+    const userId = expectId(await t.mutation(registerFromSession, {
       subject: "user_alice",
       email: "alice@x.com",
-    });
+    }));
     const user = await t.run((ctx) => ctx.db.get(userId));
     expect(user?.name).toBeUndefined();
   });
@@ -189,10 +196,10 @@ describe("registerFromSession — multi-invite atomic", () => {
       role: "admin",
     });
 
-    const userId = await t.mutation(registerFromSession, {
+    const userId = expectId(await t.mutation(registerFromSession, {
       subject: "user_alice",
       email: "alice@x.com",
-    });
+    }));
 
     const aInvite = await t.run((ctx) => ctx.db.get(inviteA));
     const bInvite = await t.run((ctx) => ctx.db.get(inviteB));
@@ -220,14 +227,14 @@ describe("registerFromSession — idempotent op subject", () => {
     const t = convexTest(schema, modules);
     await seedInvite(t, { email: "alice@x.com", groupId: (await seedGroup(t)).groupId });
 
-    const firstId = await t.mutation(registerFromSession, {
+    const firstId = expectId(await t.mutation(registerFromSession, {
       subject: "user_alice",
       email: "alice@x.com",
-    });
-    const secondId = await t.mutation(registerFromSession, {
+    }));
+    const secondId = expectId(await t.mutation(registerFromSession, {
       subject: "user_alice",
       email: "alice@x.com",
-    });
+    }));
 
     expect(secondId).toBe(firstId);
     const users = await t.run((ctx) =>
@@ -252,10 +259,10 @@ describe("registerFromSession — idempotent op subject", () => {
     });
 
     // Eerste call: users-row + membership.
-    const userId = await t.mutation(registerFromSession, {
+    const userId = expectId(await t.mutation(registerFromSession, {
       subject: "user_alice",
       email: "alice@x.com",
-    });
+    }));
     const membershipsAfter1 = await t.run((ctx) =>
       ctx.db
         .query("memberships")
@@ -273,10 +280,10 @@ describe("registerFromSession — idempotent op subject", () => {
     });
 
     // Tweede call (re-login event): no-op-pad.
-    const secondId = await t.mutation(registerFromSession, {
+    const secondId = expectId(await t.mutation(registerFromSession, {
       subject: "user_alice",
       email: "alice@x.com",
-    });
+    }));
     expect(secondId).toBe(userId);
 
     // Nieuwe invite blijft pending; geen extra membership.
@@ -377,10 +384,10 @@ describe("registerFromSession — email-normalization", () => {
       role: "member",
     });
 
-    const userId = await t.mutation(registerFromSession, {
+    const userId = expectId(await t.mutation(registerFromSession, {
       subject: "user_bouncer",
       email: "Bouncer@X.com",
-    });
+    }));
 
     const user = await t.run((ctx) => ctx.db.get(userId));
     expect(user?.email).toBe("bouncer@x.com");

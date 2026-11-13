@@ -808,11 +808,18 @@ describe("WP29 fix 1b en 2 — een verwijderde Clerk-user maakt nooit meer een u
 
   it("een andere Clerk-user blijft gewoon welkom via de webhook", async () => {
     const t = newT();
-    await world(t);
+    const w = await world(t);
     stubNet();
     await rex(t).mutation(api.users.deleteSelf, {});
     await finish(t);
 
+    // WP19b A-invariant 1: zonder uitnodiging geen rij, ook voor een nieuwe
+    // Clerk-user; met een nieuwe uitnodiging van Olga wel.
+    const refused = await webhookSession(t, "user_rex_nieuw", REX_EMAIL);
+    expect(refused.status).toBe(200);
+    expect(await usersWithSubject(t, "user_rex_nieuw")).toHaveLength(0);
+
+    await withUser(t, "user_olga").mutation(api.invites.create, { name: "Rex", email: REX_EMAIL, groupId: w.H });
     const res = await webhookSession(t, "user_rex_nieuw", REX_EMAIL);
     expect(res.status).toBe(200);
     expect(await usersWithSubject(t, "user_rex_nieuw")).toHaveLength(1);

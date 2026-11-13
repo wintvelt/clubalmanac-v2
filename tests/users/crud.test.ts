@@ -14,6 +14,9 @@ import { deleteAccount } from "../_helpers/deleteAccount";
 // gedrag-pinning van registerFromSession zelf staat in
 // `tests/users/registerFromSession.test.ts`. Tests hieronder gebruiken
 // registerFromSession alleen als seed-stap voor de andere users-API.
+// WP19b A-invariant 1: zonder uitnodiging maakt registerFromSession geen rij
+// meer. De seed zet daarom de rij direct neer, zoals de onboarding hem zou
+// maken (zelfde velden, DEFAULT_PHOTO_LIMIT).
 
 const ISSUER = "https://picked-quail-97.clerk.accounts.dev";
 
@@ -31,11 +34,16 @@ async function seedUser(
   email: string,
   name?: string,
 ) {
-  return await t.mutation(internal.users.registerFromSession, {
-    subject,
-    email,
-    ...(name !== undefined ? { name } : {}),
-  });
+  return await t.run(async (ctx) =>
+    ctx.db.insert("users", {
+      subject,
+      email: email.trim().toLowerCase(),
+      ...(name !== undefined ? { name } : {}),
+      photoCount: 0,
+      photoLimit: DEFAULT_PHOTO_LIMIT,
+      createdAt: Date.now(),
+    }),
+  );
 }
 
 describe("users.current", () => {
