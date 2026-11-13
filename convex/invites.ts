@@ -91,7 +91,7 @@ function validInviteMessage(raw: string | undefined): string | undefined {
 // WP19b A-invariant 5, 8 en 10 (besluit 2, V1): uitnodigen met naam, e-mail,
 // groep, en optioneel rol en bericht. Alleen een admin (WP28 W6), altijd met
 // een groep (A-keuze 1). De volgorde van de gates blijft zoals WP28/WP29:
-// eerst admin, dan "wordt verwijderd", dan lid of dubbel. Een weigering op
+// eerst admin, dan EMAIL_BEING_DELETED, dan lid of dubbel. Een weigering op
 // "al lid" of "al uitgenodigd" draagt het genormaliseerde adres, zodat de
 // app het kan noemen. Geeft alleen het id terug, nooit het token.
 export const create = mutation({
@@ -115,9 +115,8 @@ export const create = mutation({
     // nu wordt verwijderd. Fix-cyclus 2: pas na de admin-check (geen
     // e-mail-orakel voor niet-admins), maar vóór de check op "al lid".
     if (await isEmailBeingDeleted(ctx.db, email)) {
-      throw new Error(
-        "Dit adres hoort bij een account dat wordt verwijderd. Probeer het later opnieuw.",
-      );
+      // Fix-cyclus 1, A-invariant 19 (N1): een code met het adres.
+      throw new ConvexError({ code: "EMAIL_BEING_DELETED", email });
     }
 
     const existingUser = await ctx.db

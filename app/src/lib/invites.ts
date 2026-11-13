@@ -74,6 +74,8 @@ export function inviteRefusalText(error: unknown, action: InviteAction): string 
       return "De naam is te lang. Gebruik hoogstens 50 tekens.";
     case "NAME_INVALID":
       return "De naam bevat een teken dat niet mag, zoals een tab of een onzichtbaar teken. Haal dat weg en probeer het opnieuw.";
+    case "EMAIL_BEING_DELETED":
+      return `Het account van ${email ?? "dit adres"} wordt verwijderd. Probeer het later opnieuw.`;
     case "MESSAGE_TOO_LONG":
       return "Het bericht is te lang. Gebruik hoogstens 1000 tekens.";
     case "INVITE_INVALID":

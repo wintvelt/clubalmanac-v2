@@ -133,13 +133,13 @@ async function sharesGroup(
 //
 // Atomic flow binnen één Convex-transactie:
 //   1. Idempotent-on-subject: bestaande users-row → no-op return id.
-//   2. WP19b A-invariant 1: zonder accepteerbare uitnodiging voor het adres
-//      geen rij (`null`), en niets verandert. Geen uitzondering voor de
-//      webmaster (A-keuze 2). De webhook geeft dan gewoon 200.
-//   3. Email-uniqueness: throw bij andere subject met zelfde email
-//      (rollback laat geen halve state achter). Fail-loud zodat Clerk
+//   2. Email-uniqueness: throw bij andere subject met zelfde email, ook
+//      zonder uitnodiging (WP19b A-invariant 17). Fail-loud zodat Clerk
 //      retry't en ops 't merkt — silent claim van orphan-row zou data van
 //      vorige user overerven naar nieuwe Clerk-subject.
+//   3. WP19b A-invariant 1: zonder accepteerbare uitnodiging voor het adres
+//      geen rij (`null`), en niets verandert. Geen uitzondering voor de
+//      webmaster (A-keuze 2). De webhook geeft dan gewoon 200.
 //   4. Insert users-row, met de naam van de nieuwste uitnodiging die een
 //      naam heeft (A-invariant 11), anders de naam uit Clerk.
 //   5. Accepteer alle accepteerbare uitnodigingen en maak de lidmaatschappen.
@@ -169,16 +169,14 @@ export const registerFromSession = internalMutation({
     const normalizedEmail = normalizeEmail(email);
     const now = Date.now();
 
+    // WP19b A-invariant 17 (S1): het adres hoort al bij een andere rij.
+    // Fail-loud, ook zonder uitnodiging, dus vóór de check op uitnodigingen.
+    if (await userByEmail(ctx.db, normalizedEmail)) throw new Error("Email is al in gebruik");
+
     // WP19b A-invariant 1 en 16: alleen met een uitnodiging die nu
     // accepteerbaar is (WP28 A-invariant 4). Nieuwste eerst.
     const invites = await acceptableInvitesFor(ctx, normalizedEmail, now);
     if (invites.length === 0) return null;
-
-    const byEmail = await ctx.db
-      .query("users")
-      .withIndex("by_email", (q) => q.eq("email", normalizedEmail))
-      .unique();
-    if (byEmail) throw new Error("Email is al in gebruik");
 
     // A-invariant 11 (besluit 2, V2): de naam uit de nieuwste uitnodiging
     // met een naam; een gemigreerde uitnodiging heeft er geen.
@@ -229,6 +227,9 @@ export const registerFromSession = internalMutation({
 //   "waiting"  geen rij, wel een accepteerbare uitnodiging: de onboarding
 //              via de webhook komt nog
 //   "noInvite" geen rij en geen accepteerbare uitnodiging
+//   "blocked"  de onboarding komt niet en een uitnodiging helpt niet: de
+//              Clerk-user is gewist, of het adres hoort al bij een andere rij
+//              (fix-cyclus 1, A-invariant 17 en 18)
 //   null       anoniem
 export const signupState = query({
   args: {},
@@ -236,18 +237,28 @@ export const signupState = query({
     v.literal("account"),
     v.literal("waiting"),
     v.literal("noInvite"),
+    v.literal("blocked"),
     v.null(),
   ),
   handler: async (ctx) => {
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) return null;
     if (await userBySubject(ctx.db, identity.subject)) return "account";
-    const email = identity.email;
-    if (!email) return "noInvite";
+    if (await isDeletedClerkSubject(ctx.db, identity.subject)) return "blocked";
+    if (!identity.email) return "noInvite";
+    const email = normalizeEmail(identity.email);
+    if (await userByEmail(ctx.db, email)) return "blocked";
     const invites = await acceptableInvitesFor(ctx, email, Date.now());
     return invites.length > 0 ? "waiting" : "noInvite";
   },
 });
+
+function userByEmail(db: QueryCtx["db"], email: string) {
+  return db
+    .query("users")
+    .withIndex("by_email", (q) => q.eq("email", email))
+    .first();
+}
 
 export const updateProfile = mutation({
   args: {

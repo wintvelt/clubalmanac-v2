@@ -145,8 +145,8 @@ De Expo-app in `app/` leest twee publieke vars. Ze komen leesbaar in de app-bund
 - **Verkeerde combinatie** (URL van de ene, key van de andere omgeving): de app start, maar Convex weigert het token. De app toont dan "Verbinden met de server lukt niet" met een uitlog-knop.
 
 Clerk-dashboard voor de app-login (per instance, dev al gedaan, prod in fase 5):
-- **Configure → Email, Phone, Username**: e-mailadres met **verificatiecode** als enige inlogmethode. Wachtwoord uit. **Sign-up aan, zonder verplichte naamvelden** (WP19b: de app meldt een nieuw adres aan via sign-in-or-up; wie een account krijgt, bepaalt de backend: alleen met een open uitnodiging). Bot-bescherming bij sign-up vraagt in deze flow een captcha: checken bij de gate.
-- **Configure → Attack protection**: bescherming tegen enumeratie aan. De app verraadt een onbekend adres ook niet als die uit staat.
+- **Configure → Email, Phone, Username**: e-mailadres met **verificatiecode** als enige inlogmethode. Wachtwoord uit. **Sign-up aan, zonder verplichte naamvelden** (WP19b: de app meldt een nieuw adres aan via sign-in-or-up; wie een account krijgt, bepaalt de backend: alleen met een open uitnodiging). Staat sign-up per ongeluk uit, dan ziet een nieuwe genodigde na elke code "Deze code klopt niet"; bestaande leden merken niets.
+- **Configure → Attack protection**: bescherming tegen enumeratie aan. De app verraadt een onbekend adres ook niet als die uit staat. **Bot sign-up protection uit**, op dev en op prod (WP19b besluit 3): de app gebruikt sign-in-or-up, en met de bescherming aan vraagt Clerk dan ook bij gewoon inloggen een captcha. Dat raakt alle bestaande leden.
 - **Configure → Native applications**: Native API aan.
 - **JWT-template `convex`**: bestaat al (WP4); zonder template weigert Convex het token.
 
