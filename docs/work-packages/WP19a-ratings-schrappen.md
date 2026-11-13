@@ -98,4 +98,53 @@ Geen red-team: deze WP haalt alleen ingangen weg en voegt geen toegangspad toe.
 
 ## Spec-criticus aanvullingen (A vult in)
 
-(Leeg in draft.)
+> A, 2026-11-13. **Vraag 1 is een stop.** Tests volgen na een nieuw besluit van Wouter.
+
+### Vraag 1: like-knop of teller in een oude client — ja, in de oude webapp
+
+- **iPhone-app** (`clubalmanac-app`, alle 125 commits sinds 2022-12-09): geen knop, geen teller. De app roept `/photos/{id}/rating` nooit aan.
+- **Oude webapp** (`blob-images-frontend`, 2020-04 tot 2023-02; de Android-fallback uit Track B): wel.
+  - Op de fotopagina een duim omhoog en een duim omlaag met je eigen stand (+1 of 0). De backend houdt de waarde op 0 of 1, dus de duim omlaag haalt alleen je like weg.
+  - Een teller "+N" op elke fotokaart in de lijsten en op de fotopagina, voor elk lid zichtbaar.
+  - `blob-images-frontend-NEW` (2022-10) is een lege start zonder ratings.
+- **Gebruik:** de laatste like is van 2022-12-21. Sinds de iPhone-app is er geen like meer gegeven.
+- **Wat dit met besluit 1 doet:** reden 1 klopt alleen voor de iPhone-app. Reden 2 klopt. Reden 3: in de bron staan er 12, niet 6 (zie vraag 2).
+
+### Vraag 2: likes in de laatste extract (2026-11-06)
+
+- 13 like-records: 12 met waarde 1 en 1 zonder waarde (ingetrokken, de transform slaat die over).
+- **12 likes van 4 users op 12 foto's.** Elke foto en elke user bestaat in de bron.
+- Per maand: 2020-11: 4, 2021-09: 1, 2022-08: 6, 2022-12: 1.
+- De 6 uit besluit 1 is de dev-subset: 1 user op 6 foto's. De andere 6 vallen buiten de users die voor dev gekozen zijn. Op T0 zou de transform er 12 laden; na WP19a meldt hij er 12 als geschrapt.
+
+### Vraag 3: volgorde op dev — dev leegmaken, deployen en herladen
+
+Volgorde, met de gewone migrate-commando's ([runbook](../runbooks/wp12-data-migratie.md)):
+
+1. `reset --target dev --yes`, **met de oude code nog op dev**. De oude migratiefuncties kennen de ratings-tabel; daarna zijn `photos` en `ratings` leeg.
+2. Deploy de nieuwe code naar dev. Met lege tabellen accepteert Convex het schema zonder `ratings` en zonder de rating-velden.
+3. `transform --target dev` met de nieuwe transform (het extract van 2026-11-06 staat er nog). De uitvoer meldt 6 geschrapte likes.
+4. `load-records`, `formaten` (ongeveer 45 minuten, op de achtergrond), `verify`.
+5. De integriteitscheck één keer draaien: schoon.
+
+Waarom zo:
+- Dit is de bestaande route bij elke schemawijziging in fase 4, met geteste tooling en `verify` als controle.
+- Het test meteen invariant 4 op echte data: een extract met likes laadt zonder fout.
+- De andere route (schema eerst optioneel, opruimen, dan weg) vraagt twee deploys en een opruimfunctie die alleen voor dev bestaat en daarna weer weg moet.
+
+Let op:
+- Wie de nieuwe code naar dev deployt vóór stap 1, krijgt een weigering: elke foto heeft `ratingCount`. Dat is veilig, maar dev blijft dan op de oude code tot de reset.
+- `reset` wist ook wat met de hand op dev staat, zoals de testgroep Gatetest. Die moet opnieuw vóór de gate.
+
+### Vraag 4: wat kent de ratings nog meer
+
+- **E-mail:** nee. `lib/emailTemplates.ts` noemt ratings alleen in een commentaar.
+- **Monitoring-mail:** indirect. De drift-mail toont de regels van de scan. Twee onderdelen gaan weg: de controle van het rating-aggregaat (2b) en de twee rating-verwijzingen in `MONITORED_FKS`. Die lijst bepaalt ook wat `reset`, de leeg-check van `load-records` en `verify` tellen. `verify` gebruikt dezelfde scan.
+- **`_test`-functies en `/_test/whoami`:** nee.
+- **Integratietests** (`tests/integration`): nee.
+- **Wel, en nog niet in de spec genoemd:**
+  - `inspect` heeft een kolom met gegeven likes per user;
+  - `scripts/migrate/types.ts` (tabellenlijst en verwijzingen), en `loadRecords.ts` (meldt meegevallen likes en herrekent `ratingCount`);
+  - de test-oracles `tests/migration/fkOracle.ts` en `sharedLists.test.ts`;
+  - `ratings:listForPhoto` in de WP23-inventaris; `upsert` en `remove` in WP24 (`tests/writeGates/rating.test.ts`);
+  - de nieuwe webapp (Track B, live op T-1 week) moet ook geen ratings krijgen.
