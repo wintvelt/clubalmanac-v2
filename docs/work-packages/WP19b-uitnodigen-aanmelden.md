@@ -90,7 +90,7 @@ Bronnen: v1 `blob-images-api-groups` (`sendInvite`, `listMembers`, `deleteMember
    - Blijft: het veld `token` en de index in het schema (bestaande rijen); geen publiek pad leest of schrijft hem.
 6. **Clerk aanmelden met code in Expo:** Clerk heeft een "sign-in-or-up"-flow: `signIn.create({ identifier, signUpIfMissing: true })`. Clerk stuurt altijd een code, ook voor een onbekend adres. Pas na de juiste code zegt Clerk "bestaat niet" (fout `sign_up_if_missing_transfer`); de app maakt dan het account met `signUp.create({ transfer: true })` en `finalize()`. De gebruiker ziet bij een bekend en een onbekend adres hetzelfde: e-mail, code, klaar. Het werkt met de enumeratie-bescherming aan, en zit in de geïnstalleerde versie. Nodig in het Clerk-dashboard (dev nu, prod in fase 5): sign-up aan, geen verplichte naamvelden. Bot-bescherming bij aanmelden checken bij de gate: die vraagt in deze flow een captcha. Bronnen: Clerk-docs "Sign-in-or-up custom flow", changelog 2026-08-04.
 
-### Productvragen voor Wouter (A stopt hier)
+### Productvragen voor Wouter (beantwoord: besluit 2)
 
 - **V1. Naam en bericht bij uitnodigen?** Advies: zoals v1 per genodigde naam, e-mail en "als admin". Eén bericht voor de verzendlijst, maar optioneel (v1: verplicht). Het bericht komt in de mail en bij de ontvangen uitnodiging; de naam in de aanhef van de mail en in de lijst open uitnodigingen.
 - **V2. Welke naam krijgt een nieuw lid?** Clerk geeft er geen. Advies: de naam uit de uitnodiging (bij meer uitnodigingen de nieuwste). Het lid past hem aan in Profiel. Geen extra scherm.
@@ -111,6 +111,27 @@ Gelden ongeacht de antwoorden op V1–V4.
 8. **Uitnodigen.** Alleen een admin (WP28 W6). Altijd met een groep. Een adres dat lid is of al een open uitnodiging voor die groep heeft: geweigerd, met een Nederlandse melding die het adres noemt. Een verlopen uitnodiging blokkeert niet.
 9. **Inventaris.** De publieke paden die een invite-id aannemen staan vast in een test: `accept`, `decline`, `remove`. Elk met een gate: genodigde (op adres) of afzender of admin van de groep.
 
+### A-invarianten na besluit 2 (V1–V4)
+
+10. **Uitnodigen met naam en bericht (V1).** `create` vraagt naam en e-mail per genodigde, een groep, en optioneel rol en bericht.
+    - Naam: dezelfde regel als een groepsnaam (`NAME_REQUIRED`, `NAME_TOO_LONG`, `NAME_INVALID`), getrimd bewaard.
+    - E-mail: een adres zonder `@`, met spaties of met een lege kant geeft `EMAIL_INVALID`.
+    - Bericht: getrimd bewaard. Leeg telt als geen bericht. Meer dan 1000 tekens geeft `MESSAGE_TOO_LONG`.
+    - Een bestaand lid geeft `ALREADY_MEMBER`, een open uitnodiging voor die groep `ALREADY_INVITED`. Beide dragen het genormaliseerde adres, zodat de app het kan noemen.
+    - De volgorde van de gates blijft zoals WP28/WP29: eerst admin, dan "wordt verwijderd", dan lid of dubbel.
+11. **De naam van een nieuw lid (V2).** De onboarding geeft een nieuwe rij de naam van de nieuwste uitnodiging (`createdAt`) die hij accepteert en die een naam heeft. Zonder zo'n uitnodiging (een gemigreerde) de naam uit Clerk, anders geen naam. Een bestaande rij houdt zijn naam.
+12. **Open uitnodigingen van een groep (V3).** Een nieuwe read geeft een admin de open, niet verlopen uitnodigingen van zijn groep: id, naam, e-mail, rol, geldig tot, nieuwste eerst. Een lid zonder admin-rol krijgt `NOT_ALLOWED`, een niet-lid of onbekende groep `NOT_MEMBER`. Intrekken (`remove`) kan alleen een admin van die groep, ook de afzender alleen zolang hij admin is. Geen mail bij intrekken. Een ingetrokken uitnodiging verdwijnt uit invariant 6 en 12, en accepteren geeft `INVITE_INVALID`.
+13. **Het bericht en de naam in de mail.** De uitnodigingsmail begint met "Hi {naam}" en bevat het bericht. Naam en bericht staan HTML-veilig in het HTML-deel.
+14. **Het bericht in de app.** Invariant 6 geeft per uitnodiging ook het bericht (als er een is). Niet de naam die de admin typte en niet het adres.
+15. **Groepsfoto voor de genodigde (V4): de smalste uitzondering.** Een eigen beeldpad `GET /beeld/uitnodiging/<inviteId>[?formaat=klein|groot]`, met de uitnodiging als sleutel en niet de foto.
+    - **Wie:** alleen een ingelogde caller met een users-rij, alleen voor een uitnodiging aan zijn eigen adres, en alleen zolang die accepteerbaar is (zoals invariant 6).
+    - **Wat:** alleen het beeld van de cover van die groep, en alleen als die foto in een album van die groep staat (de cover-regel van WP24). Geen andere foto van de groep, geen origineel: zonder formaat of met `origineel` het formaat *groot*. Ontbreekt het formaat, dan het schoongemaakte origineel, zoals de andere beeldpaden.
+    - **Antwoorden:** uitgelogd 401. In alle andere gevallen één en hetzelfde 404 (een ander adres, onbekend, misvormd, verlopen, beantwoord, ingetrokken, groep weg, uitnodiger geen admin, geen cover, cover niet in de groep). Een onbekend formaat 400, zoals de andere paden. `Cache-Control` bevat `private` en niet `public`.
+    - **Geen id naar buiten:** invariant 6 geeft voor de groep alleen `hasCover` (true/false). Geen foto-id, geen `storageId`, geen fotovelden.
+    - **Niets anders gaat open:** de foto-toegang (`canAccessPhoto`) verandert niet. De genodigde krijgt via `/beeld/foto/<id>`, `photos.getById` en `groups.getWithCover` niets van die groep, ook niet de cover.
+    - **Na het antwoord:** na accepteren ziet hij de cover als lid. Na afwijzen, verlopen of intrekken geeft het pad 404.
+16. **Een uitnodiging zonder groep telt nergens** (A-keuze 1). Ook een gemigreerde (groep gewist bij de migratie): hij maakt geen account, staat niet in invariant 6 en is niet te accepteren.
+
 ### A-keuzes
 
 1. **Geen uitnodiging zonder groep** (vraag 3). De tests op een uitnodiging zonder groep (create, accept, onboarding) vervallen.
@@ -122,12 +143,12 @@ Gelden ongeacht de antwoorden op V1–V4.
 | v1 | v2 |
 |---|---|
 | Inloggen en Aanmelden apart, met "ik heb een uitnodiging" | één inlogscherm: e-mail, code, klaar. De app kiest zelf inloggen of aanmelden (vraag 6) |
-| Aanmelden: code, naam, e-mail, wachtwoord, opt-in | geen apart scherm (V2 bepaalt de naam) |
+| Aanmelden: code, naam, e-mail, wachtwoord, opt-in | geen apart scherm; de naam komt uit de uitnodiging (A-invariant 11) |
 | — | ingelogd zonder account en zonder uitnodiging: "Je hebt eerst een uitnodiging nodig", met uitloggen (A-invariant 3, A-keuze 3) |
 | Uitnodigingen: lijst + "code invoeren" | Profiel → Uitnodigingen: lijst uit A-invariant 6, zonder code. Leeg: "Geen uitnodigingen" |
-| Uitgenodigd: aan, op, van, bericht, groepsfoto; Accepteren, Afwijzen | idem zonder "aan/op" en met V1/V4. Accepteren → naar de groep. Afwijzen → weg uit de lijst. Niet meer geldig → "Deze uitnodiging is niet meer geldig", geen fout |
-| Groep → Uitnodigen: verzendlijst, bericht | idem (V1). Weigering per adres zichtbaar |
-| Leden: sectie uitgenodigd, intrekken | V3 |
+| Uitgenodigd: aan, op, van, bericht, groepsfoto; Accepteren, Afwijzen | van, bericht, groepsfoto (A-invariant 15), geldig tot. Accepteren → naar de groep. Afwijzen → weg uit de lijst. Niet meer geldig → "Deze uitnodiging is niet meer geldig", geen fout |
+| Groep → Uitnodigen: verzendlijst (naam, e-mail, als admin), bericht | idem, bericht optioneel (A-invariant 10). Weigering per adres zichtbaar |
+| Leden: sectie uitgenodigd, intrekken | blok "Uitgenodigd", alleen voor een admin; intrekken na bevestiging (A-invariant 12) |
 
 ### Ops-runbook-impact (aanvulling)
 
@@ -140,14 +161,35 @@ Gelden ongeacht de antwoorden op V1–V4.
 
 Namen die de tests gebruiken. Gedrag staat in de A-invarianten.
 
-- `internal.users.registerFromSession({ subject, email, name? })` → `Id<"users"> | null`. `null` = geweigerd (A-invariant 1).
+- `internal.users.registerFromSession({ subject, email, name? })` → `Id<"users"> | null`. `null` = geweigerd (A-invariant 1, 11).
 - `api.users.signupState()` → `"account" | "waiting" | "noInvite" | null` (A-invariant 3). `null` zonder identity.
-- `api.invites.listReceived()` → lijst (A-invariant 6), vorm in `lib/shapes.ts`.
-- `api.invites.accept({ inviteId })` → `{ groupId }`; `api.invites.decline({ inviteId })` → `null`.
-- `api.invites.create({ email, groupId, role? })` → `{ inviteId }` (velden uit V1 komen erbij).
-- `inviteTemplate` zonder `inviteUrl` en `token`, met het adres van de genodigde.
-- App: de pure beslissing "welk scherm zonder rij" breidt `noUserRowView` uit met `noInvite`.
+- `api.invites.create({ email, name, groupId, role?, message? })` → `{ inviteId }` (A-invariant 8, 10). Schema: `name` en `message` optioneel op de rij (gemigreerde rijen hebben ze niet).
+- `api.invites.listReceived()` → lijst van `{ _id, role?, expiresAt, message?, group: { _id, name, hasCover }, inviter: { _id, name?, ...avatar } | null }` (A-invariant 6, 14, 15).
+- `api.invites.listForGroup({ groupId })` → lijst van `{ _id, name?, email, role?, expiresAt }` (A-invariant 12).
+- `api.invites.accept({ inviteId })` → `{ groupId }`; `api.invites.decline({ inviteId })` → `null`; `api.invites.remove({ inviteId })` (A-invariant 7, 12).
+- Weigeringen als `ConvexError({ code })`, met `email` erbij voor `ALREADY_MEMBER` en `ALREADY_INVITED`.
+- `GET /beeld/uitnodiging/<inviteId>` in `convex/http.ts` (A-invariant 15).
+- `inviteTemplate` zonder `inviteUrl` en `token`, met naam, adres en bericht.
+- App, pure logica: `noUserRowView` krijgt `signupState` erbij en geeft `noInvite`. `loginErrors` krijgt `isSignUpTransfer(error)` voor de Clerk-fout `sign_up_if_missing_transfer`.
+- Migratie (`scripts/migrate`): mag naam en bericht van een v1-uitnodiging meenemen. Geen test.
 
 ### RED tests
 
-Volgen na de besluiten over V1–V4. De migratie van `{ token }` naar `{ inviteId }` raakt ongeveer 20 testbestanden; A doet dat via een helper, zoals WP29 A-keuze 5.
+Stand bij A's commit: backend 240 rood en 2310 groen, app 3 rood. Elke rode test faalt om de juiste reden: een ontbrekende functie of route, `name` of `message` die de validator nog niet kent, het argument `token`, de oude zero-invite-flow of de link in de mail. `npm run typecheck` is rood op precies die API-verschillen tot B's impl en codegen.
+
+| Bestand | Wat |
+|---|---|
+| `tests/invites/_wp19b.ts` | gedeelde opzet: wereld, uitnodiging en cover seeden |
+| `tests/invites/wp19bOnboarding.test.ts` | A-invariant 1, 2, 11, 16: geen rij zonder accepteerbare uitnodiging (10 gevallen, webmaster, webhook), alsnog uitgenodigd, de naam |
+| `tests/users/signupState.test.ts` | A-invariant 3 |
+| `tests/invites/listReceived.test.ts` | A-invariant 6, 14, 15: welke, volgorde, veld-whitelist, `hasCover` zonder foto-id |
+| `tests/invites/acceptDeclineById.test.ts` | A-invariant 7: op id, één weigering `INVITE_INVALID`, `{ groupId }` |
+| `tests/invites/createWp19b.test.ts` | A-invariant 5, 8, 10: naam, e-mail, bericht, altijd een groep, `ALREADY_*` met adres |
+| `tests/invites/listForGroup.test.ts` | A-invariant 12: open uitnodigingen voor een admin, intrekken alleen door een admin, geen mail |
+| `tests/invites/inviteMailNoLink.test.ts` | A-invariant 4, 13: geen link of token, wel adres, instructie, aanhef en bericht, HTML-veilig, zonder `CLUBALMANAC_APP_URL` |
+| `tests/images/inviteCover.test.ts` | A-invariant 15: het beeldpad van de genodigde, 16 gevallen met één 404, niets anders gaat open |
+| `tests/invites/inventory.test.ts` | A-invariant 5 en 9: geen `token` op een publiek pad, de paden met een invite-id |
+| `tests/readWhitelist/inventory.test.ts`, `invites.test.ts`, `_world.ts` | WP23: de publieke queries (min `getByToken`, plus `listReceived`, `listForGroup`, `signupState`) en hun vorm |
+| `tests/images/httpRoute.test.ts` | inventaris http-paden: drie beeldpaden |
+| `app/tests/noUserRowView.test.ts`, `app/tests/signUpTransfer.test.ts` | app, pure logica: het scherm "eerst een uitnodiging" en de Clerk-transfer-fout |
+| omgezet | `accept`, `decline`, `create` herschreven op de nieuwe opzet; `publicGet` → `listMine`; `fixLanding` weg (de landing bestaat niet meer; R2 is gedekt door A-invariant 6); `registerFromSession` (zero-invite en webmaster draaien om); token → id in `bouncedHandler`, `sendInviteEmail`, `exLid`, `fixInviterRights`, `createGate`, `albums/fixCodes`, `profileOrientation`, `profileVersion`, `integration/images/exMember`; altijd een groep in de mail-, webhook- en `deleteAccount`-tests; `buildInviteUrl` weg uit `envVarGates` |
