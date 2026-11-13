@@ -24,6 +24,7 @@ Een lid ziet op een kaart waar de foto's van een album zijn gemaakt. Als eigenaa
    - A telt de 7 losse profielbeelden op prod: data na het eerste beeld of een MPF-blok?
 5. **Fix-cyclus 2 na de gate** (2026-11-13):
    - **Het foto-menu verschijnt weer bij andermans foto**, in het album en in het foto-detail. Sinds WP17c gaf `menuActions` zonder plek een lege lijst voor een foto van een ander. Een gewoon lid zag daardoor geen "Delen" en geen "Als profielfoto" (WP27). Elke aanroep moet de plek expliciet meegeven.
+   - A pint dit als A-invariant 13 (`app/tests/photoMenuPlace.test.ts`). Alleen PhotoDetailScreen en AlbumScreen hadden de fout; Mijn foto's gaf `null` al expliciet mee.
    - **Knorren:** de telling kan zonder AWS-toegang niet. Na de cutover kijken we of de 9 users met een knor die nog zien. Een geweigerde knor wordt een letter, er lekt niets.
 
 ## Invarianten (draft)
@@ -218,6 +219,7 @@ Bronnen: de oude app (`screens/AlbumMap.jsx`, `PhotoMap.jsx`, `components/PhotoM
     - een formaat (door ons gemaakt, zonder EXIF, WP25 invariant 18) gaat ongewijzigd mee.
 11. **"Opslaan" pas na een tik of sleep** als er geen opgeslagen plek is, ook direct na "Locatie weghalen" (besluit 4, audit S3). Met een plek alleen als de speld ergens anders staat. Verandert de opgeslagen plek, dan begint de speld opnieuw en staat Opslaan uit.
 12. **Delen toont dat het bezig is en negeert een tweede tik** (besluit 4, audit N1). Bezig vanaf de tik op "Delen" (bij andermans foto: "Delen" in de melding) tot het delen klaar is, gelukt of niet. Zolang het loopt, start een nieuwe tik op "Delen" niets, ook niet bij een andere foto. Elk scherm met het foto-menu toont het.
+13. **Het foto-menu volgt de plek** (besluit 5). In een album en in het foto-detail heeft andermans foto een menu: "Als profielfoto" (WP27), en met formaten ook "Delen". Een eigen foto en Mijn foto's houden hun menu. `menuActions` heeft geen standaard-plek meer: wie de plek vergeet, krijgt een typefout en geen stille lege lijst. De schermen roepen `menuActions` niet zelf aan; ze vragen `hasActions(photo)` aan `usePhotoMenu`, met dezelfde plek als `open`.
 
 ### Toegangsdefinities (standing rule)
 
@@ -259,6 +261,7 @@ Geen `expo-location`. Na het toevoegen een nieuwe EAS-build (native code).
 | `app/tests/placeShare.test.ts` | A-invariant 6 en 7; besluit 3; de kaartregio |
 | `app/tests/locationDraft.test.ts` | A-invariant 11 |
 | `app/tests/shareBusy.test.ts` | A-invariant 12 |
+| `app/tests/photoMenuPlace.test.ts` | A-invariant 13 (besluit 5) |
 
 Testbestanden en de GPS-controle: `tests/_helpers/jpeg.ts` en `tests/fixtures/wp17d/` (`gps.jpg`, `gps-progressief.jpg`, `schoon.jpg`, `schoon-b.jpg`). De controle zoekt in het hele bestand naar een TIFF-kop met GPS-wijzer en naar XMP-GPS, niet alleen tot de beelddata (audit S2: dezelfde blinde vlek als de schoonmaker).
 
@@ -273,6 +276,7 @@ Aangenomen API (B kiest de interne vorm, niet de namen):
 - Refusal-code `LOCATION_INVALID` erbij in `RefusalCode`.
 - In de app een nieuwe module `app/src/lib/placeShare.ts` met `placeShareActions`, `shareNotice`, `shareEdits` en `mapRegion`.
 - Fix-cyclus 1: `useLocationDraft(saved)` in `app/src/lib/locationDraft.ts` geeft `{ pin, move, canSave }`; `LocationScreen` gebruikt hem en zet Opslaan uit met `canSave`. `usePhotoMenu(...)` geeft naast `open` ook `sharing: boolean`.
+- Fix-cyclus 2: `usePhotoMenu(...)` geeft ook `hasActions(photo): boolean`; `menuActions(ctx, photo, place)` zonder standaardwaarde.
 
 ### Fix-cyclus 1: rest-risico en gate (A, 2026-11-13)
 
