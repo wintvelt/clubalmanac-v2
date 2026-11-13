@@ -49,7 +49,7 @@ async function setup(t: T) {
   const owen = await registerUser(t, "user_owen", "owen@x.com", "Owen");
   const photoId = await t.run(async (ctx) => {
     const storageId = await ctx.storage.store(new Blob([new Uint8Array([0xff, 0xd8, 0xff, 0xd9])], { type: "image/jpeg" }));
-    return await ctx.db.insert("photos", { ownerId: owen, storageId, ...HOME, ratingCount: 0, createdAt: Date.now() });
+    return await ctx.db.insert("photos", { ownerId: owen, storageId, ...HOME, createdAt: Date.now() });
   });
   return { owen, photoId };
 }

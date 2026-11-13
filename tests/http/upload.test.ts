@@ -252,7 +252,7 @@ describe("POST /upload — happy path (reservation flow)", () => {
     );
     expect(photo).not.toBeNull();
     expect(photo?.ownerId).toBe(aliceId);
-    expect(photo?.ratingCount).toBe(0);
+    expect(photo, "WP19a: een nieuwe foto heeft geen rating-velden").not.toHaveProperty("ratingCount");
     expect(typeof photo?.createdAt).toBe("number");
     expect(photo?.createdAt).toBeGreaterThanOrEqual(before);
     expect(photo?.createdAt).toBeLessThanOrEqual(after);

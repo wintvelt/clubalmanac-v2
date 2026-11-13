@@ -41,7 +41,6 @@ async function world(t: T) {
     const pAlice = await ctx.db.insert("photos", {
       ownerId: alice,
       storageId,
-      ratingCount: 0,
       createdAt: now,
     });
     await ctx.db.patch(alice, { profilePhotoStorageId: storageId });

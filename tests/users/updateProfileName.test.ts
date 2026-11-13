@@ -172,7 +172,6 @@ describe("updateProfile — een geweigerde naam verandert niets (invariant 9)", 
       await ctx.db.insert("photos", {
         ownerId: id,
         storageId: sid,
-        ratingCount: 0,
         createdAt: Date.now(),
       });
       return sid;
@@ -196,7 +195,6 @@ describe("updateProfile — gemigreerde namen", () => {
       await ctx.db.insert("photos", {
         ownerId: id,
         storageId: sid,
-        ratingCount: 0,
         createdAt: Date.now(),
       });
       return sid;

@@ -83,7 +83,6 @@ async function world(t: T, ownerRole: Role) {
       ownerId: users.owner.id,
       storageId: await ctx.storage.store(new Blob(["p"])),
       exifOrientation: 1,
-      ratingCount: 0,
       createdAt: now,
     });
     await ctx.db.insert("albumPhotos", {

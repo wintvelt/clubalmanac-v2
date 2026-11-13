@@ -45,13 +45,11 @@ async function world(t: T) {
     const pAlice = await ctx.db.insert("photos", {
       ownerId: alice,
       storageId: aliceImage,
-      ratingCount: 0,
       createdAt: now,
     });
     const pDave = await ctx.db.insert("photos", {
       ownerId: dave,
       storageId: daveImage,
-      ratingCount: 0,
       createdAt: now,
     });
     return { alice, bob, carol, dave, pAlice, pDave };

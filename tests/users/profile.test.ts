@@ -48,7 +48,6 @@ describe("U3: photo query joint owner-data fresh", () => {
       return await ctx.db.insert("photos", {
         ownerId: aliceId,
         storageId,
-        ratingCount: 0,
         createdAt: Date.now(),
       });
     });

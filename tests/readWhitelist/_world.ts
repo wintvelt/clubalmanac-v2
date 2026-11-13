@@ -69,8 +69,7 @@ export const SHAPE = {
     "takenAt",
     "locationLabel",
     "exifOrientation",
-    "ratingAverage",
-    "ratingCount",
+    // WP19a: geen ratingAverage/ratingCount meer.
     "createdAt",
     // WP25 fix-cyclus 2 (invariant 26): altijd aanwezig, true of false.
     "hasFormats",
@@ -89,7 +88,6 @@ export const SHAPE = {
     "flaggedBy",
     "flagReason",
   ],
-  rating: ["photoId", "value"],
   feature: [
     "_id",
     "type",
@@ -237,8 +235,6 @@ export async function seedWorld(t: T) {
       longitude: 4.8922,
       locationLabel: "Amsterdam",
       exifOrientation: 6,
-      ratingAverage: 3,
-      ratingCount: 2,
       createdAt: now - 9 * DAY,
     });
 
@@ -335,22 +331,6 @@ export async function seedWorld(t: T) {
     await publish(A1, G1, pAlice, users.alice.id);
     await publish(A2, G2, pCarol, users.carol.id);
     await publish(A3, G3, pAlice, users.alice.id);
-
-    const rate = async (
-      photoId: Id<"photos">,
-      userId: Id<"users">,
-      value: number,
-    ) =>
-      await ctx.db.insert("ratings", {
-        photoId,
-        userId,
-        value,
-        createdAt: now - 2 * DAY,
-        updatedAt: now - DAY,
-      });
-    await rate(pBob, users.alice.id, 4);
-    await rate(pBob, users.bob.id, 2);
-    await rate(pAlice, users.bob.id, 5);
 
     const tokens = {
       g1: "tok-g1-secret-0001",
@@ -486,7 +466,6 @@ export async function staleId<TN extends TableNames>(
         id = await ctx.db.insert("photos", {
           ownerId: w.users.bob.id,
           storageId: await ctx.storage.store(new Blob(["x"])),
-          ratingCount: 0,
           createdAt: now,
         });
         break;

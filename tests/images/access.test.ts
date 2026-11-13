@@ -70,7 +70,6 @@ async function insertPhoto(
     ctx.db.insert("photos", {
       ownerId,
       storageId: sid,
-      ratingCount: 0,
       createdAt: Date.now(),
     }),
   );

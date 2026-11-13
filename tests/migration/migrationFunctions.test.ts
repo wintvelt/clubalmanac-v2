@@ -37,7 +37,6 @@ async function seedUploadLeftovers(t: ReturnType<typeof convexTest>) {
     const photoId = await ctx.db.insert("photos", {
       ownerId: userId,
       storageId,
-      ratingCount: 0,
       createdAt: NOW,
     });
     await ctx.db.insert("uploadIdempotency", {

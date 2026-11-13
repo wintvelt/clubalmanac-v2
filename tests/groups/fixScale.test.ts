@@ -8,10 +8,10 @@ import { as, seedGroup, type T } from "./_beheer";
 import { deleteAccount } from "../_helpers/deleteAccount";
 
 // WP28 fix-cyclus 2, A-invariant 14 (red-team F1): verwijderen, vertrekken
-// en het account verwijderen lukken voor een lid dat elke foto heeft gerated
-// die hij kan zien, ook in een groep van PUBLICATIONS publicaties. A-invariant
-// 7 blijft gelden: de juiste ratings gaan weg, het gemiddelde en het aantal
-// kloppen.
+// en het account verwijderen lukken voor een lid van een groep met
+// PUBLICATIONS publicaties. WP19a: de ratings zijn geschrapt; wat blijft is de
+// cascade zelf (M1: zijn foto's uit de albums van de groep, die van anderen
+// blijven).
 //
 // convex-test dwingt hier de echte Convex-limieten af (`transactionLimits`),
 // onder meer 4096 db-aanroepen per mutation. Zonder die optie valt een te
@@ -21,10 +21,8 @@ import { deleteAccount } from "../_helpers/deleteAccount";
 // 3000 is ruim het dubbele (spec §Fix-cyclus 2, A-keuze 1).
 //
 // Wereld: oprichter Olga, admin Anna en admin Rex in groep G. Olga heeft
-// PUBLICATIONS foto's in G; Anna (4) en Rex (2) gaven ze allemaal een
-// rating. Rex heeft OWN eigen foto's in G, die hij en Anna ook ratten. Rex en
-// Olga zitten ook in groep H, waar SHARED van Olga's foto's ook staan: daar
-// houdt Rex zijn rating.
+// PUBLICATIONS foto's in G. Rex heeft OWN eigen foto's in G. Rex en Olga
+// zitten ook in groep H, waar SHARED van Olga's foto's ook staan.
 
 const PUBLICATIONS = 3000;
 const OWN = 5;
@@ -45,7 +43,6 @@ type Big = Awaited<ReturnType<typeof bigWorld>>;
 async function bigWorld(t: T) {
   const w = await seedGroup(t, { founder: "olga", members: { anna: "admin", rex: "admin" } });
   const olga = w.users.olga!;
-  const anna = w.users.anna!;
   const rex = w.users.rex!;
 
   const ids = await t.run(async (ctx) => {
@@ -68,16 +65,12 @@ async function bigWorld(t: T) {
         const photoId = await ctx.db.insert("photos", {
           ownerId: olga,
           storageId: ids.storageId,
-          ratingCount: 2,
-          ratingAverage: 3,
           createdAt: now,
         });
         await ctx.db.insert("albumPhotos", { albumId: ids.albumG, photoId, groupId: w.groupId, addedAt: now, addedBy: olga });
         if (i < SHARED) {
           await ctx.db.insert("albumPhotos", { albumId: ids.albumH, photoId, groupId: ids.H, addedAt: now, addedBy: olga });
         }
-        await ctx.db.insert("ratings", { photoId, userId: anna, value: 4, createdAt: now, updatedAt: now });
-        await ctx.db.insert("ratings", { photoId, userId: rex, value: 2, createdAt: now, updatedAt: now });
         out.push(photoId);
       }
       return out;
@@ -93,13 +86,9 @@ async function bigWorld(t: T) {
       const photoId = await ctx.db.insert("photos", {
         ownerId: rex,
         storageId,
-        ratingCount: 2,
-        ratingAverage: 4.5,
         createdAt: now,
       });
       await ctx.db.insert("albumPhotos", { albumId: ids.albumG, photoId, groupId: w.groupId, addedAt: now, addedBy: rex });
-      await ctx.db.insert("ratings", { photoId, userId: anna, value: 4, createdAt: now, updatedAt: now });
-      await ctx.db.insert("ratings", { photoId, userId: rex, value: 5, createdAt: now, updatedAt: now });
       out.push(photoId);
     }
     await ctx.db.patch(rex, { photoCount: OWN });
@@ -109,57 +98,25 @@ async function bigWorld(t: T) {
   return { ...w, ...ids, olgaPhotos, rexPhotos };
 }
 
-/** Alle ratings en foto's in twee reads, zodat de check zelf binnen de limiet blijft. */
+/** Foto's en publicaties in twee reads, zodat de check zelf binnen de limiet blijft. */
 async function state(t: T) {
-  const { ratings, photos } = await t.run(async (ctx) => ({
-    ratings: await ctx.db.query("ratings").collect(),
+  const { pubs, photos } = await t.run(async (ctx) => ({
+    pubs: await ctx.db.query("albumPhotos").collect(),
     photos: await ctx.db.query("photos").collect(),
   }));
-  return { ratings, photos: new Map(photos.map((p) => [p._id, p])) };
+  return { pubs, photos: new Map(photos.map((p) => [p._id, p])) };
 }
 
-/** A-invariant 7: aantal en gemiddelde op elke foto volgen uit zijn ratings. */
-function expectAggregatesMatch(s: Awaited<ReturnType<typeof state>>) {
-  const byPhoto = new Map<Id<"photos">, number[]>();
-  for (const r of s.ratings) byPhoto.set(r.photoId, [...(byPhoto.get(r.photoId) ?? []), r.value]);
-  let wrong = 0;
-  for (const [id, p] of s.photos) {
-    const values = byPhoto.get(id) ?? [];
-    const avg = values.length ? values.reduce((a, b) => a + b, 0) / values.length : undefined;
-    const okCount = (p.ratingCount ?? 0) === values.length;
-    const okAvg = avg === undefined ? p.ratingAverage === undefined : Math.abs((p.ratingAverage ?? NaN) - avg) < 1e-9;
-    if (!okCount || !okAvg) wrong++;
-  }
-  expect(wrong, "foto's met een aggregaat dat niet bij de ratings past").toBe(0);
-}
-
-function ratingsOf(s: Awaited<ReturnType<typeof state>>, userId: Id<"users">) {
-  return s.ratings.filter((r) => r.userId === userId);
-}
-
-/** Na verwijderen of vertrekken: Rex houdt alleen de ratings op wat hij nog ziet. */
+/** Na verwijderen of vertrekken: zijn foto's zijn uit G, die van Olga staan er nog (M1). */
 async function expectLeftG(t: T, w: Big) {
   const s = await state(t);
-  const rex = w.users.rex!;
-  const anna = w.users.anna!;
-
-  const kept = new Set(ratingsOf(s, rex).map((r) => r.photoId));
-  const expected = new Set([...w.olgaPhotos.slice(0, SHARED), ...w.rexPhotos]);
-  expect(kept.size, "ratings die Rex houdt").toBe(expected.size);
-  for (const id of expected) expect(kept.has(id)).toBe(true);
-
-  // Anna ziet Rex' eigen foto's niet meer (M1, AP3); Olga's foto's wel.
-  const annaOn = new Set(ratingsOf(s, anna).map((r) => r.photoId));
-  expect(annaOn.size).toBe(PUBLICATIONS);
-  for (const id of w.rexPhotos) expect(annaOn.has(id)).toBe(false);
-
-  expectAggregatesMatch(s);
-  const sample = s.photos.get(w.olgaPhotos[PUBLICATIONS - 1]!);
-  expect(sample?.ratingCount).toBe(1);
-  expect(sample?.ratingAverage).toBeCloseTo(4, 9);
-  const shared = s.photos.get(w.olgaPhotos[0]!);
-  expect(shared?.ratingCount).toBe(2);
-  expect(shared?.ratingAverage).toBeCloseTo(3, 9);
+  const inG = s.pubs.filter((p) => p.albumId === w.albumG).map((p) => p.photoId);
+  const inGSet = new Set(inG);
+  for (const id of w.rexPhotos) expect(inGSet.has(id)).toBe(false);
+  expect(inG.length, "Olga's publicaties in G").toBe(PUBLICATIONS);
+  for (const id of w.rexPhotos) expect(s.photos.has(id), "zijn foto's zelf blijven").toBe(true);
+  const inH = s.pubs.filter((p) => p.albumId === w.albumH);
+  expect(inH).toHaveLength(SHARED);
 }
 
 async function membershipOf(t: T, groupId: Id<"groups">, userId: Id<"users">) {
@@ -171,7 +128,7 @@ async function membershipOf(t: T, groupId: Id<"groups">, userId: Id<"users">) {
   );
 }
 
-describe(`A-invariant 14 — een lid met ${PUBLICATIONS} ratings`, () => {
+describe(`A-invariant 14 — een lid van een groep met ${PUBLICATIONS} publicaties`, () => {
   it("de oprichter verwijdert hem uit de groep", { timeout: 120_000 }, async () => {
     const t = newLimitedT();
     const w = await bigWorld(t);
@@ -194,11 +151,7 @@ describe(`A-invariant 14 — een lid met ${PUBLICATIONS} ratings`, () => {
     await deleteAccount(t, as(t, "user_rex"));
 
     const s = await state(t);
-    expect(ratingsOf(s, w.users.rex!)).toHaveLength(0);
     for (const id of w.rexPhotos) expect(s.photos.has(id)).toBe(false);
-    expectAggregatesMatch(s);
-    const sample = s.photos.get(w.olgaPhotos[0]!);
-    expect(sample?.ratingCount).toBe(1);
-    expect(sample?.ratingAverage).toBeCloseTo(4, 9);
+    for (const id of w.olgaPhotos) expect(s.photos.has(id)).toBe(true);
   });
 });

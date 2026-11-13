@@ -5,7 +5,7 @@ import schema from "../../convex/schema";
 import { shareInGroup } from "../_helpers/access";
 import { modules } from "../_helpers/modules";
 
-// Cascade matrix rows P3, P4, P5, P7 — cat-3 cascade deletes (en
+// Cascade matrix rows P3, P5, P7 (P4, de ratings, viel weg met WP19a) — cat-3 cascade deletes (en
 // selectief patches) vanuit photos.remove. Plus storage cleanup via
 // scheduled cleanupStorage action.
 
@@ -143,50 +143,6 @@ describe("P3: photos.remove cascade albumPhotos", () => {
     expect(after.filter((p) => p.photoId === photoId)).toHaveLength(0);
     // Andere photo blijft gepubliceerd.
     expect(after.filter((p) => p.photoId === otherPhoto)).toHaveLength(1);
-  });
-});
-
-describe("P4: photos.remove cascade ratings", () => {
-  it("verwijdert ratings op deze photo", async () => {
-    const t = convexTest(schema, modules);
-    const aliceId = await registerUser(t, "user_alice", "a@x.com");
-    const bobId = await registerUser(t, "user_bob", "b@x.com");
-
-    const storageId = await uploadStorage(t);
-    const photoId = await withUser(t, "user_alice").mutation(
-      internal.photos.create,
-      { storageId },
-    );
-
-    await t.run(async (ctx) => {
-      await ctx.db.insert("ratings", {
-        photoId,
-        userId: bobId,
-        value: 4,
-        createdAt: Date.now(),
-        updatedAt: Date.now(),
-      });
-    });
-
-    await withUser(t, "user_alice").mutation(api.photos.remove, { photoId });
-
-    const ratings = await t.run((ctx) =>
-      ctx.db
-        .query("ratings")
-        .withIndex("by_photo", (q) => q.eq("photoId", photoId))
-        .collect(),
-    );
-    expect(ratings).toHaveLength(0);
-
-    // Ratings van bob op andere foto's blijven (sanity)
-    const bobRatings = await t.run((ctx) =>
-      ctx.db
-        .query("ratings")
-        .withIndex("by_user", (q) => q.eq("userId", bobId))
-        .collect(),
-    );
-    expect(bobRatings).toHaveLength(0); // bob had alleen deze rating
-    void aliceId;
   });
 });
 

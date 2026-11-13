@@ -42,7 +42,6 @@ export async function insertPhoto(
     return await ctx.db.insert("photos", {
       ownerId,
       storageId,
-      ratingCount: 0,
       createdAt: Date.now(),
       ...extra,
     });

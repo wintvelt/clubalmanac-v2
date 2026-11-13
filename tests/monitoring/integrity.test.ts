@@ -163,7 +163,6 @@ describe("integrityCheck — storage-orphans (inv 2a)", () => {
       ctx.db.insert("photos", {
         ownerId,
         storageId,
-        ratingCount: 0,
         createdAt: FIXED_NOW,
       }),
     );
@@ -215,7 +214,6 @@ describe("integrityCheck — aggregate-drift: users.photoCount", () => {
         ctx.db.insert("photos", {
           ownerId,
           storageId,
-          ratingCount: 0,
           createdAt: FIXED_NOW,
         }),
       );
@@ -230,124 +228,19 @@ describe("integrityCheck — aggregate-drift: users.photoCount", () => {
   });
 });
 
-describe("integrityCheck — aggregate-drift: photos.ratingAverage/ratingCount", () => {
-  it("ratingAverage=4.5 + ratingCount=2 matcht ratings [4,5] → OK (oracle: handberekend 4.5)", async () => {
-    // Oracle-anker (ab-audit-workflow §anti-pattern): 4.5 is handberekend, niet
-    // recompute-vs-recompute. Pint de aggregate-formule tegen een onafhankelijk
-    // getal zodat een wrong-but-self-consistent recompute niet stilletjes slaagt.
+describe("integrityCheck — WP19a invariant 5: geen rating-controle meer", () => {
+  it("foto's zonder rating-velden zijn schoon", async () => {
+    // Ratings zijn geschrapt (WP19a): geen aggregaat om te herrekenen, geen
+    // tabel om naar te verwijzen. Een gewone foto is gewoon schoon.
     const t = convexTest(schema, modules);
-    const ownerId = await seedUser(t, { photoCount: 1 });
-    const storageId = await storeBlob(t);
-    const photoId = await t.run((ctx) =>
-      ctx.db.insert("photos", {
-        ownerId,
-        storageId,
-        ratingCount: 2,
-        ratingAverage: 4.5,
-        createdAt: FIXED_NOW,
-      }),
-    );
-    for (const value of [4, 5]) {
+    const ownerId = await seedUser(t, { photoCount: 2 });
+    for (let i = 0; i < 2; i++) {
+      const storageId = await storeBlob(t);
       await t.run((ctx) =>
-        ctx.db.insert("ratings", {
-          photoId,
-          userId: ownerId,
-          value,
-          createdAt: FIXED_NOW,
-          updatedAt: FIXED_NOW,
-        }),
+        ctx.db.insert("photos", { ownerId, storageId, createdAt: FIXED_NOW }),
       );
     }
     expect(await runMonitorDelta(t)).toBe(0);
-  });
-
-  it("ratingCount=3 maar slechts 2 ratings → drift", async () => {
-    const t = convexTest(schema, modules);
-    const ownerId = await seedUser(t, { photoCount: 1 });
-    const storageId = await storeBlob(t);
-    const photoId = await t.run((ctx) =>
-      ctx.db.insert("photos", {
-        ownerId,
-        storageId,
-        ratingCount: 3,
-        ratingAverage: 4.5,
-        createdAt: FIXED_NOW,
-      }),
-    );
-    for (const value of [4, 5]) {
-      await t.run((ctx) =>
-        ctx.db.insert("ratings", {
-          photoId,
-          userId: ownerId,
-          value,
-          createdAt: FIXED_NOW,
-          updatedAt: FIXED_NOW,
-        }),
-      );
-    }
-    expect(await runMonitorDelta(t)).toBe(1);
-  });
-
-  it("ratingAverage-drift van 0.5 (stored 4.0, werkelijk 4.5) → drift (epsilon, NIET >=1-drempel)", async () => {
-    // [A-verfijning inv 3] ratingAverage is float; een naïeve >=1-drempel zou
-    // deze Δ0.5-drift missen. Werkelijke avg van [4,5] = 4.5 (handberekend);
-    // stored 4.0 ⇒ |Δ| = 0.5 > 1e-9 ⇒ drift. ratingCount=2 klopt hier wél, dus
-    // dit isoleert de ratingAverage-tak.
-    const t = convexTest(schema, modules);
-    const ownerId = await seedUser(t, { photoCount: 1 });
-    const storageId = await storeBlob(t);
-    const photoId = await t.run((ctx) =>
-      ctx.db.insert("photos", {
-        ownerId,
-        storageId,
-        ratingCount: 2,
-        ratingAverage: 4.0,
-        createdAt: FIXED_NOW,
-      }),
-    );
-    for (const value of [4, 5]) {
-      await t.run((ctx) =>
-        ctx.db.insert("ratings", {
-          photoId,
-          userId: ownerId,
-          value,
-          createdAt: FIXED_NOW,
-          updatedAt: FIXED_NOW,
-        }),
-      );
-    }
-    expect(await runMonitorDelta(t)).toBe(1);
-  });
-
-  it("ratingAverage undefined + ratingCount=0 + geen ratings → OK", async () => {
-    const t = convexTest(schema, modules);
-    const ownerId = await seedUser(t, { photoCount: 1 });
-    const storageId = await storeBlob(t);
-    await t.run((ctx) =>
-      ctx.db.insert("photos", {
-        ownerId,
-        storageId,
-        ratingCount: 0,
-        createdAt: FIXED_NOW,
-      }),
-    );
-    expect(await runMonitorDelta(t)).toBe(0);
-  });
-
-  it("ratingAverage gezet (3.0) terwijl 0 ratings (count 0) → drift (undefined-grens)", async () => {
-    const t = convexTest(schema, modules);
-    const ownerId = await seedUser(t, { photoCount: 1 });
-    const storageId = await storeBlob(t);
-    await t.run((ctx) =>
-      ctx.db.insert("photos", {
-        ownerId,
-        storageId,
-        ratingCount: 0,
-        ratingAverage: 3.0,
-        createdAt: FIXED_NOW,
-      }),
-    );
-    expect(await runMonitorDelta(t)).toBe(1);
   });
 });
 
@@ -465,7 +358,6 @@ describe("integrityCheck — FK-integriteit (inv 2c)", () => {
       ctx.db.insert("photos", {
         ownerId,
         storageId,
-        ratingCount: 0,
         createdAt: FIXED_NOW,
         // flaggedBy bewust ongezet — een ongezette optionele FK is geen dangling FK
       }),
@@ -481,7 +373,6 @@ describe("integrityCheck — FK-integriteit (inv 2c)", () => {
       ctx.db.insert("photos", {
         ownerId: userId,
         storageId,
-        ratingCount: 0,
         createdAt: FIXED_NOW,
       }),
     );
@@ -669,26 +560,15 @@ describe("integrityCheck — read-only + geen self-healing (inv 10 + 2d)", () =>
     expect(user?.photoCount).toBe(7); // NIET naar 0 "gerepareerd"
   });
 
-  it("muteert geen rijen in bron-tabellen (photos/users/ratings counts onveranderd)", async () => {
+  it("muteert geen rijen in bron-tabellen (photos/users counts onveranderd)", async () => {
     const t = convexTest(schema, modules);
     const ownerId = await seedUser(t, { photoCount: 9 }); // drift
     const storageId = await storeBlob(t);
-    const photoId = await t.run((ctx) =>
+    await t.run((ctx) =>
       ctx.db.insert("photos", {
         ownerId,
         storageId,
-        ratingCount: 5, // ratingCount-drift
-        ratingAverage: 2.0,
         createdAt: FIXED_NOW,
-      }),
-    );
-    await t.run((ctx) =>
-      ctx.db.insert("ratings", {
-        photoId,
-        userId: ownerId,
-        value: 2,
-        createdAt: FIXED_NOW,
-        updatedAt: FIXED_NOW,
       }),
     );
 
@@ -696,7 +576,6 @@ describe("integrityCheck — read-only + geen self-healing (inv 10 + 2d)", () =>
       await t.run(async (ctx) => ({
         users: (await ctx.db.query("users").collect()).length,
         photos: (await ctx.db.query("photos").collect()).length,
-        ratings: (await ctx.db.query("ratings").collect()).length,
       }));
 
     const before = await countAll();

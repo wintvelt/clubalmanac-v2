@@ -161,7 +161,7 @@ async function world(t: T, photos: number, pending: number) {
     const photoIds: Id<"photos">[] = [];
     for (let n = 0; n < photos; n++) {
       const storageId = await ctx.storage.store(new Blob([`a${n}`]));
-      const photoId = await ctx.db.insert("photos", { ownerId: alice, storageId, ratingCount: 0, createdAt: now });
+      const photoId = await ctx.db.insert("photos", { ownerId: alice, storageId, createdAt: now });
       photoIds.push(photoId);
       await ctx.db.insert(TABLE, {
         ownerId: alice,
@@ -178,7 +178,7 @@ async function world(t: T, photos: number, pending: number) {
     const bobPhotos: Id<"photos">[] = [];
     for (let n = 0; n < 3; n++) {
       const storageId = await ctx.storage.store(new Blob([`b${n}`]));
-      const photoId = await ctx.db.insert("photos", { ownerId: bob, storageId, ratingCount: 0, createdAt: now });
+      const photoId = await ctx.db.insert("photos", { ownerId: bob, storageId, createdAt: now });
       bobPhotos.push(photoId);
       await ctx.db.insert(TABLE, {
         ownerId: bob,
@@ -255,7 +255,7 @@ describe("A-invariant 26: een foto wissen leest alleen de reservering van die fo
     const w = await world(t, 10, 5);
     const old = await t.run(async (ctx) => {
       const storageId = await ctx.storage.store(new Blob(["oud"]));
-      return await ctx.db.insert("photos", { ownerId: w.alice, storageId, ratingCount: 0, createdAt: Date.now() });
+      return await ctx.db.insert("photos", { ownerId: w.alice, storageId, createdAt: Date.now() });
     });
     const scans: Scan[] = [];
 

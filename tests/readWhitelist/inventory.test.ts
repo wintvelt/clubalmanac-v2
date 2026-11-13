@@ -56,7 +56,7 @@ const EXPECTED_PUBLIC_QUERIES = [
   // WP17c invariant 1, 2: Mijn foto's, bladerend.
   "photos:listMine",
   "photos:listMyFlagged",
-  "ratings:listForPhoto",
+  // WP19a: ratings:listForPhoto is weg (ratings geschrapt).
   "smoke:ping",
   "users:current",
   "users:getById",

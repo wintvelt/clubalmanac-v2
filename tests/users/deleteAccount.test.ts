@@ -183,18 +183,16 @@ async function world(t: T) {
     const AH = await ctx.db.insert("albums", { groupId: H, name: "AH", createdBy: rexId, createdAt: now });
 
     const pr1Blob = await blob("pr1");
-    const pr1 = await ctx.db.insert("photos", { ownerId: rexId, storageId: pr1Blob, ratingCount: 1, ratingAverage: 4, createdAt: now });
+    const pr1 = await ctx.db.insert("photos", { ownerId: rexId, storageId: pr1Blob, createdAt: now });
     const pr2Blob = await blob("pr2");
     const klein = await blob("pr2 klein");
     const groot = await blob("pr2 groot");
-    const pr2 = await ctx.db.insert("photos", { ownerId: rexId, storageId: pr2Blob, formats: { klein, groot }, ratingCount: 0, createdAt: now });
+    const pr2 = await ctx.db.insert("photos", { ownerId: rexId, storageId: pr2Blob, formats: { klein, groot }, createdAt: now });
     const po1Blob = await blob("po1");
     const po1 = await ctx.db.insert("photos", {
       ownerId: olga,
       storageId: po1Blob,
       noFormatsAcceptedAt: now,
-      ratingCount: 2,
-      ratingAverage: 3,
       flaggedAt: now,
       flaggedBy: rexId,
       flagReason: "x",
@@ -211,12 +209,6 @@ async function world(t: T) {
     const po1InH = await pub(AH, po1, H, rexId);
     await ctx.db.patch(G, { coverPhotoId: pr1 });
     await ctx.db.patch(AG, { coverPhotoId: pr1 });
-
-    const rate = (photoId: Id<"photos">, userId: Id<"users">, value: number) =>
-      ctx.db.insert("ratings", { photoId, userId, value, createdAt: now, updatedAt: now });
-    await rate(pr1, anna, 4);
-    await rate(po1, rexId, 2);
-    await rate(po1, anna, 4);
 
     await ctx.db.insert("uploadIdempotency", { ownerId: rexId, clientUploadId: "r1", status: "completed", photoId: pr1, createdAt: now, completedAt: now });
     await ctx.db.insert("uploadIdempotency", { ownerId: rexId, clientUploadId: "r2", status: "in_progress", createdAt: now });
@@ -312,16 +304,11 @@ describe("WP29 A-invariant 1 — direct na deleteSelf is het account afgesloten"
     await rex(t).mutation(api.users.deleteSelf, {});
 
     await expect(rex(t).mutation(api.groups.create, { name: "Nieuw" })).rejects.toThrow();
-    await expect(rex(t).mutation(api.ratings.upsert, { photoId: w.po1, value: 5 })).rejects.toThrow();
     await expect(rex(t).mutation(api.users.updateProfile, { name: "Ander" })).rejects.toThrow();
     await expect(rex(t).mutation(api.users.recordVisit, {})).rejects.toThrow();
 
     const groups = await t.run(async (ctx) => ctx.db.query("groups").collect());
     expect(groups.map((g) => g.name)).not.toContain("Nieuw");
-    const rating = await t.run(async (ctx) =>
-      ctx.db.query("ratings").withIndex("by_photo_and_user", (q) => q.eq("photoId", w.po1).eq("userId", w.rex)).unique(),
-    );
-    expect(rating?.value ?? null).not.toBe(5);
   });
 
   it("een upload weigert en maakt geen foto", async () => {
@@ -492,18 +479,12 @@ describe("WP29 A-invariant 4 — wat van anderen is, blijft en klopt", () => {
     expect(pubs[0]?.addedBy).toBe(w.olga);
   });
 
-  it("po1: zijn rating weg, aantal en gemiddelde kloppen; de melding blijft zonder melder", async () => {
+  it("po1: de melding blijft zonder melder", async () => {
     const { t, w } = await done();
     const po1 = await get(t, w.po1);
-    expect(po1?.ratingCount).toBe(1);
-    expect(po1?.ratingAverage).toBeCloseTo(4, 9);
     expect(po1?.flaggedBy).toBeUndefined();
     expect(po1?.flaggedAt).toBeDefined();
     expect(po1?.flaggedDeleteDate).toBeDefined();
-    const ratings = await t.run(async (ctx) =>
-      ctx.db.query("ratings").withIndex("by_photo", (q) => q.eq("photoId", w.po1)).collect(),
-    );
-    expect(ratings.map((r) => r.userId)).toEqual([w.anna]);
   });
 
   it("features: de zijne weg met hun upvotes; zijn upvote op die van Olga weg en de teller klopt", async () => {
@@ -586,20 +567,19 @@ describe("WP29 A-invariant 6 en 9 — Clerk, en geen mail bij succes", () => {
 // ── A-invariant 5: tussendoor binnengekomen ──────────────────────────
 
 describe("WP29 A-invariant 5 — wat na het afsluiten nog binnenkomt, gaat mee", () => {
-  it("een foto, publicatie en rating van hem die tussendoor in de database kwamen, zijn aan het eind weg", async () => {
+  it("een foto en publicatie van hem die tussendoor in de database kwamen, zijn aan het eind weg", async () => {
     const t = newT();
     const w = await world(t);
     stubNet();
     await rex(t).mutation(api.users.deleteSelf, {});
 
-    // Zoals een upload of rating die net vóór het afsluiten begon en erna
+    // Zoals een upload die net vóór het afsluiten begon en erna
     // committe, of tussen twee opruimstappen in.
     const late = await t.run(async (ctx) => {
       const now = Date.now();
       const storageId = await ctx.storage.store(new Blob(["laat"], { type: "image/jpeg" }));
-      const photoId = await ctx.db.insert("photos", { ownerId: w.rex, storageId, ratingCount: 0, createdAt: now });
+      const photoId = await ctx.db.insert("photos", { ownerId: w.rex, storageId, createdAt: now });
       await ctx.db.insert("albumPhotos", { albumId: w.AG, photoId, groupId: w.G, addedAt: now, addedBy: w.rex });
-      await ctx.db.insert("ratings", { photoId: w.po1, userId: w.rex, value: 1, createdAt: now, updatedAt: now });
       return { photoId, storageId };
     });
     await finish(t);
@@ -698,10 +678,6 @@ describe("WP29 A-invariant 7 — Clerk mislukt blijvend, of de sleutel ontbreekt
     expect(net.clerk).toEqual([]);
     expect(net.mails).toEqual([]);
     expect(await get(t, w.anna)).not.toBeNull();
-    const annaRatings = await t.run(async (ctx) =>
-      ctx.db.query("ratings").withIndex("by_user", (q) => q.eq("userId", w.anna)).collect(),
-    );
-    expect(annaRatings).toHaveLength(2);
     expect(await membershipsOf(t, w.G)).toHaveLength(4);
   });
 });

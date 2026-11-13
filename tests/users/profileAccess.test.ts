@@ -61,7 +61,6 @@ async function insertPhoto(
     const photoId = await ctx.db.insert("photos", {
       ownerId,
       storageId,
-      ratingCount: 0,
       createdAt: Date.now(),
       ...(opts.exifOrientation !== undefined ? { exifOrientation: opts.exifOrientation } : {}),
       ...(formats ? { formats } : {}),

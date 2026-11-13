@@ -83,7 +83,6 @@ export async function seedPhoto(t: T, ownerId: Id<"users">): Promise<Id<"photos"
     return await ctx.db.insert("photos", {
       ownerId,
       storageId,
-      ratingCount: 0,
       createdAt: Date.now(),
     });
   });
@@ -104,27 +103,6 @@ export async function publish(
       groupId: album!.groupId,
       addedAt: Date.now(),
       addedBy: photo!.ownerId,
-    });
-  });
-}
-
-/** Een rating, direct, met het aggregaat op de foto erbij. */
-export async function seedRating(
-  t: T,
-  photoId: Id<"photos">,
-  userId: Id<"users">,
-  value: number,
-): Promise<void> {
-  await t.run(async (ctx) => {
-    const now = Date.now();
-    await ctx.db.insert("ratings", { photoId, userId, value, createdAt: now, updatedAt: now });
-    const all = await ctx.db
-      .query("ratings")
-      .withIndex("by_photo", (q) => q.eq("photoId", photoId))
-      .collect();
-    await ctx.db.patch(photoId, {
-      ratingCount: all.length,
-      ratingAverage: all.reduce((s, r) => s + r.value, 0) / all.length,
     });
   });
 }
@@ -178,7 +156,6 @@ const TABLES = [
   "albumPhotos",
   "albumLastSeen",
   "photos",
-  "ratings",
   "invites",
   "users",
 ] as const;

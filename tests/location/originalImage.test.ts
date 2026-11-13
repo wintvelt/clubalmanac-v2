@@ -50,7 +50,6 @@ async function setup(t: T) {
       latitude: 52.123,
       longitude: 5.987,
       locationLabel: "8 Dorpsstraat - Ergens - Nederland",
-      ratingCount: 0,
       createdAt: Date.now(),
     });
     return { photoId, storageId };
@@ -63,7 +62,6 @@ async function setup(t: T) {
       latitude: 52.123,
       longitude: 5.987,
       locationLabel: "8 Dorpsstraat - Ergens - Nederland",
-      ratingCount: 0,
       createdAt: Date.now(),
     });
     return { photoId, storageId };

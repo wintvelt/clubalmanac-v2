@@ -50,7 +50,6 @@ async function world(t: T) {
         ownerId,
         storageId: await blob(`foto-${ownerId}-${exifOrientation}`),
         exifOrientation,
-        ratingCount: 0,
         createdAt: now,
       });
     const pAlice = await photo(alice, 6);
@@ -96,7 +95,6 @@ async function goneId(t: T, w: W): Promise<Id<"photos">> {
     const id = await ctx.db.insert("photos", {
       ownerId: w.alice,
       storageId: await ctx.storage.store(new Blob(["weg"])),
-      ratingCount: 0,
       createdAt: Date.now(),
     });
     await ctx.db.delete(id);
