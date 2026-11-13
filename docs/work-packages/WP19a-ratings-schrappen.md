@@ -104,7 +104,7 @@ Geen red-team: deze WP haalt alleen ingangen weg en voegt geen toegangspad toe.
 
 ## Spec-criticus aanvullingen (A vult in)
 
-> A, 2026-11-13. **Vraag 1 is een stop.** Tests volgen na een nieuw besluit van Wouter.
+> A, 2026-11-13. Vraag 1 was een stop; na besluit 2 volgen de tests (§Tests).
 
 ### Vraag 1: like-knop of teller in een oude client — ja, in de oude webapp
 
@@ -154,3 +154,35 @@ Let op:
   - de test-oracles `tests/migration/fkOracle.ts` en `sharedLists.test.ts`;
   - `ratings:listForPhoto` in de WP23-inventaris; `upsert` en `remove` in WP24 (`tests/writeGates/rating.test.ts`);
   - de nieuwe webapp (Track B, live op T-1 week) moet ook geen ratings krijgen.
+
+### A-invarianten (aanvulling op invariant 1–6)
+
+1. **Ook de plekken uit vraag 4 kennen geen ratings meer:** de likes-kolom in `inspect`, de tabellenlijst en verwijzingen in `scripts/migrate/types.ts`, en `loadRecords.ts` (de melding bij `--accept-missing-files` noemt geen likes meer en herrekent geen rating-velden).
+2. **De transform meldt de drop in één regel.** Die regel bevat de woorden "like" en "geschrapt" en het aantal. Het aantal is: actieve likes (waarde 1) op een foto én van een user die allebei geladen worden. Een ingetrokken like of een record zonder waarde telt niet. Op het extract van 2026-11-06 is dat 12 voor prod en 6 voor dev.
+3. **Geen code in `convex/` noemt nog een rating.** Commentaar telt niet; een tabelnaam in een string wel. Dit dekt "geen pad verwijst nog naar de tabel of de velden".
+4. **Een nieuwe foto heeft geen rating-velden** (upload en `photos.create`).
+5. **App:** geen bestand in `app/` noemt nog een rating, ook de uitleg bij Account verwijderen niet. Die noemt nog wel de lidmaatschappen.
+
+### Tests
+
+Nieuw:
+- `tests/ratingsGone/noRatings.test.ts`: schema zonder tabel en velden, geen module `ratings`, geen functie met een rating in naam, args of returns (ook genest), en de bronscan van A-invariant 3.
+- `tests/migration/transform.test.ts` §WP19a: geen tabel `ratings` in de uitvoer, geen rating-veld op een foto, de drop-regel op prod en dev, ingetrokken likes tellen niet. Het verwachte aantal komt uit de fixture, niet uit een vast getal. De fixture kreeg een like op een foto die dev niet laadt, en een record zonder waarde.
+- `tests/migration/inspectNoLikes.test.ts`: `inspect` draait op een extract met likes en noemt ze niet.
+- `app/tests/noRatings.test.ts`: A-invariant 5.
+
+Aangepast (de rest van het gedrag blijft gelijk):
+- de oracles `fkOracle.ts` (dus `sharedLists.test.ts` en de nep-deployment), de WP23-inventaris, de melding in `loadRecords.test.ts`;
+- de integriteitscheck: de 2b-tests op het rating-aggregaat zijn vervangen door "een foto zonder rating-velden is schoon";
+- de cascade-tests van invariant 3: rating-seeds en -asserties zijn weg; `fixScale` test nu vertrek en account weg in een groep met 3000 publicaties zonder ratings;
+- `ratingCount: 0` is uit alle foto-inserts in tests gehaald, en `photos/crud` en `http/upload` controleren dat een nieuwe foto het veld niet heeft.
+
+Verwijderd, want ze testen alleen ratings: `tests/ratings/*`, `tests/readWhitelist/ratings.test.ts`, `tests/writeGates/rating.test.ts`, `tests/groups/fixRatings.test.ts`.
+
+Rood tot B klaar is: bijna alle foto-tests, omdat het schema `ratingCount` nog eist. Typecheck: alleen die fout. Een wegwerp-referentie (niet gecommit) maakt alles groen.
+
+### Voor B
+
+- Cutover-regel bij `load-records`: "de transform meldt het aantal geschrapte likes (op T0 12)".
+- Cascade-matrix: R1, P4, U6, AP3 en de rating-delen van A1, M1, M5, G4 en MON1 (2b) vallen weg.
+- Dev volgens vraag 3. Stap 3 meldt 6 geschrapte likes.
