@@ -5,6 +5,11 @@
 ## Besluiten Wouter
 
 1. **Geen link in de uitnodigingsmail (2026-11-13).** Er is nog geen webapp, en een app-link werkt alleen als de app al op het toestel staat. De mail zegt: installeer de app en log in met dit e-mailadres. Na het inloggen ziet de genodigde de uitnodiging in de app. Dit sluit WP13 vraag 4.
+2. **Productvragen V1–V4 (2026-11-13, na A's stop).**
+   - V1: per genodigde naam, e-mail en "als admin"; één bericht voor de hele lijst, optioneel. Het bericht staat in de mail en in de app.
+   - V2: een nieuw lid krijgt de naam uit de uitnodiging (de nieuwste). Aanpassen kan in Profiel.
+   - V3: open uitnodigingen staan in Leden onder "Uitgenodigd". Alleen een admin ziet ze en kan er een intrekken, na bevestiging. De genodigde krijgt geen mail.
+   - V4 (**anders dan A's advies**): de genodigde ziet de groepsfoto bij een ontvangen uitnodiging. A ontwerpt de smalste uitzondering op de foto-toegang: alleen de cover van die groep, alleen voor de ingelogde genodigde en alleen zolang de uitnodiging accepteerbaar is. Geen andere foto's van de groep, geen `storageId`.
 
 ## Productdoel
 
