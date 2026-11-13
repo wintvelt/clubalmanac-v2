@@ -15,6 +15,13 @@ Een lid ziet op een kaart waar de foto's van een album zijn gemaakt. Als eigenaa
    - een melding vóór het delen, alleen bij de foto van een ander;
    - delen in het grote formaat, per foto;
    - de kaart alleen per album.
+4. **Fix-cyclus 1 na audit en red-team** (2026-11-13):
+   - **Het origineel gaat altijd zonder GPS naar buiten**, voor elk lid en ook voor de eigenaar. Na "Locatie weghalen" of wijzigen mag geen geserveerd bestand de oude plek nog dragen. De app vraagt het origineel zelf niet op.
+   - **De schoonmaker is fail-closed**: een bestand dat hij niet begrijpt (afwijkende structuur, of een niet-JPEG zonder formaten) gaat niet ongewijzigd mee. Ook data ná het eerste beeld (een tweede beeld, MPF-preview, motion-photo-trailer) gaat niet mee.
+   - **Een late plaatsnaam van de upload** wordt alleen bewaard als de foto die plek nog heeft.
+   - **"Opslaan" pas na een tik of sleep** als er geen opgeslagen plek is (ook direct na weghalen).
+   - **Delen toont dat het bezig is** en negeert een tweede tik.
+   - A telt de 7 losse profielbeelden op prod: data na het eerste beeld of een MPF-blok?
 
 ## Invarianten (draft)
 
