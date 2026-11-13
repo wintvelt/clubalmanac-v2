@@ -40,7 +40,6 @@ import type * as monitoring from "../monitoring.js";
 import type * as photoFormats from "../photoFormats.js";
 import type * as photoMetadata from "../photoMetadata.js";
 import type * as photos from "../photos.js";
-import type * as ratings from "../ratings.js";
 import type * as smoke from "../smoke.js";
 import type * as uploads from "../uploads.js";
 import type * as users from "../users.js";
@@ -84,7 +83,6 @@ declare const fullApi: ApiFromModules<{
   photoFormats: typeof photoFormats;
   photoMetadata: typeof photoMetadata;
   photos: typeof photos;
-  ratings: typeof ratings;
   smoke: typeof smoke;
   uploads: typeof uploads;
   users: typeof users;

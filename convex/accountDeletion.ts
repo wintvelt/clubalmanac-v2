@@ -9,7 +9,6 @@ import {
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import { internalRemovePhoto } from "./photos";
-import { recomputeRatingAggregate } from "./ratings";
 import { deleteGroupCascade, internalRemoveMember } from "./groups";
 import { normalizeEmail } from "./lib/email";
 import { getWebmasterEmails } from "./lib/auth";
@@ -35,15 +34,14 @@ import { clerkSubjectHash } from "./lib/accountState";
 //    klaar is, ruimt hem op: `step` als Clerk al klaar was, anders
 //    `clerkDeleted` via een laatste `step` (die ook nog een keer alles nakijkt).
 //
-// Fase-volgorde (de reden staat bij elke fase): ratings en eigen foto's vóór de
-// lidmaatschappen, zodat de lidmaatschap-cascade (M1, AP3, pruneRatingsOfLeaver,
-// M2-e) bij een groot account niets meer te lezen heeft; de opvolging (M2-c/d)
+// Fase-volgorde (de reden staat bij elke fase): eigen foto's vóór de
+// lidmaatschappen, zodat de lidmaatschap-cascade (M1, M2-e) bij een groot
+// account niets meer te lezen heeft; de opvolging (M2-c/d)
 // vóór de albums, zodat een album de nieuwe oprichter als maker krijgt.
 
 // Per stap. Ruim binnen de limieten van één transactie (4096 db-aanroepen,
 // 32.000 gelezen documenten, 1000 geplande functies), ook met de full-scans in
 // internalRemovePhoto (groepen, albums, users per foto).
-const RATINGS_PER_STEP = 200;
 const PHOTOS_PER_STEP = 50;
 const ROWS_PER_STEP = 500;
 const FEATURES_PER_STEP = 50;
@@ -192,29 +190,7 @@ const profilePhase: Phase = async (ctx, user) => {
 };
 
 /**
- * U6: zijn ratings, en het aggregaat op de foto's van anderen (R1, WP28
- * besluit 13). Vóór de foto's en lidmaatschappen: dan hoeft
- * pruneRatingsOfLeaver later niets meer te lezen.
- */
-const ratingsPhase: Phase = async (ctx, user) => {
-  const ratings = await ctx.db
-    .query("ratings")
-    .withIndex("by_user", (q) => q.eq("userId", user._id))
-    .take(RATINGS_PER_STEP);
-  if (ratings.length === 0) return false;
-  for (const r of ratings) await ctx.db.delete(r._id);
-  for (const photoId of new Set(ratings.map((r) => r.photoId))) {
-    const photo = await ctx.db.get(photoId);
-    // Een eigen foto gaat hierna toch weg.
-    if (photo && photo.ownerId !== user._id) {
-      await recomputeRatingAggregate(ctx, photoId);
-    }
-  }
-  return true;
-};
-
-/**
- * U7: zijn foto's, met P3–P5 en P7 en hun beelden (internalRemovePhoto). Vóór
+ * U7: zijn foto's, met P3, P5 en P7 en hun beelden (internalRemovePhoto). Vóór
  * de lidmaatschappen: de M1-cascade en M2-e hebben dan geen publicaties van
  * hem meer te lezen.
  */
@@ -430,7 +406,6 @@ const visitsPhase: Phase = async (ctx, user) => {
 
 const PHASES: Phase[] = [
   profilePhase,
-  ratingsPhase,
   photosPhase,
   reservationsPhase,
   membershipsPhase,

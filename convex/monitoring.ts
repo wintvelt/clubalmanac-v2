@@ -33,7 +33,6 @@ import {
 //     de externe call. `emailSent` = "gequeue'd", niet "afgeleverd".
 
 const HEARTBEAT_INTERVAL_MS = 30 * 24 * 60 * 60 * 1000;
-const RATING_AVERAGE_EPSILON = 1e-9;
 
 /**
  * Élke foreign key die deze scan controleert, in één lijst.
@@ -69,8 +68,6 @@ export const MONITORED_FKS: Array<{
   { table: "albumPhotos", field: "photoId", required: true },
   { table: "albumPhotos", field: "groupId", required: true },
   { table: "albumPhotos", field: "addedBy", required: true },
-  { table: "ratings", field: "photoId", required: true },
-  { table: "ratings", field: "userId", required: true },
   { table: "invites", field: "invitedBy", required: true },
   { table: "invites", field: "groupId", required: false },
   { table: "features", field: "submittedBy", required: true },
@@ -164,7 +161,6 @@ export async function collectDriftLines(ctx: {
   // read binnen deze transactie (invariant 11).
   const allUsers = await ctx.db.query("users").collect();
   const allPhotos = await ctx.db.query("photos").collect();
-  const allRatings = await ctx.db.query("ratings").collect();
   const allFeatures = await ctx.db.query("features").collect();
   const allUpvotes = await ctx.db.query("featureUpvotes").collect();
 
@@ -222,43 +218,6 @@ export async function collectDriftLines(ctx: {
         table: "users",
         id: u._id,
         detail: `wordt verwijderd sinds ${new Date(u.deletion.startedAt).toISOString()} (users:retryAccountDeletion)`,
-      });
-    }
-  }
-
-  // ── (2b) Aggregate-drift: photos.ratingAverage + ratingCount ───────
-  const ratingsByPhoto = new Map<string, number[]>();
-  for (const r of allRatings) {
-    const arr = ratingsByPhoto.get(r.photoId) ?? [];
-    arr.push(r.value);
-    ratingsByPhoto.set(r.photoId, arr);
-  }
-  for (const p of allPhotos) {
-    const values = ratingsByPhoto.get(p._id) ?? [];
-    const count = values.length;
-    if (p.ratingCount !== count) {
-      driftRows.push({
-        table: "photos",
-        id: p._id,
-        detail: `ratingCount stored=${p.ratingCount} recompute=${count}`,
-      });
-    }
-    // ratingAverage is float: exacte epsilon-mismatch, NIET ≥1-drempel.
-    // undefined-semantiek: count 0 ⇔ stored undefined = match; één van beide
-    // gezet en de ander niet = drift.
-    const recomputed =
-      count > 0 ? values.reduce((a, b) => a + b, 0) / count : undefined;
-    const stored = p.ratingAverage;
-    const averageDrift =
-      (stored === undefined) !== (recomputed === undefined) ||
-      (stored !== undefined &&
-        recomputed !== undefined &&
-        Math.abs(stored - recomputed) > RATING_AVERAGE_EPSILON);
-    if (averageDrift) {
-      driftRows.push({
-        table: "photos",
-        id: p._id,
-        detail: `ratingAverage stored=${stored} recompute=${recomputed}`,
       });
     }
   }

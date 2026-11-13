@@ -148,8 +148,6 @@ export const photoFields = {
   takenAt: v.optional(v.number()),
   locationLabel: v.optional(v.string()),
   exifOrientation: v.optional(v.number()),
-  ratingAverage: v.optional(v.number()),
-  ratingCount: v.number(),
   createdAt: v.number(),
 };
 /**
@@ -174,15 +172,6 @@ export const allFlagFields = {
   flaggedBy: v.optional(v.id("users")),
   flagReason: v.optional(v.string()),
 };
-
-// ── ratings ───────────────────────────────────────────────────────
-
-/** Rating-vorm. Geen `userId` (is altijd de caller), geen tijden (A-keuze 1). */
-export const ratingFields = {
-  photoId: v.id("photos"),
-  value: v.number(),
-};
-export const rating = v.object(ratingFields);
 
 // ── features ──────────────────────────────────────────────────────
 

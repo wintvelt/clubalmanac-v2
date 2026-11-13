@@ -224,7 +224,7 @@ ${SIGNATURE_TEXT}`;
 // ---------------------------------------------------------------------------
 // PII-grens (invariant 9): de aanroeper levert al genormaliseerde drift-regels
 // die uitsluitend table-namen + record-IDs + counts bevatten. Geen user-content
-// (geen namen, emails, rating-comments, photo-bytes). De template echoot die
+// (geen namen, emails, photo-bytes). De template echoot die
 // regels één-op-één en voegt geen extra velden toe.
 export function monitorDriftAlertTemplate(opts: {
   lines: string[];

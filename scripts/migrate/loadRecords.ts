@@ -100,7 +100,7 @@ export async function loadRecords(target: Target, acceptMissingFiles: boolean): 
     console.warn(
       `[load-records] --accept-missing-files: ${dropped.photos.length} foto('s) overgeslagen ` +
         `wegens ontbrekend bestand, ${dropped.profilePhotos} profielfoto('s) zonder bestand ` +
-        `gewist, ${dropped.albumPhotos} albumfoto('s) en ${dropped.ratings} like(s) meegevallen, ` +
+        `gewist, ${dropped.albumPhotos} albumfoto('s) meegevallen, ` +
         `${dropped.coverPhotos} cover-verwijzing(en) gewist. Aggregates zijn herteld.`,
     );
     for (const key of uncovered) {
@@ -252,7 +252,6 @@ function toDoc(
 export type DropReport = {
   photos: string[];
   albumPhotos: number;
-  ratings: number;
   coverPhotos: number;
   profilePhotos: number;
 };
@@ -278,7 +277,6 @@ export function applyStorageMap(
   const dropped: DropReport = {
     photos: [],
     albumPhotos: 0,
-    ratings: 0,
     coverPhotos: 0,
     profilePhotos: 0,
   };
@@ -295,11 +293,6 @@ export function applyStorageMap(
   records.albumPhotos = input.albumPhotos.filter((row) => {
     const keep = !gone.has(row.photoId as string);
     if (!keep) dropped.albumPhotos += 1;
-    return keep;
-  });
-  records.ratings = input.ratings.filter((row) => {
-    const keep = !gone.has(row.photoId as string);
-    if (!keep) dropped.ratings += 1;
     return keep;
   });
 
@@ -328,9 +321,8 @@ export function applyStorageMap(
 }
 
 /**
- * `users.photoCount`, `photos.ratingCount` en `photos.ratingAverage` opnieuw uit
- * de rijen die daadwerkelijk geladen worden. Exact de drie aggregates die
- * `internal.monitoring.integrityCheck` herrekent.
+ * `users.photoCount` opnieuw uit de rijen die daadwerkelijk geladen worden,
+ * zoals `internal.monitoring.integrityCheck` hem herrekent.
  */
 export function recomputeAggregates(records: Records): void {
   const photosByOwner = new Map<string, number>();
@@ -342,14 +334,4 @@ export function recomputeAggregates(records: Records): void {
     ...user,
     photoCount: photosByOwner.get(user.sourceKey) ?? 0,
   }));
-
-  const likesByPhoto = new Map<string, number>();
-  for (const rating of records.ratings) {
-    const photoId = rating.photoId as string;
-    likesByPhoto.set(photoId, (likesByPhoto.get(photoId) ?? 0) + 1);
-  }
-  records.photos = records.photos.map((photo) => {
-    const count = likesByPhoto.get(photo.sourceKey) ?? 0;
-    return { ...photo, ratingCount: count, ratingAverage: count > 0 ? 1 : undefined };
-  });
 }

@@ -149,9 +149,6 @@ export default defineSchema({
     // formaten" (`formaten --accept-no-formats`), met de tijd. De backfill
     // slaat hem dan over; WP10 meldt hem niet als "formaten ontbreken".
     noFormatsAcceptedAt: v.optional(v.number()),
-    // Aggregate rating (gemiddelde van ratings table).
-    ratingAverage: v.optional(v.number()),
-    ratingCount: v.number(),
     // Flagging (FL1: auto-delete na 14 dagen, FL2: appeal + admin decision).
     flaggedAt: v.optional(v.number()),
     flaggedBy: v.optional(v.id("users")),
@@ -189,21 +186,6 @@ export default defineSchema({
     .index("by_status_and_createdAt", ["status", "createdAt"])
     // WP18 A-invariant 26: een foto wissen leest alleen zijn eigen reservering.
     .index("by_photo", ["photoId"]),
-
-  // ──────────────────────────────────────────────────────────────────
-  // Ratings
-  // ──────────────────────────────────────────────────────────────────
-  // Vervangt UF records.
-  ratings: defineTable({
-    photoId: v.id("photos"),
-    userId: v.id("users"),
-    value: v.number(), // bv. 1..5
-    createdAt: v.number(),
-    updatedAt: v.number(),
-  })
-    .index("by_photo", ["photoId"])
-    .index("by_user", ["userId"])
-    .index("by_photo_and_user", ["photoId", "userId"]),
 
   // ──────────────────────────────────────────────────────────────────
   // Invites

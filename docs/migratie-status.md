@@ -209,7 +209,7 @@ Dus: communicatie en blokkade gaan **buiten de oude app om**.
 - [ ] T-1 week: group-injection aanzetten in DynamoDB (in-app reminder verschijnt)
 - [ ] T-1 week: nieuwe iPhone app live in App Store (beschikbaar voor download), nieuwe webapp live, beide tegen prod env. **Apart aan te maken vóór de review-indiening**: een vers demo-account in prod-Clerk voor Apple's reviewers, met genoeg zichtbare content om de app te kunnen beoordelen. Het oude `John Appleseed`-account migreert niet mee.
 - [ ] T-1 dag: laatste reminder via WhatsApp/email
-- [ ] T0: verse `extract` + `transform` op actuele DynamoDB-stand, dan `load-files` (alleen de delta sinds T-2), dan `load-records`, `formaten` (WP25) en `verify` (WP12, prod-config). Volgorde staat in het WP12-runbook. Minuten, niet uren — de bulk staat al in storage sinds T-2.
+- [ ] T0: verse `extract` + `transform` op actuele DynamoDB-stand, dan `load-files` (alleen de delta sinds T-2), dan `load-records`, `formaten` (WP25) en `verify` (WP12, prod-config). Het aantal geschrapte likes staat in de transform-uitvoer (op T0 12, WP19a). Volgorde staat in het WP12-runbook. Minuten, niet uren — de bulk staat al in storage sinds T-2.
 - [ ] T-0: `integrityCheck`-cron op prod weer aanzetten, ná een groene `verify`
 - [ ] T-0: backend write-block aan op AWS
 - [ ] T-0: webapp redirect aan

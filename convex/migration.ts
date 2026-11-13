@@ -18,7 +18,7 @@ import { collectDriftLines, MONITORED_TABLES, referencedStorageIds } from "./mon
 //
 // Deze functies omzeilen bewust de normale auth-checks (requireWebmaster e.d.)
 // én de aggregate-onderhoudende mutations: de aggregates (`users.photoCount`,
-// `photos.rating*`, `features.upvoteCount`) worden door de transform berekend
+// `features.upvoteCount`) worden door de transform berekend
 // en hier één-op-één weggeschreven. Zou de import via de gewone mutations
 // lopen, dan zou elke insert de tellers opnieuw bijwerken en zouden ze twee
 // keer geteld worden.
@@ -32,7 +32,6 @@ const LOAD_TABLES = [
   "albums",
   "photos",
   "albumPhotos",
-  "ratings",
   "invites",
   "features",
   "featureUpvotes",
