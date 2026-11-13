@@ -301,11 +301,18 @@ export function buildExtract(): SourceItem[] {
     { PK: "GPG-1#A-1", SK: "P-bob-2", photo: { SK: "U-bob", user: BOB }, createdAt: "2021-04-06" },
 
     // ── ratings (0/1-like, geen 1..5-score) ───────────────────────────
+    // WP19a: likes gaan niet meer mee; de transform meldt hoeveel er geschrapt
+    // zijn. Telt alleen actieve likes binnen wat geladen wordt.
     { PK: "UFP-bob-1", SK: "U-alice", rating: 1, prevRating: 0, createdAt: "2021-05-01" },
     // Like weer ingetrokken → geen ratings-rij.
     { PK: "UFP-bob-2", SK: "U-alice", rating: 0, prevRating: 1, createdAt: "2021-05-02" },
     { PK: "UFP-alice-1", SK: "U-bob", rating: 1, prevRating: 0, createdAt: "2021-05-03" },
     { PK: "UFP-alice-1", SK: "U-carol", rating: 1, prevRating: 0, createdAt: "2021-05-04" },
+    // WP19a: een like op een foto van Dave. Op dev valt die foto af, dus telt
+    // de dev-melding minder likes dan de prod-melding.
+    { PK: "UFP-dave-1", SK: "U-alice", rating: 1, prevRating: 0, createdAt: "2021-05-05" },
+    // WP19a: een record zonder waarde (zoals er één op prod staat) is geen like.
+    { PK: "UFP-bob-1", SK: "U-carol", prevRating: 1, createdAt: "2021-05-06" },
 
     // ── features ──────────────────────────────────────────────────────
     {

@@ -28,7 +28,7 @@ import {
   sumUnreadInGroup,
   upsertAlbumLastSeen,
 } from "./albums";
-import { afterUnpublish, pruneRatingsOfLeaver } from "./lib/unpublish";
+import { afterUnpublish } from "./lib/unpublish";
 import { wipeIfLost } from "./lib/profilePhoto";
 
 const ROLE = v.union(v.literal("admin"), v.literal("member"));
@@ -339,9 +339,9 @@ export const remove = mutation({
 // Groep weg, met alles wat eraan hangt. Gedeeld door groups.remove (G3, G4)
 // en het laatste lid dat weggaat (M2-e): beide doen hetzelfde.
 // Volgorde: albumPhotos → albums (+ albumLastSeen, A1/A2) → memberships →
-// uitnodigingen → groep → ratings op de weggehaalde publicaties (AP3,
-// WP28 A-invariant 3). Photos blijven (eigendom van users, niet groups).
-// [Cascade matrix G3, G4, A1, A2, AP3, M2-e]
+// uitnodigingen → groep → covers en profielfoto's van de weggehaalde
+// publicaties (WP28 A-invariant 3). Photos blijven (eigendom van users, niet
+// groups). [Cascade matrix G3, G4, A1, A2, AP4, M2-e]
 export async function deleteGroupCascade(
   ctx: MutationCtx,
   groupId: Id<"groups">,
@@ -386,7 +386,7 @@ export async function deleteGroupCascade(
 // Aangeroepen door groups.removeMember (na de gates) en door
 // users.deleteSelf voor transitieve cascade per membership.
 //
-// Cascade matrix rows M1, M2 (a-e), M3, en WP28: AP3/AP4 op de weggehaalde
+// Cascade matrix rows M1, M2 (a-e), M3, en WP28: AP4 op de weggehaalde
 // publicaties, open uitnodigingen aan zijn adres.
 export async function internalRemoveMember(
   ctx: MutationCtx,
@@ -442,16 +442,6 @@ export async function internalRemoveMember(
   }
   await expireInvitesBy(ctx, userId, groupId);
 
-  // WP28 A-invariant 7 (R1): zijn ratings op foto's van deze groep die hij
-  // daarna niet meer ziet, gaan weg, in dezelfde transactie, zodat het
-  // gemiddelde nooit een ex-lid telt.
-  await pruneRatingsOfLeaver(
-    ctx,
-    userId,
-    new Set(groupAps.map((ap) => ap.photoId)),
-    owned,
-  );
-
   // WP27 besluit 7 (A-invariant 11): had hij de foto van een ander als
   // profielfoto en ziet hij die nu niet meer, dan krijgt hij de letter.
   await wipeIfLost(ctx, userId);
@@ -464,14 +454,14 @@ export async function internalRemoveMember(
 
   if (remaining.length === 0) {
     // cascade-matrix.md M2-e: laatste lid weg, zelfde cascade als
-    // groups.remove. De ratings op zijn eigen weggehaalde publicaties volgen
-    // daarna (alleen hij had ze, als eigenaar).
+    // groups.remove. Daarna de covers en profielfoto's van zijn eigen
+    // weggehaalde publicaties.
     await deleteGroupCascade(ctx, groupId);
     await afterUnpublish(ctx, removedAps);
     return;
   }
 
-  // WP28 A-invariant 3: covers en ratings volgen zijn weggehaalde foto's.
+  // WP28 A-invariant 3: covers volgen zijn weggehaalde foto's.
   await afterUnpublish(ctx, removedAps);
 
   // Na besluit 3 en 4 verdwijnt de oprichter alleen nog via

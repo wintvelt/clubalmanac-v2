@@ -27,7 +27,6 @@ export const TABLE_ORDER = [
   "albums",
   "photos",
   "albumPhotos",
-  "ratings",
   "invites",
   "features",
   "featureUpvotes",
@@ -88,10 +87,6 @@ export const FKS: Record<TableName, FkSpec[]> = {
     { field: "groupId", target: "groups", required: true },
     { field: "addedBy", target: "users", required: true },
   ],
-  ratings: [
-    { field: "photoId", target: "photos", required: true },
-    { field: "userId", target: "users", required: true },
-  ],
   invites: [
     { field: "invitedBy", target: "users", required: true },
     { field: "groupId", target: "groups", required: false },
@@ -145,7 +140,6 @@ export function emptyRecords(): Records {
     albums: [],
     photos: [],
     albumPhotos: [],
-    ratings: [],
     invites: [],
     features: [],
     featureUpvotes: [],

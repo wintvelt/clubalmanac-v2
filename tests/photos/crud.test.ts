@@ -69,7 +69,7 @@ describe("photos.create basic", () => {
     expect(photo?.ownerId).toBe(aliceId);
     expect(photo?.storageId).toBe(storageId);
     expect(photo?.locationLabel).toBe("Amsterdam");
-    expect(photo?.ratingCount).toBe(0);
+    expect(photo, "WP19a: een nieuwe foto heeft geen rating-velden").not.toHaveProperty("ratingCount");
     expect(typeof photo?.createdAt).toBe("number");
   });
 });

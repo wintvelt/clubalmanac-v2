@@ -97,7 +97,6 @@ describe("users.updateProfile", () => {
       await ctx.db.insert("photos", {
         ownerId: id,
         storageId: s,
-        ratingCount: 0,
         createdAt: Date.now(),
       });
       return s;

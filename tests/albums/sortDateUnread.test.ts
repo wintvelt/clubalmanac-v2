@@ -41,7 +41,7 @@ async function setup(t: T, sortDateOffset: number) {
 async function publish(t: T, ownerId: Id<"users">, albumId: Id<"albums">, groupId: Id<"groups">, addedAt: number) {
   await t.run(async (ctx) => {
     const storageId = await ctx.storage.store(new Blob(["x"]));
-    const photoId = await ctx.db.insert("photos", { ownerId, storageId, ratingCount: 0, createdAt: addedAt });
+    const photoId = await ctx.db.insert("photos", { ownerId, storageId, createdAt: addedAt });
     await ctx.db.insert("albumPhotos", { albumId, photoId, groupId, addedAt, addedBy: ownerId });
   });
 }

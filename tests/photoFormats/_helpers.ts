@@ -59,7 +59,6 @@ export async function seedPhoto(
     const doc = {
       ownerId,
       storageId,
-      ratingCount: 0,
       createdAt: opts.createdAt ?? Date.now(),
       ...(opts.exifOrientation !== undefined ? { exifOrientation: opts.exifOrientation } : {}),
       ...(opts.width !== undefined ? { width: opts.width } : {}),

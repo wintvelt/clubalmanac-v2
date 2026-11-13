@@ -52,7 +52,6 @@ async function setup(t: T) {
     const photoId = await ctx.db.insert("photos", {
       ownerId: owen,
       storageId,
-      ratingCount: 0,
       createdAt: Date.now(),
     });
     const profile = await ctx.storage.store(new Blob([PROFILE_BYTES], { type: "image/jpeg" }));
@@ -132,7 +131,6 @@ describe("GET /beeld/foto/<photoId>", () => {
       const id = await ctx.db.insert("photos", {
         ownerId: s.owen,
         storageId: await ctx.storage.store(new Blob(["weg"])),
-        ratingCount: 0,
         createdAt: Date.now(),
       });
       await ctx.db.delete(id);
@@ -348,7 +346,6 @@ async function storedImage(t: T, bytes: Uint8Array<ArrayBuffer>, type: string | 
     const photoId = await ctx.db.insert("photos", {
       ownerId: s.owen,
       storageId,
-      ratingCount: 0,
       createdAt: Date.now(),
     });
     await ctx.db.patch(s.owen, { profilePhotoStorageId: storageId });

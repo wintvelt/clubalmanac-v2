@@ -4,10 +4,9 @@ import type { Doc, Id } from "../_generated/dataModel";
 // WP23: foto-toegang = eigenaar, óf lid van een groep waarin de foto in een
 // album staat (albumPhotos draagt groupId). Geen webmaster-bypass.
 //
-// Eén definitie voor alle reads: photos.getById/getWithOwner,
-// ratings.listForPhoto (via requirePhotoAccess) en de geneste covers in
-// groups.getWithCover en albums.getWithCover (invariant 10). WP24: ook de
-// write-gates (photos.flag en ratings.upsert via requirePhotoAccess; covers,
+// Eén definitie voor alle reads: photos.getById/getWithOwner en de geneste
+// covers in groups.getWithCover en albums.getWithCover (invariant 10). WP24:
+// ook de write-gates (photos.flag via requirePhotoAccess; covers,
 // addPhoto en het beeld via de strengere regels hieronder). Apart in lib/
 // zodat groups.ts en albums.ts het kunnen gebruiken zonder photos.ts te
 // importeren.

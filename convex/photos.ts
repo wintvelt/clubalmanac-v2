@@ -54,7 +54,7 @@ export async function requirePhotoAccess(
 
 // WP17a invariant 7: de foto-reads achter het detail geven bij geen toegang
 // en bij een onbekende of gewiste foto dezelfde ConvexError met code
-// NOT_MEMBER (zoals de album- en groep-reads). Mutations en ratings houden
+// NOT_MEMBER (zoals de album- en groep-reads). Mutations houden
 // requirePhotoAccess.
 async function requirePhotoAccessForRead(
   ctx: QueryCtx,
@@ -208,7 +208,6 @@ export const create = internalMutation({
       latitude: args.latitude,
       longitude: args.longitude,
       locationLabel: args.locationLabel,
-      ratingCount: 0,
       createdAt: Date.now(),
     });
 
@@ -314,7 +313,6 @@ export const createFromUploadInternal = internalMutation({
       takenAt,
       latitude,
       longitude,
-      ratingCount: 0,
       createdAt: now,
     });
 
@@ -510,13 +508,6 @@ export async function internalRemovePhoto(
     .withIndex("by_photo", (q) => q.eq("photoId", photoId))
     .collect();
   for (const r of reservations) await ctx.db.delete(r._id);
-
-  // P4: cascade ratings op deze photo
-  const ratings = await ctx.db
-    .query("ratings")
-    .withIndex("by_photo", (q) => q.eq("photoId", photoId))
-    .collect();
-  for (const r of ratings) await ctx.db.delete(r._id);
 
   // P5: cover-ref cleanup. Oude AWS handler gebruikte coverIndex GSI (zie
   // /blob-images-api/handlersDBstreams/photoDelToCover.js + dynamodb-lib-photo.js

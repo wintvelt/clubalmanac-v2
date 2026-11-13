@@ -105,14 +105,13 @@ describe("verify: de verwachting komt uit de transform, niet uit de laadstap", (
   test("een deployment zonder foto's is niet groen, ook niet met een lege storage-map", async () => {
     // Exact het rampscenario uit de audit: `load-files` was niet gedraaid, de
     // map was leeg, en alles wat aan een foto hing viel weg. De deployment
-    // bevat dan users, groepen en albums — maar nul foto's, nul albumfoto's,
-    // nul likes. Als `verify` zijn verwachting uit diezelfde lege map afleidt,
+    // bevat dan users, groepen en albums — maar nul foto's en nul
+    // albumfoto's. Als `verify` zijn verwachting uit diezelfde lege map afleidt,
     // meldt hij "verwacht 0, gevonden 0, ok" en is het verlies onzichtbaar.
     deployment.seed({
       ...records.meta.counts,
       photos: 0,
       albumPhotos: 0,
-      ratings: 0,
     });
     put({
       "convex-records.json": records,

@@ -27,7 +27,6 @@ async function publish(
     const photoId = await ctx.db.insert("photos", {
       ownerId: args.ownerId,
       storageId,
-      ratingCount: 0,
       createdAt: args.addedAt,
     });
     await ctx.db.insert("albumPhotos", {

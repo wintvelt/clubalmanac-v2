@@ -42,7 +42,6 @@ async function addRow(
     const doc = {
       ownerId,
       storageId,
-      ratingCount: 0,
       createdAt: Date.now(),
       ...(opts.exifOrientation !== undefined ? { exifOrientation: opts.exifOrientation } : {}),
       ...(formats ? { formats } : {}),

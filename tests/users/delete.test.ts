@@ -7,8 +7,8 @@ import { modules } from "../_helpers/modules";
 import { seedMember } from "../_helpers/membership";
 import { deleteAccount } from "../_helpers/deleteAccount";
 
-// Cascade matrix rows U6, U7, U8: cat-3 cascade deletes vanuit users.deleteSelf.
-// U6 = ratings, U7 = photos + queued storage cleanup action, U8 = memberships.
+// Cascade matrix rows U7, U8: cat-3 cascade deletes vanuit users.deleteSelf.
+// (U6, de ratings, viel weg met WP19a.) U7 = photos + queued storage cleanup action, U8 = memberships.
 
 const ISSUER = "https://picked-quail-97.clerk.accounts.dev";
 
@@ -45,76 +45,11 @@ async function insertPhoto(
     const photoId = await ctx.db.insert("photos", {
       ownerId,
       storageId,
-      ratingCount: 0,
       createdAt: Date.now(),
     });
     return { photoId, storageId };
   });
 }
-
-describe("U6: deleteSelf cascade ratings", () => {
-  it("verwijdert alle ratings van de user", async () => {
-    const t = convexTest(schema, modules);
-    const aliceId = await registerUser(t, "user_alice", "a@x.com");
-    const bobId = await registerUser(t, "user_bob", "b@x.com");
-
-    const { photoId } = await insertPhoto(t, bobId);
-    await t.run(async (ctx) => {
-      await ctx.db.insert("ratings", {
-        photoId,
-        userId: aliceId,
-        value: 4,
-        createdAt: Date.now(),
-        updatedAt: Date.now(),
-      });
-    });
-
-    await deleteAccount(t, withUser(t, "user_alice"));
-
-    const remaining = await t.run((ctx) =>
-      ctx.db
-        .query("ratings")
-        .withIndex("by_user", (q) => q.eq("userId", aliceId))
-        .collect(),
-    );
-    expect(remaining).toHaveLength(0);
-  });
-
-  it("ratings van andere users blijven", async () => {
-    const t = convexTest(schema, modules);
-    const aliceId = await registerUser(t, "user_alice", "a@x.com");
-    const bobId = await registerUser(t, "user_bob", "b@x.com");
-    const carolId = await registerUser(t, "user_carol", "c@x.com");
-
-    const { photoId } = await insertPhoto(t, bobId);
-    await t.run(async (ctx) => {
-      await ctx.db.insert("ratings", {
-        photoId,
-        userId: aliceId,
-        value: 4,
-        createdAt: Date.now(),
-        updatedAt: Date.now(),
-      });
-      await ctx.db.insert("ratings", {
-        photoId,
-        userId: carolId,
-        value: 5,
-        createdAt: Date.now(),
-        updatedAt: Date.now(),
-      });
-    });
-
-    await deleteAccount(t, withUser(t, "user_alice"));
-
-    const carolRatings = await t.run((ctx) =>
-      ctx.db
-        .query("ratings")
-        .withIndex("by_user", (q) => q.eq("userId", carolId))
-        .collect(),
-    );
-    expect(carolRatings).toHaveLength(1);
-  });
-});
 
 describe("U7: deleteSelf cascade photos + queued storage cleanup", () => {
   it("verwijdert photo records én cleant storage via scheduled action", async () => {
@@ -265,7 +200,6 @@ describe("U10: deleteSelf clear flaggedBy refs", () => {
       return await ctx.db.insert("photos", {
         ownerId: bobId,
         storageId,
-        ratingCount: 0,
         createdAt: flaggedAt,
         flaggedAt,
         flaggedBy: aliceId,
@@ -300,7 +234,6 @@ describe("U10: deleteSelf clear flaggedBy refs", () => {
       return await ctx.db.insert("photos", {
         ownerId: bobId,
         storageId,
-        ratingCount: 0,
         createdAt: t0,
         flaggedAt: t0,
         flaggedBy: carolId,

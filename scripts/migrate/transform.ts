@@ -9,8 +9,9 @@
 //   1. `createdAt` is een kalenderdag → `toEpoch()`, UTC-middernacht.
 //   2. `seenPics` is een ONGELEZEN-wachtrij → `deriveAlbumLastSeen()`.
 //   3. `featureUpvotes` heeft geen bron → upvoteCount 0 + verlies-waarschuwing.
-//   4. rollen/statussen/types matchen niet → `mapRole()` / `mapFeatureStatus()`,
-//      en ratings zijn likes (0/1), geen 1..5-score.
+//   4. rollen/statussen/types matchen niet → `mapRole()` / `mapFeatureStatus()`.
+//      De UF-records zijn likes (0/1); ze gaan niet mee (WP19a), de transform
+//      meldt alleen hoeveel er geschrapt zijn.
 //   5. verplichte velden zonder bron → founder-afleiding, gesynthetiseerde
 //      `albums.createdBy`, `albumPhotos.addedBy` = eigenaar van de foto.
 //   6. lege string is een "leeg"-sentinel → `str()` behandelt '' als afwezig.
@@ -159,7 +160,7 @@ type Parsed = {
   albums: Map<string, { groupId: string; item: SourceItem }>;
   albumPhotos: Array<{ groupId: string; albumId: string; photoId: string; item: SourceItem }>;
   photos: Map<string, { ownerId: string; item: SourceItem }>;
-  ratings: Array<{ photoId: string; userId: string; item: SourceItem }>;
+  likes: Array<{ photoId: string; userId: string; item: SourceItem }>;
   features: Map<string, SourceItem>;
   unknown: Map<string, number>;
 };
@@ -172,7 +173,7 @@ function parse(items: SourceItem[]): Parsed {
     albums: new Map(),
     albumPhotos: [],
     photos: new Map(),
-    ratings: [],
+    likes: [],
     features: new Map(),
     unknown: new Map(),
   };
@@ -225,7 +226,7 @@ function parse(items: SourceItem[]): Parsed {
       continue;
     }
     if (pk.startsWith("UF")) {
-      parsed.ratings.push({ photoId: pk.slice(2), userId: sk, item });
+      parsed.likes.push({ photoId: pk.slice(2), userId: sk, item });
       continue;
     }
     if (pk.startsWith("GA")) {
@@ -753,8 +754,6 @@ export function transform(items: SourceItem[], config: TransformConfig): Transfo
       longitude: num(item.exifLon),
       locationLabel: str(item.exifAddress),
       exifOrientation: undefined, // de oude app roteerde de bytes zelf
-      ratingAverage: undefined, // volgt uit de ratings hieronder
-      ratingCount: 0,
       flaggedAt: toEpoch(item.flaggedDate),
       flaggedBy,
       flagReason: undefined,
@@ -800,34 +799,14 @@ export function transform(items: SourceItem[], config: TransformConfig): Transfo
     });
   }
 
-  // ── ratings (likes, 0/1) ────────────────────────────────────────────
-  for (const r of src.ratings) {
-    const value = num(r.item.rating) ?? 0;
-    if (value !== 1) {
-      // rating 0 = like weer ingetrokken. Geen rij.
-      continue;
-    }
-    if (!includedPhotos.has(r.photoId)) {
-      if (src.photos.has(r.photoId)) countFiltered("like uitgesloten: foto niet opgenomen");
-      else warn(`like ${r.photoId}#${r.userId}: foto bestaat niet — overgeslagen`);
-      continue;
-    }
-    if (!includedUsers.has(r.userId)) {
-      if (src.users.has(r.userId)) countFiltered("like uitgesloten: user niet opgenomen");
-      else warn(`like ${r.photoId}#${r.userId}: user bestaat niet — overgeslagen`);
-      continue;
-    }
-    const createdAt = toEpoch(r.item.createdAt);
-    if (createdAt === undefined) fail(`like ${r.photoId}#${r.userId} heeft geen createdAt`);
-    records.ratings.push({
-      sourceKey: `${r.photoId}#${r.userId}`,
-      photoId: r.photoId,
-      userId: r.userId,
-      value: 1,
-      createdAt,
-      updatedAt: createdAt,
-    });
-  }
+  // ── likes: geschrapt (WP19a) ────────────────────────────────────────
+  // Geen rij en geen veld. De melding telt wat anders geladen zou zijn: een
+  // actieve like (waarde 1; 0 of geen waarde = ingetrokken) op een foto en van
+  // een user die allebei meegaan.
+  const droppedLikes = src.likes.filter(
+    (l) => num(l.item.rating) === 1 && includedPhotos.has(l.photoId) && includedUsers.has(l.userId),
+  ).length;
+  warn(`${droppedLikes} like(s) geschrapt: ratings gaan niet mee naar Convex (WP19a)`);
 
   // ── features (correctie 3) ──────────────────────────────────────────
   for (const [featureId, item] of src.features) {
@@ -878,18 +857,6 @@ export function transform(items: SourceItem[], config: TransformConfig): Transfo
   }
   for (const u of records.users) {
     u.photoCount = photoCountByOwner.get(u.sourceKey) ?? 0;
-  }
-  const likesByPhoto = new Map<string, number>();
-  for (const r of records.ratings) {
-    const photoId = r.photoId as string;
-    likesByPhoto.set(photoId, (likesByPhoto.get(photoId) ?? 0) + 1);
-  }
-  for (const p of records.photos) {
-    const count = likesByPhoto.get(p.sourceKey) ?? 0;
-    p.ratingCount = count;
-    // Het oude "rating" is een like: ratingAverage is 1 zodra er één like is,
-    // en afwezig bij nul — precies zoals integrityCheck 'm herrekent.
-    p.ratingAverage = count > 0 ? 1 : undefined;
   }
 
   // ── albumLastSeen (correctie 2) ─────────────────────────────────────

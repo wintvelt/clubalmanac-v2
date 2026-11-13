@@ -375,7 +375,6 @@ describe("groups.update", () => {
       return await ctx.db.insert("photos", {
         ownerId: adminId,
         storageId,
-        ratingCount: 0,
         createdAt: Date.now(),
       });
     });
@@ -455,7 +454,6 @@ describe("groups.remove", () => {
       const photoId = await ctx.db.insert("photos", {
         ownerId: adminId,
         storageId,
-        ratingCount: 0,
         createdAt: Date.now(),
       });
       await ctx.db.insert("albumPhotos", {

@@ -46,8 +46,6 @@ export const MONITORED_FK_ORACLE: FkOracleEntry[] = [
   { table: "albumPhotos", field: "photoId", target: "photos", required: true },
   { table: "albumPhotos", field: "groupId", target: "groups", required: true },
   { table: "albumPhotos", field: "addedBy", target: "users", required: true },
-  { table: "ratings", field: "photoId", target: "photos", required: true },
-  { table: "ratings", field: "userId", target: "users", required: true },
   { table: "invites", field: "invitedBy", target: "users", required: true },
   { table: "invites", field: "groupId", target: "groups", required: false },
   { table: "features", field: "submittedBy", target: "users", required: true },
@@ -68,7 +66,7 @@ export const MONITORED_FK_ORACLE: FkOracleEntry[] = [
 /**
  * Élke tabel die de integriteitsscan aanraakt: de tabellen uit de FK-lijst plus
  * de tabellen waarvan hij een aggregate of de storage-referenties herrekent
- * (`users.photoCount`, `photos.rating*`, `features.upvoteCount`,
+ * (`users.photoCount`, `features.upvoteCount`,
  * `users.profilePhotoStorageId`). Dit is de set waar de migratie-tooling op
  * moet werken: leeg-preconditie, reset, en de telling in `verify`.
  */
@@ -79,7 +77,6 @@ export const MONITORED_TABLE_ORACLE: string[] = [
   "albums",
   "photos",
   "albumPhotos",
-  "ratings",
   "invites",
   "features",
   "featureUpvotes",

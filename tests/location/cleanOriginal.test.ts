@@ -82,7 +82,6 @@ async function photoWith(
       latitude: 52.1234,
       longitude: 5.9876,
       locationLabel: "8 Dorpsstraat, Ergens, Nederland",
-      ratingCount: 0,
       createdAt: Date.now(),
     });
     return { photoId, storageId };

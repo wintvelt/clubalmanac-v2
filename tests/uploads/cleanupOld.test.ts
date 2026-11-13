@@ -87,7 +87,6 @@ describe("internal.uploads.cleanupOld — completed-status retention (7d)", () =
       const photoId = await ctx.db.insert("photos", {
         ownerId: userId,
         storageId,
-        ratingCount: 0,
         createdAt: FIXED_NOW - 30 * DAY_MS,
       });
       return await ctx.db.insert("uploadIdempotency", {
@@ -121,7 +120,6 @@ describe("internal.uploads.cleanupOld — completed-status retention (7d)", () =
       const photoId = await ctx.db.insert("photos", {
         ownerId: userId,
         storageId,
-        ratingCount: 0,
         createdAt: FIXED_NOW,
       });
       return await ctx.db.insert("uploadIdempotency", {
@@ -160,7 +158,6 @@ describe("internal.uploads.cleanupOld — completed-status retention (7d)", () =
         return await ctx.db.insert("photos", {
           ownerId: userId,
           storageId,
-          ratingCount: 0,
           createdAt: FIXED_NOW - 30 * DAY_MS,
         });
       };
@@ -303,7 +300,6 @@ describe("internal.uploads.cleanupOld — mixed status + edge cases", () => {
         return await ctx.db.insert("photos", {
           ownerId: userId,
           storageId,
-          ratingCount: 0,
           createdAt: FIXED_NOW - DAY_MS,
         });
       };
@@ -374,7 +370,6 @@ describe("internal.uploads.cleanupOld — mixed status + edge cases", () => {
       const photoId = await ctx.db.insert("photos", {
         ownerId: userId,
         storageId,
-        ratingCount: 0,
         createdAt: FIXED_NOW - 6 * 60 * MINUTE_MS,
       });
       return await ctx.db.insert("uploadIdempotency", {
@@ -425,7 +420,6 @@ describe("internal.uploads.cleanupOld — mixed status + edge cases", () => {
       const pid = await ctx.db.insert("photos", {
         ownerId: userId,
         storageId,
-        ratingCount: 0,
         createdAt: FIXED_NOW - 30 * DAY_MS,
       });
       await ctx.db.insert("uploadIdempotency", {

@@ -175,7 +175,7 @@ describe("A-invariant 22: een gewiste foto neemt zijn reservering mee", () => {
     const w = await world(t);
     const dead = await t.run(async (ctx) => {
       const storageId = await ctx.storage.store(new Blob(["weg"]));
-      const id = await ctx.db.insert("photos", { ownerId: w.alice, storageId, ratingCount: 0, createdAt: Date.now() });
+      const id = await ctx.db.insert("photos", { ownerId: w.alice, storageId, createdAt: Date.now() });
       await ctx.db.delete(id);
       await ctx.storage.delete(storageId);
       const day = Date.now() - 24 * HOUR;

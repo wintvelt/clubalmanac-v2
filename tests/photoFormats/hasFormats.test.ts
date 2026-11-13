@@ -177,7 +177,6 @@ describe("profileHasFormats in de user-vorm", () => {
       await ctx.db.insert("photos", {
         ownerId: s.mia,
         storageId: own.storageId,
-        ratingCount: 0,
         createdAt: Date.now(),
         exifOrientation: 3,
         formats: {

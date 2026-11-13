@@ -496,8 +496,8 @@ export const remove = mutation({
 
     await ctx.db.delete(albumId);
 
-    // WP28 invariant 5 en A-invariant 3: groepscover en ratings volgen de
-    // weggehaalde publicaties (AP3, AP4).
+    // WP28 invariant 5 en A-invariant 3: de groepscover volgt de
+    // weggehaalde publicaties (AP4).
     await afterUnpublish(ctx, albumPhotos);
   },
 });
@@ -555,9 +555,8 @@ export const removePhoto = mutation({
 
     await ctx.db.delete(ap._id);
 
-    // AP3 (ratings van wie geen toegang meer heeft, ook een orphan-rating van
-    // een ex-lid) en AP4 (album- en groepscover): de gedeelde cascade, zelfde
-    // als bij album weg, lid weg en groep weg (WP28 A-invariant 3).
+    // AP4 (album- en groepscover): de gedeelde cascade, zelfde als bij album
+    // weg, lid weg en groep weg (WP28 A-invariant 3).
     await afterUnpublish(ctx, [ap]);
   },
 });

@@ -78,7 +78,6 @@ async function bigWorld(t: T) {
         const photoId = await ctx.db.insert("photos", {
           ownerId: base.olga,
           storageId,
-          ratingCount: 0,
           createdAt: now,
         });
         await ctx.db.insert("albumPhotos", {

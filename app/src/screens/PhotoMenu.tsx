@@ -78,8 +78,8 @@ const SUCCESS: Record<Exclude<PhotoAction, "rotate">, Feedback> = {
 // Invariant 2: wat er weggaat bij verwijderen.
 function deleteWhat(n: number): string {
   return n === 1
-    ? "De foto verdwijnt uit elk album, met zijn likes. Is hij een cover of een profielfoto, dan is hij dat niet meer. Dit kun je niet ongedaan maken."
-    : `De ${n} foto's verdwijnen uit elk album, met hun likes. Zijn ze een cover of een profielfoto, dan zijn ze dat niet meer. Dit kun je niet ongedaan maken.`;
+    ? "De foto verdwijnt uit elk album. Is hij een cover of een profielfoto, dan is hij dat niet meer. Dit kun je niet ongedaan maken."
+    : `De ${n} foto's verdwijnen uit elk album. Zijn ze een cover of een profielfoto, dan zijn ze dat niet meer. Dit kun je niet ongedaan maken.`;
 }
 
 // WP17c: waar het menu hoort. Een album (met zijn groep), of Mijn foto's

@@ -63,11 +63,6 @@ describe("lid verlaat groep", () => {
     );
     expectNoData(
       await outcome(() =>
-        bob.query(api.ratings.listForPhoto, { photoId: w.photos.pAlice }),
-      ),
-    );
-    expectNoData(
-      await outcome(() =>
         bob.query(api.users.getById, { userId: w.users.alice.id }),
       ),
     );

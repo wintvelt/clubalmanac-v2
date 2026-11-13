@@ -69,7 +69,7 @@ async function sharePixels(
   storageId: Id<"_storage">,
 ): Promise<Id<"photos">> {
   return await t.run(async (ctx) =>
-    ctx.db.insert("photos", { ownerId, storageId, ratingCount: 0, createdAt: Date.now() }),
+    ctx.db.insert("photos", { ownerId, storageId, createdAt: Date.now() }),
   );
 }
 

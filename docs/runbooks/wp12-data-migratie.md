@@ -155,6 +155,7 @@ npm run migrate -- verify --target prod
 ```
 
 - [ ] Gemelde foto's (WP12b). `transform` stopt als een foto die geladen wordt een verwijderdatum heeft, welke datum ook, en noemt elke foto. v1 wiste een gemelde foto nooit; de FL1-cron van v2 draait elke nacht en wist hem zodra de datum voorbij is. Op 2026-11-07 waren er 0. Stopt hij: beslis (Wouter) vóór `load-records`. Laat de datum in de bron wissen en draai `extract` en `transform` opnieuw, of accepteer het verlies met `transform --target prod --accept-flagged-deletion`. Dan staat er per foto een waarschuwing in het rapport. De oude vlag `--accept-expired-flags` doet niets meer.
+- [ ] Likes (WP19a). Ratings gaan niet mee naar Convex. Het aantal geschrapte likes staat in de transform-uitvoer (op T0 12). De AWS-bron blijft tot T+30.
 - [ ] `formaten` eindigt met exitcode 0: geen foto zonder formaten (behalve afgetekende), niets mislukt. Zie §Formaten (WP25) hieronder.
 - [ ] `verify` is groen: rij-aantallen kloppen, geen dangling storage-verwijzingen, geen storage-orphans, integriteitsscan leeg (dus ook geen `formaten ontbreken`), en het aantal groepen en albums met een cover klopt met de bron.
 

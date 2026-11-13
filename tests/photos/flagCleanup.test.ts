@@ -59,7 +59,6 @@ async function insertPhotoWithFlag(
     const photoId = await ctx.db.insert("photos", {
       ownerId,
       storageId,
-      ratingCount: 0,
       createdAt: Date.now(),
       ...flagPatch,
     });
@@ -180,16 +179,6 @@ describe("FL1: cleanupFlaggedPhotos cron", () => {
         flaggedDeleteDate: baseNow - DAY_MS,
       });
 
-      // P4: rating op deze photo
-      await t.run(async (ctx) => {
-        await ctx.db.insert("ratings", {
-          photoId,
-          userId: bobId,
-          value: 3,
-          createdAt: baseNow,
-          updatedAt: baseNow,
-        });
-      });
       // P7: photoCount alvast verhogen
       await t.run(async (ctx) => {
         const u = await ctx.db.get(aliceId);
@@ -202,14 +191,6 @@ describe("FL1: cleanupFlaggedPhotos cron", () => {
       await t.mutation(internal.photos.cleanupFlaggedPhotos, {});
 
       expect(await t.run((ctx) => ctx.db.get(photoId))).toBeNull();
-      // P4: ratings weg
-      const ratings = await t.run((ctx) =>
-        ctx.db
-          .query("ratings")
-          .withIndex("by_photo", (q) => q.eq("photoId", photoId))
-          .collect(),
-      );
-      expect(ratings).toHaveLength(0);
       // P7: photoCount gedecrement
       const after = await t.run((ctx) => ctx.db.get(aliceId));
       expect(after?.photoCount).toBe(beforeCount - 1);

@@ -53,7 +53,6 @@ async function setup(t: T) {
     ctx.db.insert("photos", {
       ownerId: adminId,
       storageId: await ctx.storage.store(new Blob(["x"])),
-      ratingCount: 0,
       createdAt: Date.now(),
     }),
   );

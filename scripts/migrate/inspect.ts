@@ -19,7 +19,6 @@ type UserStat = {
   adminIn: number;
   founderIn: number;
   photos: number;
-  ratingsGiven: number;
   invitesSent: number;
 };
 
@@ -39,7 +38,6 @@ export function inspect(): void {
       adminIn: 0,
       founderIn: 0,
       photos: 0,
-      ratingsGiven: 0,
       invitesSent: 0,
     };
     stats.set(userId, created);
@@ -79,8 +77,6 @@ export function inspect(): void {
       }
     } else if (pk.startsWith("PO")) {
       stat(sk).photos += 1;
-    } else if (pk.startsWith("UF")) {
-      if (item.rating === 1) stat(sk).ratingsGiven += 1;
     }
   }
 
@@ -95,12 +91,12 @@ export function inspect(): void {
   const pad = (value: string | number, width: number) => String(value).padEnd(width);
   console.log(
     pad("userId", 34) + pad("naam", 22) + pad("groepen", 9) + pad("admin", 7) +
-      pad("founder", 9) + pad("foto's", 8) + pad("likes", 7) + "invites",
+      pad("founder", 9) + pad("foto's", 8) + "invites",
   );
   for (const row of rows) {
     console.log(
       pad(row.userId, 34) + pad(row.name, 22) + pad(row.groups, 9) + pad(row.adminIn, 7) +
-        pad(row.founderIn, 9) + pad(row.photos, 8) + pad(row.ratingsGiven, 7) + row.invitesSent,
+        pad(row.founderIn, 9) + pad(row.photos, 8) + row.invitesSent,
     );
   }
   console.log(

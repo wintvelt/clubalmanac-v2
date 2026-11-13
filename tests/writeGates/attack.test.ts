@@ -40,7 +40,6 @@ async function attackAndRead(
     ["groups.update cover", () => attacker.mutation(api.groups.update, { groupId, coverPhotoId: photoId })],
     ["albums.update cover", () => attacker.mutation(api.albums.update, { albumId, coverPhotoId: photoId })],
     ["photos.flag", () => attacker.mutation(api.photos.flag, { photoId, reason: "x" })],
-    ["ratings.upsert", () => attacker.mutation(api.ratings.upsert, { photoId, value: 5 })],
     // Invariant 8: het beeld van de foto, en het profielbeeld van de eigenaar.
     [
       "users.updateProfile beeld van de foto",
@@ -66,7 +65,6 @@ async function attackAndRead(
   // Directe reads op de foto: geen data.
   expectNoData(await outcome(() => attacker.query(api.photos.getById, { photoId })));
   expectNoData(await outcome(() => attacker.query(api.photos.getWithOwner, { photoId })));
-  expectNoData(await outcome(() => attacker.query(api.ratings.listForPhoto, { photoId })));
   expectNoData(
     await outcome(() => attacker.query(api.photos.listByOwner, { ownerId: target.ownerId })),
   );

@@ -206,7 +206,6 @@ async function seedPhoto(
       width: opts.width,
       height: opts.height,
       mimeType: opts.mimeType,
-      ratingCount: 0,
       createdAt: Date.now(),
     }),
   );
@@ -941,8 +940,6 @@ describe("photos.rotate — cascade-safe", () => {
         latitude: 52.37,
         longitude: 4.89,
         locationLabel: "Amsterdam, Nederland",
-        ratingAverage: 4,
-        ratingCount: 3,
         flaggedAt: now,
         flaggedBy: bobId,
         createdAt: now,
@@ -966,8 +963,6 @@ describe("photos.rotate — cascade-safe", () => {
     expect(photo?.latitude).toBe(52.37);
     expect(photo?.longitude).toBe(4.89);
     expect(photo?.locationLabel).toBe("Amsterdam, Nederland");
-    expect(photo?.ratingAverage).toBe(4);
-    expect(photo?.ratingCount).toBe(3);
     expect(photo?.flaggedAt).toBe(now);
     expect(photo?.flaggedBy).toBe(bobId);
   });

@@ -80,7 +80,6 @@ async function bigWorld(t: T) {
           takenAt: Date.UTC(2020, 0, 1) + i * 60_000,
           locationLabel: "Ergens",
           exifOrientation: 1,
-          ratingCount: 0,
           createdAt: Date.UTC(2021, 0, 1) + i * 3_600_000,
         });
         if (i < PHOTOS) {

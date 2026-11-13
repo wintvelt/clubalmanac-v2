@@ -26,7 +26,7 @@ import { space } from "../theme";
 
 const WHAT_GOES = [
   "Al je foto's, ook in de albums van je groepen.",
-  "Je lidmaatschappen en je ratings.",
+  "Je lidmaatschappen.",
   "Je login: met dit e-mailadres kun je daarna niet meer inloggen.",
   "Ben je oprichter van een groep, dan neemt een ander lid het over. Ben je het laatste lid, dan verdwijnt de groep.",
 ];

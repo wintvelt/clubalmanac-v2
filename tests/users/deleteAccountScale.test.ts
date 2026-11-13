@@ -14,11 +14,13 @@ import { modules } from "../_helpers/modules";
 //
 // Prod (2026-11): ±1560 foto's in totaal, 6 groepen, de grootste met 18 leden
 // en 1459 publicaties. Deze wereld:
-// - Rex heeft OWN eigen foto's (meer dan alle foto's op prod), elk gerated
-//   door de 17 andere leden, allemaal in album AR van groep G, en de eerste
-//   SOLO ook in groep S waar hij het laatste lid is (M2-e).
-// - Olga heeft RATED foto's in album AO van G, elk gerated door alle 18 leden,
-//   ook Rex. De eerste IN_H staan ook in groep H (oprichter Olga, Rex lid).
+// - Rex heeft OWN eigen foto's (meer dan alle foto's op prod), allemaal in
+//   album AR van groep G, en de eerste SOLO ook in groep S waar hij het
+//   laatste lid is (M2-e).
+// - Olga heeft RATED foto's in album AO van G. De eerste IN_H staan ook in
+//   groep H (oprichter Olga, Rex lid).
+// WP19a: de ratings op die foto's zijn weg (ratings geschrapt); de naam
+// RATED bleef staan voor de foto's van een ander.
 // - Rex is oprichter van G (18 leden, iedereen admin zoals op prod) → M2-d.
 //
 // Spec: docs/work-packages/WP29-account-verwijderen.md §A-invarianten.
@@ -86,16 +88,11 @@ async function bigWorld(t: T) {
             ownerId: base.rex,
             storageId,
             noFormatsAcceptedAt: now,
-            ratingCount: OTHERS,
-            ratingAverage: 4,
             createdAt: now,
           });
           await ctx.db.insert("albumPhotos", { albumId: base.AR, photoId, groupId: base.G, addedAt: now, addedBy: base.rex });
           if (i < SOLO) {
             await ctx.db.insert("albumPhotos", { albumId: base.AS, photoId, groupId: base.S, addedAt: now, addedBy: base.rex });
-          }
-          for (const userId of base.others) {
-            await ctx.db.insert("ratings", { photoId, userId, value: 4, createdAt: now, updatedAt: now });
           }
           out.push({ photoId, storageId });
         }
@@ -116,17 +113,11 @@ async function bigWorld(t: T) {
             ownerId: base.olga,
             storageId: base.olgaBlob,
             noFormatsAcceptedAt: now,
-            ratingCount: OTHERS + 1,
-            ratingAverage: (OTHERS * 4 + 1) / (OTHERS + 1),
             createdAt: now,
           });
           await ctx.db.insert("albumPhotos", { albumId: base.AO, photoId, groupId: base.G, addedAt: now, addedBy: base.olga });
           if (i < IN_H) {
             await ctx.db.insert("albumPhotos", { albumId: base.AH, photoId, groupId: base.H, addedAt: now, addedBy: base.olga });
-          }
-          await ctx.db.insert("ratings", { photoId, userId: base.rex, value: 1, createdAt: now, updatedAt: now });
-          for (const userId of base.others) {
-            await ctx.db.insert("ratings", { photoId, userId, value: 4, createdAt: now, updatedAt: now });
           }
           out.push(photoId);
         }
@@ -150,7 +141,7 @@ function stubClerk() {
   return calls;
 }
 
-describe(`WP29 A-invariant 8 — account verwijderen met ${OWN} eigen foto's en ${RATED} gerate foto's van een ander`, () => {
+describe(`WP29 A-invariant 8 — account verwijderen met ${OWN} eigen foto's en ${RATED} foto's van een ander`, () => {
   it("lukt binnen de Convex-limieten; alles van hem weg, de groepen en aggregaten kloppen", { timeout: 600_000 }, async () => {
     const t = newLimitedT();
     const w = await bigWorld(t);
@@ -166,7 +157,6 @@ describe(`WP29 A-invariant 8 — account verwijderen met ${OWN} eigen foto's en 
       user: await ctx.db.get(w.rex),
       bySubject: await ctx.db.query("users").withIndex("by_subject", (q) => q.eq("subject", "user_rex")).collect(),
       photos: await ctx.db.query("photos").withIndex("by_owner", (q) => q.eq("ownerId", w.rex)).take(1),
-      ratings: await ctx.db.query("ratings").withIndex("by_user", (q) => q.eq("userId", w.rex)).take(1),
       memberships: await ctx.db.query("memberships").withIndex("by_user", (q) => q.eq("userId", w.rex)).collect(),
       groupsFounded: await ctx.db.query("groups").withIndex("by_createdBy", (q) => q.eq("createdBy", w.rex)).collect(),
       albums: (await ctx.db.query("albums").collect()).filter((a) => a.createdBy === w.rex),
@@ -178,7 +168,6 @@ describe(`WP29 A-invariant 8 — account verwijderen met ${OWN} eigen foto's en 
     expect(his.user).toBeNull();
     expect(his.bySubject).toEqual([]);
     expect(his.photos).toEqual([]);
-    expect(his.ratings).toEqual([]);
     expect(his.memberships).toEqual([]);
     expect(his.groupsFounded).toEqual([]);
     expect(his.albums).toEqual([]);
@@ -201,24 +190,21 @@ describe(`WP29 A-invariant 8 — account verwijderen met ${OWN} eigen foto's en 
     expect(g.members).toHaveLength(OTHERS);
     expect(g.AR?.createdBy).toBe(w.olga);
 
-    // Elke foto van Olga: 17 ratings, gemiddelde 4, in stukken gelezen.
+    // Elke foto van Olga staat er nog, met haar publicatie in AO, in stukken gelezen.
     let wrong = 0;
     for (let start = 0; start < RATED; start += CHUNK) {
       wrong += await t.run(async (ctx) => {
         let bad = 0;
         for (const id of w.olgaPhotos.slice(start, start + CHUNK)) {
           const photo = await ctx.db.get(id);
-          const ratings = await ctx.db.query("ratings").withIndex("by_photo", (q) => q.eq("photoId", id)).collect();
-          const ok =
-            ratings.length === OTHERS &&
-            photo?.ratingCount === OTHERS &&
-            Math.abs((photo?.ratingAverage ?? NaN) - 4) < 1e-9;
+          const pubs = await ctx.db.query("albumPhotos").withIndex("by_photo", (q) => q.eq("photoId", id)).collect();
+          const ok = photo !== null && pubs.some((p) => p.albumId === w.AO);
           if (!ok) bad++;
         }
         return bad;
       });
     }
-    expect(wrong, "foto's van Olga met een verkeerd aantal of gemiddelde").toBe(0);
+    expect(wrong, "foto's van Olga die weg zijn of hun publicatie in AO kwijt").toBe(0);
 
     // De andere leden houden hun rij.
     const others = await t.run(async (ctx) => Promise.all(w.others.map((id) => ctx.db.get(id))));

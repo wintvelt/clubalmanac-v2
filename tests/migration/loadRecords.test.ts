@@ -140,13 +140,15 @@ describe("load-records: de storage-map is een preconditie, geen suggestie", () =
     const before = {
       photos: records.meta.counts.photos!,
       albumPhotos: records.meta.counts.albumPhotos!,
-      ratings: records.meta.counts.ratings!,
     };
+    const out = captureConsole();
     await expect(loadRecords("dev", true)).resolves.toBe(0);
+    // WP19a: geen likes meer om mee te laten vallen; de melding noemt ze niet.
+    expect(out.warn()).toMatch(/foto\('s\) overgeslagen/);
+    expect(out.warn()).not.toMatch(/like|rating/i);
 
     expect(deployment.count("photos")).toBe(before.photos - 1);
     expect(deployment.count("albumPhotos")).toBe(before.albumPhotos - 1);
-    expect(deployment.count("ratings")).toBe(before.ratings - 1);
 
     const totalPhotoCount = deployment
       .docs("users")

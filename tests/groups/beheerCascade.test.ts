@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import { api } from "../../convex/_generated/api";
-import type { Id } from "../../convex/_generated/dataModel";
 import {
   albumRow,
   as,
@@ -10,12 +9,12 @@ import {
   seedAlbum,
   seedGroup,
   seedPhoto,
-  seedRating,
   type T,
 } from "./_beheer";
 
 // WP28 — A-invariant 3 en invariant 5: een publicatie die verdwijnt, neemt
-// cover en ratings mee, langs elke weg, zoals `albums.removePhoto` (AP3, AP4).
+// de cover mee (de ratings vielen weg met WP19a), langs elke weg, zoals
+// `albums.removePhoto` (AP4).
 // In v1 liep elke weggehaalde publicatie via de stream door
 // groupPhotoDelToCover en groupPhotoDelToRating, ook bij album weg en lid weg
 // (spec kernvondst 3).
@@ -28,19 +27,6 @@ async function world(t: T) {
   const A = await seedAlbum(t, w.groupId, w.users.olga!, "A");
   const B = await seedAlbum(t, w.groupId, w.users.olga!, "B");
   return { ...w, A, B };
-}
-
-async function ratingsOn(t: T, photoId: Id<"photos">) {
-  return await t.run(async (ctx) =>
-    ctx.db
-      .query("ratings")
-      .withIndex("by_photo", (q) => q.eq("photoId", photoId))
-      .collect(),
-  );
-}
-
-async function photoRow(t: T, photoId: Id<"photos">) {
-  return await t.run(async (ctx) => ctx.db.get(photoId));
 }
 
 describe("invariant 5 — album verwijderen wist de groepscover als die foto nergens meer in de groep staat", () => {
@@ -84,46 +70,14 @@ describe("invariant 5 — album verwijderen wist de groepscover als die foto ner
   });
 });
 
-describe("A-invariant 3 — album verwijderen haalt ratings weg van wie de foto niet meer mag zien", () => {
-  it("de rating van een lid gaat weg, die van de eigenaar blijft, het gemiddelde klopt", async () => {
-    const t = newT();
-    const w = await world(t);
-    const P = await seedPhoto(t, w.users.anna!);
-    await publish(t, w.A, P);
-    await seedRating(t, P, w.users.anna!, 4);
-    await seedRating(t, P, w.users.lex!, 2);
-
-    await as(t, "user_olga").mutation(api.albums.remove, { albumId: w.A });
-
-    const left = await ratingsOn(t, P);
-    expect(left.map((r) => r.userId)).toEqual([w.users.anna]);
-    const p = await photoRow(t, P);
-    expect(p?.ratingCount).toBe(1);
-    expect(p?.ratingAverage).toBe(4);
-  });
-
-  it("staat de foto nog in een ander album van de groep, dan blijft de rating", async () => {
-    const t = newT();
-    const w = await world(t);
-    const P = await seedPhoto(t, w.users.anna!);
-    await publish(t, w.A, P);
-    await publish(t, w.B, P);
-    await seedRating(t, P, w.users.lex!, 2);
-
-    await as(t, "user_olga").mutation(api.albums.remove, { albumId: w.A });
-
-    expect((await ratingsOn(t, P)).map((r) => r.userId)).toEqual([w.users.lex]);
-  });
-});
-
 // Lid weg: door een admin verwijderd, of zelf vertrokken. Zijn foto's gaan uit
-// de albums van de groep (M1); covers en ratings volgen (AP4, AP3).
+// de albums van de groep (M1); covers volgen (AP4).
 const DEPARTURES = [
   ["verwijderd door een admin", "user_anna"],
   ["zelf vertrokken", "user_lex"],
 ] as const;
 
-describe.each(DEPARTURES)("lid weg (%s): covers en ratings volgen zijn foto's", (_label, actor) => {
+describe.each(DEPARTURES)("lid weg (%s): covers volgen zijn foto's", (_label, actor) => {
   async function leave(t: T, w: Awaited<ReturnType<typeof world>>) {
     await as(t, actor).mutation(api.groups.removeMember, {
       groupId: w.groupId,
@@ -163,43 +117,5 @@ describe.each(DEPARTURES)("lid weg (%s): covers en ratings volgen zijn foto's", 
 
     expect((await groupRow(t, w.groupId))?.coverPhotoId).toBe(annas);
     expect((await albumRow(t, w.A))?.coverPhotoId).toBe(annas);
-  });
-
-  it("ratings van achterblijvers op zijn foto gaan weg; zijn eigen rating blijft; het gemiddelde klopt", async () => {
-    const t = newT();
-    const w = await world(t);
-    const P = await seedPhoto(t, w.users.lex!);
-    await publish(t, w.A, P);
-    await seedRating(t, P, w.users.anna!, 5);
-    await seedRating(t, P, w.users.lex!, 3);
-
-    await leave(t, w);
-
-    expect((await ratingsOn(t, P)).map((r) => r.userId)).toEqual([w.users.lex]);
-    const p = await photoRow(t, P);
-    expect(p?.ratingCount).toBe(1);
-    expect(p?.ratingAverage).toBe(3);
-  });
-
-  it("wie de foto via een andere groep nog ziet, houdt zijn rating", async () => {
-    const t = newT();
-    const w = await world(t);
-    const P = await seedPhoto(t, w.users.lex!);
-    await publish(t, w.A, P);
-    // Tweede groep met Lex en Anna, waar de foto ook staat.
-    const other = await t.run(async (ctx) => {
-      const now = Date.now();
-      const gid = await ctx.db.insert("groups", { name: "Ander", createdBy: w.users.lex!, createdAt: now });
-      await ctx.db.insert("memberships", { userId: w.users.lex!, groupId: gid, role: "admin", joinedAt: now });
-      await ctx.db.insert("memberships", { userId: w.users.anna!, groupId: gid, role: "member", joinedAt: now });
-      return gid;
-    });
-    const C = await seedAlbum(t, other, w.users.lex!, "C");
-    await publish(t, C, P);
-    await seedRating(t, P, w.users.anna!, 5);
-
-    await leave(t, w);
-
-    expect((await ratingsOn(t, P)).map((r) => r.userId)).toEqual([w.users.anna]);
   });
 });

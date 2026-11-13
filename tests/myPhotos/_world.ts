@@ -90,8 +90,6 @@ export async function seedWorld(t: T) {
         longitude: 4.89,
         locationLabel: "Amsterdam",
         exifOrientation: 1,
-        ratingAverage: 1,
-        ratingCount: 1,
         createdAt: BASE + ++n * DAY,
         ...extra,
       });
@@ -186,7 +184,7 @@ export async function outcome(run: () => Promise<unknown>): Promise<unknown> {
 export async function gonePhotoId(t: T, ownerId: Id<"users">): Promise<Id<"photos">> {
   return await t.run(async (ctx) => {
     const storageId = await ctx.storage.store(new Blob(["x"], { type: "image/jpeg" }));
-    const id = await ctx.db.insert("photos", { ownerId, storageId, ratingCount: 0, createdAt: Date.now() });
+    const id = await ctx.db.insert("photos", { ownerId, storageId, createdAt: Date.now() });
     await ctx.db.delete(id);
     return id;
   });

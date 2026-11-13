@@ -17,7 +17,6 @@ const TABLES = [
   "albums",
   "groups",
   "photos",
-  "ratings",
   "features",
   "featureUpvotes",
   "albumLastSeen",
@@ -143,7 +142,6 @@ export async function seedPhoto(
     ctx.db.insert("photos", {
       ownerId,
       storageId: await ctx.storage.store(new Blob(["y"])),
-      ratingCount: 0,
       createdAt: Date.now(),
     }),
   );

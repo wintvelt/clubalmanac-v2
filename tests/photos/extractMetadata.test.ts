@@ -127,7 +127,6 @@ async function insertPhotoFixture(
       ownerId,
       storageId,
       ...extras,
-      ratingCount: 0,
       createdAt: Date.now(),
     }),
   );

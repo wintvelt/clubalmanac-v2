@@ -319,41 +319,93 @@ describe("photos", () => {
 });
 
 // ────────────────────────────────────────────────────────────────────────
-// Correctie 4 — ratings zijn likes (0/1), geen 1..5-score
+// WP19a invariant 4 — ratings zijn geschrapt: bewuste drop, met melding
 // ────────────────────────────────────────────────────────────────────────
-describe("ratings", () => {
-  test("een actieve like wordt één rij met waarde 1", () => {
+// Correctie 4 (likes zijn 0/1) blijft de bronlezing: alleen een like met
+// waarde 1 telt. Wat telt is wat anders geladen zou zijn: een like op een foto
+// en van een user die allebei meegaan. Op het extract van 2026-11-06 is dat 12
+// voor prod en 6 voor de dev-subset; hier rekent de test het uit de fixture.
+const activeLikes = (items: Row[]) =>
+  items.filter((i) => typeof i.PK === "string" && i.PK.startsWith("UF") && Number(i.rating) === 1);
+
+function likesThatWouldLoad(records: Row): number {
+  const photoKeys = new Set((records.photos as Row[]).map((p) => p.sourceKey));
+  const userKeys = new Set((records.users as Row[]).map((u) => u.sourceKey));
+  return activeLikes(buildExtract() as Row[]).filter(
+    (l) => photoKeys.has(String(l.PK).slice(2)) && userKeys.has(l.SK),
+  ).length;
+}
+
+/** De regel in de uitvoer die de geschrapte likes meldt. */
+function dropLines(warnings: string[]): string[] {
+  return warnings.filter((w) => /like/i.test(w) && /geschrapt/i.test(w));
+}
+
+/**
+ * Het aantal in die regel: alleen het getal vlak vóór "like(s) geschrapt".
+ * Andere getallen in de regel (zoals de 19 uit "WP19a") tellen niet mee.
+ */
+function droppedCount(line: string | undefined): number | undefined {
+  const m = line?.match(/(\d+)\s+like(?:s|\(s\))?\s+geschrapt/i);
+  return m ? Number(m[1]) : undefined;
+}
+
+describe("WP19a: likes worden geschrapt en gemeld", () => {
+  test("de uitvoer heeft geen tabel ratings meer", () => {
     const { records } = runProd();
-    expect(bySource(records.ratings, "P-bob-1#U-alice").value).toBe(1);
+    expect(Object.keys(records)).not.toContain("ratings");
   });
 
-  test("een ingetrokken like (rating 0) levert géén rij op", () => {
+  test("geen foto draagt een rating-veld, ook niet als de bron er een had", () => {
     const { records } = runProd();
-    expect(records.ratings.map((r: Row) => r.sourceKey)).not.toContain("P-bob-2#U-alice");
+    const withRating = (records.photos as Row[])
+      .filter((p) => Object.keys(p).some((k) => /rating/i.test(k)))
+      .map((p) => p.sourceKey);
+    expect(withRating).toEqual([]);
   });
 
-  test("ratingCount op de foto is het aantal likes", () => {
-    const { records } = runProd();
-    expect(bySource(records.photos, "P-alice-1").ratingCount).toBe(2);
-    expect(bySource(records.photos, "P-bob-1").ratingCount).toBe(1);
-    expect(bySource(records.photos, "P-bob-2").ratingCount).toBe(0);
+  test("prod: precies één regel meldt het aantal geschrapte likes", () => {
+    const { records, warnings } = runProd();
+    const expected = likesThatWouldLoad(records);
+    expect(expected, "de fixture heeft likes").toBeGreaterThan(0);
+    const lines = dropLines(warnings);
+    expect(lines, "één regel met 'like' en 'geschrapt'").toHaveLength(1);
+    expect(droppedCount(lines[0])).toBe(expected);
   });
 
-  test("ratingAverage is 1 bij likes en afwezig bij nul — zoals de integrity-check hem herrekent", () => {
-    const { records } = runProd();
-    expect(bySource(records.photos, "P-alice-1").ratingAverage).toBe(1);
-    expect(bySource(records.photos, "P-bob-2").ratingAverage).toBeUndefined();
+  test("dev: de regel telt alleen de likes binnen de dev-subset", () => {
+    const dev = runDev();
+    const prod = runProd();
+    const expectedDev = likesThatWouldLoad(dev.records);
+    expect(expectedDev, "de dev-subset laat likes vallen").toBeLessThan(likesThatWouldLoad(prod.records));
+    const lines = dropLines(dev.warnings);
+    expect(lines).toHaveLength(1);
+    expect(droppedCount(lines[0])).toBe(expectedDev);
   });
 
-  test("de aggregates komen uit de transform en kloppen met de rijen die geladen worden", () => {
-    const { records } = runProd();
-    const counted = new Map<string, number>();
-    for (const r of records.ratings as Row[]) {
-      counted.set(r.photoId, (counted.get(r.photoId) ?? 0) + 1);
-    }
-    for (const p of records.photos as Row[]) {
-      expect(p.ratingCount, `ratingCount van ${p.sourceKey}`).toBe(counted.get(p.sourceKey) ?? 0);
-    }
+  test("een ingetrokken like of een record zonder waarde telt niet mee", () => {
+    const { records, warnings } = runProd();
+    const photoKeys = new Set((records.photos as Row[]).map((p) => p.sourceKey));
+    const userKeys = new Set((records.users as Row[]).map((u) => u.sourceKey));
+    const allOnLoaded = (buildExtract() as Row[]).filter(
+      (i) =>
+        typeof i.PK === "string" &&
+        i.PK.startsWith("UF") &&
+        photoKeys.has(i.PK.slice(2)) &&
+        userKeys.has(i.SK),
+    ).length;
+    const expected = likesThatWouldLoad(records);
+    expect(expected, "de fixture heeft ingetrokken likes op geladen foto's").toBeLessThan(allOnLoaded);
+    const count = droppedCount(dropLines(warnings)[0]);
+    expect(count).toBe(expected);
+    expect(count).not.toBe(allOnLoaded);
+  });
+
+  test("[sanity] het aantal komt alleen uit het getal vóór 'like(s) geschrapt'", () => {
+    expect(droppedCount("3 like(s) geschrapt: ratings gaan niet mee (WP19a)")).toBe(3);
+    expect(droppedCount("12 likes geschrapt")).toBe(12);
+    expect(droppedCount("1 like geschrapt")).toBe(1);
+    expect(droppedCount("likes geschrapt (WP19a), 2026-11-06")).toBeUndefined();
   });
 });
 
@@ -530,16 +582,6 @@ describe("dev-filter", () => {
     const { records } = runDev();
     const g3 = records.groups.find((g: Row) => g.sourceKey === "G-3");
     if (g3) expect(g3.coverPhotoId).toBeUndefined();
-  });
-
-  test("een rating waarvan één kant wegvalt, valt weg", () => {
-    const { records } = runDev();
-    const userKeys = new Set(records.users.map((u: Row) => u.sourceKey));
-    const photoKeys = new Set(records.photos.map((p: Row) => p.sourceKey));
-    for (const r of records.ratings as Row[]) {
-      expect(userKeys.has(r.userId)).toBe(true);
-      expect(photoKeys.has(r.photoId)).toBe(true);
-    }
   });
 
   test("prod filtert niet: alle vier de users komen mee", () => {
