@@ -10,6 +10,14 @@
    - V2: een nieuw lid krijgt de naam uit de uitnodiging (de nieuwste). Aanpassen kan in Profiel.
    - V3: open uitnodigingen staan in Leden onder "Uitgenodigd". Alleen een admin ziet ze en kan er een intrekken, na bevestiging. De genodigde krijgt geen mail.
    - V4 (**anders dan A's advies**): de genodigde ziet de groepsfoto bij een ontvangen uitnodiging. A ontwerpt de smalste uitzondering op de foto-toegang: alleen de cover van die groep, alleen voor de ingelogde genodigde en alleen zolang de uitnodiging accepteerbaar is. Geen andere foto's van de groep, geen `storageId`.
+3. **Fix-cyclus 1 (2026-11-14, na de audit: geen blockers, 5 should-fix).**
+   - S1: blijft fail-loud bij een tweede subject met hetzelfde adres, ook zonder uitnodiging. De poort toont dan "nog niet klaar, meld het bij de beheerder", niet "eerst een uitnodiging".
+   - S2: wie na "geen uitnodiging" alsnog wordt uitgenodigd, krijgt een duidelijke instructie in plaats van een spinner. Een gewiste subject met een open uitnodiging blijft ook niet op een spinner hangen.
+   - S5: de tweede sessie-query (`users:signupState`) is een bewuste afwijking op WP15a F2. A pint de set van precies twee.
+   - N1: "wordt verwijderd" wordt een `ConvexError` met code en adres.
+   - S3: Clerk bot sign-up protection gaat uit, op dev en op prod. In `external-services.md` en de fase-5-checklist staat waarom: met de bescherming aan vraagt Clerk ook bij inloggen een captcha. Ook N2 (het symptoom als sign-up per ongeluk uit staat) komt in `external-services.md`.
+   - S4: de app opent na de eerste login op Mijn groepen. Invariant 5 is daarop aangepast; er wordt niets gebouwd.
+   - Volgorde: A schrijft RED tests (S1, S2, S5, N1), daarna doet B de impl en de docs (S3, N2). Regie checkt het resultaat; er volgt geen nieuwe audit.
 
 ## Productdoel
 
@@ -21,7 +29,7 @@ Een admin nodigt iemand uit met een e-mailadres. De genodigde krijgt een mail zo
 2. **De mail bevat geen link en geen token.** Wel: wie uitnodigt, voor welke groep, het e-mailadres waarmee je moet inloggen, en tot wanneer de uitnodiging geldt. Het token verlaat de backend niet meer.
 3. **Aanmelden met een code.** Een nieuw adres kan in de app een account maken: e-mail invullen, code uit de mail, klaar. Geen wachtwoord (zoals WP22). Het inlogscherm maakt zelf uit of het om inloggen of aanmelden gaat; de gebruiker hoeft niet te kiezen.
 4. **Geen account zonder open uitnodiging.** Dat geldt aan de serverkant. Een sessie van een adres zonder open, geldige uitnodiging maakt geen users-rij, en de app zegt dan duidelijk dat je eerst een uitnodiging nodig hebt. De app vraagt nergens anoniem of een adres een uitnodiging heeft: geen e-mail-orakel (WP23).
-5. **Eerste keer inloggen accepteert alles wat open staat.** Zoals nu in de onboarding: alle open, geldige uitnodigingen voor dat adres. Daarna opent de app op een groep van de nieuwe uitnodigingen.
+5. **Eerste keer inloggen accepteert alles wat open staat.** Zoals nu in de onboarding: alle open, geldige uitnodigingen voor dat adres. Daarna opent de app op Mijn groepen, met de nieuwe groep erin (besluit 3, S4).
 6. **Een bestaand lid ziet zijn ontvangen uitnodigingen.** Een nieuwe read geeft alleen de open, niet verlopen uitnodigingen voor het eigen adres. Per uitnodiging: groep (naam, cover), wie uitnodigt (naam, profielfoto via het openbare profielpad), tot wanneer, als admin of niet. Geen token, geen e-mailadres van een ander. Veld-whitelist zoals WP23.
 7. **Accepteren en afwijzen zonder token.** De app werkt met de uitnodiging uit de read van invariant 6. Alleen de genodigde zelf kan accepteren of afwijzen. Na accepteren staat de groep in Mijn groepen; na afwijzen verdwijnt de uitnodiging uit de lijst. De mail aan de afzender (geaccepteerd of afgewezen) blijft.
 8. **Geen anonieme ingang over uitnodigingen.** Wat alleen voor de link bestond (de landing zonder login), verdwijnt of wordt afgeschermd.
