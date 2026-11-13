@@ -201,3 +201,42 @@ Stand bij A's commit: backend 240 rood en 2310 groen, app 3 rood. Elke rode test
 | `tests/images/httpRoute.test.ts` | inventaris http-paden: drie beeldpaden |
 | `app/tests/noUserRowView.test.ts`, `app/tests/signUpTransfer.test.ts` | app, pure logica: het scherm "eerst een uitnodiging" en de Clerk-transfer-fout |
 | omgezet | `accept`, `decline`, `create` herschreven op de nieuwe opzet; `publicGet` → `listMine`; `fixLanding` weg (de landing bestaat niet meer; R2 is gedekt door A-invariant 6); `registerFromSession` (zero-invite en webmaster draaien om); token → id in `bouncedHandler`, `sendInviteEmail`, `exLid`, `fixInviterRights`, `createGate`, `albums/fixCodes`, `profileOrientation`, `profileVersion`, `integration/images/exMember`; altijd een groep in de mail-, webhook- en `deleteAccount`-tests; `buildInviteUrl` weg uit `envVarGates` |
+
+### Fix-cyclus 1 (A, 2026-11-14, besluit 3)
+
+**A-invarianten**
+
+17. **S1: een tweede subject met een adres dat al een rij heeft, blijft fail-loud.**
+    - `registerFromSession` gooit, ook zonder uitnodiging. De check op het adres komt vóór de check op uitnodigingen. Er komt geen tweede rij.
+    - De webhook geeft dan geen 200, zodat Svix herhaalt en ops het ziet (WP6).
+    - `signupState` geeft dan `"blocked"`, met of zonder uitnodiging, en hoofdletter-ongevoelig. Ook als die rij wordt verwijderd.
+    - Een uitnodiging helpt hier niet. De poort toont "nog niet klaar, meld het bij de beheerder", zonder spinner. Niet "eerst een uitnodiging".
+18. **S2, gewiste subject.** Een Clerk-subject in `deletedClerkSubjects` krijgt `"blocked"` van `signupState`, ook met een open uitnodiging. Dus niet `"waiting"`. Een ander subject met hetzelfde adres en een uitnodiging blijft `"waiting"`.
+19. **N1.** Uitnodigen van een adres waarvan het account wordt verwijderd:
+    - De backend geeft `ConvexError({ code: "EMAIL_BEING_DELETED", email })`, met het genormaliseerde adres. De volgorde blijft: een niet-admin krijgt eerst `NOT_ALLOWED`.
+    - De app noemt het adres, zegt dat het account wordt verwijderd en dat het later opnieuw kan. Niet "Controleer je verbinding".
+20. **S2, alsnog uitgenodigd.** De webhook komt één keer per sessie. Heeft deze sessie al `"noInvite"` gezien, dan toont de poort bij `"waiting"` "Log uit en opnieuw in" (`noUserRowView` → `"signOutAndIn"`). Geen spinner.
+21. **S5.** Buiten focus om lopen precies twee queries: `users:current` en `users:signupState`. Gepind tegen elke publieke query in `convex/` en tegen de aanroepen in `AuthGate.tsx`.
+
+**A-keuze 4 (S2).** Duurt `"waiting"` te lang (`waitingTimedOut`), dan toont de poort ook "Log uit en opnieuw in". Het gangbare pad is: "geen uitnodiging" zien, de app sluiten, uitgenodigd worden, de app weer openen. Clerk houdt de sessie dan vast, dus er komt geen nieuwe `session.created`. Het geheugen van de poort is na de herstart weg. Zonder time-out blijft het lid op de spinner hangen.
+
+**Voor B**
+
+- `api.users.signupState()` krijgt er `"blocked"` bij. De volgorde: rij met eigen subject → `"account"`; gewiste subject → `"blocked"`; adres van een andere rij → `"blocked"`; daarna `"waiting"` of `"noInvite"`.
+- `registerFromSession`: de check op het adres komt vóór `acceptableInvitesFor`.
+- `invites.create`: "wordt verwijderd" wordt `ConvexError({ code: "EMAIL_BEING_DELETED", email })`. `inviteRefusalText` krijgt die code erbij.
+- `noUserRowView({ deleting, deleted, signupState?, sawNoInvite?, waitingTimedOut? })` kent twee nieuwe uitkomsten:
+  - `"blocked"`: "nog niet klaar, meld het bij de beheerder", met uitloggen, zonder spinner.
+  - `"signOutAndIn"`: "Je bent uitgenodigd. Log uit en opnieuw in", met uitloggen.
+- De poort onthoudt `sawNoInvite` per Clerk-sessie. Na uitloggen is hij weg; anders ziet een volgende sessie kort "Log uit en opnieuw in" in plaats van de korte wachttijd. De lengte van de time-out kiest B.
+- Typen: `SignupState` in de app krijgt `"blocked"`.
+
+**RED tests.** Backend 13 rood, app 6 rood. De S5-tests zijn groen; ze pinnen wat er al staat.
+
+| Bestand | Wat |
+|---|---|
+| `tests/users/wp19bFix1.test.ts` | A-invariant 17, 18, 19 (backend) |
+| `tests/users/deleteAccount.test.ts` | de vier checks op "wordt verwijderd" gaan nu op de code `EMAIL_BEING_DELETED` |
+| `app/tests/noUserRowView.test.ts` | A-invariant 17, 18, 20, A-keuze 4: `"blocked"` en `"signOutAndIn"` |
+| `app/tests/inviteRefusal.test.ts` | A-invariant 19: de melding in de app |
+| `app/tests/liveQuery.test.ts` | A-invariant 21: precies twee sessie-queries |
