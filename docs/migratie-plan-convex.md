@@ -59,7 +59,7 @@ Deze cijfers komen uit `npm run migrate -- inspect` op de productie-tabel, 2026-
 ## Convex: kan het?
 
 ### Database goed haalbaar
-Single-table design wordt aparte Convex tables: `users`, `photos`, `groups`, `albums`, `albumPhotos`, `memberships`, `invites`, `ratings`, `features`, `featureUpvotes`, `albumLastSeen`. Verbetering: leesbaarder, typed schemas, geen PK/SK encoding.
+Single-table design wordt aparte Convex tables: `users`, `photos`, `groups`, `albums`, `albumPhotos`, `memberships`, `invites`, `features`, `featureUpvotes`, `albumLastSeen`. Verbetering: leesbaarder, typed schemas, geen PK/SK encoding.
 
 ### DynamoDB Streams → Convex mutations: grootste winst
 Convex mutations zijn transactioneel: je kunt in één mutation meerdere tables updaten. Geen eventual consistency. De complexe stream handler (27 cascade handlers) wordt grotendeels overbodig. Sommige denormalization kun je zelfs elimineren door te joinen i.p.v. dupliceren.
@@ -251,7 +251,7 @@ Webmaster-gated operations (uit oude AWS code):
 
 Reads (WP23): elke publieke query vereist inloggen (behalve `invites.getByToken` en `smoke.ping`) en geeft een vaste veld-whitelist terug via een return-validator (`convex/lib/shapes.ts`). Webmaster ziet daarbovenop alleen melder-velden in `listAllFlagged` en problemen van anderen in `features.*`; geen bypass op groep-, album- of foto-reads. Zie [`work-packages/WP23-read-whitelist.md`](./work-packages/WP23-read-whitelist.md).
 
-Writes (WP24): writes die foto-toegang bepalen, checken foto-toegang, zonder webmaster-bypass. `photos.flag` en `ratings.upsert` vereisen foto-toegang; `albums.addPhoto` alleen de eigenaar; een cover (`groups.update`/`albums.update`) moet in een album van die groep of in dat album staan; `users.updateProfile` (het enige publieke pad met een beeld-id; `photos.create` is intern) koppelt alleen een beeld van een eigen foto, van een foto met toegang, of de eigen huidige profielfoto. Onbekend id en geen toegang geven dezelfde error. Zie [`work-packages/WP24-write-gates.md`](./work-packages/WP24-write-gates.md).
+Writes (WP24): writes die foto-toegang bepalen, checken foto-toegang, zonder webmaster-bypass. `photos.flag` vereist foto-toegang; `albums.addPhoto` alleen de eigenaar; een cover (`groups.update`/`albums.update`) moet in een album van die groep of in dat album staan; `users.updateProfile` (het enige publieke pad met een beeld-id; `photos.create` is intern) koppelt alleen een beeld van een eigen foto, van een foto met toegang, of de eigen huidige profielfoto. Onbekend id en geen toegang geven dezelfde error. Zie [`work-packages/WP24-write-gates.md`](./work-packages/WP24-write-gates.md).
 
 Bootstrap: jouw email handmatig in Clerk dashboard aanmaken pre-cutover, env-var `WEBMASTER_EMAILS=wintvelt@me.com` zetten in Convex prod deployment. Dev-deployment krijgt z'n eigen test-email-set bij WP4-setup (zie WP4-sectie hieronder): `WEBMASTER_EMAILS` op dev bevat de webmaster-test-user (`clubalmanac-integration-webmaster@example.com`), zodat de JWT-roundtrip-pin op een echte webmaster-flow draait zonder met Wouter's prod-email te overlappen.
 
@@ -756,7 +756,7 @@ Dev gebruikt een subset van prod data: 3 chosen users met hun content. Overige 1
 **3 users selectiecriteria:**
 1. Admin/oprichter van een groep met meerdere members (test admin flows)
 2. Regular member in 2+ groepen (test multi-group navigatie)
-3. Member met veel content: foto's, ratings, locaties (test scaling van photo grid en map)
+3. Member met veel content: foto's, locaties (test scaling van photo grid en map)
 
 Vaak overlapt dit; 3 unieke users is genoeg.
 
@@ -770,7 +770,6 @@ Vaak overlapt dit; 3 unieke users is genoeg.
 | Photos | alleen geüpload door de 3 chosen |
 | Albums | in groepen waar de 3 in zitten |
 | AlbumPhotos | alleen voor photos van de 3 |
-| Ratings | rater én photo-owner beide in de 3 chosen |
 | Invites | uitnodiger is chosen, groep is opgenomen, en een genodigde die al user is moet chosen zijn (zie hieronder) |
 | Features / upvotes | alleen door de 3 chosen |
 
@@ -813,7 +812,7 @@ File bandwidth is de dominante kostenpost. Vergelijkbaar met of goedkoper dan hu
 ### 1. Unit tests op Convex functions
 `convex-test` library met Vitest. Test queries en mutations in isolatie, elke test krijgt een schone database. Test-driven werken: schrijf eerst de test op basis van verwacht gedrag van de oude API, bouw dan de Convex function.
 
-Voorbeelden: `createPhoto` maakt record aan met juiste EXIF data. `deleteGroup` cascade-delete albums en memberships. Rating update herberekent aggregate op photo.
+Voorbeelden: `createPhoto` maakt record aan met juiste EXIF data. `deleteGroup` cascade-delete albums en memberships.
 
 #### Cascade dekking — matrix-aanpak
 
@@ -821,7 +820,7 @@ Het oude AWS systeem had 28 cascade handlers in `mainStream.js`. Een deel daarva
 
 Vier categorieën:
 1. **Eliminated (join on read):** geen cascade meer, query joint live. Test verifieert dat join fresh data returnt na update
-2. **Transactional aggregate:** aggregate veld (`photoCount`, `ratingAverage`) atomisch herrekend in zelfde mutation. Test verifieert correctheid + integrity-check zou drift flaggen
+2. **Transactional aggregate:** aggregate veld (`photoCount`, `upvoteCount`) atomisch herrekend in zelfde mutation. Test verifieert correctheid + integrity-check zou drift flaggen
 3. **Cascade delete:** parent delete-mutation deletet children inline. Test verifieert zero orphans
 4. **Reactive query coverage:** verifieert dat subscribed views correct updaten — proxy voor UI rerender. Werkt alleen als cat-1 join correct is
 

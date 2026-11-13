@@ -193,3 +193,16 @@ Rood tot B klaar is: bijna alle foto-tests, omdat het schema `ratingCount` nog e
 - Cutover-regel bij `load-records`: "de transform meldt het aantal geschrapte likes (op T0 12)".
 - Cascade-matrix: R1, P4, U6, AP3 en de rating-delen van A1, M1, M5, G4 en MON1 (2b) vallen weg.
 - Dev volgens vraag 3. Stap 3 meldt 6 geschrapte likes.
+
+## Gate (dev, simulator, 2026-11-13)
+
+Dev is volledig herladen met de originelen uit S3: `verify` groen, integriteitscheck leeg, en de transform meldt 6 geschrapte likes. In de simulator (Dev Wouter, verse build van `wp19a`):
+- Mijn groepen, een album, het foto-detail en Mijn foto's laden.
+- De bevestiging bij Overal verwijderen noemt geen likes meer.
+- Account verwijderen noemt alleen nog "Je lidmaatschappen."
+
+### Backlog
+
+- `formaten` eindigt met exit 1 terwijl alles gelukt is: de afsluitende telling (`photos.formatStatus`) haalt de limiet bij zo'n 1000 foto's. Op T0 zijn het er meer. Vóór T0 oplossen.
+- Op dev staat nog een lege tabel `ratings`; Convex laat hem staan. Prod start zonder.
+- Vertrekken en groep verwijderen passen in één keer tot zo'n 4000 publicaties per groep (grootste op prod: 1459). Staat los van ratings.
