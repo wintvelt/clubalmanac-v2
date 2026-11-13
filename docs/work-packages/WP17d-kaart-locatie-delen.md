@@ -22,6 +22,9 @@ Een lid ziet op een kaart waar de foto's van een album zijn gemaakt. Als eigenaa
    - **"Opslaan" pas na een tik of sleep** als er geen opgeslagen plek is (ook direct na weghalen).
    - **Delen toont dat het bezig is** en negeert een tweede tik.
    - A telt de 7 losse profielbeelden op prod: data na het eerste beeld of een MPF-blok?
+5. **Fix-cyclus 2 na de gate** (2026-11-13):
+   - **Het foto-menu verschijnt weer bij andermans foto**, in het album en in het foto-detail. Sinds WP17c gaf `menuActions` zonder plek een lege lijst voor een foto van een ander. Een gewoon lid zag daardoor geen "Delen" en geen "Als profielfoto" (WP27). Elke aanroep moet de plek expliciet meegeven.
+   - **Knorren:** de telling kan zonder AWS-toegang niet. Na de cutover kijken we of de 9 users met een knor die nog zien. Een geweigerde knor wordt een letter, er lekt niets.
 
 ## Invarianten (draft)
 
