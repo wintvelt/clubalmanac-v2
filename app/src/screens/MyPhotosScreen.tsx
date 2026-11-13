@@ -25,7 +25,6 @@ import {
   ActionFeedback,
   SharingProgress,
   BottomPanel,
-  menuActions,
   usePhotoMenu,
   useSelectionActions,
   type Feedback,
@@ -204,7 +203,7 @@ function MyPhotosContent() {
         ListFooterComponent={hasPhotos && list.loadingMore ? <LoadingState /> : undefined}
         renderItem={({ item }) => {
           const photo = menuPhotoOf(item);
-          const hasMenu = !selecting && menuActions(ctx, photo, null).length > 0;
+          const hasMenu = !selecting && menu.hasActions(photo);
           return (
             <MyTile
               photo={item}

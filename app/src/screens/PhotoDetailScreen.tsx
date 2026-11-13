@@ -31,7 +31,6 @@ import {
   ActionFeedback,
   SharingProgress,
   ActionsButton,
-  menuActions,
   useMenuContext,
   usePhotoMenu,
   type Feedback,
@@ -130,7 +129,7 @@ function DetailContent({
     hasFormats: entry.photo.hasFormats,
     exifOrientation: entry.photo.exifOrientation,
   };
-  const hasActions = menuActions(ctx, menuPhoto).length > 0;
+  const hasActions = menu.hasActions(menuPhoto);
 
   useEffect(() => {
     if (page && shown && shown.length > 0) list.current?.scrollToIndex({ index, animated: false });

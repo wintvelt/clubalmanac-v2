@@ -26,7 +26,6 @@ import {
   ActionFeedback,
   SharingProgress,
   ActionsButton,
-  menuActions,
   usePhotoMenu,
   type Feedback,
   type MenuContext,
@@ -94,7 +93,7 @@ function DetailContent({
   const photo = shown?.[index];
   const menu = usePhotoMenu({ place: null, ctx, photoIds: ids, onFeedback: setFeedback , sharePhoto: useSharePhoto() });
   const menuPhoto = photo ? menuPhotoOf(photo) : undefined;
-  const hasActions = menuActions(ctx, menuPhoto, null).length > 0;
+  const hasActions = menu.hasActions(menuPhoto);
 
   useEffect(() => {
     if (page && shown && shown.length > 0) flatList.current?.scrollToIndex({ index, animated: false });

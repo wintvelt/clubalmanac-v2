@@ -32,7 +32,6 @@ import {
   ActionFeedback,
   SharingProgress,
   BottomPanel,
-  menuActions,
   useMenuContext,
   usePhotoMenu,
   useSelectionActions,
@@ -206,7 +205,7 @@ function AlbumContent({ groupId, albumId }: { groupId: Id<"groups">; albumId: Id
         }
         renderItem={({ item }) => {
           const photo = menuPhotoOf(item);
-          const hasMenu = !selecting && menuActions(ctx, photo).length > 0;
+          const hasMenu = !selecting && menu.hasActions(photo);
           return (
             <Tile
               entry={item}

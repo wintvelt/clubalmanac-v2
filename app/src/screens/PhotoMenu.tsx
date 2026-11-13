@@ -97,7 +97,9 @@ export function useMenuContext(groupId: Id<"groups">, me: Id<"users"> | undefine
 export function menuActions(
   ctx: MenuContext | undefined,
   photo: MenuPhoto | undefined,
-  place: MenuPlace = null,
+  // WP17d besluit 5 (A-invariant 13): geen standaard-plek. Een album, of null
+  // voor Mijn foto's; wie hem vergeet, krijgt een typefout.
+  place: MenuPlace,
 ): MenuAction[] {
   if (!ctx || !photo) return [];
   // WP17d A-invariant 6: delen bij elke foto met formaten, locatie bij een
@@ -288,7 +290,13 @@ export function usePhotoMenu({
     [ctx, place, onFeedback, perform],
   );
 
-  return { open, sharing };
+  // WP17d A-invariant 13: "is er een menu?" met dezelfde plek als `open`.
+  const hasActions = useCallback(
+    (photo: MenuPhoto | undefined) => menuActions(ctx, photo, place).length > 0,
+    [ctx, place],
+  );
+
+  return { open, sharing, hasActions };
 }
 
 // --- Selectie (invariant 7, A-keuze 2) -------------------------------------------------
