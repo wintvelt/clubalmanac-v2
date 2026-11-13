@@ -24,6 +24,10 @@ export default function Layout() {
         options={{ title: "Nieuwe groep", presentation: "modal", headerRight: () => <CloseButton /> }}
       />
       <Stack.Screen
+        name="groep/[groupId]/nieuwe-uitnodiging"
+        options={{ title: "Uitnodigen", presentation: "modal", headerRight: () => <CloseButton /> }}
+      />
+      <Stack.Screen
         name="groep/[groupId]/nieuw-album"
         options={{ title: "Nieuw album", presentation: "modal", headerRight: () => <CloseButton /> }}
       />

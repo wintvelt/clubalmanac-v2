@@ -28,6 +28,11 @@ const MESSAGE_BY_CODE: Record<string, string> = {
 
 const UNKNOWN_ACCOUNT_CODE = "form_identifier_not_found";
 
+// WP19b: sign-in-or-up. Na de juiste code meldt Clerk voor een onbekend adres
+// deze fout; dat is geen melding maar de stap naar `signUp.create({ transfer:
+// true })`.
+const SIGN_UP_TRANSFER_CODE = "sign_up_if_missing_transfer";
+
 // Code van de eerste Clerk-fout, of undefined als het geen Clerk-fout is.
 function firstClerkErrorCode(error: unknown): string | undefined {
   if (typeof error !== "object" || error === null) return undefined;
@@ -58,4 +63,15 @@ export function emailStepResult(error: unknown): EmailStepResult {
 
 export function isUnknownAccountError(error: unknown): boolean {
   return firstClerkErrorCode(error) === UNKNOWN_ACCOUNT_CODE;
+}
+
+/**
+ * WP19b: is dit Clerks "maak nu het account"-fout van de sign-in-or-up-flow?
+ * Herkend als API-fout (`errors[0].code`) en als ClerkError (`code`). Gooit
+ * nooit.
+ */
+export function isSignUpTransfer(error: unknown): boolean {
+  if (firstClerkErrorCode(error) === SIGN_UP_TRANSFER_CODE) return true;
+  if (typeof error !== "object" || error === null) return false;
+  return (error as { code?: unknown }).code === SIGN_UP_TRANSFER_CODE;
 }

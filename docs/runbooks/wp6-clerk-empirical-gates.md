@@ -91,25 +91,23 @@ Via Convex dashboard → Functions of via `npx convex run`:
 
 ✅ Pass-criterium: webhook log toont 200 success, geen DB-mutatie zichtbaar in row-counts. Idempotency-subject-check werkt.
 
-## Gate 3 — zero-invite fallback
+## Gate 3 — geen account zonder uitnodiging (WP19b)
 
-**Doel**: bewijst dat een Clerk-signup zonder pending invite een users-row aanmaakt **zonder** membership — terminal "registered-no-membership" werkt zoals gespec'd, geen orphan-Clerk-state.
+**Doel**: bewijst dat een Clerk-sessie zonder accepteerbare uitnodiging **geen** users-row maakt (WP19b A-invariant 1). Was tot WP19b de "zero-invite fallback" (rij zonder lidmaatschap); dat is omgedraaid. Ook de webmaster krijgt geen rij zonder uitnodiging.
 
 ### Stappen
 
-1. Clerk dashboard → Users → "Create user" (handmatig, niet via signup-flow)
-2. Email: een vers adres dat **géén** pending invite heeft (bv. `wintvelt+wp6-gate3@gmail.com`). First/Last name optioneel. Password willekeurig.
-3. NB: handmatig-aangemaakte users hebben directe `session.created` zonder Clerk-verification-loop (admin maakt 'm als verified aan). Webhook vuurt direct.
+1. Log in de app in met een vers adres dat **geen** open uitnodiging heeft (bv. `wintvelt+wp6-gate3@gmail.com`): e-mail, code, klaar. Clerk maakt de Clerk-user (sign-in-or-up).
+2. De webhook vuurt `session.created`.
 
-Alternatief als dashboard-create geen `session.created` triggert: log in op Clerk hosted met de net aangemaakte credentials → triggert dan alsnog.
+### Verificatie
 
-### Verificatie via Convex Data
+- **Convex logs**: `/clerk-webhook` geeft 200 (geen herhaling door Svix).
+- **`users`-tabel**: géén row voor dit adres; `memberships` en `invites` ongewijzigd.
+- **App**: "Je hebt eerst een uitnodiging nodig", met Uitloggen.
+- **Daarna**: een admin nodigt dit adres uit; uitloggen en opnieuw inloggen maakt de rij en het lidmaatschap (A-invariant 2).
 
-- **`users`-tabel**: nieuwe row voor `wintvelt+wp6-gate3@gmail.com`
-- **`invites`-tabel**: géén row voor dit email (we hebben er geen aangemaakt)
-- **`memberships`-tabel**: géén nieuwe row voor deze user
-
-✅ Pass-criterium: users-row aangemaakt, géén membership, géén throw in mutation. User kan inloggen maar landt op leeg dashboard (frontend Phase 4 toont straks "wacht op invite").
+✅ Pass-criterium: 200, geen users-row, het scherm "eerst een uitnodiging"; na uitnodigen en opnieuw inloggen wel een rij.
 
 ## Negatieve curl-test (optioneel)
 

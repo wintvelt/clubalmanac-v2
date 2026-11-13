@@ -13,7 +13,7 @@ Gekozen 2026-05. EU-based, GDPR-compliant. Free tier 6000/maand voldoende voor 1
 
 ### Vereiste env-vars per deployment
 
-WP5 introduceert 5 env-vars. Alle vijf moeten op zowel dev als prod gezet zijn — anders fail-loud throw bij eerste send. Geen "stille" fallback-defaults meer (WP5-audit S-3 fix: APP_URL had silent prod-fallback, STAGE had silent "dev"-fallback — beide leidden tot subtiele mis-routing).
+WP5 introduceerde 5 env-vars; sinds WP19b (geen link in de uitnodigingsmail) zijn het er 4 Mailjet-vars plus `CLUBALMANAC_STAGE`. Ze moeten op zowel dev als prod gezet zijn — anders fail-loud throw bij eerste send. Geen "stille" fallback-defaults meer (WP5-audit S-3 fix: APP_URL had silent prod-fallback, STAGE had silent "dev"-fallback — beide leidden tot subtiele mis-routing).
 
 | Env-var | Waarde dev | Waarde prod | Wat gebeurt bij ontbreken |
 |---|---|---|---|
@@ -21,7 +21,6 @@ WP5 introduceert 5 env-vars. Alle vijf moeten op zowel dev als prod gezet zijn �
 | `MAILJET_API_SECRET` | dev-secret | prod-secret | idem |
 | `MAILJET_WEBHOOK_SECRET` | gegenereerde random string, zelfde in Mailjet dashboard webhook-config | aparte prod-string | `/email-event` → 503, geen state-mutatie |
 | `MAILJET_VERIFIED_SENDERS` | comma-sep van alle from-addresses die in code voorkomen (`invites@…`, `info@…`) | idem, met prod-domain | `UNVERIFIED_SENDER:` throw vóór elke send |
-| `CLUBALMANAC_APP_URL` | dev-app-host (bv. `http://localhost:5173`) | `https://clubalmanac.com` | throw bij `buildInviteUrl`-call (S-3 fix) |
 | `CLUBALMANAC_STAGE` | `"dev"` | `"prod"` | throw bij `getStageLabel`-call op problem-report-pad (S-3 fix) |
 
 ### Rotation
@@ -146,7 +145,7 @@ De Expo-app in `app/` leest twee publieke vars. Ze komen leesbaar in de app-bund
 - **Verkeerde combinatie** (URL van de ene, key van de andere omgeving): de app start, maar Convex weigert het token. De app toont dan "Verbinden met de server lukt niet" met een uitlog-knop.
 
 Clerk-dashboard voor de app-login (per instance, dev al gedaan, prod in fase 5):
-- **Configure → Email, Phone, Username**: e-mailadres met **verificatiecode** als enige inlogmethode. Wachtwoord uit. Sign-up uit of invite-only.
+- **Configure → Email, Phone, Username**: e-mailadres met **verificatiecode** als enige inlogmethode. Wachtwoord uit. **Sign-up aan, zonder verplichte naamvelden** (WP19b: de app meldt een nieuw adres aan via sign-in-or-up; wie een account krijgt, bepaalt de backend: alleen met een open uitnodiging). Bot-bescherming bij sign-up vraagt in deze flow een captcha: checken bij de gate.
 - **Configure → Attack protection**: bescherming tegen enumeratie aan. De app verraadt een onbekend adres ook niet als die uit staat.
 - **Configure → Native applications**: Native API aan.
 - **JWT-template `convex`**: bestaat al (WP4); zonder template weigert Convex het token.

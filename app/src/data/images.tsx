@@ -2,6 +2,7 @@ import { useAuth } from "@clerk/expo";
 import { Image, type ImageSource } from "expo-image";
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import {
+  inviteCoverUrl,
   photoImageUrl,
   profileImageUrl,
   siteUrlOf,
@@ -50,6 +51,23 @@ export function useSiteUrl(): string | null {
 // Geen van beide is de kale URL: daaronder bewaarden builds van vóór WP25 het
 // origineel op schijf (fix-cyclus 3, kernvondst 16).
 export function usePhotoLoad(photoId: string, format: ImageFormat, hasFormats?: boolean) {
+  return useTokenImageLoad((site) => {
+    const uri = photoImageUrl(site, photoId, format);
+    return { uri, cacheKey: `${uri}#${hasFormats === true ? "formaat" : "origineel"}` };
+  });
+}
+
+// WP19b A-invariant 15: de cover bij een ontvangen uitnodiging. Dezelfde
+// token-toestand als een foto. De bytes zijn altijd een formaat of een
+// schoongemaakt origineel; de schermen houden hem alleen in het geheugen.
+export function useInviteCoverLoad(inviteId: string, format: ImageFormat) {
+  return useTokenImageLoad((site) => {
+    const uri = inviteCoverUrl(site, inviteId, format);
+    return { uri, cacheKey: uri };
+  });
+}
+
+function useTokenImageLoad(target: (site: string) => { uri: string; cacheKey: string }) {
   const site = useSiteUrl();
   const { isSignedIn, getToken, sessionClaims } = useAuth();
   const forConvex = sessionClaims?.aud === "convex";
@@ -77,8 +95,7 @@ export function usePhotoLoad(photoId: string, format: ImageFormat, hasFormats?: 
   if (site === null || view.kind === "failed") source = null;
   else if (view.kind === "wait") source = undefined;
   else {
-    const uri = photoImageUrl(site, photoId, format);
-    const cacheKey = `${uri}#${hasFormats === true ? "formaat" : "origineel"}`;
+    const { uri, cacheKey } = target(site);
     source = { uri, cacheKey, headers: { Authorization: `Bearer ${view.token}` } };
   }
   const attempt = view.kind === "load" ? view.attempt : load.attempt;

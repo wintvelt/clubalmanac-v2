@@ -7,9 +7,11 @@ import type { SessionState } from "./sessionState";
 
 const ACTIVE = "active";
 
-// De enige query die buiten focus om mag lopen (F2), zoals getFunctionName
-// hem noemt.
-const SESSION_QUERY = "users:current";
+// De queries die buiten focus om mogen lopen (F2), zoals getFunctionName ze
+// noemt: users.current, en (WP19b A-invariant 3) users.signupState, waarmee
+// de poort zonder users-rij weet of er een uitnodiging is. De poort zet de
+// tweede alleen live zolang users.current `null` is.
+const SESSION_QUERIES: ReadonlySet<string> = new Set(["users:current", "users:signupState"]);
 
 // Het scherm in beeld: focus (geen andere tab, geen scherm erbovenop, geen
 // modaal erover), app actief, sessie ready. In "reconnecting" heeft Convex
@@ -34,7 +36,7 @@ export function sessionQueryIsLive(input: {
   convexAuthenticated: boolean;
 }): boolean {
   return (
-    input.query === SESSION_QUERY &&
+    SESSION_QUERIES.has(input.query) &&
     input.appState === ACTIVE &&
     input.clerkLoaded &&
     input.clerkSignedIn &&

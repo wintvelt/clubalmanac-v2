@@ -1,4 +1,4 @@
-import { v } from "convex/values";
+import { ConvexError, v } from "convex/values";
 import {
   internalAction,
   internalMutation,
@@ -8,31 +8,36 @@ import {
   type MutationCtx,
   type QueryCtx,
 } from "./_generated/server";
-import type { Doc } from "./_generated/dataModel";
+import type { Doc, Id } from "./_generated/dataModel";
 import { internal } from "./_generated/api";
 import { requireCurrentUser } from "./users";
 import { activeUserBySubject, isEmailBeingDeleted } from "./lib/accountState";
 import {
+  acceptableInvitesFor,
   getMembership,
-  isGroupInviteStillValid,
+  isInviteAcceptable,
   refuse,
   requireAdminForWrite,
 } from "./groups";
 import { normalizeEmail } from "./lib/email";
+import { validName } from "./lib/names";
+import { isPublishedInGroup } from "./lib/photoAccess";
 import {
-  inviteLanding,
+  inviteForAdmin,
+  inviteForAdminFields,
+  inviteReceived,
+  inviteReceivedFields,
   inviteSender,
   inviteSenderFields,
-  landingGroupFields,
-  landingInviterFields,
   pick,
+  publicProfileFields,
+  receivedGroupFields,
 } from "./lib/shapes";
 import { avatarFieldsOf } from "./lib/profilePhoto";
 import { INVITES_SENDER, sendMailjetMessage } from "./lib/mailjet";
 import {
   acceptedTemplate,
   bouncedTemplate,
-  buildInviteUrl,
   declinedTemplate,
   formatNlDate,
   inviteTemplate,
@@ -42,18 +47,11 @@ const ROLE = v.union(v.literal("admin"), v.literal("member"));
 
 const DEFAULT_EXPIRY_MS = 14 * 24 * 60 * 60 * 1000; // 14 dagen
 
+// WP19b A-invariant 10: het bericht bij een uitnodiging, in code points.
+export const INVITE_MESSAGE_MAX_LENGTH = 1000;
+
 function generateToken(): string {
   return crypto.randomUUID();
-}
-
-async function findByToken(
-  ctx: QueryCtx | MutationCtx,
-  token: string,
-): Promise<Doc<"invites"> | null> {
-  return await ctx.db
-    .query("invites")
-    .withIndex("by_token", (q) => q.eq("token", token))
-    .unique();
 }
 
 async function findInvitesByEmail(
@@ -66,81 +64,86 @@ async function findInvitesByEmail(
     .collect();
 }
 
+/**
+ * WP19b A-invariant 10: een adres met precies één `@`, een niet-lege kant
+ * links en rechts, en geen spaties. Geeft het genormaliseerde adres.
+ */
+function validInviteEmail(raw: string): string {
+  const email = normalizeEmail(raw);
+  const parts = email.split("@");
+  if (parts.length !== 2 || !parts[0] || !parts[1] || /\s/.test(email)) {
+    throw new ConvexError({ code: "EMAIL_INVALID" });
+  }
+  return email;
+}
+
+/** Getrimd; leeg telt als geen bericht. */
+function validInviteMessage(raw: string | undefined): string | undefined {
+  if (raw === undefined) return undefined;
+  const message = raw.trim();
+  if (message.length === 0) return undefined;
+  if ([...message].length > INVITE_MESSAGE_MAX_LENGTH) {
+    throw new ConvexError({ code: "MESSAGE_TOO_LONG" });
+  }
+  return message;
+}
+
+// WP19b A-invariant 5, 8 en 10 (besluit 2, V1): uitnodigen met naam, e-mail,
+// groep, en optioneel rol en bericht. Alleen een admin (WP28 W6), altijd met
+// een groep (A-keuze 1). De volgorde van de gates blijft zoals WP28/WP29:
+// eerst admin, dan "wordt verwijderd", dan lid of dubbel. Een weigering op
+// "al lid" of "al uitgenodigd" draagt het genormaliseerde adres, zodat de
+// app het kan noemen. Geeft alleen het id terug, nooit het token.
 export const create = mutation({
   args: {
     email: v.string(),
-    groupId: v.optional(v.id("groups")),
+    name: v.string(),
+    groupId: v.id("groups"),
     role: v.optional(ROLE),
+    message: v.optional(v.string()),
   },
-  returns: v.object({ inviteId: v.id("invites"), token: v.string() }),
-  handler: async (ctx, { email, groupId, role }) => {
-    const user = await requireCurrentUser(ctx);
-    const normalizedEmail = normalizeEmail(email);
+  returns: v.object({ inviteId: v.id("invites") }),
+  handler: async (ctx, args) => {
+    // WP28 besluit 6 (W6): alleen een admin nodigt uit. Geen lid of onbekende
+    // groep: NOT_MEMBER; lid zonder admin-rol: NOT_ALLOWED.
+    const { user } = await requireAdminForWrite(ctx, args.groupId);
+    const name = validName(args.name, "NAME_REQUIRED");
+    const email = validInviteEmail(args.email);
+    const message = validInviteMessage(args.message);
 
     // WP29 fix 8: geen uitnodiging (en geen mail) aan iemand wiens account
-    // nu wordt verwijderd. Als het verwijderen klaar is, kan iedereen hem
-    // weer uitnodigen. Fix-cyclus 2: met groep pas na de admin-check (geen
+    // nu wordt verwijderd. Fix-cyclus 2: pas na de admin-check (geen
     // e-mail-orakel voor niet-admins), maar vóór de check op "al lid".
-    const rejectIfBeingDeleted = async () => {
-      if (await isEmailBeingDeleted(ctx.db, normalizedEmail)) {
-        throw new Error(
-          "Dit adres hoort bij een account dat wordt verwijderd. Probeer het later opnieuw.",
-        );
-      }
-    };
-
-    // WP28 besluit 6 (W6): alleen een admin nodigt uit voor een groep. Geen
-    // lid of onbekende groep: NOT_MEMBER; lid zonder admin-rol: NOT_ALLOWED.
-    if (groupId) {
-      await requireAdminForWrite(ctx, groupId);
-      await rejectIfBeingDeleted();
-
-      // [GAP] Weiger als de email al member is van de group — beter hier
-      // catchen dan pas op accept (oude AWS code deed dat in acceptInvite).
-      const existingUser = await ctx.db
-        .query("users")
-        .withIndex("by_email", (q) => q.eq("email", normalizedEmail))
-        .unique();
-      if (existingUser) {
-        const existingMembership = await getMembership(
-          ctx,
-          existingUser._id,
-          groupId,
-        );
-        if (existingMembership) {
-          throw new Error("Deze gebruiker is al lid van de groep");
-        }
-      }
-    } else {
-      // Zonder groep mag elke ingelogde user uitnodigen (fix-cyclus 2,
-      // geaccepteerd: zoals de melding over een dubbele open invite).
-      await rejectIfBeingDeleted();
+    if (await isEmailBeingDeleted(ctx.db, email)) {
+      throw new Error(
+        "Dit adres hoort bij een account dat wordt verwijderd. Probeer het later opnieuw.",
+      );
     }
 
-    // [GAP] Dedup: voorkom dubbele pending invite voor (email, groupId).
-    const existingInvites = await findInvitesByEmail(ctx, normalizedEmail);
+    const existingUser = await ctx.db
+      .query("users")
+      .withIndex("by_email", (q) => q.eq("email", email))
+      .unique();
+    if (existingUser && (await getMembership(ctx, existingUser._id, args.groupId))) {
+      throw new ConvexError({ code: "ALREADY_MEMBER", email });
+    }
+
+    // Een open, niet verlopen uitnodiging voor dezelfde groep is dubbel. Een
+    // verlopen uitnodiging (expiresAt <= now) blokkeert niet.
     const now = Date.now();
-    // Audit-8 §9: expiresAt > now ⇔ nog geldig (gespiegelde polariteit van
-    // de <= now "verlopen"-spec in accept/decline). Boundary-moment telt als
-    // verlopen; een invite met expiresAt === now is dus géén duplicate.
-    const duplicate = existingInvites.find(
-      (i) =>
-        i.status === "pending" &&
-        i.expiresAt > now &&
-        i.groupId === groupId,
+    const duplicate = (await findInvitesByEmail(ctx, email)).find(
+      (i) => i.status === "pending" && i.expiresAt > now && i.groupId === args.groupId,
     );
-    if (duplicate) {
-      throw new Error("Er staat al een open invite voor dit emailadres");
-    }
+    if (duplicate) throw new ConvexError({ code: "ALREADY_INVITED", email });
 
-    const token = generateToken();
-    const effectiveRole = groupId ? (role ?? "member") : role;
     const inviteId = await ctx.db.insert("invites", {
-      email: normalizedEmail,
+      email,
       invitedBy: user._id,
-      groupId,
-      role: effectiveRole,
-      token,
+      groupId: args.groupId,
+      role: args.role ?? "member",
+      name,
+      ...(message !== undefined ? { message } : {}),
+      token: generateToken(),
       status: "pending",
       expiresAt: now + DEFAULT_EXPIRY_MS,
       createdAt: now,
@@ -153,92 +156,120 @@ export const create = mutation({
       inviteId,
     });
 
-    return { inviteId, token };
+    return { inviteId };
   },
 });
 
-// Public: gebruikt door invite-landingpagina vóór login. Geen auth-check:
-// het token is het toegangsbewijs. Frontend bepaalt wat te tonen op basis van
-// status + isExpired.
-//
-// Audit-8 + WP23 (A-keuze 6, herzien 47b65bc): alleen wat de landing nodig
-// heeft. Wél de invitee-email: met code-login moet de user precies dat adres
-// gebruiken, en het token ging al naar dat adres. Geen token-echo,
-// invitedBy-id, bouncedAt, `_id` of tijden.
-// Inviter = {_id, name} (WP17a besluit 8: `_id` voor het openbare
-// profielpad, geen beeld-id); groep = {_id, name, description}
-// (`_id` voor "accepteren, dan naar de groep"; ontsluit niets voor een
-// niet-lid).
-export const getByToken = query({
-  args: { token: v.string() },
-  returns: v.union(inviteLanding, v.null()),
-  handler: async (ctx, { token }) => {
-    const invite = await findByToken(ctx, token);
-    if (!invite) return null;
-    const inviterDoc = await ctx.db.get(invite.invitedBy);
-    // WP28 A-invariant 9 (red-team R2): de groep alleen bij een open, niet
-    // verlopen uitnodiging. Met een oud token (geaccepteerd, afgewezen,
-    // verlopen) volgt een ex-lid de groep niet; wie lid is, vindt hem in
-    // Mijn groepen.
-    const isExpired = invite.expiresAt <= Date.now();
-    const isOpen = invite.status === "pending" && !isExpired;
-    const groupDoc =
-      isOpen && invite.groupId ? await ctx.db.get(invite.groupId) : null;
-    return {
-      status: invite.status,
-      isExpired,
-      ...(invite.role !== undefined ? { role: invite.role } : {}),
-      email: invite.email,
-      group: groupDoc ? pick(groupDoc, landingGroupFields) : null,
-      inviter: inviterDoc
-        ? { ...pick(inviterDoc, landingInviterFields), ...(await avatarFieldsOf(ctx, inviterDoc)) }
-        : null,
-    };
+/** WP24: de cover staat in een album van die groep (en de foto bestaat). */
+async function groupHasCover(ctx: QueryCtx, group: Doc<"groups">): Promise<boolean> {
+  if (!group.coverPhotoId) return false;
+  const cover = await ctx.db.get(group.coverPhotoId);
+  if (!cover) return false;
+  return await isPublishedInGroup(ctx, cover._id, group._id);
+}
+
+// WP19b invariant 6, A-invariant 6, 14, 15: de ontvangen uitnodigingen van de
+// caller. Alleen die nu accepteerbaar zijn, voor het adres van zijn users-rij,
+// nieuwste eerst. Veld-whitelist (WP23): geen token, geen e-mailadres, geen
+// invitedBy, geen naam die de admin typte, geen tijden behalve geldig tot. De
+// groep met `hasCover` en zonder foto-id: het beeld loopt via
+// `/beeld/uitnodiging/<inviteId>`. Anoniem of zonder rij: lege lijst.
+export const listReceived = query({
+  args: {},
+  returns: v.array(inviteReceived),
+  handler: async (ctx) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) return [];
+    const user = await activeUserBySubject(ctx.db, identity.subject);
+    if (!user) return [];
+    const invites = await acceptableInvitesFor(ctx, user.email, Date.now());
+    const out = [];
+    for (const invite of invites) {
+      const group = await ctx.db.get(invite.groupId!);
+      if (!group) continue;
+      const inviter = await ctx.db.get(invite.invitedBy);
+      out.push({
+        ...pick(invite, inviteReceivedFields),
+        group: {
+          ...pick(group, receivedGroupFields),
+          hasCover: await groupHasCover(ctx, group),
+        },
+        inviter: inviter
+          ? { ...pick(inviter, publicProfileFields), ...(await avatarFieldsOf(ctx, inviter)) }
+          : null,
+      });
+    }
+    return out;
   },
 });
 
+// WP19b A-invariant 12 (besluit 2, V3): de open, niet verlopen uitnodigingen
+// van een groep, voor een admin van die groep. Nieuwste eerst. Een lid zonder
+// admin-rol: NOT_ALLOWED; geen lid of onbekende groep: NOT_MEMBER.
+export const listForGroup = query({
+  args: { groupId: v.id("groups") },
+  returns: v.array(inviteForAdmin),
+  handler: async (ctx, { groupId }) => {
+    await requireAdminForWrite(ctx, groupId);
+    const now = Date.now();
+    const rows = await ctx.db
+      .query("invites")
+      .withIndex("by_group", (q) => q.eq("groupId", groupId))
+      .collect();
+    return rows
+      .filter((i) => i.status === "pending" && i.expiresAt > now)
+      .sort((a, b) => b.createdAt - a.createdAt)
+      .map((i) => pick(i, inviteForAdminFields));
+  },
+});
+
+/**
+ * WP19b A-invariant 7: de uitnodiging achter een id, als die nu accepteerbaar
+ * is en voor het adres van de caller. Anders één weigering, `INVITE_INVALID`
+ * (van een ander adres, onbekend, ingetrokken, verlopen, al beantwoord, groep
+ * weg, uitnodiger geen admin, zonder groep): zo verraadt hij niet of een id
+ * bestaat.
+ */
+async function requireOwnAcceptableInvite(
+  ctx: MutationCtx,
+  user: Doc<"users">,
+  invite: Doc<"invites"> | null,
+): Promise<Doc<"invites"> & { groupId: Id<"groups"> }> {
+  if (
+    !invite ||
+    invite.email !== normalizeEmail(user.email) ||
+    !invite.groupId ||
+    !(await isInviteAcceptable(ctx, invite, Date.now()))
+  ) {
+    refuse("INVITE_INVALID");
+  }
+  return invite as Doc<"invites"> & { groupId: Id<"groups"> };
+}
+
+// WP19b invariant 7, A-invariant 7: accepteren op het id uit `listReceived`.
+// Geeft de groep terug (WP28 H2): de app gaat daarheen.
 export const accept = mutation({
-  args: { token: v.string() },
-  handler: async (ctx, { token }) => {
+  args: { inviteId: v.id("invites") },
+  returns: v.object({ groupId: v.id("groups") }),
+  handler: async (ctx, { inviteId }) => {
     const user = await requireCurrentUser(ctx);
-    const invite = await findByToken(ctx, token);
-    if (!invite) throw new Error("Invite niet gevonden");
-    if (invite.email !== normalizeEmail(user.email)) {
-      throw new Error("Invite is niet voor jouw email");
-    }
-    if (invite.status !== "pending") {
-      throw new Error("Invite is niet meer pending");
-    }
-    // Audit-8 §9: expiresAt <= now is verlopen (boundary-moment telt al als
-    // verlopen). Harmoniseert met create en registerFromSession (`> now` als geldig).
-    // Status-patch zou worden teruggedraaid door de throw (Convex mutations
-    // zijn atomair). Markeren als expired gebeurt door cron of bounce-handler.
-    if (invite.expiresAt <= Date.now()) {
-      throw new Error("Invite is verlopen");
-    }
-    // WP28 A-invariant 4: de groep bestaat nog en de uitnodiger is nog admin.
-    if (!(await isGroupInviteStillValid(ctx, invite))) refuse("INVITE_INVALID");
+    const invite = await requireOwnAcceptableInvite(ctx, user, await ctx.db.get(inviteId));
+    const now = Date.now();
 
-    await ctx.db.patch(invite._id, {
-      status: "accepted",
-      respondedAt: Date.now(),
-    });
+    await ctx.db.patch(invite._id, { status: "accepted", respondedAt: now });
 
-    if (invite.groupId) {
-      const existing = await getMembership(ctx, user._id, invite.groupId);
-      const desiredRole = invite.role ?? "member";
-      if (!existing) {
-        await ctx.db.insert("memberships", {
-          userId: user._id,
-          groupId: invite.groupId,
-          role: desiredRole,
-          joinedAt: Date.now(),
-        });
-      } else if (existing.role !== "admin" && desiredRole === "admin") {
-        // Upgrade: bestaand member wordt admin (oude AWS:
-        // hasBetterRoleForMember). Geen downgrade van admin → member.
-        await ctx.db.patch(existing._id, { role: "admin" });
-      }
+    const existing = await getMembership(ctx, user._id, invite.groupId);
+    const desiredRole = invite.role ?? "member";
+    if (!existing) {
+      await ctx.db.insert("memberships", {
+        userId: user._id,
+        groupId: invite.groupId,
+        role: desiredRole,
+        joinedAt: now,
+      });
+    } else if (existing.role !== "admin" && desiredRole === "admin") {
+      // Upgrade: bestaand lid wordt admin. Geen downgrade van admin → lid.
+      await ctx.db.patch(existing._id, { role: "admin" });
     }
 
     // Notify inviter — best-effort gequeue'd action.
@@ -246,59 +277,37 @@ export const accept = mutation({
       kind: "accepted",
       inviteId: invite._id,
     });
+    return { groupId: invite.groupId };
   },
 });
 
+// WP19b invariant 7, A-invariant 7: afwijzen op id. Een eigen, al afgewezen
+// uitnodiging nog eens afwijzen geeft geen fout en geen tweede mail
+// (refresh, twee keer tikken). Al het andere dat niet accepteerbaar is:
+// INVITE_INVALID.
 export const decline = mutation({
-  args: { token: v.string() },
-  handler: async (ctx, { token }) => {
+  args: { inviteId: v.id("invites") },
+  returns: v.null(),
+  handler: async (ctx, { inviteId }) => {
     const user = await requireCurrentUser(ctx);
-    const invite = await findByToken(ctx, token);
-    if (!invite) throw new Error("Invite niet gevonden");
+    const row = await ctx.db.get(inviteId);
+    if (row && row.status === "declined" && row.email === normalizeEmail(user.email)) {
+      return null;
+    }
+    const invite = await requireOwnAcceptableInvite(ctx, user, row);
 
-    // Audit-8 order-bug: status-checks vóór email-check. Een tweede call op
-    // een reeds-declined invite (refresh, history-replay) moet idempotent
-    // zijn ongeacht caller-email. Voor terminal states (declined/accepted/
-    // expired) is geen state-overgang meer nodig en is de email-mismatch-
-    // throw ongepast (lekt status niet, want eerste rechtmatige caller heeft
-    // 'm al gezet).
-    if (invite.status === "declined") return;
-    if (invite.status === "accepted") {
-      throw new Error("Invite is al geaccepteerd");
-    }
-    if (invite.status === "expired") {
-      throw new Error("Invite is verlopen");
-    }
-    if (invite.expiresAt <= Date.now()) {
-      throw new Error("Invite is verlopen");
-    }
-    // Pending: vereist matching email vóór state-overgang.
-    if (invite.email !== normalizeEmail(user.email)) {
-      throw new Error("Invite is niet voor jouw email");
-    }
-
-    await ctx.db.patch(invite._id, {
-      status: "declined",
-      respondedAt: Date.now(),
-    });
+    await ctx.db.patch(invite._id, { status: "declined", respondedAt: Date.now() });
 
     await ctx.scheduler.runAfter(0, internal.invites.sendInviteEmail, {
       kind: "declined",
       inviteId: invite._id,
     });
+    return null;
   },
 });
 
-// WP23 (A-keuze 7): `listPendingForEmail` en `hasPendingForEmail` zijn
-// verwijderd. Ze waren anoniem (email-orakel, en de lijst gaf tokens terug)
-// en geen client gebruikte ze: de pre-signup-gate is bewust niet gebouwd
-// (WP6); de onboarding (users.registerFromSession) filtert zelf op pending +
-// niet verlopen. Ontvangen uitnodigingen van de caller worden een nieuwe read
-// in WP19.
-
 // Sender-view: eigen verstuurde invites (alle statussen, audit/history).
-// Audit-8: gebruikt by_invitedBy index ipv full-table scan — schaalt bij
-// groei van invites-table (was O(n) over alle invites).
+// Audit-8: gebruikt by_invitedBy index ipv full-table scan.
 // WP23 (A-keuze 8): invite-vorm zonder token, invitedBy, respondedAt, bouncedAt.
 export const listMine = query({
   args: {},
@@ -316,36 +325,25 @@ export const listMine = query({
   },
 });
 
-// Sender of een group-admin van de invite-group kan een pending invite
-// intrekken. Reeds responded invites (accepted/declined) niet — dat zou
-// een latent membership orphanen.
+// WP19b A-invariant 12 (besluit 2, V3): intrekken kan alleen een admin van de
+// groep van de uitnodiging, ook de afzender alleen zolang hij admin is. Geen
+// lid, onbekende groep, onbekend id of een uitnodiging zonder groep:
+// NOT_MEMBER (geen bestaans-orakel); lid zonder admin-rol: NOT_ALLOWED. Een
+// geaccepteerde uitnodiging blijft staan (geschiedenis van het lidmaatschap).
+// De genodigde krijgt geen mail.
 export const remove = mutation({
   args: { inviteId: v.id("invites") },
+  returns: v.null(),
   handler: async (ctx, { inviteId }) => {
-    const user = await requireCurrentUser(ctx);
+    await requireCurrentUser(ctx);
     const invite = await ctx.db.get(inviteId);
-    if (!invite) throw new Error("Invite bestaat niet");
-
+    if (!invite || !invite.groupId) refuse("NOT_MEMBER");
+    await requireAdminForWrite(ctx, invite.groupId);
     if (invite.status === "accepted") {
       throw new Error("Geaccepteerde invite kan niet meer ingetrokken worden");
     }
-
-    let allowed = invite.invitedBy === user._id;
-    if (!allowed && invite.groupId) {
-      const callerMembership = await getMembership(
-        ctx,
-        user._id,
-        invite.groupId,
-      );
-      if (callerMembership && callerMembership.role === "admin") {
-        allowed = true;
-      }
-    }
-    if (!allowed) {
-      throw new Error("Geen rechten om deze invite in te trekken");
-    }
-
     await ctx.db.delete(inviteId);
+    return null;
   },
 });
 
@@ -444,16 +442,18 @@ export const getInviteForEmail = internalQuery({
     const inviter = await ctx.db.get(invite.invitedBy);
     const group = invite.groupId ? await ctx.db.get(invite.groupId) : null;
     // accepter/decliner lookup: invite.email is altijd normalized, by_email
-    // index op users werkt direct. Kan null zijn als de ontvanger zich nog
-    // niet had geregistreerd (decline via public-token zonder account).
+    // index op users werkt direct. Kan null zijn als de ontvanger er geen
+    // account (meer) heeft.
     const recipientUser = await ctx.db
       .query("users")
       .withIndex("by_email", (q) => q.eq("email", invite.email))
       .unique();
+    // WP19b A-invariant 4: geen token meer; wel naam en bericht voor de mail.
     return {
       invite: {
         email: invite.email,
-        token: invite.token,
+        ...(invite.name !== undefined ? { name: invite.name } : {}),
+        ...(invite.message !== undefined ? { message: invite.message } : {}),
         expiresAt: invite.expiresAt,
         invitedBy: invite.invitedBy,
         groupId: invite.groupId ?? null,
@@ -507,11 +507,14 @@ export const sendInviteEmail = internalAction({
 
     if (kind === "invite") {
       const inviterName = data.inviter?.name ?? "iemand";
+      // WP19b A-invariant 4 en 13: geen link en geen token; wel het adres
+      // waarmee de genodigde inlogt, de aanhef en het bericht.
       const tpl = inviteTemplate({
         inviterName,
         groupName,
-        inviteUrl: buildInviteUrl(data.invite.token),
-        token: data.invite.token,
+        inviteeName: data.invite.name,
+        inviteeEmail: data.invite.email,
+        message: data.invite.message,
         expirationDate: formatNlDate(data.invite.expiresAt),
       });
       await sendMailjetMessage({

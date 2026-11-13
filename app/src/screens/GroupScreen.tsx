@@ -14,6 +14,7 @@ import { Notice } from "../components/Notice";
 import { QueryBoundary } from "../components/QueryBoundary";
 import { Screen } from "../components/Screen";
 import { SegmentedTabs } from "../components/SegmentedTabs";
+import { InvitedSection } from "./InvitesScreens";
 import { SmallButton } from "../components/SmallButton";
 import { EmptyState, LoadingState } from "../components/States";
 import { Text } from "../components/Text";
@@ -284,6 +285,8 @@ function MembersTab({ groupId, groupName, founderId }: { groupId: Id<"groups">; 
   const myRole = members.find((m) => m.membership.userId === me?._id)?.membership.role;
   const viewer = me && myRole ? { me: me._id as string, role: myRole, founderId } : undefined;
   const iAmFounder = viewer !== undefined && viewer.me === founderId;
+  // WP19b A-invariant 12: uitnodigen en "Uitgenodigd" alleen voor een admin.
+  const iAmAdmin = myRole === "admin";
 
   async function run(action: MemberAction, target: { userId: Id<"users">; name: string | null }) {
     if (inFlight.current) return;
@@ -389,6 +392,7 @@ function MembersTab({ groupId, groupName, founderId }: { groupId: Id<"groups">; 
           </ListSection>
         </View>
       ))}
+      {iAmAdmin && <InvitedSection groupId={groupId} />}
       {iAmFounder && (
         <Text variant="meta" color="muted">
           Als oprichter kun je de groep niet verlaten. Maak eerst een ander lid oprichter. Ben je het enige lid,

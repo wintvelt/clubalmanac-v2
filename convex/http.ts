@@ -428,6 +428,7 @@ http.route({
 // (WP25 A-invariant 13).
 const PHOTO_PREFIX = "/beeld/foto/";
 const PROFILE_PREFIX = "/beeld/profiel/";
+const INVITE_PREFIX = "/beeld/uitnodiging/";
 
 const NOT_FOUND = () => new Response("Niet gevonden", { status: 404 });
 const BAD_FORMAT = () => new Response("Onbekend formaat", { status: 400 });
@@ -581,6 +582,49 @@ http.route({
       return await cleanOriginalResponse(ctx, choice.storageId, FALLBACK_CACHE_PROFILE);
     }
     return await imageResponse(ctx, choice.storageId, "public, no-cache");
+  }),
+});
+
+// WP19b A-invariant 15: de cover voor een genodigde, op invite-id.
+//   GET /beeld/uitnodiging/<inviteId>[?formaat=klein|groot]
+//     400 onbekend formaat (vóór alles, zoals de andere paden)
+//     401 uitgelogd of ongeldige token
+//     404 alle andere gevallen, één antwoord: geen users-rij, een ander
+//         adres, onbekend, misvormd, niet (meer) accepteerbaar, geen cover,
+//         cover niet in de groep, beeld gewist
+//     200 de bytes; nooit het origineel (zonder formaat of met `origineel`:
+//         *groot*). `private, no-cache`: de toegang eindigt met de
+//         uitnodiging, dus een cache vraagt het eerst opnieuw.
+http.route({
+  pathPrefix: INVITE_PREFIX,
+  method: "GET",
+  handler: httpAction(async (ctx, request) => {
+    // `origineel` uitgeschreven geeft hier ook *groot* (A-invariant 15).
+    const raw = new URL(request.url).searchParams.get("formaat");
+    const format = raw === "origineel" ? "origineel" : parseImageFormat(raw);
+    if (format === "ongeldig") return BAD_FORMAT();
+
+    let identity;
+    try {
+      identity = await ctx.auth.getUserIdentity();
+    } catch {
+      return new Response("Unauthorized", { status: 401 });
+    }
+    if (!identity) return new Response("Unauthorized", { status: 401 });
+
+    const choice = await ctx.runQuery(internal.images.inviteCoverInFormat, {
+      inviteId: idFromPath(request, INVITE_PREFIX),
+      formaat: format === "origineel" ? "groot" : format,
+    });
+    if (!choice) return NOT_FOUND();
+    if (choice.fallback) {
+      return await cleanOriginalResponse(ctx, choice.storageId, FALLBACK_CACHE_PHOTO, {
+        Vary: "Authorization",
+      });
+    }
+    return await imageResponse(ctx, choice.storageId, "private, no-cache", {
+      Vary: "Authorization",
+    });
   }),
 });
 

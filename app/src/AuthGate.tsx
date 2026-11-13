@@ -65,6 +65,12 @@ export function AuthGate({ children }: { children: ReactNode }) {
   // Live: maakt de webhook de rij alsnog aan, dan wordt dit vanzelf "ready".
   // Gepauzeerd in de achtergrond geldt de laatst bekende rij (invariant 12).
   const currentUser = useSessionQuery(api.users.current, {}, session);
+  // WP19b A-invariant 3: zonder users-rij zegt de backend waarom. Alleen live
+  // zolang users.current `null` is.
+  const signupState = useSessionQuery(api.users.signupState, {}, {
+    ...session,
+    convexAuthenticated: session.convexAuthenticated && currentUser === null,
+  });
   const derived = deriveSessionState({ ...session, currentUser, tokenFetchFailed, online });
   const sticky = useStickyReconnecting(derived, session.clerkSignedIn);
   const { retrying } = sticky;
@@ -129,7 +135,11 @@ export function AuthGate({ children }: { children: ReactNode }) {
         </StatusScreen>
       );
     case "noUserRow":
-      return <NoUserRow view={noUserRowView({ deleting: accountDeleting, deleted: accountDeleted })} />;
+      return (
+        <NoUserRow
+          view={noUserRowView({ deleting: accountDeleting, deleted: accountDeleted, signupState })}
+        />
+      );
     case "show":
     case "login":
     case "home":
@@ -270,9 +280,28 @@ function NoUserRow({ view }: { view: NoUserRowView }) {
       return <Loading />;
     case "accountDeleted":
       return <AccountDeletedScreen />;
+    case "noInvite":
+      return <NoInviteScreen />;
     case "notReady":
       return <NoUserRowScreen />;
   }
+}
+
+// WP19b A-invariant 3 en A-keuze 3: ingelogd, maar zonder account en zonder
+// uitnodiging. Geen "opnieuw proberen": wie later wordt uitgenodigd, logt uit
+// en opnieuw in.
+function NoInviteScreen() {
+  const { user } = useUser();
+  const email = user?.primaryEmailAddress?.emailAddress;
+  return (
+    <StatusScreen
+      title="Je hebt eerst een uitnodiging nodig"
+      message="Clubalmanac is alleen voor leden van een groep. Vraag een beheerder van je groep om je uit te nodigen met dit e-mailadres. Log daarna uit en opnieuw in."
+    >
+      {email && <Text color="muted">Ingelogd als {email}</Text>}
+      <SignOutButton />
+    </StatusScreen>
+  );
 }
 
 // WP29 fix 7: het account is verwijderd, maar het uitloggen daarna lukte niet.
