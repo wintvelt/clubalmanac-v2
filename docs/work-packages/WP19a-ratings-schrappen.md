@@ -11,6 +11,12 @@
 
    Daarmee vervallen de backlog-punten uit WP28 (besluit 11 en 13): de leesgrens bij vertrek, groep verwijderen en account verwijderen met veel ratings, en audit K3.
 
+2. **Schrappen blijft (2026-11-13, na A's stop op vraag 1).**
+   - De oude webapp had een like-knop en een teller "+N"; de iPhone-app niet.
+   - De bron telt 12 likes van 4 leden. De laatste is van 2022-12.
+   - Bij T0 verdwijnen ze. De nieuwe webapp (Track B) krijgt geen likes.
+   - A's dev-volgorde (vraag 3) is akkoord.
+
 ## Productdoel
 
 Er bestaan geen ratings meer: een lid kan er geen geven en ziet er geen. Vertrekken, een lid verwijderen, een groep of album verwijderen en je account verwijderen hangen niet meer af van hoeveel ratings er ooit gegeven zijn.
