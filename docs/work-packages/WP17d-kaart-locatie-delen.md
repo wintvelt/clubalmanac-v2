@@ -284,3 +284,22 @@ Aangenomen API (B kiest de interne vorm, niet de namen):
 - **N2: Apple en `NSLocation…`.** `react-native-maps` linkt CoreLocation. Bij de EAS/TestFlight-upload kan Apple een ontbrekende `NSLocationWhenInUseUsageDescription` melden (ITMS-90683) en de upload blokkeren. Controleren bij de eerste upload. Eist Apple de sleutel, dan gaat hij erin; `app/tests/placeShare.test.ts` (A-invariant 7) verbiedt nu elke `NSLocation`-tekst en moet dan "geen toestemming vragen" pinnen (geen `expo-location`, geen `showsUserLocation`) in plaats van "geen sleutel". Een purpose string vraagt zelf niets. Dat is een besluit van Wouter.
 - **N3: de kaart van het grootste album in de gate.** Het album met 327 plekken (van 540): openen, scrollen en in- en uitzoomen tot elke speld los staat. Kijken of de kaart vloeiend blijft (elke speld heeft een miniatuur en `tracksViewChanges`).
 - **De stand van een los profielbeeld:** de schoonmaker zet de stand-tag terug (B). In de gate: een los profielbeeld met een stand-tag staat rechtop.
+
+## Gate (dev, simulator, 2026-11-13)
+
+Groen na fix-cyclus 2.
+
+- **Kaart:** "In Georgië" (54 plekken) toont groepjes met aantallen; inzoomen splitst ze en loopt vloeiend. Een album zonder plekken toont "Geen locaties" met het aantal foto's zonder locatie. Het tweede lid (dev3) ziet de kaart van "Gatetest nu" met 14 plekken en 3 zonder.
+- **Locatie wijzigen:** tik op de kaart, Opslaan aan, nieuwe plek en plaatsnaam van Photon. Weghalen: melding vooraf, speld naar midden-Nederland, Opslaan uit; dev3 ziet de foto niet meer op de kaart. Testfoto daarna exact teruggezet.
+- **Delen:** eigen foto zonder melding, "Foto klaarmaken om te delen…" in beeld, deelmenu met een JPEG. Andermans foto (als dev3): "Deze foto van Dev Wouter verlaat de app.", daarna het deelmenu.
+- **Openbaar profielpad:** zonder formaat, *groot* en *klein*: 200, JPEG, geen EXIF.
+- **Gate-vondst → fix-cyclus 2:** een gewoon lid kreeg bij andermans foto geen menu (regressie uit WP17c, zie besluit 5).
+- **Niet gedekt:** het album met 327 plekken staat niet op dev (grootste: 54). De knorren op prod (besluit 5). N2 (`NSLocation` bij de eerste TestFlight-upload).
+
+### Backlog
+
+- Locatie wijzigen: verandert de plek elders terwijl het scherm open is, dan staat Opslaan aan en blijft "Locatie is weggehaald" staan.
+- "Geen locaties" staat in een rode foutbox; het is geen fout.
+- Spelden half buiten beeld bij een album over meerdere werelddelen.
+- Schoonmaker: alleen bekende segmenten houden (nu gaan gereserveerde markers mee); GPS bij een upload buiten de app; `setLocation` zonder rem (Photon fair use, coördinaten in de log).
+- Bezig-staat bij delen geldt per scherm.
