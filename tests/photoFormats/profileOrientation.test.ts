@@ -6,6 +6,7 @@ import schema from "../../convex/schema";
 import { registerUser, withUser } from "../_helpers/auth";
 import { modules } from "../_helpers/modules";
 import { expectShape, SHAPE } from "../readWhitelist/_world";
+import { bytesOf, sameBytes, SCHOON } from "../_helpers/jpeg";
 import { seedPhoto } from "./_helpers";
 import { seedMember } from "../_helpers/membership";
 
@@ -200,10 +201,12 @@ describe("de stand hoort bij de rij waarvan het profielpad de bytes geeft", () =
   it("geen rij met formaten: het origineel, met de stand van de eigen rij (WP8, zoals Photo)", async () => {
     const t = convexTest(schema, modules);
     const s = await setup(t);
-    const own = await seedPhoto(t, s.owen, { original: "OWEN-ORIGINEEL", exifOrientation: 6 });
+    // WP17d besluit 4: het origineel gaat alleen als echte JPEG over het profielpad.
+    const own = await seedPhoto(t, s.owen, { original: "OWEN-ORIGINEEL", originalBytes: SCHOON, exifOrientation: 6 });
     await t.run((ctx) => ctx.db.patch(s.owen, { profilePhotoStorageId: own.storageId }));
 
-    expect(await servedText(t, s.owen)).toBe("OWEN-ORIGINEEL");
+    const res = await t.fetch(profileUrl(s.owen), { method: "GET" });
+    expect(sameBytes(await bytesOf(res), SCHOON)).toBe(true);
     expect(await standOf(t, s.owen)).toBe(6);
   });
 

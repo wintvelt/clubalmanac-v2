@@ -6,6 +6,7 @@ import type { Id } from "../../convex/_generated/dataModel";
 import schema from "../../convex/schema";
 import { registerUser, withUser } from "../_helpers/auth";
 import { deleteAccount } from "../_helpers/deleteAccount";
+import { labeledJpeg } from "../_helpers/jpeg";
 import { modules } from "../_helpers/modules";
 import { seedMember } from "../_helpers/membership";
 
@@ -33,9 +34,13 @@ type R = Record<string, any>;
 const MISSING_FUNCTION =
   /could not find|no such export|exported from module|no function named|not a function|not registered/i;
 
-/** Bytes die het profielpad als JPEG herkent (magische bytes), met een label. */
+/**
+ * Een echte JPEG met een label (WP17d besluit 4: een origineel gaat alleen als
+ * JPEG die de schoonmaker begrijpt over het profielpad). Het label staat in
+ * een commentaar-segment; het profielpad mag het weghalen.
+ */
 function jpeg(label: string): Blob {
-  return new Blob([new Uint8Array([0xff, 0xd8, 0xff, 0xe0]), label], { type: "image/jpeg" });
+  return new Blob([labeledJpeg(label)], { type: "image/jpeg" });
 }
 
 async function insertPhoto(
@@ -48,8 +53,9 @@ async function insertPhoto(
     const storageId = await ctx.storage.store(jpeg(label));
     const formats = opts.withFormats
       ? {
-          klein: await ctx.storage.store(jpeg(`klein van ${label}`)),
-          groot: await ctx.storage.store(jpeg(`groot van ${label}`)),
+          // Een formaat gaat ongewijzigd mee (tests/photoFormats/httpFormats.test.ts).
+          klein: await ctx.storage.store(new Blob([`klein van ${label}`], { type: "image/jpeg" })),
+          groot: await ctx.storage.store(new Blob([`groot van ${label}`], { type: "image/jpeg" })),
         }
       : undefined;
     const photoId = await ctx.db.insert("photos", {
