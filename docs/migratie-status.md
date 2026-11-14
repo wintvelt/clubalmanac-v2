@@ -187,7 +187,7 @@ Dus: communicatie en blokkade gaan **buiten de oude app om**.
 ### Cutover stappenplan
 
 - [ ] T-4 weken: prod environments activeren — Convex prod deployment aanmaken (EU Dublin), Clerk prod instance activeren, env-paren wirën (Convex `CLERK_FRONTEND_API_URL` → prod Clerk, EAS prod build profile met juiste keys)
-- [ ] T-4 weken: prod env-vars op Convex deployment zetten (apart van dev) — `MAILJET_API_KEY`, `MAILJET_SECRET_KEY`, `MAILJET_SENDER_EMAIL`, `MAILJET_WEBHOOK_USER`, `MAILJET_WEBHOOK_SECRET`, `CLUBALMANAC_STAGE=prod`, `CLERK_WEBHOOK_SECRET` (prod Svix), aparte `WEBMASTER_EMAILS`, `CLUBALMANAC_APP_STORE_ID=1663038609` (WP19c, App Store-link in de uitnodigingsmail)
+- [ ] T-4 weken: prod env-vars op Convex deployment zetten (apart van dev) — `MAILJET_API_KEY`, `MAILJET_API_SECRET`, `MAILJET_VERIFIED_SENDERS`, `MAILJET_WEBHOOK_SECRET`, `CLUBALMANAC_STAGE=prod`, `CLERK_WEBHOOK_SECRET` (prod Svix), aparte `WEBMASTER_EMAILS`, `CLUBALMANAC_APP_STORE_ID=1663038609` (WP19c, App Store-link in de uitnodigingsmail)
 - [ ] T-4 weken: Mailjet prod webhook-config — eigen webhook-URL (`https://<prod-deployment>.eu-west-1.convex.site/email-event`) + eigen Basic-auth-secret in Mailjet dashboard configureren
 - [ ] Vóór de App Store-build: `CLERK_SECRET_KEY` (`sk_live_…`) op de prod-deployment, anders blijft na Account verwijderen de Clerk-user staan ([WP29](./work-packages/WP29-account-verwijderen.md), [`external-services.md`](./conventions/external-services.md) §Auth).
 - [ ] Daarna één keer testen: een wegwerp-account uitnodigen, in de app Account verwijderen, en in het Clerk-dashboard van de prod-instance checken dat de user weg is.

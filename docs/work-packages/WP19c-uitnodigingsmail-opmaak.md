@@ -1,6 +1,6 @@
 # WP19c: uitnodigingsmail met opmaak en groepsfoto
 
-> Draft regie 2026-11-14. Backend-WP (mail), geen app-wijziging. A → B → audit → gate op dev met een echte mail. Eigen branch `wp19c`.
+> Draft regie 2026-11-14. Backend-WP (mail), plus één app-wijziging (besluit 4: cover op de uitnodigingskaart rechtop). A → B → audit → gate op dev met een echte mail en de kaart in de app. Eigen branch `wp19c`.
 
 ## Besluiten Wouter
 
@@ -51,7 +51,7 @@ Wie een uitnodiging krijgt, ziet in de mail meteen van welke groep: de groepsfot
 2. A: oude mail bekijken, open vragen, A-invarianten, RED tests. Stop bij een productvraag.
 3. B: implementatie.
 4. Audit.
-5. Gate op dev: een uitnodiging naar Wouters `+clerk_test`-adres voor Blob bibliotheek (cover in album) en voor een groep zonder geschikte cover. Mail in iPhone Mail en Gmail bekijken, licht en donker.
+5. Gate op dev: een uitnodiging naar Wouters `+clerk_test`-adres voor Blob bibliotheek (cover in album) en voor een groep zonder geschikte cover. Mail in iPhone Mail en Gmail bekijken, licht en donker. In Gmail donker letten op de oranje knop en de grijze berichtstreep: Gmail kleurt zelf om. Daarna in de app (simulator), als genodigde in Profiel → Uitnodigingen: staat de cover op de kaart rechtop, voor een groep met cover in stand 6 en een groep met cover zonder stand?
 
 ## Spec-criticus aanvullingen (A, 2026-11-14)
 

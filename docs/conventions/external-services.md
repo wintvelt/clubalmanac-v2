@@ -13,7 +13,7 @@ Gekozen 2026-05. EU-based, GDPR-compliant. Free tier 6000/maand voldoende voor 1
 
 ### Vereiste env-vars per deployment
 
-WP5 introduceerde 5 env-vars; sinds WP19b (geen link in de uitnodigingsmail) zijn het er 4 Mailjet-vars plus `CLUBALMANAC_STAGE`, en sinds WP19c ook `CLUBALMANAC_APP_STORE_ID`. Ze moeten op zowel dev als prod gezet zijn — anders fail-loud throw bij eerste send. Geen "stille" fallback-defaults meer (WP5-audit S-3 fix: APP_URL had silent prod-fallback, STAGE had silent "dev"-fallback — beide leidden tot subtiele mis-routing).
+WP5 introduceerde 5 env-vars; sinds WP19b (geen link in de uitnodigingsmail) zijn het er 4 Mailjet-vars plus `CLUBALMANAC_STAGE`. Ze moeten op zowel dev als prod gezet zijn — anders fail-loud throw bij eerste send. Uitzondering: `CLUBALMANAC_APP_STORE_ID` (WP19c) moet ook op beide, maar zonder gaat de uitnodigingsmail gewoon de deur uit, zie de tabel. Geen "stille" fallback-defaults meer (WP5-audit S-3 fix: APP_URL had silent prod-fallback, STAGE had silent "dev"-fallback — beide leidden tot subtiele mis-routing).
 
 | Env-var | Waarde dev | Waarde prod | Wat gebeurt bij ontbreken |
 |---|---|---|---|
