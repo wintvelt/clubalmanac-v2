@@ -7,6 +7,7 @@
 1. **Groepsfoto en opmaak in de uitnodigingsmail (2026-11-14).** De oude uitnodigingsmail had opmaak en de groepsfoto. WP5 nam alleen de tekst over; in WP19b zag A de groepsfoto in v1, maar dat werd geen vraag. Wouter: nu oppakken.
 2. **De foto zit in de mail zelf, niet achter een link.** Een link naar een beeld werkt voor iedereen die de mail doorgestuurd krijgt en botst met WP19b besluit 1 (geen link, geen token). 
 3. **De App Store-link gaat mee (2026-11-14).** Een vaste link naar de app in de App Store, voor iPhone. Geen persoonlijke link en geen token, dus geen botsing met WP19b besluit 1. De Apple ID van de app is `1663038609` (Wouter, 2026-11-14; openbaar, geen geheim). De link is `https://apps.apple.com/app/id1663038609`.
+4. **De cover op de uitnodigingskaart in de app staat ook rechtop (2026-11-14, na A).** A vond dat de kaart uit WP19b (`InviteCover`) de cover zonder `exifOrientation` toont, zodat een gedraaide foto op zijn kant ligt. Wouter: meenemen in WP19c.
 
 ## Productdoel
 
