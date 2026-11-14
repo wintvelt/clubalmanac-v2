@@ -144,10 +144,12 @@ function MyFlaggedContent() {
 
   return (
     <Screen underHeader>
-      <Text>
-        Andere leden hebben deze foto's gemeld als ongepast. Ben je het er niet mee eens? Maak dan bezwaar; de
-        webmaster beoordeelt de foto. Zonder bezwaar wordt de foto na de genoemde datum verwijderd.
-      </Text>
+      {photos.length > 0 && (
+        <Text>
+          Andere leden hebben deze foto's gemeld als ongepast. Ben je het er niet mee eens? Maak dan bezwaar; de
+          webmaster beoordeelt de foto. Zonder bezwaar wordt de foto na de genoemde datum verwijderd.
+        </Text>
+      )}
       {status && <Notice kind={status.kind} message={status.text} />}
       {photos.length === 0 ? (
         <EmptyState icon="flag" title="Geen meldingen" text="Er zijn geen meldingen over jouw foto's." />
@@ -305,10 +307,12 @@ function FlagQueueContent() {
 
   return (
     <Screen underHeader>
-      <Text>
-        Foto's die leden als ongepast meldden. Een bezwaar zonder besluit staat bovenaan. Zonder besluit wordt een
-        foto na de genoemde datum verwijderd.
-      </Text>
+      {queue.length > 0 && (
+        <Text>
+          Foto's die leden als ongepast meldden. Een bezwaar zonder besluit staat bovenaan. Zonder besluit wordt een
+          foto na de genoemde datum verwijderd.
+        </Text>
+      )}
       {status && <Notice kind={status.kind} message={status.text} />}
       {queue.length === 0 ? (
         <EmptyState icon="flag" title="Geen meldingen" text="Er zijn geen gemelde foto's." />

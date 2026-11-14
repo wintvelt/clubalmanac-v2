@@ -277,7 +277,7 @@ function ProblemsContent() {
       <Text>
         {webmaster
           ? "Alle gemelde problemen. Alleen de melder en jij zien ze."
-          : "Werkt er iets niet? Meld het; de webmaster krijgt een mail. Je meldingen zie alleen jij, en de webmaster."}
+          : "Werkt er iets niet? Meld het; de webmaster krijgt een mail. Alleen jij en de webmaster zien je meldingen."}
       </Text>
       <Button title="Probleem melden" icon="problem" onPress={() => router.push(submitPath("problem"))} />
       {status && <Notice kind={status.kind} message={status.text} />}
