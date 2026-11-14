@@ -254,7 +254,7 @@ Clerk-dev: aanmelden open, bot sign-up protection uit. `CLUBALMANAC_APP_URL` weg
 ### Backlog
 
 - Het berichtveld in Uitnodigen verdwijnt achter het toetsenbord.
-- iPhone Mail toont bij de uitnodigingsmail "Dit bericht is van een mailinglijst" met "Meld me af" (waarschijnlijk een List-Unsubscribe-header van Mailjet). Uitzoeken of dat uit kan.
+- Later: in de uitnodigingsmail een vaste link naar de app in de App Store (alleen iPhone; werkt pas als de app bij T0 weer te koop is). Nodig: de Apple ID van de app. Besluit Wouter 2026-11-14: niet in WP19b.
 - De groepsfoto bij een uitnodiging werkt alleen als de cover in een album van de groep staat. Op dev geldt dat voor 1 van 3 groepen met een cover. Vóór T0 op prod tellen; dan beslissen of dat genoeg is.
 - Een uitnodiging zonder melding of teller: een bestaand lid ziet hem alleen via Profiel → Uitnodigingen (audit N3).
 
