@@ -1,6 +1,6 @@
 # WP20: melden — foto's, ideeën en problemen
 
-> Regie 2026-11-14. App-WP met een stuk backend. A → besluiten Wouter → B → audit → gate in de simulator (dev). Eigen branch `wp20`. Na WP19c en WP30, vóór T0.
+> Regie 2026-11-14. App-WP met een stuk backend. A → besluiten Wouter → B → audit → red-team op het beeldpad → gate in de simulator (dev). Eigen branch `wp20`. Na WP19c en WP30, vóór T0.
 
 ## Productdoel
 
@@ -52,6 +52,16 @@ De backend is er grotendeels (WP4, WP5, WP23, WP24). De app heeft nog niets.
 1. **Eigenaar bij een melding.** Advies regie: een mail aan de eigenaar bij een melding, met de datum waarop de foto verdwijnt en waar hij bezwaar maakt. Zonder bericht verdwijnt de foto ongemerkt (invariant 2). De naam van de melder staat er niet in.
 2. **Webmaster zonder bezwaar.** Advies regie: de webmaster kan een melding ook zonder bezwaar afwijzen (foto blijft) of de foto meteen laten verwijderen. A meldt eerst wat v1 deed.
 3. **Plek in de app.** Advies regie: melden in het foto-menu; je gemelde foto's in Profiel (naast Uitnodigingen, alleen zichtbaar als er iets is); ideeën en problemen in Instellingen; de webmaster-schermen ook in Instellingen, alleen voor de webmaster.
+
+### Besluiten Wouter (2026-11-14, na A's advies)
+
+Alle adviezen overgenomen.
+
+1. **Mail aan de eigenaar bij een melding,** met de datum waarop de foto verdwijnt (A-invariant 10).
+2. **De webmaster beslist ook zonder bezwaar:** goedkeuren (melding weg) of de foto meteen verwijderen, met een mail aan de eigenaar (A-invarianten 11–13).
+3. **De webmaster ziet het beeld van een gemelde foto,** alleen zolang die gemeld is (A-invariant 9). Nieuw leespad voor beeldbytes, dus na de audit een red-team op deze uitzondering.
+4. **Plek, zoals v1:** melden in het foto-menu; je eigen gemelde foto's en de wachtrij van de webmaster in Profiel, alleen zichtbaar als er iets is; ideeën en problemen in Instellingen. Dit vervangt vraag 3 hierboven.
+5. **Probleem melden zonder account:** geen nieuw schrijfpad zonder login. De contactlink op de Info-pagina's (`CONTACT_MAILTO`, ook uitgelogd) is de weg; B zorgt dat die vindbaar is als "probleem melden".
 
 ## Risico-assessment
 
