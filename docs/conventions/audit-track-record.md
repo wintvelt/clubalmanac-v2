@@ -75,6 +75,10 @@ Tussen 2026-04 en 2026-06 hebben 18 audit-cycli op clubalmanac-v2 backend de vol
   - Een productinvariant uit de draft viel tussen A en B door (de app zou na de eerste login op de groep openen). A loopt voortaan elke genummerde spec-invariant na: een A-invariant, een test, of "niet getest, omdat …".
   - Een nieuwe toegangsregel (alleen een cover die in een album van de groep staat) kan in de praktijk weinig opleveren. Tel tijdens de gate hoeveel echte data aan de regel voldoet; op dev was dat 1 van 3.
   - Een gate-mail naar een nep-adres bounced en laat de uitnodiging verlopen. Gebruik voor de gate een echt adres met `+clerk_test`: de mail komt aan en Clerk vraagt de vaste testcode.
+- **WP19c (uitnodigingsmail met opmaak en groepsfoto) afgesloten 2026-11-14**: A, B en audit als sub-sessies vanuit regie, twee rondes. Ronde 1: opmaak, inline foto via Mailjet's `InlinedAttachments`, App Store-link, cover op de kaart rechtop. Audit: geen blockers, twee doc-should-fixes (regie) en een testgat bij gespiegelde standen (A). De gate vond wat geen test kon vinden: iPhone Mail toonde de foto twee keer, omdat Mailjet een `multipart/mixed` bouwt, en Mailjet zette tracking in elke mail. Ronde 2 (besluit 5 en 6): mail met foto via Mailjet SMTP met een eigen `multipart/related`, tracking per bericht uit; audit schoon, gate groen. Lessen:
+  - Tests op de API-payload zeggen niets over de mail die de provider ervan maakt. Lees bij een gate met bijlagen of opmaak de ruwe mail (MIME-structuur, ingevoegde pixels en links), niet alleen het beeld in één client.
+  - Bekijk een mail met een inline-beeld altijd ook in Apple Mail; Gmail verbergt structuurfouten.
+  - Een gedeelde tabel tussen controle en gecontroleerde (de EXIF-standen, nu in backend én app) vraagt een test met minstens één gespiegelde stand tegen een onafhankelijke oracle (zelfde patroon als WP8).
 
 ## Recurring-pattern-kandidaten (WP23)
 

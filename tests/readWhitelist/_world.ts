@@ -110,8 +110,10 @@ export const SHAPE = {
   // Geen token, e-mailadres, invitedBy, status of tijden behalve geldig tot.
   // `message` alleen als er een is. De uitnodiger zoals op het openbare
   // profielpad (WP17a besluit 8); de groep met `hasCover`, zonder foto-id.
+  // WP19c A-invariant 12: plus `coverOrientation` als de cover een stand heeft
+  // (pBob, de cover van G1, heeft stand 6).
   inviteReceived: ["_id", "role", "expiresAt", "group", "inviter"],
-  receivedGroup: ["_id", "name", "hasCover"],
+  receivedGroup: ["_id", "name", "hasCover", "coverOrientation"],
   receivedInviter: ["_id", "name", "profileHasFormats", "profileVersion"],
   // WP19b A-invariant 12: de open uitnodigingen van een groep (admin).
   inviteForAdmin: ["_id", "email", "role", "expiresAt"],

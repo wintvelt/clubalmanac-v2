@@ -23,6 +23,7 @@
     "@clerk/backend": "^3.4.4",
     "@edge-runtime/vm": "^5.0.0",
     "@types/node": "^24.19.2",
+    "@types/nodemailer": "^8.0.2",
     "convex-test": "^0.0.50",
     "dotenv": "^17.4.2",
     "typescript": "^6.0.3",
@@ -32,6 +33,7 @@
     "convex": "^1.45.0",
     "exif-parser": "^0.1.12",
     "heic-decode": "2.1.0",
+    "nodemailer": "10.3.1",
     "sharp": "0.35.5"
   }
 }
