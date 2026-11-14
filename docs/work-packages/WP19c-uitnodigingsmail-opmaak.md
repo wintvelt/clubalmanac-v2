@@ -191,7 +191,7 @@ Bronnen: de gate-mail (`scripts/.data/wp19c-mail1.eml`); Mailjet `smtp-relay/con
   - `handleBounce` zoekt op het adres van de ontvanger (`email` in het event) en ontdubbelt op `MessageID`.
   - De Event API geldt per account, voor de Send API en SMTP gelijk. Mailjet zet bij SMTP zijn eigen Return-Path (in de gate-mail `…bnc3.mailjet.com`), dus de bounce komt via Mailjet bij ons.
   - `X-MJ-CustomID` met een id zou alleen een id in de mail brengen (A-invariant 2).
-- **Afmeldlink van Mailjet.** Mailjet zet zelf een `List-Unsubscribe` met een `mjt.lu`-link in de kop. Dat is geen tracking, maar wie erop klikt, krijgt van Mailjet geen mail meer. De volgende mail aan dat adres wordt `blocked`, en `handleBounce` zet de uitnodiging dan op verlopen. Buiten scope; zie de vragen voor Wouter.
+- **Afmeldlink van Mailjet.** Mailjet zet zelf een `List-Unsubscribe` met een `mjt.lu`-link in de kop. Dat is geen tracking, maar wie erop klikt, krijgt van Mailjet geen mail meer. De volgende mail aan dat adres wordt `blocked`, en `handleBounce` zet de uitnodiging dan op verlopen. Buiten scope: geaccepteerd known issue 1 in `external-services.md` (Mailjet), Wouter 2026-11-14 ("afmeld gedoe laat maar zitten").
 
 **A-keuzes**
 
@@ -230,7 +230,7 @@ Bronnen: de gate-mail (`scripts/.data/wp19c-mail1.eml`); Mailjet `smtp-relay/con
 - **Poort:** 587 met STARTTLS. Mailjet kent ook 25, 80, 465, 588 en 2525.
 - **Risico: niet bewezen dat de Node-runtime van Convex uitgaand verkeer op poort 587 toelaat.** Ik vond geen officiële Convex-doc; op het forum werkt het bij de een wel en bij de ander niet, zonder duidelijke oorzaak.
   - **Voorstel:** de gate op dev is de proef: één echte uitnodiging met foto.
-  - Werkt het niet, dan gaan uitnodigingen dankzij A-keuze 7 gewoon, zonder foto en met een fout in de log. Dan beslist Wouter (vraag 2).
+  - Werkt het niet, dan gaan uitnodigingen dankzij A-keuze 7 gewoon, zonder foto en met een fout in de log. Dan beslist Wouter: een andere poort (2525, 465), de mail zonder foto laten, of een andere provider. De gate van 2026-11-14 bewees dat poort 587 werkt.
 
 **Ops en gate**
 
@@ -251,6 +251,17 @@ Bronnen: de gate-mail (`scripts/.data/wp19c-mail1.eml`); Mailjet `smtp-relay/con
 | `inviteMailPhoto`, `-Layout`, `-AppStore`, `-NoLink` | mocken nodemailer (nooit echt naar Mailjet) |
 | `tests/email/mailjetClient.test.ts` | tracking uit op de Send API; de test van `InlinedAttachments` is weg |
 
+## Gate (dev, 2026-11-14)
+
+Groen. Mails naar Wouters `+clerk_test`-adres, in iPhone Mail en Gmail bekeken; ruwe mail gelezen.
+
+- **Ronde 1 (Send API met `InlinedAttachments`):** opmaak, foto, bericht over twee regels en App Store-knop goed, in licht en donker. Groep zonder geschikte cover: mail zonder foto. Maar iPhone Mail toonde de foto twee keer (`multipart/mixed`), en Mailjet zette een meetpixel en click-tracking in de mail. Daaruit besluit 5 en 6.
+- **Ronde 2 (SMTP):** poort 587 werkt vanuit Convex. De mail met foto is `multipart/alternative` [tekst, `multipart/related` [HTML, foto]], de foto staat één keer in iPhone Mail. Geen `mjt.lu/oo/` of `mjt.lu/lnk/`; de App Store-link gaat rechtstreeks. De mail zonder foto (Send API) is ook zonder tracking.
+- **App (simulator, als genodigde):** de kaart in Profiel → Uitnodigingen toont de cover rechtop, zonder stand en in stand 6; zonder geschikte cover de letter.
+- **Niet getoetst:** een mail zonder `CLUBALMANAC_APP_STORE_ID` (de tests dekken het; het weghalen en terugzetten op dev was het niet waard).
+- **Bijvangst:** wisselt een admin de groepscover terwijl de genodigde het scherm open heeft, dan draait de app het oude beeld met de nieuwe stand tot het scherm opnieuw opent. Het beeldpad per uitnodiging blijft gelijk. Backlog.
+
 ### Follow-up (buiten scope)
 
 - **De gedeelde schil voor de andere mails aan leden** (vraag 3).
+- **Cover op de uitnodigingskaart ververst niet bij een nieuwe cover** zolang het scherm open is (zie Gate). Klein; de oplossing is het beeld opnieuw laden als de foto of stand wijzigt.
