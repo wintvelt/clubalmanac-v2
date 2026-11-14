@@ -10,9 +10,9 @@ import { seedInvite, world } from "./_wp19b";
 
 export const SENDER = "invites@clubalmanac.com";
 export const APP_STORE_ENV = "CLUBALMANAC_APP_STORE_ID";
-/** Placeholder, geen echte Apple ID (opdracht regie). */
-export const PLACEHOLDER_APP_ID = "1234567890";
-export const APP_STORE_URL = `https://apps.apple.com/app/id${PLACEHOLDER_APP_ID}`;
+/** De Apple ID van de app (besluit 3, openbaar). */
+export const APPLE_APP_ID = "1663038609";
+export const APP_STORE_URL = `https://apps.apple.com/app/id${APPLE_APP_ID}`;
 
 export type Attachment = {
   ContentType?: string;

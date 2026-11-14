@@ -21,14 +21,14 @@ import {
   imgTags,
   mailEnv,
   mailFor,
-  PLACEHOLDER_APP_ID,
+  APPLE_APP_ID,
   seedCoverPhoto,
   setup,
   type Attachment,
   type Msg,
 } from "./_wp19c";
 
-beforeEach(() => mailEnv(PLACEHOLDER_APP_ID));
+beforeEach(() => mailEnv(APPLE_APP_ID));
 afterEach(() => clearMailEnv());
 
 // --- beelden -------------------------------------------------------------------------

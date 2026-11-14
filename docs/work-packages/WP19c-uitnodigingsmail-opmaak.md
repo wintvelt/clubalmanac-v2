@@ -6,7 +6,7 @@
 
 1. **Groepsfoto en opmaak in de uitnodigingsmail (2026-11-14).** De oude uitnodigingsmail had opmaak en de groepsfoto. WP5 nam alleen de tekst over; in WP19b zag A de groepsfoto in v1, maar dat werd geen vraag. Wouter: nu oppakken.
 2. **De foto zit in de mail zelf, niet achter een link.** Een link naar een beeld werkt voor iedereen die de mail doorgestuurd krijgt en botst met WP19b besluit 1 (geen link, geen token). 
-3. **De App Store-link gaat mee (2026-11-14).** Een vaste link naar de app in de App Store, voor iPhone. Geen persoonlijke link en geen token, dus geen botsing met WP19b besluit 1. De Apple ID van de app levert Wouter aan.
+3. **De App Store-link gaat mee (2026-11-14).** Een vaste link naar de app in de App Store, voor iPhone. Geen persoonlijke link en geen token, dus geen botsing met WP19b besluit 1. De Apple ID van de app is `1663038609` (Wouter, 2026-11-14; openbaar, geen geheim). De link is `https://apps.apple.com/app/id1663038609`.
 
 ## Productdoel
 
@@ -62,7 +62,7 @@ Bronnen: v1 `blob-images-api-groups/handlersGroup/sendInvite.js`, `emails/invite
 2. ***Klein* staat niet rechtop.** Een formaat bevat de ruwe pixels zonder oriëntatie-tag (WP25 invariant 18). De app draait met `photos.exifOrientation`, ook na draaien (WP8). Een mailclient weet dat niet. Zonder ingreep staat een cover met stand 6 in de mail op zijn kant.
 3. **Hetzelfde zit in WP19b, in de app.** `InviteCover` (Profiel → Uitnodigingen) toont *klein* zonder stand; `listReceived` geeft geen stand mee. Leden zien de cover wel rechtop (`GroupParts`). Buiten scope; zie §Follow-up.
 4. **De test "geen link" van WP19b blijft waar zonder Apple ID.** Met de App Store-link wordt de regel: geen link, behalve die ene.
-5. **`app/eas.json` heeft al een `ascAppId`.** Dat is de Apple ID van de app in App Store Connect. Wouter bevestigt of dit de ID voor de link is. De code bevat geen echte waarde (A-invariant 9).
+5. **`app/eas.json` heeft al een `ascAppId`:** `1663038609`. Wouter bevestigt dat dit de Apple ID voor de link is (besluit 3).
 
 ### Antwoorden open vragen
 
@@ -126,12 +126,12 @@ Aanvulling op invariant 1–8 hierboven. Het entrypoint blijft `internal.invites
 1. **De foto staat bovenaan, heel en niet bijgesneden.** v1 sneed bij tot 640×200, maar dan valt bij een staande foto het belangrijkste weg. *Klein* is max 512 px; hij staat op zijn eigen breedte, met afronding 16 (design.md §4, groepsfoto).
 2. **Geen logo en geen andere beelden.** Bovenaan staat "Clubalmanac" als tekst. Een tweede bijlage voor het logo maakt de mail groter, en een gehost logo is een URL. De handtekening is tekst, zoals nu.
 3. **Geen voet met links.** "Over ons", privacy en voorwaarden van v1 vervallen: er mag maar één link in.
-4. **Env-var in plaats van constante.** Ontbreken kan dan ook echt (invariant 8), de code bevat geen echte waarde, en dev en prod kunnen dezelfde ID krijgen. Nadeel: één env-var extra op prod (§Ops).
+4. **Env-var in plaats van constante.** Invariant 8 kent een ontbrekende ID, en dat kan dan ook echt. Dev en prod krijgen dezelfde waarde, `1663038609`. Nadeel: één env-var extra op prod (§Ops). Omdat de ID openbaar is, kan een constante ook; dan vervalt het geval "ontbreekt".
 5. **Tekst van de link:** "Heb je een iPhone? Installeer Clubalmanac uit de App Store." met de knop "Naar de App Store". Wouter ziet hem bij de gate.
 
 ### Ops-runbook-impact
 
-- **Wouter, na de merge:** `npx convex env set CLUBALMANAC_APP_STORE_ID <Apple ID>` op dev. Op prod met `--prod`, vóór T0 in de lijst met prod env-vars van `migratie-status.md`.
+- **Wouter, na de merge:** `npx convex env set CLUBALMANAC_APP_STORE_ID 1663038609` op dev. Op prod met `--prod`, vóór T0 in de lijst met prod env-vars van `migratie-status.md`.
 - **B's commit:** de env-var in de tabel van `external-services.md` (Mailjet-sectie), met wat er gebeurt als hij ontbreekt.
 - **Gate:** zie §Werkvolgorde stap 5. Extra:
   - een cover met stand 6 (rechtop in de mail?);
@@ -149,13 +149,13 @@ Namen die de tests gebruiken. Het gedrag staat in de A-invarianten.
 
 ### RED tests
 
-Stand bij A's commit: backend 29 rood, 2587 groen, 1 overgeslagen. De rode tests falen om de juiste reden: er is geen bijlage, geen opmaak, geen link en geen log. De gevallen zonder foto en met kapotte bytes zijn al groen; zij pinnen wat moet blijven. `npm run typecheck` heeft één fout, `inlinedAttachments` op `MailjetMessage`, tot B die toevoegt. Opzet in `tests/invites/_wp19c.ts`. De Apple ID in de tests is een placeholder.
+Stand bij A's commit: backend 29 rood, 2587 groen, 1 overgeslagen. De rode tests falen om de juiste reden: er is geen bijlage, geen opmaak, geen link en geen log. De gevallen zonder foto en met kapotte bytes zijn al groen; zij pinnen wat moet blijven. `npm run typecheck` heeft één fout, `inlinedAttachments` op `MailjetMessage`, tot B die toevoegt. Opzet in `tests/invites/_wp19c.ts`. De tests gebruiken de echte Apple ID, `1663038609`.
 
 | Bestand | Wat |
 |---|---|
 | `tests/invites/inviteMailPhoto.test.ts` (Node, echte sharp) | A-invariant 1–7: bijlage en `cid:`, welke foto (5 gevallen zonder foto), *klein* en niet het origineel, rechtop (stand 1, 3, 6, 8, leeg), geen metadata of GPS, grootte en breedte, kapotte bytes, de andere mails zonder bijlage |
 | `tests/invites/inviteMailLayout.test.ts` | A-invariant 8, 10, 11: document, licht en donker, tokens, letter, geen externe bronnen, één kolom, grootte, tekstversie, escaping, regeleinden |
-| `tests/invites/inviteMailAppStore.test.ts` | A-invariant 9: de link met een placeholder-ID, de enige link, iPhone; zonder, leeg of ongeldig: geen link, wel een log; niet in de andere mails |
+| `tests/invites/inviteMailAppStore.test.ts` | A-invariant 9: de link `https://apps.apple.com/app/id1663038609`, de enige link, iPhone; zonder, leeg of ongeldig: geen link, wel een log; niet in de andere mails |
 | `tests/email/mailjetClient.test.ts` | de payload van `InlinedAttachments`, en geen sleutel zonder bijlagen |
 | `tests/invites/inviteMailNoLink.test.ts` | aangepast: de env-var staat uit, dus "geen link" blijft gelden |
 

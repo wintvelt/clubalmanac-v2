@@ -2,7 +2,7 @@
 // de App Store. Spec: docs/work-packages/WP19c-uitnodigingsmail-opmaak.md.
 //
 // De Apple ID komt uit de env-var `CLUBALMANAC_APP_STORE_ID` (A-keuze 4). Deze
-// tests gebruiken een placeholder; de echte ID staat nergens in de code.
+// tests gebruiken de echte ID uit besluit 3, 1663038609 (openbaar).
 // Ontbreekt de ID, of is hij geen 6–12 cijfers, dan gaat de mail zonder link
 // en logt de action een fout met de naam van de env-var (niet stil).
 
@@ -16,7 +16,7 @@ import {
   hrefsIn,
   mailEnv,
   mailFor,
-  PLACEHOLDER_APP_ID,
+  APPLE_APP_ID,
   setup,
   urlsIn,
 } from "./_wp19c";
@@ -32,7 +32,7 @@ function loggedAbout(spy: ReturnType<typeof errorSpy>, needle: string): boolean 
 }
 
 describe("A-invariant 9 — met een geldige ID", () => {
-  beforeEach(() => mailEnv(PLACEHOLDER_APP_ID));
+  beforeEach(() => mailEnv(APPLE_APP_ID));
 
   it("de App Store-URL is de enige link en de enige URL, in HTML en tekst", async () => {
     const t = newT();

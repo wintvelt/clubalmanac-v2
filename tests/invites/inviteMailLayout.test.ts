@@ -8,9 +8,9 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { formatNlDate } from "../../convex/lib/emailTemplates";
 import { newT } from "../groups/_beheer";
 import { inviteRow } from "./_wp19b";
-import { APP_STORE_URL, clearMailEnv, imgTags, mailEnv, mailFor, PLACEHOLDER_APP_ID, setup } from "./_wp19c";
+import { APP_STORE_URL, clearMailEnv, imgTags, mailEnv, mailFor, APPLE_APP_ID, setup } from "./_wp19c";
 
-beforeEach(() => mailEnv(PLACEHOLDER_APP_ID));
+beforeEach(() => mailEnv(APPLE_APP_ID));
 afterEach(() => clearMailEnv());
 
 /** Het blok `@media (prefers-color-scheme: dark) { … }`, of "". */
