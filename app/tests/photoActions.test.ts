@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   composeRotation,
+  photoActionLabel,
   photoActions,
   previewOrientation,
   selectionPlan,
@@ -55,22 +56,22 @@ describe("photoActions: wat het menu toont", () => {
     );
   });
 
-  it("foto van een ander, lid: alleen als profielfoto (WP27 besluit 2)", () => {
+  it("foto van een ander, lid: als profielfoto (WP27 besluit 2) en melden (WP20)", () => {
     expect(
       menu({ me: ME, role: "member", ownerId: OTHER, addedBy: OTHER }),
-    ).toEqual(["profilePhoto"]);
+    ).toEqual(sorted(["profilePhoto", "flag"]));
   });
 
-  it("foto van een ander, admin: draaien, covers, profielfoto en uit album; niet verwijderen", () => {
+  it("foto van een ander, admin: draaien, covers, profielfoto, uit album en melden; niet verwijderen", () => {
     expect(
       menu({ me: ME, role: "admin", ownerId: OTHER, addedBy: OTHER }),
-    ).toEqual(sorted(["rotate", "albumCover", "groupCover", "profilePhoto", "removeFromAlbum"]));
+    ).toEqual(sorted(["rotate", "albumCover", "groupCover", "profilePhoto", "removeFromAlbum", "flag"]));
   });
 
-  it("foto van een ander die de user zelf toevoegde (oude data): profielfoto en uit album", () => {
+  it("foto van een ander die de user zelf toevoegde (oude data): profielfoto, uit album en melden", () => {
     expect(
       menu({ me: ME, role: "member", ownerId: OTHER, addedBy: ME }),
-    ).toEqual(sorted(["profilePhoto", "removeFromAlbum"]));
+    ).toEqual(sorted(["profilePhoto", "removeFromAlbum", "flag"]));
   });
 
   it("verwijderen staat als laatste", () => {
@@ -334,5 +335,35 @@ describe("WP17c selectionSummary addToAlbum: wat niet mocht, wat er al in stond,
     expect(msg).toMatch(/\b2\b/);
     expect(msg).toMatch(/\b3\b/);
     expect(msg).toMatch(/\b4\b/);
+  });
+});
+
+// --- WP20: melden (A-invariant: menu; spec §Voor B) -----------------------------------
+//
+// Orakel uit de backend (photos.flag, WP24): wie de foto ziet en niet de
+// eigenaar is. In een album ziet iedereen die het menu opent de foto, dus:
+// alleen niet bij je eigen foto. Rood en als laatste, zoals v1.
+
+describe("WP20 photoActions: melden", () => {
+  it("nooit bij je eigen foto, voor geen enkele rol", () => {
+    for (const role of ["member", "admin"] as const) {
+      for (const addedBy of [ME, OTHER]) {
+        expect(photoActions({ me: ME, role, ownerId: ME, addedBy })).not.toContain("flag");
+      }
+    }
+  });
+
+  it("altijd bij andermans foto, als laatste", () => {
+    for (const role of ["member", "admin"] as const) {
+      for (const addedBy of [ME, OTHER]) {
+        const shown = photoActions({ me: ME, role, ownerId: OTHER, addedBy });
+        expect(shown[shown.length - 1], `${role}/${addedBy}`).toBe("flag");
+        expect(new Set(shown).size).toBe(shown.length);
+      }
+    }
+  });
+
+  it("label: Melden als ongepast", () => {
+    expect(photoActionLabel("flag")).toBe("Melden als ongepast");
   });
 });

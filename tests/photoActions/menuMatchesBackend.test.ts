@@ -113,6 +113,9 @@ function runAction(t: T, w: W, viewer: ViewerKey, action: PhotoAction): Promise<
       return client.mutation(api.groups.update, { groupId: w.groupId, coverPhotoId: w.photoId });
     case "profilePhoto":
       return client.mutation(api.users.setProfilePhoto, { photoId: w.photoId });
+    // WP20: melden (photos.flag, WP24: foto-toegang, niet je eigen foto).
+    case "flag":
+      return client.mutation(api.photos.flag, { photoId: w.photoId });
   }
   throw new Error(`onbekende actie ${String(action)}`);
 }
@@ -142,6 +145,7 @@ const ACTIONS: PhotoAction[] = [
   "profilePhoto",
   "removeFromAlbum",
   "delete",
+  "flag",
 ];
 
 const CASES: { ownerRole: Role; viewer: ViewerKey }[] = [

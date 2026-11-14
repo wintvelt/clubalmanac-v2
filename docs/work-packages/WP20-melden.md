@@ -231,7 +231,13 @@ Andere schrijvers van flag-velden en `upvoteCount` zijn intern: de cron (FL1), a
 
 ### Tests (stand na A)
 
-Zie §Voor B voor de bestanden. Besluit-afhankelijke tests staan apart: valt een besluit anders uit, dan past A die aan.
+Backend: 55 rood, 2676 groen, 1 overgeslagen. App: 5 rood plus 2 bestanden die nog niet laden (de modules `lib/flags`, `lib/features` ontbreken), 1342 groen. Alle rode tests falen om de juiste reden: een functie of module ontbreekt, er komt geen code of mail, de tekst is niet getrimd, of de datum staat niet in de mail.
+
+- Los van de besluiten: `tests/features/validation.test.ts` (1), `setStatus.test.ts` (2), `listMyUpvotes.test.ts` (3, 4), `tests/users/isWebmasterQuery.test.ts` (5), `tests/photos/denyMailDate.test.ts` (6), `flagReason.test.ts` (7), `tests/writeGates/appealOracle.test.ts` (8), `tests/images/webmasterFlagged.test.ts` (9); de inventaris in `tests/readWhitelist/inventory.test.ts`; "flag" in `tests/photoActions/menuMatchesBackend.test.ts`.
+- Besluit 1: `tests/photos/flagOwnerMail.test.ts` (10). Besluit 2: `tests/photos/webmasterWithoutAppeal.test.ts` (11–13) en de laatste guard in `decideFlag.test.ts` (nu `approve: false`). Valt een besluit anders uit, dan past A die bestanden aan.
+- App: `app/tests/photoActions.test.ts` (melden), `flags.test.ts`, `features.test.ts`.
+- Gedeelde opzet voor de mails: `tests/photos/_wp20.ts` (vaste klok 12:00 UTC, nep-Mailjet, datum-orakel los van de templates).
+- Typecheck: backend 2 fouten en app 7, allemaal `"flag"` buiten `PhotoAction` of een ontbrekende module. Ze verdwijnen met B's werk.
 
 ### Voor B
 

@@ -341,7 +341,10 @@ describe("photos.decideFlag — guards", () => {
     ).rejects.toThrow();
   });
 
-  it("decideFlag gooit als foto wel geflagged maar niet appealed is", async () => {
+  // WP20 besluit 2 (advies regie, A-invariant 11): approve zonder bezwaar mag
+  // nu (tests/photos/webmasterWithoutAppeal.test.ts); deny zonder bezwaar
+  // blijft geweigerd. Valt besluit 2 anders uit, dan weer approve: true hier.
+  it("decideFlag(deny) gooit als foto wel geflagged maar niet appealed is", async () => {
     const t = convexTest(schema, modules);
     await registerUser(t, "user_alice", "a@x.com");
     const bobId = await registerUser(t, "user_bob", "b@x.com");
@@ -357,7 +360,7 @@ describe("photos.decideFlag — guards", () => {
     await expect(
       withUser(t, "user_wm", WEBMASTER_EMAIL).mutation(
         api.photos.decideFlag,
-        { photoId, approve: true },
+        { photoId, approve: false },
       ),
     ).rejects.toThrow();
   });
