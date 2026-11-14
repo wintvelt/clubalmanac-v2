@@ -10,7 +10,7 @@
 
 ## Productdoel
 
-Wie een uitnodiging krijgt, ziet in de mail meteen van welke groep: de groepsfoto bovenaan en een verzorgde opmaak in de stijl van de app. De tekst blijft wat hij nu is (WP19b): geen link, geen token, wel naam, bericht, inlogadres en geldig tot.
+Wie een uitnodiging krijgt, ziet in de mail meteen van welke groep: de groepsfoto bovenaan en een verzorgde opmaak in de stijl van de app. De tekst blijft wat hij nu is (WP19b): geen persoonlijke link, geen token, wel naam, bericht, inlogadres en geldig tot. Nieuw is één vaste link naar de app in de App Store.
 
 ## Invarianten
 
@@ -42,7 +42,6 @@ Wie een uitnodiging krijgt, ziet in de mail meteen van welke groep: de groepsfot
 1. **Hoe zag de oude uitnodigingsmail eruit?** Opmaak, plaats en grootte van de groepsfoto, en hoe v1 de foto meestuurde (bijlage of link).
 2. **Mailjet inline-bijlage:** veldnamen en grenzen in Send API v3.1 (check de actuele docs). Hoe groot wordt een mail met *klein*?
 3. **Basisopmaak voor alle mails?** Advies: één gedeelde HTML-schil voor alle mails van Mailjet, of alleen de uitnodiging?
-
 4. **App Store-link:** had de oude mail een link naar de App Store of naar een store-pagina? Zo ja, welke tekst.
 
 ## Werkvolgorde
