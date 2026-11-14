@@ -240,3 +240,21 @@ Stand bij A's commit: backend 240 rood en 2310 groen, app 3 rood. Elke rode test
 | `app/tests/noUserRowView.test.ts` | A-invariant 17, 18, 20, A-keuze 4: `"blocked"` en `"signOutAndIn"` |
 | `app/tests/inviteRefusal.test.ts` | A-invariant 19: de melding in de app |
 | `app/tests/liveQuery.test.ts` | A-invariant 21: precies twee sessie-queries |
+
+## Gate (dev, simulator, 2026-11-14)
+
+Clerk-dev: aanmelden open, bot sign-up protection uit. `CLUBALMANAC_APP_URL` weg uit de dev-env. Verse build van `wp19b`.
+- **Nieuw lid.** Dev Wouter nodigt in de app een echt adres uit (naam, bericht). De mail komt aan zonder link en zonder token, met "Hi {naam}", het bericht, het inlogadres en de datum. Aanmelden met code: het account bestaat, de naam komt uit de uitnodiging, de groep staat in Mijn groepen. Leden toont de uitnodiging onder "Uitgenodigd" tot hij is geaccepteerd.
+- **Bestaand lid.** Twee nieuwe uitnodigingen in Profiel → Uitnodigingen: accepteren gaat naar de groep, afwijzen (na bevestiging) haalt hem weg. De lijst werkt live bij.
+- **Groepsfoto.** Bij Blob bibliotheek staat de cover op de kaart. Bij twee andere groepen staat de lettertegel, omdat hun cover in geen album van de groep zit (A-invariant 15, zo bedoeld).
+- **Geen uitnodiging.** Een nieuw adres zonder uitnodiging krijgt "Je hebt eerst een uitnodiging nodig", en er komt geen users-rij. Komt er daarna een uitnodiging, dan wordt het scherm live "Je bent uitgenodigd. Log uit en opnieuw in" (S2). Die mail naar een nep-adres bounced; de uitnodiging verloopt en het scherm gaat terug (bounce-pad, IB1).
+- **Bestaand lid inloggen.** Dev Wouter logt in zonder captcha (S3).
+- **Intrekken.** Een admin trekt een open uitnodiging in na bevestiging; de genodigde krijgt geen mail.
+
+### Backlog
+
+- Het berichtveld in Uitnodigen verdwijnt achter het toetsenbord.
+- iPhone Mail toont bij de uitnodigingsmail "Dit bericht is van een mailinglijst" met "Meld me af" (waarschijnlijk een List-Unsubscribe-header van Mailjet). Uitzoeken of dat uit kan.
+- De groepsfoto bij een uitnodiging werkt alleen als de cover in een album van de groep staat. Op dev geldt dat voor 1 van 3 groepen met een cover. Vóór T0 op prod tellen; dan beslissen of dat genoeg is.
+- Een uitnodiging zonder melding of teller: een bestaand lid ziet hem alleen via Profiel → Uitnodigingen (audit N3).
+

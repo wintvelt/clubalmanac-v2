@@ -71,6 +71,10 @@ Tussen 2026-04 en 2026-06 hebben 18 audit-cycli op clubalmanac-v2 backend de vol
 - **WP19a (ratings schrappen) afgesloten 2026-11-13**: A, B en audit als sub-sessies vanuit regie (Setup 2, data/schema medium). A stopte op de stop-vraag in de spec: de iPhone-app had nooit ratings, maar de oude webapp had likes (12). Wouter hield het besluit (besluit 2). Dev herladen met de originelen uit S3; daarvoor kwam een read-only AWS-sleutel op de server. Audit: geen blockers, één should-fix (de verwijder-bevestiging noemde nog likes), opgelost in een kleine fix-cyclus zonder heraudit. Lessen:
   - Een eerdere "bestond niet in v1" gold maar voor één client. Vraag bij schrappen naar elke oude client, ook de webapp.
   - Een scan op de interne term ("rating") mist het woord dat de gebruiker ziet ("likes"). Laat een schrap-test ook de gebruikerswoorden zoeken.
+- **WP19b (uitnodigen en aanmelden) afgesloten 2026-11-14**: A, B en audit als sub-sessies vanuit regie (Setup 2, security hoog). Besluiten: geen link in de mail, en de groepsfoto bij een uitnodiging (tegen A's advies in). A ontwierp daarvoor een smal eigen beeldpad. Audit: geen blockers, vijf should-fix (onder andere een stil weggevallen fail-loud bij een dubbel adres, en een spinner zonder uitweg); opgelost in één fix-cyclus zonder heraudit. Gate met een echte mail naar een `+clerk_test`-adres van Wouter. Lessen:
+  - Een productinvariant uit de draft viel tussen A en B door (de app zou na de eerste login op de groep openen). A loopt voortaan elke genummerde spec-invariant na: een A-invariant, een test, of "niet getest, omdat …".
+  - Een nieuwe toegangsregel (alleen een cover die in een album van de groep staat) kan in de praktijk weinig opleveren. Tel tijdens de gate hoeveel echte data aan de regel voldoet; op dev was dat 1 van 3.
+  - Een gate-mail naar een nep-adres bounced en laat de uitnodiging verlopen. Gebruik voor de gate een echt adres met `+clerk_test`: de mail komt aan en Clerk vraagt de vaste testcode.
 
 ## Recurring-pattern-kandidaten (WP23)
 
