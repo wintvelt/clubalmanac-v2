@@ -265,3 +265,26 @@ Backend: 55 rood, 2676 groen, 1 overgeslagen. App: 5 rood plus 2 bestanden die n
 - Backend: `features.setStatus`, `features.listMyUpvotes`, `users.isWebmaster`, de controle in `features.create`/`update` (codes A-invariant 1), de grens op de reden, `appeal` zonder orakel, het beeld voor de webmaster, de datum in de mail bij afwijzen. Na de besluiten: de mail bij melden, `decideFlag` zonder bezwaar, `photos.removeFlagged` met mail.
 - App: `photoActions` krijgt de actie `"flag"` (alleen andermans foto, als laatste, label "Melden als ongepast"). Nieuwe pure module `app/src/lib/flags.ts` voor de fase van een eigen melding, en `app/src/lib/features.ts` voor statusnamen en foutteksten (zie `app/tests/flags.test.ts`, `app/tests/features.test.ts`).
 - Doc: mailtabel in `external-services.md`; cascade-matrix FL2 (approve zonder bezwaar, `removeFlagged`) als besluit 2 doorgaat.
+
+### Fix-cyclus 1 (A, besluit 6)
+
+**S1, de datum.** Het probleem: de cron wist om 03:00 UTC alles met `flaggedDeleteDate <= now`. Een melding om 01:00 UTC krijgt als verwijderdatum 28 november 01:00 UTC; de mail noemt "na 28-11", maar de ronde van 28 november om 04:00 NL wist de foto al. Hetzelfde voor afwijzen (+7 dagen) en voor de dag in de app ("Wordt verwijderd na …", eigenaar en wachtrij). Een gemigreerde datum (middernacht UTC) heeft het ook.
+
+A-keuze 9 (mechanisme): **de genoemde dag is de kalenderdag vóór de eerste opruimronde op of na `flaggedDeleteDate`.**
+- De eerste ronde is de eerste 03:00 UTC op of na de verwijderdatum (precies 03:00 telt mee, want `<=`).
+- 03:00 UTC is 04:00 (winter) of 05:00 (zomer) in NL, dus dezelfde kalenderdag in UTC en NL. De dag ervoor bestaat de foto in NL-tijd de hele dag, en bezwaar kan dan ook.
+- De opgeslagen datum, de termijnen (14 en 7 dagen) en de cron blijven zoals ze zijn. Geen schema-wijziging, geen migratie.
+- Dezelfde regel in de mail (melden, afwijzen) en in de app. De backend en de app delen geen code; elk heeft de regel zelf. De app-functie is `removalDay(deleteAt)` in `app/src/lib/flags.ts`, met de dag als "27 november 2026" (de vorm van `flagDay`).
+- De regel hangt aan het uur van de cron. `tests/crons/registration.test.ts` pint 03:00 UTC; wie het uur verandert, moet ook deze regel aanpassen. B zet dat bij de cron in een commentaar.
+
+**S2, alleen gemelde foto's lezen.** `listMyFlagged` en `listAllFlagged` lezen alleen rijen met `flaggedAt`, niet alle foto's van de eigenaar of de hele tabel. Gedrag gelijk, ook voor gemigreerde meldingen (`flaggedAt` op middernacht UTC, jaren terug). convex-test ziet niet hoeveel rijen een query leest: de tests pinnen het gedrag, de audit toetst het lezen in de code. Een nieuwe index mag; `by_flagged` is niet sparse (WP17a vraag 9), dus de query heeft een ondergrens nodig.
+
+**N3, geen mail aan wie wordt verwijderd.** Bij melden, afwijzen en `removeFlagged` gaat er geen mail naar een eigenaar wiens account wordt verwijderd (`users.deletion`, WP29). De controle telt op het moment van versturen, dus ook als het verwijderen begint nadat de mutation de mail heeft ingepland. Wat de mutations verder doen, verandert niet.
+
+**N1** is UI ("Bezig…" pas na de bevestiging, op de knop die je koos): geen test, B kijkt in de simulator.
+
+**Tests (stand na A, fix-cyclus 1):**
+- `tests/photos/flagDateWindow.test.ts` (S1, backend): melden om 00:10, 01:00 en 02:59 UTC en afwijzen om 02:30 UTC noemen de dag ervoor; daarna draait de cron op de genoemde dag (de foto blijft) en de dag erna (weg). Controles om 12:00 en 23:30 UTC. 4 rood, 3 groen.
+- `app/tests/flags.test.ts` (S1, app): `removalDay`, 10 gevallen met de hand (winter, zomer, precies 03:00, middernacht, jaarwissel). 10 rood: de functie bestaat nog niet.
+- `tests/photos/listFlaggedSame.test.ts` (S2): het gedrag, groen. Het lezen toetst de audit.
+- `tests/photos/flagNoMailDeleting.test.ts` (N3): 6 rood, 3 controles groen.

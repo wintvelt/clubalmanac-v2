@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { flagQueueOrder, ownFlagView } from "../src/lib/flags";
+import { flagQueueOrder, ownFlagView, removalDay } from "../src/lib/flags";
 
 // WP20, pure logica achter "Gemelde foto's" (eigenaar) en de wachtrij
 // (webmaster). Spec: docs/work-packages/WP20-melden.md §A-invarianten,
@@ -73,5 +73,33 @@ describe("flagQueueOrder: de wachtrij van de webmaster (A-keuze 7)", () => {
       { id: "bezwaar", flaggedAt: T0 + 5 * DAY, flaggedAppealDate: T0 + 6 * DAY },
     ];
     expect(sortQueue(items)[0]).toBe("bezwaar");
+  });
+});
+
+// --- WP20 besluit 6, S1 (fix-cyclus 1): de dag in "Wordt verwijderd na <dag>" ----------
+//
+// Zelfde regel als de mail (A-keuze 9): de genoemde dag is de kalenderdag vóór
+// de eerste opruimronde (cron FL1, dagelijks 03:00 UTC, `flaggedDeleteDate <=
+// now`) op of na de verwijderdatum. Die dag bestaat de foto in NL-tijd de hele
+// dag; de ronde daarna is om 04:00 (winter) of 05:00 (zomer) NL.
+// Orakel: met de hand, per geval.
+
+describe("removalDay: de laatste hele dag (S1)", () => {
+  const nov = (day: number, h: number, m = 0, s = 0) => Date.UTC(2026, 10, day, h, m, s);
+  const jul = (day: number, h: number, m = 0, s = 0) => Date.UTC(2026, 6, day, h, m, s);
+
+  it.each([
+    ["01:00 UTC (winter): de dag ervoor", nov(28, 1), "27 november 2026"],
+    ["00:00 UTC, gemigreerd (dag-niveau): de dag ervoor", nov(28, 0), "27 november 2026"],
+    ["02:59:59 UTC: de dag ervoor", nov(28, 2, 59, 59), "27 november 2026"],
+    ["precies 03:00 UTC: die ronde wist hem (<=), dus de dag ervoor", nov(28, 3), "27 november 2026"],
+    ["03:00:01 UTC: de ronde van morgen, dus die dag zelf", nov(28, 3, 0, 1), "28 november 2026"],
+    ["12:00 UTC: die dag zelf", nov(28, 12), "28 november 2026"],
+    ["23:30 UTC (00:30 NL de dag erna): de UTC-dag", nov(28, 23, 30), "28 november 2026"],
+    ["01:00 UTC (zomer, 03:00 NL): de dag ervoor", jul(10, 1), "9 juli 2026"],
+    ["22:30 UTC (zomer, 00:30 NL de dag erna): de UTC-dag", jul(10, 22, 30), "10 juli 2026"],
+    ["jaarwissel: 1 januari 02:00 UTC", Date.UTC(2027, 0, 1, 2), "31 december 2026"],
+  ])("%s", (_label, deleteAt, expected) => {
+    expect(removalDay(deleteAt)).toBe(expected);
   });
 });
