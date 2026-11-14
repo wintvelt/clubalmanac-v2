@@ -61,7 +61,7 @@ Bronnen: v1 `blob-images-api-groups/handlersGroup/sendInvite.js`, `emails/invite
 
 1. **v1 stuurde de foto als openbare URL**, niet als bijlage: `img.clubalmanac.com/<base64 van bucket+key>`, bijgesneden tot 640×200. Wie de mail had, had de foto, ook doorgestuurd. Besluit 2 sluit dat uit.
 2. ***Klein* staat niet rechtop.** Een formaat bevat de ruwe pixels zonder oriëntatie-tag (WP25 invariant 18). De app draait met `photos.exifOrientation`, ook na draaien (WP8). Een mailclient weet dat niet. Zonder ingreep staat een cover met stand 6 in de mail op zijn kant.
-3. **Hetzelfde zit in WP19b, in de app.** `InviteCover` (Profiel → Uitnodigingen) toont *klein* zonder stand; `listReceived` geeft geen stand mee. Leden zien de cover wel rechtop (`GroupParts`). Buiten scope; zie §Follow-up.
+3. **Hetzelfde zit in WP19b, in de app.** `InviteCover` (Profiel → Uitnodigingen) toont *klein* zonder stand; `listReceived` geeft geen stand mee. Leden zien de cover wel rechtop (`GroupParts`). Besluit 4: in scope, A-invariant 12.
 4. **De test "geen link" van WP19b blijft waar zonder Apple ID.** Met de App Store-link wordt de regel: geen link, behalve die ene.
 5. **`app/eas.json` heeft al een `ascAppId`:** `1663038609`. Wouter bevestigt dat dit de Apple ID voor de link is (besluit 3).
 
@@ -121,6 +121,13 @@ Aanvulling op invariant 1–8 hierboven. Het entrypoint blijft `internal.invites
    - De andere mails krijgen de link niet.
 10. **De tekstversie is compleet.** Zij bevat dezelfde inhoud als de HTML: aanhef, afzender, groep, bericht, inlogadres, geldig tot en de App Store-URL (als die er is). Geen `cid:`, geen HTML-tags en geen verwijzing naar een beeld.
 11. **HTML-veilig (invariant 7)**, ook in attributen: groepsnaam, afzender, genodigde en bericht zijn ge-escaped, ook in de `alt` van de foto (`Groepsfoto van {groep}`). Regeleinden in het bericht worden `<br>` in de HTML.
+12. **De cover op de uitnodigingskaart staat rechtop (besluit 4).**
+    - `invites.listReceived` geeft bij de groep `coverOrientation`: de `exifOrientation` van de cover (1–8). Dezelfde rij en dezelfde waarde die een lid krijgt.
+    - Alleen als `hasCover` true is en de cover een stand heeft. Anders ontbreekt het veld. Een cover die niet in een album van de groep staat, verraadt zo ook zijn stand niet.
+    - De whitelist groeit met precies dit ene veld. Er gaat geen foto-id, storage-id, maat, datum, plek of `hasFormats` mee naar buiten (WP19b A-invariant 15).
+    - Draait een lid de cover (WP8), dan volgt `listReceived` reactief.
+    - In de app draait de kaart (`InviteCover`) het beeld met die stand, met dezelfde transform als `PhotoImage` (`orientationTransform`). Zonder stand, of met stand 1, draait hij niet. Het beeld blijft alleen in het geheugen (WP19b A-invariant 15).
+    - Rest-risico, hetzelfde als elders in de app: een cover zonder formaten komt als origineel met de tag in het bestand. Op prod hebben alle foto's na de backfill formaten (WP25).
 
 ### A-keuzes
 
@@ -147,10 +154,14 @@ Namen die de tests gebruiken. Het gedrag staat in de A-invarianten.
 - Rechtop zetten en metadata weghalen vraagt een beeldbibliotheek. sharp staat al in de Node-runtime (WP25, `externalPackages`). Waar dat draait, is aan B. Een tweede (Node-)action mag, als `sendInviteEmail` het entrypoint blijft.
 - De env-var heet `CLUBALMANAC_APP_STORE_ID`.
 - De vorm van `inviteTemplate` en van de schil is aan B. De tests lezen alleen de Mailjet-payload.
+- **Besluit 4, backend:** `receivedGroupFields`/`inviteReceived` (`lib/shapes.ts`): `group` krijgt `coverOrientation: v.optional(v.number())`.
+- **Besluit 4, app:** `InviteCover` verhuist naar `app/src/components/InviteCover.tsx`. Daar exporteert hij `InviteCover({ inviteId: string; name: string; exifOrientation?: number })`, met `useInviteCoverLoad` uit `../data/images` zoals nu. `InvitesScreens.tsx` geeft `exifOrientation={… coverOrientation}` door. De draaiing gaat via `orientationTransform` uit `lib/photos`; de vorm van het vak is aan B.
 
 ### RED tests
 
-Stand bij A's commit: backend 29 rood, 2587 groen, 1 overgeslagen. De rode tests falen om de juiste reden: er is geen bijlage, geen opmaak, geen link en geen log. De gevallen zonder foto en met kapotte bytes zijn al groen; zij pinnen wat moet blijven. `npm run typecheck` heeft één fout, `inlinedAttachments` op `MailjetMessage`, tot B die toevoegt. Opzet in `tests/invites/_wp19c.ts`. De tests gebruiken de echte Apple ID, `1663038609`.
+Stand bij A's commit: backend 29 rood, 2587 groen, 1 overgeslagen. De rode tests falen om de juiste reden: er is geen bijlage, geen opmaak, geen link en geen log. De gevallen zonder foto en met kapotte bytes zijn al groen; zij pinnen wat moet blijven. `npm run typecheck` heeft één fout, `inlinedAttachments` op `MailjetMessage`, tot B die toevoegt. Opzet in `tests/invites/_wp19c.ts`.
+
+Na besluit 4: backend 36 rood (29 + 7 voor A-invariant 12), 2589 groen. App 8 rood, 1336 groen. De rode tests falen omdat `coverOrientation` ontbreekt en `components/InviteCover.tsx` nog niet bestaat. De app-typecheck heeft daardoor één fout (de module). Tegen een tijdelijke minimale component (niet gecommit) worden de 6 render-tests groen; de harness werkt dus. De tests gebruiken de echte Apple ID, `1663038609`.
 
 | Bestand | Wat |
 |---|---|
@@ -159,8 +170,10 @@ Stand bij A's commit: backend 29 rood, 2587 groen, 1 overgeslagen. De rode tests
 | `tests/invites/inviteMailAppStore.test.ts` | A-invariant 9: de link `https://apps.apple.com/app/id1663038609`, de enige link, iPhone; zonder, leeg of ongeldig: geen link, wel een log; niet in de andere mails |
 | `tests/email/mailjetClient.test.ts` | de payload van `InlinedAttachments`, en geen sleutel zonder bijlagen |
 | `tests/invites/inviteMailNoLink.test.ts` | aangepast: de env-var staat uit, dus "geen link" blijft gelden |
+| `tests/invites/listReceivedOrientation.test.ts` | A-invariant 12: `coverOrientation` met en zonder stand, niet bij een cover buiten het album of zonder cover, reactief na draaien, geen foto-velden |
+| `tests/readWhitelist/_world.ts`, `invites.test.ts`; `tests/invites/listReceived.test.ts` | WP23-whitelist: `receivedGroup` met `coverOrientation` (pBob heeft stand 6) |
+| `app/tests/inviteCover.test.ts` | A-invariant 12, app: dezelfde transform als `PhotoImage` voor stand 2, 3, 6 en 8; geen draaiing zonder stand; `InvitesScreens` geeft `coverOrientation` door |
 
 ### Follow-up (buiten scope)
 
-- **De uitnodigingskaart in de app toont de cover zonder stand** (kernvondst 3). `listReceived` mist de stand en `InviteCover` past hem niet toe. Een kleine fix in de app en de backend, los van deze mail.
 - **De gedeelde schil voor de andere mails aan leden** (vraag 3).
