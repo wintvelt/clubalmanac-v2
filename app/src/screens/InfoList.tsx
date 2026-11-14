@@ -38,9 +38,10 @@ export function InfoList({ signedIn }: { signedIn: boolean }) {
             onPress={() => router.push(infoPath(page.slug, signedIn))}
           />
         ))}
+        {/* WP20 besluit 5: ook uitgelogd de weg om een probleem te melden. */}
         <ListRow
           icon="mail"
-          title="Contact"
+          title="Contact of probleem melden"
           chevron={false}
           onPress={() => void Linking.openURL(CONTACT_MAILTO).catch(() => {})}
         />

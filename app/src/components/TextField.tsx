@@ -8,9 +8,11 @@ type Props = Omit<TextInputProps, "style"> & {
   label: string;
   // Fout: rand in `danger`. De melding zelf staat eronder, als <Notice>.
   invalid?: boolean;
+  // Voor een veld met meerdere regels (WP20: omschrijving).
+  minHeight?: number;
 };
 
-export function TextField({ label, invalid = false, editable = true, onFocus, onBlur, ...rest }: Props) {
+export function TextField({ label, invalid = false, editable = true, minHeight, onFocus, onBlur, ...rest }: Props) {
   const { colors, scheme } = useTheme();
   const [focused, setFocused] = useState(false);
   const borderColor = invalid ? colors.danger : focused ? colors.primary : colors.fieldLine;
@@ -41,6 +43,7 @@ export function TextField({ label, invalid = false, editable = true, onFocus, on
             borderWidth: focused || invalid ? border.fieldFocus : border.field,
           },
           !editable && styles.disabled,
+          minHeight !== undefined && { minHeight, textAlignVertical: "top" },
         ]}
         {...rest}
       />

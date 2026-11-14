@@ -10,6 +10,9 @@ export default function Layout() {
   return (
     <Stack screenOptions={useStackScreenOptions()}>
       <Stack.Screen name="index" options={{ title: "Instellingen" }} />
+      <Stack.Screen name="ideeen" options={{ title: "Ideeën" }} />
+      <Stack.Screen name="problemen" options={{ title: "Problemen" }} />
+      <Stack.Screen name="doorgeven" options={{ title: "Doorgeven" }} />
       {INFO_PAGES.map((page) => (
         <Stack.Screen key={page.slug} name={page.slug} options={{ title: page.title }} />
       ))}

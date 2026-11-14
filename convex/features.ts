@@ -15,6 +15,7 @@ import {
   requireWebmaster,
 } from "./lib/auth";
 import { feature, featureFields, pick } from "./lib/shapes";
+import { validFeatureDescription, validFeatureTitle } from "./lib/names";
 import { INFO_SENDER, sendMailjetMessage } from "./lib/mailjet";
 import {
   getStageLabel,
@@ -37,8 +38,11 @@ export const create = mutation({
     description: v.string(),
   },
   returns: v.id("features"),
-  handler: async (ctx, { type, title, description }) => {
+  handler: async (ctx, { type, title: rawTitle, description: rawDescription }) => {
     const user = await requireCurrentUser(ctx);
+    // WP20 A-invariant 1: eerst de controle, dan pas schrijven en mailen.
+    const title = validFeatureTitle(rawTitle);
+    const description = validFeatureDescription(rawDescription);
     const featureId = await ctx.db.insert("features", {
       type,
       title,
@@ -75,10 +79,28 @@ export const update = mutation({
     const feature = await ctx.db.get(featureId);
     if (!feature) throw new Error("Feature bestaat niet");
 
+    // WP20 A-invariant 1: dezelfde controle als bij create.
     const patch: Partial<Doc<"features">> = {};
-    if (title !== undefined) patch.title = title;
-    if (description !== undefined) patch.description = description;
+    if (title !== undefined) patch.title = validFeatureTitle(title);
+    if (description !== undefined) {
+      patch.description = validFeatureDescription(description);
+    }
     if (Object.keys(patch).length > 0) await ctx.db.patch(featureId, patch);
+  },
+});
+
+// WP20 A-invariant 2: de webmaster zet de status van een idee of probleem.
+// Webmaster-gate eerst (invariant 3): een niet-webmaster krijgt dezelfde
+// weigering voor een bestaand en een onbekend id.
+export const setStatus = mutation({
+  args: { featureId: v.id("features"), status: STATUS },
+  returns: v.null(),
+  handler: async (ctx, { featureId, status }) => {
+    await requireWebmaster(ctx);
+    const feature = await ctx.db.get(featureId);
+    if (!feature) throw new Error("Feature bestaat niet");
+    if (feature.status !== status) await ctx.db.patch(featureId, { status });
+    return null;
   },
 });
 
@@ -215,6 +237,29 @@ export const hasUpvoted = query({
       )
       .unique();
     return existing !== null;
+  },
+});
+
+// WP20 A-invariant 3: de ids van de features waarop de caller stemde, voor
+// de hele lijst in één query. Alleen eigen stemmen. Zonder account een fout,
+// zoals `list`. Een stem op een feature die de caller niet (meer) ziet, valt
+// weg: geen id dat `list` niet ook geeft.
+export const listMyUpvotes = query({
+  args: {},
+  returns: v.array(v.id("features")),
+  handler: async (ctx) => {
+    const user = await requireCurrentUser(ctx);
+    const webmaster = await isWebmaster(ctx);
+    const mine = await ctx.db
+      .query("featureUpvotes")
+      .withIndex("by_user", (q) => q.eq("userId", user._id))
+      .collect();
+    const ids: Id<"features">[] = [];
+    for (const u of mine) {
+      const f = await ctx.db.get(u.featureId);
+      if (f && canSee(f, user._id, webmaster)) ids.push(f._id);
+    }
+    return ids;
   },
 });
 

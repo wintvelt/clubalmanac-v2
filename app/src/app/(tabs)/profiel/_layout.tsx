@@ -6,6 +6,8 @@ export default function Layout() {
     <Stack screenOptions={useStackScreenOptions()}>
       <Stack.Screen name="index" options={{ title: "Profiel" }} />
       <Stack.Screen name="uitnodigingen" options={{ title: "Uitnodigingen" }} />
+      <Stack.Screen name="gemeld" options={{ title: "Gemelde foto's" }} />
+      <Stack.Screen name="meldingen" options={{ title: "Meldingen beoordelen" }} />
       <Stack.Screen name="verwijderen" options={{ title: "Account verwijderen" }} />
     </Stack>
   );

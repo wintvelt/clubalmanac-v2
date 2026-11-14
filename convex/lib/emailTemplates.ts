@@ -259,19 +259,77 @@ ${SIGNATURE_TEXT}`;
 // ---------------------------------------------------------------------------
 export function flagDecisionDenyTemplate(opts: {
   ownerName: string;
+  /** WP20 A-invariant 6: de nieuwe flaggedDeleteDate; `null` = "binnenkort". */
+  deleteAt: number | null;
 }): TemplateBlock {
   const subject = `Je bezwaar over een melding voor ongepaste inhoud is afgewezen`;
+  const when = opts.deleteAt === null ? "binnenkort" : `na ${formatNlDate(opts.deleteAt)}`;
 
   const htmlPart = `
 <p>Hi ${escapeHtml(opts.ownerName)},</p>
 <p>HELAAS: Je bezwaar op de melding op 1 van je foto's is afgewezen.</p>
-<p>De foto zal binnenkort definitief van clubalmanac worden verwijderd.</p>
+<p>De foto wordt ${when} definitief van clubalmanac verwijderd.</p>
 ${SIGNATURE_HTML}
 `.trim();
 
   const textPart = `Hi ${opts.ownerName},
 
-HELAAS: Je bezwaar op de melding op 1 van je foto's is afgewezen. De foto zal binnenkort definitief van clubalmanac worden verwijderd.
+HELAAS: Je bezwaar op de melding op 1 van je foto's is afgewezen. De foto wordt ${when} definitief van clubalmanac verwijderd.
+
+${SIGNATURE_TEXT}`;
+
+  return { subject, htmlPart, textPart };
+}
+
+// ---------------------------------------------------------------------------
+// kind = "flagReported" (naar photo-owner) — WP20 besluit 1, A-invariant 10
+// ---------------------------------------------------------------------------
+// Bij de eerste melding. Kaal, zoals de mail bij afwijzen (A-keuze 5). Geen
+// naam of adres van de melder, geen reden (invariant 1): de template krijgt ze
+// niet eens mee.
+export function flagReportedTemplate(opts: {
+  ownerName: string;
+  deleteAt: number;
+}): TemplateBlock {
+  const subject = `Een van je foto's is gemeld als ongepast`;
+  const day = formatNlDate(opts.deleteAt);
+  const where = `Profiel → Gemelde foto's`;
+
+  const htmlPart = `
+<p>Hi ${escapeHtml(opts.ownerName)},</p>
+<p>Een ander lid heeft 1 van je foto's gemeld als ongepast.</p>
+<p>Ben je het daar niet mee eens? Maak dan bezwaar in de app Clubalmanac, via ${escapeHtml(where)}. Zonder bezwaar wordt de foto na ${day} definitief van clubalmanac verwijderd.</p>
+${SIGNATURE_HTML}
+`.trim();
+
+  const textPart = `Hi ${opts.ownerName},
+
+Een ander lid heeft 1 van je foto's gemeld als ongepast.
+
+Ben je het daar niet mee eens? Maak dan bezwaar in de app Clubalmanac, via ${where}. Zonder bezwaar wordt de foto na ${day} definitief van clubalmanac verwijderd.
+
+${SIGNATURE_TEXT}`;
+
+  return { subject, htmlPart, textPart };
+}
+
+// ---------------------------------------------------------------------------
+// kind = "flagRemoved" (naar photo-owner) — WP20 besluit 2, A-invariant 13
+// ---------------------------------------------------------------------------
+// De webmaster liet een gemelde foto meteen verwijderen. Geen melder, geen
+// reden; de foto zelf is al weg.
+export function flagRemovedTemplate(opts: { ownerName: string }): TemplateBlock {
+  const subject = `Je gemelde foto is verwijderd`;
+
+  const htmlPart = `
+<p>Hi ${escapeHtml(opts.ownerName)},</p>
+<p>1 van je foto's was gemeld als ongepast. Na beoordeling is de foto van clubalmanac verwijderd.</p>
+${SIGNATURE_HTML}
+`.trim();
+
+  const textPart = `Hi ${opts.ownerName},
+
+1 van je foto's was gemeld als ongepast. Na beoordeling is de foto van clubalmanac verwijderd.
 
 ${SIGNATURE_TEXT}`;
 

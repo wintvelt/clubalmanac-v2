@@ -9,6 +9,7 @@ import { ListRow, ListSection } from "../components/ListRow";
 import { Notice } from "../components/Notice";
 import { SmallButton } from "../components/SmallButton";
 import { ProfileAvatar } from "../components/Photo";
+import { QueryBoundary } from "../components/QueryBoundary";
 import { Screen } from "../components/Screen";
 import { LoadingState } from "../components/States";
 import { Text } from "../components/Text";
@@ -134,10 +135,14 @@ export function ProfileScreen() {
         </Text>
       </View>
 
-      {/* WP19b: ontvangen uitnodigingen. */}
+      {/* WP19b: ontvangen uitnodigingen. WP20 besluit 4: gemelde foto's en de
+          wachtrij van de webmaster, alleen als er iets is. */}
       <ListSection>
         <ListRow title="Uitnodigingen" icon="mail" onPress={() => router.push("/profiel/uitnodigingen")} />
       </ListSection>
+      <QueryBoundary fallback={() => null}>
+        <FlagRows />
+      </QueryBoundary>
 
       {/* WP29: gevaarlijke rij, in een eigen blok onderaan. */}
       <View style={styles.dangerBlock}>
@@ -152,6 +157,40 @@ export function ProfileScreen() {
         </ListSection>
       </View>
     </Screen>
+  );
+}
+
+// WP20 besluit 4: "Gemelde foto's" als een eigen foto gemeld is; voor de
+// webmaster "Meldingen beoordelen" als er een gemelde foto is. Zonder iets:
+// geen rij.
+function FlagRows() {
+  const mine = useLiveQuery(api.photos.listMyFlagged, {});
+  const webmaster = useLiveQuery(api.users.isWebmaster, {});
+  const hasMine = (mine?.length ?? 0) > 0;
+  return (
+    <>
+      {hasMine && (
+        <ListSection>
+          <ListRow title="Gemelde foto's" icon="flag" onPress={() => router.push("/profiel/gemeld")} />
+        </ListSection>
+      )}
+      {webmaster === true && <QueueRow />}
+    </>
+  );
+}
+
+// Alleen gemount voor de webmaster: voor ieder ander weigert de backend.
+function QueueRow() {
+  const all = useLiveQuery(api.photos.listAllFlagged, {});
+  if (!all || all.length === 0) return null;
+  return (
+    <ListSection>
+      <ListRow
+        title={`Meldingen beoordelen (${all.length})`}
+        icon="flag"
+        onPress={() => router.push("/profiel/meldingen")}
+      />
+    </ListSection>
   );
 }
 

@@ -83,3 +83,36 @@ function hasForbiddenChar(name: string): boolean {
   }
   return false;
 }
+
+/**
+ * WP20 A-invariant 1: titel en omschrijving van een idee of probleem. Zelfde
+ * tekenregel als namen, eigen grenzen. Geeft de getrimde tekst, of gooit een
+ * ConvexError met de code van het veld.
+ * - Titel: 1–100 code points, één regel (`TITLE_REQUIRED`, `TITLE_TOO_LONG`,
+ *   `TITLE_INVALID`).
+ * - Omschrijving: 0–2000 code points; regeleinden (`\n`) mogen, elke regel
+ *   volgt de tekenregel (`DESCRIPTION_TOO_LONG`, `DESCRIPTION_INVALID`).
+ */
+export const FEATURE_TITLE_MAX_LENGTH = 100;
+export const FEATURE_DESCRIPTION_MAX_LENGTH = 2000;
+
+export function validFeatureTitle(raw: string): string {
+  const title = raw.trim();
+  if (title.length === 0) throw new ConvexError({ code: "TITLE_REQUIRED" });
+  if ([...title].length > FEATURE_TITLE_MAX_LENGTH) {
+    throw new ConvexError({ code: "TITLE_TOO_LONG" });
+  }
+  if (hasForbiddenChar(title)) throw new ConvexError({ code: "TITLE_INVALID" });
+  return title;
+}
+
+export function validFeatureDescription(raw: string): string {
+  const description = raw.trim();
+  if ([...description].length > FEATURE_DESCRIPTION_MAX_LENGTH) {
+    throw new ConvexError({ code: "DESCRIPTION_TOO_LONG" });
+  }
+  if (description.split("\n").some(hasForbiddenChar)) {
+    throw new ConvexError({ code: "DESCRIPTION_INVALID" });
+  }
+  return description;
+}

@@ -31,6 +31,9 @@ const IONICONS = {
   map: "map",
   pin: "location",
   share: "share",
+  idea: "bulb",
+  problem: "bug",
+  vote: "thumbs-up",
 } as const;
 
 export type IconName = keyof typeof IONICONS;

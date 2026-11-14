@@ -58,7 +58,9 @@ Alle templates leven in [`convex/lib/emailTemplates.ts`](../../convex/lib/emailT
 |---|---|---|---|---|
 | `invite` | `invites@` | geïnviteerde | "… nodigt je uit …" | inviter-naam, groep, inlogadres, expiry, App Store-link, groepsfoto (WP19c); geen invite-link of token (WP19b) |
 | `accepted` / `declined` / `bounced` | `invites@` | inviter | accept/decline/bounce-melding | inviter-naam, accepter/decliner-naam, groep |
-| `flagDecisionDeny` | `info@` | photo-owner | "Je bezwaar … is afgewezen" | owner-naam |
+| `flagReported` (WP20) | `info@` | photo-owner | "Een van je foto's is gemeld als ongepast" | owner-naam, verwijderdatum, waar je bezwaar maakt. Alleen bij de eerste melding; geen melder of reden |
+| `flagDecisionDeny` | `info@` | photo-owner | "Je bezwaar … is afgewezen" | owner-naam, verwijderdatum (WP20) |
+| `flagRemoved` (WP20) | `info@` | photo-owner | "Je gemelde foto is verwijderd" | owner-naam; geen melder of reden. Na `photos.removeFlagged`, los van de foto-rij |
 | `problemReport` | `info@` | `WEBMASTER_EMAILS` | "Probleem gemeld op {stage}" | submitter-naam/email, titel, beschrijving |
 | `monitor-drift-alert` (WP10) | `info@` | `WEBMASTER_EMAILS` | "Clubalmanac integriteits-check: drift gedetecteerd (N)" | run-timestamp + per drift-rij `table/id: detail` (counts + IDs). **Géén user-content** (geen namen, emails, comments) — PII-grens invariant 9 |
 | `monitor-heartbeat` (WP10) | `info@` | `WEBMASTER_EMAILS` | "Clubalmanac integriteits-check: maandelijkse heartbeat" | run-timestamp + "monitor draait nog"-tekst. Conditioneel op drift-aanwezigheid: bij gededupte openstaande drift een waarschuwingszinsnede ("openstaande drift" + verwijzing naar dashboard-log) zonder drift-IDs (PII-grens invariant 9 blijft); schone run zonder waarschuwing |
