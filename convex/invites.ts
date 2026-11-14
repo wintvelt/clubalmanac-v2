@@ -5,6 +5,7 @@ import {
   internalQuery,
   mutation,
   query,
+  type ActionCtx,
   type MutationCtx,
   type QueryCtx,
 } from "./_generated/server";
@@ -40,6 +41,8 @@ import {
   bouncedTemplate,
   declinedTemplate,
   formatNlDate,
+  INVITE_PHOTO_CONTENT_ID,
+  INVITE_PHOTO_FILENAME,
   inviteTemplate,
 } from "./lib/emailTemplates";
 
@@ -159,12 +162,12 @@ export const create = mutation({
   },
 });
 
-/** WP24: de cover staat in een album van die groep (en de foto bestaat). */
-async function groupHasCover(ctx: QueryCtx, group: Doc<"groups">): Promise<boolean> {
-  if (!group.coverPhotoId) return false;
+/** WP24: de cover, als die in een album van die groep staat (en de foto bestaat). */
+async function visibleGroupCover(ctx: QueryCtx, group: Doc<"groups">): Promise<Doc<"photos"> | null> {
+  if (!group.coverPhotoId) return null;
   const cover = await ctx.db.get(group.coverPhotoId);
-  if (!cover) return false;
-  return await isPublishedInGroup(ctx, cover._id, group._id);
+  if (!cover) return null;
+  return (await isPublishedInGroup(ctx, cover._id, group._id)) ? cover : null;
 }
 
 // WP19b invariant 6, A-invariant 6, 14, 15: de ontvangen uitnodigingen van de
@@ -187,11 +190,15 @@ export const listReceived = query({
       const group = await ctx.db.get(invite.groupId!);
       if (!group) continue;
       const inviter = await ctx.db.get(invite.invitedBy);
+      // WP19c A-invariant 12: bij de cover alleen zijn stand, zodat de kaart
+      // *klein* rechtop toont. Dezelfde waarde die een lid krijgt.
+      const cover = await visibleGroupCover(ctx, group);
       out.push({
         ...pick(invite, inviteReceivedFields),
         group: {
           ...pick(group, receivedGroupFields),
-          hasCover: await groupHasCover(ctx, group),
+          hasCover: cover !== null,
+          ...(cover?.exifOrientation !== undefined ? { coverOrientation: cover.exifOrientation } : {}),
         },
         inviter: inviter
           ? { ...pick(inviter, publicProfileFields), ...(await avatarFieldsOf(ctx, inviter)) }
@@ -468,6 +475,41 @@ export const getInviteForEmail = internalQuery({
   },
 });
 
+// WP19c invariant 2–5, A-invariant 1–7: de groepsfoto voor de mail, of
+// `null`. Welke foto beslist `images.inviteMailCover`; de pixels maakt de
+// Node-action `inviteMail.coverAttachment` (sharp). Die wordt alleen
+// aangeroepen als er een cover is. Mislukt er iets, dan gaat de mail zonder
+// foto: de uitnodiging faalt er niet op.
+async function inviteMailPhoto(
+  ctx: ActionCtx,
+  inviteId: Id<"invites">,
+): Promise<{ base64Content: string; width: number } | null> {
+  try {
+    const cover = await ctx.runQuery(internal.images.inviteMailCover, { inviteId });
+    if (!cover) return null;
+    return await ctx.runAction(internal.inviteMail.coverAttachment, cover);
+  } catch (e) {
+    console.error(
+      `[sendInviteEmail] groepsfoto mislukt inviteId=${inviteId}, de mail gaat zonder foto: ${e instanceof Error ? e.message : String(e)}`,
+    );
+    return null;
+  }
+}
+
+// WP19c besluit 3, A-invariant 9: de vaste link naar de app in de App Store.
+// De Apple ID komt uit `CLUBALMANAC_APP_STORE_ID` en geldt alleen als 6–12
+// cijfers. Anders geen link, en een fout in de log (niet stil); de mail gaat.
+const APP_STORE_ID_ENV = "CLUBALMANAC_APP_STORE_ID";
+
+function appStoreUrlFromEnv(): string | undefined {
+  const raw = process.env[APP_STORE_ID_ENV];
+  if (raw !== undefined && /^\d{6,12}$/.test(raw)) return `https://apps.apple.com/app/id${raw}`;
+  console.error(
+    `[sendInviteEmail] ${APP_STORE_ID_ENV} ${raw === undefined || raw === "" ? "ontbreekt" : "is geen Apple ID (6–12 cijfers)"}; de uitnodiging gaat zonder App Store-link`,
+  );
+  return undefined;
+}
+
 // Mailjet-action voor de vier invite-mail-kinds.
 //
 // Recipient-resolutie:
@@ -508,6 +550,9 @@ export const sendInviteEmail = internalAction({
       const inviterName = data.inviter?.name ?? "iemand";
       // WP19b A-invariant 4 en 13: geen link en geen token; wel het adres
       // waarmee de genodigde inlogt, de aanhef en het bericht.
+      // WP19c: de groepsfoto als inline-bijlage en de App Store-link.
+      const photo = await inviteMailPhoto(ctx, inviteId);
+      const appStoreUrl = appStoreUrlFromEnv();
       const tpl = inviteTemplate({
         inviterName,
         groupName,
@@ -515,6 +560,8 @@ export const sendInviteEmail = internalAction({
         inviteeEmail: data.invite.email,
         message: data.invite.message,
         expirationDate: formatNlDate(data.invite.expiresAt),
+        ...(photo ? { photo: { width: photo.width } } : {}),
+        ...(appStoreUrl ? { appStoreUrl } : {}),
       });
       await sendMailjetMessage({
         from: { email: INVITES_SENDER },
@@ -522,6 +569,18 @@ export const sendInviteEmail = internalAction({
         subject: tpl.subject,
         htmlPart: tpl.htmlPart,
         textPart: tpl.textPart,
+        ...(photo
+          ? {
+              inlinedAttachments: [
+                {
+                  contentType: "image/jpeg",
+                  filename: INVITE_PHOTO_FILENAME,
+                  contentId: INVITE_PHOTO_CONTENT_ID,
+                  base64Content: photo.base64Content,
+                },
+              ],
+            }
+          : {}),
       });
       return;
     }

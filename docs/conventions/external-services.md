@@ -13,7 +13,7 @@ Gekozen 2026-05. EU-based, GDPR-compliant. Free tier 6000/maand voldoende voor 1
 
 ### Vereiste env-vars per deployment
 
-WP5 introduceerde 5 env-vars; sinds WP19b (geen link in de uitnodigingsmail) zijn het er 4 Mailjet-vars plus `CLUBALMANAC_STAGE`. Ze moeten op zowel dev als prod gezet zijn — anders fail-loud throw bij eerste send. Geen "stille" fallback-defaults meer (WP5-audit S-3 fix: APP_URL had silent prod-fallback, STAGE had silent "dev"-fallback — beide leidden tot subtiele mis-routing).
+WP5 introduceerde 5 env-vars; sinds WP19b (geen link in de uitnodigingsmail) zijn het er 4 Mailjet-vars plus `CLUBALMANAC_STAGE`, en sinds WP19c ook `CLUBALMANAC_APP_STORE_ID`. Ze moeten op zowel dev als prod gezet zijn — anders fail-loud throw bij eerste send. Geen "stille" fallback-defaults meer (WP5-audit S-3 fix: APP_URL had silent prod-fallback, STAGE had silent "dev"-fallback — beide leidden tot subtiele mis-routing).
 
 | Env-var | Waarde dev | Waarde prod | Wat gebeurt bij ontbreken |
 |---|---|---|---|
@@ -22,6 +22,7 @@ WP5 introduceerde 5 env-vars; sinds WP19b (geen link in de uitnodigingsmail) zij
 | `MAILJET_WEBHOOK_SECRET` | gegenereerde random string, zelfde in Mailjet dashboard webhook-config | aparte prod-string | `/email-event` → 503, geen state-mutatie |
 | `MAILJET_VERIFIED_SENDERS` | comma-sep van alle from-addresses die in code voorkomen (`invites@…`, `info@…`) | idem, met prod-domain | `UNVERIFIED_SENDER:` throw vóór elke send |
 | `CLUBALMANAC_STAGE` | `"dev"` | `"prod"` | throw bij `getStageLabel`-call op problem-report-pad (S-3 fix) |
+| `CLUBALMANAC_APP_STORE_ID` (WP19c) | `1663038609` (Apple ID van de app, openbaar) | idem | Geen throw: de uitnodigingsmail gaat zonder App Store-link, met een `console.error` die de env-var noemt. Geldt alleen als 6–12 cijfers |
 
 ### Rotation
 

@@ -9,7 +9,7 @@
 // Mailjet Send API v3.1 contract: POST naar
 // `https://api.mailjet.com/v3.1/send` met basic-auth
 // (`MAILJET_API_KEY:MAILJET_API_SECRET`) en JSON body
-// `{ Messages: [{ From, To, Subject, HTMLPart, TextPart }] }`.
+// `{ Messages: [{ From, To, Subject, HTMLPart, TextPart, InlinedAttachments? }] }`.
 //
 // Sender-policy per mail-kind (spec §"Mailjet sender-policy"):
 //   invite | accepted | declined | bounced → invites@clubalmanac.com
@@ -37,12 +37,25 @@ export function isSenderVerified(fromAddress: string): boolean {
 
 export type MailjetRecipient = { email: string; name?: string };
 
+/**
+ * WP19c: een inline-bijlage, in de HTML aan te spreken als `cid:<contentId>`.
+ * Mailjet v3.1: `InlinedAttachments: [{ ContentType, Filename, ContentID,
+ * Base64Content }]`.
+ */
+export type MailjetInlineAttachment = {
+  contentType: string;
+  filename: string;
+  contentId: string;
+  base64Content: string;
+};
+
 export type MailjetMessage = {
   from: MailjetRecipient;
   to: MailjetRecipient[];
   subject: string;
   htmlPart: string;
   textPart: string;
+  inlinedAttachments?: MailjetInlineAttachment[];
 };
 
 // Hard gate vóór de Mailjet-fetch. Gooit een typed Error met prefix
@@ -96,6 +109,17 @@ export async function sendMailjetMessage(msg: MailjetMessage): Promise<void> {
         Subject: msg.subject,
         HTMLPart: msg.htmlPart,
         TextPart: msg.textPart,
+        // Zonder bijlagen geen sleutel (WP19c); nooit gewone `Attachments`.
+        ...(msg.inlinedAttachments && msg.inlinedAttachments.length > 0
+          ? {
+              InlinedAttachments: msg.inlinedAttachments.map((a) => ({
+                ContentType: a.contentType,
+                Filename: a.filename,
+                ContentID: a.contentId,
+                Base64Content: a.base64Content,
+              })),
+            }
+          : {}),
       },
     ],
   };

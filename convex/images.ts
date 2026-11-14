@@ -149,13 +149,53 @@ export const inviteCoverInFormat = internalQuery({
     const invite = await ctx.db.get(id);
     if (!invite || invite.email !== normalizeEmail(user.email)) return null;
     if (!(await isInviteAcceptable(ctx, invite, Date.now()))) return null;
-    const group = await ctx.db.get(invite.groupId!);
-    if (!group?.coverPhotoId) return null;
-    const cover = await ctx.db.get(group.coverPhotoId);
-    if (!cover || !(await isPublishedInGroup(ctx, cover._id, group._id))) return null;
-    const original = await storedImage(ctx, cover.storageId);
-    if (!original) return null;
-    return await chooseFormat(ctx, cover, formaat, original);
+    const found = await inviteGroupCover(ctx, invite);
+    if (!found) return null;
+    return await chooseFormat(ctx, found.cover, formaat, found.original);
+  },
+});
+
+/**
+ * De cover van de groep van een uitnodiging, als die in een album van die
+ * groep staat (WP24) en het origineel nog in storage is. Gedeeld door het
+ * beeldpad van de genodigde en de uitnodigingsmail (WP19c invariant 2).
+ */
+async function inviteGroupCover(
+  ctx: QueryCtx,
+  invite: Doc<"invites">,
+): Promise<{ cover: Doc<"photos">; original: Id<"_storage"> } | null> {
+  if (!invite.groupId) return null;
+  const group = await ctx.db.get(invite.groupId);
+  if (!group?.coverPhotoId) return null;
+  const cover = await ctx.db.get(group.coverPhotoId);
+  if (!cover || !(await isPublishedInGroup(ctx, cover._id, group._id))) return null;
+  const original = await storedImage(ctx, cover.storageId);
+  if (!original) return null;
+  return { cover, original };
+}
+
+/**
+ * WP19c invariant 2 en 3, A-invariant 3: de groepsfoto voor de
+ * uitnodigingsmail. Dezelfde cover-regel als `inviteCoverInFormat`, zonder
+ * identity: de mail-action heeft geen caller. Alleen *klein*, nooit een
+ * terugval op het origineel of *groot*. Plus de stand, die de mail-stap in de
+ * pixels toepast (A-invariant 4). Het storage-id blijft binnen de server.
+ */
+export const inviteMailCover = internalQuery({
+  args: { inviteId: v.id("invites") },
+  returns: v.union(
+    v.object({ storageId: v.id("_storage"), exifOrientation: v.optional(v.number()) }),
+    v.null(),
+  ),
+  handler: async (ctx, { inviteId }) => {
+    const invite = await ctx.db.get(inviteId);
+    if (!invite) return null;
+    const found = await inviteGroupCover(ctx, invite);
+    if (!found) return null;
+    const klein = await storedImage(ctx, found.cover.formats?.klein);
+    if (!klein) return null;
+    const { exifOrientation } = found.cover;
+    return { storageId: klein, ...(exifOrientation !== undefined ? { exifOrientation } : {}) };
   },
 });
 
