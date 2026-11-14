@@ -1,6 +1,6 @@
 # WP30: afhankelijkheden bijwerken
 
-> Draft regie 2026-11-14. Onderhoud, geen nieuw gedrag. Eén uitvoerende sessie (solo), daarna een gate van regie in de simulator met een nieuwe build. Geen A/B/audit: er is geen nieuw gedrag om te testen of te bouwen. Eigen branch `wp30`.
+> Regie 2026-11-14, landed 2026-11-14. Onderhoud, geen nieuw gedrag. Eén uitvoerende sessie (solo), daarna een gate van regie in de simulator met een nieuwe build. Geen A/B/audit: er is geen nieuw gedrag om te testen of te bouwen. Eigen branch `wp30`.
 
 ## Productdoel
 
@@ -60,3 +60,16 @@ Alleen patch- en minor-updates, binnen de huidige major. Stand van `npm outdated
 
 - Geen nieuwe env-vars.
 - De volgende TestFlight-build (EAS) neemt de nieuwe native versies mee. Geen aparte stap nodig; noteren in het gate-verslag welke build het eerst draait.
+
+## Uitkomst (2026-11-14)
+
+- **Bijgewerkt:** Convex 1.50 (app en backend), `@clerk/backend` 3.29, `@clerk/expo` 4.16, Expo 58.0.25 met modules, React Native 0.88.1, nodemailer 10.5, AWS SDK. Wat Expo 58 nog op de oude versie houdt (React 19.3.0, gesture-handler, svg, worklets, datetimepicker), bleef staan.
+- **Changelogs:** niets dat ons raakt. `@clerk/expo` 4.16.1 geeft `getToken` een vaste identiteit, dus onze workaround is nu overbodig maar onschadelijk.
+- **Kwetsbaarheden:** root 0; app 4 middel, 0 hoog (allemaal `minimatch` in Expo's build-tooling, geen runtime).
+- **Gate (simulator, nieuwe dev-build, dev Wouter):** uitloggen en inloggen met code; groep, album, foto, kaart; delen; draaien (voorbeeld, niet bewaard); upload in Test group; Bewerk groep met datumkiezer; Profiel; uitnodiging met foto via SMTP komt aan. Groen.
+
+### Backlog
+
+- **`convex-test` 0.0.52 → 0.0.71:** breekt 11 tests (geplande functies lopen nu echt door; `Date.now()` schuift 1 ms per transactie). Aanpassingen in 7 testbestanden, deels grensgevallen. Eigen WP met A.
+- **`minimatch` (4× middel) via `@expo/fingerprint`:** wachten op een Expo-patch, of een override naar minimatch 11.
+- **Klein:** het versiecommentaar in `app/src/lib/loginErrors.ts:6` noemt nog `@clerk/expo` 4.14.1.
