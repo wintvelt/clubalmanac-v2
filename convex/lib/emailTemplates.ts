@@ -24,12 +24,80 @@ function escapeHtml(s: string): string {
 }
 
 // ---------------------------------------------------------------------------
+// WP19c: de HTML-schil in de stijl van de app (A-invariant 8)
+// ---------------------------------------------------------------------------
+// Eén kolom op een `surface`-kaart, de tokens van docs/design.md §2 in licht en
+// donker, de systeemletter. Geen externe bronnen: geen webfont, `<link>`,
+// `<script>` of `url(`; elk beeld is een `cid:`-bijlage. De lichte kleuren
+// staan ook inline, voor clients die `<style>` weggooien; het donkere blok
+// overschrijft ze met `!important`. Nu alleen voor de uitnodiging (A, open
+// vraag 3); de andere mails aan leden kunnen hem later krijgen.
+
+const LIGHT = { bg: "#F1F5F9", surface: "#FFFFFF", text: "#0F172A", muted: "#475569", cta: "#C2410C", onCta: "#FFFFFF" };
+const DARK = { bg: "#020617", surface: "#0F172A", text: "#E2E8F0", muted: "#94A3B8", cta: "#FB923C", onCta: "#1C0A02" };
+const FONT = "-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif";
+
+function emailShell(opts: { title: string; body: string }): string {
+  return `<!doctype html>
+<html lang="nl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<meta name="supported-color-schemes" content="light dark">
+<title>${escapeHtml(opts.title)}</title>
+<style>
+:root { color-scheme: light dark; supported-color-schemes: light dark; }
+body { margin: 0; padding: 0; background: ${LIGHT.bg}; color: ${LIGHT.text}; font-family: ${FONT}; }
+.ca-bg { background: ${LIGHT.bg}; }
+.ca-card { background: ${LIGHT.surface}; }
+.ca-text { color: ${LIGHT.text}; }
+.ca-muted { color: ${LIGHT.muted}; }
+.ca-cta { background: ${LIGHT.cta}; color: ${LIGHT.onCta}; }
+@media (prefers-color-scheme: dark) {
+  body, .ca-bg { background: ${DARK.bg} !important; color: ${DARK.text} !important; }
+  .ca-card { background: ${DARK.surface} !important; }
+  .ca-text { color: ${DARK.text} !important; }
+  .ca-muted { color: ${DARK.muted} !important; border-color: ${DARK.muted} !important; }
+  .ca-cta { background: ${DARK.cta} !important; color: ${DARK.onCta} !important; }
+}
+</style>
+</head>
+<body class="ca-bg" style="margin:0;padding:0;background:${LIGHT.bg};color:${LIGHT.text};font-family:${FONT};">
+<table role="presentation" class="ca-bg" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:${LIGHT.bg};">
+<tr><td align="center" style="padding:24px 12px;">
+<table role="presentation" class="ca-card" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:600px;background:${LIGHT.surface};border-radius:16px;">
+<tr><td class="ca-text" style="padding:24px;color:${LIGHT.text};font-family:${FONT};font-size:18px;line-height:1.5;">
+${opts.body}
+</td></tr>
+</table>
+</td></tr>
+</table>
+</body>
+</html>`;
+}
+
+/** Tekst als HTML, met een regeleinde als `<br>`. */
+function htmlLines(s: string): string {
+  return escapeHtml(s).replace(/\r?\n/g, "<br>");
+}
+
+// ---------------------------------------------------------------------------
 // kind = "invite" (naar geïnviteerde)
 // ---------------------------------------------------------------------------
-// WP19b besluit 1, A-invariant 4 en 13: geen link en geen token. Wel wie
-// uitnodigt, de groep, het adres waarmee de genodigde inlogt, tot wanneer, en
-// dat hij de app installeert en met dat adres inlogt. De aanhef met de naam
-// uit de uitnodiging (een gemigreerde heeft er geen) en het bericht.
+// WP19b besluit 1, A-invariant 4 en 13: geen persoonlijke link en geen token.
+// Wel wie uitnodigt, de groep, het adres waarmee de genodigde inlogt, tot
+// wanneer, en dat hij de app installeert en met dat adres inlogt. De aanhef
+// met de naam uit de uitnodiging (een gemigreerde heeft er geen) en het
+// bericht.
+//
+// WP19c: opmaak in de schil hierboven (A-invariant 8), de groepsfoto als
+// `cid:`-bijlage bovenaan (A-invariant 1, 6, 11) en één vaste App Store-link
+// (A-invariant 9). De tekstversie heeft dezelfde inhoud, zonder beeld
+// (A-invariant 10).
+export const INVITE_PHOTO_CONTENT_ID = "groepsfoto";
+export const INVITE_PHOTO_FILENAME = "groepsfoto.jpg";
+
 export function inviteTemplate(opts: {
   inviterName: string;
   groupName: string | undefined;
@@ -37,6 +105,10 @@ export function inviteTemplate(opts: {
   inviteeEmail: string;
   message?: string;
   expirationDate: string; // already formatted NL-date string
+  /** De groepsfoto als bijlage `cid:${INVITE_PHOTO_CONTENT_ID}`, met zijn breedte in px. */
+  photo?: { width: number };
+  /** De vaste link naar de app in de App Store; zonder: geen link. */
+  appStoreUrl?: string;
 }): TemplateBlock {
   const groupRef = opts.groupName ?? "clubalmanac";
   const subject = opts.groupName
@@ -45,26 +117,46 @@ export function inviteTemplate(opts: {
 
   const greetingText = opts.inviteeName ? `Hi ${opts.inviteeName},` : "Hi,";
   const greetingHtml = opts.inviteeName ? `Hi ${escapeHtml(opts.inviteeName)},` : "Hi,";
-  const messageHtml = opts.message
-    ? `<p><em>"${escapeHtml(opts.message)}"</em></p>`
-    : "";
-  const messageText = opts.message ? `\n"${opts.message}"\n` : "";
+  const p = (html: string, extra = "") => `<p class="ca-text" style="margin:0 0 16px;color:${LIGHT.text};${extra}">${html}</p>`;
 
-  const htmlPart = `
-<p>${greetingHtml}</p>
-<p>${escapeHtml(opts.inviterName)} nodigt je uit om lid te worden van ${escapeHtml(groupRef)} op clubalmanac.</p>
-${messageHtml}
-<p>Installeer de app Clubalmanac en log in met dit e-mailadres: <strong>${escapeHtml(opts.inviteeEmail)}</strong>. Na het inloggen zie je de uitnodiging in de app.</p>
-<p>Deze uitnodiging is geldig tot ${escapeHtml(opts.expirationDate)}.</p>
-${SIGNATURE_HTML}
-`.trim();
+  const photoHtml = opts.photo
+    ? `<img src="cid:${INVITE_PHOTO_CONTENT_ID}" width="${opts.photo.width}" alt="Groepsfoto van ${escapeHtml(groupRef)}" style="display:block;max-width:100%;height:auto;border:0;border-radius:16px;margin:0 auto 20px;">`
+    : "";
+  const messageHtml = opts.message
+    ? `<p class="ca-muted" style="margin:0 0 16px;padding:4px 0 4px 16px;border-left:3px solid ${LIGHT.muted};color:${LIGHT.muted};font-style:italic;">${htmlLines(opts.message)}</p>`
+    : "";
+  const appStoreHtml = opts.appStoreUrl
+    ? `${p("Heb je een iPhone? Installeer Clubalmanac uit de App Store.")}
+<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 20px;"><tr><td class="ca-cta" style="background:${LIGHT.cta};border-radius:12px;"><a class="ca-cta" href="${escapeHtml(opts.appStoreUrl)}" style="display:inline-block;padding:14px 24px;background:${LIGHT.cta};color:${LIGHT.onCta};border-radius:12px;font-family:${FONT};font-size:18px;font-weight:700;text-decoration:none;">Naar de App Store</a></td></tr></table>`
+    : "";
+
+  const body = [
+    `<p class="ca-muted" style="margin:0 0 16px;color:${LIGHT.muted};font-size:16px;font-weight:600;">Clubalmanac</p>`,
+    photoHtml,
+    `<h1 class="ca-text" style="margin:0 0 12px;color:${LIGHT.text};font-size:30px;line-height:1.2;font-weight:700;">${greetingHtml}</h1>`,
+    p(`${escapeHtml(opts.inviterName)} nodigt je uit om lid te worden van <strong>${escapeHtml(groupRef)}</strong> op Clubalmanac.`),
+    messageHtml,
+    p(`Installeer de app Clubalmanac en log in met dit e-mailadres: <strong>${escapeHtml(opts.inviteeEmail)}</strong>. Na het inloggen zie je de uitnodiging in de app.`),
+    appStoreHtml,
+    `<p class="ca-muted" style="margin:0 0 16px;color:${LIGHT.muted};font-size:16px;">Deze uitnodiging is geldig tot <span style="white-space:nowrap;">${escapeHtml(opts.expirationDate)}</span>.</p>`,
+    p("Groet,<br>Clubalmanac", "margin:0;"),
+  ]
+    .filter((s) => s !== "")
+    .join("\n");
+
+  const htmlPart = emailShell({ title: "Uitnodiging voor Clubalmanac", body });
+
+  const messageText = opts.message ? `\n"${opts.message}"\n` : "";
+  const appStoreText = opts.appStoreUrl
+    ? `\nHeb je een iPhone? Installeer Clubalmanac uit de App Store:\n${opts.appStoreUrl}\n`
+    : "";
 
   const textPart = `${greetingText}
 
-${opts.inviterName} nodigt je uit om lid te worden van ${groupRef} op clubalmanac.
+${opts.inviterName} nodigt je uit om lid te worden van ${groupRef} op Clubalmanac.
 ${messageText}
 Installeer de app Clubalmanac en log in met dit e-mailadres: ${opts.inviteeEmail}. Na het inloggen zie je de uitnodiging in de app.
-
+${appStoreText}
 Deze uitnodiging is geldig tot ${opts.expirationDate}.
 
 ${SIGNATURE_TEXT}`;

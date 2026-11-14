@@ -138,7 +138,7 @@ function assertHeicFits(bytes: Uint8Array): void {
 type Sharp = typeof SharpModule;
 type RawInput = { data: Buffer; width: number; height: number; channels: 1 | 2 | 3 | 4 };
 
-async function loadSharp(): Promise<Sharp> {
+export async function loadSharp(): Promise<Sharp> {
   const mod = (await import("sharp")) as unknown as { default?: Sharp } & Sharp;
   const sharp = mod.default ?? mod;
   // Geen cache van decodes tussen aanroepen: een warme action verwerkt in de

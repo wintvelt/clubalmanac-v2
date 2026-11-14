@@ -5,6 +5,9 @@ import { formatNlDate } from "../../convex/lib/emailTemplates";
 import { newT, type T } from "../groups/_beheer";
 import { inviteRow, seedInvite, world } from "./_wp19b";
 
+// Besluit 5: een mail met foto gaat via SMTP. Nooit echt naar Mailjet.
+vi.mock("nodemailer", async () => (await import("./_smtp")).nodemailerMock());
+
 // WP19b besluit 1, invariant 2, A-invariant 4 en 13: de uitnodigingsmail
 // bevat geen link en geen token. Wel: wie uitnodigt, de groep, het adres
 // waarmee je inlogt, tot wanneer, dat je de app installeert en met dat adres
@@ -20,6 +23,9 @@ beforeEach(() => {
   process.env.MAILJET_API_KEY = "k";
   process.env.MAILJET_API_SECRET = "s";
   delete process.env.CLUBALMANAC_APP_URL;
+  // WP19c A-invariant 9: zonder Apple ID geen App Store-link, dus "geen link"
+  // blijft hier gelden. Met de ID: tests/invites/inviteMailAppStore.test.ts.
+  delete process.env.CLUBALMANAC_APP_STORE_ID;
 });
 afterEach(() => {
   delete process.env.MAILJET_VERIFIED_SENDERS;

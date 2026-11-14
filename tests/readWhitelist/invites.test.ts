@@ -29,7 +29,7 @@ function expectNoInviteSecrets(value: unknown, w: World) {
 }
 
 describe("invites.listReceived — de genodigde (WP19b)", () => {
-  it("precies id, rol, geldig tot, groep (id, naam, hasCover) en uitnodiger (openbaar profiel)", async () => {
+  it("precies id, rol, geldig tot, groep (id, naam, hasCover, coverOrientation) en uitnodiger (openbaar profiel)", async () => {
     const t = newT();
     const w = await seedWorld(t);
     // Carol (geen lid van G1) wordt door Alice (admin) uitgenodigd.
@@ -56,6 +56,8 @@ describe("invites.listReceived — de genodigde (WP19b)", () => {
     expect(got.group.name).toBe("Club");
     // G1 heeft pBob als cover, en pBob staat in A1 van G1.
     expect(got.group.hasCover).toBe(true);
+    // WP19c A-invariant 12: de stand van de cover, geen foto-id.
+    expect(got.group.coverOrientation).toBe(6);
     expect(got.inviter._id).toBe(w.users.alice.id);
     expect(got.inviter.name).toBe("Alice");
     const json = JSON.stringify(got);

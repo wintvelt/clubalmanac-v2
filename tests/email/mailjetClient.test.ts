@@ -29,6 +29,7 @@ import { modules } from "../_helpers/modules";
 // Vaste verified-sender voor de happy-path tests. Spec-aanvulling pin't
 // invite/accepted/declined/bounced → `invites@clubalmanac.com`.
 const INVITES_SENDER = "invites@clubalmanac.com";
+const INFO_SENDER = "info@clubalmanac.com";
 
 function setEnv(opts: {
   verifiedSenders?: string;
@@ -342,5 +343,48 @@ describe("mailjet client — creds fail-fast (N-1)", () => {
       /^MAILJET_CREDS_MISSING:/,
     );
     expect(fetchSpy).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// WP19c besluit 5 en 6, A-invariant 15–16. Een mail met foto gaat via SMTP
+// (tests/invites/inviteMailSmtp.test.ts); de Send API krijgt nooit bijlagen.
+// Mailjet volgt de ontvanger niet: elk bericht via de Send API heeft
+// `TrackOpens` en `TrackClicks` op "disabled", ook de meldingen aan info@.
+// ---------------------------------------------------------------------------
+
+describe("mailjet client — geen bijlagen, geen tracking (WP19c)", () => {
+  const base = {
+    to: [{ email: "bob@x.com" }],
+    subject: "s",
+    htmlPart: '<p>h <a href="https://apps.apple.com/app/id1663038609">x</a></p>',
+    textPart: "t",
+  };
+
+  function sentMessage(fetchSpy: ReturnType<typeof vi.fn>): Record<string, unknown> {
+    const init = fetchSpy.mock.calls[0]![1] as RequestInit;
+    return (JSON.parse(String(init.body)) as { Messages: Record<string, unknown>[] }).Messages[0]!;
+  }
+
+  for (const sender of [INVITES_SENDER, INFO_SENDER]) {
+    it(`van ${sender}: TrackOpens en TrackClicks "disabled"`, async () => {
+      setEnv({ verifiedSenders: `${INVITES_SENDER},${INFO_SENDER}`, apiKey: "k", apiSecret: "s" });
+      const fetchSpy = mockMailjet2xx();
+      const { sendMailjetMessage } = await import("../../convex/lib/mailjet");
+      await sendMailjetMessage({ ...base, from: { email: sender } });
+      const m = sentMessage(fetchSpy);
+      expect(m.TrackOpens).toBe("disabled");
+      expect(m.TrackClicks).toBe("disabled");
+    });
+  }
+
+  it("geen InlinedAttachments- en geen Attachments-sleutel", async () => {
+    setEnv({ verifiedSenders: INVITES_SENDER, apiKey: "k", apiSecret: "s" });
+    const fetchSpy = mockMailjet2xx();
+    const { sendMailjetMessage } = await import("../../convex/lib/mailjet");
+    await sendMailjetMessage({ ...base, from: { email: INVITES_SENDER } });
+    const m = sentMessage(fetchSpy);
+    expect("InlinedAttachments" in m).toBe(false);
+    expect("Attachments" in m).toBe(false);
   });
 });

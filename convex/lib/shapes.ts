@@ -237,7 +237,13 @@ export const receivedGroupFields = {
 
 export const inviteReceived = v.object({
   ...inviteReceivedFields,
-  group: v.object({ ...receivedGroupFields, hasCover: v.boolean() }),
+  // WP19c A-invariant 12: de stand van de cover, alleen bij `hasCover` en
+  // als de cover er een heeft. Geen ander foto-veld.
+  group: v.object({
+    ...receivedGroupFields,
+    hasCover: v.boolean(),
+    coverOrientation: v.optional(v.number()),
+  }),
   // De uitnodiger zoals op het openbare profielpad (WP17a besluit 8).
   inviter: v.union(publicProfile, v.null()),
 });

@@ -13,7 +13,7 @@ Gekozen 2026-05. EU-based, GDPR-compliant. Free tier 6000/maand voldoende voor 1
 
 ### Vereiste env-vars per deployment
 
-WP5 introduceerde 5 env-vars; sinds WP19b (geen link in de uitnodigingsmail) zijn het er 4 Mailjet-vars plus `CLUBALMANAC_STAGE`. Ze moeten op zowel dev als prod gezet zijn — anders fail-loud throw bij eerste send. Geen "stille" fallback-defaults meer (WP5-audit S-3 fix: APP_URL had silent prod-fallback, STAGE had silent "dev"-fallback — beide leidden tot subtiele mis-routing).
+WP5 introduceerde 5 env-vars; sinds WP19b (geen link in de uitnodigingsmail) zijn het er 4 Mailjet-vars plus `CLUBALMANAC_STAGE`. Ze moeten op zowel dev als prod gezet zijn — anders fail-loud throw bij eerste send. Uitzondering: `CLUBALMANAC_APP_STORE_ID` (WP19c) moet ook op beide, maar zonder gaat de uitnodigingsmail gewoon de deur uit, zie de tabel. Geen "stille" fallback-defaults meer (WP5-audit S-3 fix: APP_URL had silent prod-fallback, STAGE had silent "dev"-fallback — beide leidden tot subtiele mis-routing).
 
 | Env-var | Waarde dev | Waarde prod | Wat gebeurt bij ontbreken |
 |---|---|---|---|
@@ -22,6 +22,7 @@ WP5 introduceerde 5 env-vars; sinds WP19b (geen link in de uitnodigingsmail) zij
 | `MAILJET_WEBHOOK_SECRET` | gegenereerde random string, zelfde in Mailjet dashboard webhook-config | aparte prod-string | `/email-event` → 503, geen state-mutatie |
 | `MAILJET_VERIFIED_SENDERS` | comma-sep van alle from-addresses die in code voorkomen (`invites@…`, `info@…`) | idem, met prod-domain | `UNVERIFIED_SENDER:` throw vóór elke send |
 | `CLUBALMANAC_STAGE` | `"dev"` | `"prod"` | throw bij `getStageLabel`-call op problem-report-pad (S-3 fix) |
+| `CLUBALMANAC_APP_STORE_ID` (WP19c) | `1663038609` (Apple ID van de app, openbaar) | idem | Geen throw: de uitnodigingsmail gaat zonder App Store-link, met een `console.error` die de env-var noemt. Geldt alleen als 6–12 cijfers |
 
 ### Rotation
 
@@ -45,9 +46,17 @@ Bij escalerende blockers op één van deze drie: heroverweeg Scaleway TEM. Pre-o
 
 Alle templates leven in [`convex/lib/emailTemplates.ts`](../../convex/lib/emailTemplates.ts) en gaan via `sendMailjetMessage` met de per-kind sender-policy.
 
+**Uitnodiging met groepsfoto: via SMTP (WP19c).**
+- Alleen de uitnodiging met groepsfoto gaat via Mailjet's SMTP-ingang (`in-v3.mailjet.com:587`, STARTTLS, nodemailer in [`convex/lib/mailjetSmtp.ts`](../../convex/lib/mailjetSmtp.ts)). Zo staat de foto met de HTML in een `multipart/related` en toont iPhone Mail hem één keer.
+- Login met dezelfde `MAILJET_API_KEY`/`MAILJET_API_SECRET`; geen extra env-vars. Sender-check en credentials gelden ook hier.
+- Faalt SMTP (poort dicht, login, time-out), dan gaat dezelfde uitnodiging zonder foto via de Send API, met een `console.error` die SMTP noemt.
+- `nodemailer` staat in `convex.json` bij `node.externalPackages`.
+
+**Geen tracking (WP19c).** Per bericht uit, boven de instelling van het account: Send API `TrackOpens`/`TrackClicks` `"disabled"`, SMTP `X-Mailjet-TrackOpen: 0`/`X-Mailjet-TrackClick: 0`. Links gaan dus rechtstreeks, zonder `mjt.lu`.
+
 | Kind | Sender | Bestemming | Subject (samengevat) | Body bevat |
 |---|---|---|---|---|
-| `invite` | `invites@` | geïnviteerde | "… nodigt je uit …" | inviter-naam, groep, invite-link + token, expiry |
+| `invite` | `invites@` | geïnviteerde | "… nodigt je uit …" | inviter-naam, groep, inlogadres, expiry, App Store-link, groepsfoto (WP19c); geen invite-link of token (WP19b) |
 | `accepted` / `declined` / `bounced` | `invites@` | inviter | accept/decline/bounce-melding | inviter-naam, accepter/decliner-naam, groep |
 | `flagDecisionDeny` | `info@` | photo-owner | "Je bezwaar … is afgewezen" | owner-naam |
 | `problemReport` | `info@` | `WEBMASTER_EMAILS` | "Probleem gemeld op {stage}" | submitter-naam/email, titel, beschrijving |

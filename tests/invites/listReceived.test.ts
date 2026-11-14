@@ -16,7 +16,8 @@ const listReceived = api.invites.listReceived;
 type R = Record<string, unknown>;
 
 const TOP_KEYS = ["_id", "role", "expiresAt", "message", "group", "inviter"];
-const GROUP_KEYS = ["_id", "name", "hasCover"];
+// WP19c A-invariant 12: `coverOrientation` erbij (tests/invites/listReceivedOrientation.test.ts).
+const GROUP_KEYS = ["_id", "name", "hasCover", "coverOrientation"];
 const INVITER_KEYS = ["_id", "name", "profileOrientation", "profileHasFormats", "profileVersion"];
 
 beforeEach(() => {

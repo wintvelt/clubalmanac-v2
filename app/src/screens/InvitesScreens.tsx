@@ -1,12 +1,12 @@
 import { useMutation } from "convex/react";
 import type { FunctionReturnType } from "convex/server";
-import { Image } from "expo-image";
 import { router, useLocalSearchParams } from "expo-router";
 import { useRef, useState } from "react";
 import { Alert, Pressable, StyleSheet, Switch, View } from "react-native";
 import type { Id } from "../../../convex/_generated/dataModel";
 import { Button } from "../components/Button";
 import { Icon } from "../components/Icon";
+import { InviteCover } from "../components/InviteCover";
 import { LetterTile } from "../components/LetterTile";
 import { LinkButton } from "../components/LinkButton";
 import { ListSection } from "../components/ListRow";
@@ -18,7 +18,6 @@ import { EmptyState, LoadingState } from "../components/States";
 import { Text } from "../components/Text";
 import { TextField } from "../components/TextField";
 import { api } from "../convexApi";
-import { useInviteCoverLoad } from "../data/images";
 import { useLiveQuery } from "../data/useLiveQuery";
 import { groupPath, invitePath } from "../lib/groupRoutes";
 import {
@@ -356,7 +355,11 @@ function ReceivedCard({
     <View style={[styles.card, { backgroundColor: colors.surface }]}>
       <View style={styles.head}>
         {invite.group.hasCover ? (
-          <InviteCover inviteId={invite._id} name={invite.group.name} />
+          <InviteCover
+            inviteId={invite._id}
+            name={invite.group.name}
+            exifOrientation={invite.group.coverOrientation}
+          />
         ) : (
           <LetterTile name={invite.group.name} size={COVER} radius={radius.albumTile} />
         )}
@@ -387,35 +390,6 @@ function ReceivedCard({
 
 const COVER = 64;
 
-// A-invariant 15: de groepsfoto via het beeldpad van de genodigde. Lukt het
-// laden niet, dan de lettertegel. Alleen in het geheugen: de toegang eindigt
-// met de uitnodiging.
-function InviteCover({ inviteId, name }: { inviteId: string; name: string }) {
-  const { source, attempt, onError } = useInviteCoverLoad(inviteId, "klein");
-  const { colors } = useTheme();
-  if (source === null) return <LetterTile name={name} size={COVER} radius={radius.albumTile} />;
-  return (
-    <View
-      style={[styles.cover, { backgroundColor: colors.line }]}
-      accessible
-      accessibilityRole="image"
-      accessibilityLabel={`Groepsfoto van ${name}`}
-    >
-      {source && (
-        <Image
-          key={attempt}
-          source={source}
-          cachePolicy="memory"
-          style={StyleSheet.absoluteFill}
-          contentFit="cover"
-          accessible={false}
-          onError={onError}
-        />
-      )}
-    </View>
-  );
-}
-
 const styles = StyleSheet.create({
   block: { gap: space.s },
   section: { gap: space.s },
@@ -433,5 +407,4 @@ const styles = StyleSheet.create({
   head: { flexDirection: "row", alignItems: "center", gap: space.m },
   from: { flexDirection: "row", alignItems: "center", gap: space.m },
   message: { fontStyle: "italic" },
-  cover: { width: COVER, height: COVER, borderRadius: radius.albumTile, overflow: "hidden" },
 });
