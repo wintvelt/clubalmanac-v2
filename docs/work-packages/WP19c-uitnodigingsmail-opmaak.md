@@ -5,7 +5,8 @@
 ## Besluiten Wouter
 
 1. **Groepsfoto en opmaak in de uitnodigingsmail (2026-11-14).** De oude uitnodigingsmail had opmaak en de groepsfoto. WP5 nam alleen de tekst over; in WP19b zag A de groepsfoto in v1, maar dat werd geen vraag. Wouter: nu oppakken.
-2. **De foto zit in de mail zelf, niet achter een link.** Een link naar een beeld werkt voor iedereen die de mail doorgestuurd krijgt en botst met WP19b besluit 1 (geen link, geen token). De App Store-link blijft "later" (WP19b backlog).
+2. **De foto zit in de mail zelf, niet achter een link.** Een link naar een beeld werkt voor iedereen die de mail doorgestuurd krijgt en botst met WP19b besluit 1 (geen link, geen token). 
+3. **De App Store-link gaat mee (2026-11-14).** Een vaste link naar de app in de App Store, voor iPhone. Geen persoonlijke link en geen token, dus geen botsing met WP19b besluit 1. De Apple ID van de app levert Wouter aan.
 
 ## Productdoel
 
@@ -20,12 +21,13 @@ Wie een uitnodiging krijgt, ziet in de mail meteen van welke groep: de groepsfot
 5. **De mail gaat ook zonder foto weg.** Lukt het ophalen van het beeld niet, dan gaat de mail zonder foto; de uitnodiging faalt niet.
 6. **Opmaak in de stijl van de app** (`docs/design.md`): kleuren, lettertype-fallback, één kolom, leesbaar in licht en donker. Tekst-versie (`textPart`) blijft compleet zonder beeld.
 7. **HTML-veilig** zoals nu: naam, bericht en groepsnaam ge-escaped.
+8. **App Store-link.** De mail bevat een vaste link naar de app in de App Store (`https://apps.apple.com/app/id<Apple ID>`), met de tekst dat die voor een iPhone is. Geen andere links. De link werkt pas als de app bij T0 weer te koop is; tot dan toont Apple "niet beschikbaar". Waar de Apple ID staat (constante of env-var) is aan A en B; ontbreekt hij, dan gaat de mail zonder link weg en niet stil fout.
 
 ## Edge cases + scope-uitsluitingen
 
 - Groep zonder cover, of cover niet in een album van de groep: mail zonder foto.
 - Uitnodiging ingetrokken voordat de mail wegging: geen mail (zoals nu).
-- **Buiten scope:** de App Store-link, de andere mails (geaccepteerd, afgewezen, bounce, melden) tenzij A adviseert dezelfde basisopmaak mee te nemen (open vraag 3), en de afmeldmelding van iPhone Mail (vervallen, WP19b).
+- **Buiten scope:** de andere mails (geaccepteerd, afgewezen, bounce, melden) tenzij A adviseert dezelfde basisopmaak mee te nemen (open vraag 3), en de afmeldmelding van iPhone Mail (vervallen, WP19b).
 
 ## Risico-assessment
 
@@ -40,6 +42,8 @@ Wie een uitnodiging krijgt, ziet in de mail meteen van welke groep: de groepsfot
 1. **Hoe zag de oude uitnodigingsmail eruit?** Opmaak, plaats en grootte van de groepsfoto, en hoe v1 de foto meestuurde (bijlage of link).
 2. **Mailjet inline-bijlage:** veldnamen en grenzen in Send API v3.1 (check de actuele docs). Hoe groot wordt een mail met *klein*?
 3. **Basisopmaak voor alle mails?** Advies: één gedeelde HTML-schil voor alle mails van Mailjet, of alleen de uitnodiging?
+
+4. **App Store-link:** had de oude mail een link naar de App Store of naar een store-pagina? Zo ja, welke tekst.
 
 ## Werkvolgorde
 
