@@ -20,6 +20,9 @@ beforeEach(() => {
   process.env.MAILJET_API_KEY = "k";
   process.env.MAILJET_API_SECRET = "s";
   delete process.env.CLUBALMANAC_APP_URL;
+  // WP19c A-invariant 9: zonder Apple ID geen App Store-link, dus "geen link"
+  // blijft hier gelden. Met de ID: tests/invites/inviteMailAppStore.test.ts.
+  delete process.env.CLUBALMANAC_APP_STORE_ID;
 });
 afterEach(() => {
   delete process.env.MAILJET_VERIFIED_SENDERS;

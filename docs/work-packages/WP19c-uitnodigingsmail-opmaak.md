@@ -149,6 +149,8 @@ Namen die de tests gebruiken. Het gedrag staat in de A-invarianten.
 
 ### RED tests
 
+Stand bij A's commit: backend 29 rood, 2587 groen, 1 overgeslagen. De rode tests falen om de juiste reden: er is geen bijlage, geen opmaak, geen link en geen log. De gevallen zonder foto en met kapotte bytes zijn al groen; zij pinnen wat moet blijven. `npm run typecheck` heeft één fout, `inlinedAttachments` op `MailjetMessage`, tot B die toevoegt. Opzet in `tests/invites/_wp19c.ts`. De Apple ID in de tests is een placeholder.
+
 | Bestand | Wat |
 |---|---|
 | `tests/invites/inviteMailPhoto.test.ts` (Node, echte sharp) | A-invariant 1–7: bijlage en `cid:`, welke foto (5 gevallen zonder foto), *klein* en niet het origineel, rechtop (stand 1, 3, 6, 8, leeg), geen metadata of GPS, grootte en breedte, kapotte bytes, de andere mails zonder bijlage |
