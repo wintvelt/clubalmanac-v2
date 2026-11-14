@@ -4,11 +4,14 @@
 //
 // Zonder cover: de foto zit in inviteMailPhoto.test.ts (Node, sharp).
 
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { formatNlDate } from "../../convex/lib/emailTemplates";
 import { newT } from "../groups/_beheer";
 import { inviteRow } from "./_wp19b";
 import { APP_STORE_URL, clearMailEnv, imgTags, mailEnv, mailFor, APPLE_APP_ID, setup } from "./_wp19c";
+
+// Besluit 5: een mail met foto gaat via SMTP. Nooit echt naar Mailjet.
+vi.mock("nodemailer", async () => (await import("./_smtp")).nodemailerMock());
 
 beforeEach(() => mailEnv(APPLE_APP_ID));
 afterEach(() => clearMailEnv());

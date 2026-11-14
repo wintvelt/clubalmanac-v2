@@ -21,6 +21,9 @@ import {
   urlsIn,
 } from "./_wp19c";
 
+// Besluit 5: een mail met foto gaat via SMTP. Nooit echt naar Mailjet.
+vi.mock("nodemailer", async () => (await import("./_smtp")).nodemailerMock());
+
 afterEach(() => clearMailEnv());
 
 function errorSpy() {

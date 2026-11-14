@@ -151,7 +151,7 @@ Aanvulling op invariant 1–8 hierboven. Het entrypoint blijft `internal.invites
 
 Namen die de tests gebruiken. Het gedrag staat in de A-invarianten.
 
-- `MailjetMessage` (`lib/mailjet.ts`) krijgt `inlinedAttachments?: Array<{ contentType: string; filename: string; contentId: string; base64Content: string }>`. In de payload wordt dat `InlinedAttachments: [{ ContentType, Filename, ContentID, Base64Content }]`. Zonder bijlagen staat de sleutel niet in de payload.
+- Besluit 5 en 6: zie §Besluit 5 en 6 (A) hieronder. `inlinedAttachments` op de Send API is daarna niet meer nodig; de tests pinnen het niet.
 - `internal.invites.sendInviteEmail({ kind, inviteId })` blijft het entrypoint. De cover-regel is dezelfde als in `images.inviteCoverInFormat`, maar zonder identity: de action heeft geen caller.
 - Rechtop zetten en metadata weghalen vraagt een beeldbibliotheek. sharp staat al in de Node-runtime (WP25, `externalPackages`). Waar dat draait, is aan B. Een tweede (Node-)action mag, als `sendInviteEmail` het entrypoint blijft.
 - De env-var heet `CLUBALMANAC_APP_STORE_ID`.
@@ -170,11 +170,86 @@ Na besluit 4: backend 36 rood (29 + 7 voor A-invariant 12), 2589 groen. App 8 ro
 | `tests/invites/inviteMailPhoto.test.ts` (Node, echte sharp) | A-invariant 1–7: bijlage en `cid:`, welke foto (5 gevallen zonder foto), *klein* en niet het origineel, rechtop (stand 1, 3, 6, 8, leeg), geen metadata of GPS, grootte en breedte, kapotte bytes, de andere mails zonder bijlage |
 | `tests/invites/inviteMailLayout.test.ts` | A-invariant 8, 10, 11: document, licht en donker, tokens, letter, geen externe bronnen, één kolom, grootte, tekstversie, escaping, regeleinden |
 | `tests/invites/inviteMailAppStore.test.ts` | A-invariant 9: de link `https://apps.apple.com/app/id1663038609`, de enige link, iPhone; zonder, leeg of ongeldig: geen link, wel een log; niet in de andere mails |
-| `tests/email/mailjetClient.test.ts` | de payload van `InlinedAttachments`, en geen sleutel zonder bijlagen |
+| `tests/email/mailjetClient.test.ts` | Send API: geen bijlage-sleutels; `TrackOpens`/`TrackClicks` "disabled" (besluit 6) |
 | `tests/invites/inviteMailNoLink.test.ts` | aangepast: de env-var staat uit, dus "geen link" blijft gelden |
 | `tests/invites/listReceivedOrientation.test.ts` | A-invariant 12: `coverOrientation` met en zonder stand, niet bij een cover buiten het album of zonder cover, reactief na draaien, geen foto-velden |
 | `tests/readWhitelist/_world.ts`, `invites.test.ts`; `tests/invites/listReceived.test.ts` | WP23-whitelist: `receivedGroup` met `coverOrientation` (pBob heeft stand 6) |
 | `app/tests/inviteCover.test.ts` | A-invariant 12, app: dezelfde transform als `PhotoImage` voor stand 2, 3, 6 en 8; geen draaiing zonder stand; `InvitesScreens` geeft `coverOrientation` door |
+
+### Besluit 5 en 6 (A, 2026-11-14, na de gate)
+
+Bronnen: de gate-mail (`scripts/.data/wp19c-mail1.eml`); Mailjet `smtp-relay/configuration`, `smtp-relay/custom-headers`, `send-api-v31/send-api-errors` en `add-email-headers`; `convex/http.ts` en `invites.handleBounce`.
+
+**Vondsten**
+
+- **De gate-mail** is `multipart/mixed` [`multipart/alternative` [tekst, HTML], `image/jpeg`]. Apple Mail toont een deel naast de alternative als bijlage onderaan: de foto twee keer. De Send API v3.1 neemt geen eigen MIME aan; de SMTP-ingang wel.
+- **Tracking kan per bericht uit.**
+  - Send API v3.1: `TrackOpens` en `TrackClicks` met `"disabled"`.
+  - SMTP: `X-Mailjet-TrackOpen: 0` en `X-Mailjet-TrackClick: 0`. Volgens de docs gaat dat boven de instelling van het account.
+  - Het staat dus in de code; het dashboard hoeft niet.
+- **De bounce-koppeling verandert niet.** We gebruiken geen `CustomID` of `EventPayload`.
+  - `handleBounce` zoekt op het adres van de ontvanger (`email` in het event) en ontdubbelt op `MessageID`.
+  - De Event API geldt per account, voor de Send API en SMTP gelijk. Mailjet zet bij SMTP zijn eigen Return-Path (in de gate-mail `…bnc3.mailjet.com`), dus de bounce komt via Mailjet bij ons.
+  - `X-MJ-CustomID` met een id zou alleen een id in de mail brengen (A-invariant 2).
+- **Afmeldlink van Mailjet.** Mailjet zet zelf een `List-Unsubscribe` met een `mjt.lu`-link in de kop. Dat is geen tracking, maar wie erop klikt, krijgt van Mailjet geen mail meer. De volgende mail aan dat adres wordt `blocked`, en `handleBounce` zet de uitnodiging dan op verlopen. Buiten scope; zie de vragen voor Wouter.
+
+**A-keuzes**
+
+6. **Alleen een mail met inline-foto gaat via SMTP**, in de praktijk de uitnodiging met groepsfoto. Al het andere blijft op de Send API, ook de uitnodiging zonder foto.
+   - Alleen die mail heeft een `multipart/related` nodig.
+   - SMTP vanuit Convex is nog niet bewezen (zie risico), en zo staan de andere mails daar los van.
+   - Tracking gaat op beide wegen uit, voor elke mail.
+7. **Terugval: als SMTP faalt** (verbinding, login, time-out of weigering), gaat dezelfde uitnodiging zonder foto via de Send API, met een `console.error` die SMTP noemt.
+   - Geen terugval bij ontbrekende credentials of een niet-geverifieerde sender: die gooien zoals nu, vóór elke verzending.
+   - Rest-risico: een time-out nadat Mailjet de mail al aannam, geeft twee mails (met en zonder foto). Klein en onschadelijk.
+8. **De MIME:** `multipart/alternative` [`text/plain`, `multipart/related` [`text/html`, `image/jpeg`]]. Dat bouwt nodemailer zelf met `attachments: [{ cid }]`.
+9. **nodemailer als SMTP-client.** Gangbaar en puur JS. De tests mocken `createTransport` en laten nodemailer's eigen `streamTransport` de MIME bouwen (`tests/invites/_smtp.ts`). Of B de MIME zelf bouwt (`raw`) of nodemailer laat bouwen, maakt voor de tests niet uit.
+
+**A-invarianten 13–18**
+
+13. **SMTP:** host `in-v3.mailjet.com`, poort 587, `secure: false` met `requireTLS: true`, anders gaan key en secret onversleuteld over de lijn.
+    - Login: `MAILJET_API_KEY` en `MAILJET_API_SECRET`. Geen nieuwe env-vars.
+    - `connectionTimeout`, `greetingTimeout` en `socketTimeout` elk hoogstens 30 s, zodat de terugval binnen de action valt.
+    - Envelop van `invites@`, alleen aan de genodigde; geen Cc of Bcc.
+14. **De MIME** zoals A-keuze 8.
+    - Nergens `multipart/mixed`, en precies één beeld: inline, base64, `Content-ID: <groepsfoto>`, en de HTML verwijst er één keer naar.
+    - Tekst en HTML in UTF-8.
+    - A-invariant 1–11 gelden voor beide wegen (`mailFor` in `_wp19c.ts` leest API en SMTP in dezelfde vorm).
+15. **Geen tracking:**
+    - SMTP: de twee `X-Mailjet-Track…`-koppen op `0`.
+    - Send API: `TrackOpens` en `TrackClicks` op `"disabled"` bij elk bericht, ook naar `info@`.
+    - Geen `X-MJ-CustomID` of `X-MJ-EventPayload`, en geen id, token of Convex-host in de ruwe mail.
+16. **Zonder foto:** de Send API, zonder bijlage. Faalt SMTP: de terugval van A-keuze 7.
+17. **Sender-check en credentials vóór elke verzending, ook op SMTP.** Ontbreekt er iets, dan `MAILJET_CREDS_MISSING` of `UNVERIFIED_SENDER`, er gaat niets weg en er is geen terugval.
+18. **De bounce blijft gekoppeld:** een `bounce`-event met het adres van de genodigde en een `MessageID` zet de uitnodiging op verlopen. `http.ts` en `handleBounce` veranderen niet.
+
+**Convex en SMTP**
+
+- **Waar het draait:** SMTP vraagt `node:net`/`tls`, dus een `"use node"`-module. `lib/mailjet.ts` wordt ook geïmporteerd door bestanden zonder Node (`invites`, `features`, `monitoring`, `accountDeletion`). Daarom mag nodemailer daar niet in; het SMTP-deel komt in een eigen Node-module, met een Node-action zoals `inviteMail.coverAttachment`. De sender-check en de credentials-check delen ze.
+- **Pakketten:** `nodemailer` in `package.json` (met `@types/nodemailer` voor dev), en in `convex.json` bij `node.externalPackages`. Op het Convex-forum meldt men fouten met een gebundelde nodemailer; extern installeren voorkomt dat.
+- **Poort:** 587 met STARTTLS. Mailjet kent ook 25, 80, 465, 588 en 2525.
+- **Risico: niet bewezen dat de Node-runtime van Convex uitgaand verkeer op poort 587 toelaat.** Ik vond geen officiële Convex-doc; op het forum werkt het bij de een wel en bij de ander niet, zonder duidelijke oorzaak.
+  - **Voorstel:** de gate op dev is de proef: één echte uitnodiging met foto.
+  - Werkt het niet, dan gaan uitnodigingen dankzij A-keuze 7 gewoon, zonder foto en met een fout in de log. Dan beslist Wouter (vraag 2).
+
+**Ops en gate**
+
+- Geen nieuwe env-vars. B's commit: in `external-services.md` (Mailjet) de SMTP-ingang, de terugval en dat tracking per bericht uit staat.
+- **Gate, extra:**
+  - in iPhone Mail staat de foto één keer;
+  - in de ruwe mail: `multipart/alternative` bovenaan, geen `mjt.lu/oo/` en geen `mjt.lu/lnk/`, en de App Store-link rechtstreeks;
+  - een mail zonder foto (groep zonder cover) komt nog steeds aan;
+  - in de Convex-logs geen SMTP-fout.
+
+**RED tests (besluit 5 en 6)**
+
+| Bestand | Wat |
+|---|---|
+| `tests/invites/inviteMailSmtp.test.ts` (Node, nep-nodemailer, echte sharp) | A-invariant 13–18 |
+| `tests/invites/_smtp.ts` | de nep-nodemailer met echte MIME, een MIME-lezer |
+| `tests/invites/_wp19c.ts` | `mailFor` leest API en SMTP; `transport`, `raw`, `mime`, `envelope` |
+| `inviteMailPhoto`, `-Layout`, `-AppStore`, `-NoLink` | mocken nodemailer (nooit echt naar Mailjet) |
+| `tests/email/mailjetClient.test.ts` | tracking uit op de Send API; de test van `InlinedAttachments` is weg |
 
 ### Follow-up (buiten scope)
 

@@ -10,7 +10,7 @@
 // al in de pixels hebben, zonder tag (A-invariant 4).
 
 import sharp from "sharp";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Id } from "../../convex/_generated/dataModel";
 import { gpsAnywhere, isJpeg } from "../_helpers/jpeg";
 import { newT, type T } from "../groups/_beheer";
@@ -27,6 +27,9 @@ import {
   type Attachment,
   type Msg,
 } from "./_wp19c";
+
+// Besluit 5: een mail met foto gaat via SMTP. Nooit echt naar Mailjet.
+vi.mock("nodemailer", async () => (await import("./_smtp")).nodemailerMock());
 
 beforeEach(() => mailEnv(APPLE_APP_ID));
 afterEach(() => clearMailEnv());

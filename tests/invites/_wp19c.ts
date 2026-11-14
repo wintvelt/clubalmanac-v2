@@ -3,6 +3,7 @@ import { internal } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
 import { publish, seedAlbum, type T, type World } from "../groups/_beheer";
 import { seedInvite, world } from "./_wp19b";
+import { decodeWords, parseMime, smtp, walk, type Part } from "./_smtp";
 
 // WP19c — gedeelde opzet voor de uitnodigingsmail met opmaak, groepsfoto en
 // App Store-link. Spec: docs/work-packages/WP19c-uitnodigingsmail-opmaak.md
@@ -28,6 +29,14 @@ export type Msg = {
   TextPart?: string;
   InlinedAttachments?: Attachment[];
   Attachments?: unknown[];
+  /** Langs welke weg de mail ging (besluit 5): de Send API of SMTP. */
+  transport: "api" | "smtp";
+  /** Alleen bij `api`: het JSON-bericht zoals Mailjet het kreeg. */
+  api?: Record<string, unknown>;
+  /** Alleen bij `smtp`: de ruwe mail en de geparste boom. */
+  raw?: string;
+  mime?: Part;
+  envelope?: { from?: string; to?: string[] };
 };
 
 export function mailEnv(appStoreId?: string): void {
@@ -46,9 +55,10 @@ export function clearMailEnv(): void {
   delete process.env[APP_STORE_ENV];
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
+  smtp.reset();
 }
 
-function stubMailjet() {
+export function stubMailjet() {
   const spy = vi.fn().mockResolvedValue(
     new Response(JSON.stringify({ Messages: [{ Status: "success" }] }), {
       status: 200,
@@ -59,17 +69,65 @@ function stubMailjet() {
   return spy;
 }
 
-/** Draait `sendInviteEmail` en geeft het ene verstuurde bericht. */
+/**
+ * Draait `sendInviteEmail` en geeft het ene verstuurde bericht, langs welke weg
+ * ook: de Send API (fetch) of SMTP (nodemailer, zie `_smtp.ts`). Precies één
+ * verzending in totaal. Een SMTP-mail komt terug in dezelfde vorm als een
+ * API-bericht, zodat de tests van A-invariant 1–11 voor beide gelden.
+ * Een testbestand dat dit gebruikt, mockt nodemailer (`_smtp.ts`).
+ */
 export async function mailFor(
   t: T,
   inviteId: Id<"invites">,
   kind: "invite" | "accepted" | "declined" | "bounced" = "invite",
 ): Promise<Msg> {
   const spy = stubMailjet();
+  smtp.sent = [];
   await t.action(internal.invites.sendInviteEmail, { kind, inviteId });
-  expect(spy).toHaveBeenCalledTimes(1);
+  expect(spy.mock.calls.length + smtp.sent.length).toBe(1);
+  if (smtp.sent.length === 1) return fromSmtp(smtp.sent[0]!.raw, smtp.sent[0]!.envelope);
   const init = spy.mock.calls[0]![1] as RequestInit;
-  return (JSON.parse(String(init.body)) as { Messages: Msg[] }).Messages[0]!;
+  const api = (JSON.parse(String(init.body)) as { Messages: Array<Record<string, unknown>> }).Messages[0]!;
+  return { ...(api as Omit<Msg, "transport">), transport: "api", api };
+}
+
+// Op de lijn is een regeleinde CRLF; terug naar `\n` zoals in het API-bericht.
+const text = (p: Part) => p.body.toString("utf8").replace(/\r\n/g, "\n");
+
+/** Een SMTP-mail in de vorm van een API-bericht. */
+export function fromSmtp(raw: string, envelope: { from?: string; to?: string[] }): Msg {
+  const mime = parseMime(raw);
+  const leaves = walk(mime)
+    .map((x) => x.part)
+    .filter((p) => !p.type.startsWith("multipart/"));
+  const disposition = (p: Part) => (p.headers.get("content-disposition") ?? "").split(";")[0]!.trim().toLowerCase();
+  const isFile = (p: Part) => !p.type.startsWith("text/") || disposition(p) === "attachment";
+  const filename = (p: Part) => {
+    const cd = /filename\*?=("?)([^";]+)\1/i.exec(p.headers.get("content-disposition") ?? "");
+    return cd?.[2] ?? p.params.name;
+  };
+  const html = leaves.find((p) => p.type === "text/html" && !isFile(p));
+  const plain = leaves.find((p) => p.type === "text/plain" && !isFile(p));
+  const files = leaves.filter(isFile);
+  const inline = files.filter((p) => p.headers.has("content-id") && disposition(p) !== "attachment");
+  const to = (mime.headers.get("to") ?? "").match(/[^\s<>,"]+@[^\s<>,"]+/g) ?? [];
+  return {
+    To: to.map((Email) => ({ Email })),
+    Subject: decodeWords(mime.headers.get("subject") ?? ""),
+    ...(html ? { HTMLPart: text(html) } : {}),
+    ...(plain ? { TextPart: text(plain) } : {}),
+    InlinedAttachments: inline.map((p) => ({
+      ContentType: p.type,
+      Filename: filename(p),
+      ContentID: (p.headers.get("content-id") ?? "").replace(/^<|>$/g, ""),
+      Base64Content: p.body.toString("base64"),
+    })),
+    Attachments: files.filter((p) => !inline.includes(p)),
+    transport: "smtp",
+    raw,
+    mime,
+    envelope,
+  };
 }
 
 /** Olga (admin) nodigt Nina uit voor "De Fotoclub". */

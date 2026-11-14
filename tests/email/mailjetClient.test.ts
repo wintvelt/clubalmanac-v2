@@ -29,6 +29,7 @@ import { modules } from "../_helpers/modules";
 // Vaste verified-sender voor de happy-path tests. Spec-aanvulling pin't
 // invite/accepted/declined/bounced → `invites@clubalmanac.com`.
 const INVITES_SENDER = "invites@clubalmanac.com";
+const INFO_SENDER = "info@clubalmanac.com";
 
 function setEnv(opts: {
   verifiedSenders?: string;
@@ -346,22 +347,17 @@ describe("mailjet client — creds fail-fast (N-1)", () => {
 });
 
 // ---------------------------------------------------------------------------
-// WP19c A-invariant 1 en §Voor B: inline-bijlagen in de payload.
-// Mailjet v3.1: `InlinedAttachments: [{ ContentType, Filename, ContentID,
-// Base64Content }]`, in de HTML `cid:<ContentID>`. Zonder bijlagen staat de
-// sleutel er niet (en nooit een gewone `Attachments`).
+// WP19c besluit 5 en 6, A-invariant 15–16. Een mail met foto gaat via SMTP
+// (tests/invites/inviteMailSmtp.test.ts); de Send API krijgt nooit bijlagen.
+// Mailjet volgt de ontvanger niet: elk bericht via de Send API heeft
+// `TrackOpens` en `TrackClicks` op "disabled", ook de meldingen aan info@.
 // ---------------------------------------------------------------------------
 
-describe("mailjet client — inline-bijlagen (WP19c)", () => {
-  beforeEach(() => {
-    setEnv({ verifiedSenders: INVITES_SENDER, apiKey: "k", apiSecret: "s" });
-  });
-
+describe("mailjet client — geen bijlagen, geen tracking (WP19c)", () => {
   const base = {
-    from: { email: INVITES_SENDER },
     to: [{ email: "bob@x.com" }],
     subject: "s",
-    htmlPart: '<img src="cid:groepsfoto">',
+    htmlPart: '<p>h <a href="https://apps.apple.com/app/id1663038609">x</a></p>',
     textPart: "t",
   };
 
@@ -370,26 +366,23 @@ describe("mailjet client — inline-bijlagen (WP19c)", () => {
     return (JSON.parse(String(init.body)) as { Messages: Record<string, unknown>[] }).Messages[0]!;
   }
 
-  it("inlinedAttachments → InlinedAttachments met de veldnamen van Mailjet", async () => {
-    const fetchSpy = mockMailjet2xx();
-    const { sendMailjetMessage } = await import("../../convex/lib/mailjet");
-    await sendMailjetMessage({
-      ...base,
-      inlinedAttachments: [
-        { contentType: "image/jpeg", filename: "groepsfoto.jpg", contentId: "groepsfoto", base64Content: "/9j/AA==" },
-      ],
+  for (const sender of [INVITES_SENDER, INFO_SENDER]) {
+    it(`van ${sender}: TrackOpens en TrackClicks "disabled"`, async () => {
+      setEnv({ verifiedSenders: `${INVITES_SENDER},${INFO_SENDER}`, apiKey: "k", apiSecret: "s" });
+      const fetchSpy = mockMailjet2xx();
+      const { sendMailjetMessage } = await import("../../convex/lib/mailjet");
+      await sendMailjetMessage({ ...base, from: { email: sender } });
+      const m = sentMessage(fetchSpy);
+      expect(m.TrackOpens).toBe("disabled");
+      expect(m.TrackClicks).toBe("disabled");
     });
-    const m = sentMessage(fetchSpy);
-    expect(m.InlinedAttachments).toEqual([
-      { ContentType: "image/jpeg", Filename: "groepsfoto.jpg", ContentID: "groepsfoto", Base64Content: "/9j/AA==" },
-    ]);
-    expect("Attachments" in m).toBe(false);
-  });
+  }
 
-  it("zonder bijlagen: geen InlinedAttachments- en geen Attachments-sleutel", async () => {
+  it("geen InlinedAttachments- en geen Attachments-sleutel", async () => {
+    setEnv({ verifiedSenders: INVITES_SENDER, apiKey: "k", apiSecret: "s" });
     const fetchSpy = mockMailjet2xx();
     const { sendMailjetMessage } = await import("../../convex/lib/mailjet");
-    await sendMailjetMessage({ ...base, htmlPart: "<p>h</p>" });
+    await sendMailjetMessage({ ...base, from: { email: INVITES_SENDER } });
     const m = sentMessage(fetchSpy);
     expect("InlinedAttachments" in m).toBe(false);
     expect("Attachments" in m).toBe(false);
