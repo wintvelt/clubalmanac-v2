@@ -52,4 +52,112 @@ Wie een uitnodiging krijgt, ziet in de mail meteen van welke groep: de groepsfot
 4. Audit.
 5. Gate op dev: een uitnodiging naar Wouters `+clerk_test`-adres voor Blob bibliotheek (cover in album) en voor een groep zonder geschikte cover. Mail in iPhone Mail en Gmail bekijken, licht en donker.
 
-## Spec-criticus aanvullingen (A vult in)
+## Spec-criticus aanvullingen (A, 2026-11-14)
+
+Bronnen: v1 `blob-images-api-groups/handlersGroup/sendInvite.js`, `emails/invite.js`, `blob-images-common/core/email.js` en `core/ses.js`. Huidig: `convex/invites.ts` (`sendInviteEmail`), `lib/emailTemplates.ts`, `lib/mailjet.ts`, `images.ts` (`inviteCoverInFormat`), `photoFormats.ts`, `docs/design.md`, `app/src/screens/InvitesScreens.tsx` en `GroupParts.tsx`. Mailjet: dev.mailjet.com, "Send with attached files" (v3.1).
+
+### Kernvondsten
+
+1. **v1 stuurde de foto als openbare URL**, niet als bijlage: `img.clubalmanac.com/<base64 van bucket+key>`, bijgesneden tot 640×200. Wie de mail had, had de foto, ook doorgestuurd. Besluit 2 sluit dat uit.
+2. ***Klein* staat niet rechtop.** Een formaat bevat de ruwe pixels zonder oriëntatie-tag (WP25 invariant 18). De app draait met `photos.exifOrientation`, ook na draaien (WP8). Een mailclient weet dat niet. Zonder ingreep staat een cover met stand 6 in de mail op zijn kant.
+3. **Hetzelfde zit in WP19b, in de app.** `InviteCover` (Profiel → Uitnodigingen) toont *klein* zonder stand; `listReceived` geeft geen stand mee. Leden zien de cover wel rechtop (`GroupParts`). Buiten scope; zie §Follow-up.
+4. **De test "geen link" van WP19b blijft waar zonder Apple ID.** Met de App Store-link wordt de regel: geen link, behalve die ene.
+5. **`app/eas.json` heeft al een `ascAppId`.** Dat is de Apple ID van de app in App Store Connect. Wouter bevestigt of dit de ID voor de link is. De code bevat geen echte waarde (A-invariant 9).
+
+### Antwoorden open vragen
+
+1. **De oude mail.** HTML in tabellen en divs, met deze opbouw:
+   - een paarse achtergrond (`#312e81`) met een wit vlak van max 635 px en Verdana;
+   - bovenaan het logo als beeld (gehost);
+   - daaronder de groepsfoto over de volle breedte, 640×200 bijgesneden, met een link naar de uitnodiging;
+   - "Hi {naam}" groot en vet, dan "{afzender} nodigt je uit om lid te worden van **{groep}**", het bericht tussen twee sierstreepjes (beeld), en een oranje knop "Bekijk uitnodiging" met de link er nog eens onder als tekst;
+   - "geldig tot", "We zien je graag terug", een handtekening als beeld;
+   - een voet met © en links naar "over ons", privacy en voorwaarden.
+
+   Zonder groepsfoto stond er een uitnodigingsicoon. De tekstversie was drie regels met de link. Alle beelden waren URL's; er was geen bijlage.
+2. **Mailjet v3.1.**
+   - Het veld is `InlinedAttachments: [{ ContentType, Filename, ContentID, Base64Content }]`.
+   - In de HTML staat `<img src="cid:<ContentID>">`. `ContentID` is optioneel; zonder werkt `cid:<Filename>`. Mailjet controleert niet of hij uniek is.
+   - Grens: bijlagen samen niet boven 15 MB.
+   - Grootte met *klein*: gemiddeld 35 kB, max 71 kB (WP25-meting); in base64 ongeveer 47 kB, max 95 kB. De HTML blijft ver onder de 102 kB waarboven Gmail de mail afkapt; een bijlage telt daar niet mee.
+3. **Basisopmaak voor alle mails.** Advies: één gedeelde HTML-schil (A-invariant 6), maar in WP19c alleen voor de uitnodiging, zoals de draft zegt.
+   - De andere mails naar leden (geaccepteerd, afgewezen, bounce, melding afgewezen) kunnen hem later in één kleine stap krijgen.
+   - Mails naar de webmaster (probleem, monitor, account verwijderen) blijven kale tekst.
+   - Geen productvraag: de scope blijft zoals hij is.
+4. **App Store-link in v1:** nee. Er stond nergens een link naar een store, in geen enkele mail en niet in de backend-repos. De enige link was de knop "Bekijk uitnodiging" naar de webapp. De tekst voor de nieuwe link is een A-keuze (A-invariant 9).
+
+### A-invarianten
+
+Aanvulling op invariant 1–8 hierboven. Het entrypoint blijft `internal.invites.sendInviteEmail({ kind, inviteId })`.
+
+1. **Precies één bijlage, alleen in de uitnodiging.** Met foto bevat het bericht één `InlinedAttachments`-item: `image/jpeg`, met een `ContentID`. De HTML verwijst er precies één keer naar met `cid:`. Zonder foto is er geen bijlage, geen `<img>` en geen `cid:`. Er komt nooit een gewone `Attachments`-bijlage. De mails "geaccepteerd", "afgewezen" en "bounce" krijgen nooit een bijlage, ook niet als de groep een cover heeft.
+2. **Niets verwijst naar de foto of de opslag.**
+   - Geen foto-id, storage-id of token in de mail of in de bestandsnaam.
+   - Geen `convex.cloud`, `convex.site` of `/beeld/`.
+   - De bestandsnaam is vast (bv. `groepsfoto.jpg`), zonder groepsnaam.
+3. **Welke foto (invariant 2 en 3).** Alleen de cover van de groep van de uitnodiging, en alleen als die foto in een album van die groep staat. Dan *klein*. In deze gevallen is er geen foto:
+   - de groep heeft geen cover;
+   - de cover staat alleen in een album van een andere groep, of in geen album;
+   - de foto heeft geen formaten;
+   - het object van *klein* is weg.
+
+   Nooit het origineel en nooit *groot*.
+4. **Rechtop.** De bijlage toont de foto zoals een lid hem in de app ziet: `exifOrientation` (1–8, of leeg) is in de pixels toegepast. De bijlage bevat geen oriëntatie-tag, dus een mailclient draait niet nog een keer.
+5. **Alleen pixels (invariant 4).** De bijlage is een JPEG die te decoderen is, zonder APP1 (EXIF of XMP), zonder GPS en zonder IPTC. Dat geldt ook als *klein* er tegen de regels in wel metadata in had.
+6. **Grootte.** De bijlage is hoogstens 200 kB (ruim boven de gemeten max van 71 kB). Is hij groter, dan gaat de mail zonder foto. De breedte is hoogstens 512 px, en de foto wordt nooit vergroot. In de HTML staat `width` gelijk aan die breedte, met `max-width:100%`.
+7. **De mail gaat altijd (invariant 5).** Kan *klein* niet gelezen of verwerkt worden (geen beeld, kapotte bytes), dan gaat de mail zonder foto, met dezelfde tekst. Er komt geen fout uit de action, en er gaat precies één mail weg.
+8. **Opmaak (invariant 6).**
+   - Een volledig HTML-document met `lang="nl"`, utf-8 en viewport.
+   - Licht en donker: `<meta name="color-scheme" content="light dark">`, en een `@media (prefers-color-scheme: dark)`-blok met de donkere tokens.
+   - De tokens uit design.md §2: `bg`, `surface`, `text`, `muted`, `cta` en `onCta`, licht en donker.
+   - De systeemletter (`-apple-system` met een sans-serif als terugval). Geen webfont, `<link>`, `<script>`, `@import` of `url(`.
+   - Eén kolom, max 560–640 px breed. Elk `<img>` is een `cid:`.
+   - De HTML blijft onder 100 kB, ook met een bericht van 1000 tekens.
+9. **App Store-link (invariant 8).**
+   - De bron is de env-var `CLUBALMANAC_APP_STORE_ID`. Hij geldt alleen als hij uit 6 tot 12 cijfers bestaat.
+   - Met een geldige ID staat de URL `https://apps.apple.com/app/id<ID>` in HTML en tekst. In de HTML is dat de enige `<a href>` en de enige http(s)-URL, als knop in `cta`. De tekst zegt dat hij voor een iPhone is.
+   - Zonder ID, met een lege of een ongeldige ID: de mail gaat zonder link en zonder `<a>`. Er komt een `console.error` met de naam van de env-var, en geen exception.
+   - De andere mails krijgen de link niet.
+10. **De tekstversie is compleet.** Zij bevat dezelfde inhoud als de HTML: aanhef, afzender, groep, bericht, inlogadres, geldig tot en de App Store-URL (als die er is). Geen `cid:`, geen HTML-tags en geen verwijzing naar een beeld.
+11. **HTML-veilig (invariant 7)**, ook in attributen: groepsnaam, afzender, genodigde en bericht zijn ge-escaped, ook in de `alt` van de foto (`Groepsfoto van {groep}`). Regeleinden in het bericht worden `<br>` in de HTML.
+
+### A-keuzes
+
+1. **De foto staat bovenaan, heel en niet bijgesneden.** v1 sneed bij tot 640×200, maar dan valt bij een staande foto het belangrijkste weg. *Klein* is max 512 px; hij staat op zijn eigen breedte, met afronding 16 (design.md §4, groepsfoto).
+2. **Geen logo en geen andere beelden.** Bovenaan staat "Clubalmanac" als tekst. Een tweede bijlage voor het logo maakt de mail groter, en een gehost logo is een URL. De handtekening is tekst, zoals nu.
+3. **Geen voet met links.** "Over ons", privacy en voorwaarden van v1 vervallen: er mag maar één link in.
+4. **Env-var in plaats van constante.** Ontbreken kan dan ook echt (invariant 8), de code bevat geen echte waarde, en dev en prod kunnen dezelfde ID krijgen. Nadeel: één env-var extra op prod (§Ops).
+5. **Tekst van de link:** "Heb je een iPhone? Installeer Clubalmanac uit de App Store." met de knop "Naar de App Store". Wouter ziet hem bij de gate.
+
+### Ops-runbook-impact
+
+- **Wouter, na de merge:** `npx convex env set CLUBALMANAC_APP_STORE_ID <Apple ID>` op dev. Op prod met `--prod`, vóór T0 in de lijst met prod env-vars van `migratie-status.md`.
+- **B's commit:** de env-var in de tabel van `external-services.md` (Mailjet-sectie), met wat er gebeurt als hij ontbreekt.
+- **Gate:** zie §Werkvolgorde stap 5. Extra:
+  - een cover met stand 6 (rechtop in de mail?);
+  - één mail zonder env-var (geen link, wel een log).
+
+### Voor B
+
+Namen die de tests gebruiken. Het gedrag staat in de A-invarianten.
+
+- `MailjetMessage` (`lib/mailjet.ts`) krijgt `inlinedAttachments?: Array<{ contentType: string; filename: string; contentId: string; base64Content: string }>`. In de payload wordt dat `InlinedAttachments: [{ ContentType, Filename, ContentID, Base64Content }]`. Zonder bijlagen staat de sleutel niet in de payload.
+- `internal.invites.sendInviteEmail({ kind, inviteId })` blijft het entrypoint. De cover-regel is dezelfde als in `images.inviteCoverInFormat`, maar zonder identity: de action heeft geen caller.
+- Rechtop zetten en metadata weghalen vraagt een beeldbibliotheek. sharp staat al in de Node-runtime (WP25, `externalPackages`). Waar dat draait, is aan B. Een tweede (Node-)action mag, als `sendInviteEmail` het entrypoint blijft.
+- De env-var heet `CLUBALMANAC_APP_STORE_ID`.
+- De vorm van `inviteTemplate` en van de schil is aan B. De tests lezen alleen de Mailjet-payload.
+
+### RED tests
+
+| Bestand | Wat |
+|---|---|
+| `tests/invites/inviteMailPhoto.test.ts` (Node, echte sharp) | A-invariant 1–7: bijlage en `cid:`, welke foto (5 gevallen zonder foto), *klein* en niet het origineel, rechtop (stand 1, 3, 6, 8, leeg), geen metadata of GPS, grootte en breedte, kapotte bytes, de andere mails zonder bijlage |
+| `tests/invites/inviteMailLayout.test.ts` | A-invariant 8, 10, 11: document, licht en donker, tokens, letter, geen externe bronnen, één kolom, grootte, tekstversie, escaping, regeleinden |
+| `tests/invites/inviteMailAppStore.test.ts` | A-invariant 9: de link met een placeholder-ID, de enige link, iPhone; zonder, leeg of ongeldig: geen link, wel een log; niet in de andere mails |
+| `tests/email/mailjetClient.test.ts` | de payload van `InlinedAttachments`, en geen sleutel zonder bijlagen |
+| `tests/invites/inviteMailNoLink.test.ts` | aangepast: de env-var staat uit, dus "geen link" blijft gelden |
+
+### Follow-up (buiten scope)
+
+- **De uitnodigingskaart in de app toont de cover zonder stand** (kernvondst 3). `listReceived` mist de stand en `InviteCover` past hem niet toe. Een kleine fix in de app en de backend, los van deze mail.
+- **De gedeelde schil voor de andere mails aan leden** (vraag 3).
