@@ -63,6 +63,17 @@ Alle adviezen overgenomen.
 4. **Plek, zoals v1:** melden in het foto-menu; je eigen gemelde foto's en de wachtrij van de webmaster in Profiel, alleen zichtbaar als er iets is; ideeën en problemen in Instellingen. Dit vervangt vraag 3 hierboven.
 5. **Probleem melden zonder account:** geen nieuw schrijfpad zonder login. De contactlink op de Info-pagina's (`CONTACT_MAILTO`, ook uitgelogd) is de weg; B zorgt dat die vindbaar is als "probleem melden".
 
+### Besluiten na de audit (2026-11-14)
+
+6. **Fix-cyclus 1** (A test, B impl), uit de audit:
+   - **S1, de datum klopt altijd.** De datum die mail en app noemen ("na <datum>") is een dag waarop de foto de hele dag (NL-tijd) nog bestaat en bezwaar nog kan; de foto verdwijnt pas bij de eerste opruimronde daarna. Ook bij een melding of afwijzing tussen 00:00 en 03:00 UTC. A test met een klok in dat venster en kiest met B het mechanisme.
+   - **S2, Profiel leest alleen gemelde foto's.** `listMyFlagged` en `listAllFlagged` lezen niet meer alle foto's, alleen de gemelde. Gedrag gelijk.
+   - **N1:** "Bezig…" pas na de bevestiging, op de knop die je koos.
+   - **N3:** geen mail aan een eigenaar wiens account wordt verwijderd.
+   - S3 (migratieplan) doet regie in de closeout.
+7. **N2: de webmaster mag over een melding van zijn eigen foto beslissen.** Geen wijziging; als eigenaar kan hij die foto toch al verwijderen.
+8. **Red-team op het beeldpad** (besluit 3) na fix-cyclus 1, inclusief N5 (het beeld in de cache van de webmaster na goedkeuren).
+
 ## Risico-assessment
 
 - **security/privacy: middel.** Melder-identiteit en reden mogen alleen naar de webmaster; webmaster-gates; een probleemmelding kan persoonlijke tekst bevatten. De bestaande reads hebben al een whitelist (WP23). Geen red-team, tenzij A een nieuw leespad voor melder of reden voorstelt.
