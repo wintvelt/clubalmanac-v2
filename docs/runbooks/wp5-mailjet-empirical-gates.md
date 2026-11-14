@@ -20,11 +20,10 @@ npx convex env set MAILJET_API_KEY <key-uit-mailjet>
 npx convex env set MAILJET_API_SECRET <secret-uit-mailjet>
 npx convex env set MAILJET_WEBHOOK_SECRET <openssl-rand-hex-32>
 npx convex env set MAILJET_VERIFIED_SENDERS "invites@clubalmanac.com,info@clubalmanac.com"
-npx convex env set CLUBALMANAC_APP_URL "https://clubalmanac.com"
 npx convex env set CLUBALMANAC_STAGE "dev"
 ```
 
-Verificatie: `npx convex env list` toont nu 8 env-vars (2 bestaand + 6 nieuwe).
+Verificatie: `npx convex env list` toont nu 7 env-vars (2 bestaand + 5 nieuwe; `CLUBALMANAC_APP_URL` is met WP19b vervallen).
 
 ### C. Test-data in Convex dev DB
 

@@ -214,32 +214,40 @@ export const inviteSenderFields = {
 };
 export const inviteSender = v.object(inviteSenderFields);
 
-/** Groep op de invite-landing: genoeg om te tonen en na accepteren te navigeren. */
-export const landingGroupFields = {
+/**
+ * WP19b A-invariant 6, 14: een ontvangen uitnodiging (`listReceived`). Geen
+ * token, e-mailadres, invitedBy, naam die de admin typte, status of tijden
+ * behalve geldig tot. `message` alleen als er een is.
+ */
+export const inviteReceivedFields = {
+  _id: v.id("invites"),
+  role: v.optional(ROLE),
+  expiresAt: v.number(),
+  message: v.optional(v.string()),
+};
+
+/**
+ * De groep bij een ontvangen uitnodiging. A-invariant 15: `hasCover` in plaats
+ * van een foto-id; het beeld loopt via `/beeld/uitnodiging/<inviteId>`.
+ */
+export const receivedGroupFields = {
   _id: v.id("groups"),
   name: v.string(),
-  description: v.optional(v.string()),
 };
 
-/**
- * Inviter op de invite-landing. WP17a besluit 8 + invariant 10: het user-id
- * (de landing toont de profielfoto via het openbare profielpad), geen
- * beeld-id. Herziet audit-8 ("geen `_id`").
- */
-export const landingInviterFields = {
-  _id: v.id("users"),
-  name: v.optional(v.string()),
-};
-
-/**
- * Invite-landing (anoniem, token = toegangsbewijs). Mét invitee-email (A-keuze
- * 6, herzien 47b65bc); geen token, invitedBy, bouncedAt, `_id` of tijden.
- */
-export const inviteLanding = v.object({
-  status: INVITE_STATUS,
-  isExpired: v.boolean(),
-  role: v.optional(ROLE),
-  email: v.string(),
-  group: v.union(v.object(landingGroupFields), v.null()),
-  inviter: v.union(v.object({ ...landingInviterFields, ...avatarFields }), v.null()),
+export const inviteReceived = v.object({
+  ...inviteReceivedFields,
+  group: v.object({ ...receivedGroupFields, hasCover: v.boolean() }),
+  // De uitnodiger zoals op het openbare profielpad (WP17a besluit 8).
+  inviter: v.union(publicProfile, v.null()),
 });
+
+/** WP19b A-invariant 12: een open uitnodiging van een groep, voor een admin. */
+export const inviteForAdminFields = {
+  _id: v.id("invites"),
+  name: v.optional(v.string()),
+  email: v.string(),
+  role: v.optional(ROLE),
+  expiresAt: v.number(),
+};
+export const inviteForAdmin = v.object(inviteForAdminFields);

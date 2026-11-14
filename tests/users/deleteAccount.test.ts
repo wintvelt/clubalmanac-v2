@@ -128,7 +128,6 @@ beforeEach(() => {
   process.env.MAILJET_API_KEY = "k";
   process.env.MAILJET_API_SECRET = "s";
   process.env.CLUBALMANAC_STAGE = "dev";
-  process.env.CLUBALMANAC_APP_URL = "https://app.x.test";
   process.env.CLERK_WEBHOOK_SECRET = TEST_WEBHOOK_SECRET;
 });
 afterEach(() => {
@@ -371,19 +370,26 @@ describe("WP29 A-invariant 2 — geen nieuwe rij voor dezelfde Clerk-user", () =
 
   it("na afloop begint dat adres met een nieuwe Clerk-user als nieuw", async () => {
     const t = newT();
-    await world(t);
+    const w = await world(t);
     stubNet();
     await rex(t).mutation(api.users.deleteSelf, {});
     await finish(t);
 
+    // WP19b A-invariant 1: zonder uitnodiging geen account; Olga nodigt hem
+    // opnieuw uit voor H.
+    expect(
+      await t.mutation(internal.users.registerFromSession, { subject: "user_rex_nieuw", email: REX_EMAIL }),
+    ).toBeNull();
+    await withUser(t, "user_olga").mutation(api.invites.create, { name: "Rex", email: REX_EMAIL, groupId: w.H });
     const fresh = await t.mutation(internal.users.registerFromSession, { subject: "user_rex_nieuw", email: REX_EMAIL });
-    const row = await get(t, fresh);
+    expect(fresh).not.toBeNull();
+    const row = await get(t, fresh!);
     expect(row?.photoCount).toBe(0);
     expect(row?.profilePhotoStorageId).toBeUndefined();
     const ms = await t.run(async (ctx) =>
-      ctx.db.query("memberships").withIndex("by_user", (q) => q.eq("userId", fresh)).collect(),
+      ctx.db.query("memberships").withIndex("by_user", (q) => q.eq("userId", fresh!)).collect(),
     );
-    expect(ms).toEqual([]);
+    expect(ms.map((m) => m.groupId)).toEqual([w.H]);
   });
 });
 
@@ -802,11 +808,18 @@ describe("WP29 fix 1b en 2 — een verwijderde Clerk-user maakt nooit meer een u
 
   it("een andere Clerk-user blijft gewoon welkom via de webhook", async () => {
     const t = newT();
-    await world(t);
+    const w = await world(t);
     stubNet();
     await rex(t).mutation(api.users.deleteSelf, {});
     await finish(t);
 
+    // WP19b A-invariant 1: zonder uitnodiging geen rij, ook voor een nieuwe
+    // Clerk-user; met een nieuwe uitnodiging van Olga wel.
+    const refused = await webhookSession(t, "user_rex_nieuw", REX_EMAIL);
+    expect(refused.status).toBe(200);
+    expect(await usersWithSubject(t, "user_rex_nieuw")).toHaveLength(0);
+
+    await withUser(t, "user_olga").mutation(api.invites.create, { name: "Rex", email: REX_EMAIL, groupId: w.H });
     const res = await webhookSession(t, "user_rex_nieuw", REX_EMAIL);
     expect(res.status).toBe(200);
     expect(await usersWithSubject(t, "user_rex_nieuw")).toHaveLength(1);
@@ -855,7 +868,9 @@ describe("WP29 fix 3 — retryAccountDeletion terwijl de Clerk-pogingen nog lope
 });
 
 describe("WP29 fix 4 en 8 — uitnodigen tijdens het verwijderen", () => {
-  it("Clerk hangt, Olga nodigt hem opnieuw uit: geweigerd, met of zonder groep en in elke schrijfwijze; geen uitnodiging, geen mail", async () => {
+  // WP19b A-invariant 19 (N1): de weigering is een ConvexError met code
+  // EMAIL_BEING_DELETED en het adres; de vorm staat in tests/users/wp19bFix1.test.ts.
+  it("Clerk hangt, Olga nodigt hem opnieuw uit: geweigerd, in elke schrijfwijze; geen uitnodiging, geen mail", async () => {
     const t = newT();
     const w = await world(t);
     const net = stubNet(() => 500);
@@ -863,8 +878,8 @@ describe("WP29 fix 4 en 8 — uitnodigen tijdens het verwijderen", () => {
     await finish(t);
 
     const olga = withUser(t, "user_olga");
-    await expect(olga.mutation(api.invites.create, { email: REX_EMAIL, groupId: w.H })).rejects.toThrow(/wordt verwijderd/);
-    await expect(olga.mutation(api.invites.create, { email: " REX@x.test " })).rejects.toThrow(/wordt verwijderd/);
+    await expect(olga.mutation(api.invites.create, { name: "Genodigde", email: REX_EMAIL, groupId: w.H })).rejects.toThrow(/EMAIL_BEING_DELETED/);
+    await expect(olga.mutation(api.invites.create, { name: "Genodigde", email: " REX@x.test ", groupId: w.H })).rejects.toThrow(/EMAIL_BEING_DELETED/);
     await finish(t);
 
     const invites = await t.run(async (ctx) =>
@@ -874,9 +889,9 @@ describe("WP29 fix 4 en 8 — uitnodigen tijdens het verwijderen", () => {
     expect(mailsTo(net, REX_EMAIL)).toEqual([]);
   });
 
-  it("direct na deleteSelf ook: een losse uitnodiging aan zijn adres wordt geweigerd", async () => {
+  it("direct na deleteSelf ook: een uitnodiging aan zijn adres wordt geweigerd", async () => {
     const t = newT();
-    await world(t);
+    const w = await world(t);
     stubNet();
     // Olga's open losse uitnodiging aan hem zou anders als dubbel gelden.
     await t.run(async (ctx) => {
@@ -886,7 +901,7 @@ describe("WP29 fix 4 en 8 — uitnodigen tijdens het verwijderen", () => {
     });
     await rex(t).mutation(api.users.deleteSelf, {});
 
-    await expect(withUser(t, "user_olga").mutation(api.invites.create, { email: REX_EMAIL })).rejects.toThrow(/wordt verwijderd/);
+    await expect(withUser(t, "user_olga").mutation(api.invites.create, { name: "Genodigde", email: REX_EMAIL, groupId: w.H })).rejects.toThrow(/EMAIL_BEING_DELETED/);
   });
 
   it("R3: na herstel en retry is alles weg; daarna kan Olga hem weer uitnodigen en die uitnodiging blijft", async () => {
@@ -895,14 +910,14 @@ describe("WP29 fix 4 en 8 — uitnodigen tijdens het verwijderen", () => {
     stubNet(() => 500);
     await rex(t).mutation(api.users.deleteSelf, {});
     await finish(t);
-    await expect(withUser(t, "user_olga").mutation(api.invites.create, { email: REX_EMAIL, groupId: w.H })).rejects.toThrow();
+    await expect(withUser(t, "user_olga").mutation(api.invites.create, { name: "Genodigde", email: REX_EMAIL, groupId: w.H })).rejects.toThrow();
 
     const net = stubNet();
     await t.mutation(retryRef, { userId: w.rex });
     await finish(t);
     expect(await tracesOfRex(t, w)).toEqual([]);
 
-    const { inviteId } = await withUser(t, "user_olga").mutation(api.invites.create, { email: REX_EMAIL, groupId: w.H });
+    const { inviteId } = await withUser(t, "user_olga").mutation(api.invites.create, { name: "Genodigde", email: REX_EMAIL, groupId: w.H });
     await finish(t);
     expect((await get(t, inviteId))?.status).toBe("pending");
     expect(mailsTo(net, REX_EMAIL)).toHaveLength(1);
@@ -1038,8 +1053,8 @@ describe("WP29 fix-cyclus 2, punt 2 — geen e-mail-orakel in invites.create", (
   it("een niet-lid krijgt voor zijn adres dezelfde fout als voor elk ander adres", async () => {
     const { t, w } = await deleting();
     const eve = withUser(t, "user_eve");
-    const forRex = await outcome(eve.mutation(api.invites.create, { email: REX_EMAIL, groupId: w.H }));
-    const forOther = await outcome(eve.mutation(api.invites.create, { email: "niemand@x.test", groupId: w.H }));
+    const forRex = await outcome(eve.mutation(api.invites.create, { name: "Genodigde", email: REX_EMAIL, groupId: w.H }));
+    const forOther = await outcome(eve.mutation(api.invites.create, { name: "Genodigde", email: "niemand@x.test", groupId: w.H }));
     expect(forRex).not.toBe("ok");
     expect(forRex).toBe(forOther);
   });
@@ -1047,8 +1062,8 @@ describe("WP29 fix-cyclus 2, punt 2 — geen e-mail-orakel in invites.create", (
   it("een lid zonder admin-rol idem", async () => {
     const { t, w } = await deleting();
     const lex = withUser(t, "user_lex");
-    const forRex = await outcome(lex.mutation(api.invites.create, { email: REX_EMAIL, groupId: w.G }));
-    const forOther = await outcome(lex.mutation(api.invites.create, { email: "niemand@x.test", groupId: w.G }));
+    const forRex = await outcome(lex.mutation(api.invites.create, { name: "Genodigde", email: REX_EMAIL, groupId: w.G }));
+    const forOther = await outcome(lex.mutation(api.invites.create, { name: "Genodigde", email: "niemand@x.test", groupId: w.G }));
     expect(forRex).not.toBe("ok");
     expect(forRex).toBe(forOther);
   });
@@ -1056,6 +1071,6 @@ describe("WP29 fix-cyclus 2, punt 2 — geen e-mail-orakel in invites.create", (
   it("een admin hoort het wel, ook als hij nog lid is van de groep (vóór de check op 'al lid')", async () => {
     const { t, w } = await deleting();
     // Direct na deleteSelf is Rex nog lid van G.
-    await expect(withUser(t, "user_olga").mutation(api.invites.create, { email: REX_EMAIL, groupId: w.G })).rejects.toThrow(/wordt verwijderd/);
+    await expect(withUser(t, "user_olga").mutation(api.invites.create, { name: "Genodigde", email: REX_EMAIL, groupId: w.G })).rejects.toThrow(/EMAIL_BEING_DELETED/);
   });
 });

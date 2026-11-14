@@ -1,16 +1,25 @@
-import { useSignIn } from "@clerk/expo";
+import { useSignIn, useSignUp } from "@clerk/expo";
 import { useCallback, useRef, useState } from "react";
 import { normalizeLoginCode } from "../lib/loginCode";
 import { resumeClerkStorage } from "./deviceClerkStorage";
 import { setLoginRequestRunning } from "./loginRequest";
 import {
   emailStepResult,
+  isSignUpTransfer,
   isUnknownAccountError,
   LOGIN_MESSAGES,
   loginErrorMessage,
 } from "../lib/loginErrors";
 
 // Inloggen met e-mailadres + eenmalige code uit de mail (WP13 invariant 18).
+//
+// WP19b invariant 3: hetzelfde scherm maakt ook een account. Clerks
+// sign-in-or-up (`signUpIfMissing`): Clerk stuurt voor elk adres een code, en
+// pas na de juiste code zegt hij dat het adres nog geen account heeft (de fout
+// `sign_up_if_missing_transfer`). Dan maakt de app het account met
+// `signUp.create({ transfer: true })`. De gebruiker ziet bij een bekend en een
+// onbekend adres hetzelfde: e-mail, code, klaar. Of er een uitnodiging is,
+// bepaalt de backend pas na het inloggen (users.signupState).
 //
 // `submitCode` neemt ruwe tekst en hangt niet aan het invoerveld: een code uit
 // een andere bron (later de mail-link, WP22) kan hier ook in (invariant 19).
@@ -47,6 +56,7 @@ const UNFINISHED_ERROR =
 
 export function useEmailCodeLogin(): EmailCodeLogin {
   const { signIn } = useSignIn();
+  const { signUp } = useSignUp();
 
   // Naar Mail en terug (invariant 20): overleeft de app dat niet, dan staat de
   // lopende poging nog bij Clerk. Daar pakken we hem weer op, zonder een
@@ -107,10 +117,13 @@ export function useEmailCodeLogin(): EmailCodeLogin {
           fail(EMPTY_EMAIL_ERROR);
           return;
         }
-        const { error: clerkError } = await signIn.emailCode.sendCode({
-          emailAddress: email,
-        });
-        const result = emailStepResult(clerkError ?? undefined);
+        // WP19b: sign-in-or-up. Een onbekend adres krijgt ook een code.
+        const created = await signIn.create({ identifier: email, signUpIfMissing: true });
+        let clerkError: unknown = created.error ?? undefined;
+        if (clerkError === undefined) {
+          clerkError = (await signIn.emailCode.sendCode()).error ?? undefined;
+        }
+        const result = emailStepResult(clerkError);
         if (result.kind === "error") {
           fail(result.message);
           return;
@@ -134,6 +147,21 @@ export function useEmailCodeLogin(): EmailCodeLogin {
           return;
         }
         const verified = await signIn.emailCode.verifyCode({ code });
+        // WP19b: juiste code, maar nog geen account: maak het nu.
+        if (isSignUpTransfer(verified.error) || (!verified.error && signIn.isTransferable)) {
+          const created = await signUp.create({ transfer: true });
+          if (created.error) {
+            fail(loginErrorMessage(created.error));
+            return;
+          }
+          if (signUp.status !== "complete") {
+            fail(UNFINISHED_ERROR);
+            return;
+          }
+          const finalizedSignUp = await signUp.finalize();
+          if (finalizedSignUp.error) fail(loginErrorMessage(finalizedSignUp.error));
+          return;
+        }
         if (verified.error) {
           fail(loginErrorMessage(verified.error));
           return;
@@ -147,7 +175,7 @@ export function useEmailCodeLogin(): EmailCodeLogin {
         const finalized = await signIn.finalize();
         if (finalized.error) fail(loginErrorMessage(finalized.error));
       }),
-    [run, signIn],
+    [run, signIn, signUp],
   );
 
   const resendCode = useCallback(

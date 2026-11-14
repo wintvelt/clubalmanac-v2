@@ -42,7 +42,11 @@ const EXPECTED = [
   "groups:transferFounder",
   "groups:update",
   "groups:updateMemberRole",
+  // WP19b A-invariant 7 en 9: accepteren en afwijzen gaan op invite-id (was:
+  // token); gate = genodigde op adres (tests/invites/acceptDeclineById.test.ts).
+  "invites:accept",
   "invites:create",
+  "invites:decline",
   "invites:remove",
 ].sort();
 

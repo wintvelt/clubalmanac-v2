@@ -2,7 +2,9 @@ import { v } from "convex/values";
 import { internalQuery, type QueryCtx } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import { getBySubject } from "./users";
-import { canAccessPhoto } from "./lib/photoAccess";
+import { canAccessPhoto, isPublishedInGroup } from "./lib/photoAccess";
+import { isInviteAcceptable } from "./groups";
+import { normalizeEmail } from "./lib/email";
 import { visibleProfilePhoto } from "./lib/profilePhoto";
 
 // WP17a: de toegangsregel voor beeldbytes (invariant 1, 2, 3, 13, 14).
@@ -118,6 +120,42 @@ export const profileImageInFormat = internalQuery({
     const { storageId: original, chosen } = visible;
     if (!chosen?.row.formats) return { storageId: original, fallback: true };
     return await chooseFormat(ctx, chosen.row, formaat, original);
+  },
+});
+
+/**
+ * WP19b besluit 2 (V4), A-invariant 15: de cover van de groep van een
+ * ontvangen uitnodiging, voor de genodigde. De smalste uitzondering op de
+ * foto-toegang: de sleutel is de uitnodiging, niet de foto, en
+ * `canAccessPhoto` verandert niet.
+ * - Alleen een ingelogde caller met een users-rij, alleen voor een uitnodiging
+ *   aan zijn eigen adres die nu accepteerbaar is.
+ * - Alleen de cover van die groep, en alleen als die in een album van die
+ *   groep staat (WP24). Geen origineel: de aanroeper vraagt altijd een
+ *   formaat; zonder formaten het origineel met `fallback: true` (dat het pad
+ *   alleen schoongemaakt verstuurt).
+ * Al het andere: `null`, één 404.
+ */
+export const inviteCoverInFormat = internalQuery({
+  args: { inviteId: v.string(), formaat: formaatArg },
+  returns: v.union(imageChoice, v.null()),
+  handler: async (ctx, { inviteId, formaat }) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) return null;
+    const user = await getBySubject(ctx, identity.subject);
+    if (!user) return null;
+    const id = ctx.db.normalizeId("invites", inviteId);
+    if (!id) return null;
+    const invite = await ctx.db.get(id);
+    if (!invite || invite.email !== normalizeEmail(user.email)) return null;
+    if (!(await isInviteAcceptable(ctx, invite, Date.now()))) return null;
+    const group = await ctx.db.get(invite.groupId!);
+    if (!group?.coverPhotoId) return null;
+    const cover = await ctx.db.get(group.coverPhotoId);
+    if (!cover || !(await isPublishedInGroup(ctx, cover._id, group._id))) return null;
+    const original = await storedImage(ctx, cover.storageId);
+    if (!original) return null;
+    return await chooseFormat(ctx, cover, formaat, original);
   },
 });
 

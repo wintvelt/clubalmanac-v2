@@ -39,12 +39,18 @@ afterEach(() => {
   delete process.env.MAILJET_WEBHOOK_SECRET;
 });
 
+// WP19b A-keuze 1: een uitnodiging heeft altijd een groep. Elke aanroep maakt
+// een eigen groep van de afzender (hij is daar admin).
+async function newGroup(t: ReturnType<typeof convexTest>, subject: string) {
+  return await withUser(t, subject).mutation(api.groups.create, { name: `G-${crypto.randomUUID()}` });
+}
+
 async function seedPendingInviteForBounce(
   t: ReturnType<typeof convexTest>,
   inviteEmail: string,
 ): Promise<void> {
   await registerUserWithInvite(t, "user_alice", "alice@x.com", "Alice");
-  await withUser(t, "user_alice").mutation(api.invites.create, {
+  await withUser(t, "user_alice").mutation(api.invites.create, { name: "Genodigde", groupId: await newGroup(t, "user_alice"),
     email: inviteEmail,
   });
 }
@@ -93,10 +99,10 @@ describe("/email-event — payload-shape variaties", () => {
   it("array met meerdere bounces voor verschillende emails → meerdere handleBounce-calls", async () => {
     const t = convexTest(schema, modules);
     await registerUserWithInvite(t, "user_alice", "alice@x.com", "Alice");
-    await withUser(t, "user_alice").mutation(api.invites.create, {
+    await withUser(t, "user_alice").mutation(api.invites.create, { name: "Genodigde", groupId: await newGroup(t, "user_alice"),
       email: "one@x.com",
     });
-    await withUser(t, "user_alice").mutation(api.invites.create, {
+    await withUser(t, "user_alice").mutation(api.invites.create, { name: "Genodigde", groupId: await newGroup(t, "user_alice"),
       email: "two@x.com",
     });
 
@@ -119,10 +125,10 @@ describe("/email-event — payload-shape variaties", () => {
   it("event zonder MessageID/event_id → skip dat event, andere events in batch slagen", async () => {
     const t = convexTest(schema, modules);
     await registerUserWithInvite(t, "user_alice", "alice@x.com", "Alice");
-    await withUser(t, "user_alice").mutation(api.invites.create, {
+    await withUser(t, "user_alice").mutation(api.invites.create, { name: "Genodigde", groupId: await newGroup(t, "user_alice"),
       email: "ok@x.com",
     });
-    await withUser(t, "user_alice").mutation(api.invites.create, {
+    await withUser(t, "user_alice").mutation(api.invites.create, { name: "Genodigde", groupId: await newGroup(t, "user_alice"),
       email: "skip@x.com",
     });
 
@@ -243,7 +249,7 @@ describe("/email-event — payload-shape variaties", () => {
   it("mixed-case email in payload → resolveert tegen invite (normalizeEmail)", async () => {
     const t = convexTest(schema, modules);
     await registerUserWithInvite(t, "user_alice", "alice@x.com", "Alice");
-    await withUser(t, "user_alice").mutation(api.invites.create, {
+    await withUser(t, "user_alice").mutation(api.invites.create, { name: "Genodigde", groupId: await newGroup(t, "user_alice"),
       email: "Bouncer@X.com",
     });
 

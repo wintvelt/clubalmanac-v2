@@ -13,11 +13,11 @@ import {
   type World,
 } from "./_world";
 
-// WP23 — invites-reads. Spec §Vormen (invite-landing, invite afzender),
-// A-keuzes 6 (landing mét invitee-email sinds herziening 47b65bc, wel
-// group._id; geen token/invitedBy/bouncedAt/_id/tijden) en 8 (listMine
-// zonder token/respondedAt/bouncedAt). Niet-publiek-zijn van
-// listPendingForEmail/hasPendingForEmail staat in inventory.test.ts.
+// WP23 — invites-reads. A-keuze 8 (listMine zonder token/respondedAt/
+// bouncedAt). WP19b: de anonieme landing (getByToken) is weg; daarvoor in de
+// plaats listReceived (A-invariant 6, 14, 15) en listForGroup (A-invariant
+// 12). Niet-publiek-zijn van listPendingForEmail/hasPendingForEmail en van
+// getByToken staat in inventory.test.ts en tests/invites/inventory.test.ts.
 
 useWebmasterEnv();
 
@@ -28,72 +28,63 @@ function expectNoInviteSecrets(value: unknown, w: World) {
   }
 }
 
-describe("invites.getByToken — anonieme landingspagina", () => {
-  it("precies status, isExpired, rol, email van de genodigde, groep (id, naam, omschrijving) en inviter (id en naam; WP17a besluit 8: geen beeld-id)", async () => {
+describe("invites.listReceived — de genodigde (WP19b)", () => {
+  it("precies id, rol, geldig tot, groep (id, naam, hasCover) en uitnodiger (openbaar profiel)", async () => {
     const t = newT();
     const w = await seedWorld(t);
-    const got = (await t.query(api.invites.getByToken, {
-      token: w.tokens.g1,
-    })) as R;
-    expectShape(got, SHAPE.inviteLanding);
-    expectShape(got.group, SHAPE.landingGroup);
-    expectShape(got.inviter, SHAPE.landingInviter);
-    expect(got.status).toBe("pending");
-    expect(got.isExpired).toBe(false);
-    expect(got.role).toBe("member");
-    expect(got.email).toBe("new@x.com");
+    // Carol (geen lid van G1) wordt door Alice (admin) uitgenodigd.
+    const id = await t.run(async (ctx) =>
+      ctx.db.insert("invites", {
+        email: "carol@x.com",
+        invitedBy: w.users.alice.id,
+        groupId: w.groups.G1,
+        role: "member",
+        token: "tok-carol-g1-secret",
+        status: "pending",
+        expiresAt: Date.now() + 86_400_000,
+        createdAt: Date.now(),
+      }),
+    );
+    const list = (await asUser(t, w, "carol").query(api.invites.listReceived, {})) as R[];
+    expect(list).toHaveLength(1);
+    const got = list[0]!;
+    expectShape(got, SHAPE.inviteReceived);
+    expectShape(got.group, SHAPE.receivedGroup);
+    expectShape(got.inviter, SHAPE.receivedInviter);
+    expect(got._id).toBe(id);
     expect(got.group._id).toBe(w.groups.G1);
     expect(got.group.name).toBe("Club");
-    expect(got.inviter.name).toBe("Alice");
-    // WP17a besluit 8: het user-id van de afzender, voor het openbare
-    // profielpad. Geen beeld-id (invariant 10).
+    // G1 heeft pBob als cover, en pBob staat in A1 van G1.
+    expect(got.group.hasCover).toBe(true);
     expect(got.inviter._id).toBe(w.users.alice.id);
-    expect(JSON.stringify(got)).not.toContain("profilePhotoStorageId");
+    expect(got.inviter.name).toBe("Alice");
+    const json = JSON.stringify(got);
+    expect(json).not.toContain("tok-carol-g1-secret");
+    expect(json).not.toContain(w.photos.pBob);
+    expect(json).not.toContain("profilePhotoStorageId");
     expectNoInviteSecrets(got, w);
     expectNoUserSecrets(got, w);
   });
 
-  it("gebouncede, verlopen invite: landing-vorm met status en email, zonder bouncedAt", async () => {
-    const t = newT();
-    const w = await seedWorld(t);
-    const got = (await t.query(api.invites.getByToken, {
-      token: w.tokens.bounced,
-    })) as R;
-    expectShape(got, SHAPE.inviteLanding);
-    expect(got.status).toBe("expired");
-    expect(got.isExpired).toBe(true);
-    expect(got.email).toBe("bounce@x.com");
-  });
-
-  it("algemene invite zonder groep en zonder rol: group is null, rol ontbreekt", async () => {
-    const t = newT();
-    const w = await seedWorld(t);
-    const got = (await t.query(api.invites.getByToken, {
-      token: w.tokens.general,
-    })) as R;
-    expectShape(
-      got,
-      SHAPE.inviteLanding.filter((k) => k !== "role"),
-    );
-    expect(got.group).toBeNull();
-  });
-
-  it("ingelogd (ook als iemand anders dan de genodigde): dezelfde landing-vorm, niet meer", async () => {
-    const t = newT();
-    const w = await seedWorld(t);
-    const got = await asUser(t, w, "bob").query(api.invites.getByToken, {
-      token: w.tokens.g1,
-    });
-    expectShape(got, SHAPE.inviteLanding);
-    expectNoInviteSecrets(got, w);
-  });
-
-  it("onbekend token: null (ongewijzigd)", async () => {
+  it("[] zonder identity en [] bij identity zonder users-rij", async () => {
     const t = newT();
     await seedWorld(t);
-    expect(
-      await t.query(api.invites.getByToken, { token: "bestaat-niet" }),
-    ).toBeNull();
+    expect(await t.query(api.invites.listReceived, {})).toEqual([]);
+    expect(await asGhost(t).query(api.invites.listReceived, {})).toEqual([]);
+  });
+});
+
+describe("invites.listForGroup — admin (WP19b)", () => {
+  it("alleen open, niet verlopen; vorm id, e-mail, rol, geldig tot (geen naam op deze rij)", async () => {
+    const t = newT();
+    const w = await seedWorld(t);
+    const list = (await asUser(t, w, "alice").query(api.invites.listForGroup, {
+      groupId: w.groups.G1,
+    })) as R[];
+    expect(list.map((i) => i._id)).toEqual([w.invites.invG1]);
+    expectShape(list[0], SHAPE.inviteForAdmin);
+    expectNoInviteSecrets(list, w);
+    expectNoUserSecrets(list, w);
   });
 });
 

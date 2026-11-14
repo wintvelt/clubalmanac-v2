@@ -20,3 +20,9 @@ export function photoImageUrl(siteUrl: string, photoId: string, format: ImageFor
 export function profileImageUrl(siteUrl: string, userId: string, format: ImageFormat): string {
   return `${siteUrl}/beeld/profiel/${encodeURIComponent(userId)}?formaat=${format}`;
 }
+
+// WP19b A-invariant 15: de cover van de groep bij een ontvangen uitnodiging,
+// op invite-id. Met het Clerk-token, zoals een foto; nooit een origineel.
+export function inviteCoverUrl(siteUrl: string, inviteId: string, format: ImageFormat): string {
+  return `${siteUrl}/beeld/uitnodiging/${encodeURIComponent(inviteId)}?formaat=${format}`;
+}

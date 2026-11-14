@@ -1,3 +1,6 @@
+import { readdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { screenQueryIsLive, sessionQueryIsLive } from "../src/lib/liveQuery";
 import type { SessionState } from "../src/lib/sessionState";
@@ -141,5 +144,65 @@ describe("sessionQueryIsLive — de query achter de auth-poort (users.current)",
                   }),
                 ).toBe(expected);
               }
+  });
+});
+
+// WP19b fix-cyclus 1, S5 (A-invariant 21; besluit 3: bewuste afwijking op
+// WP15a F2). Buiten focus om lopen precies twee queries: users.current en
+// users.signupState. Een derde laat deze test falen, ook als hij later in de
+// backend bijkomt. Gemeten tegen elke publieke query in convex/, plus de
+// aanroepen in de poort.
+describe("sessionQueryIsLive — precies twee sessie-queries (WP19b S5)", () => {
+  const SESSION = ["users:current", "users:signupState"];
+  const LIVE = {
+    appState: "active",
+    clerkLoaded: true,
+    clerkSignedIn: true,
+    convexAuthLoading: false,
+    convexAuthenticated: true,
+  };
+  const CONVEX = fileURLToPath(new URL("../../convex", import.meta.url));
+
+  function publicQueries(dir: string, prefix = ""): string[] {
+    const out: string[] = [];
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      if (entry.name.startsWith("_") || entry.name === "node_modules") continue;
+      const full = join(dir, entry.name);
+      if (entry.isDirectory()) {
+        out.push(...publicQueries(full, `${prefix}${entry.name}/`));
+      } else if (entry.name.endsWith(".ts") && !entry.name.endsWith(".d.ts")) {
+        const mod = `${prefix}${entry.name.slice(0, -3)}`;
+        for (const m of readFileSync(full, "utf8").matchAll(/export\s+const\s+(\w+)\s*=\s*query\s*\(/g)) {
+          out.push(`${mod}:${m[1]}`);
+        }
+      }
+    }
+    return out;
+  }
+
+  const all = publicQueries(CONVEX);
+
+  it("de scan vindt de publieke queries, waaronder de twee sessie-queries", () => {
+    expect(all.length).toBeGreaterThan(10);
+    for (const q of SESSION) expect(all).toContain(q);
+  });
+
+  it("live met alles in orde: alleen users:current en users:signupState", () => {
+    const live = all.filter((query) => sessionQueryIsLive({ ...LIVE, query }));
+    expect(live.sort()).toEqual([...SESSION].sort());
+  });
+
+  it("users:signupState pauzeert net als users:current", () => {
+    const query = "users:signupState";
+    expect(sessionQueryIsLive({ ...LIVE, query })).toBe(true);
+    expect(sessionQueryIsLive({ ...LIVE, query, appState: "background" })).toBe(false);
+    expect(sessionQueryIsLive({ ...LIVE, query, clerkSignedIn: false })).toBe(false);
+    expect(sessionQueryIsLive({ ...LIVE, query, convexAuthenticated: false })).toBe(false);
+  });
+
+  it("de poort roept de sessie-route aan met precies die twee queries", () => {
+    const gate = readFileSync(fileURLToPath(new URL("../src/AuthGate.tsx", import.meta.url)), "utf8");
+    const used = [...gate.matchAll(/useSessionQuery\(\s*api\.(\w+)\.(\w+)/g)].map((m) => `${m[1]}:${m[2]}`);
+    expect([...new Set(used)].sort()).toEqual([...SESSION].sort());
   });
 });

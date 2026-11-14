@@ -8,7 +8,7 @@ import {
   type QueryCtx,
 } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
-import { isGroupInviteStillValid } from "./groups";
+import { acceptableInvitesFor } from "./groups";
 import { restartAccountDeletion, startAccountDeletion } from "./accountDeletion";
 import { activeUserBySubject, isDeletedClerkSubject, userBySubject } from "./lib/accountState";
 import { normalizeEmail } from "./lib/email";
@@ -133,14 +133,16 @@ async function sharesGroup(
 //
 // Atomic flow binnen één Convex-transactie:
 //   1. Idempotent-on-subject: bestaande users-row → no-op return id.
-//   2. Email-uniqueness: throw bij andere subject met zelfde email
-//      (rollback laat geen halve state achter). Fail-loud zodat Clerk
+//   2. Email-uniqueness: throw bij andere subject met zelfde email, ook
+//      zonder uitnodiging (WP19b A-invariant 17). Fail-loud zodat Clerk
 //      retry't en ops 't merkt — silent claim van orphan-row zou data van
 //      vorige user overerven naar nieuwe Clerk-subject.
-//   3. Insert users-row.
-//   4. Vind alle pending, niet-verlopen invites voor email; accept ze
-//      atomair (status=accepted + respondedAt) en insert membership voor
-//      elke invite met groupId.
+//   3. WP19b A-invariant 1: zonder accepteerbare uitnodiging voor het adres
+//      geen rij (`null`), en niets verandert. Geen uitzondering voor de
+//      webmaster (A-keuze 2). De webhook geeft dan gewoon 200.
+//   4. Insert users-row, met de naam van de nieuwste uitnodiging die een
+//      naam heeft (A-invariant 11), anders de naam uit Clerk.
+//   5. Accepteer alle accepteerbare uitnodigingen en maak de lidmaatschappen.
 //
 // Re-login pad = idempotent no-op vóór invite-collect → nieuwe invites
 // tussen signup en re-login worden NIET stille geaccepteerd (re-login !=
@@ -151,7 +153,7 @@ export const registerFromSession = internalMutation({
     email: v.string(),
     name: v.optional(v.string()),
   },
-  returns: v.id("users"),
+  returns: v.union(v.id("users"), v.null()),
   handler: async (ctx, { subject, email, name }) => {
     // WP29 A-invariant 2: ook een account dat wordt verwijderd telt als
     // bestaand, zodat een nieuwe sessie geen nieuwe, lege rij maakt.
@@ -165,64 +167,98 @@ export const registerFromSession = internalMutation({
     }
 
     const normalizedEmail = normalizeEmail(email);
-
-    const byEmail = await ctx.db
-      .query("users")
-      .withIndex("by_email", (q) => q.eq("email", normalizedEmail))
-      .unique();
-    if (byEmail) throw new Error("Email is al in gebruik");
-
     const now = Date.now();
+
+    // WP19b A-invariant 17 (S1): het adres hoort al bij een andere rij.
+    // Fail-loud, ook zonder uitnodiging, dus vóór de check op uitnodigingen.
+    if (await userByEmail(ctx.db, normalizedEmail)) throw new Error("Email is al in gebruik");
+
+    // WP19b A-invariant 1 en 16: alleen met een uitnodiging die nu
+    // accepteerbaar is (WP28 A-invariant 4). Nieuwste eerst.
+    const invites = await acceptableInvitesFor(ctx, normalizedEmail, now);
+    if (invites.length === 0) return null;
+
+    // A-invariant 11 (besluit 2, V2): de naam uit de nieuwste uitnodiging
+    // met een naam; een gemigreerde uitnodiging heeft er geen.
+    const invitedName = invites
+      .map((i) => i.name?.trim())
+      .find((n): n is string => n !== undefined && n.length > 0);
     const userId = await ctx.db.insert("users", {
       subject,
       email: normalizedEmail,
-      name,
+      name: invitedName ?? name,
       photoCount: 0,
       photoLimit: DEFAULT_PHOTO_LIMIT,
       createdAt: now,
     });
 
-    const invites = await ctx.db
-      .query("invites")
-      .withIndex("by_email", (q) => q.eq("email", normalizedEmail))
-      .collect();
     for (const invite of invites) {
-      if (invite.status !== "pending") continue;
-      if (invite.expiresAt <= now) continue;
-      // WP28 A-invariant 4: zoals invites.accept. Een uitnodiging voor een
-      // gewiste groep, of van iemand die geen admin meer is, wordt niet
-      // geaccepteerd en maakt geen lidmaatschap; hij blijft staan zoals hij
-      // stond.
-      if (!(await isGroupInviteStillValid(ctx, invite))) continue;
       await ctx.db.patch(invite._id, {
         status: "accepted",
         respondedAt: now,
       });
-      if (invite.groupId) {
-        // Defense-in-depth (WP6-audit N-6): existing-membership-check spiegelt
-        // de discipline van `invites.accept`. In praktijk niet te raken (user
-        // is vers gecreëerd in dezelfde tx; geen pre-existing memberships) maar
-        // bewaart de invariant als toekomstige aanpassingen `userId` hergebruiken.
-        const existing = await ctx.db
-          .query("memberships")
-          .withIndex("by_user_and_group", (q) =>
-            q.eq("userId", userId).eq("groupId", invite.groupId!),
-          )
-          .unique();
-        if (!existing) {
-          await ctx.db.insert("memberships", {
-            userId,
-            groupId: invite.groupId,
-            role: invite.role ?? "member",
-            joinedAt: now,
-          });
-        }
+      // Defense-in-depth (WP6-audit N-6): existing-membership-check spiegelt
+      // de discipline van `invites.accept`. In praktijk niet te raken (user
+      // is vers gecreëerd in dezelfde tx) maar bewaart de invariant. Twee
+      // uitnodigingen voor dezelfde groep: één lidmaatschap, de hoogste rol.
+      const groupId = invite.groupId!;
+      const role = invite.role ?? "member";
+      const membership = await ctx.db
+        .query("memberships")
+        .withIndex("by_user_and_group", (q) =>
+          q.eq("userId", userId).eq("groupId", groupId),
+        )
+        .unique();
+      if (!membership) {
+        await ctx.db.insert("memberships", { userId, groupId, role, joinedAt: now });
+      } else if (membership.role !== "admin" && role === "admin") {
+        await ctx.db.patch(membership._id, { role: "admin" });
       }
     }
 
     return userId;
   },
 });
+
+// WP19b A-invariant 3: waarom is er (nog) geen account? Alleen voor de
+// ingelogde caller en alleen over zijn eigen geverifieerde adres (de
+// email-claim uit de sessie, WP4); geen orakel over andere adressen.
+//   "account"  er is een users-rij (ook als het account wordt verwijderd)
+//   "waiting"  geen rij, wel een accepteerbare uitnodiging: de onboarding
+//              via de webhook komt nog
+//   "noInvite" geen rij en geen accepteerbare uitnodiging
+//   "blocked"  de onboarding komt niet en een uitnodiging helpt niet: de
+//              Clerk-user is gewist, of het adres hoort al bij een andere rij
+//              (fix-cyclus 1, A-invariant 17 en 18)
+//   null       anoniem
+export const signupState = query({
+  args: {},
+  returns: v.union(
+    v.literal("account"),
+    v.literal("waiting"),
+    v.literal("noInvite"),
+    v.literal("blocked"),
+    v.null(),
+  ),
+  handler: async (ctx) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) return null;
+    if (await userBySubject(ctx.db, identity.subject)) return "account";
+    if (await isDeletedClerkSubject(ctx.db, identity.subject)) return "blocked";
+    if (!identity.email) return "noInvite";
+    const email = normalizeEmail(identity.email);
+    if (await userByEmail(ctx.db, email)) return "blocked";
+    const invites = await acceptableInvitesFor(ctx, email, Date.now());
+    return invites.length > 0 ? "waiting" : "noInvite";
+  },
+});
+
+function userByEmail(db: QueryCtx["db"], email: string) {
+  return db
+    .query("users")
+    .withIndex("by_email", (q) => q.eq("email", email))
+    .first();
+}
 
 export const updateProfile = mutation({
   args: {

@@ -27,7 +27,7 @@ const DAY = 24 * 60 * 60 * 1000;
 /**
  * Owen (admin) en Mia (lid) in G, album A. `anchor` is een foto van Owen in A,
  * zodat de foto-reads Owen als eigenaar tonen. Een open uitnodiging van Owen
- * voor de anonieme landing.
+ * aan Nina, die hem ziet in listReceived (WP19b).
  */
 async function setup(t: T) {
   const owen = await registerUser(t, "user_owen", "owen@x.com", "Owen");
@@ -37,6 +37,8 @@ async function setup(t: T) {
   const A = await withUser(t, "user_owen").mutation(api.albums.create, { groupId: G, name: "A" });
   const anchor = await seedPhoto(t, owen, { original: "ANKER" });
   await withUser(t, "user_owen").mutation(api.albums.addPhoto, { albumId: A, photoId: anchor.photoId });
+  // WP19b: de genodigde Nina (account, geen lid) ziet Owen in listReceived.
+  await registerUser(t, "user_nina", "nieuw@x.com", "Nina");
   await t.run((ctx) =>
     ctx.db.insert("invites", {
       email: "nieuw@x.com",
@@ -72,7 +74,7 @@ async function views(t: T, s: S): Promise<[string, R][]> {
     ["users.getById", (await mia.query(api.users.getById, { userId: s.owen })) as R],
     ["users.current", (await owen.query(api.users.current, {})) as R],
     ["users.profile", (await owen.query(api.users.profile, {})) as R],
-    ["invites.getByToken", ((await t.query(api.invites.getByToken, { token: "tok-owen" })) as R).inviter],
+    ["invites.listReceived", ((await withUser(t, "user_nina").query(api.invites.listReceived, {})) as R[])[0]!.inviter],
   ];
 }
 

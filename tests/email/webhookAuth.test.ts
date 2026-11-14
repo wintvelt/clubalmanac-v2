@@ -47,12 +47,18 @@ function bouncePayload(opts: {
   ]);
 }
 
+// WP19b A-keuze 1: een uitnodiging heeft altijd een groep. Elke aanroep maakt
+// een eigen groep van de afzender (hij is daar admin).
+async function newGroup(t: ReturnType<typeof convexTest>, subject: string) {
+  return await withUser(t, subject).mutation(api.groups.create, { name: `G-${crypto.randomUUID()}` });
+}
+
 async function seedPendingInviteForBounce(
   t: ReturnType<typeof convexTest>,
   inviteEmail: string,
 ): Promise<void> {
   await registerUserWithInvite(t, "user_alice", "alice@x.com", "Alice");
-  await withUser(t, "user_alice").mutation(api.invites.create, {
+  await withUser(t, "user_alice").mutation(api.invites.create, { name: "Genodigde", groupId: await newGroup(t, "user_alice"),
     email: inviteEmail,
   });
 }

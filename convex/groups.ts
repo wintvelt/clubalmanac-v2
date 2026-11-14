@@ -152,17 +152,51 @@ async function requireTarget(
 /**
  * WP28 A-invariant 4 en besluit 6: een uitnodiging voor een groep werkt
  * alleen als de groep nog bestaat en de uitnodiger op het moment van
- * accepteren nog admin is. Voor invites.accept en de onboarding.
+ * accepteren nog admin is. WP19b A-invariant 16: een uitnodiging zonder
+ * groep (gemigreerd) werkt nergens.
  */
 export async function isGroupInviteStillValid(
   ctx: QueryCtx,
   invite: Doc<"invites">,
 ): Promise<boolean> {
-  if (!invite.groupId) return true;
+  if (!invite.groupId) return false;
   const group = await ctx.db.get(invite.groupId);
   if (!group) return false;
   const inviter = await getMembership(ctx, invite.invitedBy, invite.groupId);
   return inviter?.role === "admin";
+}
+
+/**
+ * WP19b: is deze uitnodiging nu accepteerbaar? Open, niet verlopen (de grens
+ * telt als verlopen), met een groep die bestaat en een uitnodiger die daar
+ * nog admin is. Eén regel voor de onboarding, `signupState`, `listReceived`,
+ * accepteren, afwijzen en het beeldpad van de genodigde.
+ */
+export async function isInviteAcceptable(
+  ctx: QueryCtx,
+  invite: Doc<"invites">,
+  now: number,
+): Promise<boolean> {
+  if (invite.status !== "pending") return false;
+  if (invite.expiresAt <= now) return false;
+  return await isGroupInviteStillValid(ctx, invite);
+}
+
+/** De accepteerbare uitnodigingen voor een adres, nieuwste eerst. */
+export async function acceptableInvitesFor(
+  ctx: QueryCtx,
+  email: string,
+  now: number,
+): Promise<Doc<"invites">[]> {
+  const rows = await ctx.db
+    .query("invites")
+    .withIndex("by_email", (q) => q.eq("email", normalizeEmail(email)))
+    .collect();
+  const out: Doc<"invites">[] = [];
+  for (const invite of rows) {
+    if (await isInviteAcceptable(ctx, invite, now)) out.push(invite);
+  }
+  return out.sort((a, b) => b.createdAt - a.createdAt);
 }
 
 export const create = mutation({

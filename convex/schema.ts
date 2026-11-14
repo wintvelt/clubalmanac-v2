@@ -194,10 +194,17 @@ export default defineSchema({
   invites: defineTable({
     email: v.string(),
     invitedBy: v.id("users"),
-    // Optioneel: invite voor specifieke group.
+    // WP19b A-keuze 1: een nieuwe uitnodiging heeft altijd een groep. Optioneel
+    // voor gemigreerde rijen; een uitnodiging zonder groep telt nergens
+    // (A-invariant 16).
     groupId: v.optional(v.id("groups")),
     role: v.optional(v.union(v.literal("admin"), v.literal("member"))),
-    // Token voor public invite-pagina.
+    // WP19b A-invariant 10: de naam die de admin typte en het bericht.
+    // Optioneel: gemigreerde rijen hebben ze niet.
+    name: v.optional(v.string()),
+    message: v.optional(v.string()),
+    // WP19b A-invariant 5: het token verlaat de backend niet meer. Het veld
+    // en de index blijven voor bestaande rijen; geen publiek pad leest het.
     token: v.string(),
     status: v.union(
       v.literal("pending"),

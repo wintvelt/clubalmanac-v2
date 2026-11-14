@@ -68,7 +68,7 @@ describe("invites.accept: INVITE_INVALID", () => {
     const t = newT();
     const w = await world(t);
     const token = crypto.randomUUID();
-    await t.run(async (ctx) =>
+    const inviteId = await t.run(async (ctx) =>
       ctx.db.insert("invites", {
         email: "eve@x.test",
         invitedBy: w.users.lex!,
@@ -80,7 +80,7 @@ describe("invites.accept: INVITE_INVALID", () => {
         createdAt: Date.now(),
       }),
     );
-    await expectRefused(t, "INVITE_INVALID", () => as(t, "user_eve").mutation(api.invites.accept, { token }));
+    await expectRefused(t, "INVITE_INVALID", () => as(t, "user_eve").mutation(api.invites.accept, { inviteId }));
     expect(await membership(t, w.groupId, w.users.eve!)).toBeNull();
   });
 });

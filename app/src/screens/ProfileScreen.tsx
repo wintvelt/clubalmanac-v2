@@ -134,6 +134,11 @@ export function ProfileScreen() {
         </Text>
       </View>
 
+      {/* WP19b: ontvangen uitnodigingen. */}
+      <ListSection>
+        <ListRow title="Uitnodigingen" icon="mail" onPress={() => router.push("/profiel/uitnodigingen")} />
+      </ListSection>
+
       {/* WP29: gevaarlijke rij, in een eigen blok onderaan. */}
       <View style={styles.dangerBlock}>
         <ListSection>

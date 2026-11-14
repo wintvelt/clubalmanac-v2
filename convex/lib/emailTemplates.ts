@@ -6,9 +6,8 @@
 // inline signature-image (oude AWS gebruikte S3-hosted PNG; v2 gebruikt
 // tekst-afsluiting om hosting-dependency te vermijden).
 //
-// PII-guard: alleen de `invite`-template bevat de invite-token. Notify-
-// templates (accepted/declined/bounced) gaan naar de inviter — daar mag
-// het token niet in (info-leak via mail-forward).
+// PII-guard: geen enkele template bevat het invite-token (WP19b
+// A-invariant 4: ook de uitnodigingsmail niet meer).
 
 export type TemplateBlock = { subject: string; htmlPart: string; textPart: string };
 
@@ -27,12 +26,16 @@ function escapeHtml(s: string): string {
 // ---------------------------------------------------------------------------
 // kind = "invite" (naar geïnviteerde)
 // ---------------------------------------------------------------------------
+// WP19b besluit 1, A-invariant 4 en 13: geen link en geen token. Wel wie
+// uitnodigt, de groep, het adres waarmee de genodigde inlogt, tot wanneer, en
+// dat hij de app installeert en met dat adres inlogt. De aanhef met de naam
+// uit de uitnodiging (een gemigreerde heeft er geen) en het bericht.
 export function inviteTemplate(opts: {
   inviterName: string;
   groupName: string | undefined;
+  inviteeName?: string;
+  inviteeEmail: string;
   message?: string;
-  inviteUrl: string;
-  token: string;
   expirationDate: string; // already formatted NL-date string
 }): TemplateBlock {
   const groupRef = opts.groupName ?? "clubalmanac";
@@ -40,28 +43,27 @@ export function inviteTemplate(opts: {
     ? `${opts.inviterName} nodigt je uit om lid te worden van "${opts.groupName}"`
     : `${opts.inviterName} nodigt je uit op clubalmanac`;
 
+  const greetingText = opts.inviteeName ? `Hi ${opts.inviteeName},` : "Hi,";
+  const greetingHtml = opts.inviteeName ? `Hi ${escapeHtml(opts.inviteeName)},` : "Hi,";
   const messageHtml = opts.message
     ? `<p><em>"${escapeHtml(opts.message)}"</em></p>`
     : "";
   const messageText = opts.message ? `\n"${opts.message}"\n` : "";
 
   const htmlPart = `
-<p>Hi,</p>
+<p>${greetingHtml}</p>
 <p>${escapeHtml(opts.inviterName)} nodigt je uit om lid te worden van ${escapeHtml(groupRef)} op clubalmanac.</p>
 ${messageHtml}
-<p><a href="${escapeHtml(opts.inviteUrl)}">Bekijk online</a></p>
-<p>Of plak deze code op de uitnodigingspagina: ${escapeHtml(opts.token)}</p>
+<p>Installeer de app Clubalmanac en log in met dit e-mailadres: <strong>${escapeHtml(opts.inviteeEmail)}</strong>. Na het inloggen zie je de uitnodiging in de app.</p>
 <p>Deze uitnodiging is geldig tot ${escapeHtml(opts.expirationDate)}.</p>
 ${SIGNATURE_HTML}
 `.trim();
 
-  const textPart = `Hi,
+  const textPart = `${greetingText}
 
 ${opts.inviterName} nodigt je uit om lid te worden van ${groupRef} op clubalmanac.
 ${messageText}
-Bekijk online: ${opts.inviteUrl}
-
-Of plak deze code op de uitnodigingspagina: ${opts.token}
+Installeer de app Clubalmanac en log in met dit e-mailadres: ${opts.inviteeEmail}. Na het inloggen zie je de uitnodiging in de app.
 
 Deze uitnodiging is geldig tot ${opts.expirationDate}.
 
@@ -349,21 +351,6 @@ export function formatNlDate(timestamp: number): string {
   const mm = String(d.getUTCMonth() + 1).padStart(2, "0");
   const yyyy = d.getUTCFullYear();
   return `${dd}-${mm}-${yyyy}`;
-}
-
-// Helper: invite-URL voor de landing-pagina. Frontend leeft op
-// `https://<deployment>.<region>.convex.site` of een custom-domain — we gebruiken
-// `CLUBALMANAC_APP_URL` env-var. Audit-follow-up 2026-05-17 (S-3): geen
-// silent fallback meer naar `"https://clubalmanac.com"` — dat zou
-// dev-deployment-mails met prod-domain invite-links genereren. Fail-loud
-// met `APP_URL_MISSING:`-prefix zodat ops het in logs direct ziet.
-export function buildInviteUrl(token: string): string {
-  const raw = process.env.CLUBALMANAC_APP_URL;
-  if (raw === undefined || raw === "") {
-    throw new Error("APP_URL_MISSING: CLUBALMANAC_APP_URL env-var unset");
-  }
-  const base = raw.replace(/\/+$/, "");
-  return `${base}/invite/${encodeURIComponent(token)}`;
 }
 
 // Helper: stage-label voor problem-report (dev/prod). Audit-follow-up

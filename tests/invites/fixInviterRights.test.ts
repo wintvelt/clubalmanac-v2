@@ -28,12 +28,12 @@ async function world(t: T) {
     members: { rex: "admin" },
     outsiders: ["alt"],
   });
-  const { token } = await as(t, "user_rex").mutation(api.invites.create, {
+  const { inviteId } = await as(t, "user_rex").mutation(api.invites.create, { name: "Genodigde",
     email: "alt-tweede@x.test",
     groupId: w.groupId,
     role: "admin",
   });
-  return { ...w, token };
+  return { ...w, inviteId };
 }
 
 async function openInvitesBy(t: T, userId: Id<"users">, groupId: Id<"groups">) {
@@ -46,18 +46,18 @@ async function openInvitesBy(t: T, userId: Id<"users">, groupId: Id<"groups">) {
 
 /** Olga haalt Rex terug als admin, met een nieuwe uitnodiging die hij accepteert. */
 async function bringBackAsAdmin(t: T, w: Awaited<ReturnType<typeof world>>) {
-  const re = await as(t, "user_olga").mutation(api.invites.create, {
+  const re = await as(t, "user_olga").mutation(api.invites.create, { name: "Genodigde",
     email: "rex@x.test",
     groupId: w.groupId,
     role: "admin",
   });
-  await as(t, "user_rex").mutation(api.invites.accept, { token: re.token });
+  await as(t, "user_rex").mutation(api.invites.accept, { inviteId: re.inviteId });
   expect((await membership(t, w.groupId, w.users.rex!))?.role).toBe("admin");
 }
 
-async function tryAccept(t: T, subject: string, token: string) {
+async function tryAccept(t: T, subject: string, inviteId: Id<"invites">) {
   try {
-    await as(t, subject).mutation(api.invites.accept, { token });
+    await as(t, subject).mutation(api.invites.accept, { inviteId });
   } catch {
     // de fout zelf is vrij
   }
@@ -107,7 +107,7 @@ describe.each(LOSSES)("A-invariant 10: admin Rex wordt %s", (_label, lose) => {
     // Alt is het tweede adres van Rex.
     await t.run(async (ctx) => ctx.db.patch(w.users.alt!, { email: "alt-tweede@x.test" }));
 
-    await tryAccept(t, "user_alt", w.token);
+    await tryAccept(t, "user_alt", w.inviteId);
 
     expect(await membership(t, w.groupId, w.users.alt!)).toBeNull();
   });
@@ -129,7 +129,9 @@ describe.each(LOSSES)("A-invariant 10: admin Rex wordt %s", (_label, lose) => {
       email: "alt-tweede@x.test",
     });
 
-    expect(await membership(t, w.groupId, nieuw)).toBeNull();
+    // WP19b A-invariant 1: zijn oude uitnodiging is niet accepteerbaar, dus
+    // geen account (en dus ook geen lidmaatschap).
+    expect(nieuw).toBeNull();
   });
 });
 
@@ -142,7 +144,8 @@ describe("A-invariant 10: account verwijderd", () => {
       subject: "user_tweede",
       email: "alt-tweede@x.test",
     });
-    expect(await membership(t, w.groupId, nieuw)).toBeNull();
+    // WP19b A-invariant 1: geen accepteerbare uitnodiging, dus geen account.
+    expect(nieuw).toBeNull();
     expect(await openInvitesBy(t, w.users.rex!, w.groupId)).toEqual([]);
   });
 });
@@ -160,7 +163,7 @@ describe("A-invariant 10: alleen de groep waar hij zijn recht verliest", () => {
         joinedAt: Date.now(),
       }),
     );
-    await as(t, "user_rex").mutation(api.invites.create, { email: "ander@x.test", groupId: other.groupId });
+    await as(t, "user_rex").mutation(api.invites.create, { name: "Genodigde", email: "ander@x.test", groupId: other.groupId });
 
     await as(t, "user_olga").mutation(api.groups.removeMember, { groupId: w.groupId, userId: w.users.rex! });
 

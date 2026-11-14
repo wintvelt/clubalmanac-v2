@@ -18,7 +18,7 @@ import { useAppState } from "./data/useAppState";
 import { useSessionQuery } from "./data/useLiveQuery";
 import { useOnline } from "./data/online";
 import { useRecordVisit } from "./data/useRecordVisit";
-import { noUserRowView, type NoUserRowView } from "./lib/noUserRowView";
+import { noUserRowView, SIGNUP_WAITING_TIMEOUT_MS, type NoUserRowView } from "./lib/noUserRowView";
 import { RECONNECT_TIMEOUT_MS } from "./lib/reconnectView";
 import { routeAccess } from "./lib/routeAccess";
 import {
@@ -52,7 +52,7 @@ import { StatusScreen } from "./screens/StatusScreen";
 // klopt: zo is er geen render waarin een ingelogd scherm zonder sessie te zien
 // is.
 export function AuthGate({ children }: { children: ReactNode }) {
-  const { isLoaded, isSignedIn } = useAuth();
+  const { isLoaded, isSignedIn, sessionId } = useAuth();
   const { isLoading, isAuthenticated } = useConvexAuth();
   const { tokenFetchFailed, retry: retryConnection } = useConvexConnection();
   const online = useOnline();
@@ -65,6 +65,16 @@ export function AuthGate({ children }: { children: ReactNode }) {
   // Live: maakt de webhook de rij alsnog aan, dan wordt dit vanzelf "ready".
   // Gepauzeerd in de achtergrond geldt de laatst bekende rij (invariant 12).
   const currentUser = useSessionQuery(api.users.current, {}, session);
+  // WP19b A-invariant 3: zonder users-rij zegt de backend waarom. Alleen live
+  // zolang users.current `null` is.
+  const signupState = useSessionQuery(api.users.signupState, {}, {
+    ...session,
+    convexAuthenticated: session.convexAuthenticated && currentUser === null,
+  });
+  const sawNoInvite = useSawNoInvite(signupState, sessionId ?? null);
+  // A-keuze 4: na een herstart van de app is sawNoInvite weg en komt de
+  // webhook niet meer; duurt "waiting" te lang, dan ook "Log uit en opnieuw in".
+  const waiting = useTimeout(currentUser === null && signupState === "waiting", SIGNUP_WAITING_TIMEOUT_MS);
   const derived = deriveSessionState({ ...session, currentUser, tokenFetchFailed, online });
   const sticky = useStickyReconnecting(derived, session.clerkSignedIn);
   const { retrying } = sticky;
@@ -129,7 +139,17 @@ export function AuthGate({ children }: { children: ReactNode }) {
         </StatusScreen>
       );
     case "noUserRow":
-      return <NoUserRow view={noUserRowView({ deleting: accountDeleting, deleted: accountDeleted })} />;
+      return (
+        <NoUserRow
+          view={noUserRowView({
+            deleting: accountDeleting,
+            deleted: accountDeleted,
+            signupState,
+            sawNoInvite,
+            waitingTimedOut: waiting.timedOut,
+          })}
+        />
+      );
     case "show":
     case "login":
     case "home":
@@ -178,6 +198,17 @@ function useTimeout(active: boolean, timeoutMs: number): { timedOut: boolean; re
   }, [active, period, timeoutMs]);
   const restart = useCallback(() => setPeriod((p) => p + 1), []);
   return { timedOut: active && expired === period, restart };
+}
+
+// WP19b A-invariant 20: de webhook komt één keer per Clerk-sessie. Heeft
+// deze sessie "noInvite" gezien, dan maakt een latere uitnodiging geen rij
+// meer tot een nieuwe sessie. Per sessie-id: na uitloggen is het weg.
+function useSawNoInvite(signupState: unknown, sessionId: string | null): boolean {
+  const [noInviteSession, setNoInviteSession] = useState<string | null>(null);
+  if (signupState === "noInvite" && sessionId !== null && noInviteSession !== sessionId) {
+    setNoInviteSession(sessionId);
+  }
+  return sessionId !== null && noInviteSession === sessionId;
 }
 
 // Hoe lang loopt de huidige poging al (F8)? Elke nieuwe poging begint een
@@ -270,9 +301,64 @@ function NoUserRow({ view }: { view: NoUserRowView }) {
       return <Loading />;
     case "accountDeleted":
       return <AccountDeletedScreen />;
+    case "noInvite":
+      return <NoInviteScreen />;
+    case "blocked":
+      return <BlockedScreen />;
+    case "signOutAndIn":
+      return <SignOutAndInScreen />;
     case "notReady":
       return <NoUserRowScreen />;
   }
+}
+
+// WP19b A-invariant 3 en A-keuze 3: ingelogd, maar zonder account en zonder
+// uitnodiging. Geen "opnieuw proberen": wie later wordt uitgenodigd, logt uit
+// en opnieuw in.
+function NoInviteScreen() {
+  const { user } = useUser();
+  const email = user?.primaryEmailAddress?.emailAddress;
+  return (
+    <StatusScreen
+      title="Je hebt eerst een uitnodiging nodig"
+      message="Clubalmanac is alleen voor leden van een groep. Vraag een beheerder van je groep om je uit te nodigen met dit e-mailadres. Log daarna uit en opnieuw in."
+    >
+      {email && <Text color="muted">Ingelogd als {email}</Text>}
+      <SignOutButton />
+    </StatusScreen>
+  );
+}
+
+// WP19b fix-cyclus 1, A-invariant 17 en 18: de onboarding komt niet en een
+// uitnodiging helpt niet. Geen spinner; de beheerder moet het oplossen.
+function BlockedScreen() {
+  const { user } = useUser();
+  const email = user?.primaryEmailAddress?.emailAddress;
+  return (
+    <StatusScreen
+      title="Je account is nog niet klaar"
+      message="Er is iets misgegaan bij het aanmaken van je account. Meld het bij de beheerder, met het e-mailadres hieronder."
+    >
+      {email && <Text color="muted">Ingelogd als {email}</Text>}
+      <SignOutButton />
+    </StatusScreen>
+  );
+}
+
+// WP19b fix-cyclus 1, A-invariant 20 en A-keuze 4: er is nu een uitnodiging,
+// maar in deze sessie komt het account niet meer vanzelf.
+function SignOutAndInScreen() {
+  const { user } = useUser();
+  const email = user?.primaryEmailAddress?.emailAddress;
+  return (
+    <StatusScreen
+      title="Je bent uitgenodigd"
+      message="Log uit en opnieuw in met dit e-mailadres. Dan maken we je account."
+    >
+      {email && <Text color="muted">Ingelogd als {email}</Text>}
+      <SignOutButton />
+    </StatusScreen>
+  );
 }
 
 // WP29 fix 7: het account is verwijderd, maar het uitloggen daarna lukte niet.

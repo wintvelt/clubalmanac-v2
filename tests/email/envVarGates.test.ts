@@ -1,6 +1,6 @@
 // WP5 audit-follow-up 2026-05-17 — S-3: fail-loud env-var gates.
 //
-// Audit S-3: `getStageLabel()` en `buildInviteUrl(token)` vallen nu silent
+// Audit S-3: `getStageLabel()` en (tot WP19b) `buildInviteUrl(token)` vielen silent
 // terug op `"dev"` resp. `"https://clubalmanac.com"` als de env-var unset is
 // (zie `convex/lib/emailTemplates.ts:235` en `:243`). Voor prod-deploy is
 // dat een ops-bug die maandenlang onopgemerkt kan blijven (mails verzonden
@@ -14,10 +14,7 @@
 // werken zoals voorheen (regression-guard tegen B's fix).
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import {
-  buildInviteUrl,
-  getStageLabel,
-} from "../../convex/lib/emailTemplates";
+import { getStageLabel } from "../../convex/lib/emailTemplates";
 
 // Bewaar de oorspronkelijke waarden zodat tests die env-vars zetten geen
 // state lekken naar andere test-files (mailjetClient/sendInviteEmail
@@ -71,44 +68,5 @@ describe("getStageLabel — fail-loud bij missing env-var (S-3)", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// S-3b: buildInviteUrl — fail-loud bij ontbrekende CLUBALMANAC_APP_URL
-// ---------------------------------------------------------------------------
-
-describe("buildInviteUrl — fail-loud bij missing env-var (S-3)", () => {
-  it("CLUBALMANAC_APP_URL unset → throwt APP_URL_MISSING:-prefix", async () => {
-    // Silent fallback naar "https://clubalmanac.com" zou invite-links
-    // genereren naar een prod-domein vanaf een dev-deployment. Fail-loud.
-    delete process.env.CLUBALMANAC_APP_URL;
-    expect(() => buildInviteUrl("token-abc")).toThrow(/^APP_URL_MISSING:/);
-  });
-
-  it("CLUBALMANAC_APP_URL = '' (leeg) → throwt APP_URL_MISSING:-prefix", async () => {
-    process.env.CLUBALMANAC_APP_URL = "";
-    expect(() => buildInviteUrl("token-abc")).toThrow(/^APP_URL_MISSING:/);
-  });
-
-  it("CLUBALMANAC_APP_URL = 'https://app.example.com' → bevat base + token (happy-path)", async () => {
-    // Pin't dat de happy-path concat-behavior van vóór de fix-change blijft
-    // werken: base + /invite/ + url-encoded token.
-    process.env.CLUBALMANAC_APP_URL = "https://app.example.com";
-    const url = buildInviteUrl("token-abc");
-    expect(url).toContain("https://app.example.com");
-    expect(url).toContain("token-abc");
-  });
-
-  it("trailing slash op CLUBALMANAC_APP_URL wordt gestript (geen dubbele slash)", async () => {
-    // Bestaand gedrag in `:235` (`.replace(/\/+$/, "")`) blijft consistent
-    // na fix — regression-guard.
-    process.env.CLUBALMANAC_APP_URL = "https://app.example.com/";
-    const url = buildInviteUrl("tok");
-    expect(url.startsWith("https://app.example.com/invite/")).toBe(true);
-    expect(url).not.toContain("//invite/");
-  });
-
-  it("token wordt url-encoded in de pad-positie", async () => {
-    process.env.CLUBALMANAC_APP_URL = "https://app.example.com";
-    const url = buildInviteUrl("tok en met spatie");
-    expect(url).toContain(encodeURIComponent("tok en met spatie"));
-  });
-});
+// S-3b (buildInviteUrl) is vervallen met WP19b: de uitnodigingsmail heeft geen
+// link meer (A-invariant 4); `CLUBALMANAC_APP_URL` bestaat niet meer.

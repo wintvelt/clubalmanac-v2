@@ -49,6 +49,12 @@ export function newAlbumPath(groupId: string): string {
   return `${groupPath(groupId)}/nieuw-album`;
 }
 
+// WP19b: Uitnodigen is modaal in de Home-stack, zoals Nieuw album. Geen
+// "uitnodigen" als groepstab-route (WP16).
+export function invitePath(groupId: string): string {
+  return `${groupPath(groupId)}/nieuwe-uitnodiging`;
+}
+
 export function editGroupPath(groupId: string): string {
   return `${groupPath(groupId)}/bewerken`;
 }

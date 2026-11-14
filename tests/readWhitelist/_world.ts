@@ -106,14 +106,15 @@ export const SHAPE = {
     "expiresAt",
     "createdAt",
   ],
-  // A-keuze 6 herzien (Wouter, 47b65bc): email van de genodigde wél.
-  inviteLanding: ["status", "isExpired", "role", "email", "group", "inviter"],
-  landingGroup: ["_id", "name", "description"],
-  // WP17a besluit 8 + invariant 10 (A paste aan): geen profielbeeld-id op de
-  // anonieme landing, wel het user-id van de afzender. Daarmee toont de
-  // landing zijn profielfoto via het openbare profielpad. Dit herziet de
-  // uitsluiting van `_id` uit WP23 (precedent audit-8).
-  landingInviter: ["_id", "name", "profileHasFormats", "profileVersion"],
+  // WP19b A-invariant 6, 14, 15: een ontvangen uitnodiging (listReceived).
+  // Geen token, e-mailadres, invitedBy, status of tijden behalve geldig tot.
+  // `message` alleen als er een is. De uitnodiger zoals op het openbare
+  // profielpad (WP17a besluit 8); de groep met `hasCover`, zonder foto-id.
+  inviteReceived: ["_id", "role", "expiresAt", "group", "inviter"],
+  receivedGroup: ["_id", "name", "hasCover"],
+  receivedInviter: ["_id", "name", "profileHasFormats", "profileVersion"],
+  // WP19b A-invariant 12: de open uitnodigingen van een groep (admin).
+  inviteForAdmin: ["_id", "email", "role", "expiresAt"],
 } as const;
 
 /** Keys met een gedefinieerde waarde, gesorteerd. `null` telt als gedefinieerd. */

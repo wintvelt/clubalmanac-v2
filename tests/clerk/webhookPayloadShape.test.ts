@@ -54,7 +54,7 @@ describe("/clerk-webhook — event-type filter", () => {
       api.groups.create,
       { name: "Test group" },
     );
-    await withUser(t, "user_inviter").mutation(api.invites.create, {
+    await withUser(t, "user_inviter").mutation(api.invites.create, { name: "Genodigde",
       email: "alice@x.com",
       groupId,
     });
@@ -213,7 +213,7 @@ describe("/clerk-webhook — email-resolutie discipline", () => {
       { name: "Test group" },
     );
     // Invite voor de PRIMARY (alice@x.com), niet voor secondary (backup@x.com).
-    await withUser(t, "user_inviter").mutation(api.invites.create, {
+    await withUser(t, "user_inviter").mutation(api.invites.create, { name: "Genodigde",
       email: "alice@x.com",
       groupId,
     });
@@ -256,13 +256,10 @@ describe("/clerk-webhook — email-resolutie discipline", () => {
       api.groups.create,
       { name: "Test group" },
     );
-    // Invite seeded met normalized lowercase.
-    await withUser(t, "user_inviter").mutation(api.invites.create, {
-      email: "bouncer@x.com",
-    });
-    // Clerk-payload heeft mixed-case (kan in praktijk gebeuren als user
-    // mixed-case typt in signup-form).
-    await withUser(t, "user_inviter").mutation(api.invites.create, {
+    // Invite met hoofdletters; create normaliseert naar lowercase. Clerk-payload
+    // heeft mixed-case (kan in praktijk gebeuren als user mixed-case typt).
+    // WP19b A-keuze 1: geen invite zonder groep meer.
+    await withUser(t, "user_inviter").mutation(api.invites.create, { name: "Genodigde",
       email: "BOUNCER@X.COM",
       groupId,
     });
@@ -288,8 +285,7 @@ describe("/clerk-webhook — email-resolutie discipline", () => {
         .withIndex("by_email", (q) => q.eq("email", "bouncer@x.com"))
         .collect(),
     );
-    // Beide invites (eerste zonder group + tweede met group) zijn voor
-    // hetzelfde normalized email → beide moeten geaccepteerd zijn.
+    expect(invites).toHaveLength(1);
     for (const i of invites) {
       expect(i.status).toBe("accepted");
     }
