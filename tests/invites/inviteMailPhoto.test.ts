@@ -274,11 +274,18 @@ describe("A-invariant 3 — welke foto", () => {
 
 describe("A-invariant 4 — rechtop, zonder tag", () => {
   // Waar het rode vlak (ruw linksboven) staat als de stand is toegepast.
+  // Hoek (links/rechts, boven/onder) plus kanteling (`swap`) is per stand uniek,
+  // dus ook een verwisseling van gespiegelde standen (2↔4, 5↔7) faalt.
+  // Gecontroleerd tegen sharp (`rotate()` op een JPEG met die tag).
   const cases: Array<{ stand: number | undefined; right: boolean; bottom: boolean; swap: boolean }> = [
     { stand: undefined, right: false, bottom: false, swap: false },
     { stand: 1, right: false, bottom: false, swap: false },
+    { stand: 2, right: true, bottom: false, swap: false },
     { stand: 3, right: true, bottom: true, swap: false },
+    { stand: 4, right: false, bottom: true, swap: false },
+    { stand: 5, right: false, bottom: false, swap: true },
     { stand: 6, right: true, bottom: false, swap: true },
+    { stand: 7, right: true, bottom: true, swap: true },
     { stand: 8, right: false, bottom: true, swap: true },
   ];
 
