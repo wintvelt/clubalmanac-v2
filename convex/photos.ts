@@ -37,6 +37,12 @@ const FLAG_DELETE_DAYS = 14;
 const DENY_DELETE_DAYS = 7;
 /** WP20 A-invariant 7: de webmaster leest de reden; de publieke API begrenst hem. */
 const FLAG_REASON_MAX_LENGTH = 500;
+/**
+ * WP20 besluit 6, S2: ondergrens voor index-ranges op flaggedAt. Elke
+ * flaggedAt is een tijdstip (ms sinds 1970, ook gemigreerde meldingen); een
+ * rij zonder flaggedAt valt eronder.
+ */
+const FLAGGED_AT_MIN = 0;
 
 // WP23: foto-toegang (definitie in lib/photoAccess). Eén error voor "foto
 // bestaat niet" en "geen toegang" (invariant 4).
@@ -1156,9 +1162,14 @@ export const listMyFlagged = query({
   returns: v.array(v.object({ ...MY_FLAGGED_FIELDS, ...hasFormatsField })),
   handler: async (ctx) => {
     const user = await requireCurrentUser(ctx);
+    // WP20 besluit 6, S2: alleen de gemelde foto's lezen. Een ontbrekende
+    // flaggedAt sorteert in de index vóór elk getal, dus de ondergrens laat
+    // de niet-gemelde foto's buiten de range.
     const owned = await ctx.db
       .query("photos")
-      .withIndex("by_owner", (q) => q.eq("ownerId", user._id))
+      .withIndex("by_owner_and_flagged", (q) =>
+        q.eq("ownerId", user._id).gte("flaggedAt", FLAGGED_AT_MIN),
+      )
       .collect();
     return await Promise.all(
       owned
@@ -1178,7 +1189,12 @@ export const listAllFlagged = query({
   returns: v.array(v.object({ ...ALL_FLAGGED_FIELDS, ...hasFormatsField })),
   handler: async (ctx) => {
     await requireWebmaster(ctx);
-    const all = await ctx.db.query("photos").withIndex("by_flagged").collect();
+    // WP20 besluit 6, S2: `by_flagged` is niet sparse (WP17a vraag 9); de
+    // ondergrens houdt de niet-gemelde foto's buiten de range.
+    const all = await ctx.db
+      .query("photos")
+      .withIndex("by_flagged", (q) => q.gte("flaggedAt", FLAGGED_AT_MIN))
+      .collect();
     return await Promise.all(
       all
         .filter((p) => p.flaggedAt !== undefined)
@@ -1224,7 +1240,10 @@ export const getPhotoOwnerForEmail = internalQuery({
     const photo = await ctx.db.get(photoId);
     if (!photo) return null;
     const owner = await ctx.db.get(photo.ownerId);
-    if (!owner) return null;
+    // WP20 besluit 6, N3: geen mail aan een eigenaar wiens account wordt
+    // verwijderd (WP29). Deze query draait bij het versturen, dus het telt
+    // ook als het verwijderen begon nadat de mail was ingepland.
+    if (!owner || owner.deletion !== undefined) return null;
     return {
       ownerName: owner.name ?? owner.email,
       ownerEmail: owner.email,
@@ -1238,7 +1257,8 @@ export const getOwnerForEmail = internalQuery({
   args: { ownerId: v.id("users") },
   handler: async (ctx, { ownerId }) => {
     const owner = await ctx.db.get(ownerId);
-    if (!owner) return null;
+    // WP20 besluit 6, N3: zie getPhotoOwnerForEmail.
+    if (!owner || owner.deletion !== undefined) return null;
     return { ownerName: owner.name ?? owner.email, ownerEmail: owner.email };
   },
 });

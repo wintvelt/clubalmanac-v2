@@ -9,6 +9,8 @@
 // PII-guard: geen enkele template bevat het invite-token (WP19b
 // A-invariant 4: ook de uitnodigingsmail niet meer).
 
+import { FLAG_CLEANUP_HOUR_UTC } from "./constants";
+
 export type TemplateBlock = { subject: string; htmlPart: string; textPart: string };
 
 const SIGNATURE_TEXT = "Groet,\nClubalmanac";
@@ -257,13 +259,30 @@ ${SIGNATURE_TEXT}`;
 // ---------------------------------------------------------------------------
 // kind = "flagDecisionDeny" (naar photo-owner)
 // ---------------------------------------------------------------------------
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * WP20 besluit 6, S1 (A-keuze 9): de dag die de mail noemt ("na <dag>"). Dat
+ * is de kalenderdag vóór de eerste opruimronde (FL1, dagelijks om
+ * FLAG_CLEANUP_HOUR_UTC, `flaggedDeleteDate <= now`) op of na `deleteAt`. Die
+ * dag bestaat de foto in NL-tijd de hele dag, want de ronde valt in NL op
+ * dezelfde kalenderdag (04:00 of 05:00). Geeft middernacht UTC van die dag.
+ */
+export function flagRemovalDay(deleteAt: number): number {
+  const dayStart = Math.floor(deleteAt / DAY_MS) * DAY_MS;
+  const firstRunDay =
+    deleteAt - dayStart <= FLAG_CLEANUP_HOUR_UTC * 60 * 60 * 1000 ? dayStart : dayStart + DAY_MS;
+  return firstRunDay - DAY_MS;
+}
+
 export function flagDecisionDenyTemplate(opts: {
   ownerName: string;
   /** WP20 A-invariant 6: de nieuwe flaggedDeleteDate; `null` = "binnenkort". */
   deleteAt: number | null;
 }): TemplateBlock {
   const subject = `Je bezwaar over een melding voor ongepaste inhoud is afgewezen`;
-  const when = opts.deleteAt === null ? "binnenkort" : `na ${formatNlDate(opts.deleteAt)}`;
+  const when =
+    opts.deleteAt === null ? "binnenkort" : `na ${formatNlDate(flagRemovalDay(opts.deleteAt))}`;
 
   const htmlPart = `
 <p>Hi ${escapeHtml(opts.ownerName)},</p>
@@ -292,7 +311,7 @@ export function flagReportedTemplate(opts: {
   deleteAt: number;
 }): TemplateBlock {
   const subject = `Een van je foto's is gemeld als ongepast`;
-  const day = formatNlDate(opts.deleteAt);
+  const day = formatNlDate(flagRemovalDay(opts.deleteAt));
   const where = `Profiel → Gemelde foto's`;
 
   const htmlPart = `

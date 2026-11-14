@@ -71,6 +71,23 @@ export function flagDay(ts: number): string {
   return `${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]} ${d.getUTCFullYear()}`;
 }
 
+const DAY_MS = 24 * 60 * 60 * 1000;
+/** Het uur (UTC) van de opruimronde FL1 (convex/crons.ts, FLAG_CLEANUP_HOUR_UTC). */
+const CLEANUP_HOUR_UTC = 3;
+
+/**
+ * WP20 besluit 6, S1 (A-keuze 9): de dag in "Wordt verwijderd na <dag>",
+ * dezelfde regel als de mail (convex/lib/emailTemplates `flagRemovalDay`). Het
+ * is de kalenderdag vóór de eerste opruimronde (dagelijks 03:00 UTC,
+ * `flaggedDeleteDate <= now`) op of na `deleteAt`; die dag bestaat de foto in
+ * NL-tijd de hele dag. Verandert het uur van de cron, dan ook hier.
+ */
+export function removalDay(deleteAt: number): string {
+  const dayStart = Math.floor(deleteAt / DAY_MS) * DAY_MS;
+  const firstRunDay = deleteAt - dayStart <= CLEANUP_HOUR_UTC * 60 * 60 * 1000 ? dayStart : dayStart + DAY_MS;
+  return flagDay(firstRunDay - DAY_MS);
+}
+
 /** De stand in woorden, voor eigenaar en webmaster. */
 export function flagStageLabel(stage: FlagStage): string {
   switch (stage) {

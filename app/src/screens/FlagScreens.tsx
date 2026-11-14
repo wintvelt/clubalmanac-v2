@@ -11,7 +11,7 @@ import { EmptyState, LoadingState } from "../components/States";
 import { Text } from "../components/Text";
 import { api } from "../convexApi";
 import { useLiveQuery } from "../data/useLiveQuery";
-import { flagDay, flagQueueOrder, flagStage, flagStageLabel, ownFlagView, type FlagDates } from "../lib/flags";
+import { flagDay, flagQueueOrder, flagStage, flagStageLabel, ownFlagView, removalDay, type FlagDates } from "../lib/flags";
 import { radius, space, useTheme } from "../theme";
 import { LoadError } from "./GroupParts";
 
@@ -37,22 +37,32 @@ function confirm(title: string, message: string, button: string, destructive = t
   });
 }
 
-// Eén aanroep tegelijk, ook bij dubbel tikken; `busyId` laat zien welke.
+// Eén aanroep tegelijk, ook bij dubbel tikken. WP20 besluit 6, N1: "Bezig…"
+// pas na de bevestiging, en alleen op de knop die je koos (`isBusy`). Zolang
+// de vraag openstaat, doet een tweede tik niets.
+type Action = "appeal" | "remove" | "keep" | "deny" | "removeNow";
 function useBusy() {
   const inFlight = useRef(false);
-  const [busyId, setBusyId] = useState<string | null>(null);
-  const run = async (id: string, work: () => Promise<void>) => {
+  const [busy, setBusy] = useState<{ id: string; action: Action } | null>(null);
+  const run = async (
+    id: string,
+    action: Action,
+    ask: (() => Promise<boolean>) | null,
+    work: () => Promise<void>,
+  ) => {
     if (inFlight.current) return;
     inFlight.current = true;
-    setBusyId(id);
     try {
+      if (ask && !(await ask())) return;
+      setBusy({ id, action });
       await work();
     } finally {
       inFlight.current = false;
-      setBusyId(null);
+      setBusy(null);
     }
   };
-  return { busyId, run };
+  const isBusy = (id: string, action: Action) => busy?.id === id && busy.action === action;
+  return { anyBusy: busy !== null, isBusy, run };
 }
 
 const THUMB = 96;
@@ -63,7 +73,8 @@ function FlagDatesText({ photo, deleteAt }: { photo: FlagDates; deleteAt: number
     photo.flaggedAt !== undefined ? `Gemeld op ${flagDay(photo.flaggedAt)}` : null,
     photo.flaggedAppealDate !== undefined ? `Bezwaar gemaakt op ${flagDay(photo.flaggedAppealDate)}` : null,
     photo.flaggedAppealDenyDate !== undefined ? `Bezwaar afgewezen op ${flagDay(photo.flaggedAppealDenyDate)}` : null,
-    deleteAt !== null ? `Wordt verwijderd na ${flagDay(deleteAt)}` : null,
+    // WP20 besluit 6, S1: de laatste hele dag, zoals de mail.
+    deleteAt !== null ? `Wordt verwijderd na ${removalDay(deleteAt)}` : null,
   ].filter((l): l is string => l !== null);
   return (
     <>
@@ -104,7 +115,7 @@ function MyFlaggedContent() {
   const appeal = useMutation(api.photos.appeal);
   const remove = useMutation(api.photos.remove);
   const [status, setStatus] = useState<Status>(null);
-  const { busyId, run } = useBusy();
+  const { anyBusy, isBusy, run } = useBusy();
 
   if (photos === undefined) {
     return (
@@ -115,7 +126,7 @@ function MyFlaggedContent() {
   }
 
   const doAppeal = (p: MyFlagged) =>
-    run(p._id, async () => {
+    run(p._id, "appeal", null, async () => {
       setStatus(null);
       try {
         await appeal({ photoId: p._id });
@@ -126,13 +137,13 @@ function MyFlaggedContent() {
     });
 
   const doRemove = (p: MyFlagged) =>
-    run(p._id, async () => {
-      const ok = await confirm(
+    run(p._id, "remove", () =>
+      confirm(
         "Foto overal verwijderen?",
         "De foto verdwijnt uit elk album. Is hij een cover of een profielfoto, dan is hij dat niet meer. Dit kun je niet ongedaan maken.",
         "Verwijderen",
-      );
-      if (!ok) return;
+      ),
+    async () => {
       setStatus(null);
       try {
         await remove({ photoId: p._id });
@@ -182,15 +193,17 @@ function MyFlaggedContent() {
                 <Button
                   title="Bezwaar maken"
                   busyTitle="Bezig…"
-                  busy={busyId === p._id}
-                  disabled={busyId !== null && busyId !== p._id}
+                  busy={isBusy(p._id, "appeal")}
+                  disabled={anyBusy && !isBusy(p._id, "appeal")}
                   onPress={() => void doAppeal(p)}
                 />
               )}
               <Button
                 title="Foto verwijderen"
                 variant="secondary"
-                disabled={busyId !== null}
+                busyTitle="Verwijderen…"
+                busy={isBusy(p._id, "remove")}
+                disabled={anyBusy && !isBusy(p._id, "remove")}
                 onPress={() => void doRemove(p)}
               />
             </Card>
@@ -242,7 +255,7 @@ function FlagQueueContent() {
   const decide = useMutation(api.photos.decideFlag);
   const removeFlagged = useMutation(api.photos.removeFlagged);
   const [status, setStatus] = useState<Status>(null);
-  const { busyId, run } = useBusy();
+  const { anyBusy, isBusy, run } = useBusy();
 
   if (all === undefined) {
     return (
@@ -254,14 +267,14 @@ function FlagQueueContent() {
   const queue = [...all].sort(flagQueueOrder);
 
   const keep = (p: Flagged) =>
-    run(p._id, async () => {
-      const ok = await confirm(
+    run(p._id, "keep", () =>
+      confirm(
         "Foto laten staan?",
         "De melding vervalt en de foto blijft staan. De eigenaar krijgt geen bericht.",
         "Laten staan",
         false,
-      );
-      if (!ok) return;
+      ),
+    async () => {
       setStatus(null);
       try {
         await decide({ photoId: p._id, approve: true });
@@ -272,13 +285,13 @@ function FlagQueueContent() {
     });
 
   const deny = (p: Flagged) =>
-    run(p._id, async () => {
-      const ok = await confirm(
+    run(p._id, "deny", () =>
+      confirm(
         "Bezwaar afwijzen?",
         "De eigenaar krijgt een mail. Over 7 dagen wordt de foto verwijderd.",
         "Afwijzen",
-      );
-      if (!ok) return;
+      ),
+    async () => {
       setStatus(null);
       try {
         await decide({ photoId: p._id, approve: false });
@@ -289,13 +302,13 @@ function FlagQueueContent() {
     });
 
   const removeNow = (p: Flagged) =>
-    run(p._id, async () => {
-      const ok = await confirm(
+    run(p._id, "removeNow", () =>
+      confirm(
         "Foto nu verwijderen?",
         "De foto verdwijnt meteen uit elk album. De eigenaar krijgt een mail. Dit kun je niet ongedaan maken.",
         "Verwijderen",
-      );
-      if (!ok) return;
+      ),
+    async () => {
       setStatus(null);
       try {
         await removeFlagged({ photoId: p._id });
@@ -320,8 +333,7 @@ function FlagQueueContent() {
         queue.map((p) => {
           const stage = flagStage(p);
           const deleteAt = stage === "appealed" ? null : (p.flaggedDeleteDate ?? null);
-          const busy = busyId === p._id;
-          const disabled = busyId !== null;
+          const disabledFor = (a: Action) => anyBusy && !isBusy(p._id, a);
           return (
             <Card key={p._id}>
               <View style={styles.head}>
@@ -344,14 +356,28 @@ function FlagQueueContent() {
                 title="Foto laten staan"
                 variant={stage === "appealed" ? "cta" : "secondary"}
                 busyTitle="Bezig…"
-                busy={busy}
-                disabled={disabled && !busy}
+                busy={isBusy(p._id, "keep")}
+                disabled={disabledFor("keep")}
                 onPress={() => void keep(p)}
               />
               {stage === "appealed" && (
-                <Button title="Bezwaar afwijzen" variant="secondary" disabled={disabled} onPress={() => void deny(p)} />
+                <Button
+                  title="Bezwaar afwijzen"
+                  variant="secondary"
+                  busyTitle="Bezig…"
+                  busy={isBusy(p._id, "deny")}
+                  disabled={disabledFor("deny")}
+                  onPress={() => void deny(p)}
+                />
               )}
-              <Button title="Foto nu verwijderen" variant="secondary" disabled={disabled} onPress={() => void removeNow(p)} />
+              <Button
+                title="Foto nu verwijderen"
+                variant="secondary"
+                busyTitle="Verwijderen…"
+                busy={isBusy(p._id, "removeNow")}
+                disabled={disabledFor("removeNow")}
+                onPress={() => void removeNow(p)}
+              />
             </Card>
           );
         })

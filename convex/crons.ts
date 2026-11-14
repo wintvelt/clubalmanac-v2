@@ -1,13 +1,19 @@
 import { cronJobs } from "convex/server";
 import { internal } from "./_generated/api";
+import { FLAG_CLEANUP_HOUR_UTC } from "./lib/constants";
 
 const crons = cronJobs();
 
 // FL1: dagelijks geflagde photos waar de countdown afgelopen is
 // definitief verwijderen. Zie cascade-matrix.md row FL1.
+// LET OP (WP20 besluit 6, S1, A-keuze 9): mail en app noemen als laatste dag
+// de kalenderdag vóór de eerste ronde op of na `flaggedDeleteDate`. Die regel
+// rekent met dit uur: `flagRemovalDay` (lib/emailTemplates, via
+// FLAG_CLEANUP_HOUR_UTC) en `removalDay` in app/src/lib/flags.ts. Verander je
+// het uur, pas dan ook de app aan (en tests/crons/registration.test.ts).
 crons.daily(
   "cleanup flagged photos",
-  { hourUTC: 3, minuteUTC: 0 },
+  { hourUTC: FLAG_CLEANUP_HOUR_UTC, minuteUTC: 0 },
   internal.photos.cleanupFlaggedPhotos,
   {},
 );

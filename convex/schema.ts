@@ -159,6 +159,9 @@ export default defineSchema({
     createdAt: v.number(),
   })
     .index("by_owner", ["ownerId"])
+    // WP20 besluit 6, S2: alleen de gemelde foto's van een eigenaar lezen
+    // (listMyFlagged), met een ondergrens op flaggedAt.
+    .index("by_owner_and_flagged", ["ownerId", "flaggedAt"])
     // WP17c A-keuze 1: Mijn foto's bladert per eigenaar, nieuwste upload eerst.
     .index("by_owner_and_createdAt", ["ownerId", "createdAt"])
     // WP24 invariant 8: welke foto's horen bij een beeld
