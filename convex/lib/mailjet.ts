@@ -9,7 +9,12 @@
 // Mailjet Send API v3.1 contract: POST naar
 // `https://api.mailjet.com/v3.1/send` met basic-auth
 // (`MAILJET_API_KEY:MAILJET_API_SECRET`) en JSON body
-// `{ Messages: [{ From, To, Subject, HTMLPart, TextPart, InlinedAttachments? }] }`.
+// `{ Messages: [{ From, To, Subject, HTMLPart, TextPart, TrackOpens, TrackClicks }] }`.
+//
+// WP19c besluit 6: Mailjet volgt de ontvanger niet. Per bericht staan
+// `TrackOpens` en `TrackClicks` op "disabled"; dat gaat boven de instelling van
+// het account. Een mail met inline-foto gaat via de SMTP-ingang
+// (`lib/mailjetSmtp.ts`, besluit 5); die deelt `assertMailjetReady`.
 //
 // Sender-policy per mail-kind (spec §"Mailjet sender-policy"):
 //   invite | accepted | declined | bounced → invites@clubalmanac.com
@@ -37,25 +42,12 @@ export function isSenderVerified(fromAddress: string): boolean {
 
 export type MailjetRecipient = { email: string; name?: string };
 
-/**
- * WP19c: een inline-bijlage, in de HTML aan te spreken als `cid:<contentId>`.
- * Mailjet v3.1: `InlinedAttachments: [{ ContentType, Filename, ContentID,
- * Base64Content }]`.
- */
-export type MailjetInlineAttachment = {
-  contentType: string;
-  filename: string;
-  contentId: string;
-  base64Content: string;
-};
-
 export type MailjetMessage = {
   from: MailjetRecipient;
   to: MailjetRecipient[];
   subject: string;
   htmlPart: string;
   textPart: string;
-  inlinedAttachments?: MailjetInlineAttachment[];
 };
 
 // Hard gate vóór de Mailjet-fetch. Gooit een typed Error met prefix
@@ -82,10 +74,22 @@ function assertMailjetCreds(): void {
   }
 }
 
+// De poort vóór elke verzending, via de Send API én via SMTP (WP19c
+// A-invariant 17): eerst de sender, dan de credentials. Gooit; er gaat dan
+// niets weg en er is geen terugval.
+export function assertMailjetReady(fromAddress: string): void {
+  assertVerifiedSender(fromAddress);
+  assertMailjetCreds();
+}
+
+/** De login van Mailjet, voor de Send API en voor SMTP. Na `assertMailjetReady`. */
+export function mailjetCreds(): { key: string; secret: string } {
+  return { key: process.env.MAILJET_API_KEY ?? "", secret: process.env.MAILJET_API_SECRET ?? "" };
+}
+
 function basicAuthHeader(): string {
   // assertMailjetCreds() is door de caller al gegooid als creds missen.
-  const key = process.env.MAILJET_API_KEY ?? "";
-  const secret = process.env.MAILJET_API_SECRET ?? "";
+  const { key, secret } = mailjetCreds();
   return `Basic ${btoa(`${key}:${secret}`)}`;
 }
 
@@ -95,8 +99,7 @@ function basicAuthHeader(): string {
 // en de verified-sender-gate is onze enige betrouwbare silent-failure-
 // verdediging.
 export async function sendMailjetMessage(msg: MailjetMessage): Promise<void> {
-  assertVerifiedSender(msg.from.email);
-  assertMailjetCreds();
+  assertMailjetReady(msg.from.email);
 
   const payload = {
     Messages: [
@@ -109,17 +112,9 @@ export async function sendMailjetMessage(msg: MailjetMessage): Promise<void> {
         Subject: msg.subject,
         HTMLPart: msg.htmlPart,
         TextPart: msg.textPart,
-        // Zonder bijlagen geen sleutel (WP19c); nooit gewone `Attachments`.
-        ...(msg.inlinedAttachments && msg.inlinedAttachments.length > 0
-          ? {
-              InlinedAttachments: msg.inlinedAttachments.map((a) => ({
-                ContentType: a.contentType,
-                Filename: a.filename,
-                ContentID: a.contentId,
-                Base64Content: a.base64Content,
-              })),
-            }
-          : {}),
+        // WP19c besluit 6: geen meetpixel en geen omgeleide links.
+        TrackOpens: "disabled",
+        TrackClicks: "disabled",
       },
     ],
   };

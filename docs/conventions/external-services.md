@@ -46,9 +46,17 @@ Bij escalerende blockers op één van deze drie: heroverweeg Scaleway TEM. Pre-o
 
 Alle templates leven in [`convex/lib/emailTemplates.ts`](../../convex/lib/emailTemplates.ts) en gaan via `sendMailjetMessage` met de per-kind sender-policy.
 
+**Uitnodiging met groepsfoto: via SMTP (WP19c).**
+- Alleen de uitnodiging met groepsfoto gaat via Mailjet's SMTP-ingang (`in-v3.mailjet.com:587`, STARTTLS, nodemailer in [`convex/lib/mailjetSmtp.ts`](../../convex/lib/mailjetSmtp.ts)). Zo staat de foto met de HTML in een `multipart/related` en toont iPhone Mail hem één keer.
+- Login met dezelfde `MAILJET_API_KEY`/`MAILJET_API_SECRET`; geen extra env-vars. Sender-check en credentials gelden ook hier.
+- Faalt SMTP (poort dicht, login, time-out), dan gaat dezelfde uitnodiging zonder foto via de Send API, met een `console.error` die SMTP noemt.
+- `nodemailer` staat in `convex.json` bij `node.externalPackages`.
+
+**Geen tracking (WP19c).** Per bericht uit, boven de instelling van het account: Send API `TrackOpens`/`TrackClicks` `"disabled"`, SMTP `X-Mailjet-TrackOpen: 0`/`X-Mailjet-TrackClick: 0`. Links gaan dus rechtstreeks, zonder `mjt.lu`.
+
 | Kind | Sender | Bestemming | Subject (samengevat) | Body bevat |
 |---|---|---|---|---|
-| `invite` | `invites@` | geïnviteerde | "… nodigt je uit …" | inviter-naam, groep, invite-link + token, expiry |
+| `invite` | `invites@` | geïnviteerde | "… nodigt je uit …" | inviter-naam, groep, inlogadres, expiry, App Store-link, groepsfoto (WP19c); geen invite-link of token (WP19b) |
 | `accepted` / `declined` / `bounced` | `invites@` | inviter | accept/decline/bounce-melding | inviter-naam, accepter/decliner-naam, groep |
 | `flagDecisionDeny` | `info@` | photo-owner | "Je bezwaar … is afgewezen" | owner-naam |
 | `problemReport` | `info@` | `WEBMASTER_EMAILS` | "Probleem gemeld op {stage}" | submitter-naam/email, titel, beschrijving |

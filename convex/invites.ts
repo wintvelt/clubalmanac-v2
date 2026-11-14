@@ -35,14 +35,12 @@ import {
   receivedGroupFields,
 } from "./lib/shapes";
 import { avatarFieldsOf } from "./lib/profilePhoto";
-import { INVITES_SENDER, sendMailjetMessage } from "./lib/mailjet";
+import { assertMailjetReady, INVITES_SENDER, sendMailjetMessage } from "./lib/mailjet";
 import {
   acceptedTemplate,
   bouncedTemplate,
   declinedTemplate,
   formatNlDate,
-  INVITE_PHOTO_CONTENT_ID,
-  INVITE_PHOTO_FILENAME,
   inviteTemplate,
 } from "./lib/emailTemplates";
 
@@ -551,36 +549,48 @@ export const sendInviteEmail = internalAction({
       // WP19b A-invariant 4 en 13: geen link en geen token; wel het adres
       // waarmee de genodigde inlogt, de aanhef en het bericht.
       // WP19c: de groepsfoto als inline-bijlage en de App Store-link.
+      // Besluit 5: een mail met foto gaat via SMTP; zonder foto via de Send API.
+      // De poort (sender, credentials) eerst: faalt die, dan gaat er niets weg
+      // en is er geen terugval (A-invariant 17).
+      assertMailjetReady(INVITES_SENDER);
       const photo = await inviteMailPhoto(ctx, inviteId);
       const appStoreUrl = appStoreUrlFromEnv();
-      const tpl = inviteTemplate({
-        inviterName,
-        groupName,
-        inviteeName: data.invite.name,
-        inviteeEmail: data.invite.email,
-        message: data.invite.message,
-        expirationDate: formatNlDate(data.invite.expiresAt),
-        ...(photo ? { photo: { width: photo.width } } : {}),
-        ...(appStoreUrl ? { appStoreUrl } : {}),
-      });
+      const render = (withPhoto: { width: number } | null) =>
+        inviteTemplate({
+          inviterName,
+          groupName,
+          inviteeName: data.invite.name,
+          inviteeEmail: data.invite.email,
+          message: data.invite.message,
+          expirationDate: formatNlDate(data.invite.expiresAt),
+          ...(withPhoto ? { photo: { width: withPhoto.width } } : {}),
+          ...(appStoreUrl ? { appStoreUrl } : {}),
+        });
+      if (photo) {
+        const tpl = render(photo);
+        try {
+          await ctx.runAction(internal.inviteMail.sendWithPhoto, {
+            to: data.invite.email,
+            subject: tpl.subject,
+            htmlPart: tpl.htmlPart,
+            textPart: tpl.textPart,
+            photoBase64: photo.base64Content,
+          });
+          return;
+        } catch (e) {
+          // A-keuze 7: dezelfde uitnodiging zonder foto via de Send API.
+          console.error(
+            `[sendInviteEmail] SMTP mislukt inviteId=${inviteId}, de uitnodiging gaat zonder foto via de Send API: ${e instanceof Error ? e.message : String(e)}`,
+          );
+        }
+      }
+      const tpl = render(null);
       await sendMailjetMessage({
         from: { email: INVITES_SENDER },
         to: [{ email: data.invite.email }],
         subject: tpl.subject,
         htmlPart: tpl.htmlPart,
         textPart: tpl.textPart,
-        ...(photo
-          ? {
-              inlinedAttachments: [
-                {
-                  contentType: "image/jpeg",
-                  filename: INVITE_PHOTO_FILENAME,
-                  contentId: INVITE_PHOTO_CONTENT_ID,
-                  base64Content: photo.base64Content,
-                },
-              ],
-            }
-          : {}),
       });
       return;
     }

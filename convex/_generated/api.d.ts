@@ -28,6 +28,7 @@ import type * as lib_formatSet from "../lib/formatSet.js";
 import type * as lib_jpegMeta from "../lib/jpegMeta.js";
 import type * as lib_mailCover from "../lib/mailCover.js";
 import type * as lib_mailjet from "../lib/mailjet.js";
+import type * as lib_mailjetSmtp from "../lib/mailjetSmtp.js";
 import type * as lib_names from "../lib/names.js";
 import type * as lib_photoAccess from "../lib/photoAccess.js";
 import type * as lib_photoFormats from "../lib/photoFormats.js";
@@ -73,6 +74,7 @@ declare const fullApi: ApiFromModules<{
   "lib/jpegMeta": typeof lib_jpegMeta;
   "lib/mailCover": typeof lib_mailCover;
   "lib/mailjet": typeof lib_mailjet;
+  "lib/mailjetSmtp": typeof lib_mailjetSmtp;
   "lib/names": typeof lib_names;
   "lib/photoAccess": typeof lib_photoAccess;
   "lib/photoFormats": typeof lib_photoFormats;

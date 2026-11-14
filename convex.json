@@ -1,5 +1,9 @@
 {
   "node": {
-    "externalPackages": ["sharp", "heic-decode"]
+    "externalPackages": [
+      "sharp",
+      "heic-decode",
+      "nodemailer"
+    ]
   }
 }
