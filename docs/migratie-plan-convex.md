@@ -243,11 +243,15 @@ Eigenschappen die deze helper pinnen (zie `tests/lib/auth.test.ts`):
 - **Whitespace + comma-separated** robuust via `trim` + `filter`.
 - **Webmaster zónder users-record** wordt geweigerd door de interne `requireCurrentUser`-call. Audit-7 §3.
 
-Webmaster-gated operations (uit oude AWS code):
-- `decideFlag(photoId, approve)` — flag appeal beslissing
-- `listAllFlagged()` — admin queue van geflagde photos
-- `features.remove(featureId)` — feature requests verwijderen
-- `features.update(featureId, ...)` — feature status updaten (bv. "accepted")
+Webmaster-gated operations (WP20; de gate komt vóór elke lookup, dus een onbekend en een bestaand id geven dezelfde weigering):
+- `photos.decideFlag(photoId, approve)` — melding laten vervallen, of een bezwaar afwijzen
+- `photos.removeFlagged(photoId)` — gemelde foto meteen verwijderen, met mail aan de eigenaar
+- `photos.listAllFlagged()` — wachtrij met melder en reden
+- `features.setStatus(featureId, status)` — status van een idee of probleem
+- `features.update` / `features.remove` — idee of probleem aanpassen of verwijderen
+- `users.isWebmaster()` — geen gate maar een boolean; de app toont er de webmaster-schermen mee
+
+Beeldpad (WP20 besluit 3): `photoImage` en `photoImageInFormat` geven de webmaster het beeld van een foto met `flaggedAt`, ook zonder groepstoegang. Alleen die twee reads, en alleen zolang de foto gemeld is. De wachtrij in de app houdt dat beeld alleen in het geheugen (besluit 10).
 
 Reads (WP23): elke publieke query vereist inloggen (behalve `invites.getByToken` en `smoke.ping`) en geeft een vaste veld-whitelist terug via een return-validator (`convex/lib/shapes.ts`). Webmaster ziet daarbovenop alleen melder-velden in `listAllFlagged` en problemen van anderen in `features.*`; geen bypass op groep-, album- of foto-reads. Zie [`work-packages/WP23-read-whitelist.md`](./work-packages/WP23-read-whitelist.md).
 
@@ -361,30 +365,33 @@ photos: {
 // by_flagged_delete (op flaggedDeleteDate) — nodig voor auto-delete cron
 ```
 
-**Mutations:**
-- `flag(photoId, reason?)` — non-owner, idempotent. Sets `flaggedAt`, `flaggedBy`, `flaggedDeleteDate = now + 14d`
+**Mutations** (WP20):
+- `flag(photoId, reason?)` — lid met foto-toegang, niet de eigenaar; stil idempotent. Sets `flaggedAt`, `flaggedBy`, `flaggedDeleteDate = now + 14d`, en mailt de eigenaar (zonder melder of reden)
 - `appeal(photoId)` — owner only, idempotent. Sets `flaggedAppealDate`, clears `flaggedDeleteDate` (pause countdown)
-- `decideFlag(photoId, approve: boolean)` — webmaster only. Approve = clear alle flag fields. Deny = sets `flaggedAppealDenyDate`, `flaggedDeleteDate = now + 7d`, queue email action naar owner
+- `decideFlag(photoId, approve: boolean)` — webmaster only. Approve (ook zonder bezwaar) = clear alle flag fields, geen mail. Deny vraagt een bezwaar: sets `flaggedAppealDenyDate`, `flaggedDeleteDate = now + 7d`, mail naar owner
+- `removeFlagged(photoId)` — webmaster only, alleen voor een gemelde foto. Verwijdert meteen en mailt de eigenaar
+
+**Datum in mail en app** (WP20 A-keuze 9): genoemd wordt de dag vóór de eerste cron-run (03:00 UTC) die de foto wist, via `flagRemovalDay` (backend) en `removalDay` (app).
 
 **Queries:**
-- `listMyFlagged()` — current user's eigen photos die geflagd zijn (voor `Inappropriate.jsx`)
-- `listAllFlagged()` — webmaster only, scan `by_flagged` index (voor `InappropriateAdmin.jsx`)
+- `listMyFlagged()` — eigen gemelde foto's, alleen datums (index `by_owner_and_flagged`)
+- `listAllFlagged()` — webmaster only, met melder en reden
 
-**`by_flagged` is niet sparse** (WP17a): Convex zet documenten zonder `flaggedAt` gewoon in de index (`undefined` sorteert vóór alle waarden). Het JS-filter in `listMyFlagged` en `listAllFlagged` blijft dus nodig, of de query krijgt een ondergrens.
+**`by_flagged` is niet sparse** (WP17a): Convex zet documenten zonder `flaggedAt` gewoon in de index. Beide queries lezen daarom met ondergrens `.gte("flaggedAt", 0)` (WP20 S2).
 
 **Scheduled cron (daily):**
 Vind photos waar `flaggedDeleteDate < now` (en niet onder appeal), auto-delete via `internalRemovePhoto`. Was niet expliciet in oude AWS code (mogelijk handmatig opgeruimd of bug). Convex cron lost dit definitief op.
 
 **Authorization:**
-- `flag`: elke authenticated user behalve owner
+- `flag`: lid met foto-toegang, niet de owner
 - `appeal`: alleen owner van de photo
-- `decideFlag` / `listAllFlagged`: webmaster only — via `requireWebmaster(ctx)` helper (env-var based, zie sectie Webmaster-rol)
+- `decideFlag` / `removeFlagged` / `listAllFlagged`: webmaster only — via `requireWebmaster(ctx)` helper (env-var based, zie sectie Webmaster-rol)
 
 **Boundary-semantiek (audit-9 §3):**
 FL1-cleanup gebruikt `flaggedDeleteDate <= now` — een photo waar de countdown precies aan grenst wordt diezelfde cron-run nog opgeruimd, niet de volgende dag. Consistent met Email-normalisatie invariant + Invites `expiresAt <= now is verlopen`. Strict `<` was bias-gevoelig (cron vuurt op vaste klok, photo bleef 24h extra hangen).
 
 **Re-decision semantiek (audit-9 §2):**
-- `decideFlag(approve)` na deny: webmaster mág eigen deny overrulen — alle flag-velden worden alsnog gewist. Bewust permissief voor menselijke fout-correctie. Approve-pad checkt alleen op `flaggedAppealDate !== undefined`, dat blijft gezet ook na deny.
+- `decideFlag(approve)` na deny: webmaster mág eigen deny overrulen — alle flag-velden worden alsnog gewist. Bewust permissief voor menselijke fout-correctie. Approve vraagt alleen `flaggedAt`, geen bezwaar.
 - `decideFlag(deny)` na deny: idempotent — geen re-email, geen reset van de 7d countdown, `flaggedAppealDenyDate` ongewijzigd. Voorkomt dat accidental dubbel-click owner een tweede mail bezorgt of de countdown effectief verlengt naar 14d.
 
 **Owner-self-delete (audit-9 §8.4):**
