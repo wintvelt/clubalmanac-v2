@@ -63,6 +63,9 @@ type PhotoProps = {
   fallback?: ReactNode;
   // Voor VoiceOver; zonder is het beeld decoratief.
   accessibilityLabel?: string;
+  // WP20 besluit 10 (N5): nooit op schijf, ook met formaten. Voor een beeld dat
+  // de kijker alleen tijdelijk mag hebben (de wachtrij van de webmaster).
+  memoryOnly?: boolean;
 };
 
 // Een foto, een album- of een groepscover. Tot het beeld er is: een grijs vlak
@@ -77,6 +80,7 @@ export function PhotoImage({
   radius = 0,
   fallback,
   accessibilityLabel,
+  memoryOnly,
 }: PhotoProps) {
   const { colors } = useTheme();
   const [state, setState] = useState<"loading" | "loaded">("loading");
@@ -107,8 +111,9 @@ export function PhotoImage({
               // Wisselt hasFormats, dan bouwt het beeld opnieuw op: bytes en stand samen.
               key={`${attempt}-${withFormats ? "formaat" : "origineel"}`}
               source={source}
-              // Met formaten de schijfcache (invariant 1); het origineel alleen in het geheugen.
-              cachePolicy={withFormats ? undefined : "memory"}
+              // Met formaten de schijfcache (invariant 1); het origineel, en alles
+              // met memoryOnly, alleen in het geheugen.
+              cachePolicy={withFormats && memoryOnly !== true ? undefined : "memory"}
               style={inner}
               contentFit={fit}
               recyclingKey={photoId}

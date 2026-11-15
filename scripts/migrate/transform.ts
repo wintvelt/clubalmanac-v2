@@ -402,6 +402,30 @@ export function transform(items: SourceItem[], config: TransformConfig): Transfo
     includedPhotos.add(photoId);
   }
 
+  // ── gedeelde S3-sleutel (WP20 besluit 10, R2) ───────────────────────
+  // load-files uploadt per sleutel en load-records geeft elke foto met die
+  // sleutel hetzelfde _storage-id. Twee foto's met één sleutel delen in v2 dus
+  // één beeld: een melding of een wis van de ene raakt ook de andere. Alleen
+  // foto's die geladen worden, op de sleutel zoals hij opgeslagen wordt
+  // (getrimd). Geen ontsnappingsvlag. Een profielfoto met de sleutel van een
+  // foto valt hier buiten: zo deed v1 het, en v2 wist die profielfoto mee.
+  const photosByKey = new Map<string, string[]>();
+  for (const photoId of [...includedPhotos].sort()) {
+    const key = str(src.photos.get(photoId)!.item.url)!;
+    photosByKey.set(key, [...(photosByKey.get(key) ?? []), photoId]);
+  }
+  const sharedKeys = [...photosByKey.entries()]
+    .filter(([, ids]) => ids.length > 1)
+    .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
+  if (sharedKeys.length > 0) {
+    fail(
+      `${sharedKeys.length} S3-sleutel(s) gedeeld door meer dan één foto: ` +
+        sharedKeys.map(([key, ids]) => `${key} (${ids.join(", ")})`).join("; ") +
+        `. In v2 zouden die foto's één beeld delen, zodat een melding of wis van ` +
+        `de ene ook de andere raakt. Geef elke foto in de bron een eigen beeld.`,
+    );
+  }
+
   // ── gemelde foto's met een verwijderdatum (WP12b F1, G1) ────────────
   // v1 wiste een gemelde foto nooit; de FL1-cron van v2 wist hem zodra zijn
   // verwijderdatum voorbij is, en draait elke nacht. Elke datum, ook een in de

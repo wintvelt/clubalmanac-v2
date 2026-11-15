@@ -346,6 +346,8 @@ function FlagQueueContent() {
                   fit="contain"
                   radius={radius.albumTile}
                   accessibilityLabel="Gemelde foto"
+                  // Besluit 10 (N5): het beeld blijft niet op de telefoon van de webmaster.
+                  memoryOnly
                 />
                 <View style={styles.flex}>
                   <Text variant="albumName">{flagStageLabel(stage)}</Text>
