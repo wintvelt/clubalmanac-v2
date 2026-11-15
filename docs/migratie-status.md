@@ -95,7 +95,7 @@ Bouw migratie-tooling die zowel dev (subset) als prod (volledig) kan vullen. Eé
 - [ ] Performance check op foto laden in dev. Als te traag: switch naar R2 component (kan ook later)
 - [ ] S3 prod data laten staan als backup tot ~T+90
 
-## Fase 4: Clients updaten ✅ AFGEROND
+## Fase 4: Clients updaten — iPhone-app klaar, webapp na T0
 
 Twee parallelle tracks. Beide kunnen onafhankelijk doorlopen worden, maar moeten samen klaar zijn voor cutover.
 
@@ -134,9 +134,9 @@ Werk door de app per feature. Elke stap lokaal testbaar in Expo dev build tegen 
 
 Per feature: het gedrag van de oude app is de checklist, data komt via `useQuery` / `useMutation`. Wie de oude app nog heeft, blijft tot cutover op AWS werken.
 
-### Track B: Webapp — geschrapt
+### Track B: Webapp — na T0
 
-Besluit Wouter 2026-11-15: geen nieuwe webapp. Niemand gebruikt de oude; die gaat op T0 uit en toont dan een pagina die naar de iPhone-app verwijst.
+Besluit Wouter 2026-11-15: niemand gebruikt de oude webapp. Volgorde: eerst de oude webapp uitzetten (vóór de overstap), dan de iPhone-app overzetten, later een nieuwe webapp toevoegen. Keuzes voor de nieuwe (Expo Web of apart, scope, hosting, kaarten op het web) pas dan.
 
 ## Fase 5: Lancering — hard cutover — open
 
@@ -173,7 +173,7 @@ Dus: communicatie en blokkade gaan **buiten de oude app om**.
 - Resultaat in oude app: generic alert "Er ging iets mis, probeer het later anders weer" — acceptabel gegeven de out-of-band communicatie
 
 **4. Oude webapp uit**
-- Statische pagina op het oude webapp-domein: "Deze webapp is uit dienst, gebruik de iPhone-app." Geen nieuwe webapp (besluit 2026-11-15).
+- De oude webapp gaat al vóór de overstap uit, met een pagina "gebruik de iPhone-app" (besluit 2026-11-15). Een nieuwe webapp komt na T0.
 
 ### Cutover stappenplan
 
@@ -206,7 +206,6 @@ Dus: communicatie en blokkade gaan **buiten de oude app om**.
 - [ ] T0: filmlijst op prod vullen ná `load-records`: `node scripts/wp21/seedArgs.ts --group <prod-id van "Blob bibliotheek">`, dan het geprinte `--prod`-commando; daarna `npx convex run --prod films:checkLinks` (geen mail = goed), en de cron `film link check` weer aan als hij uit stond ([WP21](./work-packages/WP21-videos.md))
 - [ ] T0: bucket `blob-videos` dicht, nadat de nieuwe app op prod een film afspeelt: S3 → bucket → Permissions → **Block public access**, alle vier aan (de oude app speelt dan geen films meer). Controle: een film-link zonder het deel na `?` geeft 403, mét geeft nog 206 ([WP21](./work-packages/WP21-videos.md) besluit 3, red-team)
 - [ ] T-0: backend write-block aan op AWS
-- [ ] T-0: oude webapp uit: statische pagina "gebruik de iPhone-app" op het oude domein
 - [ ] T0: 20 users informeren dat ze nu kunnen overstappen. Instructie: app bijwerken, inloggen met je e-mailadres en de code uit de mail
 - [ ] T+1: bevestigen dat alles werkt voor alle 20 users
 - [ ] T+30: AWS resources opschonen (S3 `blob-images` nog even bewaren als backup tot ~T+90). **Uitzondering: bucket `blob-videos` blijft staan** — daar draait de video-weergave van de nieuwe app op tot de R2-overstap. Niet opruimen, ook niet na T+90.

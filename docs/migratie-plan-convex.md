@@ -49,7 +49,7 @@ Cognito met invite-only signup (pre-signup Lambda checkt invite in DB), custom e
 
 ### Clients
 - **iPhone app** (App Store): primaire client. Expo SDK 47, React Native 0.70.5 (eind 2022). `aws-amplify` v5 voor Cognito + API + Storage. **Geen `expo-updates` of `expo-notifications` geïnstalleerd** → geen OTA, geen push.
-- **Webapp** (legacy): zelfde AWS backend. Wordt niet gebruikt; gaat op T0 uit zonder opvolger (besluit 2026-11-15).
+- **Webapp** (legacy): zelfde AWS backend. Wordt niet gebruikt; gaat vóór de overstap uit, een nieuwe webapp komt na T0 (besluit 2026-11-15).
 
 ### Schaal
 20 users, 6 groepen, 17 albums, ~1544 foto's (bucket `blob-images`: 1601 objecten, 5,6 GB), 1524 album-koppelingen, 3 openstaande invites, en 12 likes in totaal. Plus 10 video's (~19 GB) in een aparte bucket `blob-videos` — die gaan niet mee naar Convex, zie [`work-packages/WP12-data-migratie-tooling.md`](./work-packages/WP12-data-migratie-tooling.md) §Video's. Laag/casual gebruik. AWS kost ~$10/maand.
@@ -905,7 +905,7 @@ Dus: communicatie en blokkade gaan **buiten de oude app om**.
 - Resultaat in oude app: generic alert "Er ging iets mis, probeer het later anders weer" — acceptabel gegeven de out-of-band communicatie
 
 **4. Oude webapp uit**
-- Statische pagina op het oude webapp-domein: "Deze webapp is uit dienst, gebruik de iPhone-app." Geen nieuwe webapp (besluit 2026-11-15).
+- De oude webapp gaat al vóór de overstap uit, met een pagina "gebruik de iPhone-app" (besluit 2026-11-15). Een nieuwe webapp komt na T0.
 
 Concrete cutover-stappenplan + Monitoring/Backup + Cyclus-2 backlog: zie [`migratie-status.md`](./migratie-status.md).
 
