@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="nl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Privacyverklaring – clubalmanac</title>
+<style>
+  :root { color-scheme: light dark; --fg:#0f172a; --muted:#475569; --bg:#f1f5f9; --link:#0369a1; }
+  @media (prefers-color-scheme: dark) { :root { --fg:#e2e8f0; --muted:#94a3b8; --bg:#0f172a; --link:#38bdf8; } }
+  body { margin:0; background:var(--bg); color:var(--fg); font:17px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+  main { max-width:640px; margin:0 auto; padding:48px 20px 64px; }
+  h1 { font-size:30px; margin:0 0 16px; }
+  h2 { font-size:21px; margin:32px 0 8px; }
+  p, li { color:var(--fg); }
+  .muted { color:var(--muted); }
+  a { color:var(--link); }
+  .bar { height:6px; border-radius:3px; background:linear-gradient(90deg,#a3e635,#0ea5e9); margin:0 0 32px; }
+</style>
+</head>
+<body><main>
+<div class="bar"></div>
+<h1>Privacyverklaring</h1>
+<h2>Samenvatting</h2>
+<p>Om lid te worden deel je wat gegevens met ons:</p>
+<ul><li>je e-mailadres, om in te loggen</li><li>je naam, zodat leden weten wie je bent</li><li>de groepen en albums die je maakt</li><li>de foto's die je deelt, met de plaats waar ze zijn gemaakt als je toestel die opslaat</li></ul>
+<p>Je naam en je foto's zien alleen jij, de andere leden van je groepen, en de beheerder van de app (Wouter). Je e-mailadres ziet alleen jij en de beheerder. Verder deelt niemand je gegevens.</p>
+<p>Verwijder je je account (op Profiel), dan worden al je gegevens verwijderd.</p>
+<h2>De officiële versie</h2>
+<p><em>Verantwoordelijke.</em> Inc Management (Pelikaanweg 6, 3762 VB Soest) is verantwoordelijk voor de verwerking van persoonsgegevens zoals beschreven in deze verklaring. Wouter In 't Velt is de functionaris gegevensbescherming. Hij is te bereiken via wouter@clubalmanac.com.</p>
+<p><em>Welke gegevens.</em> </p>
+<ul><li>Naam: zoals je hem opgeeft, zodat andere leden je herkennen.</li><li>E-mailadres: om in te loggen met een code per e-mail, en om je berichten te sturen, zoals een uitnodiging.</li><li>Foto's: die je deelt in de groepen waar je lid van bent.</li><li>Locatie van foto's: de GPS-gegevens die je toestel in een foto opslaat, en de plaatsnaam die we daaruit afleiden.</li><li>Gebruik: wanneer je de app voor het laatst opende.</li></ul>
+<p><em>Kinderen.</em> De app is niet bedoeld voor kinderen jonger dan 16 jaar zonder toestemming van een ouder of voogd. Denk je dat we zonder die toestemming gegevens van een minderjarige hebben, mail ons dan. Dan verwijderen we ze.</p>
+<p><em>Waarvoor.</em> Om je een account te geven, je te laten inloggen, je foto's met je groepen te delen, en je te mailen als dat voor de app nodig is. Er zijn geen advertenties, geen tracking en geen geautomatiseerde besluiten over personen.</p>
+<p><em>Hoe lang.</em> Zolang je account bestaat. Verwijder je je account op Profiel, dan verwijderen we al je gegevens en je login, meestal binnen een paar minuten.</p>
+<p><em>Wie verwerkt je gegevens voor ons.</em> Met deze bedrijven is er een verwerkersovereenkomst of gelden hun standaardvoorwaarden voor verwerkers:</p>
+<ul><li>Convex: opslag van alle gegevens en foto's, op servers in Dublin (Ierland, EU).</li><li>Clerk: inloggen. Clerk bewaart je e-mailadres en je inlogsessies. Clerk is een Amerikaans bedrijf. De doorgifte buiten de EU valt onder het EU-VS Data Privacy Framework.</li><li>Mailjet: het versturen van e-mail, vanuit Frankrijk (EU).</li><li>Photon (Komoot): zet de GPS-gegevens van een foto om in een plaatsnaam. Alleen de coördinaten gaan erheen, niet je naam of e-mailadres. Komoot zit in Duitsland (EU).</li></ul>
+<p><em>Cookies.</em> De app gebruikt geen cookies en geen trackers.</p>
+<p><em>Inzien, aanpassen of verwijderen.</em> Je hebt het recht je gegevens in te zien, te laten aanpassen of te laten verwijderen. Je naam pas je zelf aan op Profiel. Voor de rest, en voor bezwaar of het overdragen van je gegevens, mail je wouter@clubalmanac.com. We reageren binnen vier weken.</p>
+<p>Je kunt ook een klacht indienen bij de Autoriteit Persoonsgegevens (autoriteitpersoonsgegevens.nl).</p>
+<p><em>Beveiliging.</em> We nemen passende maatregelen tegen misbruik, verlies en onbevoegde toegang. Denk je dat er toch iets mis is, mail ons dan.</p>
+<p class="muted"><a href="/">clubalmanac</a></p>
+</main></body>
+</html>

@@ -68,7 +68,7 @@ Per domein: unit tests eerst, dan implementatie.
 - [x] **Integrity-check / monitoring:** dagelijkse `internal.monitoring.integrityCheck` 04:30 UTC scant vier categorieën in één transactie (storage-orphans incl. `users.profilePhotoStorageId`, aggregate-drift, FK-integriteit 18 verplicht + 5 optioneel, geen self-healing). Alert-pad via bestaand Mailjet `info@`-sender → `WEBMASTER_EMAILS`: dashboard-log altijd autoritatief, drift-mail met strict-consecutive dedup (drift→clean→drift = re-alert per audit-S-1-fix), maandelijkse heartbeat met conditionele warning bij gededupte drift (per audit-N-1-fix). Nieuwe `monitoringRuns` tabel met `by_runAt` index. Implementatie via **[WP10]** (cyclus 1 + audit-fix-cyclus 2026-06-04). 30 tests groen, suite 609, typecheck clean.
 - [x] **Deferred integration-tests (WP5+WP6 follow-up):** `tests/integration/mailjet/sendRoundtrip.test.ts` (directe Send-API call, silent-failure-pin van WP5 known-issue #2 + happy-path met MessageID) + `tests/integration/clerk/onboardingWebhook.test.ts` (synth-payload met fresh subject + echte Svix-HMAC, atomic onboarding pin op drie velden `users.createdAt`/`invites.respondedAt`/`memberships.joinedAt`, tamper→401-pad). Zes nieuwe `INTEGRATION_TEST_ENABLED`-gated helpers in `convex/_test.ts` (seed/reads/cleanup voor Clerk-fixture). `getConvexSiteBase` + `requireEnv` gecentraliseerd in `tests/integration/_helpers/convexSite.ts`. Combo-runbook `docs/runbooks/wp11-deferred-integration-gates.md`. Implementatie via **[WP11]**. Niet tegen live services gedraaid in deze WP — dat is runbook-stap pre-cutover. Prod-Gates herhalen staat in fase 5 T-4-weken-stappenplan.
 
-Backend is client-agnostisch. Zelfde queries/mutations werken straks voor zowel iPhone app als webapp.
+Backend is client-agnostisch.
 
 ## Fase 3: Data migratie tooling + dev seed ✅ AFGEROND
 
@@ -95,7 +95,7 @@ Bouw migratie-tooling die zowel dev (subset) als prod (volledig) kan vullen. Eé
 - [ ] Performance check op foto laden in dev. Als te traag: switch naar R2 component (kan ook later)
 - [ ] S3 prod data laten staan als backup tot ~T+90
 
-## Fase 4: Clients updaten — open
+## Fase 4: Clients updaten — iPhone-app klaar, webapp na T0
 
 Twee parallelle tracks. Beide kunnen onafhankelijk doorlopen worden, maar moeten samen klaar zijn voor cutover.
 
@@ -134,17 +134,9 @@ Werk door de app per feature. Elke stap lokaal testbaar in Expo dev build tegen 
 
 Per feature: het gedrag van de oude app is de checklist, data komt via `useQuery` / `useMutation`. Wie de oude app nog heeft, blijft tot cutover op AWS werken.
 
-### Track B: Webapp
+### Track B: Webapp — na T0
 
-Webapp is fallback voor Android users met corporate restricties. Niet schrappen.
-
-- [ ] **Keuze maken:** Expo Web vanuit `app/` (zelfde codebase, simpelste pad) vs aparte Next.js app (betere desktop UX, meer werk)
-- [ ] Default-aanbeveling: **Expo Web**, gegeven de smalle use case (foto's bekijken/uploaden)
-- [ ] Scope bepalen: feature-pariteit met iPhone of view-only?
-- [ ] Backend: gedeelde Convex deployment, geen extra werk in fase 2
-- [ ] Auth: Clerk web component
-- [ ] Hosting: Vercel of Cloudflare Pages
-- [ ] Werkt met camera/maps in browser? `react-native-maps` heeft geen web support out-of-the-box → alternatief nodig (Leaflet, Google Maps JS)
+Besluit Wouter 2026-11-15: niemand gebruikt de oude webapp. Volgorde: eerst de oude webapp uitzetten (vóór de overstap), dan de iPhone-app overzetten, later een nieuwe webapp toevoegen. Keuzes voor de nieuwe (Expo Web of apart, scope, hosting, kaarten op het web) pas dan.
 
 ## Fase 5: Lancering — hard cutover — open
 
@@ -180,9 +172,8 @@ Dus: communicatie en blokkade gaan **buiten de oude app om**.
 - Reads laten staan een paar weken zodat de oude app niet hard crasht (toont nog content, kan niet meer wijzigen)
 - Resultaat in oude app: generic alert "Er ging iets mis, probeer het later anders weer" — acceptabel gegeven de out-of-band communicatie
 
-**4. Webapp cutover**
-- Statische redirect-pagina deployen op het oude webapp domein: "Deze webapp is uit dienst, gebruik vanaf nu {nieuwe URL}"
-- Geen App Store delay zoals bij de iPhone app
+**4. Oude webapp uit**
+- De oude webapp gaat al vóór de overstap uit, met een pagina "gebruik de iPhone-app" (besluit 2026-11-15). Een nieuwe webapp komt na T0.
 
 ### Cutover stappenplan
 
@@ -208,14 +199,13 @@ Dus: communicatie en blokkade gaan **buiten de oude app om**.
 - [ ] T-2 weken: `load-files` op prod draaien (WP12) — alle fotobestanden naar Convex-prod-storage, `.data/storage-map.json` gevuld, daarna `formaten` op prod als check (WP25; de grootste JPEG van 64 MP is dan voor het eerst aan de beurt). 5,6 GB over 1601 objecten, ordegrootte een uur over een lijn van <20 Mbit/s; hervatbaar. Video's blijven op S3 (besluit 2026-08-23, zie WP12 §Video's).
    - **Heroverwegen bij start fase 5:** de dev-seed haalde ~3,6 MB/s (~29 Mbit/s, 2026-10-25), dus 5,6 GB in ~30 min. Past dat in het cutover-venster, dan kan alles op T-0 en vervallen de T-2-split, de cron-pauze en `prune-storage`. Eerst een tweede meting.
 - [ ] T-1 week: group-injection aanzetten in DynamoDB (in-app reminder verschijnt)
-- [ ] T-1 week: nieuwe iPhone app live in App Store (beschikbaar voor download), nieuwe webapp live, beide tegen prod env. **Apart aan te maken vóór de review-indiening**: een vers demo-account in prod-Clerk voor Apple's reviewers, met genoeg zichtbare content om de app te kunnen beoordelen. Het oude `John Appleseed`-account migreert niet mee.
+- [ ] T-1 week: nieuwe iPhone app live in App Store (beschikbaar voor download), tegen prod env. **Apart aan te maken vóór de review-indiening**: een vers demo-account in prod-Clerk voor Apple's reviewers, met genoeg zichtbare content om de app te kunnen beoordelen. Het oude `John Appleseed`-account migreert niet mee.
 - [ ] T-1 dag: laatste reminder via WhatsApp/email
 - [ ] T0: verse `extract` + `transform` op actuele DynamoDB-stand, dan `load-files` (alleen de delta sinds T-2), dan `load-records`, `formaten` (WP25) en `verify` (WP12, prod-config). Het aantal geschrapte likes staat in de transform-uitvoer (op T0 12, WP19a). Volgorde staat in het WP12-runbook. Minuten, niet uren — de bulk staat al in storage sinds T-2.
 - [ ] T-0: `integrityCheck`-cron op prod weer aanzetten, ná een groene `verify`
 - [ ] T0: filmlijst op prod vullen ná `load-records`: `node scripts/wp21/seedArgs.ts --group <prod-id van "Blob bibliotheek">`, dan het geprinte `--prod`-commando; daarna `npx convex run --prod films:checkLinks` (geen mail = goed), en de cron `film link check` weer aan als hij uit stond ([WP21](./work-packages/WP21-videos.md))
 - [ ] T0: bucket `blob-videos` dicht, nadat de nieuwe app op prod een film afspeelt: S3 → bucket → Permissions → **Block public access**, alle vier aan (de oude app speelt dan geen films meer). Controle: een film-link zonder het deel na `?` geeft 403, mét geeft nog 206 ([WP21](./work-packages/WP21-videos.md) besluit 3, red-team)
 - [ ] T-0: backend write-block aan op AWS
-- [ ] T-0: webapp redirect aan
 - [ ] T0: 20 users informeren dat ze nu kunnen overstappen. Instructie: app bijwerken, inloggen met je e-mailadres en de code uit de mail
 - [ ] T+1: bevestigen dat alles werkt voor alle 20 users
 - [ ] T+30: AWS resources opschonen (S3 `blob-images` nog even bewaren als backup tot ~T+90). **Uitzondering: bucket `blob-videos` blijft staan** — daar draait de video-weergave van de nieuwe app op tot de R2-overstap. Niet opruimen, ook niet na T+90.
