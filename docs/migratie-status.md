@@ -136,7 +136,7 @@ Per feature: het gedrag van de oude app is de checklist, data komt via `useQuery
 
 ### Track B: Webapp — na T0
 
-Besluit Wouter 2026-11-15: niemand gebruikt de oude webapp. Volgorde: eerst de oude webapp uitzetten (vóór de overstap), dan de iPhone-app overzetten, later een nieuwe webapp toevoegen. Keuzes voor de nieuwe (Expo Web of apart, scope, hosting, kaarten op het web) pas dan.
+Besluit Wouter 2026-11-15: niemand gebruikt de oude webapp. Volgorde: eerst de oude webapp uitzetten (vóór de overstap), dan de iPhone-app overzetten, later een nieuwe webapp toevoegen. **Oude webapp uit sinds 2026-11-15**: clubalmanac.com toont een pagina die naar de app verwijst plus de privacyverklaring ([`site/README.md`](../site/README.md)), dev.clubalmanac.com is uitgeschakeld. Keuzes voor de nieuwe (Expo Web of apart, scope, hosting, kaarten op het web) pas dan.
 
 ## Fase 5: Lancering — hard cutover — open
 
@@ -173,7 +173,7 @@ Dus: communicatie en blokkade gaan **buiten de oude app om**.
 - Resultaat in oude app: generic alert "Er ging iets mis, probeer het later anders weer" — acceptabel gegeven de out-of-band communicatie
 
 **4. Oude webapp uit**
-- De oude webapp gaat al vóór de overstap uit, met een pagina "gebruik de iPhone-app" (besluit 2026-11-15). Een nieuwe webapp komt na T0.
+- Gedaan 2026-11-15, vóór de overstap: clubalmanac.com toont een pagina die naar de iPhone-app verwijst, dev.clubalmanac.com is uit. Een nieuwe webapp komt na T0.
 
 ### Cutover stappenplan
 

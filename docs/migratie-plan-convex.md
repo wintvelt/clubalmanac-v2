@@ -905,7 +905,7 @@ Dus: communicatie en blokkade gaan **buiten de oude app om**.
 - Resultaat in oude app: generic alert "Er ging iets mis, probeer het later anders weer" — acceptabel gegeven de out-of-band communicatie
 
 **4. Oude webapp uit**
-- De oude webapp gaat al vóór de overstap uit, met een pagina "gebruik de iPhone-app" (besluit 2026-11-15). Een nieuwe webapp komt na T0.
+- Gedaan 2026-11-15, vóór de overstap: clubalmanac.com toont een pagina die naar de iPhone-app verwijst, dev.clubalmanac.com is uit. Een nieuwe webapp komt na T0.
 
 Concrete cutover-stappenplan + Monitoring/Backup + Cyclus-2 backlog: zie [`migratie-status.md`](./migratie-status.md).
 
