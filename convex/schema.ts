@@ -285,7 +285,9 @@ export default defineSchema({
     videoKey: v.string(),
     coverKey: v.optional(v.string()),
     order: v.number(),
-  }).index("by_order", ["order"]),
+  })
+    .index("by_order", ["order"])
+    .index("by_group", ["groupId"]),
 
   // ──────────────────────────────────────────────────────────────────
   // Album last-seen (per user × album)

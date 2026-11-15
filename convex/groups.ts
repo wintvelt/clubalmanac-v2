@@ -373,9 +373,10 @@ export const remove = mutation({
 // Groep weg, met alles wat eraan hangt. Gedeeld door groups.remove (G3, G4)
 // en het laatste lid dat weggaat (M2-e): beide doen hetzelfde.
 // Volgorde: albumPhotos → albums (+ albumLastSeen, A1/A2) → memberships →
-// uitnodigingen → groep → covers en profielfoto's van de weggehaalde
+// uitnodigingen → films (WP21) → groep → covers en profielfoto's van de weggehaalde
 // publicaties (WP28 A-invariant 3). Photos blijven (eigendom van users, niet
-// groups). [Cascade matrix G3, G4, A1, A2, AP4, M2-e]
+// groups); de filmbestanden in S3 ook, alleen de rijen gaan weg.
+// [Cascade matrix G3, G4, A1, A2, AP4, M2-e]
 export async function deleteGroupCascade(
   ctx: MutationCtx,
   groupId: Id<"groups">,
@@ -410,6 +411,14 @@ export async function deleteGroupCascade(
     .withIndex("by_group", (q) => q.eq("groupId", groupId))
     .collect();
   for (const i of invites) await ctx.db.delete(i._id);
+
+  // WP21: de films van de groep gaan mee, zodat geen film-rij naar de
+  // gewiste groep wijst. Films van andere groepen blijven.
+  const films = await ctx.db
+    .query("films")
+    .withIndex("by_group", (q) => q.eq("groupId", groupId))
+    .collect();
+  for (const f of films) await ctx.db.delete(f._id);
 
   await ctx.db.delete(groupId);
 
