@@ -176,3 +176,12 @@ Besluit 3 (bucket dicht op T0) en 5 (tiende bestand niet tonen) zijn ops en data
 A paste twee bestaande tests aan: `tests/readWhitelist/inventory.test.ts` (`films:list` erbij) en `tests/crons/registration.test.ts` (vijf crons).
 
 **Stand:** backend 67 rood / 2764 groen / 1 overgeslagen, alle rood omdat `convex/films.ts` en de cron ontbreken. App: `app/tests/films.test.ts` laadt niet (`src/lib/films.ts` ontbreekt), 1381 groen. Typecheck: backend schoon; app alleen fouten in `tests/films.test.ts` (ontbrekende module en `filmPath`).
+
+### Gate-fix (A, na de simulator-gate)
+
+Twee vondsten, gepind in `app/tests/filmGate.test.ts`:
+
+1. **Spoelen schuift het scherm weg.** `filmScreenOptions` in `src/lib/films.ts` zet `gestureEnabled: false` en houdt de navigatiebalk met de gewone terugknop (geen `headerShown: false`, `headerBackVisible: false` of eigen `headerLeft`). De Home-stack gebruikt die opties voor `groep/[groupId]/film/[filmId]`. De test pint alleen de opties; of spoelen echt werkt, controleert de simulator-gate.
+2. **De film speelt door buiten beeld.** `filmPlayerCommand(event)` in `src/lib/films.ts`, met `{ type: "linkReady", focused }` of `{ type: "focusChanged", focused }`, geeft `"play"`, `"pause"` of `"none"`: link klaar in beeld → spelen; link klaar buiten beeld → niet starten; focus weg → pauzeren; focus terug → niets. `FilmPlayer` leest de focus met `useIsFocused` en volgt de functie. Geen spelen op de achtergrond of in beeld-in-beeld.
+
+A-keuze: bij terugkomen speelt de film niet vanzelf verder. De plek blijft staan; de kijker drukt zelf op afspelen. Of de speler echt pauzeert bij een tweede filmscherm of een tabwissel: simulator-gate.
