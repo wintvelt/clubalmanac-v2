@@ -120,3 +120,15 @@ A rapporteert ook wat hier ontbreekt of niet klopt.
 7. **Bewaking van de sleutel**: de dagelijkse monitoring-check controleert ook dat één cover met een ondertekende link te lezen is, en mailt bij een fout. Aanbevolen: ja (kleine toevoeging, dekt invariant 16).
 
 Covers blijven PNG's uit S3 met cache (geen besluit nodig, tenzij Wouter ze kleiner wil).
+
+## Besluiten Wouter (2026-11-15)
+
+Alle adviezen van A overgenomen.
+
+1. **Wie kijkt:** leden van "Blob bibliotheek", trailers en films. "Test group" ziet geen films meer.
+2. **Linkduur:** 3 uur voor een film; cover-links mogen korter. Na een fout kijk je verder waar je was (invariant 14).
+3. **Bucket dicht op T0**, nadat de nieuwe app op prod een film afspeelt. Wouter zet "Block public access" aan. Regel in `migratie-status.md` (regie, closeout).
+4. **Geen bestandsnamen of bucket-URL in de repo** (invariant 9), ook na het dichtzetten.
+5. **Het tiende bestand niet tonen.**
+6. **Films zonder `faststart`:** eerst testen in de gate; pas omzetten als ze traag starten of spoelen.
+7. **Bewaking:** de dagelijkse monitoring-check leest één cover via een ondertekende link en mailt bij een fout.
