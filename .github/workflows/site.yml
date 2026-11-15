@@ -25,22 +25,24 @@ jobs:
     env:
       SITE_BUCKET: ${{ vars.SITE_BUCKET }}
       SITE_DISTRIBUTION_ID: ${{ vars.SITE_DISTRIBUTION_ID }}
+      SITE_DEPLOY_ROLE_ARN: ${{ vars.SITE_DEPLOY_ROLE_ARN }}
     steps:
       - name: Variabelen aanwezig
         run: |
           test -n "$SITE_BUCKET" || { echo "repo-variabele SITE_BUCKET ontbreekt"; exit 1; }
           test -n "$SITE_DISTRIBUTION_ID" || { echo "repo-variabele SITE_DISTRIBUTION_ID ontbreekt"; exit 1; }
-          test -n "${{ vars.SITE_DEPLOY_ROLE_ARN }}" || { echo "repo-variabele SITE_DEPLOY_ROLE_ARN ontbreekt"; exit 1; }
+          test -n "$SITE_DEPLOY_ROLE_ARN" || { echo "repo-variabele SITE_DEPLOY_ROLE_ARN ontbreekt"; exit 1; }
 
       - uses: actions/checkout@v6
 
       - uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ vars.SITE_DEPLOY_ROLE_ARN }}
+          role-to-assume: ${{ env.SITE_DEPLOY_ROLE_ARN }}
           aws-region: us-east-1
 
       # Alle pagina's zijn HTML, ook privacy/nl zonder extensie: zet het type
-      # expliciet, anders gokt S3 op een download. --delete haalt weg wat niet
+      # expliciet, anders gokt S3 op een download. Komt er ooit een plaatje of
+      # favicon bij, splits dan de sync per type. --delete haalt weg wat niet
       # meer in site/ staat; README.md hoort niet op de site.
       - name: Uploaden
         run: |

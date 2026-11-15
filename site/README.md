@@ -17,14 +17,24 @@ Domein, DNS en CloudFront blijven staan: de mail van `invites@`, `info@` en `wou
 
 ## Eenmalig opzetten (Wouter)
 
-1. **IAM → Identity providers**: staat `token.actions.githubusercontent.com` er al? Noteer dan de ARN.
+Stap 1 tot en met 4 vóór de merge van de PR; de merge zet daarna de pagina's in de bucket.
+
+1. **IAM → Identity providers**: staat `token.actions.githubusercontent.com` er al? Noteer dan de ARN, en check dat bij *Audiences* `sts.amazonaws.com` staat.
 2. **CloudFront**: noteer het ID van de distributie van clubalmanac.com (begint met `E`).
 3. **CloudFormation** (regio *us-east-1*) **→ Create stack → Upload a template file** → `infra/site.yml`. Stacknaam `clubalmanac-site`. Parameters: `DistributionId` uit stap 2, `GitHubOidcProviderArn` uit stap 1 (leeg als die er niet was). Vink onderaan aan dat de stack IAM-resources mag maken. Wacht op *CREATE_COMPLETE* en bekijk **Outputs**.
 4. **GitHub → repo → Settings → Secrets and variables → Actions → Variables**: `SITE_BUCKET` = `clubalmanac-site`, `SITE_DISTRIBUTION_ID` = het ID uit stap 2, `SITE_DEPLOY_ROLE_ARN` = output `DeployRoleArn`.
-5. **GitHub → Actions → Site → Run workflow** (op `main`). Dan staan de pagina's in de bucket.
+5. **Merge de PR.** De Action *Site* draait vanzelf en zet de pagina's in de bucket. Check in **Actions** dat hij groen is. Later opnieuw draaien kan met **Run workflow** op `main`.
 6. **CloudFront → de distributie → Origins → Create origin**: origin domain = output `BucketOriginDomain`, origin access **Origin access control settings**, kies OAC `clubalmanac-site`. De bucket policy staat al goed; de gele balk met *Copy policy* mag je negeren.
-7. **Behaviors → Default (\*) → Edit**: maak eerst een screenshot van *Function associations* (voor terugzetten). Zet de origin op de nieuwe origin en alle function associations op *No association*. Save.
-8. **General → Settings → Edit → Default root object**: `index.html`. Save.
-9. **Invalidations → Create invalidation**: `/*`. Controle: https://clubalmanac.com toont de lustrumtekst, https://clubalmanac.com/privacy/nl de privacyverklaring.
+7. **Eerst vastleggen voor terugzetten** (screenshots): bij **Behaviors** de lijst en van *Default (\*)* het edit-scherm (origin, viewer protocol policy, cache policy, origin request policy, function associations); de tab **Error pages**; bij **General** het *Default root object*.
+8. **Behaviors → Default (\*) → Edit**:
+   - Origin: de nieuwe origin.
+   - *Viewer protocol policy*: **Redirect HTTP to HTTPS** (S3 krijgt dan altijd HTTPS; met "HTTP and HTTPS" geeft http:// een 403).
+   - *Cache policy*: **CachingOptimized**. *Origin request policy*: geen (stuur de Host-header niet door, anders weigert S3).
+   - Alle *Function associations*: **No association**. Save.
+9. **Behaviors**: verwijder de andere regels (`_next/static/*`, `static/*`, `_next/data/*`); die horen bij de oude webapp. **Error pages**: verwijder eigen foutpagina's van de oude webapp.
+10. **General → Settings → Edit → Default root object**: `index.html`. Save.
+11. **Invalidations → Create invalidation**: `/*`. Controle: https://clubalmanac.com toont de lustrumtekst, http://clubalmanac.com stuurt door naar https, https://clubalmanac.com/privacy/nl toont de privacyverklaring.
 
-Terugzetten: Default (\*) weer op `blob-images-frontend-master` met de functies uit de screenshot, en opnieuw `/*` invalideren.
+Terugzetten: alles uit stap 7 terug zoals op de screenshots, en opnieuw `/*` invalideren.
+
+Bekend: een onbekend pad (bv. `/favicon.ico`) geeft een 403-foutpagina van CloudFront in plaats van een 404.

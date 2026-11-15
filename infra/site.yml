@@ -30,7 +30,9 @@ Conditions:
 Resources:
   SiteBucket:
     Type: AWS::S3::Bucket
-    DeletionPolicy: Retain
+    # Bij een mislukte eerste create gaat de lege bucket mee terug, anders
+    # blokkeert de vaste naam een nieuwe poging.
+    DeletionPolicy: RetainExceptOnCreate
     UpdateReplacePolicy: Retain
     Properties:
       BucketName: clubalmanac-site
