@@ -58,7 +58,8 @@ WP1-WP4 liepen vóór de formele spec-doc-discipline (geen WP-file). Status uit 
 | WP23 | Auth + veld-whitelist op publieke reads (`users.getById` lekte email/subject; alle publieke queries nagelopen). Vóór WP15-WP17 de reads gebruiken. | [`WP23-read-whitelist.md`](./WP23-read-whitelist.md) | ✅ landed 2026-11-02 (audit + heraudit groen) |
 | WP24 | Write-gates op foto-toegang: `albums.addPhoto`, `coverPhotoId` in `groups.update`/`albums.update`, `photos.flag`, `ratings.upsert` checken foto-toegang, plus bestaans-orakels in mutations (incl. `albums.markSeen`, `features.upvote`). Uit WP23-audit, zie WP23 §Closeout. **Af vóór WP17.** | [`WP24-write-gates.md`](./WP24-write-gates.md) | ✅ landed 2026-11-02 (audit + heraudit groen) |
 | Phase 4 Track B | Webapp | — | na T0 (besluit 2026-11-15); oude webapp uit sinds 2026-11-15 |
-| Phase 5 | Hard cutover | — | uit fase 2-scope |
+| WP31 | Overstap naar prod (fase 5): draaiboek van T-4 weken tot T+30 met schrijfstop, cutover-groep, Clerk pre-create, foto's en data naar prod, App Store-vrijgave op T0, films en controles per stap. A→besluiten→draaiboek→red-team→generale repetitie. | [`WP31-cutover.md`](./WP31-cutover.md) | draft 2026-11-15 |
+| Phase 5 | Hard cutover | [`WP31-cutover.md`](./WP31-cutover.md) | zie WP31 |
 
 Per WP-start: trigger [`phase-kickoff`](https://github.com/anthropics/claude-code) skill in een regie-sessie, draft-spec hier neerzetten, A→B→audit-flow doorlopen.
 
