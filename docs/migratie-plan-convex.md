@@ -49,7 +49,7 @@ Cognito met invite-only signup (pre-signup Lambda checkt invite in DB), custom e
 
 ### Clients
 - **iPhone app** (App Store): primaire client. Expo SDK 47, React Native 0.70.5 (eind 2022). `aws-amplify` v5 voor Cognito + API + Storage. **Geen `expo-updates` of `expo-notifications` geïnstalleerd** → geen OTA, geen push.
-- **Webapp** (legacy): fallback voor Android-users die door corporate restricties geen apps kunnen installeren. Zelfde AWS backend.
+- **Webapp** (legacy): zelfde AWS backend. Wordt niet gebruikt; gaat op T0 uit zonder opvolger (besluit 2026-11-15).
 
 ### Schaal
 20 users, 6 groepen, 17 albums, ~1544 foto's (bucket `blob-images`: 1601 objecten, 5,6 GB), 1524 album-koppelingen, 3 openstaande invites, en 12 likes in totaal. Plus 10 video's (~19 GB) in een aparte bucket `blob-videos` — die gaan niet mee naar Convex, zie [`work-packages/WP12-data-migratie-tooling.md`](./work-packages/WP12-data-migratie-tooling.md) §Video's. Laag/casual gebruik. AWS kost ~$10/maand.
@@ -864,11 +864,11 @@ Handmatig per feature in Expo dev build. Bij 20 users pragmatisch genoeg, geen a
 
 De hele backend bouwen en testen, los van de app en los van de data. Tests draaien tegen een lege `convex-test` database.
 
-Status van de fase-2-checklist staat in [`migratie-status.md`](./migratie-status.md). Backend is client-agnostisch. Zelfde queries/mutations werken straks voor zowel iPhone app als webapp.
+Status van de fase-2-checklist staat in [`migratie-status.md`](./migratie-status.md). Backend is client-agnostisch.
 
 ### Fase 3-5: status in `migratie-status.md`
 
-Detail van data-migratie-tooling, client-tracks (iPhone + webapp) en hard-cutover-stappenplan zijn verhuisd naar `migratie-status.md`. Cutover-mechanieken (group-injection, write-block) blijven hieronder als architectuur-rationale.
+Detail van data-migratie-tooling, de iPhone-app en hard-cutover-stappenplan zijn verhuisd naar `migratie-status.md`. Cutover-mechanieken (group-injection, write-block) blijven hieronder als architectuur-rationale.
 
 ## Cutover-mechanieken (architectuur-rationale)
 
@@ -904,9 +904,8 @@ Dus: communicatie en blokkade gaan **buiten de oude app om**.
 - Reads laten staan een paar weken zodat de oude app niet hard crasht (toont nog content, kan niet meer wijzigen)
 - Resultaat in oude app: generic alert "Er ging iets mis, probeer het later anders weer" — acceptabel gegeven de out-of-band communicatie
 
-**4. Webapp cutover**
-- Statische redirect-pagina deployen op het oude webapp domein: "Deze webapp is uit dienst, gebruik vanaf nu {nieuwe URL}"
-- Geen App Store delay zoals bij de iPhone app
+**4. Oude webapp uit**
+- Statische pagina op het oude webapp-domein: "Deze webapp is uit dienst, gebruik de iPhone-app." Geen nieuwe webapp (besluit 2026-11-15).
 
 Concrete cutover-stappenplan + Monitoring/Backup + Cyclus-2 backlog: zie [`migratie-status.md`](./migratie-status.md).
 
@@ -918,7 +917,6 @@ Concrete cutover-stappenplan + Monitoring/Backup + Cyclus-2 backlog: zie [`migra
 | **Video streaming** | 30-min video's, bandwidth | Upload is handmatig (geen issue). Streaming: native Convex werkt, R2 is beter vanwege edge caching. Geen harde limiet op file size |
 | **Oude app niet upgradebaar** | SDK 47 → huidige = 5+ majors; datalaag gaat er toch uit | Verse app in `app/` (besluit 2026-10-25, zie `migratie-status.md` fase 4 Track A) |
 | **Geen update-mechanisme oude app** | Geen `expo-updates`, geen push, App Store submit van 3 jaar oude codebase wordt afgeraden | Forceert hard cutover. Communicatie via out-of-band kanalen + group-injection als in-app reminder + backend write-block |
-| **Webapp scope** | Camera/maps werken niet 1:1 in browser (`react-native-maps` heeft geen web support) | Scope vroeg in fase 4B bepalen: view-only vs full feature. Maps: Leaflet of Google Maps JS als web-alternatief |
 | **Stream handler vertaling** | Complex cascade logic, 27 handlers | Test-driven bouwen. Grootste kans: Convex transacties elimineren veel complexiteit |
 | **File bandwidth kosten** | Dominante kostenpost bij Convex native storage | $2.71-$9.15/maand native, of ~$0/maand met R2 component |
 | **Battery drain via subscriptions** | Convex WebSocket houdt radio warm; te veel/te brede live `useQuery` calls = drain. iOS suspendt in background, maar reconnect-storms bij flaky netwerk kosten ook | Per scherm bewuste keuze: live subscription alleen waar realtime nodig is. Unsubscribe bij navigatie weg. Pauzeer bij `AppState !== 'active'`. Voor zelden-muterende data: one-shot fetch ipv live query |

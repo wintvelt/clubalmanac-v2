@@ -57,7 +57,7 @@ WP1-WP4 liepen vóór de formele spec-doc-discipline (geen WP-file). Status uit 
 | WP30 | Afhankelijkheden bijwerken (check 2026-11-14): kleine updates voor Clerk, Convex, Expo, React Native en Expo-modules; in de app 8 kwetsbaarheden in onderliggende pakketten (2 hoog, o.a. zod), allemaal met een fix. TypeScript 7 en Vitest 5 los daarvan. Na WP19b, vóór T0. | [`WP30-afhankelijkheden.md`](./WP30-afhankelijkheden.md) | ✅ landed 2026-11-14 (gate simulator, nieuwe build); convex-test 0.0.71 en minimatch in de backlog |
 | WP23 | Auth + veld-whitelist op publieke reads (`users.getById` lekte email/subject; alle publieke queries nagelopen). Vóór WP15-WP17 de reads gebruiken. | [`WP23-read-whitelist.md`](./WP23-read-whitelist.md) | ✅ landed 2026-11-02 (audit + heraudit groen) |
 | WP24 | Write-gates op foto-toegang: `albums.addPhoto`, `coverPhotoId` in `groups.update`/`albums.update`, `photos.flag`, `ratings.upsert` checken foto-toegang, plus bestaans-orakels in mutations (incl. `albums.markSeen`, `features.upvote`). Uit WP23-audit, zie WP23 §Closeout. **Af vóór WP17.** | [`WP24-write-gates.md`](./WP24-write-gates.md) | ✅ landed 2026-11-02 (audit + heraudit groen) |
-| Phase 4 Track B | Webapp | — | open |
+| Phase 4 Track B | Webapp | — | geschrapt 2026-11-15: oude webapp gaat op T0 uit, geen opvolger |
 | Phase 5 | Hard cutover | — | uit fase 2-scope |
 
 Per WP-start: trigger [`phase-kickoff`](https://github.com/anthropics/claude-code) skill in een regie-sessie, draft-spec hier neerzetten, A→B→audit-flow doorlopen.
