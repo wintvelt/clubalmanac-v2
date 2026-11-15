@@ -1,6 +1,6 @@
 # Site op clubalmanac.com (na de oude webapp)
 
-Besluit Wouter 2026-11-15: de oude webapp gaat uit vóór de overstap. Op clubalmanac.com staan dan alleen:
+De oude webapp is uit sinds 2026-11-15 (besluit Wouter, vóór de overstap). Op clubalmanac.com staan alleen:
 
 - `/`: de website is even dicht (bijkomen van een lustrum), gebruik de iPhone-app
 - `/privacy/nl`: de privacyverklaring. App Store Connect linkt hierheen, dus deze pagina moet blijven.
@@ -13,9 +13,9 @@ CloudFront-distributie met alternate domain `clubalmanac.com`, DNS in Route 53. 
 
 De nieuwe site staat in bucket `clubalmanac-site`, gemaakt door CloudFormation-stack [`infra/site.yml`](../infra/site.yml). Die stack regelt ook de leestoegang voor CloudFront (OAC) en de deploy-rol voor GitHub Actions (OIDC, alleen vanaf `main`, alleen deze bucket en cache legen). Geen AWS-sleutels in GitHub. De distributie zelf zit niet in de stack: die bestond al.
 
-Domein, DNS en CloudFront blijven staan: de mail van `invites@`, `info@` en `wouter@` hangt aan het domein.
+Domein, DNS en CloudFront blijven staan: de mail van `invites@`, `info@` en `wouter@` hangt aan het domein. De distributie van dev.clubalmanac.com (`ERQ3ZNEILVY87`, oude webapp) is uitgeschakeld; opruimen samen met de rest van AWS op T+30.
 
-## Eenmalig opzetten (Wouter)
+## Eenmalig opzetten (Wouter) — gedaan 2026-11-15
 
 Stap 1 tot en met 4 vóór de merge van de PR; de merge zet daarna de pagina's in de bucket.
 

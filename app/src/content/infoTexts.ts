@@ -18,7 +18,7 @@ const ABOUT: readonly InfoBlock[] = [
   },
   {
     kind: "paragraph",
-    text: "De app blijft bestaan zolang Apple hem in de App Store toelaat. Je kunt de foto's ook bekijken op de website clubalmanac.com.",
+    text: "De app blijft bestaan zolang Apple hem in de App Store toelaat.",
   },
   {
     kind: "paragraph",

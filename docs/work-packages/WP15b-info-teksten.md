@@ -10,7 +10,7 @@ Bovenaan: de naam en de versie van de app (bestaat al).
 
 Deze app is voor de jaarclub. Voor alle foto's die we in de loop der jaren hebben gemaakt. Een deel is gedigitaliseerd en online gedeeld. Een deel ligt nog op zolders.
 
-De app blijft bestaan zolang Apple hem in de App Store toelaat. Je kunt de foto's ook bekijken op de website clubalmanac.com.
+De app blijft bestaan zolang Apple hem in de App Store toelaat.
 
 De bedoeling is dat de app gratis blijft, maar zonder garanties (zoals in het leven).
 
