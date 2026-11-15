@@ -6,6 +6,7 @@ import { canAccessPhoto, isPublishedInGroup } from "./lib/photoAccess";
 import { isInviteAcceptable } from "./groups";
 import { normalizeEmail } from "./lib/email";
 import { visibleProfilePhoto } from "./lib/profilePhoto";
+import { isWebmaster } from "./lib/auth";
 
 // WP17a: de toegangsregel voor beeldbytes (invariant 1, 2, 3, 13, 14).
 // Het beeldpad (`GET /beeld/...`, convex/http.ts, besluit 1: vorm B) vraagt
@@ -33,9 +34,25 @@ async function storedImage(
 }
 
 /**
+ * WP20 A-invariant 9: foto-toegang, plus één uitzondering voor de webmaster:
+ * het beeld van een foto die nu gemeld is (`flaggedAt` gezet), zodat hij in de
+ * wachtrij kan beslissen. Na goedkeuren zijn de flag-velden weg en vervalt de
+ * uitzondering. `isWebmaster` eist de users-rij (WP24 invariant 5). Alleen het
+ * beeldpad; geen andere read krijgt deze uitzondering.
+ */
+async function canSeePhotoImage(
+  ctx: QueryCtx,
+  userId: Id<"users">,
+  photo: Doc<"photos">,
+): Promise<boolean> {
+  if (await canAccessPhoto(ctx, userId, photo)) return true;
+  return photo.flaggedAt !== undefined && (await isWebmaster(ctx));
+}
+
+/**
  * Foto: het beeld als de caller nu foto-toegang heeft (`canAccessPhoto`,
  * WP23: eigenaar, of lid van een groep met de foto in een album; geen
- * webmaster-bypass). Anders `null`: uitgelogd, geen users-rij, geen toegang,
+ * webmaster-bypass, behalve een gemelde foto: `canSeePhotoImage`). Anders `null`: uitgelogd, geen users-rij, geen toegang,
  * onbekend of misvormd id, foto of beeld gewist.
  */
 export const photoImage = internalQuery({
@@ -49,7 +66,7 @@ export const photoImage = internalQuery({
     const id = ctx.db.normalizeId("photos", photoId);
     if (!id) return null;
     const photo = await ctx.db.get(id);
-    if (!photo || !(await canAccessPhoto(ctx, user._id, photo))) return null;
+    if (!photo || !(await canSeePhotoImage(ctx, user._id, photo))) return null;
     return await storedImage(ctx, photo.storageId);
   },
 });
@@ -71,7 +88,7 @@ export const photoImageInFormat = internalQuery({
     const id = ctx.db.normalizeId("photos", photoId);
     if (!id) return null;
     const photo = await ctx.db.get(id);
-    if (!photo || !(await canAccessPhoto(ctx, user._id, photo))) return null;
+    if (!photo || !(await canSeePhotoImage(ctx, user._id, photo))) return null;
     const original = await storedImage(ctx, photo.storageId);
     if (!original) return null;
     return await chooseFormat(ctx, photo, formaat, original);

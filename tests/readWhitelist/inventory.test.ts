@@ -41,6 +41,8 @@ const EXPECTED_PUBLIC_QUERIES = [
   "features:getById",
   "features:hasUpvoted",
   "features:list",
+  // WP20 A-invariant 3: de eigen stemmen voor de hele lijst.
+  "features:listMyUpvotes",
   "groups:getById",
   "groups:getWithCover",
   "groups:listMembers",
@@ -63,6 +65,8 @@ const EXPECTED_PUBLIC_QUERIES = [
   "smoke:ping",
   "users:current",
   "users:getById",
+  // WP20 A-invariant 5: of de caller webmaster is (boolean, gooit nooit).
+  "users:isWebmaster",
   // WP15b: eigen live query voor Profiel (invariant 7), vorm ownProfile.
   "users:profile",
   // WP19b A-invariant 3: waarom er (nog) geen account is.

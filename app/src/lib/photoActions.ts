@@ -10,7 +10,8 @@ export type PhotoAction =
   | "profilePhoto"
   | "rotate"
   | "removeFromAlbum"
-  | "delete";
+  | "delete"
+  | "flag";
 
 export type Role = "admin" | "member";
 
@@ -24,6 +25,7 @@ export type Role = "admin" | "member";
 //   draaien        eigenaar, of admin                  (photos.rotate, WP8)
 //   uit album      wie hem toevoegde, of admin         (albums.removePhoto)
 //   verwijderen    eigenaar                            (photos.remove)
+//   melden         wie de foto ziet, niet de eigenaar  (photos.flag, WP20/WP24)
 // De rol is die in de groep van dit album. Een admin van een andere groep met
 // dezelfde foto mag in de backend ook draaien; het menu mag dan strenger zijn.
 
@@ -41,9 +43,11 @@ const RULES: Record<PhotoAction, (i: MenuInput) => boolean> = {
   rotate: (i) => i.role === "admin" || i.ownerId === i.me,
   removeFromAlbum: (i) => i.role === "admin" || i.addedBy === i.me,
   delete: (i) => i.ownerId === i.me,
+  flag: (i) => i.ownerId !== i.me,
 };
 
-// De volgorde van het menu: verwijderen (rood) altijd onderaan.
+// De volgorde van het menu: verwijderen en melden (rood) altijd onderaan. Ze
+// sluiten elkaar uit (eigen foto tegenover andermans foto).
 const MENU_ORDER: PhotoAction[] = [
   "albumCover",
   "groupCover",
@@ -51,6 +55,7 @@ const MENU_ORDER: PhotoAction[] = [
   "rotate",
   "removeFromAlbum",
   "delete",
+  "flag",
 ];
 
 export function photoActions(input: MenuInput): PhotoAction[] {
@@ -71,6 +76,8 @@ export function photoActionLabel(action: PhotoAction): string {
       return "Uit album halen";
     case "delete":
       return "Overal verwijderen";
+    case "flag":
+      return "Melden als ongepast";
   }
 }
 

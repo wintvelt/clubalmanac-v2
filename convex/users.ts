@@ -18,6 +18,7 @@ import {
 } from "./lib/constants";
 import { canAccessPhoto, canUseStorage } from "./lib/photoAccess";
 import { validName } from "./lib/names";
+import { isWebmaster as isWebmasterCaller } from "./lib/auth";
 import {
   ownProfile,
   ownProfileFields,
@@ -83,6 +84,17 @@ export const profile = query({
   args: {},
   returns: v.union(ownProfile, v.null()),
   handler: ownProfileOrNull,
+});
+
+// WP20 A-invariant 5: of de caller webmaster is, zodat de app de
+// webmaster-schermen kan tonen of verbergen. De gate zelf zit in elke
+// webmaster-functie (invariant 3). Gooit nooit: `false` zonder identity,
+// zonder users-rij of voor een account dat wordt verwijderd (zelfde regel als
+// `isWebmaster` in lib/auth).
+export const isWebmaster = query({
+  args: {},
+  returns: v.boolean(),
+  handler: async (ctx) => await isWebmasterCaller(ctx),
 });
 
 const NO_USER_ACCESS = "Geen toegang tot deze gebruiker";

@@ -79,6 +79,9 @@ Tussen 2026-04 en 2026-06 hebben 18 audit-cycli op clubalmanac-v2 backend de vol
   - Tests op de API-payload zeggen niets over de mail die de provider ervan maakt. Lees bij een gate met bijlagen of opmaak de ruwe mail (MIME-structuur, ingevoegde pixels en links), niet alleen het beeld in één client.
   - Bekijk een mail met een inline-beeld altijd ook in Apple Mail; Gmail verbergt structuurfouten.
   - Een gedeelde tabel tussen controle en gecontroleerde (de EXIF-standen, nu in backend én app) vraagt een test met minstens één gespiegelde stand tegen een onafhankelijke oracle (zelfde patroon als WP8).
+- **WP20 (melden, ideeën en problemen, webmaster-schermen) afgesloten 2026-11-15**: A, B, audit en red-team als sub-sessies vanuit regie (Setup 2 + 6, privacy hoog door het beeldpad voor de webmaster). Audit: geen blockers, twee should-fix in code. S1: de genoemde verwijderdatum klopte niet bij een melding tussen 00:00 en 03:00 UTC (tests draaiden op een vaste klok van 12:00). S2: Profiel las bij elke foto-wijziging alle foto's opnieuw. Opgelost in fix-cyclus 1 met heraudit. Red-team: de uitzondering op het beeldpad is strak; wel lekt de profielfoto-regel van WP27 of een foto gemeld is (geaccepteerd, besluit 9), en een gedeeld S3-beeld kon via de migratie een andere foto laten verdwijnen (fix-cyclus 2: de transform stopt). Gate in de simulator groen, met elke mail aan een `+clerk_test`-adres. Lessen:
+  - Een datum die de gebruiker leest en een cron die op een vast uur draait: test de grens rond dat uur, niet alleen een klok midden op de dag.
+  - Een webmaster-gate op dev test je pas echt als een testaccount in `WEBMASTER_EMAILS` staat en een mail-adres daarin een echte inbox is. Op dev stonden alleen nep-adressen; de app meldde "verstuurd" en de mail verdween.
 
 ## Recurring-pattern-kandidaten (WP23)
 
@@ -100,10 +103,11 @@ Twee audits op rij (WP4 `INTEGRATION_TEST_ENABLED`, WP5 vijf nieuwe env-vars) we
 ## Backlog (uit audits, niet meegelopen in eigen WP)
 
 - **WP5 N-2**: `invite.email` lowercase doorgegeven aan bounce-notify-template (origineel "Bob@X.com" wordt "bob@x.com"). UX-detail. Past in future "email-template polish" mini-WP indien ooit gewenst.
-- **Bestaans-orakels in mutations** (WP24-inventaris, lekken alleen bestaan): `photos.update`/`remove`/`rotate`/`appeal`, `albums.remove`/`removePhoto`, `groups.addMember` (user-id), `invites.remove` (status vóór rechten), `invites.create` (email van een lid), plus het beeld-id in `users.updateProfile` alleen voor wie het id al kent.
+- **Bestaans-orakels in mutations** (WP24-inventaris, lekken alleen bestaan): `photos.update`/`remove`/`rotate` (`appeal` dicht in WP20), `albums.remove`/`removePhoto`, `groups.addMember` (user-id), `invites.remove` (status vóór rechten), `invites.create` (email van een lid), plus het beeld-id in `users.updateProfile` alleen voor wie het id al kent.
 - **`convex/_test.ts` op dev** (WP24-heraudit, nu [WP26](../work-packages/README.md)): `storageDownloadUrl` en `storageDelete` lezen en wissen elk beeld zonder auth zolang `INTEGRATION_TEST_ENABLED` aan staat. Dev bevat echte foto's van 3 users. Intern maken of achter de webmaster-check.
 - **M1-cascade** (WP24-A): lid vertrekt, maar covers worden niet gewist en ratings blijven in het aggregaat. De read-gate verbergt het.
-- **Rating-validatie** (WP24-A): `ratings.upsert` accepteert elk getal (v1: 0 of 1); meld-reden heeft geen maximum.
+- **WP20 mail-teksten** (gate): de afwijsmail begint met "HELAAS:" en schrijft "clubalmanac" klein (v1-tekst uit WP5); de probleemmail toont de tijd als ISO-UTC en zet alle webmaster-adressen zichtbaar in To. Past bij WP5 N-2 in een mail-polish.
+- **WP20 nice-to-have** (heraudit H1–H3, red-team N6): de cron vergelijkt met `now` in plaats van 03:00:00 (ms-randje); het cron-uur staat in backend én app zonder test die ze gelijk houdt; de mail na `removeFlagged` heeft geen nieuwe poging.
 - **Mogelijk flaky `tests/http/upload.test.ts`** (WP24-audit N5): één keer rood in een volle run, los groen.
 - **Inventaristest beeld-ids ziet geen httpAction-routes** en geen `v.string()` die later als `Id<"_storage">` wordt gebruikt (WP24-heraudit).
 - **WP5 N-3**: `console.log` free-form structurering in graceful-skip-paths. Niet grep-baar. Past in cross-cutting observability/logging-werkpakket (zie [`migratie-plan-convex.md` §Monitoring & backup](../migratie-plan-convex.md)).

@@ -47,7 +47,7 @@ Uitzondering: queries zonder trigger (puur read-tests) leven bij de query-owner.
 | Album-photos (publications) | 4 | ✅ AP1, AP2, AP4; ❌ AP3 geschrapt |
 | Ratings | 1 | ❌ R1 (WP19a) |
 | Memberships | 4 | ✅ M1-M4 |
-| Flagging | 2 | ✅ FL1, FL2 |
+| Flagging | 3 | ✅ FL1, FL2, FL3 |
 | Invites | 2 | ✅ IB1 (WP5 bounce-webhook), IB2 (WP9 natural-expiry cron) |
 | Uploads | 1 | ✅ UI1 (cyclus 1 architectuur rewrite + audit-cyclus-1 reservation-pattern hardening, 7d/30min cleanup) |
 | Monitoring | 1 | ✅ MON1 (WP10 integrity-check — detect-only, geen cascade) |
@@ -135,6 +135,7 @@ Uitzondering: queries zonder trigger (puur read-tests) leven bij de query-owner.
 |---|---|---|---|---|---|---|---|
 | FL1 | (nieuw, niet uit AWS — was niet expliciet in oude code, mogelijk handmatig) | Daily cron | Auto-delete photos waar `flaggedDeleteDate <= now` (en niet onder appeal). Audit-9 §3: boundary `<=`, consistent met Invites `expiresAt <= now` | 3 | Convex scheduled cron `cleanupFlaggedPhotos`: scan `photos.by_flagged_delete`, sparse op `flaggedDeleteDate` (appeal pauzeert door dat veld te clearen → vanzelf geen match), roept `internalRemovePhoto` per match aan (transitief P3-P5+P7) | `tests/photos/flagCleanup.test.ts` (cron logica, fake clock voor 14d/7d countdowns + boundary-tests) + `tests/crons/registration.test.ts` (statisch pin op cron-registratie zelf — WP4 audit-13 follow-up) | ✅ |
 | FL2 | `flagPhotoDecide.js` (deny-pad) | webmaster denies appeal | Email naar owner met decision + uitleg. Audit-9 §2: deny-na-deny idempotent (no re-email, no countdown reset); approve-na-deny overrulet | n.v.t. (action, geen cascade) | `decideFlag` mutation queue't `internal.photos.sendFlagDecisionEmail` action via `ctx.scheduler.runAfter(0, ...)`, action is stub tot email-werkpakket landt (Mailjet). Idempotency-guard op deny-pad: skip als `flaggedAppealDenyDate !== undefined` | `tests/photos/decideFlag.test.ts` (assert: email-action gequeue'd bij eerste deny niet bij approve, niet bij tweede deny; approve-na-deny wist alle velden) | ✅ |
+| FL3 | (nieuw, WP20 besluit 1 en 2) | melding, of webmaster beslist zonder bezwaar | Eerste melding: mail aan de eigenaar met de verwijderdatum (`sendFlagReportedEmail`). `decideFlag(approve)` mag ook zonder bezwaar (alle flag-velden weg, geen mail); `deny` alleen na bezwaar. `photos.removeFlagged`: de webmaster verwijdert een gemelde foto meteen, in elke fase, en de eigenaar krijgt een mail (`sendFlagRemovedEmail`, op owner-id: de foto is al weg) | 3 | `removeFlagged` → `internalRemovePhoto` (P3-P5, P7, P9, zoals FL1). Webmaster-gate eerst; een niet-gemelde foto weigert hij | `tests/photos/flagOwnerMail.test.ts`, `tests/photos/webmasterWithoutAppeal.test.ts`, `tests/photos/denyMailDate.test.ts` | ✅ |
 
 ### Trigger: Invites (system events)
 

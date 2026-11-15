@@ -35,6 +35,14 @@ import {
 const DAY_MS = 24 * 60 * 60 * 1000;
 const FLAG_DELETE_DAYS = 14;
 const DENY_DELETE_DAYS = 7;
+/** WP20 A-invariant 7: de webmaster leest de reden; de publieke API begrenst hem. */
+const FLAG_REASON_MAX_LENGTH = 500;
+/**
+ * WP20 besluit 6, S2: ondergrens voor index-ranges op flaggedAt. Elke
+ * flaggedAt is een tijdstip (ms sinds 1970, ook gemigreerde meldingen); een
+ * rij zonder flaggedAt valt eronder.
+ */
+const FLAGGED_AT_MIN = 0;
 
 // WP23: foto-toegang (definitie in lib/photoAccess). Eén error voor "foto
 // bestaat niet" en "geen toegang" (invariant 4).
@@ -1013,14 +1021,26 @@ export const flag = mutation({
     if (photo.ownerId === user._id) {
       throw new Error("Eigen foto kan niet geflagd worden");
     }
+    // WP20 A-invariant 7: getrimd, hoogstens 500 tekens; leeg = geen reden.
+    // De grens komt vóór "al gemeld": anders zou een te lange reden verraden
+    // of de foto al gemeld is (invariant 4).
+    const trimmed = reason?.trim();
+    if (trimmed !== undefined && [...trimmed].length > FLAG_REASON_MAX_LENGTH) {
+      throw new ConvexError({ code: "REASON_TOO_LONG" });
+    }
     if (photo.flaggedAt !== undefined) return;
 
     const now = Date.now();
     await ctx.db.patch(photoId, {
       flaggedAt: now,
       flaggedBy: user._id,
-      flagReason: reason,
+      flagReason: trimmed ? trimmed : undefined,
       flaggedDeleteDate: now + FLAG_DELETE_DAYS * DAY_MS,
+    });
+    // WP20 besluit 1, A-invariant 10: alleen bij de eerste melding een mail
+    // aan de eigenaar (best-effort; een mislukte mail laat de melding staan).
+    await ctx.scheduler.runAfter(0, internal.photos.sendFlagReportedEmail, {
+      photoId,
     });
   },
 });
@@ -1034,9 +1054,10 @@ export const appeal = mutation({
   handler: async (ctx, { photoId }) => {
     const user = await requireCurrentUser(ctx);
     const photo = await ctx.db.get(photoId);
-    if (!photo) throw new Error("Foto bestaat niet");
-    if (photo.ownerId !== user._id) {
-      throw new Error("Alleen eigenaar kan in beroep gaan");
+    // WP20 A-invariant 8: "bestaat niet" en "niet jouw foto" geven dezelfde
+    // fout; anders is appeal een bestaans-orakel.
+    if (!photo || photo.ownerId !== user._id) {
+      throw new Error("Foto bestaat niet");
     }
     if (photo.flaggedAt === undefined) {
       throw new Error("Foto is niet geflagd");
@@ -1054,9 +1075,10 @@ export const appeal = mutation({
 });
 
 // FL2: webmaster beslist over een appeal.
-//   approve = clear alle flag-velden (volledige clean state)
+//   approve = clear alle flag-velden (volledige clean state). WP20 besluit 2
+//             (A-invariant 11): ook zonder bezwaar.
 //   deny    = set flaggedAppealDenyDate, restart 7d countdown,
-//             queue email-action naar owner
+//             queue email-action naar owner. Alleen na een bezwaar.
 // Bron: oude AWS handler flagPhotoDecide.js. Afwijking van oude code:
 // alleen email bij deny (cascade-matrix FL2).
 export const decideFlag = mutation({
@@ -1072,7 +1094,7 @@ export const decideFlag = mutation({
     if (photo.flaggedAt === undefined) {
       throw new Error("Foto is niet geflagd");
     }
-    if (photo.flaggedAppealDate === undefined) {
+    if (!approve && photo.flaggedAppealDate === undefined) {
       throw new Error("Geen appeal om over te beslissen");
     }
 
@@ -1108,6 +1130,30 @@ export const decideFlag = mutation({
   },
 });
 
+// WP20 besluit 2, A-invariant 12: de webmaster laat een gemelde foto meteen
+// verwijderen, in elke fase (gemeld, bezwaar, afgewezen), met dezelfde cascade
+// als de cron (FL1). Webmaster-gate eerst (invariant 3). Een foto die niet
+// gemeld is, weigert hij: dit is geen algemene wis-knop.
+// A-invariant 13: de eigenaar krijgt een mail. De foto is dan al weg, dus de
+// action krijgt de eigenaar mee, niet de foto.
+export const removeFlagged = mutation({
+  args: { photoId: v.id("photos") },
+  returns: v.null(),
+  handler: async (ctx, { photoId }) => {
+    await requireWebmaster(ctx);
+    const photo = await ctx.db.get(photoId);
+    if (!photo) throw new Error("Foto bestaat niet");
+    if (photo.flaggedAt === undefined) {
+      throw new Error("Foto is niet geflagd");
+    }
+    await internalRemovePhoto(ctx, photoId);
+    await ctx.scheduler.runAfter(0, internal.photos.sendFlagRemovedEmail, {
+      ownerId: photo.ownerId,
+    });
+    return null;
+  },
+});
+
 // Eigen photos die door anderen geflagd zijn (Inappropriate.jsx).
 // WP23: foto-vorm + flag-datums voor het bezwaar; geen melder of reden.
 const MY_FLAGGED_FIELDS = { ...photoFields, ...ownFlagFields };
@@ -1116,9 +1162,14 @@ export const listMyFlagged = query({
   returns: v.array(v.object({ ...MY_FLAGGED_FIELDS, ...hasFormatsField })),
   handler: async (ctx) => {
     const user = await requireCurrentUser(ctx);
+    // WP20 besluit 6, S2: alleen de gemelde foto's lezen. Een ontbrekende
+    // flaggedAt sorteert in de index vóór elk getal, dus de ondergrens laat
+    // de niet-gemelde foto's buiten de range.
     const owned = await ctx.db
       .query("photos")
-      .withIndex("by_owner", (q) => q.eq("ownerId", user._id))
+      .withIndex("by_owner_and_flagged", (q) =>
+        q.eq("ownerId", user._id).gte("flaggedAt", FLAGGED_AT_MIN),
+      )
       .collect();
     return await Promise.all(
       owned
@@ -1138,7 +1189,12 @@ export const listAllFlagged = query({
   returns: v.array(v.object({ ...ALL_FLAGGED_FIELDS, ...hasFormatsField })),
   handler: async (ctx) => {
     await requireWebmaster(ctx);
-    const all = await ctx.db.query("photos").withIndex("by_flagged").collect();
+    // WP20 besluit 6, S2: `by_flagged` is niet sparse (WP17a vraag 9); de
+    // ondergrens houdt de niet-gemelde foto's buiten de range.
+    const all = await ctx.db
+      .query("photos")
+      .withIndex("by_flagged", (q) => q.gte("flaggedAt", FLAGGED_AT_MIN))
+      .collect();
     return await Promise.all(
       all
         .filter((p) => p.flaggedAt !== undefined)
@@ -1176,17 +1232,34 @@ export const cleanupFlaggedPhotos = internalMutation({
 // FK-walk via internalQuery (action heeft geen ctx.db). Graceful skip
 // als photo of owner inmiddels weg is (cascade-race).
 
+// WP20: ook de huidige verwijderdatum, voor de mail bij melden en afwijzen.
+// Geen melder of reden (invariant 1).
 export const getPhotoOwnerForEmail = internalQuery({
   args: { photoId: v.id("photos") },
   handler: async (ctx, { photoId }) => {
     const photo = await ctx.db.get(photoId);
     if (!photo) return null;
     const owner = await ctx.db.get(photo.ownerId);
-    if (!owner) return null;
+    // WP20 besluit 6, N3: geen mail aan een eigenaar wiens account wordt
+    // verwijderd (WP29). Deze query draait bij het versturen, dus het telt
+    // ook als het verwijderen begon nadat de mail was ingepland.
+    if (!owner || owner.deletion !== undefined) return null;
     return {
       ownerName: owner.name ?? owner.email,
       ownerEmail: owner.email,
+      flaggedDeleteDate: photo.flaggedDeleteDate ?? null,
     };
+  },
+});
+
+// WP20 A-invariant 13: de eigenaar op user-id; de foto is al weg.
+export const getOwnerForEmail = internalQuery({
+  args: { ownerId: v.id("users") },
+  handler: async (ctx, { ownerId }) => {
+    const owner = await ctx.db.get(ownerId);
+    // WP20 besluit 6, N3: zie getPhotoOwnerForEmail.
+    if (!owner || owner.deletion !== undefined) return null;
+    return { ownerName: owner.name ?? owner.email, ownerEmail: owner.email };
   },
 });
 
@@ -1213,7 +1286,68 @@ export const sendFlagDecisionEmail = internalAction({
     const { INFO_SENDER, sendMailjetMessage } = await import("./lib/mailjet");
     const { flagDecisionDenyTemplate } = await import("./lib/emailTemplates");
 
-    const tpl = flagDecisionDenyTemplate({ ownerName: data.ownerName });
+    // WP20 A-invariant 6: de mail noemt de datum (zonder datum: "binnenkort").
+    const tpl = flagDecisionDenyTemplate({
+      ownerName: data.ownerName,
+      deleteAt: data.flaggedDeleteDate,
+    });
+    await sendMailjetMessage({
+      from: { email: INFO_SENDER },
+      to: [{ email: data.ownerEmail }],
+      subject: tpl.subject,
+      htmlPart: tpl.htmlPart,
+      textPart: tpl.textPart,
+    });
+  },
+});
+
+// WP20 besluit 1, A-invariant 10: mail aan de eigenaar bij de eerste melding,
+// met de datum waarop de foto verdwijnt en waar hij bezwaar maakt. Geen melder
+// of reden. Is de foto inmiddels weg, goedgekeurd of onder bezwaar (geen
+// verwijderdatum meer), dan geen mail.
+export const sendFlagReportedEmail = internalAction({
+  args: { photoId: v.id("photos") },
+  handler: async (ctx, { photoId }) => {
+    const data = await ctx.runQuery(internal.photos.getPhotoOwnerForEmail, {
+      photoId,
+    });
+    if (!data || data.flaggedDeleteDate === null) {
+      console.log(
+        `[sendFlagReportedEmail] photo/owner/verwijderdatum niet meer gevonden photoId=${photoId}, skipping`,
+      );
+      return;
+    }
+    const { INFO_SENDER, sendMailjetMessage } = await import("./lib/mailjet");
+    const { flagReportedTemplate } = await import("./lib/emailTemplates");
+    const tpl = flagReportedTemplate({
+      ownerName: data.ownerName,
+      deleteAt: data.flaggedDeleteDate,
+    });
+    await sendMailjetMessage({
+      from: { email: INFO_SENDER },
+      to: [{ email: data.ownerEmail }],
+      subject: tpl.subject,
+      htmlPart: tpl.htmlPart,
+      textPart: tpl.textPart,
+    });
+  },
+});
+
+// WP20 besluit 2, A-invariant 13: mail aan de eigenaar dat de webmaster zijn
+// gemelde foto meteen liet verwijderen. Hangt niet van de foto-rij af.
+export const sendFlagRemovedEmail = internalAction({
+  args: { ownerId: v.id("users") },
+  handler: async (ctx, { ownerId }) => {
+    const data = await ctx.runQuery(internal.photos.getOwnerForEmail, { ownerId });
+    if (!data) {
+      console.log(
+        `[sendFlagRemovedEmail] owner niet meer gevonden ownerId=${ownerId}, skipping`,
+      );
+      return;
+    }
+    const { INFO_SENDER, sendMailjetMessage } = await import("./lib/mailjet");
+    const { flagRemovedTemplate } = await import("./lib/emailTemplates");
+    const tpl = flagRemovedTemplate({ ownerName: data.ownerName });
     await sendMailjetMessage({
       from: { email: INFO_SENDER },
       to: [{ email: data.ownerEmail }],

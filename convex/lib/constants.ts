@@ -14,6 +14,14 @@ export const DEFAULT_PHOTO_LIMIT = 1000;
  */
 export const VISIT_PERIOD_MS = 3_600_000;
 
+/**
+ * FL1: het uur (UTC) waarop de dagelijkse opruimronde gemelde foto's wist
+ * (convex/crons.ts). WP20 besluit 6, S1: de dag die mail en app noemen hangt
+ * hiervan af (lib/emailTemplates `flagRemovalDay`, en in de app
+ * `removalDay` in app/src/lib/flags.ts, die het uur zelf kent).
+ */
+export const FLAG_CLEANUP_HOUR_UTC = 3;
+
 /** WP15b: maximale lengte van een naam, in tekens (code points), na trim. */
 export const NAME_MAX_LENGTH = 50;
 

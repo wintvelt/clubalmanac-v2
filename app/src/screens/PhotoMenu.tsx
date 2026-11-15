@@ -73,6 +73,14 @@ const SUCCESS: Record<Exclude<PhotoAction, "rotate">, Feedback> = {
   profilePhoto: { kind: "success", title: "Profielfoto ingesteld" },
   removeFromAlbum: { kind: "success", title: "Uit het album gehaald" },
   delete: { kind: "success", title: "Foto verwijderd" },
+  // WP20: ook als de foto al gemeld was (invariant 4: dat hoort de melder niet).
+  flag: { kind: "success", title: "Je melding is doorgegeven", message: "De eigenaar krijgt bericht, zonder jouw naam." },
+};
+
+const FLAG_FAILED: Feedback = {
+  kind: "error",
+  title: "Helaas, je melding is niet doorgegeven",
+  message: "Probeer het later opnieuw.",
 };
 
 // Invariant 2: wat er weggaat bij verwijderen.
@@ -139,6 +147,7 @@ export function usePhotoMenu({
   const setProfilePhoto = useMutation(api.users.setProfilePhoto);
   const removeFromAlbum = useMutation(api.albums.removePhoto);
   const removePhoto = useMutation(api.photos.remove);
+  const flagPhoto = useMutation(api.photos.flag);
   const openFor = useRef<string | null>(null);
   // WP17d A-invariant 12: de ref houdt een tweede tik tegen (ook binnen één
   // render), de state laat het scherm zien dat het delen bezig is.
@@ -153,12 +162,12 @@ export function usePhotoMenu({
   }, [photoIds]);
 
   const attempt = useCallback(
-    async (run: () => Promise<unknown>, done: Feedback) => {
+    async (run: () => Promise<unknown>, done: Feedback, failed: Feedback = FAILED) => {
       try {
         await run();
         onFeedback(done);
       } catch {
-        onFeedback(FAILED);
+        onFeedback(failed);
       }
     },
     [onFeedback],
@@ -261,9 +270,18 @@ export function usePhotoMenu({
             void attempt(() => removePhoto({ photoId }), SUCCESS.delete),
           );
           return;
+        case "flag":
+          // WP20: eerst vragen, zoals v1. De melder blijft anoniem (invariant 1).
+          confirm(
+            "Foto melden als ongepast?",
+            "De eigenaar krijgt hiervan bericht, zonder jouw naam. Maakt de eigenaar geen bezwaar, dan wordt de foto na 14 dagen verwijderd.",
+            "Melden",
+            () => void attempt(() => flagPhoto({ photoId }), SUCCESS.flag, FLAG_FAILED),
+          );
+          return;
       }
     },
-    [place, ctx, share, attempt, updateAlbum, updateGroup, setProfilePhoto, removeFromAlbum, removePhoto],
+    [place, ctx, share, attempt, updateAlbum, updateGroup, setProfilePhoto, removeFromAlbum, removePhoto, flagPhoto],
   );
 
   const open = useCallback(
@@ -272,7 +290,8 @@ export function usePhotoMenu({
       if (actions.length === 0) return;
       onFeedback(null);
       const options = [...actions.map(menuActionLabel), "Annuleren"];
-      const destructive = actions.indexOf("delete");
+      // Verwijderen en melden zijn rood; ze staan nooit samen in het menu.
+      const destructive = actions.findIndex((a) => a === "delete" || a === "flag");
       openFor.current = photo.photoId;
       ActionSheetIOS.showActionSheetWithOptions(
         {
