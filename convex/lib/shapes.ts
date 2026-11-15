@@ -257,3 +257,19 @@ export const inviteForAdminFields = {
   expiresAt: v.number(),
 };
 export const inviteForAdmin = v.object(inviteForAdminFields);
+
+// ── films (WP21) ──────────────────────────────────────────────────
+
+/**
+ * WP21 A-invariant 9 en 10: een film in de lijst. Geen `videoKey` of
+ * `coverKey`: de app vraagt een link per film-id; `hasCover` zegt alleen of er
+ * een cover is (invariant 7).
+ */
+export const filmListItemFields = {
+  _id: v.id("films"),
+  groupId: v.id("groups"),
+  kind: v.union(v.literal("trailer"), v.literal("film")),
+  title: v.string(),
+  year: v.number(),
+};
+export const filmListItem = v.object({ ...filmListItemFields, hasCover: v.boolean() });

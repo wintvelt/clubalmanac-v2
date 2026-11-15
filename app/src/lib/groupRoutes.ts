@@ -74,3 +74,8 @@ export function myPhotoPath(photoId: string, opts: { withoutAlbum: boolean; load
 export function myRotatePath(photoId: string): string {
   return `/mijn-fotos/draaien/${encodeURIComponent(photoId)}`;
 }
+
+// WP21: het filmscherm van een clubfilm, onder de groep in de Home-stack.
+export function filmPath(groupId: string, filmId: string): string {
+  return `${groupPath(groupId)}/film/${encodeURIComponent(filmId)}`;
+}

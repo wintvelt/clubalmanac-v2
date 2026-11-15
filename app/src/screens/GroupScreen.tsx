@@ -40,6 +40,7 @@ import {
   type MemberAction,
   type Role,
 } from "../lib/groupAdmin";
+import { groupHasFilms } from "../lib/films";
 import { albumPath, editGroupPath, newAlbumPath } from "../lib/groupRoutes";
 import {
   albumsByYear,
@@ -53,16 +54,25 @@ import {
 } from "../lib/groups";
 import { radius, size, space, useTheme } from "../theme";
 import { toMyGroups } from "./AlbumParts";
+import { FilmsTab } from "./FilmsTab";
 import { AlbumCoverTile, backToMyGroups, CoverHeader, LoadError } from "./GroupParts";
 
-type Tab = "albums" | "leden";
+type Tab = "albums" | "films" | "leden";
 const TABS = [
   { key: "albums", title: "Albums" },
+  { key: "leden", title: "Leden" },
+] as const;
+// WP21 (pariteit): Films tussen Albums en Leden, alleen in een groep met films.
+const TABS_WITH_FILMS = [
+  { key: "albums", title: "Albums" },
+  { key: "films", title: "Films" },
   { key: "leden", title: "Leden" },
 ] as const;
 
 // WP16: Groep, met de groepstabs Albums en Leden (besluit 5). Alleen de
 // zichtbare tab heeft een live query (§Routes): de andere is niet gemount.
+// WP21: in een groep met films staat Films ertussen. De filmlijst loopt wel
+// altijd mee (klein): hij beslist of die tab er is.
 // Geen lid (meer), of de groep bestaat niet: de NOT_MEMBER-fout van de
 // backend, opgevangen door de grens hieronder (invarianten 5 en 9).
 export function GroupScreen() {
@@ -95,6 +105,11 @@ function GroupContent({ groupId }: { groupId: Id<"groups"> }) {
   const notice = useNoticeUntilBlur(`group:${groupId}`);
   const [tab, setTab] = useState<Tab>("albums");
   const { userId } = useAuth();
+  // WP21: de films van je groepen (leeg zonder toegang). Bepaalt of de tab
+  // Films er is; de tab zelf speelt niets af.
+  const films = useLiveQuery(api.films.list, {});
+  const hasFilms = groupHasFilms(films, groupId);
+  const shownTab: Tab = tab === "films" && !hasFilms ? "albums" : tab;
 
   // Beslissing 4: onthouden zodra de groep echt getoond wordt.
   const shown = group !== undefined && group !== null;
@@ -127,9 +142,11 @@ function GroupContent({ groupId }: { groupId: Id<"groups"> }) {
             )}
           </View>
           {notice && <Notice kind="success" message={notice} />}
-          <SegmentedTabs tabs={TABS} selected={tab} onSelect={setTab} />
-          {tab === "albums" ? (
+          <SegmentedTabs tabs={hasFilms ? TABS_WITH_FILMS : TABS} selected={shownTab} onSelect={setTab} />
+          {shownTab === "albums" ? (
             <AlbumsTab groupId={groupId} canCreate={rights?.createAlbum ?? false} />
+          ) : shownTab === "films" ? (
+            <FilmsTab groupId={groupId} films={(films ?? []).filter((f) => f.groupId === groupId)} />
           ) : (
             <MembersTab groupId={groupId} groupName={group.name} founderId={group.createdBy} />
           )}

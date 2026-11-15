@@ -270,6 +270,26 @@ export default defineSchema({
     .index("by_user", ["userId"]),
 
   // ──────────────────────────────────────────────────────────────────
+  // Films (WP21)
+  // ──────────────────────────────────────────────────────────────────
+  // De clubfilms in S3 (de bestanden gaan niet naar Convex, WP12). Eén rij per
+  // film of trailer, in de volgorde van `order`. Toegang = lid van `groupId`.
+  // Gevuld per omgeving via `internal.films.replaceAll` (invariant 9: geen
+  // bestandsnaam in de repo). `videoKey` en `coverKey` verlaten de backend
+  // nooit, alleen als ondertekende link.
+  films: defineTable({
+    groupId: v.id("groups"),
+    kind: v.union(v.literal("trailer"), v.literal("film")),
+    title: v.string(),
+    year: v.number(),
+    videoKey: v.string(),
+    coverKey: v.optional(v.string()),
+    order: v.number(),
+  })
+    .index("by_order", ["order"])
+    .index("by_group", ["groupId"]),
+
+  // ──────────────────────────────────────────────────────────────────
   // Album last-seen (per user × album)
   // ──────────────────────────────────────────────────────────────────
   // Vervangt de oude `seenPics` array op memberships (cascade matrix

@@ -50,4 +50,14 @@ crons.daily(
   {},
 );
 
+// WP21 besluit 7 (A-invariant 16): dagelijks één cover lezen met een
+// ondertekende S3-link; mail aan de webmaster als dat niet lukt (ingetrokken
+// of verlopen sleutel, bucket of lijst weg). 05:00 UTC, na de integrity check.
+crons.daily(
+  "film link check",
+  { hourUTC: 5, minuteUTC: 0 },
+  internal.films.checkLinks,
+  {},
+);
+
 export default crons;

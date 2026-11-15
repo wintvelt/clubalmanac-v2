@@ -1,4 +1,5 @@
 import { Stack } from "expo-router";
+import { filmScreenOptions } from "../../../lib/films";
 import { CloseButton, useStackScreenOptions } from "../../../navigation/stackOptions";
 
 // WP16 §Routes: Mijn groepen → Groep → Album → Foto (WP17a) → Draaien (WP17b). Een deep link naar een groep
@@ -17,6 +18,8 @@ export default function Layout() {
       <Stack.Screen name="groep/[groupId]/album/[albumId]/draaien/[photoId]" options={{ title: "Draaien" }} />
       <Stack.Screen name="groep/[groupId]/album/[albumId]/kaart" options={{ title: "Kaart" }} />
       <Stack.Screen name="groep/[groupId]/album/[albumId]/locatie/[photoId]" options={{ title: "Locatie wijzigen" }} />
+      {/* WP21: het filmscherm van een clubfilm; geen terugveeg, zodat spoelen werkt. */}
+      <Stack.Screen name="groep/[groupId]/film/[filmId]" options={filmScreenOptions} />
       <Stack.Screen name="groep/[groupId]/bewerken" options={{ title: "Bewerk groep" }} />
       <Stack.Screen name="groep/[groupId]/album/[albumId]/bewerken" options={{ title: "Bewerk album" }} />
       <Stack.Screen
