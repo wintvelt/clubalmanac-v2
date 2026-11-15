@@ -196,6 +196,7 @@ Dus: communicatie en blokkade gaan **buiten de oude app om**.
 - [ ] T-4 weken: in prod-Clerk sign-up aan (zonder verplichte naamvelden) en bot sign-up protection uit, net als dev. Met de bescherming aan vraagt Clerk ook bij inloggen een captcha ([WP19b](./work-packages/WP19b-uitnodigen-aanmelden.md) besluit 3, [`external-services.md`](./conventions/external-services.md) §Auth).
 - [ ] T-4 weken: sessieduur in prod-Clerk kiezen (Sessions → lifetime / inactivity timeout). Die bepaalt hoe vaak een 50+-user opnieuw moet inloggen ([WP15a](./work-packages/WP15a-navigatie-subscriptions.md) open vraag 4).
 - [ ] T-4 weken: release-script voor prod: `npx convex deploy --prod` alleen als de werkmap schoon is, op `main` staat en gelijk is aan `origin/main` (besluit 2026-11-06)
+- [ ] T-4 weken: in prod-Clerk de JWT-template `convex` checken: de claim `email` is `{{user.primary_email_address}}`, geen metadata die een lid zelf zet. Daar hangt de webmaster-rol aan ([WP20](./work-packages/WP20-melden.md) besluit 12).
 - [ ] T-4 weken: controleren dat `INTEGRATION_TEST_ENABLED` en `INTEGRATION_TEST_SECRET` niet op de prod-deployment staan, zodat de `_test`-functies daar altijd weigeren ([WP26](./work-packages/WP26-test-functies-geheim.md) W4).
 - [ ] T-4 weken: smoke test prod env (lege DB, dummy registratie, JWT round-trip via prod build van app)
 - [ ] T-4 weken: WP5 prod-Gates 1+2 herhalen op prod-deployment (send-roundtrip naar test-inbox + bounce-roundtrip via echte bounce of dashboard test-event)

@@ -1,6 +1,6 @@
 # WP20: melden — foto's, ideeën en problemen
 
-> Regie 2026-11-14. App-WP met een stuk backend. A → besluiten Wouter → B → audit → red-team op het beeldpad → gate in de simulator (dev). Eigen branch `wp20`. Na WP19c en WP30, vóór T0.
+> Regie 2026-11-14. App-WP met een stuk backend. A → besluiten Wouter → B → audit → red-team op het beeldpad → fix-cyclus 2 → gate in de simulator (dev). Eigen branch `wp20`. Na WP19c en WP30, vóór T0.
 
 ## Productdoel
 
@@ -25,11 +25,11 @@ De backend is er grotendeels (WP4, WP5, WP23, WP24). De app heeft nog niets.
 1. **De melder blijft anoniem.** Alleen de webmaster ziet wie meldde en waarom (WP23, invariant 9). De eigenaar, andere leden en de melder zelf zien dat niet via een read, een fout of een mail.
 2. **Een gemelde foto verdwijnt nooit ongemerkt.** De eigenaar weet het binnen de termijn, ziet tot wanneer, en kan bezwaar maken zolang dat mag.
 3. **Webmaster-acties alleen voor de webmaster, in de backend.** De app verbergt de schermen voor anderen, maar de gate zit in de backend. Een niet-webmaster krijgt bij elke webmaster-actie dezelfde weigering, zonder te verraden of iets bestaat.
-4. **Melden lekt niets.** Een melding op een foto die je niet mag zien geeft dezelfde fout als een foto die niet bestaat (WP24). Of een foto al gemeld is, hoort de melder niet.
+4. **Melden lekt niets.** Een melding op een foto die je niet mag zien geeft dezelfde fout als een foto die niet bestaat (WP24). Of een foto al gemeld is, hoort de melder niet (uitzondering via de profielfoto: besluit 9).
 5. **Een probleem ziet alleen wie het meldde en de webmaster.** Ideeën zijn voor alle leden zichtbaar, zonder de naam van de indiener (WP23, A-keuze 5).
 6. **Stemmen klopt.** Eén stem per lid per idee; `upvoteCount` gelijk aan het aantal stemmen, ook bij snel twee keer tikken (cascade-matrix patroon 2).
 7. **Geen stille mislukking in de app.** Elke actie meldt in het NL of hij lukte; een weigering noemt de reden.
-8. **Een gemelde foto blijft in het album staan, zonder markering** (WP17a besluit 4), tenzij Wouter dat hieronder anders beslist.
+8. **Een gemelde foto blijft in het album staan, zonder markering** (WP17a besluit 4). Uitzondering: een gemelde profielfoto is tijdelijk weg (besluit 9).
 
 ## Scope
 
@@ -73,6 +73,17 @@ Alle adviezen overgenomen.
    - S3 (migratieplan) doet regie in de closeout.
 7. **N2: de webmaster mag over een melding van zijn eigen foto beslissen.** Geen wijziging; als eigenaar kan hij die foto toch al verwijderen.
 8. **Red-team op het beeldpad** (besluit 3) na fix-cyclus 1, inclusief N5 (het beeld in de cache van de webmaster na goedkeuren).
+
+### Besluiten na de red-team (2026-11-15)
+
+Alle adviezen overgenomen.
+
+9. **R1, uitzondering op invariant 4 en 8.** Via de profielfoto kan een lid merken dat een foto gemeld is: een gemelde foto wordt geen profielfoto, en een gemelde profielfoto is tijdelijk weg, ook op het openbare profielpad (WP27 besluit 8). Wie meldde en waarom lekt niet. Geaccepteerd; geen wijziging.
+10. **Fix-cyclus 2** (A test, B impl):
+    - **R2, de migratie meldt een gedeeld beeld.** Hebben twee foto-records in de bron dezelfde S3-sleutel, dan stopt de migratie met een melding die de foto's noemt, vóór er iets geladen is. Zo kan een melding of een wis nooit het beeld van een andere foto meenemen. Op de prod-extract van 2026-11-07: 0 van 1544. A kiest de stap (transform of verify).
+    - **N5, het beeld blijft niet op de telefoon van de webmaster.** De wachtrij bewaart het beeld van een gemelde foto alleen in het geheugen, niet in de schijfcache.
+11. **N6 (mail bij `removeFlagged` zonder nieuwe poging): geaccepteerd.** N7 volgt uit besluit 2 en 7. N8 is niet te voorkomen in een kleine club.
+12. **N9, de `email`-claim in Clerk.** Wouter checkt op dev dat de JWT-template `convex` `email` vult met `{{user.primary_email_address}}`; voor prod staat het in de T-4-weken-lijst.
 
 ## Risico-assessment
 
