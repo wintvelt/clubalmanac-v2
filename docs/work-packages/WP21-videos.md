@@ -163,13 +163,15 @@ Alle adviezen van A overgenomen.
 | 10 | `tests/films/inventory.test.ts` (argumenten precies `filmId`), `links.test.ts` (precies die sleutel) | |
 | 11 | `access.test.ts` (identieke weigering, lege lijst) | |
 | 12 | `inventory.test.ts`, `tests/readWhitelist/inventory.test.ts` (`films:list` met return-validator) | |
-| 13 | `links.test.ts` (cover ≠ film, per film eigen sleutel; handtekening dekt het pad) | |
+| 13 | `links.test.ts` (cover ≠ film, per film eigen sleutel; handtekening dekt het pad), `tests/films/signature.test.ts` (fix-ronde: vast pad en vaste handtekening uit de AWS-SDK-signer, sleutels met map, haakjes, `'!*`) | |
 | 14 | `app/tests/films.test.ts` (`playbackReducer`: verse link, zelfde positie) | dat de speler echt naar die positie springt: gate |
 | 15 | `app/tests/films.test.ts` (`coverSource` vaste `cacheKey`, `filmVideoSource` `useCaching: false`) | bestanden op schijf: gate |
 | 16 | `tests/films/monitoring.test.ts` (2xx geen mail; 403/404/500, netwerkfout, geen config, geen cover: één mail zonder link of geheim; cron 05:00 UTC) | |
 | 17 | `access.test.ts` (per verzoek) | dat een al uitgegeven link tot zijn einde werkt: restrisico, begrensd door de 3 uur uit `links.test.ts` |
 
 Besluit 3 (bucket dicht op T0) en 5 (tiende bestand niet tonen) zijn ops en data, niet in tests: de seed-data staat buiten de repo. Besluit 6: gate.
+
+**Fix-ronde (audit):** `tests/films/cascade.test.ts` pint dat films meegaan met hun groep (G3 via `groups.remove`, M2-e via het laatste lid); films van een andere groep blijven. `signature.test.ts` is groen op de huidige code en wordt rood als het pad ook de `/` codeert of `!'()*` niet extra codeert.
 
 A paste twee bestaande tests aan: `tests/readWhitelist/inventory.test.ts` (`films:list` erbij) en `tests/crons/registration.test.ts` (vijf crons).
 
