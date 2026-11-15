@@ -299,3 +299,20 @@ A-keuze 9 (mechanisme): **de genoemde dag is de kalenderdag vóór de eerste opr
 - `app/tests/flags.test.ts` (S1, app): `removalDay`, 10 gevallen met de hand (winter, zomer, precies 03:00, middernacht, jaarwissel). 10 rood: de functie bestaat nog niet.
 - `tests/photos/listFlaggedSame.test.ts` (S2): het gedrag, groen. Het lezen toetst de audit.
 - `tests/photos/flagNoMailDeleting.test.ts` (N3): 6 rood, 3 controles groen.
+
+### Fix-cyclus 2 (A, besluit 10)
+
+**R2, een gedeeld beeld stopt de migratie.** `load-files` uploadt per S3-sleutel en `load-records` geeft elke foto met die sleutel hetzelfde `_storage`-id. Twee foto-records met één sleutel delen in v2 dus één beeld: een melding of een wis van de ene raakt ook de andere.
+
+A-keuze 10 (stap): **de stop zit in `transform`.**
+- `transform` draait vóór `load-files` en `load-records` (verify pas erna), is puur en heeft al zo'n stop (WP12b G1). Stopt hij, dan is er geen `convex-records.json`, dus niets om te laden.
+- Het gaat om de foto's die geladen worden: na het filter op eigenaar en lege url, op de sleutel zoals de transform hem opslaat (getrimd). Valt één van de twee weg (dev: de eigenaar is niet chosen), dan deelt er in v2 niets en stopt hij niet.
+- Eén stop die alle foto's met een gedeelde sleutel noemt (per sleutel de foto-id's), niet alleen het eerste paar. Geen ontsnappingsvlag; `--accept-flagged-deletion` zet hem niet uit.
+- Buiten de stop: een profielfoto met de sleutel van een foto. Dat deed v1 zo (`updateUser` zet `photoUrl` op de url van de foto), en v2 wist de profielfoto mee als de foto weg is (`photos.ts`, `profilePhotoStorageId`).
+- Op de prod-extract van 2026-11-07: 0 van 1544. De stop raakt T0 dus niet, tenzij de bron nog verandert.
+
+**N5, het beeld van de wachtrij alleen in het geheugen.** A-keuze 11: `PhotoImage` krijgt de prop `memoryOnly`. Met `memoryOnly` gaat het beeld nooit op schijf (cachePolicy `"memory"` of `"none"`), ook met formaten. Zonder de prop verandert er niets (invariant 1). `FlagQueueContent` geeft hem aan elk beeld. "Gemelde foto's" van de eigenaar hoeft niet: dat zijn zijn eigen foto's.
+
+**Tests (stand na A, fix-cyclus 2):**
+- `tests/migration/wp20SharedKey.test.ts` (R2): paren, drie met één sleutel, twee paren in één stop, spaties, geen ontsnapping via de vlag, dev met en zonder de tweede foto, en geen `convex-records.json` na de stop. 10 rood, 2 groen (premissen).
+- `app/tests/flagQueueCache.test.ts` (N5): `PhotoImage` met `memoryOnly` en formaten niet op schijf; elk `<PhotoImage>` in `FlagQueueContent` heeft `memoryOnly`. 2 rood, 3 groen (zonder formaten al in het geheugen; de controle).
