@@ -1,4 +1,5 @@
 import { useAction } from "convex/react";
+import { useIsFocused } from "expo-router";
 import { useVideoPlayer, VideoView } from "expo-video";
 import { useEffect, useReducer, useRef, useState } from "react";
 import { StyleSheet, View } from "react-native";
@@ -9,6 +10,7 @@ import { LoadingState } from "../components/States";
 import { api } from "../convexApi";
 import {
   filmErrorMessage,
+  filmPlayerCommand,
   filmVideoSource,
   initialPlayback,
   isFilmRefusal,
@@ -27,6 +29,9 @@ import { radius, space } from "../theme";
 // - Mislukt de link of het afspelen (verlopen link, netwerk, S3), dan een
 //   NL-melding met opnieuw proberen; dat haalt een verse link en gaat verder
 //   waar de kijker was (invariant 5, A-invariant 14).
+// - Alleen in beeld spelen: focus weg (een tweede filmscherm erop, een andere
+//   tab) → pauzeren; een link die binnenkomt buiten beeld start niet. Bij
+//   terugkomen niet vanzelf verder (filmPlayerCommand).
 
 type Failure = "link" | "playback" | "refused";
 
@@ -41,6 +46,13 @@ export function FilmPlayer({ filmId, title }: { filmId: Id<"films">; title: stri
   const pendingSeek = useRef<number | null>(null);
   const position = useRef(0);
   position.current = state.position;
+  const focused = useIsFocused();
+  const focusedRef = useRef(focused);
+  focusedRef.current = focused;
+
+  useEffect(() => {
+    if (filmPlayerCommand({ type: "focusChanged", focused }) === "pause") player.pause();
+  }, [focused, player]);
 
   // Een verse link per poging.
   useEffect(() => {
@@ -57,7 +69,7 @@ export function FilmPlayer({ filmId, title }: { filmId: Id<"films">; title: stri
           pendingSeek.current = null;
         }
         dispatch({ type: "linkReady" });
-        player.play();
+        if (filmPlayerCommand({ type: "linkReady", focused: focusedRef.current }) === "play") player.play();
       })
       .catch((error: unknown) => {
         if (!alive) return;

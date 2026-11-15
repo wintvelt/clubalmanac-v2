@@ -94,6 +94,33 @@ export function playbackReducer(s: Playback, e: PlaybackEvent): Playback {
   }
 }
 
+// --- filmscherm en focus (gate-fix) ---------------------------------------
+
+/**
+ * De opties van het filmscherm in de Home-stack. De tijdbalk van de speler
+ * begint bij de linkerrand; zonder dit wint het terug-veeggebaar van het
+ * spoelen. De navigatiebalk met de gewone terugknop blijft.
+ */
+export const filmScreenOptions = { title: "Film", gestureEnabled: false } as const;
+
+export type FilmPlayerEvent =
+  | { type: "linkReady"; focused: boolean }
+  | { type: "focusChanged"; focused: boolean };
+
+/**
+ * Wat de speler doet. Alleen in beeld spelen (invariant 6: geen S3-verkeer
+ * voor een scherm dat niemand ziet). Bij terugkomen niet vanzelf verder: de
+ * plek blijft, de kijker drukt zelf op afspelen.
+ */
+export function filmPlayerCommand(e: FilmPlayerEvent): "play" | "pause" | "none" {
+  switch (e.type) {
+    case "linkReady":
+      return e.focused ? "play" : "none";
+    case "focusChanged":
+      return e.focused ? "none" : "pause";
+  }
+}
+
 // --- meldingen ---------------------------------------------------------------
 
 export type FilmErrorKind = "link" | "playback" | "cover";
