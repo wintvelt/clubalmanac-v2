@@ -21,7 +21,7 @@ Stap 1 tot en met 4 vóór de merge van de PR; de merge zet daarna de pagina's i
 
 1. **IAM → Identity providers**: staat `token.actions.githubusercontent.com` er al? Noteer dan de ARN, en check dat bij *Audiences* `sts.amazonaws.com` staat.
 2. **CloudFront**: noteer het ID van de distributie van clubalmanac.com (begint met `E`).
-3. **CloudFormation** (regio *eu-central-1*, Frankfurt) **→ Create stack → Upload a template file** → `infra/site.yml`. Stacknaam `clubalmanac-site`. Parameters: `DistributionId` uit stap 2, `GitHubOidcProviderArn` uit stap 1 (leeg als die er niet was). Vink onderaan aan dat de stack IAM-resources mag maken. Wacht op *CREATE_COMPLETE* en bekijk **Outputs**.
+3. **CloudFormation** (regio *eu-west-1*, Ierland) **→ Create stack → Upload a template file** → `infra/site.yml`. Stacknaam `clubalmanac-site`. Parameters: `DistributionId` uit stap 2, `GitHubOidcProviderArn` uit stap 1 (leeg als die er niet was). Vink onderaan aan dat de stack IAM-resources mag maken. Wacht op *CREATE_COMPLETE* en bekijk **Outputs**.
 4. **GitHub → repo → Settings → Secrets and variables → Actions → Variables**: `SITE_BUCKET` = `clubalmanac-site`, `SITE_DISTRIBUTION_ID` = het ID uit stap 2, `SITE_DEPLOY_ROLE_ARN` = output `DeployRoleArn`.
 5. **Merge de PR.** De Action *Site* draait vanzelf en zet de pagina's in de bucket. Check in **Actions** dat hij groen is. Later opnieuw draaien kan met **Run workflow** op `main`.
 6. **CloudFront → de distributie → Origins → Create origin**: origin domain = output `BucketOriginDomain`, origin access **Origin access control settings**, kies OAC `clubalmanac-site`. De bucket policy staat al goed; de gele balk met *Copy policy* mag je negeren.

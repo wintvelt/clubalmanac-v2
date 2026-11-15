@@ -38,7 +38,7 @@ jobs:
       - uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ env.SITE_DEPLOY_ROLE_ARN }}
-          aws-region: eu-central-1
+          aws-region: eu-west-1
 
       # Alle pagina's zijn HTML, ook privacy/nl zonder extensie: zet het type
       # expliciet, anders gokt S3 op een download. Komt er ooit een plaatje of
