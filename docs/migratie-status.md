@@ -213,6 +213,7 @@ Dus: communicatie en blokkade gaan **buiten de oude app om**.
 - [ ] T0: verse `extract` + `transform` op actuele DynamoDB-stand, dan `load-files` (alleen de delta sinds T-2), dan `load-records`, `formaten` (WP25) en `verify` (WP12, prod-config). Het aantal geschrapte likes staat in de transform-uitvoer (op T0 12, WP19a). Volgorde staat in het WP12-runbook. Minuten, niet uren — de bulk staat al in storage sinds T-2.
 - [ ] T-0: `integrityCheck`-cron op prod weer aanzetten, ná een groene `verify`
 - [ ] T0: filmlijst op prod vullen ná `load-records`: `node scripts/wp21/seedArgs.ts --group <prod-id van "Blob bibliotheek">`, dan het geprinte `--prod`-commando; daarna `npx convex run --prod films:checkLinks` (geen mail = goed), en de cron `film link check` weer aan als hij uit stond ([WP21](./work-packages/WP21-videos.md))
+- [ ] T0: bucket `blob-videos` dicht, nadat de nieuwe app op prod een film afspeelt: S3 → bucket → Permissions → **Block public access**, alle vier aan (de oude app speelt dan geen films meer). Controle: een film-link zonder het deel na `?` geeft 403, mét geeft nog 206 ([WP21](./work-packages/WP21-videos.md) besluit 3, red-team)
 - [ ] T-0: backend write-block aan op AWS
 - [ ] T-0: webapp redirect aan
 - [ ] T0: 20 users informeren dat ze nu kunnen overstappen. Instructie: app bijwerken, inloggen met je e-mailadres en de code uit de mail
