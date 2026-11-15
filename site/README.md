@@ -2,7 +2,7 @@
 
 Besluit Wouter 2026-11-15: de oude webapp gaat uit vóór de overstap. Op clubalmanac.com staan dan alleen:
 
-- `/`: de webapp is uit dienst, gebruik de iPhone-app
+- `/`: de website is even dicht (bijkomen van een lustrum), gebruik de iPhone-app
 - `/privacy/nl`: de privacyverklaring. App Store Connect linkt hierheen, dus deze pagina moet blijven.
 
 De bestanden maak je met `node scripts/site/build.mjs` (vanuit de repo-root). De privacytekst komt uit `app/src/content/infoTexts.ts`. Pas je die aan, draai het script opnieuw en upload `privacy/nl` opnieuw.
