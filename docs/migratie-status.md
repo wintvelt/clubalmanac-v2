@@ -198,6 +198,7 @@ Dus: communicatie en blokkade gaan **buiten de oude app om**.
 - [ ] T-4 weken: release-script voor prod: `npx convex deploy --prod` alleen als de werkmap schoon is, op `main` staat en gelijk is aan `origin/main` (besluit 2026-11-06)
 - [ ] T-4 weken: in prod-Clerk de JWT-template `convex` checken: de claim `email` is `{{user.primary_email_address}}`, geen metadata die een lid zelf zet. Daar hangt de webmaster-rol aan ([WP20](./work-packages/WP20-melden.md) besluit 12).
 - [ ] T-4 weken: controleren dat `INTEGRATION_TEST_ENABLED` en `INTEGRATION_TEST_SECRET` niet op de prod-deployment staan, zodat de `_test`-functies daar altijd weigeren ([WP26](./work-packages/WP26-test-functies-geheim.md) W4).
+- [ ] T-4 weken: clubfilms ([WP21](./work-packages/WP21-videos.md)): IAM-gebruiker met alleen `s3:GetObject` op `blob-videos/*`, en `FILMS_S3_ACCESS_KEY_ID`, `FILMS_S3_SECRET_ACCESS_KEY`, `FILMS_S3_REGION`, `FILMS_S3_BUCKET` op de prod-deployment ([`external-services.md`](./conventions/external-services.md) §AWS S3: clubfilms)
 - [ ] T-4 weken: smoke test prod env (lege DB, dummy registratie, JWT round-trip via prod build van app)
 - [ ] T-4 weken: WP5 prod-Gates 1+2 herhalen op prod-deployment (send-roundtrip naar test-inbox + bounce-roundtrip via echte bounce of dashboard test-event)
 - [ ] T-4 weken: WP6 prod-Gates 1+2+3 herhalen op prod-deployment (atomic-onboarding happy-path + idempotency-relogin + geen rij zonder uitnodiging, WP19b). Eerst [`wp6-clerk-empirical-gates.md`](./runbooks/wp6-clerk-empirical-gates.md) omzetten naar code-login: het runbook gaat nog uit van signup met wachtwoord. Prod-Clerk krijgt dezelfde login-instellingen als dev (e-mailcode aan, wachtwoord uit; dev omgezet 2026-10-25).
@@ -211,6 +212,7 @@ Dus: communicatie en blokkade gaan **buiten de oude app om**.
 - [ ] T-1 dag: laatste reminder via WhatsApp/email
 - [ ] T0: verse `extract` + `transform` op actuele DynamoDB-stand, dan `load-files` (alleen de delta sinds T-2), dan `load-records`, `formaten` (WP25) en `verify` (WP12, prod-config). Het aantal geschrapte likes staat in de transform-uitvoer (op T0 12, WP19a). Volgorde staat in het WP12-runbook. Minuten, niet uren — de bulk staat al in storage sinds T-2.
 - [ ] T-0: `integrityCheck`-cron op prod weer aanzetten, ná een groene `verify`
+- [ ] T0: filmlijst op prod vullen ná `load-records`: `node scripts/wp21/seedArgs.ts --group <prod-id van "Blob bibliotheek">`, dan het geprinte `--prod`-commando; daarna `npx convex run --prod films:checkLinks` (geen mail = goed) ([WP21](./work-packages/WP21-videos.md))
 - [ ] T-0: backend write-block aan op AWS
 - [ ] T-0: webapp redirect aan
 - [ ] T0: 20 users informeren dat ze nu kunnen overstappen. Instructie: app bijwerken, inloggen met je e-mailadres en de code uit de mail

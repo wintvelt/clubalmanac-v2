@@ -17,6 +17,8 @@ export default function Layout() {
       <Stack.Screen name="groep/[groupId]/album/[albumId]/draaien/[photoId]" options={{ title: "Draaien" }} />
       <Stack.Screen name="groep/[groupId]/album/[albumId]/kaart" options={{ title: "Kaart" }} />
       <Stack.Screen name="groep/[groupId]/album/[albumId]/locatie/[photoId]" options={{ title: "Locatie wijzigen" }} />
+      {/* WP21: het filmscherm van een clubfilm. */}
+      <Stack.Screen name="groep/[groupId]/film/[filmId]" options={{ title: "Film" }} />
       <Stack.Screen name="groep/[groupId]/bewerken" options={{ title: "Bewerk groep" }} />
       <Stack.Screen name="groep/[groupId]/album/[albumId]/bewerken" options={{ title: "Bewerk album" }} />
       <Stack.Screen

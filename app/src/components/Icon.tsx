@@ -34,6 +34,9 @@ const IONICONS = {
   idea: "bulb",
   problem: "bug",
   vote: "thumbs-up",
+  // WP21: de clubfilms.
+  film: "film",
+  play: "play-circle",
 } as const;
 
 export type IconName = keyof typeof IONICONS;

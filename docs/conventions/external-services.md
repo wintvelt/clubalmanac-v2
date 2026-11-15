@@ -218,9 +218,47 @@ De bucket `blob-videos` blijft buiten de migratie: die bestanden hebben geen Dyn
 | `MIGRATE_AWS_REGION` / `MIGRATE_DYNAMO_TABLE` / `MIGRATE_S3_BUCKET` | optioneel; defaults `eu-central-1` / `blob-images-photos-prod` / `blob-images` | defaults worden gebruikt en staan in de banner van elke run |
 | AWS-credentials | `AWS_PROFILE` of `AWS_ACCESS_KEY_ID`+`AWS_SECRET_ACCESS_KEY` | AWS-SDK faalt met een credential-fout |
 
-De AWS-credentials horen **niet** in Convex: geen enkele Convex-function praat met AWS. Ze leven op de laptop van de operator, voor de duur van de migratie, en worden bij T+30 ingetrokken.
+Deze AWS-credentials horen **niet** in Convex. Ze leven op de laptop van de operator, voor de duur van de migratie, en worden bij T+30 ingetrokken. De enige AWS-sleutel in Convex is de aparte leessleutel voor de clubfilms (hieronder).
 
 Draaiboek + opruimstap: [`runbooks/wp12-data-migratie.md`](../runbooks/wp12-data-migratie.md).
+
+## AWS S3: clubfilms (WP21)
+
+De clubfilms en hun covers blijven in S3-bucket `blob-videos` (eu-central-1), ook na T+30, tot de R2-overstap. Convex kent alleen de lijst (tabel `films`) en geeft na een toegangscheck een ondertekende S3-link: 3 uur voor een film, 15 minuten voor een cover. De app ziet nooit een sleutel. Zie [WP21](../work-packages/WP21-videos.md).
+
+**IAM-gebruiker** (eigen gebruiker, niet de migratie-leessleutel), met alleen deze policy:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    { "Effect": "Allow", "Action": "s3:GetObject", "Resource": "arn:aws:s3:::blob-videos/*" }
+  ]
+}
+```
+
+Geen `s3:ListBucket`: dan geeft een ontbrekend bestand 403 in plaats van 404, en de lijst van de bucket blijft dicht. "Block public access" (T0) raakt ondertekende links niet.
+
+### Env-vars per deployment (dev en prod)
+
+| Env-var | Waarde | Wat gebeurt bij ontbreken of leeg |
+|---|---|---|
+| `FILMS_S3_ACCESS_KEY_ID` | access key ID van de IAM-gebruiker | link voor een lid faalt met `FILMS_S3_CONFIG_MISSING: <naam>`; de dagelijkse check mailt |
+| `FILMS_S3_SECRET_ACCESS_KEY` | het geheim | idem |
+| `FILMS_S3_REGION` | `eu-central-1` | idem |
+| `FILMS_S3_BUCKET` | `blob-videos` | idem |
+
+Wie geen toegang heeft, krijgt altijd `FILM_NOT_FOUND`, ook zonder config.
+
+### De filmlijst vullen
+
+De lijst staat niet in de repo (WP21 invariant 9: de repo is publiek, de bestandsnamen niet). Bron: `scripts/.data/wp21/films.json` (gitignored). `node scripts/wp21/seedArgs.ts --group <id van "Blob bibliotheek">` schrijft de argumenten naast die lijst en print het `npx convex run films:replaceAll`-commando (prod met `--prod`). `replaceAll` vervangt de hele lijst en faalt bij een onbekende groep.
+
+### Bewaking en kosten
+
+Tekenen gebeurt lokaal, dus een ingetrokken of verlopen sleutel merkt Convex zelf niet. De cron `film link check` (dagelijks 05:00 UTC) leest één byte van een cover met een ondertekende link en mailt `WEBMASTER_EMAILS` als dat niet lukt (zonder link, geheim of bestandsnaam). Rotatie: nieuwe sleutel aanmaken, beide `FILMS_S3_*`-sleutel-vars zetten, de check handmatig draaien (`npx convex run films:checkLinks`), dan de oude sleutel intrekken. Een link die al is uitgegeven, werkt met de oude sleutel tot hij verloopt of de sleutel wordt ingetrokken.
+
+S3 rekent uitgaand verkeer: 100 GB per maand gratis per account, daarboven ~$0,09 per GB. De grootste film helemaal kijken is ~6,2 GB. De app speelt niets vanzelf af, laadt geen film vooruit en bewaart geen film op de telefoon; covers (samen ~21 MB) staan in de cache van de app.
 
 ## Productie-blind-spots
 

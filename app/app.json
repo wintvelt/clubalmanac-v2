@@ -36,7 +36,8 @@
           "cameraPermission": false,
           "microphonePermission": false
         }
-      ]
+      ],
+      "expo-video"
     ],
     "extra": {
       "eas": {

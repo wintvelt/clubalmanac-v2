@@ -513,6 +513,39 @@ ${SIGNATURE_TEXT}`;
   return { subject: mailSubject, htmlPart, textPart };
 }
 
+// ---------------------------------------------------------------------------
+// kind = "film-link-check" (naar webmaster) — WP21 besluit 7
+// ---------------------------------------------------------------------------
+// A-invariant 16: de dagelijkse check kon geen cover lezen met een
+// ondertekende link. Geen link, geen geheim en geen bestandsnaam in de mail:
+// alleen de soort fout (zie `FilmCheckProblem` in convex/films.ts).
+export function filmLinkCheckFailedTemplate(opts: {
+  reason: string;
+  stage: string;
+  timestamp: string;
+}): TemplateBlock {
+  const subject = `Clubfilms: een cover lezen uit S3 lukt niet (${opts.stage})`;
+  const advice =
+    "Controleer de S3-sleutel en de FILMS_S3_*-env-vars in Convex, de IAM-rechten (s3:GetObject op de film-bucket) en of de bestanden en de filmlijst er nog zijn. Zolang dit faalt, speelt de app geen films af.";
+
+  const htmlPart = `
+<p>Hi Admin,</p>
+<p>De dagelijkse check van de clubfilms op de ${escapeHtml(opts.stage)} omgeving kon geen cover lezen (${escapeHtml(opts.reason)}, ${escapeHtml(opts.timestamp)}).</p>
+<p>${escapeHtml(advice)}</p>
+${SIGNATURE_HTML}
+`.trim();
+
+  const textPart = `Hi Admin,
+
+De dagelijkse check van de clubfilms op de ${opts.stage} omgeving kon geen cover lezen (${opts.reason}, ${opts.timestamp}).
+
+${advice}
+
+${SIGNATURE_TEXT}`;
+
+  return { subject, htmlPart, textPart };
+}
+
 // Helper: NL-style date format voor invite-expiry. Output bv. "31-12-2026".
 export function formatNlDate(timestamp: number): string {
   const d = new Date(timestamp);
