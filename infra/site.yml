@@ -5,7 +5,7 @@ Description: >-
   CloudFront-distributie, en een deploy-rol voor GitHub Actions (OIDC, alleen
   vanaf main). De distributie zelf valt buiten deze stack: die bestond al en
   wordt met de hand naar deze bucket gewezen (site/README.md). Deployen in
-  us-east-1.
+  eu-central-1 (Frankfurt, net als de films).
 
 Parameters:
   DistributionId:
