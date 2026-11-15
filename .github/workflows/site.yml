@@ -1,0 +1,55 @@
+name: Site
+
+# Zet site/ op clubalmanac.com (bucket clubalmanac-site achter CloudFront).
+# Opzet en eenmalige stappen: site/README.md en infra/site.yml.
+
+on:
+  push:
+    branches: [main]
+    paths: ["site/**"]
+  workflow_dispatch:
+
+# Twee deploys tegelijk zouden elkaars sync kunnen doorkruisen.
+concurrency:
+  group: site-deploy
+  cancel-in-progress: false
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    env:
+      SITE_BUCKET: ${{ vars.SITE_BUCKET }}
+      SITE_DISTRIBUTION_ID: ${{ vars.SITE_DISTRIBUTION_ID }}
+    steps:
+      - name: Variabelen aanwezig
+        run: |
+          test -n "$SITE_BUCKET" || { echo "repo-variabele SITE_BUCKET ontbreekt"; exit 1; }
+          test -n "$SITE_DISTRIBUTION_ID" || { echo "repo-variabele SITE_DISTRIBUTION_ID ontbreekt"; exit 1; }
+          test -n "${{ vars.SITE_DEPLOY_ROLE_ARN }}" || { echo "repo-variabele SITE_DEPLOY_ROLE_ARN ontbreekt"; exit 1; }
+
+      - uses: actions/checkout@v6
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.SITE_DEPLOY_ROLE_ARN }}
+          aws-region: us-east-1
+
+      # Alle pagina's zijn HTML, ook privacy/nl zonder extensie: zet het type
+      # expliciet, anders gokt S3 op een download. --delete haalt weg wat niet
+      # meer in site/ staat; README.md hoort niet op de site.
+      - name: Uploaden
+        run: |
+          aws s3 sync site/ "s3://$SITE_BUCKET/" --delete \
+            --exclude "README.md" \
+            --content-type "text/html; charset=utf-8" \
+            --cache-control "public, max-age=300"
+
+      - name: Cache legen
+        run: |
+          aws cloudfront create-invalidation \
+            --distribution-id "$SITE_DISTRIBUTION_ID" --paths "/*"

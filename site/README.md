@@ -5,22 +5,26 @@ Besluit Wouter 2026-11-15: de oude webapp gaat uit vóór de overstap. Op clubal
 - `/`: de website is even dicht (bijkomen van een lustrum), gebruik de iPhone-app
 - `/privacy/nl`: de privacyverklaring. App Store Connect linkt hierheen, dus deze pagina moet blijven.
 
-De bestanden maak je met `node scripts/site/build.mjs` (vanuit de repo-root). De privacytekst komt uit `app/src/content/infoTexts.ts`. Pas je die aan, draai het script opnieuw en upload `privacy/nl` opnieuw.
+De bestanden maak je met `node scripts/site/build.mjs` (vanuit de repo-root). De privacytekst komt uit `app/src/content/infoTexts.ts`. Pas je die aan, draai dan het script opnieuw en commit `site/`. Na de merge naar `main` zet de Action [`site.yml`](../.github/workflows/site.yml) de pagina's online en leegt de cache.
 
 ## Hosting
 
-CloudFront-distributie met alternate domain `clubalmanac.com`, DNS in Route 53. De oude webapp komt uit bucket `blob-images-frontend-master` (Next.js). Die bucket blijft staan als terugvaloptie. De nieuwe site staat in een eigen bucket `clubalmanac-site`.
+CloudFront-distributie met alternate domain `clubalmanac.com`, DNS in Route 53. De oude webapp komt uit bucket `blob-images-frontend-master` (Next.js). Die bucket blijft staan als terugvaloptie.
+
+De nieuwe site staat in bucket `clubalmanac-site`, gemaakt door CloudFormation-stack [`infra/site.yml`](../infra/site.yml). Die stack regelt ook de leestoegang voor CloudFront (OAC) en de deploy-rol voor GitHub Actions (OIDC, alleen vanaf `main`, alleen deze bucket en cache legen). Geen AWS-sleutels in GitHub. De distributie zelf zit niet in de stack: die bestond al.
 
 Domein, DNS en CloudFront blijven staan: de mail van `invites@`, `info@` en `wouter@` hangt aan het domein.
 
-## Uitzetten (Wouter, AWS-console)
+## Eenmalig opzetten (Wouter)
 
-1. **S3 → Create bucket** `clubalmanac-site`, regio `us-east-1`, Block public access aan (standaard).
-2. **Upload** `index.html`. Daarna **Create folder** `privacy` en upload daarin het bestand `nl`. Zet bij die upload onder **Properties → Metadata** het type *System defined*, key `Content-Type`, value `text/html; charset=utf-8`. Doe dat ook voor `index.html`.
-3. **CloudFront → de distributie → Origins → Create origin**: origin domain `clubalmanac-site.s3.us-east-1.amazonaws.com`, origin access **Origin access control settings**, maak een nieuwe OAC. Na het opslaan toont de console een bucket policy: kopieer die naar **S3 → clubalmanac-site → Permissions → Bucket policy**.
-4. **Behaviors → Default (\*) → Edit**: noteer eerst wat er bij *Function associations* staat (voor terugzetten). Zet de origin op `clubalmanac-site` en alle function associations op *No association*. Opslaan.
-5. **General → Edit → Default root object**: `index.html`.
-6. **Invalidations → Create invalidation**: `/*`.
-7. Controle: https://clubalmanac.com toont "uit dienst", https://clubalmanac.com/privacy/nl de privacyverklaring.
+1. **IAM → Identity providers**: staat `token.actions.githubusercontent.com` er al? Noteer dan de ARN.
+2. **CloudFront**: noteer het ID van de distributie van clubalmanac.com (begint met `E`).
+3. **CloudFormation** (regio *us-east-1*) **→ Create stack → Upload a template file** → `infra/site.yml`. Stacknaam `clubalmanac-site`. Parameters: `DistributionId` uit stap 2, `GitHubOidcProviderArn` uit stap 1 (leeg als die er niet was). Vink onderaan aan dat de stack IAM-resources mag maken. Wacht op *CREATE_COMPLETE* en bekijk **Outputs**.
+4. **GitHub → repo → Settings → Secrets and variables → Actions → Variables**: `SITE_BUCKET` = `clubalmanac-site`, `SITE_DISTRIBUTION_ID` = het ID uit stap 2, `SITE_DEPLOY_ROLE_ARN` = output `DeployRoleArn`.
+5. **GitHub → Actions → Site → Run workflow** (op `main`). Dan staan de pagina's in de bucket.
+6. **CloudFront → de distributie → Origins → Create origin**: origin domain = output `BucketOriginDomain`, origin access **Origin access control settings**, kies OAC `clubalmanac-site`. De bucket policy staat al goed; de gele balk met *Copy policy* mag je negeren.
+7. **Behaviors → Default (\*) → Edit**: maak eerst een screenshot van *Function associations* (voor terugzetten). Zet de origin op de nieuwe origin en alle function associations op *No association*. Save.
+8. **General → Settings → Edit → Default root object**: `index.html`. Save.
+9. **Invalidations → Create invalidation**: `/*`. Controle: https://clubalmanac.com toont de lustrumtekst, https://clubalmanac.com/privacy/nl de privacyverklaring.
 
-Terugzetten: Default (\*) weer op `blob-images-frontend-master` met de genoteerde function associations, en opnieuw `/*` invalideren.
+Terugzetten: Default (\*) weer op `blob-images-frontend-master` met de functies uit de screenshot, en opnieuw `/*` invalideren.

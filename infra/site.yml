@@ -1,0 +1,159 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >-
+  clubalmanac.com na de oude webapp: een privé-bucket voor de statische site
+  (site/ in wintvelt/clubalmanac-v2), leesbaar alleen voor de bestaande
+  CloudFront-distributie, en een deploy-rol voor GitHub Actions (OIDC, alleen
+  vanaf main). De distributie zelf valt buiten deze stack: die bestond al en
+  wordt met de hand naar deze bucket gewezen (site/README.md). Deployen in
+  us-east-1.
+
+Parameters:
+  DistributionId:
+    Type: String
+    AllowedPattern: "^E[A-Z0-9]+$"
+    Description: ID van de CloudFront-distributie van clubalmanac.com (bv. E1ABCDEF234567).
+  GitHubRepo:
+    Type: String
+    Default: wintvelt/clubalmanac-v2
+    Description: owner/naam van de repo die mag deployen.
+  GitHubOidcProviderArn:
+    Type: String
+    Default: ""
+    Description: >-
+      ARN van een bestaande IAM-identity-provider voor
+      token.actions.githubusercontent.com. Leeg laten als die er nog niet is;
+      dan maakt deze stack hem aan.
+
+Conditions:
+  CreateOidcProvider: !Equals [!Ref GitHubOidcProviderArn, ""]
+
+Resources:
+  SiteBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketName: clubalmanac-site
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: BucketOwnerEnforced
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      # Oude versies blijven 30 dagen: een foute deploy is terug te zetten.
+      VersioningConfiguration:
+        Status: Enabled
+      LifecycleConfiguration:
+        Rules:
+          - Id: oude-versies-weg
+            Status: Enabled
+            NoncurrentVersionExpiration:
+              NoncurrentDays: 30
+
+  SiteOriginAccessControl:
+    Type: AWS::CloudFront::OriginAccessControl
+    Properties:
+      OriginAccessControlConfig:
+        Name: clubalmanac-site
+        Description: CloudFront leest clubalmanac-site
+        OriginAccessControlOriginType: s3
+        SigningBehavior: always
+        SigningProtocol: sigv4
+
+  SiteBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref SiteBucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: AlleenCloudFrontLeest
+            Effect: Allow
+            Principal:
+              Service: cloudfront.amazonaws.com
+            Action: s3:GetObject
+            Resource: !Sub "${SiteBucket.Arn}/*"
+            Condition:
+              StringEquals:
+                AWS:SourceArn: !Sub "arn:aws:cloudfront::${AWS::AccountId}:distribution/${DistributionId}"
+          - Sid: AlleenTls
+            Effect: Deny
+            Principal: "*"
+            Action: "s3:*"
+            Resource:
+              - !GetAtt SiteBucket.Arn
+              - !Sub "${SiteBucket.Arn}/*"
+            Condition:
+              Bool:
+                aws:SecureTransport: "false"
+
+  GitHubOidcProvider:
+    Type: AWS::IAM::OIDCProvider
+    Condition: CreateOidcProvider
+    Properties:
+      Url: https://token.actions.githubusercontent.com
+      ClientIdList:
+        - sts.amazonaws.com
+      ThumbprintList:
+        - 6938fd4d98bab03faadb97b34396831e3780aea1
+        - 1c58a3a8518e8759bf075b76b750d4f2df264fcd
+
+  SiteDeployRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: clubalmanac-site-deploy
+      Description: GitHub Actions (main van clubalmanac-v2) zet site/ in de bucket en leegt de cache.
+      MaxSessionDuration: 3600
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Federated: !If
+                - CreateOidcProvider
+                - !Ref GitHubOidcProvider
+                - !Ref GitHubOidcProviderArn
+            Action: sts:AssumeRoleWithWebIdentity
+            Condition:
+              StringEquals:
+                token.actions.githubusercontent.com:aud: sts.amazonaws.com
+                # Alleen een run op main, niet vanuit een PR of andere branch.
+                token.actions.githubusercontent.com:sub: !Sub "repo:${GitHubRepo}:ref:refs/heads/main"
+      Policies:
+        - PolicyName: site-deploy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: BucketLijst
+                Effect: Allow
+                Action: s3:ListBucket
+                Resource: !GetAtt SiteBucket.Arn
+              - Sid: BestandenSchrijven
+                Effect: Allow
+                Action:
+                  - s3:PutObject
+                  - s3:DeleteObject
+                Resource: !Sub "${SiteBucket.Arn}/*"
+              - Sid: CacheLegen
+                Effect: Allow
+                Action: cloudfront:CreateInvalidation
+                Resource: !Sub "arn:aws:cloudfront::${AWS::AccountId}:distribution/${DistributionId}"
+
+Outputs:
+  BucketName:
+    Value: !Ref SiteBucket
+  BucketOriginDomain:
+    Description: Origin domain voor CloudFront.
+    Value: !GetAtt SiteBucket.RegionalDomainName
+  OriginAccessControlId:
+    Description: Kies deze OAC bij de nieuwe origin.
+    Value: !GetAtt SiteOriginAccessControl.Id
+  DeployRoleArn:
+    Description: Zet als repo-variabele SITE_DEPLOY_ROLE_ARN.
+    Value: !GetAtt SiteDeployRole.Arn
