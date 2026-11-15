@@ -43,6 +43,8 @@ const EXPECTED_PUBLIC_QUERIES = [
   "features:list",
   // WP20 A-invariant 3: de eigen stemmen voor de hele lijst.
   "features:listMyUpvotes",
+  // WP21 A-invariant 12: de clubfilms van je groepen, vorm zonder sleutels.
+  "films:list",
   "groups:getById",
   "groups:getWithCover",
   "groups:listMembers",

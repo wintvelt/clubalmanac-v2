@@ -132,3 +132,45 @@ Alle adviezen van A overgenomen.
 5. **Het tiende bestand niet tonen.**
 6. **Films zonder `faststart`:** eerst testen in de gate; pas omzetten als ze traag starten of spoelen.
 7. **Bewaking:** de dagelijkse monitoring-check leest één cover via een ondertekende link en mailt bij een fout.
+
+## Testcontract (A, na de besluiten)
+
+> A 2026-11-15. Wat de RED tests vastleggen. Namen en vormen zijn A-keuzes; het hoe is aan B.
+
+- **Lijst in de data.** `internal.films.replaceAll({ items })`: de lijst is daarna precies deze items, in deze volgorde. Een item: `groupId`, `kind` (`"trailer"` of `"film"`), `title`, `year`, `videoKey`, optioneel `coverKey`. Toegang = lid van `groupId` (besluit 1: op dev en prod de groep "Blob bibliotheek"). Geen publiek pad dat de lijst wijzigt. Vullen op prod hoort in de T0-stappen.
+- **`api.films.list({})`** (query): de films waarvan de caller lid is van de groep, in seed-volgorde, vorm precies `_id, groupId, kind, title, year, hasCover`. Leeg voor niet ingelogd, account in verwijdering, geen lid. Geen uitzondering voor de webmaster.
+- **`api.films.videoUrl({ filmId })`** en **`api.films.coverUrl({ filmId })`** (actions): `{ url, expiresAt }`. De url is een ondertekende S3-GET (SigV4 in de query, `SignedHeaders=host`) op precies de `videoKey` resp. `coverKey` van die film. Film: `X-Amz-Expires=10800` (besluit 2). Cover: korter. `expiresAt` = `X-Amz-Date` plus die duur. Het enige argument is `filmId`.
+- **Weigering:** `ConvexError({ code: "FILM_NOT_FOUND" })`, identiek voor onbekende film, geen lid, niet ingelogd, account in verwijdering, verwijderd account, en een cover-link voor een film zonder cover.
+- **Env-vars** (A-keuze; de draft liet de namen aan B): `FILMS_S3_ACCESS_KEY_ID`, `FILMS_S3_SECRET_ACCESS_KEY`, `FILMS_S3_REGION`, `FILMS_S3_BUCKET`. Ontbreekt er één of is hij leeg, dan faalt een link voor een lid met een fout die begint met `FILMS_S3_CONFIG_MISSING:`. Het geheim staat nooit in een antwoord, fout of log.
+- **Bewaking (besluit 7):** `internal.films.checkLinks({})` (action) tekent een cover-link en leest die (nooit een film). 2xx: geen mail. Anders (4xx/5xx, netwerkfout, ontbrekende config, geen film met cover): één mail aan `WEBMASTER_EMAILS`, zonder link of geheim. Cron `"film link check"`, dagelijks 05:00 UTC.
+- **App** (`app/src/lib/films.ts`, puur): `filmSections` (kopjes "Trailers" en "Blockbusters", lege weg), `groupHasFilms`, `coverSource` (vaste `cacheKey` per film, zonder de ondertekende link), `filmVideoSource` (`useCaching: false`), `playbackReducer` (fout → melding, opnieuw proberen → verse link vanaf dezelfde positie), `filmErrorMessage` (NL). Route `filmPath(groupId, filmId)` = `/groep/<g>/film/<f>` in `groupRoutes.ts`, met een routebestand.
+- **Geen bestandsnamen in de repo (invariant 9):** een test scant de getrackte bestanden op de echte sleutels uit `scripts/.data/wp21/films.json` (lokaal; in CI overgeslagen) en altijd op een openbare bucket-URL.
+- **Ondertekening:** standaard S3-presign (`UNSIGNED-PAYLOAD`, `SignedHeaders=host`, pad per segment RFC 3986-gecodeerd). De tests herberekenen de handtekening met het test-geheim; A heeft die controle nagelopen tegen de SigV4-signer van de AWS-SDK.
+
+### Tests per invariant (stand na A)
+
+| Inv. | Test | Niet getest, omdat … |
+|---|---|---|
+| 1 | `tests/films/access.test.ts` (lijst en links: lid, geen lid, andere groep, webmaster, niet ingelogd) | |
+| 2 | `tests/films/links.test.ts` (film 10800 s, cover korter, `expiresAt`) | dat S3 een verlopen link weigert: dat doet S3, niet onze code |
+| 3 | `tests/films/secrets.test.ts`, `links.test.ts` (geen geheim in antwoord, fout, log; geen ondertekende link in logs), `app/tests/films.test.ts` (geen S3-host in de app) | de IAM-rechten (alleen `s3:GetObject` op `blob-videos/*`): Wouter maakt de sleutel; check in het runbook |
+| 4 | | streamen, start en spoelen: simulator-gate (Georgië, plus Sulawesi voor besluit 6) |
+| 5 | `app/tests/films.test.ts` (`playbackReducer`, `filmErrorMessage`); `links.test.ts` (elke aanvraag een verse link) | de melding op het scherm: gate |
+| 6 | `app/tests/films.test.ts` (geen speler in de lijst, geen `useCaching: true`, geen download); `monitoring.test.ts` (de check leest een cover, nooit een film) | of er na het kijken iets op schijf staat: gate |
+| 7 | `access.test.ts` (`hasCover`), `access.test.ts` (cover-link zonder cover = weigering), `app/tests/films.test.ts` (`filmSections`) | de nette tegel zelf: gate |
+| 8 | `access.test.ts` (ex-lid, account in verwijdering, verwijderd account: lijst leeg en link geweigerd) | |
+| 9 | `tests/films/noKeysInRepo.test.ts` (bucket-URL altijd; echte sleutels lokaal uit `films.json`) | in CI ontbreekt `films.json`; daar draait alleen de URL-check |
+| 10 | `tests/films/inventory.test.ts` (argumenten precies `filmId`), `links.test.ts` (precies die sleutel) | |
+| 11 | `access.test.ts` (identieke weigering, lege lijst) | |
+| 12 | `inventory.test.ts`, `tests/readWhitelist/inventory.test.ts` (`films:list` met return-validator) | |
+| 13 | `links.test.ts` (cover ≠ film, per film eigen sleutel; handtekening dekt het pad) | |
+| 14 | `app/tests/films.test.ts` (`playbackReducer`: verse link, zelfde positie) | dat de speler echt naar die positie springt: gate |
+| 15 | `app/tests/films.test.ts` (`coverSource` vaste `cacheKey`, `filmVideoSource` `useCaching: false`) | bestanden op schijf: gate |
+| 16 | `tests/films/monitoring.test.ts` (2xx geen mail; 403/404/500, netwerkfout, geen config, geen cover: één mail zonder link of geheim; cron 05:00 UTC) | |
+| 17 | `access.test.ts` (per verzoek) | dat een al uitgegeven link tot zijn einde werkt: restrisico, begrensd door de 3 uur uit `links.test.ts` |
+
+Besluit 3 (bucket dicht op T0) en 5 (tiende bestand niet tonen) zijn ops en data, niet in tests: de seed-data staat buiten de repo. Besluit 6: gate.
+
+A paste twee bestaande tests aan: `tests/readWhitelist/inventory.test.ts` (`films:list` erbij) en `tests/crons/registration.test.ts` (vijf crons).
+
+**Stand:** backend 67 rood / 2764 groen / 1 overgeslagen, alle rood omdat `convex/films.ts` en de cron ontbreken. App: `app/tests/films.test.ts` laadt niet (`src/lib/films.ts` ontbreekt), 1381 groen. Typecheck: backend schoon; app alleen fouten in `tests/films.test.ts` (ontbrekende module en `filmPath`).
