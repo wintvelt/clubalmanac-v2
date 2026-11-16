@@ -22,7 +22,11 @@ Alles hieronder laat rijen achter op prod. Dat geeft niets: vóór de repetitie 
   Restrisico (besluit staat): iedereen kan zich aanmelden met een `+clerk_test`-adres en code 424242, zonder mailbox, en bot sign-up protection staat uit. Zulke accounts tellen mee in de MAU van Clerk en zijn te scripten. Ze zien niets: zonder uitnodiging maakt de app geen user-rij (WP19b). Het demo-adres plus 424242 is een blijvend wachtwoord dat bij Apple ligt; het demo-account ziet alleen Demo. Kijk eens per kwartaal in Clerk prod → *Users* of er onbekende accounts bijkomen.
 - [ ] **Mailjet prod:** webhook naar `https://<prod>.eu-west-1.convex.site/email-event` met eigen Basic-auth-secret. Afzender gevalideerd ([`external-services.md`](../conventions/external-services.md) §Mailjet: anders gaat mail stil verloren).
 - [ ] **Rooktests:** WP5-gates 1+2 en WP6-gates 1+2+3 op prod ([`wp5-mailjet-empirical-gates.md`](./wp5-mailjet-empirical-gates.md), [`wp6-clerk-empirical-gates.md`](./wp6-clerk-empirical-gates.md); WP6 eerst omzetten naar inloggen met code). Daarna een wegwerp-account uitnodigen, in de app *Account verwijderen*, en in Clerk prod controleren dat de user weg is (WP29).
-- [ ] **Beschikbaarheid in de App Store nakijken** (alleen kijken): App Store Connect → app → *Pricing and Availability* → *App Availability*. Noteer of de app in de landen van de leden beschikbaar is, of *Removed from Sale* staat (WP31 vraag 5: sinds 2026-07-28 uit de verkoop). Niets wijzigen: wie de app nu weer beschikbaar zet, maakt de oude versie 1.6.0 weer downloadbaar. T0.9 heeft een stap voor beide uitkomsten.
+- [ ] **"Cannot Sell App" oplossen. Begin hier als eerste: dit kan weken duren.** Stand 2026-11-16 (App Store Connect → app → *Pricing and Availability*): de app staat aan in België, Luxemburg, Nederland, Zwitserland en het VK, alle vijf met status *Cannot Sell App*; alle andere landen *Not Available*. Zolang dat zo is, komt ook de nieuwe versie bij geen enkel lid aan.
+  1. App Store Connect → *Business* (*Agreements, Tax, and Banking*): staat de *Free Apps Agreement* op *Active*? Een verlopen of nog niet geaccepteerde overeenkomst is de gebruikelijke oorzaak. Accepteer wat openstaat (alleen de Account Holder kan dat).
+  2. Is alles daar actief en blijft *Cannot Sell App* staan: Apple Developer Support (developer.apple.com/contact), onderwerp App Store Connect, met de app-ID `1663038609` en de melding. Antwoord kan dagen duren.
+  Verwacht: Nederland en België op *Available*, ruim vóór de datum van de schrijfstop (T-3 weken). Daarmee is ook 1.6.0 tot T0 weer te downloaden; dat is geen probleem.
+  Afwijking: op T-3 weken nog *Cannot Sell App* → de datum van de schrijfstop nog niet vastleggen. Zonder verkoop is er geen T0.
 - [ ] **Cutover-build** met profiel `production` (`pk_live`, prod-URL). Die build wist eenmalig de Clerk-cache-sleutels van de oude `pk_test`-key (WP15a). Gefaseerde release uit (W10).
 - [ ] **Backup-bucket en -workflow** klaarzetten: [`infra/backup.md`](../../infra/backup.md) stap 1-3. Repo-variabele `BACKUP_ENABLED` **niet** zetten: zonder die variabele slaat de workflow elke run over (grijs, niet rood). Prod is tot T0 leeg of bevat de repetitie.
   Verwacht: op de 1e van de maand staat er een run *Backup* met status *skipped*.
@@ -178,14 +182,14 @@ De dag van de schrijfstop. De vrijgave (T0.9) volgt na de review, mogelijk dagen
    Controle vóór indienen (invariant 13, handmatig: de app weigert een dev-build nog niet zelf): zoek het buildnummer op in het EAS-dashboard (*Builds*); daar moet bij die build profiel `production` staan, niet `dev` (die dient bij dezelfde app in).
    Verwacht: status *Waiting for Review*, daarna *Pending Developer Release*.
    Afwijking: afgewezen → zie §Terug, "Afgewezen review".
-9. **Vrijgeven: *Release This Version*. Punt zonder terugkeer** (invariant 15). Niet vlak voor een afgesproken tijd: zichtbaar worden duurt tot 24 uur. Dan, afhankelijk van wat je bij T-4 weken zag:
-   - **beschikbaar** in de landen van de leden: niets meer te doen;
-   - ***Removed from Sale***: direct na *Release This Version*, in dezelfde sessie, *Pricing and Availability* → *App Availability* → de landen van de leden aanzetten (minstens Nederland) → *Save*. Niet eerder: dan is 1.6.0 weer te downloaden.
-   Verwacht: de versie staat op *Ready for Distribution*, en bij *App Availability* staan de landen van de leden aan.
+9. **Vrijgeven: *Release This Version*. Punt zonder terugkeer** (invariant 15). Niet vlak voor een afgesproken tijd: zichtbaar worden duurt tot 24 uur.
+   Verwacht: de versie staat op *Ready for Distribution*, en bij *Pricing and Availability* staan Nederland en België op *Available*.
+   Afwijking: weer *Cannot Sell App* → geen bericht aan de leden; *Agreements, Tax, and Banking* en Developer Support zoals bij T-4 weken. De oude app blijft zolang alleen-lezen.
 10. **Wachten tot de app echt in de App Store staat**, gecontroleerd op een gewoon toestel (geen TestFlight).
+    Controle vlak vóór het bericht: bij *Pricing and Availability* staan Nederland en België op *Available*.
     Dan pas: bericht 4 naar de leden (invariant 14), en bucket `blob-videos` dicht (S3 → Permissions → *Block public access*, alle vier aan).
     Verwacht: een film-link zonder het deel na `?` geeft 403, mét geeft 206; de film speelt in de nieuwe app.
-    Afwijking: na 24 uur nog niet te vinden → *App Availability* nakijken (staan de landen aan?).
+    Afwijking: na 24 uur nog niet te vinden → *Pricing and Availability* nakijken (status per land).
 11. **Rem op `reset`, en de backup aan:**
     - de Convex-deploy-key van de migratie intrekken (Convex-dashboard → prod → Settings → Deploy keys) en `MIGRATE_CONVEX_ADMIN_KEY_PROD` uit `.env.migrate` halen. Zonder die key kan geen migrate-commando prod nog wijzigen; een `reset` na de vrijgave zou alles wissen wat leden sindsdien deden. De backup heeft een eigen key; die blijft;
     - repo-variabele `BACKUP_ENABLED` = `true`: vanaf de 1e van de volgende maand draait de backup vanzelf. De gate (met de hand terugzetten) blijft bij T+30.
