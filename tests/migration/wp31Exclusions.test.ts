@@ -297,3 +297,89 @@ describe("WP31 invariant 11: fouten in de uitsluiting stoppen de run", () => {
     expect(() => transform(buildExtractWithExclusions(), withExclusions(exclusions))).toThrow(/U-alice/);
   });
 });
+
+// ── WP31 fix-ronde audit (A, 2026-11-16) ─────────────────────────────
+//
+// N2: een uitnodiging *aan* het adres van een uitgesloten user. Zonder account
+// heeft zo'n uitnodiging het adres als sleutel (`UM{email}`), geen user-ID. Ze
+// hoort net zo weg te vallen als een uitnodiging aan de user zelf: anders kan
+// het reviewaccount na T0 met dat adres een groep van leden in (invariant 3).
+// En ze telt mee in de rapportregel van die user (invariant 11).
+//
+// S4: elke rapportregel noemt naast de ID ook de naam uit de bron. De config
+// bevat alleen ID's; twee groepen met bijna dezelfde naam zijn met de hand
+// makkelijk te verwisselen.
+
+/** Uitnodiging in G-1 (gaat mee), van Alice, aan een adres zonder account. */
+const addressInvite = (key: string, nestedEmail: string): SourceItem => ({
+  PK: `UM${key}`,
+  SK: "G-1",
+  status: "invite",
+  role: "guest",
+  user: { name: "Erin Bronwerk", email: nestedEmail },
+  invitation: { from: ALICE, message: "Kom erbij" },
+  createdAt: "2026-08-21",
+});
+
+const lineAbout = (warnings: string[], id: string): string => {
+  const lines = warnings.filter((w) => w.includes(id) && w.includes("uitgesloten"));
+  expect(lines, `rapportregel over ${id}`).toHaveLength(1);
+  return lines[0]!;
+};
+
+describe("WP31 N2: een uitnodiging aan het adres van een uitgesloten user valt weg", () => {
+  const baseline = () => transform(buildExtractWithExclusions(), withExclusions(ALL));
+
+  test.each([
+    ["zelfde schrijfwijze", "erin@example.test", "erin@example.test"],
+    ["andere hoofdletters in de sleutel", "Erin@Example.TEST", "Erin@Example.TEST"],
+  ])("%s: geen uitnodiging erbij, de rest gelijk", (_naam, key, nested) => {
+    const items = [...buildExtractWithExclusions(), addressInvite(key, nested)];
+    const { records } = transform(items, withExclusions(ALL));
+    expect(JSON.stringify(records.invites).toLowerCase()).not.toContain("erin@example.test");
+    for (const table of TABLE_ORDER) {
+      expect(keysOf(records[table]), `tabel ${table}`).toEqual(keysOf(baseline().records[table]));
+    }
+  });
+
+  test("de rapportregel van de user telt die uitnodiging mee", () => {
+    const before = lineAbout(baseline().warnings, "U-erin");
+    const items = [...buildExtractWithExclusions(), addressInvite("erin@example.test", "erin@example.test")];
+    const after = lineAbout(transform(items, withExclusions(ALL)).warnings, "U-erin");
+    // Zonder: 1 (Erin nodigde Vriend uit). Met: 2.
+    expect(before).toMatch(/\b1 uitnodiging/);
+    expect(after).toMatch(/\b2 uitnodiging/);
+  });
+
+  test("ook als alleen het adres in de uitnodiging van Erin is (sleutel een oud adres): weg én geteld", () => {
+    // `user.email` is leidend boven de sleutel (transform.ts). Wat op dat adres
+    // wegvalt, hoort ook in de telling van de user.
+    const items = [...buildExtractWithExclusions(), addressInvite("oud-adres@example.test", "erin@example.test")];
+    const { records, warnings } = transform(items, withExclusions(ALL));
+    expect(JSON.stringify(records.invites)).not.toContain("erin@example.test");
+    expect(lineAbout(warnings, "U-erin")).toMatch(/\b2 uitnodiging/);
+  });
+
+  test("een uitnodiging aan een ander adres blijft", () => {
+    const items = [...buildExtractWithExclusions(), addressInvite("nieuw@example.test", "nieuw@example.test")];
+    const { records } = transform(items, withExclusions(ALL));
+    expect(records.invites.filter((r) => JSON.stringify(r).includes("nieuw@example.test"))).toHaveLength(1);
+  });
+});
+
+describe("WP31 S4: de rapportregel noemt de naam bij de ID", () => {
+  test("user, groep en album: ID en naam op dezelfde regel", () => {
+    const { warnings } = transform(buildExtractWithExclusions(), withExclusions(ALL));
+    expect(lineAbout(warnings, "U-erin")).toContain("Erin Bronwerk");
+    expect(lineAbout(warnings, "G-test")).toContain("Testgroep");
+    expect(lineAbout(warnings, "A-cut")).toContain("Nieuwe app op 1 december");
+  });
+
+  test("twee groepen met bijna dezelfde naam zijn in het rapport te onderscheiden", () => {
+    const items = buildExtractWithExclusions().map((item) =>
+      item.PK === "GBbase" && item.SK === "G-test" ? { ...item, name: "blob" } : item,
+    );
+    const line = lineAbout(transform(items, withExclusions(ALL)).warnings, "G-test");
+    expect(line).toMatch(/"blob"/);
+  });
+});
