@@ -31,9 +31,12 @@ git fetch --quiet origin main
 
 # Tests en typecheck niet opnieuw: main komt alleen via een PR met groene CI
 # (ruleset). Wel de afhankelijkheden precies volgens de lockfile, want die
-# gaan mee in de bundel.
+# gaan mee in de bundel. Zonder install-scripts: het enige pakket met zo'n
+# script is esbuild, en dat vindt zijn binary ook zonder (via
+# @esbuild/<platform>). sharp, heic-decode en nodemailer zijn
+# externalPackages (convex.json); die installeert Convex zelf.
 echo "[deploy:prod] main = origin/main = $(git rev-parse --short HEAD); afhankelijkheden volgens de lockfile"
-npm ci
+npm ci --ignore-scripts
 
 echo "[deploy:prod] deploy van $(git rev-parse --short HEAD)"
 npx convex deploy

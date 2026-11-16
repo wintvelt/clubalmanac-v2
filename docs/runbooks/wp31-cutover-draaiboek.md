@@ -14,6 +14,8 @@ Alles hieronder laat rijen achter op prod. Dat geeft niets: vóór de repetitie 
 
 - [ ] **Convex prod** (EU, Dublin) aanmaken; env-vars zetten: `MAILJET_API_KEY`, `MAILJET_API_SECRET`, `MAILJET_VERIFIED_SENDERS`, `MAILJET_WEBHOOK_SECRET`, `CLUBALMANAC_STAGE=prod`, `CLERK_FRONTEND_API_URL`, `CLERK_WEBHOOK_SECRET`, `CLERK_SECRET_KEY` (`sk_live_…`, WP29), `CLUBALMANAC_APP_STORE_ID=1663038609`, en de vier `FILMS_S3_*` (WP21) met de sleutel van een eigen IAM-user die alleen `s3:GetObject` op `blob-videos/*` mag. **Nog niet** `WEBMASTER_EMAILS` (W12, pas op T0.5).
   Verwacht: `npx convex env list --prod --names-only` toont precies deze namen, en níet `INTEGRATION_TEST_ENABLED` of `INTEGRATION_TEST_SECRET` (WP26).
+- [ ] **Deploy-keys van prod** elk met een eigen naam, zodat je er later één gericht intrekt: `migratie` (`.env.migrate`, [`wp12-data-migratie.md`](./wp12-data-migratie.md) §A), `backup` (GitHub-environment `prod-backup`, [`infra/backup.md`](../../infra/backup.md) stap 2) en, als je de release-clone met een key werkt in plaats van met je Convex-login, `release`. Aanmaken: `npx convex deployment token create <naam> --deployment prod`, of in het dashboard (prod → Settings → Deploy keys).
+  Verwacht: in het dashboard staan bij prod alleen keys met deze namen.
 - [ ] **Backend op prod zetten** met `npm run deploy:prod` ([`scripts/deploy-prod.sh`](../../scripts/deploy-prod.sh)), in een eigen clone die alleen hiervoor is (bv. `~/Code/clubalmanac-v2-release`), niet in de werk-checkout: daar werken meerdere sessies, en `npx convex deploy` zet ook niet-gecommitte code op prod. Het script weigert buiten een schone `main` die gelijk is aan `origin/main`. Na elke merge die de backend raakt opnieuw.
   Verwacht: `npx convex deploy` noemt de prod-deployment en eindigt zonder fout.
 - [ ] **Clerk prod** activeren, op **Hobby** (W8: sessie maximaal 7 dagen, leden loggen wekelijks opnieuw in). Instellingen gelijk aan dev: e-mailcode aan, wachtwoord uit, sign-up aan zonder verplichte naamvelden, bot sign-up protection uit, *Verification required before session* aan (Configure → Email address; standaard aan, de webhook rekent erop, WP6). JWT-template `convex`: claim `email` = `{{user.primary_email_address}}`. Webhook naar `https://<prod>.eu-west-1.convex.site/clerk-webhook` met eigen Svix-secret.
@@ -24,8 +26,12 @@ Alles hieronder laat rijen achter op prod. Dat geeft niets: vóór de repetitie 
 - [ ] **Rooktests:** WP5-gates 1+2 en WP6-gates 1+2+3 op prod ([`wp5-mailjet-empirical-gates.md`](./wp5-mailjet-empirical-gates.md), [`wp6-clerk-empirical-gates.md`](./wp6-clerk-empirical-gates.md); WP6 eerst omzetten naar inloggen met code). Daarna een wegwerp-account uitnodigen, in de app *Account verwijderen*, en in Clerk prod controleren dat de user weg is (WP29).
 - [ ] **"Cannot Sell App" oplossen. Begin hier als eerste: dit kan weken duren.** Stand 2026-11-16 (App Store Connect → app → *Pricing and Availability*): de app staat aan in België, Luxemburg, Nederland, Zwitserland en het VK, alle vijf met status *Cannot Sell App*; alle andere landen *Not Available*. Zolang dat zo is, komt ook de nieuwe versie bij geen enkel lid aan.
   1. App Store Connect → *Business* (*Agreements, Tax, and Banking*): staat de *Free Apps Agreement* op *Active*? Een verlopen of nog niet geaccepteerde overeenkomst is de gebruikelijke oorzaak. Accepteer wat openstaat (alleen de Account Holder kan dat).
-  2. Is alles daar actief en blijft *Cannot Sell App* staan: Apple Developer Support (developer.apple.com/contact), onderwerp App Store Connect, met de app-ID `1663038609` en de melding. Antwoord kan dagen duren.
-  Verwacht: Nederland en België op *Available*, ruim vóór de datum van de schrijfstop (T-3 weken). Daarmee is ook 1.6.0 tot T0 weer te downloaden; dat is geen probleem.
+  2. De Digital Services Act op twee plekken, ter vergelijking met de stand van 2026-11-16:
+     - account: *Business* → *Agreements* → *Compliance* → *Digital Services Act*: *Active* sinds 16 Aug 2024, 27 landen;
+     - app: *App Information* → *App Store Regulations & Permits*: "This developer has identified itself as a trader for this app."
+     Zo staat het, dan is de DSA niet de oorzaak. Wijzig de traderstatus niet vóór T0.
+  3. Is alles daar actief en blijft *Cannot Sell App* staan: Apple Developer Support (developer.apple.com/contact), onderwerp App Store Connect, met de app-ID `1663038609` en de melding. Antwoord kan dagen duren.
+  Verwacht: elk aangezet land waar een lid woont op *Available* (minstens Nederland en België; vraag bij bericht 1 na of iemand in Luxemburg, Zwitserland of het VK woont), ruim vóór de datum van de schrijfstop (T-3 weken). Daarmee is ook 1.6.0 tot T0 weer te downloaden; dat is geen probleem.
   Afwijking: op T-3 weken nog *Cannot Sell App* → de datum van de schrijfstop nog niet vastleggen. Zonder verkoop is er geen T0.
 - [ ] **Cutover-build** met profiel `production` (`pk_live`, prod-URL). Die build wist eenmalig de Clerk-cache-sleutels van de oude `pk_test`-key (WP15a). Gefaseerde release uit (W10).
 - [ ] **Backup-bucket en -workflow** klaarzetten: [`infra/backup.md`](../../infra/backup.md) stap 1-3. Repo-variabele `BACKUP_ENABLED` **niet** zetten: zonder die variabele slaat de workflow elke run over (grijs, niet rood). Prod is tot T0 leeg of bevat de repetitie.
@@ -71,17 +77,19 @@ Alles hieronder laat rijen achter op prod. Dat geeft niets: vóór de repetitie 
   - `uitgesloten album A… "<naam van het herinneringsalbum>" (config): geen andere rijen`
 
   Afwijking: een andere naam of een groot verschil in aantallen → verkeerde ID, config corrigeren. Een ID die niet in het extract staat, of een uitgesloten user die oprichter is van een groep die meegaat, stopt de transform zelf.
-- [ ] **Uitzondering in de schrijfstop nakijken** (alleen lezen, AWS-prod). Zoek de rol van de stream-Lambda van `blob-images-api` (Lambda → functie → Configuration → Permissions) en kijk welke functies die rol delen:
+- [ ] **Uitzondering in de schrijfstop opzoeken** (alleen lezen, AWS-prod). De tabel-policy van T0.2 laat alleen de stream-Lambda van `blob-images-api` door, niet de hele rol: bij Serverless delen alle functies van een service vaak één rol, ook handlers en Cognito-triggers zoals `cognitoSync`. Een Lambda neemt zijn rol aan met de functienaam als sessienaam; daarop zit de uitzondering. Noteer:
+  - de naam van de stream-functie en zijn rol (Lambda → functie → Configuration → Permissions);
+  - de `RoleId` van die rol (begint met `AROA`):
+    ```bash
+    aws iam get-role --role-name <rolnaam> --query Role.RoleId --output text
+    ```
+  Ter informatie, welke functies dezelfde rol delen (die worden tijdens de stop allemaal geweigerd):
   ```bash
   aws lambda list-functions --region eu-central-1 \
     --query "Functions[?Role=='<rol-ARN>'].FunctionName" --output text
   ```
-  Verwacht: alleen de stream-Lambda (en eventueel Cognito-triggers zoals `cognitoSync`).
-  Afwijking: ook andere handlers (bij Serverless delen alle functies van een service vaak één rol). Dan schrijven die door de uitzondering heen. Zet de uitzondering in de tabel-policy (T0.2) dan op de sessie van alleen de stream-functie; een Lambda neemt zijn rol aan met de functienaam als sessienaam:
-  ```json
-  "Condition": { "StringNotLike": { "aws:userid": "<RoleId>:<naam van de stream-functie>" } }
-  ```
-  `<RoleId>` (begint met `AROA`): `aws iam get-role --role-name <rolnaam> --query Role.RoleId --output text`. Doe hetzelfde op AWS-dev voor de repetitie.
+  Doe hetzelfde op AWS-dev voor de repetitie.
+  Verwacht: een `RoleId` en een functienaam, ingevuld in de policy van T0.2.
 - [ ] **WP31 staat op prod:** gemerged in `main` en met `npm run deploy:prod` gedeployd; de repetitie heeft `photos.formatStatusPage` nodig.
   Verwacht: `npx convex run --prod photos:formatStatusPage '{"cursor":null,"batchSize":1}'` geeft een telling met `"cursor": null`.
 - [ ] **Generale repetitie op prod** (W6): T0.2 tot en met T0.7 hieronder, met deze verschillen:
@@ -128,11 +136,11 @@ De dag van de schrijfstop. De vrijgave (T0.9) volgt na de review, mogelijk dagen
                     "dynamodb:BatchWriteItem", "dynamodb:PartiQLInsert",
                     "dynamodb:PartiQLUpdate", "dynamodb:PartiQLDelete"],
          "Resource": "arn:aws:dynamodb:eu-central-1:<account>:table/blob-images-photos-prod",
-         "Condition": { "ArnNotEquals": { "aws:PrincipalArn": "<rol van service blob-images-api>" } }
+         "Condition": { "StringNotLike": { "aws:userid": "<RoleId>:<naam van de stream-functie>" } }
        }]
      }
      ```
-     De rol vind je bij de stream-Lambda van `blob-images-api` (Lambda → functie → Configuration → Permissions). Zonder die uitzondering kan een cascade halverwege blijven hangen. Maak tijdens de stop geen user aan in de Cognito-console: die rol draait ook `cognitoSync`.
+     `RoleId` en functienaam komen uit T-1 week. Alleen de stream-Lambda mag nog schrijven, zodat een cascade die bij de stop al liep niet halverwege blijft hangen. Alle andere functies met dezelfde rol (handlers, `cognitoSync`) worden geweigerd; maak tijdens de stop dus ook geen user aan in de Cognito-console.
    - Aan de **bestaande** policy van bucket `blob-images` één statement **toevoegen** (niet vervangen, anders valt `img.clubalmanac.com` misschien om):
      ```json
      { "Sid": "Schrijfstop", "Effect": "Deny", "Principal": "*",
@@ -183,22 +191,22 @@ De dag van de schrijfstop. De vrijgave (T0.9) volgt na de review, mogelijk dagen
    Verwacht: status *Waiting for Review*, daarna *Pending Developer Release*.
    Afwijking: afgewezen → zie §Terug, "Afgewezen review".
 9. **Vrijgeven: *Release This Version*. Punt zonder terugkeer** (invariant 15). Niet vlak voor een afgesproken tijd: zichtbaar worden duurt tot 24 uur.
-   Verwacht: de versie staat op *Ready for Distribution*, en bij *Pricing and Availability* staan Nederland en België op *Available*.
+   Verwacht: de versie staat op *Ready for Distribution*, en bij *Pricing and Availability* staat elk land waar een lid woont op *Available* (minstens Nederland en België).
    Afwijking: weer *Cannot Sell App* → geen bericht aan de leden; *Agreements, Tax, and Banking* en Developer Support zoals bij T-4 weken. De oude app blijft zolang alleen-lezen.
 10. **Wachten tot de app echt in de App Store staat**, gecontroleerd op een gewoon toestel (geen TestFlight).
-    Controle vlak vóór het bericht: bij *Pricing and Availability* staan Nederland en België op *Available*.
+    Controle vlak vóór het bericht: bij *Pricing and Availability* staat elk land waar een lid woont op *Available*, niet alleen Nederland en België.
     Dan pas: bericht 4 naar de leden (invariant 14), en bucket `blob-videos` dicht (S3 → Permissions → *Block public access*, alle vier aan).
     Verwacht: een film-link zonder het deel na `?` geeft 403, mét geeft 206; de film speelt in de nieuwe app.
     Afwijking: na 24 uur nog niet te vinden → *Pricing and Availability* nakijken (status per land).
 11. **Rem op `reset`, en de backup aan:**
-    - de Convex-deploy-key van de migratie intrekken (Convex-dashboard → prod → Settings → Deploy keys) en `MIGRATE_CONVEX_ADMIN_KEY_PROD` uit `.env.migrate` halen. Zonder die key kan geen migrate-commando prod nog wijzigen; een `reset` na de vrijgave zou alles wissen wat leden sindsdien deden. De backup heeft een eigen key; die blijft;
+    - de deploy-key **`migratie`** intrekken (Convex-dashboard → prod → Settings → Deploy keys), alleen die, en `MIGRATE_CONVEX_ADMIN_KEY_PROD` uit `.env.migrate` halen. Zonder die key kan geen migrate-commando prod nog wijzigen; een `reset` na de vrijgave zou alles wissen wat leden sindsdien deden. `backup` en `release` blijven;
     - repo-variabele `BACKUP_ENABLED` = `true`: vanaf de 1e van de volgende maand draait de backup vanzelf. De gate (met de hand terugzetten) blijft bij T+30.
     Verwacht: `npm run migrate -- verify --target prod` stopt met "MIGRATE_CONVEX_ADMIN_KEY_PROD ontbreekt".
     Na elke review: controleren dat het demo-account nog bestaat (de reviewer kan *Account verwijderen* proberen).
 
 ## Terug
 
-- **Vóór T0.9:** beide policies weghalen (de oude app schrijft weer). Prod blijft staan zoals hij is; niemand kan erbij zolang de app niet is vrijgegeven. Dien daarna **niets** in bij Apple: een goedgekeurde versie die (per ongeluk) automatisch vrijkomt, zet leden op een prod zonder wat ze sinds het terugdraaien in de oude app deden. Een volgende poging is een nieuwe ronde vanaf T0.1, met bij T0.3 `MIGRATE_ALLOW_PROD=yes npm run migrate -- reset --target prod --yes --all` (en daarna opnieuw de demo-groep).
+- **Vóór T0.9:** eerst de ingediende versie intrekken: op *Waiting for Review* of *In Review* met *Remove from Review*, op *Pending Developer Release* met *Developer Reject*. Dan kan hij niet alsnog per ongeluk worden vrijgegeven. Daarna beide policies weghalen (de oude app schrijft weer). Prod blijft staan zoals hij is; niemand kan erbij zolang de app niet is vrijgegeven. Dien daarna **niets** in bij Apple: een goedgekeurde versie die (per ongeluk) automatisch vrijkomt, zet leden op een prod zonder wat ze sinds het terugdraaien in de oude app deden. Een volgende poging is een nieuwe ronde vanaf T0.1, met bij T0.3 `MIGRATE_ALLOW_PROD=yes npm run migrate -- reset --target prod --yes --all` (en daarna opnieuw de demo-groep).
 - **Afgewezen review:** de oude app blijft alleen-lezen tot een nieuwe build is goedgekeurd. Prod is dan nog actueel, dus opnieuw indienen mag (met *Manually release*, zie T0.8). Grens: twee weken. Daarna terug zoals hierboven, en later opnieuw.
 - **Na T0.9:** niet meer terug, en nooit meer `reset` op prod. Leden schrijven dan op prod.
 
@@ -206,11 +214,14 @@ De dag van de schrijfstop. De vrijgave (T0.9) volgt na de review, mogelijk dagen
 
 - [ ] Alle 19 leden kunnen inloggen (vraag na wie nog niet is gelukt).
 
+## Een week na T0.10
+
+- [ ] Backup-gate B4: een run met de hand (workflow *Backup*, *Run workflow*; `BACKUP_ENABLED` staat sinds T0.11 aan) en terugzetten in een wegwerp-deployment: [`infra/backup.md`](../../infra/backup.md) stap 4-5. Niet wachten tot T+30: tot deze run is het anker van T0.5 de enige kopie, en wat leden sindsdien deden staat nergens anders.
+
 ## T+30
 
-- [ ] Backup-gate B4: een run met de hand (workflow *Backup*, *Run workflow*; `BACKUP_ENABLED` staat sinds T0.11 aan) en terugzetten in een wegwerp-deployment: [`infra/backup.md`](../../infra/backup.md) stap 4-5.
 - [ ] Agenda-herinnering **elk kwartaal**: Actions → *Backup*: de laatste run is groen en de workflow staat niet uit. GitHub zet een geplande workflow uit na 60 dagen zonder activiteit in de repo, en een uitgezette workflow geeft geen rode run, alleen vooraf één mail. Staat hij uit: *Enable workflow* en met de hand draaien.
-- [ ] Opruimen (invariant 7), na de backup-gate:
+- [ ] Opruimen (invariant 7), na de backup-gate van een week na T0.10:
   - `scripts/.data/`: `prod-config.json` en het extract bevatten echte adressen; ook `./backups/wp31-prod-t0.zip`;
   - uit `.env.migrate`: `MIGRATE_CLERK_SECRET_KEY_PROD` en `MIGRATE_CONVEX_URL_PROD` (de admin-key is al weg sinds T0.11);
   - de Clerk-secret-key die je voor `clerk-ids` hebt gebruikt: als het een aparte key was, intrekken (Clerk-dashboard → API keys); `CLERK_SECRET_KEY` op Convex prod blijft;

@@ -20,12 +20,12 @@ Kosten: ~$0,80 per run aan Convex-bandbreedte (6 GB lezen) plus ~$0,15 per maand
    ```
 2. **GitHub-environment** `prod-backup` (repo → Settings → Environments → New environment):
    - *Deployment branches and tags*: alleen `main`. Dat is wat "alleen vanaf main" afdwingt: de rol vertrouwt de environment, niet de branch.
-   - *Environment secret* `CONVEX_PROD_DEPLOY_KEY`: een deploy-key van de **prod**-deployment (Convex-dashboard → prod → Settings → Deploy key). Die sleutel kan prod ook wijzigen; hij staat daarom alleen in deze environment, en de workflow doet niets anders dan exporteren.
+   - *Environment secret* `CONVEX_PROD_DEPLOY_KEY`: een deploy-key van de **prod**-deployment met de naam **`backup`** (`npx convex deployment token create backup --deployment prod`, of Convex-dashboard → prod → Settings → Deploy keys). Een eigen naam, zodat bij T0.11 alleen de key `migratie` wordt ingetrokken. Die sleutel kan prod ook wijzigen; hij staat daarom alleen in deze environment, en de workflow doet niets anders dan exporteren.
 3. **Repo-variabelen** (Settings → Secrets and variables → Actions → Variables): `BACKUP_BUCKET` en `BACKUP_ROLE_ARN`, uit de outputs van stap 1. `BACKUP_ENABLED` nog **niet** (pas bij T0.11).
 
 En: zet in je GitHub-instellingen (Settings → Notifications → Actions) mail aan voor mislukte workflows. Een rode run valt dan op. Let op: de repo is publiek, en GitHub zet een geplande workflow uit na 60 dagen zonder activiteit in de repo. Je krijgt daar vooraf een mail over; zet hem dan weer aan (Actions → Backup → *Enable workflow*). Een uitgezette workflow geeft geen rode run; daarom ook een kwartaal-herinnering (draaiboek T+30).
 
-## De eerste run en het terugzetten (gate B4, vóór T+30)
+## De eerste run en het terugzetten (gate B4, ongeveer een week na T0.10)
 
 4. **Met de hand draaien** (`BACKUP_ENABLED` staat sinds T0.11 op `true`): Actions → Backup → *Run workflow* (branch `main`).
    Verwacht: groen; de stap *Export controleren* toont ~6 GB, ~4550 bestanden (originelen plus twee formaten per foto, plus profielfoto's), ~1511 foto-rijen plus de foto's van Demo en wat leden sinds T0 toevoegden, en 20 users (19 leden plus het demo-account); de stap *Uploaden* eindigt met "klaar".

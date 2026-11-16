@@ -178,12 +178,13 @@ Per stap wie, wat, verwacht en bij afwijking: [`wp31-cutover-draaiboek.md`](./ru
 - [ ] T-1 week: herinneringsalbum, `prod-config.json` met uitsluitingen, Clerk pre-create en ID-map met `clerk-ids --create --write`, rol van de schrijfstop-uitzondering nagekeken, WP31 op prod, generale repetitie op prod (gate: schrijfstop op AWS-dev, `formaten` exit 0, `verify` groen, Wouter ziet 3 groepen, album van 540 foto's opent), daarna `reset --all`
 - [ ] T0: schrijfstop → migratie → `WEBMASTER_EMAILS`, filmlijst en anker-export met bestanden → demo-account → indienen met handmatige release → *Release This Version* → Nederland en België op *Available* → leden inlichten en `blob-videos` dicht, zodra de app in de App Store staat → migratie-key intrekken, backup aan
 - [ ] T+1: alle leden ingelogd
-- [ ] T+30: backup met de hand en teruggezet (gate B4), kwartaal-herinnering backup, `scripts/.data/` en prod-sleutels opgeruimd, AWS opgeruimd behalve `blob-images` en `blob-videos`
+- [ ] Een week na T0.10: backup met de hand en teruggezet (gate B4)
+- [ ] T+30: kwartaal-herinnering backup, `scripts/.data/` en prod-sleutels opgeruimd, AWS opgeruimd behalve `blob-images` en `blob-videos`
 - [ ] T+90: `blob-images` weg, na een bewezen terugzet. **`blob-videos` blijft** tot de R2-overstap.
 
 ## Monitoring & backup (ongoing) — open
 
-- [ ] **Backup:** maandelijkse export met bestanden via GitHub Action naar S3 (WP31 W9/B4, [`infra/backup.md`](../infra/backup.md)). Geen Convex Pro. Gate: één run met de hand en teruggezet, vóór T+30.
+- [ ] **Backup:** maandelijkse export met bestanden via GitHub Action naar S3 (WP31 W9/B4, [`infra/backup.md`](../infra/backup.md)). Geen Convex Pro. Gate: één run met de hand en teruggezet, ongeveer een week na de vrijgave.
 - [ ] **Integriteits-checks:** scheduled function voor data validatie (zie teststrategie punt 3 in migratie-plan-convex.md)
 - [ ] **Monitoring:** Convex Health & Insights dashboard (gratis), function errors in dashboard
 - [ ] **Alerting:** integriteits-checks sturen email bij inconsistentie

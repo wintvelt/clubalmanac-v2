@@ -70,7 +70,7 @@ jobs:
           ls -l snapshot.zip
 
       # Een export zonder records of zonder bestanden is geen backup. De
-      # drempels liggen ver onder de stand op T0 (5,6 GB, 1544 foto's).
+      # drempels liggen ver onder de stand op T0 (5,6 GB, 1511 foto's).
       - name: Export controleren
         run: |
           bytes=$(stat -c %s snapshot.zip)

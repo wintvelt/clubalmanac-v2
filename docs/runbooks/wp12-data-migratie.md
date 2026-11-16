@@ -38,7 +38,8 @@ Verplicht per [`data-migration-preflight.md`](../conventions/data-migration-pref
 
 ```
 # Convex-doelen. De admin-key is een deployment-scoped deploy key, gemaakt met
-# `npx convex deployment token create <naam> --deployment <dev|prod>`. Zonder
+# `npx convex deployment token create <naam> --deployment <dev|prod>`. Op prod
+# heet hij `migratie`: bij de vrijgave wordt alleen die ingetrokken (WP31). Zonder
 # zo'n key zijn de migratie-functies (internal) niet aanroepbaar — dat is de
 # bedoeling. De key moet ook internal actions mogen draaien (`formaten`); een
 # oudere dev-key mocht dat niet (2026-11-07). Zie de key-controle bij §Run 2, Vooraf.
