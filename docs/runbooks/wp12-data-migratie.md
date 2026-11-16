@@ -1,6 +1,6 @@
 # WP12 — data-migratie runbook (DynamoDB + S3 → Convex)
 
-Operationeel draaiboek voor de migratie-tooling uit [`WP12`](../work-packages/WP12-data-migratie-tooling.md). Twee runs met dezelfde tool en verschillende config: de **dev-seed** (nu, gefilterd + geanonimiseerd) en de **prod-run** (fase 5, gefaseerd over T-2 weken en T-0).
+Operationeel draaiboek voor de migratie-tooling uit [`WP12`](../work-packages/WP12-data-migratie-tooling.md). Twee runs met dezelfde tool en verschillende config: de **dev-seed** (nu, gefilterd + geanonimiseerd) en de **prod-run** (fase 5, alles op T0; volgorde en controles in [`wp31-cutover-draaiboek.md`](./wp31-cutover-draaiboek.md)).
 
 ```
 npm run migrate -- <commando> --target dev|prod [opties]
@@ -38,10 +38,11 @@ Verplicht per [`data-migration-preflight.md`](../conventions/data-migration-pref
 
 ```
 # Convex-doelen. De admin-key is een deployment-scoped deploy key, gemaakt met
-# `npx convex deployment token create <naam> --deployment <dev|prod>`. Zonder
+# `npx convex deployment token create <naam> --deployment <dev|prod>`. Op prod
+# heet hij `migratie`: bij de vrijgave wordt alleen die ingetrokken (WP31). Zonder
 # zo'n key zijn de migratie-functies (internal) niet aanroepbaar — dat is de
 # bedoeling. De key moet ook internal actions mogen draaien (`formaten`); een
-# oudere dev-key mocht dat niet (2026-11-07). Zie de key-controle bij T-2 weken.
+# oudere dev-key mocht dat niet (2026-11-07). Zie de key-controle bij §Run 2, Vooraf.
 MIGRATE_CONVEX_URL_DEV=https://glorious-pheasant-759.eu-west-1.convex.cloud
 MIGRATE_CONVEX_ADMIN_KEY_DEV=dev:glorious-pheasant-759|<key>
 
@@ -72,13 +73,20 @@ MIGRATE_CONVEX_ADMIN_KEY_PROD=prod:<prod-deployment>|<key>
 }
 ```
 
-`prod-config.json` — na de Clerk-pre-create op T-2 weken:
+`prod-config.json` — eerst de uitsluitingen met een lege `clerkIdByEmail`, dan vult `clerk-ids --create --write` de map (T-1 week, [draaiboek WP31](./wp31-cutover-draaiboek.md)):
 
 ```json
-{ "clerkIdByEmail": { "iemand@voorbeeld.nl": "user_..." }, "founderOverrides": {} }
+{
+  "clerkIdByEmail": { "iemand@voorbeeld.nl": "user_..." },
+  "founderOverrides": {},
+  "excludeUserIds": ["U<sub>"],
+  "excludeGroupIds": ["<groepId>"],
+  "excludeAlbumIds": ["<albumId>"]
+}
 ```
 
-- De Clerk-dev-ID's maak je vooraf handmatig aan in de dev-Clerk-instance; de prod-ID's komen uit de Clerk Invitations API-pre-create (zie fase 5 T-2 in `migratie-status.md`). Dev-Convex hoort bij dev-Clerk, prod bij prod — een subject uit de verkeerde instance logt nooit in.
+- De Clerk-dev-ID's maak je vooraf handmatig aan in de dev-Clerk-instance; de prod-ID's maakt en schrijft `npm run migrate -- clerk-ids --create --write` (19 leden via de Clerk Backend API, geen mail; sleutel `MIGRATE_CLERK_SECRET_KEY_PROD` in `.env.migrate`). Nooit overtypen: inloggen gaat alleen op de Clerk-ID, dus een verwisselde ID laat het ene lid stil de groepen van het andere zien. `clerk-ids` zonder vlag leest alleen en vergelijkt elke ID met het primaire adres in Clerk; `transform` stopt bij één ID op twee adressen. Dev-Convex hoort bij dev-Clerk, prod bij prod — een subject uit de verkeerde instance logt nooit in.
+- `exclude…` (WP31 W5, invariant 11): bron-ID's die bewust niet meegaan. Op T0: John Appleseed (`excludeUserIds`, hij krijgt geen Clerk-account, en zonder uitsluiting stopt de transform op hem), "Test group", "Familievakantie", "testgroep 2" en "blob" (`excludeGroupIds`), en het herinneringsalbum (`excludeAlbumIds`). Alles wat eraan hangt valt mee weg; een foto van een gewoon lid in een uitgesloten groep blijft (Mijn foto's). `transform` drukt per ID de naam af en wat er wegvalt; de verwachte regels staan in het draaiboek bij T-1 week. Een ID die niet in het extract staat, of een uitgesloten user die oprichter is van een groep die meegaat, stopt de transform.
 - `founderOverrides` is de ontsnapping voor een groep zonder `isFounder`-membership. De transform stopt in dat geval met de groep-ID in de melding; zet dan `{"<groupId>": "U<sub>"}`. Niet stilletjes de oudste member pakken.
 
 ## Run 1 — dev-seed
@@ -106,26 +114,15 @@ npm run migrate -- verify --target dev
 
 ## Run 2 — prod (fase 5)
 
-De uploadlijn haalt minder dan 20 Mbit/s. 5,6 GB past daarmee niet in een cutover-venster, dus de run is gesplitst. Fotobestanden zijn onveranderlijk: eenmaal geüpload verandert er niets meer.
+Alles op één dag, na de schrijfstop (WP31 W7): `load-files` haalde 5,36 MB/s (2026-11-13), dus 5,6 GB in ~18 minuten, en `formaten` duurt ~70. De volgorde rond deze commando's (schrijfstop, demo-account, review) staat in [`wp31-cutover-draaiboek.md`](./wp31-cutover-draaiboek.md); dezelfde run gaat een week eerder als generale repetitie op prod, met daarna `reset --target prod --yes --all`.
 
 De video's blijven buiten deze migratie: ze staan in een eigen bucket (`blob-videos`), hebben geen DynamoDB-record, en gaan pas mee bij de latere R2-overstap (WP12 §Video's — buiten scope). `load-files` is record-gedreven en raakt die bucket dus vanzelf niet aan — er is geen extra stap of uitzondering voor nodig.
 
-### T-2 weken
+### Vooraf
 
-- [ ] `integrityCheck`-cron op prod uitzetten. Tussen T-2 en T-0 staat er 5,6 GB storage met nul records; de dagelijkse check zou twee weken lang 1600+ storage-orphans melden. Weer aanzetten na een groene `verify` op T-0.
-- [ ] Clerk-pre-create is gedaan en `prod-config.json` is gevuld.
-- [ ] `npx convex export --prod --path ./backups/wp12-prod-t2.zip` als anker vóór de eerste schrijf-actie, plus een tweede kopie via het dashboard ([`data-migration-preflight.md`](../conventions/data-migration-preflight.md)). `backups/` is gitignored.
-
-```bash
-export MIGRATE_ALLOW_PROD=yes
-npm run migrate -- extract
-npm run migrate -- transform --target prod
-npm run migrate -- load-files --target prod    # uren; hervatbaar
-```
-
-`load-files` rapporteert de gehaalde doorvoer in MB/s en een schatting voor 5,6 GB. Breekt de run af: gewoon opnieuw starten — wat in `storage-map.json` staat wordt overgeslagen.
-
-- [ ] Key- en bibliotheek-controle voor `formaten` (WP25), na `load-files`. `formaten` is het enige migrate-commando dat een internal action aanroept; een key zonder dat recht breekt op T0 af. Vóór de eerste batch draait hij `selfTest`: sharp en heic-decode op een ingebouwde JPEG en HEIC, zonder te schrijven. Zo test deze run ook de bibliotheek op prod. De controle schrijft niets, mits prod nog geen foto-rij heeft. Eerst tellen (met je eigen Convex-login, los van de key):
+- [ ] `prod-config.json` heeft de uitsluitingen, en `npm run migrate -- clerk-ids` meldt "in orde" (exit 0).
+- [ ] Prod is leeg: `verify --target prod` (baseline) toont in de kolom van de deployment overal 0 en `storage: 0 objecten`. Exitcode 1 hoort daarbij (hij vergelijkt met een oude `convex-records.json`). Anders `reset --target prod --yes --all`: de rooktests en de repetitie laten rijen achter.
+- [ ] Key- en bibliotheek-controle voor `formaten` (WP25), op een lege prod. `formaten` is het enige migrate-commando dat een internal action aanroept; een key zonder dat recht breekt op T0 af. Vóór de eerste batch draait hij `selfTest`: sharp en heic-decode op een ingebouwde JPEG en HEIC, zonder te schrijven. Eerst tellen (met je eigen Convex-login, los van de key):
 
   ```bash
   npx convex run photos:formatStatus --prod      # door alleen bij photos: 0
@@ -138,23 +135,29 @@ npm run migrate -- load-files --target prod    # uren; hervatbaar
   ```
 
   Exitcode 0 betekent dat de key internal actions mag draaien en de bibliotheek werkt. Bij `key mag geen internal actions draaien`: maak een nieuwe prod-key (§A) en herhaal. Bij `geen verbinding met de deployment` of `beeldbibliotheek werkt niet`: zie §Bekende meldingen.
+
+  `photos:formatStatus` telt in één query en breekt boven ~1000 foto's af op de limiet voor systeemoperaties (WP31 B1). Gebruik hem alleen op een lege of kleine deployment; `formaten` zelf telt per pagina.
 - [ ] HEIC's op prod geteld (WP25 besluit 7): `AWS_PROFILE=clubalmanac node scripts/wp25/prod-tel.mjs`. Leest alleen uit S3. Gedaan 2026-11-07: 0 HEIC's. Zouden er HEIC's boven 13 MP tussen zitten, dan krijgen die op T0 geen formaten (`formaten` meldt ze als mislukt, "te groot"); zie §Formaten, "Blijft een foto mislukken".
 
-
-### T-0
+### T0 (na de schrijfstop)
 
 ```bash
-export MIGRATE_ALLOW_PROD=yes
-npx convex export --prod --path ./backups/wp12-prod-t0.zip  # tweede anker
-npm run migrate -- extract                      # verse stand, inclusief alles sinds T-2
-npm run migrate -- transform --target prod      # stopt bij een gemelde foto met verwijderdatum
-npm run migrate -- load-files --target prod     # alleen de delta; de rest staat al in de map
-npm run migrate -- load-records --target prod   # minuten
-npm run migrate -- formaten --target prod       # WP25; ~70 min (gemeten op dev), hervatbaar
+npm run migrate -- extract                      # na de schrijfstop
+npm run migrate -- clerk-ids                    # alleen lezen; "in orde", exit 0
+npm run migrate -- transform --target prod      # stopt bij een gemelde foto met verwijderdatum of een foute uitsluiting
+MIGRATE_ALLOW_PROD=yes npm run migrate -- load-files --target prod     # ~18 min; hervatbaar
+MIGRATE_ALLOW_PROD=yes npm run migrate -- load-records --target prod   # minuten
+MIGRATE_ALLOW_PROD=yes npm run migrate -- formaten --target prod       # WP25; ~70 min (gemeten op dev), hervatbaar
 npm run migrate -- verify --target prod
+npx convex export --prod --include-file-storage --path ./backups/wp31-prod-t0.zip  # anker, na een groene verify
 ```
 
-- [ ] Gemelde foto's (WP12b). `transform` stopt als een foto die geladen wordt een verwijderdatum heeft, welke datum ook, en noemt elke foto. v1 wiste een gemelde foto nooit; de FL1-cron van v2 draait elke nacht en wist hem zodra de datum voorbij is. Op 2026-11-07 waren er 0. Stopt hij: beslis (Wouter) vóór `load-records`. Laat de datum in de bron wissen en draai `extract` en `transform` opnieuw, of accepteer het verlies met `transform --target prod --accept-flagged-deletion`. Dan staat er per foto een waarschuwing in het rapport. De oude vlag `--accept-expired-flags` doet niets meer.
+`MIGRATE_ALLOW_PROD=yes` per commando, nooit met `export`: de review duurt dagen, en na de vrijgave mag `reset` prod nooit meer raken. Op prod is het anker pas zinvol ná het laden (ervoor is prod leeg), en dan met bestanden: tot de eerste maandelijkse backup is het de enige kopie (WP31 M2). Na de vrijgave gaat de admin-key van de migratie weg (draaiboek T0.11).
+
+`load-files` rapporteert de gehaalde doorvoer in MB/s en een schatting voor 5,6 GB. Breekt de run af: gewoon opnieuw starten — wat in `storage-map.json` staat wordt overgeslagen. Een bestand dat niet in de bucket staat, is na de schrijfstop een stop, geen `--accept-missing-files` (WP31 invariant 10).
+
+- [ ] Uitsluitingen (WP31). De transform drukt onder "uitgesloten via prod-config" één regel per ID af, met de naam en wat er in de bron aan hangt. Vergelijk met de verwachte regels in het draaiboek (T-1 week). Een uitnodiging aan het adres van een uitgesloten user valt ook weg (filterregel "op adres").
+- [ ] Gemelde foto's (WP12b). `transform` stopt als een foto die geladen wordt een verwijderdatum heeft, welke datum ook, en noemt elke foto. v1 wiste een gemelde foto nooit; de FL1-cron van v2 draait elke nacht en wist hem zodra de datum voorbij is. Op 2026-11-07 waren er 0. Stopt hij: beslis (Wouter) vóór `load-records`. Na de schrijfstop kan de bron niet meer gewijzigd worden; accepteer het verlies met `transform --target prod --accept-flagged-deletion`, of zet de schrijfstop terug (draaiboek §Terug). Dan staat er per foto een waarschuwing in het rapport. De oude vlag `--accept-expired-flags` doet niets meer.
 - [ ] Likes (WP19a). Ratings gaan niet mee naar Convex. Het aantal geschrapte likes staat in de transform-uitvoer (op T0 12). De AWS-bron blijft tot T+30.
 - [ ] `formaten` eindigt met exitcode 0: geen foto zonder formaten (behalve afgetekende), niets mislukt. Zie §Formaten (WP25) hieronder.
 - [ ] `verify` is groen: rij-aantallen kloppen, geen dangling storage-verwijzingen, geen storage-orphans, integriteitsscan leeg (dus ook geen `formaten ontbreken`), en het aantal groepen en albums met een cover klopt met de bron.
@@ -163,7 +166,7 @@ npm run migrate -- verify --target prod
 
   `verify` vergelijkt met de tellingen die de **transform** heeft vastgelegd, niet met een herberekening uit de storage-map. Dat betekent dat een run met `--accept-missing-files` per definitie níet groen is: het verlies is verklaarbaar, maar verklaarbaar is niet goedgekeurd. Lees dan de bevinding, controleer dat het verschil exact de geaccepteerde bestanden betreft, en teken er bewust voor af.
 - [ ] Storage-orphans opgeruimd, als `verify` ze meldt — zie hieronder.
-- [ ] `integrityCheck`-cron op prod weer aan.
+- [ ] Pas daarna `WEBMASTER_EMAILS` op prod (WP31 W12). Zonder die var loggen de crons in plaats van te mailen, dus een cron die tussen `load-files` en `verify` draait, mailt niemand.
 - [ ] Pas nu de app open (WP25 besluit 5): na `formaten` en een groene `verify`.
 - [ ] `unset MIGRATE_ALLOW_PROD`.
 
@@ -203,9 +206,9 @@ Meting (dev, preview-run 2026-11-07, 1001 foto's, batch 20):
 - Opslag: 1002 → 3004 objecten, +300,5 MB (~300 kB per foto).
 - Schatting prod (~1600 foto's): ~70 min.
 
-#### Storage-orphans tussen T-2 en T-0
+#### Storage-orphans
 
-De bestanden staan sinds T-2 in Convex-storage. Wordt in die twee weken een foto in de oude app verwijderd, dan is het bestand op T-0 geüpload terwijl er geen record meer naar verwijst: een storage-orphan, en precies wat WP10 de ochtend erna zou melden.
+Een storage-object zonder record: bv. formaat-objecten van een afgebroken `formaten`-batch, of bestanden van een eerdere `load-files` waarvan de records er niet meer zijn. WP10 zou ze de ochtend erna melden.
 
 ```bash
 npm run migrate -- verify --target prod          # noemt élk object dat weg zou gaan
@@ -213,7 +216,7 @@ npm run migrate -- prune-storage --target prod --yes
 npm run migrate -- verify --target prod          # nu groen
 ```
 
-- `verify` drukt de volledige lijst af, geen greep van tien: je moet vóór het opruimen kunnen zien wat er weggaat. Hij **adviseert** het opruimen alleen als de rij-aantallen kloppen; doen ze dat niet, dan is elk bestand nog nodig en stuurt hij je naar `load-records`. Tussen T-2 en T-0 is "storage-objecten zonder record" de normale toestand en niet iets om op te handelen.
+- `verify` drukt de volledige lijst af, geen greep van tien: je moet vóór het opruimen kunnen zien wat er weggaat. Hij **adviseert** het opruimen alleen als de rij-aantallen kloppen; doen ze dat niet, dan is elk bestand nog nodig en stuurt hij je naar `load-records`. Tussen `load-files` en `load-records` is "storage-objecten zonder record" de normale toestand en niet iets om op te handelen.
 - `prune-storage` wist alleen objecten die aan géén enkel geladen record hangen **én** waar `convex-records.json` niet naar verwijst. Daar staan **drie afzonderlijke mechanismen** omheen — ze doen verschillend werk en zijn eerder ten onrechte als één ding beschreven (WP12 fix-cyclus 3, R3-2):
 
   | Mechanisme | Vraag | Bij weigering |
@@ -240,7 +243,7 @@ Breekt `load-records` halverwege af, dan stopt hij luid met de bron-sleutel in d
 | `VLOER: convex-records.json beschrijft nul rijen in totaal` | Het transform-resultaat is leeg — vrijwel altijd een `extract` tegen de verkeerde tabel of AWS-omgeving. Controleer `MIGRATE_DYNAMO_TABLE` en draai `extract` + `transform` opnieuw. Er is niets gewist. Exitcode 1. |
 | `VLOER: N bestand(en) in storage-map.json, en convex-records.json heeft er geen enkele van nodig` | Tegenspraak tussen de twee werkbestanden, geen opruimopdracht. Controleer of `convex-records.json` en `storage-map.json` bij dezelfde run horen. Exitcode 1. |
 | `VLOER: alle N object(en) in storage zouden weg gaan` | Dit is geen selectieve opruiming meer. Alles wissen is `reset --all` — een ander commando, een andere bedoeling. Zoek eerst uit waarom er niets meer verwezen wordt. Exitcode 1. |
-| `verify`: `Nog niet opruimen: de rij-aantallen kloppen niet` | Normale toestand tussen T-2 en T-0: de bestanden staan er, de records nog niet. Niet opruimen; draai `load-records` en daarna opnieuw `verify`. |
+| `verify`: `Nog niet opruimen: de rij-aantallen kloppen niet` | Normale toestand tussen `load-files` en `load-records`: de bestanden staan er, de records nog niet. Niet opruimen; draai `load-records` en daarna opnieuw `verify`. |
 | `storage-map.json bestaat niet` | `load-files` is niet (af)gedraaid. `load-records` weigert; "nul bestanden bekend, dus nul foto's" is geen geldige conclusie. |
 | `N van de M verwezen bestand(en) staan niet in storage-map.json` | De gate vóór de eerste schrijf. Draai `load-files` (opnieuw) af — hij hervat waar hij gebleven was. Staan de bestanden aantoonbaar niet in S3, dan pas `--accept-missing-files`. |
 | `N bestand(en) ... staan niet in de bucket` | Records verwijzen naar een verdwenen S3-object. Bekijk `scripts/.data/missing-files.json`; met `--accept-missing-files` slaat `load-records` die foto's over, benoemt ze per bron-sleutel, en `verify` meldt het verschil daarna als bevinding. |
@@ -257,7 +260,7 @@ Breekt `load-records` halverwege af, dan stopt hij luid met de bron-sleutel in d
 | `album X: cover P staat niet in dit album maar wel in groep G` | Bewust overgenomen (WP12b besluit 4). Elk lid ziet de cover, want de foto staat in de groep. |
 | `album X` of `groep G`: `cover P staat in geen album van de groep` | Bewust overgenomen (WP12b besluit 4). In v2 ziet alleen de eigenaar zo'n cover. Na T0 kiest een admin een nieuwe cover uit een album (WP17b). De "(WP27)" in de melding is verouderd: WP27 is vervallen (2026-11-07). |
 | `album X: coverPhotoId P resolvet niet — gewist` | De cover-foto bestaat niet in de bron, of valt buiten de dev-seed. Album zonder cover, net als bij een groep. |
-| `transform`: `gemelde foto('s) met een verwijderdatum` | De FL1-cron wist ze zodra de datum voorbij is; v1 deed dat nooit. Laat de datum in de bron wissen, of draai `transform` opnieuw met `--accept-flagged-deletion` (zie T0). |
+| `transform`: `gemelde foto('s) met een verwijderdatum` | De FL1-cron wist ze zodra de datum voorbij is; v1 deed dat nooit. Vóór de schrijfstop: laat de datum in de bron wissen. Daarna kan dat niet zonder de tabel-policy kort weg te halen (de Deny geldt ook voor admins); zie het draaiboek WP31, T0.4. Of draai `transform` opnieuw met `--accept-flagged-deletion` (zie T0). |
 | `groep G: cover P staat alleen in een album van een andere groep (G2)` | Bewust overgenomen (WP12b). In v2 zien alleen de leden van G2 hem; kies na T0 een nieuwe cover (WP17b). |
 | `createdBy gesynthetiseerd` | `albums.createdBy` bestaat niet in de bron en valt terug op de founder van de groep. |
 

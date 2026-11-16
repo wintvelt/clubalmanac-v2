@@ -1,0 +1,112 @@
+name: Backup
+
+# Maandelijkse volledige export van Convex-prod, met bestanden, naar de
+# backup-bucket in eu-west-1 (WP31 B4). Opzet, controle en terugzetten:
+# infra/backup.md. Bucket en rol: infra/backup.yml.
+#
+# De deploy-key van prod kan prod ook wijzigen. Deze workflow doet daarom
+# niets anders dan exporteren en de namen (geen waarden) van de env-vars
+# noteren. De repo is publiek, dus de log ook: druk nooit een waarde af.
+# Elke action staat vast op een commit (niet op een tag die kan verschuiven):
+# deze job heeft een sleutel die prod kan wissen. Bijwerken: nieuwe SHA met
+# `git ls-remote https://github.com/<owner>/<action>.git refs/tags/<tag>`.
+
+on:
+  schedule:
+    # De 1e van de maand, 03:17 UTC (niet op het hele uur: dan is GitHub druk).
+    - cron: "17 3 1 * *"
+  workflow_dispatch:
+
+concurrency:
+  group: convex-backup
+  cancel-in-progress: false
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    # Uit tot de vrijgave (draaiboek T0.11): zonder repo-variabele
+    # BACKUP_ENABLED=true slaat elke run over (grijs, niet rood). Tot T0 is
+    # prod leeg of bevat hij de repetitie.
+    if: github.ref == 'refs/heads/main' && vars.BACKUP_ENABLED == 'true'
+    # Het geheim CONVEX_PROD_DEPLOY_KEY staat alleen in deze environment, en
+    # de environment laat alleen main toe.
+    environment: prod-backup
+    timeout-minutes: 120
+    env:
+      BACKUP_BUCKET: ${{ vars.BACKUP_BUCKET }}
+      BACKUP_ROLE_ARN: ${{ vars.BACKUP_ROLE_ARN }}
+    steps:
+      - name: Variabelen aanwezig
+        env:
+          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_PROD_DEPLOY_KEY }}
+        run: |
+          test -n "$BACKUP_BUCKET" || { echo "repo-variabele BACKUP_BUCKET ontbreekt"; exit 1; }
+          test -n "$BACKUP_ROLE_ARN" || { echo "repo-variabele BACKUP_ROLE_ARN ontbreekt"; exit 1; }
+          test -n "$CONVEX_DEPLOY_KEY" || { echo "geheim CONVEX_PROD_DEPLOY_KEY ontbreekt in environment prod-backup"; exit 1; }
+          case "$CONVEX_DEPLOY_KEY" in
+            prod:*) ;;
+            *) echo "CONVEX_PROD_DEPLOY_KEY is geen prod-deploy-key (begint niet met 'prod:')"; exit 1 ;;
+          esac
+
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version-file: .nvmrc
+          cache: "npm"
+
+      # Alleen voor de Convex-CLI, in de versie van de lockfile.
+      - run: npm ci --ignore-scripts
+
+      - name: Exporteren (met bestanden)
+        env:
+          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_PROD_DEPLOY_KEY }}
+        run: |
+          npx convex export --include-file-storage --path snapshot.zip
+          ls -l snapshot.zip
+
+      # Een export zonder records of zonder bestanden is geen backup. De
+      # drempels liggen ver onder de stand op T0 (5,6 GB, 1511 foto's).
+      - name: Export controleren
+        run: |
+          bytes=$(stat -c %s snapshot.zip)
+          files=$(unzip -Z1 snapshot.zip | grep -c '^_storage/' || true)
+          photos=$(unzip -p snapshot.zip photos/documents.jsonl | wc -l)
+          users=$(unzip -p snapshot.zip users/documents.jsonl | wc -l)
+          echo "grootte ${bytes} bytes, ${files} bestanden, ${photos} foto-rijen, ${users} users"
+          test "$bytes" -gt 1000000000 || { echo "export kleiner dan 1 GB"; exit 1; }
+          test "$files" -gt 1000 || { echo "minder dan 1000 bestanden in _storage/"; exit 1; }
+          test "$photos" -gt 1000 || { echo "minder dan 1000 foto-rijen"; exit 1; }
+          test "$users" -gt 10 || { echo "minder dan 10 users"; exit 1; }
+
+      # Alleen namen. Een export bevat geen env-vars; dit is de lijst om bij
+      # een terugzet opnieuw te vullen (waarden: wachtwoordmanager).
+      - name: Namen van de env-vars
+        env:
+          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_PROD_DEPLOY_KEY }}
+        run: |
+          npx convex env list --names-only > env-names.txt
+          grep -Eq '^[A-Z][A-Z0-9_]*$' env-names.txt || { echo "geen env-var-namen gevonden"; exit 1; }
+          if grep -Evq '^[A-Z][A-Z0-9_]*$' env-names.txt; then
+            echo "env-names.txt bevat iets anders dan namen; niet geüpload"; exit 1
+          fi
+          wc -l < env-names.txt
+
+      - uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4.3.1
+        with:
+          role-to-assume: ${{ env.BACKUP_ROLE_ARN }}
+          aws-region: eu-west-1
+
+      # Vaste sleutels: de bucket bewaart per sleutel de laatste 6 versies.
+      - name: Uploaden
+        run: |
+          stamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          aws s3 cp snapshot.zip "s3://$BACKUP_BUCKET/convex-prod/snapshot.zip" \
+            --storage-class GLACIER_IR --metadata "exported-at=$stamp,run=$GITHUB_RUN_ID" --no-progress
+          aws s3 cp env-names.txt "s3://$BACKUP_BUCKET/convex-prod/env-names.txt" \
+            --storage-class GLACIER_IR --metadata "exported-at=$stamp,run=$GITHUB_RUN_ID" --no-progress
+          echo "klaar: export van $stamp in s3://$BACKUP_BUCKET/convex-prod/"

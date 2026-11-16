@@ -158,62 +158,33 @@ Dus: communicatie en blokkade gaan **buiten de oude app om**.
 - 1 week vooraf, opnieuw 1 dag vooraf
 - Voor de 20 users persoonlijk genoeg om hard genoeg aan te komen
 
-**2. In-app reminder via group-injection (creatieve hack, geen code-update nodig)**
-- Server-side een "cutover-group" aanmaken in DynamoDB en aan elke user koppelen via membership
-- Group naam: `🚨 UPDATE NODIG - check je email`
-- Group cover-foto: visuele banner met "Nieuwe app komt op {datum}"
-- Verschijnt op het home screen bij iedereen
-- Aanzetten ~1 week voor cutover
-- Na cutover gewoon weer verwijderen
+**2. Herinnering in de oude app** ([WP31](./work-packages/WP31-cutover.md) W2)
+- Een album "Nieuwe app komt binnenkort" in Blob bibliotheek (18 van de 19 leden zitten erin). Geen cutover-groep: de oude app opent op de laatst bezochte groep.
+- De transform sluit het album uit (`excludeAlbumIds`), zodat hij niet mee naar prod gaat.
 
-**3. Backend write-block (op cutover-dag)**
-- Via `blob-images-common` een feature-flag die alle write-Lambdas een 503 returnen
-- Of IAM rechten op DynamoDB write-permissions intrekken
-- Reads laten staan een paar weken zodat de oude app niet hard crasht (toont nog content, kan niet meer wijzigen)
-- Resultaat in oude app: generic alert "Er ging iets mis, probeer het later anders weer" — acceptabel gegeven de out-of-band communicatie
+**3. Schrijfstop** (WP31 W1)
+- Twee policies, geen code: een resource policy op de DynamoDB-tabel die schrijven weigert (behalve voor de stream-Lambda), en een statement op bucket `blob-images` dat `PutObject`/`DeleteObject` onder `protected/` weigert. Terugdraaien: beide weghalen.
+- Kijken in de oude app blijft werken. De schrijfstop gaat vóór de laatste `extract` (invariant 2).
 
 **4. Oude webapp uit**
 - Gedaan 2026-11-15, vóór de overstap: clubalmanac.com toont een pagina die naar de iPhone-app verwijst, dev.clubalmanac.com is uit. Een nieuwe webapp komt na T0.
 
 ### Cutover stappenplan
 
-- [ ] T-4 weken: prod environments activeren — Convex prod deployment aanmaken (EU Dublin), Clerk prod instance activeren, env-paren wirën (Convex `CLERK_FRONTEND_API_URL` → prod Clerk, EAS prod build profile met juiste keys)
-- [ ] T-4 weken: prod env-vars op Convex deployment zetten (apart van dev) — `MAILJET_API_KEY`, `MAILJET_API_SECRET`, `MAILJET_VERIFIED_SENDERS`, `MAILJET_WEBHOOK_SECRET`, `CLUBALMANAC_STAGE=prod`, `CLERK_WEBHOOK_SECRET` (prod Svix), aparte `WEBMASTER_EMAILS`, `CLUBALMANAC_APP_STORE_ID=1663038609` (WP19c, App Store-link in de uitnodigingsmail)
-- [ ] T-4 weken: Mailjet prod webhook-config — eigen webhook-URL (`https://<prod-deployment>.eu-west-1.convex.site/email-event`) + eigen Basic-auth-secret in Mailjet dashboard configureren
-- [ ] Vóór de App Store-build: `CLERK_SECRET_KEY` (`sk_live_…`) op de prod-deployment, anders blijft na Account verwijderen de Clerk-user staan ([WP29](./work-packages/WP29-account-verwijderen.md), [`external-services.md`](./conventions/external-services.md) §Auth).
-- [ ] Daarna één keer testen: een wegwerp-account uitnodigen, in de app Account verwijderen, en in het Clerk-dashboard van de prod-instance checken dat de user weg is.
-- [ ] T-4 weken: Clerk prod webhook-config — eigen `/clerk-webhook`-URL (`https://<prod-deployment>.eu-west-1.convex.site/clerk-webhook`) + eigen Svix signing-secret + verification-required-flag aan
-- [ ] Cutover-build met `pk_live`: wis in die build eenmalig ook de Clerk-cache-sleutels met de oude `pk_test`-key. `wipe()` kent alleen de huidige key, dus zonder die stap houden testers hun test-user in de keychain ([WP15a](./work-packages/WP15a-navigatie-subscriptions.md) backlog).
-- [ ] T-4 weken: in prod-Clerk sign-up aan (zonder verplichte naamvelden) en bot sign-up protection uit, net als dev. Met de bescherming aan vraagt Clerk ook bij inloggen een captcha ([WP19b](./work-packages/WP19b-uitnodigen-aanmelden.md) besluit 3, [`external-services.md`](./conventions/external-services.md) §Auth).
-- [ ] T-4 weken: sessieduur in prod-Clerk kiezen (Sessions → lifetime / inactivity timeout). Die bepaalt hoe vaak een 50+-user opnieuw moet inloggen ([WP15a](./work-packages/WP15a-navigatie-subscriptions.md) open vraag 4).
-- [ ] T-4 weken: release-script voor prod: `npx convex deploy --prod` alleen als de werkmap schoon is, op `main` staat en gelijk is aan `origin/main` (besluit 2026-11-06)
-- [ ] T-4 weken: in prod-Clerk de JWT-template `convex` checken: de claim `email` is `{{user.primary_email_address}}`, geen metadata die een lid zelf zet. Daar hangt de webmaster-rol aan ([WP20](./work-packages/WP20-melden.md) besluit 12).
-- [ ] T-4 weken: controleren dat `INTEGRATION_TEST_ENABLED` en `INTEGRATION_TEST_SECRET` niet op de prod-deployment staan, zodat de `_test`-functies daar altijd weigeren ([WP26](./work-packages/WP26-test-functies-geheim.md) W4).
-- [ ] T-4 weken: clubfilms ([WP21](./work-packages/WP21-videos.md)): IAM-gebruiker met alleen `s3:GetObject` op `blob-videos/*`, en `FILMS_S3_ACCESS_KEY_ID`, `FILMS_S3_SECRET_ACCESS_KEY`, `FILMS_S3_REGION`, `FILMS_S3_BUCKET` op de prod-deployment ([`external-services.md`](./conventions/external-services.md) §AWS S3: clubfilms). Tot T0 mailt de cron `film link check` op prod elke dag "geen film met een cover", want de filmlijst kan pas na `load-records`: de cron tot T0 uitzetten, of die mail accepteren
-- [ ] T-4 weken: smoke test prod env (lege DB, dummy registratie, JWT round-trip via prod build van app)
-- [ ] T-4 weken: WP5 prod-Gates 1+2 herhalen op prod-deployment (send-roundtrip naar test-inbox + bounce-roundtrip via echte bounce of dashboard test-event)
-- [ ] T-4 weken: WP6 prod-Gates 1+2+3 herhalen op prod-deployment (atomic-onboarding happy-path + idempotency-relogin + geen rij zonder uitnodiging, WP19b). Eerst [`wp6-clerk-empirical-gates.md`](./runbooks/wp6-clerk-empirical-gates.md) omzetten naar code-login: het runbook gaat nog uit van signup met wachtwoord. Prod-Clerk krijgt dezelfde login-instellingen als dev (e-mailcode aan, wachtwoord uit; dev omgezet 2026-10-25).
-- [ ] T-3 weken: cutover-datum vastleggen, communicatie naar 20 users
-- [ ] T-2 weken: Clerk prod users vooraf aanmaken via de Clerk Users-API met bestaande emails, zonder wachtwoord. Clerk-IDs zijn dan bekend voor de data-import (zie fase 3 §Cognito sub → Clerk ID mapping mechanisme). Er gaat geen mail uit: users loggen op T0 in met hun e-mailadres + een code per mail (besluit 2026-10-25, [WP13](./work-packages/WP13-app-scaffold-auth.md)). **Niet alle 20 accounts zijn echte clubleden**: `John Appleseed` is het reviewaccount voor Apple's App Store-beoordeling en krijgt geen account. Loop de lijst uit `inspect` na op andere dode accounts.
-- [ ] T-2 weken, **vóór `load-files`**: `integrityCheck`-cron op prod uitzetten of de storage-orphan-check tijdelijk stilzetten. Tussen T-2 en T-0 staat er ~5,6 GB storage in prod met nul records; de dagelijkse check meldt dan twee weken lang 1600+ storage-orphans. Zonder deze stap is de eerste ervaring met de monitoring op prod een stortvloed vals-positieven. Weer aanzetten na de `verify` op T-0. (WP12 A-rol, risico-assessment ops.)
-- [ ] T-2 weken: `load-files` op prod draaien (WP12) — alle fotobestanden naar Convex-prod-storage, `.data/storage-map.json` gevuld, daarna `formaten` op prod als check (WP25; de grootste JPEG van 64 MP is dan voor het eerst aan de beurt). 5,6 GB over 1601 objecten, ordegrootte een uur over een lijn van <20 Mbit/s; hervatbaar. Video's blijven op S3 (besluit 2026-08-23, zie WP12 §Video's).
-   - **Heroverwegen bij start fase 5:** de dev-seed haalde ~3,6 MB/s (~29 Mbit/s, 2026-10-25), dus 5,6 GB in ~30 min. Past dat in het cutover-venster, dan kan alles op T-0 en vervallen de T-2-split, de cron-pauze en `prune-storage`. Eerst een tweede meting.
-- [ ] T-1 week: group-injection aanzetten in DynamoDB (in-app reminder verschijnt)
-- [ ] T-1 week: nieuwe iPhone app live in App Store (beschikbaar voor download), tegen prod env. **Apart aan te maken vóór de review-indiening**: een vers demo-account in prod-Clerk voor Apple's reviewers, met genoeg zichtbare content om de app te kunnen beoordelen. Het oude `John Appleseed`-account migreert niet mee.
-- [ ] T-1 dag: laatste reminder via WhatsApp/email
-- [ ] T0: verse `extract` + `transform` op actuele DynamoDB-stand, dan `load-files` (alleen de delta sinds T-2), dan `load-records`, `formaten` (WP25) en `verify` (WP12, prod-config). Het aantal geschrapte likes staat in de transform-uitvoer (op T0 12, WP19a). Volgorde staat in het WP12-runbook. Minuten, niet uren — de bulk staat al in storage sinds T-2.
-- [ ] T-0: `integrityCheck`-cron op prod weer aanzetten, ná een groene `verify`
-- [ ] T0: filmlijst op prod vullen ná `load-records`: `node scripts/wp21/seedArgs.ts --group <prod-id van "Blob bibliotheek">`, dan het geprinte `--prod`-commando; daarna `npx convex run --prod films:checkLinks` (geen mail = goed), en de cron `film link check` weer aan als hij uit stond ([WP21](./work-packages/WP21-videos.md))
-- [ ] T0: bucket `blob-videos` dicht, nadat de nieuwe app op prod een film afspeelt: S3 → bucket → Permissions → **Block public access**, alle vier aan (de oude app speelt dan geen films meer). Controle: een film-link zonder het deel na `?` geeft 403, mét geeft nog 206 ([WP21](./work-packages/WP21-videos.md) besluit 3, red-team)
-- [ ] T-0: backend write-block aan op AWS
-- [ ] T0: 20 users informeren dat ze nu kunnen overstappen. Instructie: app bijwerken, inloggen met je e-mailadres en de code uit de mail
-- [ ] T+1: bevestigen dat alles werkt voor alle 20 users
-- [ ] T+30: AWS resources opschonen (S3 `blob-images` nog even bewaren als backup tot ~T+90). **Uitzondering: bucket `blob-videos` blijft staan** — daar draait de video-weergave van de nieuwe app op tot de R2-overstap. Niet opruimen, ook niet na T+90.
-- [ ] T+30: cutover-group uit Convex verwijderen (was alleen reminder voor oude app)
+Per stap wie, wat, verwacht en bij afwijking: [`wp31-cutover-draaiboek.md`](./runbooks/wp31-cutover-draaiboek.md). Punt zonder terugkeer: *Release This Version* in App Store Connect.
+
+- [ ] T-4 weken: Convex prod, Clerk prod (Hobby, test mode permanent aan), Mailjet prod, env-vars (zonder `WEBMASTER_EMAILS`), rooktests WP5/WP6/WP29, IAM-user films (alleen `s3:GetObject` op `blob-videos/*`), "Cannot Sell App" oplossen (Agreements of Developer Support; kan weken duren), backend via `npm run deploy:prod`, cutover-build met `pk_live`, backup-stack ([`infra/backup.md`](../infra/backup.md)), workflow nog uit
+- [ ] T-3 weken: datum van de schrijfstop, bericht 1 (met adres-check)
+- [ ] T-1 week: herinneringsalbum, `prod-config.json` met uitsluitingen, Clerk pre-create en ID-map met `clerk-ids --create --write`, rol van de schrijfstop-uitzondering nagekeken, WP31 op prod, generale repetitie op prod (gate: schrijfstop op AWS-dev, `formaten` exit 0, `verify` groen, Wouter ziet 3 groepen, album van 540 foto's opent), daarna `reset --all`
+- [ ] T0: schrijfstop → migratie → `WEBMASTER_EMAILS`, filmlijst en anker-export met bestanden → demo-account → indienen met handmatige release → *Release This Version* → Nederland en België op *Available* → leden inlichten en `blob-videos` dicht, zodra de app in de App Store staat → migratie-key intrekken, backup aan
+- [ ] T+1: alle leden ingelogd
+- [ ] Een week na T0.10: backup met de hand en teruggezet (gate B4)
+- [ ] T+30: kwartaal-herinnering backup, `scripts/.data/` en prod-sleutels opgeruimd, AWS opgeruimd behalve `blob-images` en `blob-videos`
+- [ ] T+90: `blob-images` weg, na een bewezen terugzet. **`blob-videos` blijft** tot de R2-overstap.
 
 ## Monitoring & backup (ongoing) — open
 
-- [ ] **Backup:** Starter-plan heeft alleen handmatige back-ups (max. 2 per deployment); automatisch vraagt Pro ([docs](https://docs.convex.dev/database/backup-restore)). Vóór T0 beslissen: vaste export-routine of Pro. De app-voorwaarden beloven geen back-ups (WP15b).
+- [ ] **Backup:** maandelijkse export met bestanden via GitHub Action naar S3 (WP31 W9/B4, [`infra/backup.md`](../infra/backup.md)). Geen Convex Pro. Gate: één run met de hand en teruggezet, ongeveer een week na de vrijgave.
 - [ ] **Integriteits-checks:** scheduled function voor data validatie (zie teststrategie punt 3 in migratie-plan-convex.md)
 - [ ] **Monitoring:** Convex Health & Insights dashboard (gratis), function errors in dashboard
 - [ ] **Alerting:** integriteits-checks sturen email bij inconsistentie

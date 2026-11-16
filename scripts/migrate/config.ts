@@ -28,11 +28,15 @@ type DevConfigFile = {
 
 type ProdConfigFile = {
   /**
-   * email → Clerk-**prod**-ID. Gevuld op T-2 weken nadat de 16 users via de
-   * Clerk Invitations API zijn voorgemaakt (migratie-status fase 5).
+   * email → Clerk-**prod**-ID. Op T-1 week gemaakt met `clerk-ids --create
+   * --write` (WP31), uit Clerk prod zelf: niet overtypen.
    */
   clerkIdByEmail: Record<string, string>;
   founderOverrides?: Record<string, string>;
+  /** WP31 W5: bron-ID's die niet meegaan (reviewaccount, testgroepen, herinneringsalbum). */
+  excludeUserIds?: string[];
+  excludeGroupIds?: string[];
+  excludeAlbumIds?: string[];
 };
 
 const DEV_EXAMPLE = `{
@@ -43,8 +47,20 @@ const DEV_EXAMPLE = `{
 
 const PROD_EXAMPLE = `{
   "clerkIdByEmail": { "iemand@voorbeeld.nl": "user_..." },
-  "founderOverrides": {}
+  "founderOverrides": {},
+  "excludeUserIds": ["U<sub>"],
+  "excludeGroupIds": ["<groepId>"],
+  "excludeAlbumIds": ["<albumId>"]
 }`;
+
+/** Een optionele lijst bron-ID's; alles anders dan een lijst strings is een configfout. */
+function idList(file: string, field: string, value: unknown): string[] {
+  if (value === undefined) return [];
+  if (!Array.isArray(value) || value.some((v) => typeof v !== "string" || v.trim().length === 0)) {
+    throw new Error(`[migrate] ${file}: ${field} moet een lijst bron-ID's zijn (strings).`);
+  }
+  return value.map((v: string) => v.trim());
+}
 
 function missing(file: string, example: string): never {
   throw new Error(
@@ -79,8 +95,27 @@ export function loadConfig(target: Target, items: SourceItem[], now: number): Tr
   if (!dataFileExists(PROD_CONFIG_FILE)) missing(PROD_CONFIG_FILE, PROD_EXAMPLE);
   const file = readData<ProdConfigFile>(PROD_CONFIG_FILE);
   const byEmail = new Map<string, string>();
-  for (const [email, clerkId] of Object.entries(file.clerkIdByEmail ?? {})) {
-    byEmail.set(email.trim().toLowerCase(), clerkId);
+  const emailByClerkId = new Map<string, string>();
+  for (const [rawEmail, clerkId] of Object.entries(file.clerkIdByEmail ?? {})) {
+    // Inloggen gaat alleen op de Clerk-ID. Eén ID bij twee adressen laat het
+    // ene lid de groepen van het andere zien (WP31 S2). Eén adres in twee
+    // schrijfwijzen is evenmin eenduidig: dan zou er stil één winnen.
+    const email = rawEmail.trim().toLowerCase();
+    if (byEmail.has(email)) {
+      throw new Error(
+        `[migrate] ${PROD_CONFIG_FILE}: clerkIdByEmail noemt ${email} twee keer (andere schrijfwijze). ` +
+          `Maak de map opnieuw met 'clerk-ids --write'.`,
+      );
+    }
+    const clash = emailByClerkId.get(clerkId);
+    if (clash !== undefined) {
+      throw new Error(
+        `[migrate] ${PROD_CONFIG_FILE}: clerkIdByEmail geeft ${clerkId} aan twee adressen. ` +
+          `Maak de map opnieuw met 'clerk-ids --write'.`,
+      );
+    }
+    emailByClerkId.set(clerkId, email);
+    byEmail.set(email, clerkId);
   }
   if (byEmail.size === 0) {
     throw new Error(
@@ -108,6 +143,9 @@ export function loadConfig(target: Target, items: SourceItem[], now: number): Tr
     defaultPhotoLimit: DEFAULT_PHOTO_LIMIT,
     now,
     founderOverrides: file.founderOverrides,
+    excludeUserIds: idList(PROD_CONFIG_FILE, "excludeUserIds", file.excludeUserIds),
+    excludeGroupIds: idList(PROD_CONFIG_FILE, "excludeGroupIds", file.excludeGroupIds),
+    excludeAlbumIds: idList(PROD_CONFIG_FILE, "excludeAlbumIds", file.excludeAlbumIds),
   };
 }
 
