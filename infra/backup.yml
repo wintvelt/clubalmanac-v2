@@ -1,0 +1,121 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >-
+  Maandelijkse backup van Convex-prod (WP31 B4): een privé-bucket waarin de
+  GitHub Action `.github/workflows/backup.yml` een volledige export (met
+  bestanden) zet, en een rol die die workflow mag aannemen (OIDC, alleen vanuit
+  de GitHub-environment `prod-backup`, alleen schrijven in deze bucket).
+  Eén vaste sleutel per soort, met versiebeheer: de huidige en de 5 vorige
+  versies blijven staan, oudere gaan automatisch weg. Stoppen de runs, dan
+  blijven de laatste 6 gewoon staan. Deployen in eu-west-1 (Ierland, net als
+  de Convex-backend). Opzet en terugzetten: infra/backup.md.
+
+Parameters:
+  GitHubRepo:
+    Type: String
+    Default: wintvelt/clubalmanac-v2
+    Description: owner/naam van de repo die backups mag schrijven.
+  GitHubEnvironment:
+    Type: String
+    Default: prod-backup
+    Description: >-
+      Naam van de GitHub-environment met het Convex-geheim. Die environment
+      laat alleen main toe; dat is wat "alleen vanaf main" afdwingt.
+  GitHubOidcProviderArn:
+    Type: String
+    AllowedPattern: "^arn:aws:iam::[0-9]{12}:oidc-provider/token.actions.githubusercontent.com$"
+    Description: >-
+      ARN van de bestaande IAM-identity-provider voor
+      token.actions.githubusercontent.com (gemaakt door de site-stack, of al
+      eerder aanwezig).
+
+Resources:
+  BackupBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: RetainExceptOnCreate
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketName: clubalmanac-convex-backup
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: BucketOwnerEnforced
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      VersioningConfiguration:
+        Status: Enabled
+      LifecycleConfiguration:
+        Rules:
+          # De huidige versie plus de 5 nieuwste oude versies blijven: 6
+          # exports. Op aantal, niet op leeftijd, zodat een half jaar zonder
+          # geslaagde run geen enkele backup wist.
+          - Id: laatste-zes
+            Status: Enabled
+            NoncurrentVersionExpiration:
+              NoncurrentDays: 1
+              NewerNoncurrentVersions: 5
+          - Id: halve-uploads-weg
+            Status: Enabled
+            AbortIncompleteMultipartUpload:
+              DaysAfterInitiation: 2
+
+  BackupBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref BackupBucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: AlleenTls
+            Effect: Deny
+            Principal: "*"
+            Action: "s3:*"
+            Resource:
+              - !GetAtt BackupBucket.Arn
+              - !Sub "${BackupBucket.Arn}/*"
+            Condition:
+              Bool:
+                aws:SecureTransport: "false"
+
+  BackupRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: clubalmanac-convex-backup
+      Description: GitHub Actions (environment prod-backup van clubalmanac-v2) zet de Convex-export in de backup-bucket.
+      MaxSessionDuration: 3600
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Federated: !Ref GitHubOidcProviderArn
+            Action: sts:AssumeRoleWithWebIdentity
+            Condition:
+              StringEquals:
+                token.actions.githubusercontent.com:aud: sts.amazonaws.com
+                # Een job met `environment:` krijgt dit subject, niet de branch.
+                # De environment zelf laat alleen main toe.
+                token.actions.githubusercontent.com:sub: !Sub "repo:${GitHubRepo}:environment:${GitHubEnvironment}"
+      Policies:
+        - PolicyName: backup-schrijven
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              # Alleen erbij zetten: geen lezen, geen wissen, geen versies.
+              - Sid: ExportSchrijven
+                Effect: Allow
+                Action: s3:PutObject
+                Resource: !Sub "${BackupBucket.Arn}/convex-prod/*"
+
+Outputs:
+  BucketName:
+    Description: Zet als repo-variabele BACKUP_BUCKET.
+    Value: !Ref BackupBucket
+  BackupRoleArn:
+    Description: Zet als repo-variabele BACKUP_ROLE_ARN.
+    Value: !GetAtt BackupRole.Arn

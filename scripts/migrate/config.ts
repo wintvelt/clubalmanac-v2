@@ -28,11 +28,15 @@ type DevConfigFile = {
 
 type ProdConfigFile = {
   /**
-   * email → Clerk-**prod**-ID. Gevuld op T-2 weken nadat de 16 users via de
-   * Clerk Invitations API zijn voorgemaakt (migratie-status fase 5).
+   * email → Clerk-**prod**-ID. Gevuld op T-1 week nadat de 19 leden via de
+   * Clerk Backend API (create user, geen mail) zijn voorgemaakt (WP31).
    */
   clerkIdByEmail: Record<string, string>;
   founderOverrides?: Record<string, string>;
+  /** WP31 W5: bron-ID's die niet meegaan (reviewaccount, testgroepen, herinneringsalbum). */
+  excludeUserIds?: string[];
+  excludeGroupIds?: string[];
+  excludeAlbumIds?: string[];
 };
 
 const DEV_EXAMPLE = `{
@@ -43,8 +47,20 @@ const DEV_EXAMPLE = `{
 
 const PROD_EXAMPLE = `{
   "clerkIdByEmail": { "iemand@voorbeeld.nl": "user_..." },
-  "founderOverrides": {}
+  "founderOverrides": {},
+  "excludeUserIds": ["U<sub>"],
+  "excludeGroupIds": ["<groepId>"],
+  "excludeAlbumIds": ["<albumId>"]
 }`;
+
+/** Een optionele lijst bron-ID's; alles anders dan een lijst strings is een configfout. */
+function idList(file: string, field: string, value: unknown): string[] {
+  if (value === undefined) return [];
+  if (!Array.isArray(value) || value.some((v) => typeof v !== "string" || v.trim().length === 0)) {
+    throw new Error(`[migrate] ${file}: ${field} moet een lijst bron-ID's zijn (strings).`);
+  }
+  return value.map((v: string) => v.trim());
+}
 
 function missing(file: string, example: string): never {
   throw new Error(
@@ -108,6 +124,9 @@ export function loadConfig(target: Target, items: SourceItem[], now: number): Tr
     defaultPhotoLimit: DEFAULT_PHOTO_LIMIT,
     now,
     founderOverrides: file.founderOverrides,
+    excludeUserIds: idList(PROD_CONFIG_FILE, "excludeUserIds", file.excludeUserIds),
+    excludeGroupIds: idList(PROD_CONFIG_FILE, "excludeGroupIds", file.excludeGroupIds),
+    excludeAlbumIds: idList(PROD_CONFIG_FILE, "excludeAlbumIds", file.excludeAlbumIds),
   };
 }
 

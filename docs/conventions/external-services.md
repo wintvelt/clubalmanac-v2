@@ -118,6 +118,8 @@ Beelden lopen via de httpActions `GET /beeld/foto/<photoId>` en `GET /beeld/prof
 
 Webmaster-rol via env-var `WEBMASTER_EMAILS` met case-insensitive match (audit-7 fix).
 
+**Prod (WP31):** Clerk Hobby, dus een sessie duurt op prod hooguit 7 dagen; leden loggen wekelijks opnieuw in met een code (W8, langer vraagt Pro). *Test mode* staat op prod permanent aan, zodat de reviewer van Apple inlogt met een `+clerk_test`-adres en code 424242 (W4). Iedereen met zo'n adres krijgt dan een Clerk-account, maar komt zonder uitnodiging de app niet in (WP19b). Het demo-account is lid van alleen de groep Demo.
+
 ### Vereiste env-vars per deployment (WP6)
 
 | Env-var | Waarde dev | Waarde prod | Wat gebeurt bij ontbreken |
@@ -259,6 +261,10 @@ De lijst staat niet in de repo (WP21 invariant 9: de repo is publiek, de bestand
 Tekenen gebeurt lokaal, dus een ingetrokken of verlopen sleutel merkt Convex zelf niet. De cron `film link check` (dagelijks 05:00 UTC) leest één byte van een cover met een ondertekende link en mailt `WEBMASTER_EMAILS` als dat niet lukt (zonder link, geheim of bestandsnaam). Rotatie: nieuwe sleutel aanmaken, beide `FILMS_S3_*`-sleutel-vars zetten, de check handmatig draaien (`npx convex run films:checkLinks`), dan de oude sleutel intrekken. Een link die al is uitgegeven, werkt met de oude sleutel tot hij verloopt of de sleutel wordt ingetrokken.
 
 S3 rekent uitgaand verkeer: 100 GB per maand gratis per account, daarboven ~$0,09 per GB. De grootste film helemaal kijken is ~6,2 GB. De app speelt niets vanzelf af, laadt geen film vooruit en bewaart geen film op de telefoon; covers (samen ~21 MB) staan in de cache van de app.
+
+## Backup: GitHub Action naar S3 (WP31 B4)
+
+Elke maand een volledige export van Convex-prod met bestanden naar bucket `clubalmanac-convex-backup` (eu-west-1). Geheim `CONVEX_PROD_DEPLOY_KEY` in GitHub-environment `prod-backup` (alleen `main`), repo-variabelen `BACKUP_BUCKET` en `BACKUP_ROLE_ARN`. Opzet, controle en terugzetten: [`infra/backup.md`](../../infra/backup.md). ~$1 per maand.
 
 ## Productie-blind-spots
 

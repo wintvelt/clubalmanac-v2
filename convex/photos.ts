@@ -798,6 +798,31 @@ function isAccepted(photo: Doc<"photos">): boolean {
   return photo.noFormatsAcceptedAt !== undefined && photo.formats === undefined;
 }
 
+const formatStatusShape = {
+  photos: v.number(),
+  withFormats: v.number(),
+  withoutFormats: v.number(),
+  withExifOrientation: v.number(),
+  acceptedWithoutFormats: v.number(),
+};
+
+async function countFormatStatus(ctx: QueryCtx, photos: Doc<"photos">[]) {
+  // Een set met een ontbrekend object telt niet mee (A-invariant 22).
+  let withFormats = 0;
+  let acceptedWithoutFormats = 0;
+  for (const p of photos) {
+    if (await hasCompleteFormats(ctx, p)) withFormats += 1;
+    else if (isAccepted(p)) acceptedWithoutFormats += 1;
+  }
+  return {
+    photos: photos.length,
+    withFormats,
+    withoutFormats: photos.length - withFormats,
+    withExifOrientation: photos.filter((p) => p.exifOrientation !== undefined).length,
+    acceptedWithoutFormats,
+  };
+}
+
 /**
  * De telling voor de backfill en de pre-flight (invariant 2). `withoutFormats`
  * is elke foto zonder volledige set, ook de afgetekende; die staan daarnaast
@@ -805,28 +830,26 @@ function isAccepted(photo: Doc<"photos">): boolean {
  */
 export const formatStatus = internalQuery({
   args: {},
-  returns: v.object({
-    photos: v.number(),
-    withFormats: v.number(),
-    withoutFormats: v.number(),
-    withExifOrientation: v.number(),
-    acceptedWithoutFormats: v.number(),
-  }),
-  handler: async (ctx) => {
-    const all = await ctx.db.query("photos").collect();
-    // Een set met een ontbrekend object telt niet mee (A-invariant 22).
-    let withFormats = 0;
-    let acceptedWithoutFormats = 0;
-    for (const p of all) {
-      if (await hasCompleteFormats(ctx, p)) withFormats += 1;
-      else if (isAccepted(p)) acceptedWithoutFormats += 1;
-    }
+  returns: v.object(formatStatusShape),
+  handler: async (ctx) => countFormatStatus(ctx, await ctx.db.query("photos").collect()),
+});
+
+/**
+ * WP31 B1: dezelfde telling per pagina. `formatStatus` leest per foto twee
+ * storage-objecten in één query; op dev brak die bij 1001 foto's af op de
+ * limiet voor systeemoperaties, en prod heeft er ~1544. `formaten` telt
+ * daarom met deze query en telt de pagina's zelf op.
+ */
+export const formatStatusPage = internalQuery({
+  args: { cursor: v.union(v.string(), v.null()), batchSize: v.number() },
+  returns: v.object({ ...formatStatusShape, cursor: v.union(v.string(), v.null()) }),
+  handler: async (ctx, { cursor, batchSize }) => {
+    const page = await ctx.db
+      .query("photos")
+      .paginate({ cursor, numItems: Math.max(1, Math.floor(batchSize)) });
     return {
-      photos: all.length,
-      withFormats,
-      withoutFormats: all.length - withFormats,
-      withExifOrientation: all.filter((p) => p.exifOrientation !== undefined).length,
-      acceptedWithoutFormats,
+      ...(await countFormatStatus(ctx, page.page)),
+      cursor: page.isDone ? null : page.continueCursor,
     };
   },
 });

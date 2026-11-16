@@ -47,6 +47,14 @@ export type TransformConfig = {
    * verwijderdatum wist (`--accept-flagged-deletion`).
    */
   acceptFlaggedDeletion?: boolean;
+  /**
+   * WP31 W5, invariant 11: bron-ID's die bewust niet meegaan (het reviewaccount
+   * van Apple, testgroepen, het herinneringsalbum). Alles wat eraan hangt valt
+   * mee weg; een ID die niet in het extract staat stopt de run.
+   */
+  excludeUserIds?: string[];
+  excludeGroupIds?: string[];
+  excludeAlbumIds?: string[];
 };
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -314,6 +322,26 @@ export function transform(items: SourceItem[], config: TransformConfig): Transfo
     warn(`bron: ${count} item(s) met onbekend PK-patroon '${prefix}' overgeslagen`);
   }
 
+  // ── uitsluitingen (WP31 W5, invariant 11) ───────────────────────────
+  // Een typfout mag geen stille no-op zijn: elke ID moet in het extract staan.
+  const excludedUsers = new Set(config.excludeUserIds ?? []);
+  const excludedGroups = new Set(config.excludeGroupIds ?? []);
+  const excludedAlbums = new Set(config.excludeAlbumIds ?? []);
+  const unknownExclusions = [
+    ...[...excludedUsers].filter((id) => !src.users.has(id)).map((id) => `user ${id}`),
+    ...[...excludedGroups].filter((id) => !src.groups.has(id)).map((id) => `groep ${id}`),
+    ...[...excludedAlbums].filter((id) => !src.albums.has(id)).map((id) => `album ${id}`),
+  ];
+  if (unknownExclusions.length > 0) {
+    fail(
+      `uitsluiting(en) die niet in het extract staan: ${unknownExclusions.join(", ")}. ` +
+        `Een typfout hier sluit niets uit; controleer prod-config.json.`,
+    );
+  }
+  /** De reden in het filterrapport: uitgesloten in de config, of (dev) niet gekozen. */
+  const userGone = (userId: string): string =>
+    excludedUsers.has(userId) ? "uitgesloten (config)" : "niet chosen";
+
   // ── founders (correctie 5) ──────────────────────────────────────────
   // groups.createdBy heeft geen bronveld; hij komt van de membership met
   // isFounder. Ontbreekt die, dan stopt de run — niet stilletjes de oudste
@@ -329,6 +357,7 @@ export function transform(items: SourceItem[], config: TransformConfig): Transfo
     warn(`groep ${groupId}: createdBy uit config-override (${userId})`);
   }
   for (const groupId of src.groups.keys()) {
+    if (excludedGroups.has(groupId)) continue; // gaat niet mee, createdBy niet nodig
     if (!founderByGroup.has(groupId)) {
       fail(
         `groep ${groupId} heeft geen membership met isFounder — groups.createdBy ` +
@@ -355,7 +384,7 @@ export function transform(items: SourceItem[], config: TransformConfig): Transfo
   }
 
   const includedUsers = new Set<string>(
-    [...src.users.keys()].filter((id) => chosen === null || chosen.has(id)),
+    [...src.users.keys()].filter((id) => (chosen === null || chosen.has(id)) && !excludedUsers.has(id)),
   );
 
   // Groep hoort erbij als minstens één chosen user lid is én de founder chosen
@@ -363,11 +392,22 @@ export function transform(items: SourceItem[], config: TransformConfig): Transfo
   // met een niet-chosen founder valt af in plaats van dat we createdBy verzinnen).
   const includedGroups = new Set<string>();
   for (const groupId of src.groups.keys()) {
+    if (excludedGroups.has(groupId)) {
+      countFiltered("groep uitgesloten (config)");
+      continue;
+    }
+    const founder = founderByGroup.get(groupId)!;
+    if (excludedUsers.has(founder)) {
+      // groups.createdBy is verplicht en niet te verzinnen (invariant 11).
+      fail(
+        `user ${founder} is uitgesloten, maar is oprichter van groep ${groupId} die wél ` +
+          `meegaat. Sluit de groep ook uit, of zet een founderOverrides-entry voor ${groupId}.`,
+      );
+    }
     if (chosen === null) {
       includedGroups.add(groupId);
       continue;
     }
-    const founder = founderByGroup.get(groupId)!;
     if (!includedUsers.has(founder)) {
       countFiltered("groep uitgesloten: founder niet chosen");
       continue;
@@ -384,14 +424,15 @@ export function transform(items: SourceItem[], config: TransformConfig): Transfo
 
   const includedAlbums = new Set<string>();
   for (const [albumId, album] of src.albums) {
-    if (includedGroups.has(album.groupId)) includedAlbums.add(albumId);
+    if (excludedAlbums.has(albumId)) countFiltered("album uitgesloten (config)");
+    else if (includedGroups.has(album.groupId)) includedAlbums.add(albumId);
     else countFiltered("album uitgesloten: groep niet opgenomen");
   }
 
   const includedPhotos = new Set<string>();
   for (const [photoId, photo] of src.photos) {
     if (!includedUsers.has(photo.ownerId)) {
-      if (src.users.has(photo.ownerId)) countFiltered("foto uitgesloten: eigenaar niet chosen");
+      if (src.users.has(photo.ownerId)) countFiltered(`foto uitgesloten: eigenaar ${userGone(photo.ownerId)}`);
       else warn(`foto ${photoId}: eigenaar ${photo.ownerId} bestaat niet als user — overgeslagen`);
       continue;
     }
@@ -628,7 +669,7 @@ export function transform(items: SourceItem[], config: TransformConfig): Transfo
 
     if (!isInvite(item)) {
       if (!includedUsers.has(inviteeKey)) {
-        if (src.users.has(inviteeKey)) countFiltered("membership uitgesloten: user niet chosen");
+        if (src.users.has(inviteeKey)) countFiltered(`membership uitgesloten: user ${userGone(inviteeKey)}`);
         else warn(`membership ${inviteeKey}#${groupId}: user bestaat niet — overgeslagen`);
         continue;
       }
@@ -658,7 +699,7 @@ export function transform(items: SourceItem[], config: TransformConfig): Transfo
     // en is de invite-flow er niet op te testen.
     const inviteeIsUser = src.users.has(inviteeKey);
     if (inviteeIsUser && !includedUsers.has(inviteeKey)) {
-      countFiltered("invite uitgesloten: genodigde niet chosen");
+      countFiltered(`invite uitgesloten: genodigde ${userGone(inviteeKey)}`);
       continue;
     }
     const nested = (item.user ?? {}) as SourceItem;
@@ -676,7 +717,7 @@ export function transform(items: SourceItem[], config: TransformConfig): Transfo
     }
     if (!includedUsers.has(inviter)) {
       if (src.users.has(inviter)) {
-        countFiltered("invite uitgesloten: uitnodiger niet chosen");
+        countFiltered(`invite uitgesloten: uitnodiger ${userGone(inviter)}`);
         continue;
       }
       fail(`invite ${inviteeKey}#${groupId}: uitnodiger ${inviter} bestaat niet als user`);
@@ -838,7 +879,7 @@ export function transform(items: SourceItem[], config: TransformConfig): Transfo
     if (submittedBy === undefined) fail(`feature ${featureId} heeft geen indiener`);
     if (!includedUsers.has(submittedBy)) {
       if (src.users.has(submittedBy)) {
-        countFiltered("feature uitgesloten: indiener niet chosen");
+        countFiltered(`feature uitgesloten: indiener ${userGone(submittedBy)}`);
         continue;
       }
       fail(`feature ${featureId}: indiener ${submittedBy} bestaat niet als user`);
@@ -884,13 +925,15 @@ export function transform(items: SourceItem[], config: TransformConfig): Transfo
   }
 
   // ── albumLastSeen (correctie 2) ─────────────────────────────────────
-  deriveAlbumLastSeen({ src, records, includedAlbums, includedUsers, warn });
+  deriveAlbumLastSeen({ src, records, includedAlbums, includedUsers, excludedAlbums, warn });
 
   // ── covers zonder publicatie (WP12b besluit 4) ──────────────────────
   warnUnpublishedCovers(records, warn);
 
   // ── slotcontrole + rapport ──────────────────────────────────────────
   assertReferentiallyClosed(records);
+
+  reportExclusions({ src, excludedUsers, excludedGroups, excludedAlbums, warn });
 
   for (const [reason, count] of [...filtered].sort()) {
     warn(`filter (${config.target}): ${count}× ${reason}`);
@@ -901,6 +944,68 @@ export function transform(items: SourceItem[], config: TransformConfig): Transfo
   );
 
   return { records, warnings: warnings.map(anonymizeText) };
+}
+
+// ── uitsluitingsrapport (WP31 invariant 11) ───────────────────────────
+//
+// Per uitgesloten ID één regel met wat er in de bron direct aan hangt. Rijen
+// die via twee uitsluitingen wegvallen (een foto van de uitgesloten user in een
+// uitgesloten album) tellen bij allebei; de filterregels hieronder geven de
+// netto-totalen per tabel.
+function reportExclusions(args: {
+  src: Parsed;
+  excludedUsers: Set<string>;
+  excludedGroups: Set<string>;
+  excludedAlbums: Set<string>;
+  warn: (message: string) => void;
+}): void {
+  const { src, excludedUsers, excludedGroups, excludedAlbums, warn } = args;
+  const describe = (parts: Array<[string, number]>): string => {
+    const nonZero = parts.filter(([, n]) => n > 0).map(([label, n]) => `${n} ${label}`);
+    return nonZero.length > 0 ? nonZero.join(", ") : "geen andere rijen";
+  };
+  const inviterOf = (item: SourceItem): string | undefined =>
+    str((((item.invitation ?? {}) as SourceItem).from as SourceItem | undefined)?.SK);
+
+  for (const userId of [...excludedUsers].sort()) {
+    const memberships = src.memberships.filter((m) => !isInvite(m.item) && m.inviteeKey === userId).length;
+    const invites = src.memberships.filter(
+      (m) => isInvite(m.item) && (m.inviteeKey === userId || inviterOf(m.item) === userId),
+    ).length;
+    const photoIds = new Set([...src.photos.entries()].filter(([, p]) => p.ownerId === userId).map(([id]) => id));
+    const publications = src.albumPhotos.filter((ap) => photoIds.has(ap.photoId)).length;
+    const features = [...src.features.values()].filter(
+      (f) => (str(f.userId) ?? str((f.user as SourceItem | undefined)?.SK)) === userId,
+    ).length;
+    warn(
+      `uitgesloten user ${userId} (config): ` +
+        describe([
+          ["lidmaatschap(pen)", memberships],
+          ["uitnodiging(en)", invites],
+          ["foto('s)", photoIds.size],
+          ["publicatie(s)", publications],
+          ["idee(ën)", features],
+        ]),
+    );
+  }
+  for (const groupId of [...excludedGroups].sort()) {
+    const albumIds = new Set([...src.albums.entries()].filter(([, a]) => a.groupId === groupId).map(([id]) => id));
+    warn(
+      `uitgesloten groep ${groupId} (config): ` +
+        describe([
+          ["album(s)", albumIds.size],
+          ["publicatie(s)", src.albumPhotos.filter((ap) => albumIds.has(ap.albumId)).length],
+          ["lidmaatschap(pen)", src.memberships.filter((m) => !isInvite(m.item) && m.groupId === groupId).length],
+          ["uitnodiging(en)", src.memberships.filter((m) => isInvite(m.item) && m.groupId === groupId).length],
+        ]),
+    );
+  }
+  for (const albumId of [...excludedAlbums].sort()) {
+    warn(
+      `uitgesloten album ${albumId} (config): ` +
+        describe([["publicatie(s)", src.albumPhotos.filter((ap) => ap.albumId === albumId).length]]),
+    );
+  }
 }
 
 // ── albumLastSeen ─────────────────────────────────────────────────────
@@ -918,9 +1023,10 @@ function deriveAlbumLastSeen(args: {
   records: Records;
   includedAlbums: Set<string>;
   includedUsers: Set<string>;
+  excludedAlbums: Set<string>;
   warn: (message: string) => void;
 }): void {
-  const { src, records, includedAlbums, includedUsers, warn } = args;
+  const { src, records, includedAlbums, includedUsers, excludedAlbums, warn } = args;
 
   // albumId → photoId → addedAt, uit de rijen die daadwerkelijk geladen worden.
   const photosByAlbum = new Map<string, Map<string, number>>();
@@ -953,6 +1059,7 @@ function deriveAlbumLastSeen(args: {
         warn(`seenPics-entry van ${m.inviteeKey}#${m.groupId} zonder albumId/photoId — overgeslagen`);
         continue;
       }
+      if (excludedAlbums.has(albumId)) continue; // bewust weg, al gemeld bij de uitsluiting
       if (!includedAlbums.has(albumId) || !albums.includes(albumId)) {
         warn(
           `seenPics-entry ${albumId}/${photoId} van ${m.inviteeKey}: album hoort niet bij ` +

@@ -42,6 +42,42 @@ import { makeAdminClient, runAction, runMutation, runQuery, type AdminClient } f
 const DEFAULT_BATCH = 20;
 const MAX_BATCH = 50;
 
+/**
+ * Foto's per telpagina (WP31 B1). Per foto leest de telling twee
+ * storage-objecten; in één query over alle foto's brak dat op dev bij 1001
+ * foto's af op de limiet voor systeemoperaties. 200 per pagina blijft daar ver
+ * onder.
+ */
+const STATUS_PAGE = 200;
+
+type FormatStatus = {
+  photos: number;
+  withFormats: number;
+  withoutFormats: number;
+  withExifOrientation: number;
+  acceptedWithoutFormats: number;
+};
+
+/** De telling van `photos.formatStatus`, maar per pagina opgeteld. */
+async function formatStatusOf(admin: AdminClient): Promise<FormatStatus> {
+  const sum: FormatStatus = { photos: 0, withFormats: 0, withoutFormats: 0, withExifOrientation: 0, acceptedWithoutFormats: 0 };
+  let cursor: string | null = null;
+  do {
+    const page: FormatStatus & { cursor: string | null } = await runQuery(
+      admin,
+      internal.photos.formatStatusPage,
+      { cursor, batchSize: STATUS_PAGE },
+    );
+    sum.photos += page.photos;
+    sum.withFormats += page.withFormats;
+    sum.withoutFormats += page.withoutFormats;
+    sum.withExifOrientation += page.withExifOrientation;
+    sum.acceptedWithoutFormats += page.acceptedWithoutFormats;
+    cursor = page.cursor;
+  } while (cursor !== null);
+  return sum;
+}
+
 type Totals = { created: number; alreadyDone: number; gone: number; accepted: number; failed: Id<"photos">[] };
 
 /** De tekst van een fout; bij een ConvexError met tekst als data die tekst. */
@@ -155,7 +191,7 @@ export async function formaten(
     }
   }
 
-  const before = await runQuery(admin, internal.photos.formatStatus, {});
+  const before = await formatStatusOf(admin);
   console.log(
     `[formaten] vóór: ${before.photos} foto's, ${before.withFormats} met formaten, ` +
       `${before.withoutFormats} zonder (${before.acceptedWithoutFormats} afgetekend), ` +
@@ -234,7 +270,7 @@ export async function formaten(
     }
   }
 
-  const after = await runQuery(admin, internal.photos.formatStatus, {});
+  const after = await formatStatusOf(admin);
   console.log(
     `\n[formaten] totaal: gemaakt ${total.created}, al klaar ${total.alreadyDone}, weg ${total.gone}, ` +
       `afgetekend ${total.accepted}, mislukt ${total.failed.length} — ${batch} batch(es), ` +

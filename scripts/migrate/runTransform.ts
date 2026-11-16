@@ -56,6 +56,12 @@ export function runTransform(
   for (const table of TABLE_ORDER) {
     console.log(`  ${table.padEnd(16)} ${counts[table]}`);
   }
+  // WP31 invariant 11: elke uitsluiting apart, niet weggegroepeerd in de samenvatting.
+  const exclusions = warnings.filter((w) => w.startsWith("uitgesloten "));
+  if (exclusions.length > 0) {
+    console.log(`[transform] uitgesloten via ${target}-config (${exclusions.length}):`);
+    for (const line of exclusions) console.log(`  - ${line}`);
+  }
   console.log(`[transform] ${warnings.length} waarschuwing(en):`);
   for (const line of summarize(warnings)) console.log(`  - ${line}`);
   console.log(`[transform] → ${path}`);
