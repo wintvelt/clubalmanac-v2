@@ -173,12 +173,12 @@ Dus: communicatie en blokkade gaan **buiten de oude app om**.
 
 Per stap wie, wat, verwacht en bij afwijking: [`wp31-cutover-draaiboek.md`](./runbooks/wp31-cutover-draaiboek.md). Punt zonder terugkeer: *Release This Version* in App Store Connect.
 
-- [ ] T-4 weken: Convex prod, Clerk prod (Hobby, test mode permanent aan), Mailjet prod, env-vars (zonder `WEBMASTER_EMAILS`), rooktests WP5/WP6/WP29, cutover-build met `pk_live`, backup-stack ([`infra/backup.md`](../infra/backup.md))
+- [ ] T-4 weken: Convex prod, Clerk prod (Hobby, test mode permanent aan), Mailjet prod, env-vars (zonder `WEBMASTER_EMAILS`), rooktests WP5/WP6/WP29, IAM-user films (alleen `s3:GetObject` op `blob-videos/*`), cutover-build met `pk_live`, backup-stack ([`infra/backup.md`](../infra/backup.md)), workflow nog uit
 - [ ] T-3 weken: datum van de schrijfstop, bericht 1 (met adres-check)
-- [ ] T-1 week: herinneringsalbum, Clerk pre-create (19 leden), `prod-config.json` met uitsluitingen, generale repetitie op prod (gate: `formaten` exit 0, `verify` groen, album van 540 foto's opent), daarna `reset --all`
+- [ ] T-1 week: herinneringsalbum, `prod-config.json` met uitsluitingen, Clerk pre-create en ID-map met `clerk-ids --create --write`, generale repetitie op prod (gate: schrijfstop op AWS-dev, `formaten` exit 0, `verify` groen, Wouter ziet 3 groepen, album van 540 foto's opent), daarna `reset --all`
 - [ ] T0: schrijfstop → migratie → `WEBMASTER_EMAILS` en filmlijst → demo-account → indienen met handmatige release → *Release This Version* → leden inlichten en `blob-videos` dicht, zodra de app in de App Store staat
 - [ ] T+1: alle leden ingelogd
-- [ ] T+30: eerste backup met de hand en teruggezet (gate B4), `scripts/.data/` opgeruimd, AWS opgeruimd behalve `blob-images` en `blob-videos`
+- [ ] T+30: backup aan, eerste met de hand en teruggezet (gate B4), `scripts/.data/` en prod-sleutels opgeruimd, AWS opgeruimd behalve `blob-images` en `blob-videos`
 - [ ] T+90: `blob-images` weg, na een bewezen terugzet. **`blob-videos` blijft** tot de R2-overstap.
 
 ## Monitoring & backup (ongoing) — open

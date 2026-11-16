@@ -12,16 +12,17 @@ Spelregels:
 
 Alles hieronder laat rijen achter op prod. Dat geeft niets: vóór de repetitie en vóór T0 gaat prod door `reset` (invariant 16).
 
-- [ ] **Convex prod** (EU, Dublin) aanmaken; env-vars zetten: `MAILJET_API_KEY`, `MAILJET_API_SECRET`, `MAILJET_VERIFIED_SENDERS`, `MAILJET_WEBHOOK_SECRET`, `CLUBALMANAC_STAGE=prod`, `CLERK_FRONTEND_API_URL`, `CLERK_WEBHOOK_SECRET`, `CLERK_SECRET_KEY` (`sk_live_…`, WP29), `CLUBALMANAC_APP_STORE_ID=1663038609`, en de vier `FILMS_S3_*` (WP21). **Nog niet** `WEBMASTER_EMAILS` (W12, pas op T0.5).
+- [ ] **Convex prod** (EU, Dublin) aanmaken; env-vars zetten: `MAILJET_API_KEY`, `MAILJET_API_SECRET`, `MAILJET_VERIFIED_SENDERS`, `MAILJET_WEBHOOK_SECRET`, `CLUBALMANAC_STAGE=prod`, `CLERK_FRONTEND_API_URL`, `CLERK_WEBHOOK_SECRET`, `CLERK_SECRET_KEY` (`sk_live_…`, WP29), `CLUBALMANAC_APP_STORE_ID=1663038609`, en de vier `FILMS_S3_*` (WP21) met de sleutel van een eigen IAM-user die alleen `s3:GetObject` op `blob-videos/*` mag. **Nog niet** `WEBMASTER_EMAILS` (W12, pas op T0.5).
   Verwacht: `npx convex env list --prod --names-only` toont precies deze namen, en níet `INTEGRATION_TEST_ENABLED` of `INTEGRATION_TEST_SECRET` (WP26).
 - [ ] **Release-script** voor `npx convex deploy --prod`: alleen met een schone werkmap op `main`, gelijk aan `origin/main`.
-- [ ] **Clerk prod** activeren, op **Hobby** (W8: sessie maximaal 7 dagen, leden loggen wekelijks opnieuw in). Instellingen gelijk aan dev: e-mailcode aan, wachtwoord uit, sign-up aan zonder verplichte naamvelden, bot sign-up protection uit. JWT-template `convex`: claim `email` = `{{user.primary_email_address}}`. Webhook naar `https://<prod>.eu-west-1.convex.site/clerk-webhook` met eigen Svix-secret.
+- [ ] **Clerk prod** activeren, op **Hobby** (W8: sessie maximaal 7 dagen, leden loggen wekelijks opnieuw in). Instellingen gelijk aan dev: e-mailcode aan, wachtwoord uit, sign-up aan zonder verplichte naamvelden, bot sign-up protection uit, *Verification required before session* aan (Configure → Email address; standaard aan, de webhook rekent erop, WP6). JWT-template `convex`: claim `email` = `{{user.primary_email_address}}`. Webhook naar `https://<prod>.eu-west-1.convex.site/clerk-webhook` met eigen Svix-secret.
 - [ ] **Clerk test mode aan op prod, permanent** (W4, besluit 2026-11-16). Dan logt de reviewer van Apple in met een `+clerk_test`-adres en code 424242, bij elke volgende review ook.
   Verwacht: in het Clerk-dashboard van de prod-instance staat *Test mode* aan.
 - [ ] **Mailjet prod:** webhook naar `https://<prod>.eu-west-1.convex.site/email-event` met eigen Basic-auth-secret. Afzender gevalideerd ([`external-services.md`](../conventions/external-services.md) §Mailjet: anders gaat mail stil verloren).
 - [ ] **Rooktests:** WP5-gates 1+2 en WP6-gates 1+2+3 op prod ([`wp5-mailjet-empirical-gates.md`](./wp5-mailjet-empirical-gates.md), [`wp6-clerk-empirical-gates.md`](./wp6-clerk-empirical-gates.md); WP6 eerst omzetten naar inloggen met code). Daarna een wegwerp-account uitnodigen, in de app *Account verwijderen*, en in Clerk prod controleren dat de user weg is (WP29).
 - [ ] **Cutover-build** met profiel `production` (`pk_live`, prod-URL). Die build wist eenmalig de Clerk-cache-sleutels van de oude `pk_test`-key (WP15a). Gefaseerde release uit (W10).
-- [ ] **Backup-bucket en -workflow** klaarzetten: [`infra/backup.md`](../../infra/backup.md) stap 1-3. De eerste run pas na T0.
+- [ ] **Backup-bucket en -workflow** klaarzetten: [`infra/backup.md`](../../infra/backup.md) stap 1-3. Repo-variabele `BACKUP_ENABLED` **niet** zetten: zonder die variabele slaat de workflow elke run over (grijs, niet rood). Prod is tot T0 leeg of bevat de repetitie.
+  Verwacht: op de 1e van de maand staat er een run *Backup* met status *skipped*.
 
 ## T-3 weken — datum en leden
 
@@ -35,25 +36,54 @@ Alles hieronder laat rijen achter op prod. Dat geeft niets: vóór de repetitie 
   Verwacht: het album staat in je eigen oude app in Blob bibliotheek. Noteer de album-ID voor `excludeAlbumIds`.
 - [ ] **Extract en inspect** (alleen lezen): `npm run migrate -- extract`, `npm run migrate -- inspect`.
   Verwacht: 20 users, waarvan John Appleseed het reviewaccount; telling gelijk aan WP31 §Telling, of verklaarbaar.
-- [ ] **Clerk pre-create:** de 19 leden (iedereen behalve John Appleseed) via de Clerk Backend API aanmaken op prod, met het adres uit `UBbase.email`, zonder wachtwoord.
-  Verwacht: 19 users in Clerk prod, en geen mail bij de leden (invariant 8).
-- [ ] **`scripts/.data/prod-config.json`** vullen ([`wp12-data-migratie.md`](./wp12-data-migratie.md) §B): `clerkIdByEmail` met de 19, `excludeUserIds` met John Appleseed, `excludeGroupIds` met "Test group", "Familievakantie", "testgroep 2" en "blob", `excludeAlbumIds` met het herinneringsalbum (W5).
-  Verwacht: `transform --target prod` slaagt en drukt onder "uitgesloten via prod-config" één regel per ID af. Een ID die niet in het extract staat, of een uitgesloten user die oprichter is van een groep die meegaat, stopt de transform: corrigeer de config.
+- [ ] **`scripts/.data/prod-config.json`: de uitsluitingen** (W5), eerst zonder Clerk-ID's:
+  ```json
+  {
+    "clerkIdByEmail": {},
+    "excludeUserIds": ["<ID van John Appleseed, uit inspect>"],
+    "excludeGroupIds": ["G1bPko8fqhJ7bTEF", "G0O9PN5O6IRu9oMJ", "GoDoIz0WOM-K-lmP", "Gvh0VEosHYHFfCzZ"],
+    "excludeAlbumIds": ["<ID van het herinneringsalbum>"]
+  }
+  ```
+  De groeps-ID's zijn die van "Test group", "Familievakantie", "testgroep 2" en "blob" (extract van 2026-11-06). Let op: "blob" is níet "Blob bibliotheek" (`GT3IgqXKFgBDKZA0`, 18 leden, de films). De transform hieronder zet de naam bij elke ID; daar zie je een verwisseling.
+- [ ] **Clerk pre-create** (Wouter), met `MIGRATE_CLERK_SECRET_KEY_PROD=sk_live_…` in `.env.migrate`:
+  ```bash
+  MIGRATE_ALLOW_PROD=yes npm run migrate -- clerk-ids --create --write
+  npm run migrate -- clerk-ids
+  ```
+  De eerste maakt de 19 leden (het extract min `excludeUserIds`) aan in Clerk prod, zonder wachtwoord en zonder mail, en zet `clerkIdByEmail` uit Clerk zelf: niet overtypen (een verwisselde ID laat het ene lid stil de groepen van het andere zien). De tweede leest alleen en vergelijkt elke ID met het primaire adres in Clerk.
+  Verwacht: "19 aangemaakt" en daarna "in orde: clerkIdByEmail is gelijk aan Clerk prod (19 leden)", exitcode 0; geen mail bij de leden (invariant 8). De Clerk-users zonder lid (wegwerp uit de rooktests) staan als ID in de uitvoer.
+  Afwijking: `ONTBREEKT` of `MAP KLOPT NIET` → niet verder. Een fout bij `--create` (bv. HTTP 422, adres ongeldig): het adres in het extract nakijken; opnieuw draaien slaat wie al bestaat over.
+- [ ] **Transform op prod** (alleen lokaal): `npm run migrate -- transform --target prod`.
+  Verwacht: hij slaagt en drukt onder "uitgesloten via prod-config" precies deze regels af (aantallen van 2026-11-06):
+  - `uitgesloten user U… "John Appleseed" (config): 1 lidmaatschap(pen), 32 foto('s), 30 publicatie(s)`
+  - `uitgesloten groep G0O9PN5O6IRu9oMJ "Familievakantie" (config): 1 lidmaatschap(pen)`
+  - `uitgesloten groep G1bPko8fqhJ7bTEF "Test group" (config): 2 album(s), 30 publicatie(s), 2 lidmaatschap(pen)`
+  - `uitgesloten groep GoDoIz0WOM-K-lmP "testgroep 2" (config): 1 lidmaatschap(pen), 1 uitnodiging(en)`
+  - `uitgesloten groep Gvh0VEosHYHFfCzZ "blob" (config): 1 lidmaatschap(pen)`
+  - `uitgesloten album A… "<naam van het herinneringsalbum>" (config): geen andere rijen`
+
+  Afwijking: een andere naam of een groot verschil in aantallen → verkeerde ID, config corrigeren. Een ID die niet in het extract staat, of een uitgesloten user die oprichter is van een groep die meegaat, stopt de transform zelf.
 - [ ] **Generale repetitie op prod** (W6): T0.2 tot en met T0.7 hieronder, met deze verschillen:
-  - schrijfstop (T0.2) op de AWS-**dev**-tabel `blob-images-photos-dev` en bucket `blob-images-dev`, inclusief terugdraaien: schrijfactie geweigerd, policies weg, schrijfactie lukt weer;
+  - schrijfstop (T0.2) op de AWS-**dev**-tabel `blob-images-photos-dev` en bucket `blob-images-dev`, met de twee controles van T0.2 (tabel- en bucketnaam aangepast): beide geweigerd. Daarna de policies weghalen, de controles opnieuw: beide lukken. Ruim dan het testbestand en het testrecord op:
+    ```bash
+    aws s3 rm s3://blob-images-dev/protected/schrijfstop-test.txt
+    aws dynamodb delete-item --region eu-central-1 --table-name blob-images-photos-dev \
+      --key '{"PK":{"S":"SCHRIJFSTOP-TEST"},"SK":{"S":"test"}}'
+    ```
   - geen `WEBMASTER_EMAILS` (T0.5);
   - wel de demo-groep, het demo-account en de production-build op TestFlight (T0.7), maar **niet indienen** bij Apple.
 
   Gate, alles verplicht:
   - `formaten` eindigt met exitcode 0 (blokker B1: de telling is per pagina, nog niet op prod-volume gedraaid);
   - `verify` groen;
-  - inloggen als Wouter toont zijn 4 groepen;
+  - inloggen als Wouter toont precies 3 groepen: Blob bibliotheek, zijn groep met 1 album en 2 leden, en Demo (T0.7);
   - het album van 540 foto's opent op prod, en scrollen gaat zonder fout (blokker B3: per foto worden de formaten opgevraagd; op dev was het grootste album 302);
   - de doorvoer van `load-files` en de duur van `formaten` noteren (verwacht ~18 en ~70 minuten, W7).
 
   Afwijking bij B1 of B3: niet naar T0. Meld het aan regie; dat is code.
 - [ ] **Na de repetitie prod leegmaken:** `MIGRATE_ALLOW_PROD=yes npm run migrate -- reset --target prod --yes --all`.
-  Verwacht: `verify` (baseline) toont 0 rijen. De filmlijst staat nog (valt buiten `reset`) en wijst naar een gewiste groep: op T0.5 opnieuw vullen is daarom verplicht.
+  Verwacht: `npm run migrate -- verify --target prod` toont in de kolom van de deployment overal 0, en `storage: 0 objecten`. Exitcode 1 en "rood" horen hier bij: `verify` vergelijkt met `convex-records.json` van de repetitie. Kijk alleen naar die kolom. De filmlijst staat nog (valt buiten `reset`) en wijst naar een gewiste groep: op T0.5 opnieuw vullen is daarom verplicht.
 
 ## T-1 dag
 
@@ -88,27 +118,38 @@ De dag van de schrijfstop. De vrijgave (T0.9) volgt na de review, mogelijk dagen
        "Action": ["s3:PutObject", "s3:DeleteObject"],
        "Resource": "arn:aws:s3:::blob-images/protected/*" }
      ```
-   Verwacht: een wijziging in je eigen oude app (bv. een albumnaam) geeft een foutmelding, en de dbStream-Lambda heeft daarna 5 minuten geen aanroepen (CloudWatch, *Invocations*). Kijken in de oude app werkt nog.
-   Afwijking: de wijziging lukt → policy controleren, niet verder.
-3. **Anker en leeg-controle:** `npx convex export --prod --path ./backups/wp31-prod-t0.zip`, en `verify --target prod` (baseline).
-   Verwacht: 0 rijen. Anders eerst `reset --target prod --yes --all`.
+   Controle per policy, met je eigen AWS-login (een Deny in een policy geldt ook voor een admin):
+   ```bash
+   echo test > schrijfstop-test.txt
+   aws s3 cp schrijfstop-test.txt s3://blob-images/protected/schrijfstop-test.txt
+   aws dynamodb put-item --region eu-central-1 --table-name blob-images-photos-prod \
+     --item '{"PK":{"S":"SCHRIJFSTOP-TEST"},"SK":{"S":"test"}}'
+   ```
+   Verwacht: de eerste geeft `AccessDenied`, de tweede `AccessDeniedException`. Een wijziging in je eigen oude app (bv. een albumnaam) geeft een foutmelding, en de dbStream-Lambda heeft daarna 5 minuten geen aanroepen (CloudWatch, *Invocations*). Kijken in de oude app werkt nog.
+   Afwijking: een van de twee lukt → die policy staat niet goed (niet opgeslagen, of een fout in `Resource`). Haal het testbestand of testrecord weg (`aws s3 rm …` of `aws dynamodb delete-item …`, zoals bij de repetitie), herstel de policy en controleer opnieuw. Niet verder zolang er één lukt: draaien in de oude app wist dan nog originelen.
+3. **Anker en leeg-controle:** `npx convex export --prod --path ./backups/wp31-prod-t0.zip`, en `npm run migrate -- verify --target prod` (baseline).
+   Verwacht: in de kolom van de deployment overal 0, en `storage: 0 objecten`. Exitcode 1 en "rood" horen hier bij (`verify` vergelijkt met de oude `convex-records.json`); kijk alleen naar die kolom.
+   Afwijking: niet overal 0 → eerst `MIGRATE_ALLOW_PROD=yes npm run migrate -- reset --target prod --yes --all`, dan opnieuw.
 4. **Migratie**, in deze volgorde, elk met exitcode 0 ([`wp12-data-migratie.md`](./wp12-data-migratie.md) §Run 2 voor de meldingen):
    ```bash
    export MIGRATE_ALLOW_PROD=yes
    npm run migrate -- extract
+   npm run migrate -- inspect
+   npm run migrate -- clerk-ids                    # alleen lezen
    npm run migrate -- transform --target prod
    npm run migrate -- load-files --target prod     # ~18 min
    npm run migrate -- load-records --target prod
    npm run migrate -- formaten --target prod       # ~70 min, hervatbaar
    npm run migrate -- verify --target prod
    ```
-   Verwacht: `load-files` zonder ontbrekende bestanden (een ontbrekend bestand na de schrijfstop is een stop, geen `--accept-missing-files`, invariant 10); `formaten` "klaar", exit 0; `verify` groen.
+   Verwacht: `inspect` geeft dezelfde telling als bij T-1 week, of een verschil dat je kunt verklaren (iemand heeft vóór de stop nog iets toegevoegd); `clerk-ids` "in orde", exit 0; `transform` met dezelfde uitsluitingsregels als bij T-1 week; `load-files` zonder ontbrekende bestanden (een ontbrekend bestand na de schrijfstop is een stop, geen `--accept-missing-files`, invariant 10); `formaten` "klaar", exit 0; `verify` groen.
 5. **Na een groene `verify`:**
    - `WEBMASTER_EMAILS` op prod zetten (W12);
    - filmlijst vullen: `node scripts/wp21/seedArgs.ts --group <prod-id van "Blob bibliotheek">`, dan het geprinte `--prod`-commando (`films:replaceAll`); daarna `npx convex run --prod films:checkLinks`.
    Verwacht: `checkLinks` meldt niets (geen mail).
 6. **Zelf inloggen** met een TestFlight-build (profiel `production`) tegen prod, met je eigen adres.
-   Verwacht: je 4 groepen, met albums, foto's en profielfoto's; in Blob bibliotheek spelen de films; het herinneringsalbum, Test group en de drie lege groepen ontbreken.
+   Verwacht: precies 2 groepen, Blob bibliotheek en je groep met 1 album en 2 leden, met albums, foto's en profielfoto's; in Blob bibliotheek spelen de films; het herinneringsalbum, Test group, Familievakantie en testgroep 2 ontbreken. Na T0.7 komt Demo erbij (3).
+   Afwijking: een andere groep, of een groep mist → niet indienen; §Terug.
 7. **Demo voor Apple** (W4, invariant 12): in de app een groep "Demo" maken, het adres `<naam>+clerk_test@<eigen domein>` uitnodigen als **lid** (geen admin), daarmee inloggen (code 424242) en een paar eigen, niet-persoonlijke foto's in een album zetten.
    Verwacht: het demo-account ziet alleen Demo.
 8. **Indienen** in App Store Connect, met *Manually release this version* en gefaseerde release uit. Inloggegevens voor de reviewer: het demo-adres en code 424242.
@@ -133,8 +174,14 @@ De dag van de schrijfstop. De vrijgave (T0.9) volgt na de review, mogelijk dagen
 
 ## T+30
 
-- [ ] Eerste backup met de hand (workflow *Backup*, *Run workflow*) en terugzetten in een wegwerp-deployment: [`infra/backup.md`](../../infra/backup.md) stap 4-5 (gate B4). Daarna draait hij elke maand.
-- [ ] `scripts/.data/` opruimen: `prod-config.json` en het extract bevatten echte adressen (invariant 7). Eerst de backup-gate.
+- [ ] Repo-variabele `BACKUP_ENABLED` = `true` zetten, dan de eerste backup met de hand (workflow *Backup*, *Run workflow*) en terugzetten in een wegwerp-deployment: [`infra/backup.md`](../../infra/backup.md) stap 4-5 (gate B4). Daarna draait hij elke maand.
+- [ ] Opruimen (invariant 7), na de backup-gate:
+  - `scripts/.data/`: `prod-config.json` en het extract bevatten echte adressen; ook `./backups/wp31-prod-t0.zip`;
+  - uit `.env.migrate`: `MIGRATE_CONVEX_ADMIN_KEY_PROD`, `MIGRATE_CLERK_SECRET_KEY_PROD` en `MIGRATE_CONVEX_URL_PROD`;
+  - die Convex-deploy-key intrekken (Convex-dashboard → prod → Settings → Deploy keys). De backup heeft een eigen key; die blijft;
+  - de Clerk-secret-key die je voor `clerk-ids` hebt gebruikt: als het een aparte key was, intrekken (Clerk-dashboard → API keys); `CLERK_SECRET_KEY` op Convex prod blijft;
+  - de alleen-lezen AWS-sleutel van `extract`/`load-files` op de server: uit `~/.aws/credentials` en in IAM verwijderen.
+  Verwacht: `grep PROD .env.migrate` geeft niets.
 - [ ] AWS opruimen, behalve `blob-images` (tot T+90) en `blob-videos` (blijft, de films draaien erop).
 - [ ] Na een maand vragen of wekelijks opnieuw inloggen hindert (W8).
 

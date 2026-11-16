@@ -1,4 +1,4 @@
-// WP12 — CLI. Negen losse commando's, geen enkele knop (WP25: `formaten`).
+// WP12 — CLI. Tien losse commando's, geen enkele knop (WP25: `formaten`, WP31: `clerk-ids`).
 //
 //   node scripts/migrate/cli.ts <commando> --target dev|prod [opties]
 //   npm run migrate -- <commando> --target dev
@@ -13,6 +13,7 @@
 import { realpathSync } from "node:fs";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { clerkIds } from "./clerkIds.ts";
 import { extract } from "./extract.ts";
 import { formaten } from "./formaten.ts";
 import type { Id } from "../../convex/_generated/dataModel.js";
@@ -33,6 +34,8 @@ migratie-tooling (WP12) — DynamoDB + S3 → Convex
 commando's
   extract         DynamoDB volledig scannen → scripts/.data/dynamo-extract.json
   inspect         overzicht per user uit het extract (om de 3 chosen te kiezen)
+  clerk-ids       prod: clerkIdByEmail tegen Clerk prod controleren (WP31);
+                  --create maakt ontbrekende leden aan, --write zet de map
   transform       extract + config → scripts/.data/convex-records.json
   load-files      foto's uit S3 → Convex-storage (hervatbaar)
   load-records    de records → de Convex-tabellen (niet hervatbaar; reset + opnieuw)
@@ -56,6 +59,7 @@ opties
 omgeving (.env.migrate, gitignored)
   MIGRATE_CONVEX_URL_DEV / _PROD, MIGRATE_CONVEX_ADMIN_KEY_DEV / _PROD
   MIGRATE_ALLOW_PROD=yes     verplicht voor élke schrijf-actie op prod
+  MIGRATE_CLERK_SECRET_KEY_PROD  sk_live_… (alleen clerk-ids)
   MIGRATE_AWS_REGION / MIGRATE_DYNAMO_TABLE / MIGRATE_S3_BUCKET (optioneel)
   AWS-credentials via de gebruikelijke AWS_*-vars of AWS_PROFILE (read-only)
 `;
@@ -89,6 +93,8 @@ async function main(): Promise<number> {
     case "inspect":
       inspect();
       return 0;
+    case "clerk-ids":
+      return await clerkIds(has("--create"), has("--write"));
     case "transform":
       runTransform(parseTarget(argv), Date.now(), transformOptions(argv));
       return 0;

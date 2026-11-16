@@ -25,7 +25,9 @@ permissions:
 jobs:
   export:
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main'
+    # Uit tot T+30: zonder repo-variabele BACKUP_ENABLED=true slaat elke run
+    # over (grijs, niet rood). Tot T0 is prod leeg of bevat hij de repetitie.
+    if: github.ref == 'refs/heads/main' && vars.BACKUP_ENABLED == 'true'
     # Het geheim CONVEX_PROD_DEPLOY_KEY staat alleen in deze environment, en
     # de environment laat alleen main toe.
     environment: prod-backup

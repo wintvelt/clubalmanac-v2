@@ -118,7 +118,7 @@ Beelden lopen via de httpActions `GET /beeld/foto/<photoId>` en `GET /beeld/prof
 
 Webmaster-rol via env-var `WEBMASTER_EMAILS` met case-insensitive match (audit-7 fix).
 
-**Prod (WP31):** Clerk Hobby, dus een sessie duurt op prod hooguit 7 dagen; leden loggen wekelijks opnieuw in met een code (W8, langer vraagt Pro). *Test mode* staat op prod permanent aan, zodat de reviewer van Apple inlogt met een `+clerk_test`-adres en code 424242 (W4). Iedereen met zo'n adres krijgt dan een Clerk-account, maar komt zonder uitnodiging de app niet in (WP19b). Het demo-account is lid van alleen de groep Demo.
+**Prod (WP31):** Clerk Hobby, dus een sessie duurt op prod hooguit 7 dagen; leden loggen wekelijks opnieuw in met een code (W8, langer vraagt Pro). *Test mode* staat op prod permanent aan, zodat de reviewer van Apple inlogt met een `+clerk_test`-adres en code 424242 (W4). Iedereen met zo'n adres krijgt dan een Clerk-account, maar komt zonder uitnodiging de app niet in (WP19b). Het demo-account is lid van alleen de groep Demo. De Clerk-ID's van de 19 leden maakt en controleert `npm run migrate -- clerk-ids` (sleutel `MIGRATE_CLERK_SECRET_KEY_PROD` in `.env.migrate`, na T0 weg); inloggen gaat alleen op de Clerk-ID, het adres wordt niet vergeleken.
 
 ### Vereiste env-vars per deployment (WP6)
 
@@ -264,7 +264,7 @@ S3 rekent uitgaand verkeer: 100 GB per maand gratis per account, daarboven ~$0,0
 
 ## Backup: GitHub Action naar S3 (WP31 B4)
 
-Elke maand een volledige export van Convex-prod met bestanden naar bucket `clubalmanac-convex-backup` (eu-west-1). Geheim `CONVEX_PROD_DEPLOY_KEY` in GitHub-environment `prod-backup` (alleen `main`), repo-variabelen `BACKUP_BUCKET` en `BACKUP_ROLE_ARN`. Opzet, controle en terugzetten: [`infra/backup.md`](../../infra/backup.md). ~$1 per maand.
+Elke maand een volledige export van Convex-prod met bestanden naar bucket `clubalmanac-convex-backup` (eu-west-1). Geheim `CONVEX_PROD_DEPLOY_KEY` in GitHub-environment `prod-backup` (alleen `main`), repo-variabelen `BACKUP_BUCKET`, `BACKUP_ROLE_ARN` en `BACKUP_ENABLED` (pas `true` vanaf T+30; zonder slaat de workflow over). Per sleutel blijven minstens de laatste 6 versies, plus alles van het laatste half jaar. Opzet, controle en terugzetten: [`infra/backup.md`](../../infra/backup.md). ~$1 per maand.
 
 ## Productie-blind-spots
 

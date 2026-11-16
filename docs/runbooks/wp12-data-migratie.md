@@ -72,7 +72,7 @@ MIGRATE_CONVEX_ADMIN_KEY_PROD=prod:<prod-deployment>|<key>
 }
 ```
 
-`prod-config.json` — na de Clerk-pre-create (T-1 week):
+`prod-config.json` — eerst de uitsluitingen met een lege `clerkIdByEmail`, dan vult `clerk-ids --create --write` de map (T-1 week, [draaiboek WP31](./wp31-cutover-draaiboek.md)):
 
 ```json
 {
@@ -84,8 +84,8 @@ MIGRATE_CONVEX_ADMIN_KEY_PROD=prod:<prod-deployment>|<key>
 }
 ```
 
-- De Clerk-dev-ID's maak je vooraf handmatig aan in de dev-Clerk-instance; de prod-ID's komen uit de pre-create van de 19 leden via de Clerk Backend API (geen mail). Dev-Convex hoort bij dev-Clerk, prod bij prod — een subject uit de verkeerde instance logt nooit in.
-- `exclude…` (WP31 W5, invariant 11): bron-ID's die bewust niet meegaan. Op T0: John Appleseed (`excludeUserIds`, hij krijgt geen Clerk-account, en zonder uitsluiting stopt de transform op hem), "Test group", "Familievakantie", "testgroep 2" en "blob" (`excludeGroupIds`), en het herinneringsalbum (`excludeAlbumIds`). Alles wat eraan hangt valt mee weg; een foto van een gewoon lid in een uitgesloten groep blijft (Mijn foto's). `transform` drukt per ID af wat er wegvalt. Een ID die niet in het extract staat, of een uitgesloten user die oprichter is van een groep die meegaat, stopt de transform.
+- De Clerk-dev-ID's maak je vooraf handmatig aan in de dev-Clerk-instance; de prod-ID's maakt en schrijft `npm run migrate -- clerk-ids --create --write` (19 leden via de Clerk Backend API, geen mail; sleutel `MIGRATE_CLERK_SECRET_KEY_PROD` in `.env.migrate`). Nooit overtypen: inloggen gaat alleen op de Clerk-ID, dus een verwisselde ID laat het ene lid stil de groepen van het andere zien. `clerk-ids` zonder vlag leest alleen en vergelijkt elke ID met het primaire adres in Clerk; `transform` stopt bij één ID op twee adressen. Dev-Convex hoort bij dev-Clerk, prod bij prod — een subject uit de verkeerde instance logt nooit in.
+- `exclude…` (WP31 W5, invariant 11): bron-ID's die bewust niet meegaan. Op T0: John Appleseed (`excludeUserIds`, hij krijgt geen Clerk-account, en zonder uitsluiting stopt de transform op hem), "Test group", "Familievakantie", "testgroep 2" en "blob" (`excludeGroupIds`), en het herinneringsalbum (`excludeAlbumIds`). Alles wat eraan hangt valt mee weg; een foto van een gewoon lid in een uitgesloten groep blijft (Mijn foto's). `transform` drukt per ID de naam af en wat er wegvalt; de verwachte regels staan in het draaiboek bij T-1 week. Een ID die niet in het extract staat, of een uitgesloten user die oprichter is van een groep die meegaat, stopt de transform.
 - `founderOverrides` is de ontsnapping voor een groep zonder `isFounder`-membership. De transform stopt in dat geval met de groep-ID in de melding; zet dan `{"<groupId>": "U<sub>"}`. Niet stilletjes de oudste member pakken.
 
 ## Run 1 — dev-seed
@@ -119,8 +119,8 @@ De video's blijven buiten deze migratie: ze staan in een eigen bucket (`blob-vid
 
 ### Vooraf
 
-- [ ] Clerk-pre-create is gedaan en `prod-config.json` is gevuld (met de uitsluitingen).
-- [ ] Prod is leeg: `verify --target prod` (baseline) toont 0 rijen. Anders `reset --target prod --yes --all`: de rooktests en de repetitie laten rijen achter.
+- [ ] `prod-config.json` heeft de uitsluitingen, en `npm run migrate -- clerk-ids` meldt "in orde" (exit 0).
+- [ ] Prod is leeg: `verify --target prod` (baseline) toont in de kolom van de deployment overal 0 en `storage: 0 objecten`. Exitcode 1 hoort daarbij (hij vergelijkt met een oude `convex-records.json`). Anders `reset --target prod --yes --all`: de rooktests en de repetitie laten rijen achter.
 - [ ] Key- en bibliotheek-controle voor `formaten` (WP25), op een lege prod. `formaten` is het enige migrate-commando dat een internal action aanroept; een key zonder dat recht breekt op T0 af. Vóór de eerste batch draait hij `selfTest`: sharp en heic-decode op een ingebouwde JPEG en HEIC, zonder te schrijven. Eerst tellen (met je eigen Convex-login, los van de key):
 
   ```bash
@@ -144,6 +144,7 @@ De video's blijven buiten deze migratie: ze staan in een eigen bucket (`blob-vid
 export MIGRATE_ALLOW_PROD=yes
 npx convex export --prod --path ./backups/wp31-prod-t0.zip  # anker
 npm run migrate -- extract                      # na de schrijfstop
+npm run migrate -- clerk-ids                    # alleen lezen; "in orde", exit 0
 npm run migrate -- transform --target prod      # stopt bij een gemelde foto met verwijderdatum of een foute uitsluiting
 npm run migrate -- load-files --target prod     # ~18 min; hervatbaar
 npm run migrate -- load-records --target prod   # minuten
@@ -153,7 +154,7 @@ npm run migrate -- verify --target prod
 
 `load-files` rapporteert de gehaalde doorvoer in MB/s en een schatting voor 5,6 GB. Breekt de run af: gewoon opnieuw starten — wat in `storage-map.json` staat wordt overgeslagen. Een bestand dat niet in de bucket staat, is na de schrijfstop een stop, geen `--accept-missing-files` (WP31 invariant 10).
 
-- [ ] Uitsluitingen (WP31). De transform drukt onder "uitgesloten via prod-config" één regel per ID af, met wat er in de bron aan hangt. Controleer dat het precies de bedoelde ID's zijn.
+- [ ] Uitsluitingen (WP31). De transform drukt onder "uitgesloten via prod-config" één regel per ID af, met de naam en wat er in de bron aan hangt. Vergelijk met de verwachte regels in het draaiboek (T-1 week). Een uitnodiging aan het adres van een uitgesloten user valt ook weg (filterregel "op adres").
 - [ ] Gemelde foto's (WP12b). `transform` stopt als een foto die geladen wordt een verwijderdatum heeft, welke datum ook, en noemt elke foto. v1 wiste een gemelde foto nooit; de FL1-cron van v2 draait elke nacht en wist hem zodra de datum voorbij is. Op 2026-11-07 waren er 0. Stopt hij: beslis (Wouter) vóór `load-records`. Na de schrijfstop kan de bron niet meer gewijzigd worden; accepteer het verlies met `transform --target prod --accept-flagged-deletion`, of zet de schrijfstop terug (draaiboek §Terug). Dan staat er per foto een waarschuwing in het rapport. De oude vlag `--accept-expired-flags` doet niets meer.
 - [ ] Likes (WP19a). Ratings gaan niet mee naar Convex. Het aantal geschrapte likes staat in de transform-uitvoer (op T0 12). De AWS-bron blijft tot T+30.
 - [ ] `formaten` eindigt met exitcode 0: geen foto zonder formaten (behalve afgetekende), niets mislukt. Zie §Formaten (WP25) hieronder.

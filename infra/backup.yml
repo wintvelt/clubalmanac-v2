@@ -5,7 +5,8 @@ Description: >-
   bestanden) zet, en een rol die die workflow mag aannemen (OIDC, alleen vanuit
   de GitHub-environment `prod-backup`, alleen schrijven in deze bucket).
   Eén vaste sleutel per soort, met versiebeheer: de huidige en de 5 vorige
-  versies blijven staan, oudere gaan automatisch weg. Stoppen de runs, dan
+  versies blijven staan, plus alles van het laatste half jaar; oudere gaan
+  automatisch weg. Stoppen de runs, dan
   blijven de laatste 6 gewoon staan. Deployen in eu-west-1 (Ierland, net als
   de Convex-backend). Opzet en terugzetten: infra/backup.md.
 
@@ -51,13 +52,16 @@ Resources:
         Status: Enabled
       LifecycleConfiguration:
         Rules:
-          # De huidige versie plus de 5 nieuwste oude versies blijven: 6
-          # exports. Op aantal, niet op leeftijd, zodat een half jaar zonder
-          # geslaagde run geen enkele backup wist.
+          # Een oude versie gaat pas weg als er 5 nieuwere oude versies zijn
+          # én hij een half jaar oud is. Dus altijd minstens 6 exports, ook als
+          # de runs stoppen; en een reeks runs op één dag (een lege export die
+          # door de controle glipt, of misbruik van de rol, die alleen mag
+          # schrijven) verdringt de goede versies niet. Glacier IR rekent toch
+          # minstens 90 dagen.
           - Id: laatste-zes
             Status: Enabled
             NoncurrentVersionExpiration:
-              NoncurrentDays: 1
+              NoncurrentDays: 180
               NewerNoncurrentVersions: 5
           - Id: halve-uploads-weg
             Status: Enabled

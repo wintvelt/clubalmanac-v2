@@ -327,6 +327,13 @@ export function transform(items: SourceItem[], config: TransformConfig): Transfo
   const excludedUsers = new Set(config.excludeUserIds ?? []);
   const excludedGroups = new Set(config.excludeGroupIds ?? []);
   const excludedAlbums = new Set(config.excludeAlbumIds ?? []);
+  // Een uitnodiging aan iemand zonder account heeft zijn adres als sleutel, geen
+  // user-ID. Ook die valt weg als het adres van een uitgesloten user is.
+  const excludedUserByEmail = new Map<string, string>();
+  for (const userId of excludedUsers) {
+    const email = normalizeEmail(src.users.get(userId)?.base.email);
+    if (email !== undefined) excludedUserByEmail.set(email, userId);
+  }
   const unknownExclusions = [
     ...[...excludedUsers].filter((id) => !src.users.has(id)).map((id) => `user ${id}`),
     ...[...excludedGroups].filter((id) => !src.groups.has(id)).map((id) => `groep ${id}`),
@@ -709,6 +716,10 @@ export function transform(items: SourceItem[], config: TransformConfig): Transfo
       warn(`invite ${inviteeKey}#${groupId}: geen emailadres te vinden — overgeslagen`);
       continue;
     }
+    if (!inviteeIsUser && excludedUserByEmail.has(rawEmail)) {
+      countFiltered("invite uitgesloten: genodigde uitgesloten (config, op adres)");
+      continue;
+    }
 
     const invitation = (item.invitation ?? {}) as SourceItem;
     const inviter = str((invitation.from as SourceItem | undefined)?.SK);
@@ -933,7 +944,15 @@ export function transform(items: SourceItem[], config: TransformConfig): Transfo
   // ── slotcontrole + rapport ──────────────────────────────────────────
   assertReferentiallyClosed(records);
 
-  reportExclusions({ src, excludedUsers, excludedGroups, excludedAlbums, warn });
+  reportExclusions({
+    src,
+    excludedUsers,
+    excludedGroups,
+    excludedAlbums,
+    excludedUserByEmail,
+    anonymize: config.anonymize,
+    warn,
+  });
 
   for (const [reason, count] of [...filtered].sort()) {
     warn(`filter (${config.target}): ${count}× ${reason}`);
@@ -952,14 +971,22 @@ export function transform(items: SourceItem[], config: TransformConfig): Transfo
 // die via twee uitsluitingen wegvallen (een foto van de uitgesloten user in een
 // uitgesloten album) tellen bij allebei; de filterregels hieronder geven de
 // netto-totalen per tabel.
+//
+// Elke regel noemt ook de naam uit de bron: de config bevat alleen ID's, en
+// twee groepen met bijna dezelfde naam ("blob" en "Blob bibliotheek") zijn met
+// de hand makkelijk te verwisselen. De naam van een user alleen als er niet
+// geanonimiseerd wordt (prod), want de scrub vangt alleen adressen.
 function reportExclusions(args: {
   src: Parsed;
   excludedUsers: Set<string>;
   excludedGroups: Set<string>;
   excludedAlbums: Set<string>;
+  excludedUserByEmail: Map<string, string>;
+  anonymize: boolean;
   warn: (message: string) => void;
 }): void {
-  const { src, excludedUsers, excludedGroups, excludedAlbums, warn } = args;
+  const { src, excludedUsers, excludedGroups, excludedAlbums, excludedUserByEmail, anonymize, warn } = args;
+  const named = (name: string | undefined): string => (name === undefined ? "" : ` "${name}"`);
   const describe = (parts: Array<[string, number]>): string => {
     const nonZero = parts.filter(([, n]) => n > 0).map(([label, n]) => `${n} ${label}`);
     return nonZero.length > 0 ? nonZero.join(", ") : "geen andere rijen";
@@ -970,7 +997,11 @@ function reportExclusions(args: {
   for (const userId of [...excludedUsers].sort()) {
     const memberships = src.memberships.filter((m) => !isInvite(m.item) && m.inviteeKey === userId).length;
     const invites = src.memberships.filter(
-      (m) => isInvite(m.item) && (m.inviteeKey === userId || inviterOf(m.item) === userId),
+      (m) =>
+        isInvite(m.item) &&
+        (m.inviteeKey === userId ||
+          inviterOf(m.item) === userId ||
+          (m.inviteeKey.includes("@") && excludedUserByEmail.get(normalizeEmail(m.inviteeKey) ?? "") === userId)),
     ).length;
     const photoIds = new Set([...src.photos.entries()].filter(([, p]) => p.ownerId === userId).map(([id]) => id));
     const publications = src.albumPhotos.filter((ap) => photoIds.has(ap.photoId)).length;
@@ -978,7 +1009,7 @@ function reportExclusions(args: {
       (f) => (str(f.userId) ?? str((f.user as SourceItem | undefined)?.SK)) === userId,
     ).length;
     warn(
-      `uitgesloten user ${userId} (config): ` +
+      `uitgesloten user ${userId}${anonymize ? "" : named(str(src.users.get(userId)?.base.name))} (config): ` +
         describe([
           ["lidmaatschap(pen)", memberships],
           ["uitnodiging(en)", invites],
@@ -991,7 +1022,7 @@ function reportExclusions(args: {
   for (const groupId of [...excludedGroups].sort()) {
     const albumIds = new Set([...src.albums.entries()].filter(([, a]) => a.groupId === groupId).map(([id]) => id));
     warn(
-      `uitgesloten groep ${groupId} (config): ` +
+      `uitgesloten groep ${groupId}${named(str(src.groups.get(groupId)?.name))} (config): ` +
         describe([
           ["album(s)", albumIds.size],
           ["publicatie(s)", src.albumPhotos.filter((ap) => albumIds.has(ap.albumId)).length],
@@ -1002,7 +1033,7 @@ function reportExclusions(args: {
   }
   for (const albumId of [...excludedAlbums].sort()) {
     warn(
-      `uitgesloten album ${albumId} (config): ` +
+      `uitgesloten album ${albumId}${named(str(src.albums.get(albumId)?.item.name))} (config): ` +
         describe([["publicatie(s)", src.albumPhotos.filter((ap) => ap.albumId === albumId).length]]),
     );
   }

@@ -28,8 +28,8 @@ type DevConfigFile = {
 
 type ProdConfigFile = {
   /**
-   * email → Clerk-**prod**-ID. Gevuld op T-1 week nadat de 19 leden via de
-   * Clerk Backend API (create user, geen mail) zijn voorgemaakt (WP31).
+   * email → Clerk-**prod**-ID. Op T-1 week gemaakt met `clerk-ids --create
+   * --write` (WP31), uit Clerk prod zelf: niet overtypen.
    */
   clerkIdByEmail: Record<string, string>;
   founderOverrides?: Record<string, string>;
@@ -95,7 +95,18 @@ export function loadConfig(target: Target, items: SourceItem[], now: number): Tr
   if (!dataFileExists(PROD_CONFIG_FILE)) missing(PROD_CONFIG_FILE, PROD_EXAMPLE);
   const file = readData<ProdConfigFile>(PROD_CONFIG_FILE);
   const byEmail = new Map<string, string>();
+  const emailByClerkId = new Map<string, string>();
   for (const [email, clerkId] of Object.entries(file.clerkIdByEmail ?? {})) {
+    // Inloggen gaat alleen op de Clerk-ID. Eén ID bij twee adressen laat het
+    // ene lid de groepen van het andere zien (WP31 S2).
+    const clash = emailByClerkId.get(clerkId);
+    if (clash !== undefined) {
+      throw new Error(
+        `[migrate] ${PROD_CONFIG_FILE}: clerkIdByEmail geeft ${clerkId} aan twee adressen. ` +
+          `Maak de map opnieuw met 'clerk-ids --write'.`,
+      );
+    }
+    emailByClerkId.set(clerkId, email);
     byEmail.set(email.trim().toLowerCase(), clerkId);
   }
   if (byEmail.size === 0) {
