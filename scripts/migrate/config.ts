@@ -96,9 +96,17 @@ export function loadConfig(target: Target, items: SourceItem[], now: number): Tr
   const file = readData<ProdConfigFile>(PROD_CONFIG_FILE);
   const byEmail = new Map<string, string>();
   const emailByClerkId = new Map<string, string>();
-  for (const [email, clerkId] of Object.entries(file.clerkIdByEmail ?? {})) {
+  for (const [rawEmail, clerkId] of Object.entries(file.clerkIdByEmail ?? {})) {
     // Inloggen gaat alleen op de Clerk-ID. Eén ID bij twee adressen laat het
-    // ene lid de groepen van het andere zien (WP31 S2).
+    // ene lid de groepen van het andere zien (WP31 S2). Eén adres in twee
+    // schrijfwijzen is evenmin eenduidig: dan zou er stil één winnen.
+    const email = rawEmail.trim().toLowerCase();
+    if (byEmail.has(email)) {
+      throw new Error(
+        `[migrate] ${PROD_CONFIG_FILE}: clerkIdByEmail noemt ${email} twee keer (andere schrijfwijze). ` +
+          `Maak de map opnieuw met 'clerk-ids --write'.`,
+      );
+    }
     const clash = emailByClerkId.get(clerkId);
     if (clash !== undefined) {
       throw new Error(
@@ -107,7 +115,7 @@ export function loadConfig(target: Target, items: SourceItem[], now: number): Tr
       );
     }
     emailByClerkId.set(clerkId, email);
-    byEmail.set(email.trim().toLowerCase(), clerkId);
+    byEmail.set(email, clerkId);
   }
   if (byEmail.size === 0) {
     throw new Error(

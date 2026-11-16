@@ -141,16 +141,17 @@ De video's blijven buiten deze migratie: ze staan in een eigen bucket (`blob-vid
 ### T0 (na de schrijfstop)
 
 ```bash
-export MIGRATE_ALLOW_PROD=yes
-npx convex export --prod --path ./backups/wp31-prod-t0.zip  # anker
 npm run migrate -- extract                      # na de schrijfstop
 npm run migrate -- clerk-ids                    # alleen lezen; "in orde", exit 0
 npm run migrate -- transform --target prod      # stopt bij een gemelde foto met verwijderdatum of een foute uitsluiting
-npm run migrate -- load-files --target prod     # ~18 min; hervatbaar
-npm run migrate -- load-records --target prod   # minuten
-npm run migrate -- formaten --target prod       # WP25; ~70 min (gemeten op dev), hervatbaar
+MIGRATE_ALLOW_PROD=yes npm run migrate -- load-files --target prod     # ~18 min; hervatbaar
+MIGRATE_ALLOW_PROD=yes npm run migrate -- load-records --target prod   # minuten
+MIGRATE_ALLOW_PROD=yes npm run migrate -- formaten --target prod       # WP25; ~70 min (gemeten op dev), hervatbaar
 npm run migrate -- verify --target prod
+npx convex export --prod --include-file-storage --path ./backups/wp31-prod-t0.zip  # anker, na een groene verify
 ```
+
+`MIGRATE_ALLOW_PROD=yes` per commando, nooit met `export`: de review duurt dagen, en na de vrijgave mag `reset` prod nooit meer raken. Op prod is het anker pas zinvol ná het laden (ervoor is prod leeg), en dan met bestanden: tot de eerste maandelijkse backup is het de enige kopie (WP31 M2). Na de vrijgave gaat de admin-key van de migratie weg (draaiboek T0.11).
 
 `load-files` rapporteert de gehaalde doorvoer in MB/s en een schatting voor 5,6 GB. Breekt de run af: gewoon opnieuw starten — wat in `storage-map.json` staat wordt overgeslagen. Een bestand dat niet in de bucket staat, is na de schrijfstop een stop, geen `--accept-missing-files` (WP31 invariant 10).
 
@@ -258,7 +259,7 @@ Breekt `load-records` halverwege af, dan stopt hij luid met de bron-sleutel in d
 | `album X: cover P staat niet in dit album maar wel in groep G` | Bewust overgenomen (WP12b besluit 4). Elk lid ziet de cover, want de foto staat in de groep. |
 | `album X` of `groep G`: `cover P staat in geen album van de groep` | Bewust overgenomen (WP12b besluit 4). In v2 ziet alleen de eigenaar zo'n cover. Na T0 kiest een admin een nieuwe cover uit een album (WP17b). De "(WP27)" in de melding is verouderd: WP27 is vervallen (2026-11-07). |
 | `album X: coverPhotoId P resolvet niet — gewist` | De cover-foto bestaat niet in de bron, of valt buiten de dev-seed. Album zonder cover, net als bij een groep. |
-| `transform`: `gemelde foto('s) met een verwijderdatum` | De FL1-cron wist ze zodra de datum voorbij is; v1 deed dat nooit. Laat de datum in de bron wissen, of draai `transform` opnieuw met `--accept-flagged-deletion` (zie T0). |
+| `transform`: `gemelde foto('s) met een verwijderdatum` | De FL1-cron wist ze zodra de datum voorbij is; v1 deed dat nooit. Vóór de schrijfstop: laat de datum in de bron wissen. Daarna kan dat niet zonder de tabel-policy kort weg te halen (de Deny geldt ook voor admins); zie het draaiboek WP31, T0.4. Of draai `transform` opnieuw met `--accept-flagged-deletion` (zie T0). |
 | `groep G: cover P staat alleen in een album van een andere groep (G2)` | Bewust overgenomen (WP12b). In v2 zien alleen de leden van G2 hem; kies na T0 een nieuwe cover (WP17b). |
 | `createdBy gesynthetiseerd` | `albums.createdBy` bestaat niet in de bron en valt terug op de founder van de groep. |
 

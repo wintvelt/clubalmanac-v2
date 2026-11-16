@@ -7,6 +7,9 @@ name: Backup
 # De deploy-key van prod kan prod ook wijzigen. Deze workflow doet daarom
 # niets anders dan exporteren en de namen (geen waarden) van de env-vars
 # noteren. De repo is publiek, dus de log ook: druk nooit een waarde af.
+# Elke action staat vast op een commit (niet op een tag die kan verschuiven):
+# deze job heeft een sleutel die prod kan wissen. Bijwerken: nieuwe SHA met
+# `git ls-remote https://github.com/<owner>/<action>.git refs/tags/<tag>`.
 
 on:
   schedule:
@@ -25,8 +28,9 @@ permissions:
 jobs:
   export:
     runs-on: ubuntu-latest
-    # Uit tot T+30: zonder repo-variabele BACKUP_ENABLED=true slaat elke run
-    # over (grijs, niet rood). Tot T0 is prod leeg of bevat hij de repetitie.
+    # Uit tot de vrijgave (draaiboek T0.11): zonder repo-variabele
+    # BACKUP_ENABLED=true slaat elke run over (grijs, niet rood). Tot T0 is
+    # prod leeg of bevat hij de repetitie.
     if: github.ref == 'refs/heads/main' && vars.BACKUP_ENABLED == 'true'
     # Het geheim CONVEX_PROD_DEPLOY_KEY staat alleen in deze environment, en
     # de environment laat alleen main toe.
@@ -48,9 +52,9 @@ jobs:
             *) echo "CONVEX_PROD_DEPLOY_KEY is geen prod-deploy-key (begint niet met 'prod:')"; exit 1 ;;
           esac
 
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
 
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
         with:
           node-version-file: .nvmrc
           cache: "npm"
@@ -92,7 +96,7 @@ jobs:
           fi
           wc -l < env-names.txt
 
-      - uses: aws-actions/configure-aws-credentials@v4
+      - uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4.3.1
         with:
           role-to-assume: ${{ env.BACKUP_ROLE_ARN }}
           aws-region: eu-west-1

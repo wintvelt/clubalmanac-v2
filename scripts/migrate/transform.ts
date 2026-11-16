@@ -301,6 +301,16 @@ function isInvite(item: SourceItem): boolean {
   return str(item.status) === "invite";
 }
 
+/**
+ * Het adres van een uitnodiging: `user.email` is leidend boven de sleutel (de
+ * genodigde kan zijn adres later gewijzigd hebben). Eén regel voor de filter
+ * en voor het uitsluitingsrapport, zodat wat wegvalt ook geteld wordt.
+ */
+function inviteAddress(inviteeKey: string, item: SourceItem): string | undefined {
+  const nested = (item.user ?? {}) as SourceItem;
+  return normalizeEmail(nested.email) ?? (inviteeKey.includes("@") ? normalizeEmail(inviteeKey) : undefined);
+}
+
 // ── de transform zelf ─────────────────────────────────────────────────
 
 export function transform(items: SourceItem[], config: TransformConfig): TransformResult {
@@ -709,9 +719,7 @@ export function transform(items: SourceItem[], config: TransformConfig): Transfo
       countFiltered(`invite uitgesloten: genodigde ${userGone(inviteeKey)}`);
       continue;
     }
-    const nested = (item.user ?? {}) as SourceItem;
-    const rawEmail =
-      normalizeEmail(nested.email) ?? (inviteeKey.includes("@") ? normalizeEmail(inviteeKey) : undefined);
+    const rawEmail = inviteAddress(inviteeKey, item);
     if (rawEmail === undefined) {
       warn(`invite ${inviteeKey}#${groupId}: geen emailadres te vinden — overgeslagen`);
       continue;
@@ -1001,7 +1009,8 @@ function reportExclusions(args: {
         isInvite(m.item) &&
         (m.inviteeKey === userId ||
           inviterOf(m.item) === userId ||
-          (m.inviteeKey.includes("@") && excludedUserByEmail.get(normalizeEmail(m.inviteeKey) ?? "") === userId)),
+          (!src.users.has(m.inviteeKey) &&
+            excludedUserByEmail.get(inviteAddress(m.inviteeKey, m.item) ?? "") === userId)),
     ).length;
     const photoIds = new Set([...src.photos.entries()].filter(([, p]) => p.ownerId === userId).map(([id]) => id));
     const publications = src.albumPhotos.filter((ap) => photoIds.has(ap.photoId)).length;

@@ -14,12 +14,15 @@ Alles hieronder laat rijen achter op prod. Dat geeft niets: vóór de repetitie 
 
 - [ ] **Convex prod** (EU, Dublin) aanmaken; env-vars zetten: `MAILJET_API_KEY`, `MAILJET_API_SECRET`, `MAILJET_VERIFIED_SENDERS`, `MAILJET_WEBHOOK_SECRET`, `CLUBALMANAC_STAGE=prod`, `CLERK_FRONTEND_API_URL`, `CLERK_WEBHOOK_SECRET`, `CLERK_SECRET_KEY` (`sk_live_…`, WP29), `CLUBALMANAC_APP_STORE_ID=1663038609`, en de vier `FILMS_S3_*` (WP21) met de sleutel van een eigen IAM-user die alleen `s3:GetObject` op `blob-videos/*` mag. **Nog niet** `WEBMASTER_EMAILS` (W12, pas op T0.5).
   Verwacht: `npx convex env list --prod --names-only` toont precies deze namen, en níet `INTEGRATION_TEST_ENABLED` of `INTEGRATION_TEST_SECRET` (WP26).
-- [ ] **Release-script** voor `npx convex deploy --prod`: alleen met een schone werkmap op `main`, gelijk aan `origin/main`.
+- [ ] **Backend op prod zetten** met `npm run deploy:prod` ([`scripts/deploy-prod.sh`](../../scripts/deploy-prod.sh)), in een eigen clone die alleen hiervoor is (bv. `~/Code/clubalmanac-v2-release`), niet in de werk-checkout: daar werken meerdere sessies, en `npx convex deploy` zet ook niet-gecommitte code op prod. Het script weigert buiten een schone `main` die gelijk is aan `origin/main`. Na elke merge die de backend raakt opnieuw.
+  Verwacht: `npx convex deploy` noemt de prod-deployment en eindigt zonder fout.
 - [ ] **Clerk prod** activeren, op **Hobby** (W8: sessie maximaal 7 dagen, leden loggen wekelijks opnieuw in). Instellingen gelijk aan dev: e-mailcode aan, wachtwoord uit, sign-up aan zonder verplichte naamvelden, bot sign-up protection uit, *Verification required before session* aan (Configure → Email address; standaard aan, de webhook rekent erop, WP6). JWT-template `convex`: claim `email` = `{{user.primary_email_address}}`. Webhook naar `https://<prod>.eu-west-1.convex.site/clerk-webhook` met eigen Svix-secret.
 - [ ] **Clerk test mode aan op prod, permanent** (W4, besluit 2026-11-16). Dan logt de reviewer van Apple in met een `+clerk_test`-adres en code 424242, bij elke volgende review ook.
   Verwacht: in het Clerk-dashboard van de prod-instance staat *Test mode* aan.
+  Restrisico (besluit staat): iedereen kan zich aanmelden met een `+clerk_test`-adres en code 424242, zonder mailbox, en bot sign-up protection staat uit. Zulke accounts tellen mee in de MAU van Clerk en zijn te scripten. Ze zien niets: zonder uitnodiging maakt de app geen user-rij (WP19b). Het demo-adres plus 424242 is een blijvend wachtwoord dat bij Apple ligt; het demo-account ziet alleen Demo. Kijk eens per kwartaal in Clerk prod → *Users* of er onbekende accounts bijkomen.
 - [ ] **Mailjet prod:** webhook naar `https://<prod>.eu-west-1.convex.site/email-event` met eigen Basic-auth-secret. Afzender gevalideerd ([`external-services.md`](../conventions/external-services.md) §Mailjet: anders gaat mail stil verloren).
 - [ ] **Rooktests:** WP5-gates 1+2 en WP6-gates 1+2+3 op prod ([`wp5-mailjet-empirical-gates.md`](./wp5-mailjet-empirical-gates.md), [`wp6-clerk-empirical-gates.md`](./wp6-clerk-empirical-gates.md); WP6 eerst omzetten naar inloggen met code). Daarna een wegwerp-account uitnodigen, in de app *Account verwijderen*, en in Clerk prod controleren dat de user weg is (WP29).
+- [ ] **Beschikbaarheid in de App Store nakijken** (alleen kijken): App Store Connect → app → *Pricing and Availability* → *App Availability*. Noteer of de app in de landen van de leden beschikbaar is, of *Removed from Sale* staat (WP31 vraag 5: sinds 2026-07-28 uit de verkoop). Niets wijzigen: wie de app nu weer beschikbaar zet, maakt de oude versie 1.6.0 weer downloadbaar. T0.9 heeft een stap voor beide uitkomsten.
 - [ ] **Cutover-build** met profiel `production` (`pk_live`, prod-URL). Die build wist eenmalig de Clerk-cache-sleutels van de oude `pk_test`-key (WP15a). Gefaseerde release uit (W10).
 - [ ] **Backup-bucket en -workflow** klaarzetten: [`infra/backup.md`](../../infra/backup.md) stap 1-3. Repo-variabele `BACKUP_ENABLED` **niet** zetten: zonder die variabele slaat de workflow elke run over (grijs, niet rood). Prod is tot T0 leeg of bevat de repetitie.
   Verwacht: op de 1e van de maand staat er een run *Backup* met status *skipped*.
@@ -64,6 +67,19 @@ Alles hieronder laat rijen achter op prod. Dat geeft niets: vóór de repetitie 
   - `uitgesloten album A… "<naam van het herinneringsalbum>" (config): geen andere rijen`
 
   Afwijking: een andere naam of een groot verschil in aantallen → verkeerde ID, config corrigeren. Een ID die niet in het extract staat, of een uitgesloten user die oprichter is van een groep die meegaat, stopt de transform zelf.
+- [ ] **Uitzondering in de schrijfstop nakijken** (alleen lezen, AWS-prod). Zoek de rol van de stream-Lambda van `blob-images-api` (Lambda → functie → Configuration → Permissions) en kijk welke functies die rol delen:
+  ```bash
+  aws lambda list-functions --region eu-central-1 \
+    --query "Functions[?Role=='<rol-ARN>'].FunctionName" --output text
+  ```
+  Verwacht: alleen de stream-Lambda (en eventueel Cognito-triggers zoals `cognitoSync`).
+  Afwijking: ook andere handlers (bij Serverless delen alle functies van een service vaak één rol). Dan schrijven die door de uitzondering heen. Zet de uitzondering in de tabel-policy (T0.2) dan op de sessie van alleen de stream-functie; een Lambda neemt zijn rol aan met de functienaam als sessienaam:
+  ```json
+  "Condition": { "StringNotLike": { "aws:userid": "<RoleId>:<naam van de stream-functie>" } }
+  ```
+  `<RoleId>` (begint met `AROA`): `aws iam get-role --role-name <rolnaam> --query Role.RoleId --output text`. Doe hetzelfde op AWS-dev voor de repetitie.
+- [ ] **WP31 staat op prod:** gemerged in `main` en met `npm run deploy:prod` gedeployd; de repetitie heeft `photos.formatStatusPage` nodig.
+  Verwacht: `npx convex run --prod photos:formatStatusPage '{"cursor":null,"batchSize":1}'` geeft een telling met `"cursor": null`.
 - [ ] **Generale repetitie op prod** (W6): T0.2 tot en met T0.7 hieronder, met deze verschillen:
   - schrijfstop (T0.2) op de AWS-**dev**-tabel `blob-images-photos-dev` en bucket `blob-images-dev`, met de twee controles van T0.2 (tabel- en bucketnaam aangepast): beide geweigerd. Daarna de policies weghalen, de controles opnieuw: beide lukken. Ruim dan het testbestand en het testrecord op:
     ```bash
@@ -72,7 +88,8 @@ Alles hieronder laat rijen achter op prod. Dat geeft niets: vóór de repetitie 
       --key '{"PK":{"S":"SCHRIJFSTOP-TEST"},"SK":{"S":"test"}}'
     ```
   - geen `WEBMASTER_EMAILS` (T0.5);
-  - wel de demo-groep, het demo-account en de production-build op TestFlight (T0.7), maar **niet indienen** bij Apple.
+  - wel de demo-groep, het demo-account en de production-build op TestFlight (T0.7), maar **niet indienen** bij Apple;
+  - de production-build alleen in *Internal Testing* (jezelf), **niet** in de externe groep "Blob testgroep": anders werken leden op prod, en `reset` wist daarna wat ze deden.
 
   Gate, alles verplicht:
   - `formaten` eindigt met exitcode 0 (blokker B1: de telling is per pagina, nog niet op prod-volume gedraaid);
@@ -127,46 +144,59 @@ De dag van de schrijfstop. De vrijgave (T0.9) volgt na de review, mogelijk dagen
    ```
    Verwacht: de eerste geeft `AccessDenied`, de tweede `AccessDeniedException`. Een wijziging in je eigen oude app (bv. een albumnaam) geeft een foutmelding, en de dbStream-Lambda heeft daarna 5 minuten geen aanroepen (CloudWatch, *Invocations*). Kijken in de oude app werkt nog.
    Afwijking: een van de twee lukt → die policy staat niet goed (niet opgeslagen, of een fout in `Resource`). Haal het testbestand of testrecord weg (`aws s3 rm …` of `aws dynamodb delete-item …`, zoals bij de repetitie), herstel de policy en controleer opnieuw. Niet verder zolang er één lukt: draaien in de oude app wist dan nog originelen.
-3. **Anker en leeg-controle:** `npx convex export --prod --path ./backups/wp31-prod-t0.zip`, en `npm run migrate -- verify --target prod` (baseline).
+3. **Leeg-controle:** `npm run migrate -- verify --target prod` (baseline). Een export nu zou leeg zijn; het anker komt bij T0.5.
    Verwacht: in de kolom van de deployment overal 0, en `storage: 0 objecten`. Exitcode 1 en "rood" horen hier bij (`verify` vergelijkt met de oude `convex-records.json`); kijk alleen naar die kolom.
    Afwijking: niet overal 0 → eerst `MIGRATE_ALLOW_PROD=yes npm run migrate -- reset --target prod --yes --all`, dan opnieuw.
 4. **Migratie**, in deze volgorde, elk met exitcode 0 ([`wp12-data-migratie.md`](./wp12-data-migratie.md) §Run 2 voor de meldingen):
    ```bash
-   export MIGRATE_ALLOW_PROD=yes
    npm run migrate -- extract
    npm run migrate -- inspect
    npm run migrate -- clerk-ids                    # alleen lezen
    npm run migrate -- transform --target prod
-   npm run migrate -- load-files --target prod     # ~18 min
-   npm run migrate -- load-records --target prod
-   npm run migrate -- formaten --target prod       # ~70 min, hervatbaar
+   MIGRATE_ALLOW_PROD=yes npm run migrate -- load-files --target prod     # ~18 min
+   MIGRATE_ALLOW_PROD=yes npm run migrate -- load-records --target prod
+   MIGRATE_ALLOW_PROD=yes npm run migrate -- formaten --target prod       # ~70 min, hervatbaar
    npm run migrate -- verify --target prod
    ```
+   `MIGRATE_ALLOW_PROD=yes` alleen vóór het commando zelf, nooit met `export`: de review duurt dagen, en een vergeten `reset` in diezelfde shell wist dan prod.
    Verwacht: `inspect` geeft dezelfde telling als bij T-1 week, of een verschil dat je kunt verklaren (iemand heeft vóór de stop nog iets toegevoegd); `clerk-ids` "in orde", exit 0; `transform` met dezelfde uitsluitingsregels als bij T-1 week; `load-files` zonder ontbrekende bestanden (een ontbrekend bestand na de schrijfstop is een stop, geen `--accept-missing-files`, invariant 10); `formaten` "klaar", exit 0; `verify` groen.
+   Afwijkingen die de schrijfstop lastig maakt (de Deny geldt ook voor jou; de bron is niet te wijzigen):
+   - `clerk-ids` meldt `ONTBREEKT` (iemand werd na T-1 week lid): `MIGRATE_ALLOW_PROD=yes npm run migrate -- clerk-ids --create --write`, dan `clerk-ids` opnieuw ("in orde").
+   - `transform` stopt op een gemelde foto met een verwijderdatum: beslis. Of het verlies accepteren met `transform --target prod --accept-flagged-deletion` (de FL1-cron wist de foto). Of de tabel-policy kort weghalen, alleen die datum in de oude app wissen, de policy terugzetten, de twee controles van T0.2 opnieuw, en vanaf `extract` opnieuw.
+   - `inspect` wijkt af zonder verklaring: niet verder; §Terug.
 5. **Na een groene `verify`:**
    - `WEBMASTER_EMAILS` op prod zetten (W12);
    - filmlijst vullen: `node scripts/wp21/seedArgs.ts --group <prod-id van "Blob bibliotheek">`, dan het geprinte `--prod`-commando (`films:replaceAll`); daarna `npx convex run --prod films:checkLinks`.
-   Verwacht: `checkLinks` meldt niets (geen mail).
+   - **anker**, een volledige export mét bestanden: `npx convex export --prod --include-file-storage --path ./backups/wp31-prod-t0.zip` (~6 GB, ~$0,80). Tot de eerste maandelijkse backup is dit de enige kopie van prod met de bestanden.
+   Verwacht: `checkLinks` meldt niets (geen mail); `ls -l ./backups/wp31-prod-t0.zip` toont ~5,5-6 GB.
 6. **Zelf inloggen** met een TestFlight-build (profiel `production`) tegen prod, met je eigen adres.
    Verwacht: precies 2 groepen, Blob bibliotheek en je groep met 1 album en 2 leden, met albums, foto's en profielfoto's; in Blob bibliotheek spelen de films; het herinneringsalbum, Test group, Familievakantie en testgroep 2 ontbreken. Na T0.7 komt Demo erbij (3).
    Afwijking: een andere groep, of een groep mist → niet indienen; §Terug.
 7. **Demo voor Apple** (W4, invariant 12): in de app een groep "Demo" maken, het adres `<naam>+clerk_test@<eigen domein>` uitnodigen als **lid** (geen admin), daarmee inloggen (code 424242) en een paar eigen, niet-persoonlijke foto's in een album zetten.
    Verwacht: het demo-account ziet alleen Demo.
-8. **Indienen** in App Store Connect, met *Manually release this version* en gefaseerde release uit. Inloggegevens voor de reviewer: het demo-adres en code 424242.
-   Controle vóór indienen (invariant 13): het buildnummer hoort bij een EAS-build met profiel `production`, niet `dev` (die dient bij dezelfde app in).
+8. **Indienen** in App Store Connect, met *Manually release this version* en gefaseerde release uit. Die keuze geldt per versie: een nieuwe versie (bv. 2.0.1 na een afwijzing) staat standaard weer op automatisch, dus bij **elke** indiening opnieuw nakijken. Inloggegevens voor de reviewer: het demo-adres en code 424242.
+   Controle vóór indienen (invariant 13, handmatig: de app weigert een dev-build nog niet zelf): zoek het buildnummer op in het EAS-dashboard (*Builds*); daar moet bij die build profiel `production` staan, niet `dev` (die dient bij dezelfde app in).
    Verwacht: status *Waiting for Review*, daarna *Pending Developer Release*.
    Afwijking: afgewezen → zie §Terug, "Afgewezen review".
-9. **Vrijgeven: *Release This Version*. Punt zonder terugkeer** (invariant 15). Niet vlak voor een afgesproken tijd: zichtbaar worden duurt tot 24 uur.
+9. **Vrijgeven: *Release This Version*. Punt zonder terugkeer** (invariant 15). Niet vlak voor een afgesproken tijd: zichtbaar worden duurt tot 24 uur. Dan, afhankelijk van wat je bij T-4 weken zag:
+   - **beschikbaar** in de landen van de leden: niets meer te doen;
+   - ***Removed from Sale***: direct na *Release This Version*, in dezelfde sessie, *Pricing and Availability* → *App Availability* → de landen van de leden aanzetten (minstens Nederland) → *Save*. Niet eerder: dan is 1.6.0 weer te downloaden.
+   Verwacht: de versie staat op *Ready for Distribution*, en bij *App Availability* staan de landen van de leden aan.
 10. **Wachten tot de app echt in de App Store staat**, gecontroleerd op een gewoon toestel (geen TestFlight).
     Dan pas: bericht 4 naar de leden (invariant 14), en bucket `blob-videos` dicht (S3 → Permissions → *Block public access*, alle vier aan).
     Verwacht: een film-link zonder het deel na `?` geeft 403, mét geeft 206; de film speelt in de nieuwe app.
-11. `unset MIGRATE_ALLOW_PROD`. Na elke review: controleren dat het demo-account nog bestaat (de reviewer kan *Account verwijderen* proberen).
+    Afwijking: na 24 uur nog niet te vinden → *App Availability* nakijken (staan de landen aan?).
+11. **Rem op `reset`, en de backup aan:**
+    - de Convex-deploy-key van de migratie intrekken (Convex-dashboard → prod → Settings → Deploy keys) en `MIGRATE_CONVEX_ADMIN_KEY_PROD` uit `.env.migrate` halen. Zonder die key kan geen migrate-commando prod nog wijzigen; een `reset` na de vrijgave zou alles wissen wat leden sindsdien deden. De backup heeft een eigen key; die blijft;
+    - repo-variabele `BACKUP_ENABLED` = `true`: vanaf de 1e van de volgende maand draait de backup vanzelf. De gate (met de hand terugzetten) blijft bij T+30.
+    Verwacht: `npm run migrate -- verify --target prod` stopt met "MIGRATE_CONVEX_ADMIN_KEY_PROD ontbreekt".
+    Na elke review: controleren dat het demo-account nog bestaat (de reviewer kan *Account verwijderen* proberen).
 
 ## Terug
 
-- **Vóór T0.9:** beide policies weghalen (de oude app schrijft weer). Prod blijft staan zoals hij is; niemand kan erbij zolang de app niet is vrijgegeven. Een volgende poging begint bij T0.3 met `reset --target prod --yes --all` (en daarna opnieuw de demo-groep).
-- **Afgewezen review:** de oude app blijft alleen-lezen tot een nieuwe build is goedgekeurd. Grens: twee weken. Daarna terug zoals hierboven, en later opnieuw.
-- **Na T0.9:** niet meer terug. Leden schrijven dan op prod.
+- **Vóór T0.9:** beide policies weghalen (de oude app schrijft weer). Prod blijft staan zoals hij is; niemand kan erbij zolang de app niet is vrijgegeven. Dien daarna **niets** in bij Apple: een goedgekeurde versie die (per ongeluk) automatisch vrijkomt, zet leden op een prod zonder wat ze sinds het terugdraaien in de oude app deden. Een volgende poging is een nieuwe ronde vanaf T0.1, met bij T0.3 `MIGRATE_ALLOW_PROD=yes npm run migrate -- reset --target prod --yes --all` (en daarna opnieuw de demo-groep).
+- **Afgewezen review:** de oude app blijft alleen-lezen tot een nieuwe build is goedgekeurd. Prod is dan nog actueel, dus opnieuw indienen mag (met *Manually release*, zie T0.8). Grens: twee weken. Daarna terug zoals hierboven, en later opnieuw.
+- **Na T0.9:** niet meer terug, en nooit meer `reset` op prod. Leden schrijven dan op prod.
 
 ## T+1
 
@@ -174,11 +204,11 @@ De dag van de schrijfstop. De vrijgave (T0.9) volgt na de review, mogelijk dagen
 
 ## T+30
 
-- [ ] Repo-variabele `BACKUP_ENABLED` = `true` zetten, dan de eerste backup met de hand (workflow *Backup*, *Run workflow*) en terugzetten in een wegwerp-deployment: [`infra/backup.md`](../../infra/backup.md) stap 4-5 (gate B4). Daarna draait hij elke maand.
+- [ ] Backup-gate B4: een run met de hand (workflow *Backup*, *Run workflow*; `BACKUP_ENABLED` staat sinds T0.11 aan) en terugzetten in een wegwerp-deployment: [`infra/backup.md`](../../infra/backup.md) stap 4-5.
+- [ ] Agenda-herinnering **elk kwartaal**: Actions → *Backup*: de laatste run is groen en de workflow staat niet uit. GitHub zet een geplande workflow uit na 60 dagen zonder activiteit in de repo, en een uitgezette workflow geeft geen rode run, alleen vooraf één mail. Staat hij uit: *Enable workflow* en met de hand draaien.
 - [ ] Opruimen (invariant 7), na de backup-gate:
   - `scripts/.data/`: `prod-config.json` en het extract bevatten echte adressen; ook `./backups/wp31-prod-t0.zip`;
-  - uit `.env.migrate`: `MIGRATE_CONVEX_ADMIN_KEY_PROD`, `MIGRATE_CLERK_SECRET_KEY_PROD` en `MIGRATE_CONVEX_URL_PROD`;
-  - die Convex-deploy-key intrekken (Convex-dashboard → prod → Settings → Deploy keys). De backup heeft een eigen key; die blijft;
+  - uit `.env.migrate`: `MIGRATE_CLERK_SECRET_KEY_PROD` en `MIGRATE_CONVEX_URL_PROD` (de admin-key is al weg sinds T0.11);
   - de Clerk-secret-key die je voor `clerk-ids` hebt gebruikt: als het een aparte key was, intrekken (Clerk-dashboard → API keys); `CLERK_SECRET_KEY` op Convex prod blijft;
   - de alleen-lezen AWS-sleutel van `extract`/`load-files` op de server: uit `~/.aws/credentials` en in IAM verwijderen.
   Verwacht: `grep PROD .env.migrate` geeft niets.
@@ -196,4 +226,4 @@ Kort, in je eigen woorden aan te passen.
 1. **T-3 weken.** "Op {datum} gaat de oude app op slot: je kunt dan nog kijken, maar niets meer toevoegen. Een paar dagen later komt de nieuwe app, als gewone update in de App Store. Je logt dan in met je e-mailadres en een code die je per mail krijgt. Klopt het adres waarmee je in de app zit nog? Laat het weten als dat niet zo is."
 2. **T-1 dag.** "Morgen gaat de oude app op slot. Upload of nodig vandaag niemand meer uit; wat je na morgen toevoegt, gaat verloren."
 3. **T0.1.** "De oude app is nu op slot: kijken kan, toevoegen niet. Zodra de nieuwe app in de App Store staat, hoor je het."
-4. **T0.10.** "De nieuwe app staat in de App Store. Werk de app bij (of installeer hem opnieuw), log in met je e-mailadres en de code uit de mail. Je ziet al je groepen, albums en foto's. Eén keer per week vraagt de app opnieuw om een code."
+4. **T0.10.** "De nieuwe app staat in de App Store. Werk de app bij (of installeer hem opnieuw), log in met je e-mailadres en de code uit de mail; geen mail binnen een paar minuten? Kijk in je spam, want de code komt van een nieuwe afzender. Je ziet al je groepen, albums en foto's. Eén keer per week vraagt de app opnieuw om een code."

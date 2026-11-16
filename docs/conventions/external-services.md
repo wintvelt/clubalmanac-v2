@@ -264,7 +264,7 @@ S3 rekent uitgaand verkeer: 100 GB per maand gratis per account, daarboven ~$0,0
 
 ## Backup: GitHub Action naar S3 (WP31 B4)
 
-Elke maand een volledige export van Convex-prod met bestanden naar bucket `clubalmanac-convex-backup` (eu-west-1). Geheim `CONVEX_PROD_DEPLOY_KEY` in GitHub-environment `prod-backup` (alleen `main`), repo-variabelen `BACKUP_BUCKET`, `BACKUP_ROLE_ARN` en `BACKUP_ENABLED` (pas `true` vanaf T+30; zonder slaat de workflow over). Per sleutel blijven minstens de laatste 6 versies, plus alles van het laatste half jaar. Opzet, controle en terugzetten: [`infra/backup.md`](../../infra/backup.md). ~$1 per maand.
+Elke maand een volledige export van Convex-prod met bestanden naar bucket `clubalmanac-convex-backup` (eu-west-1). Geheim `CONVEX_PROD_DEPLOY_KEY` in GitHub-environment `prod-backup` (alleen `main`), repo-variabelen `BACKUP_BUCKET`, `BACKUP_ROLE_ARN` en `BACKUP_ENABLED` (pas `true` bij de vrijgave, draaiboek T0.11; zonder slaat de workflow over). Actions vast op commit-SHA. Per sleutel blijven minstens de laatste 6 versies, plus alles van het laatste half jaar. Opzet, controle en terugzetten: [`infra/backup.md`](../../infra/backup.md). ~$1 per maand.
 
 ## Productie-blind-spots
 
