@@ -23,7 +23,9 @@ Achtergrond: de meeste leden zitten in één groep, of altijd in dezelfde. De tw
    |---|---|---|
    | de groepspagina van de thuisgroep | groepen (Ionicons `people`) | naar *Mijn groepen* |
    | *Mijn groepen* | huisje, actief | doet niets |
-   | elders (album, foto, andere groep, overige schermen onder Home) | huisje | naar de thuisgroep, of zonder thuisgroep naar *Mijn groepen* |
+   | album, foto of ander scherm binnen een groep | huisje | naar de groepspagina van de thuisgroep (dat is die groep, besluit 2) |
+   | een andere tab (*Mijn foto's*, Profiel, Instellingen) die de user opende vanaf *Mijn groepen* | huisje | terug naar *Mijn groepen* (besluit 1) |
+   | een andere tab, in alle andere gevallen | huisje | naar de thuisgroep, of zonder thuisgroep naar *Mijn groepen* |
 
    Het toegankelijkheidslabel volgt de bestemming ("Mijn groepen" of de naam van de thuisgroep).
 7. **De terug-naar-*Mijn groepen*-knop op de groepspagina vervalt.** *Mijn groepen* bereik je via de Home-knop.
@@ -137,7 +139,13 @@ Inventaris van de schermen met een tekstveld, met de toestanden die het formulie
 - **C4. Return-toets.** Het gedrag van de return-toets verandert niet in deze WP.
 - **C5. Met meldingen (eis voor B's simulator-check).** Invariant 11 geldt in elke toestand uit de laatste kolom, niet alleen in de lege begintoestand: elke melding die er kan staan, ook meerdere tegelijk, elke fout en elk extra blok. Een melding die verschijnt doordat de user op de knop tikt terwijl het toetsenbord open is (fout na versturen), staat ook in beeld. B kijkt per scherm minstens de lege toestand na, en de toestand met de meeste meldingen of blokken boven het veld. Inloggen dus met "Je account is verwijderd." erboven, en Uitnodigen met drie rijen, een fout per rij en een bericht. B noemt in zijn rapport per scherm welke toestanden hij zag.
 
-### Open vragen aan regie
+### Open vragen aan regie (beantwoord, zie §Besluiten Wouter 2026-11-17)
 
 1. **Home-knop vanaf een andere tab** (*Mijn foto's*, Profiel, Instellingen). (a) Naar de thuisgroep, zoals de rij "elders" en zoals de oude app. (b) De Home-tab openen zoals je hem verliet, zoals nu. Advies: (a). Dat past bij het productdoel "met de Home-knop direct in de groep". Nadeel: een open album op Home ben je kwijt. De tests volgen (a).
 2. **Wanneer wordt een bezochte groep de thuisgroep?** (a) Meteen: open je groep X, dan is X direct de thuisgroep en toont de knop daar `people`. De rij "andere groep" komt dan bijna niet meer voor. (b) Bij de volgende start: de thuisgroep ligt vast vanaf inloggen of een koude start, en een bezoek telt pas bij de volgende keer. Verlaten of eruit gezet worden telt wel meteen (invariant 8). In X brengt de Home-knop je dan naar je vaste groep. Advies: (b). De tabel noemt "andere groep" als gewone plek, en de knop blijft binnen een sessie voorspelbaar. Invariant 1 kan met beide. De pure tests hangen er niet van af, alleen het doorgeven van de waarde.
+
+### Besluiten Wouter 2026-11-17 (regie)
+
+1. **Home vanaf een andere tab:** ging de user vanaf *Mijn groepen* rechtstreeks naar die tab, dan brengt Home hem terug naar *Mijn groepen*. In alle andere gevallen doet Home wat Home hoort te doen: met thuisgroep naar de thuisgroep, zonder naar *Mijn groepen*. Dat geldt ook voor de terug-beweging vanaf zo'n tab.
+2. **Een bezochte groep is meteen en blijvend de thuisgroep** (vraag 2, optie a). Op elke groepspagina die de user bezoekt, staat dus het `people`-icoon en brengt Home hem naar *Mijn groepen*; vanaf een album of foto in die groep brengt Home hem naar die groepspagina. De tabel van invariant 6 is daarop aangepast.
+
