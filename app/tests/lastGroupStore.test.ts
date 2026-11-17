@@ -7,6 +7,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 //
 // expo-secure-store is hier nep: een geheugen dat sleutels weigert zoals het
 // toestel (alleen letters, cijfers, ".", "-" en "_"; niet leeg).
+// Besluit 2 en A10: een bezoek maakt de groep meteen de thuisgroep. De
+// Home-knop leest hem synchroon, zonder te wachten op het toestel.
 // Spec: docs/work-packages/WP32-thuisgroep-ui-fixes.md.
 
 const device = vi.hoisted(() => ({
@@ -35,14 +37,30 @@ vi.mock("expo-secure-store", () => {
   };
 });
 
-import { clearLastGroup, forgetLastGroup, loadLastGroup, saveLastGroup } from "../src/data/lastGroup";
+// Elke test is een verse app-start: het geheugen van de module begint leeg,
+// het nep-toestel houdt wat er in staat tot beforeEach het wist.
+type Store = typeof import("../src/data/lastGroup");
+let clearLastGroup: Store["clearLastGroup"];
+let forgetLastGroup: Store["forgetLastGroup"];
+let loadLastGroup: Store["loadLastGroup"];
+let saveLastGroup: Store["saveLastGroup"];
+let lastGroupNow: Store["lastGroupNow"];
+let subscribeLastGroup: Store["subscribeLastGroup"];
+
+async function startApp() {
+  vi.resetModules();
+  ({ clearLastGroup, forgetLastGroup, loadLastGroup, saveLastGroup, lastGroupNow, subscribeLastGroup } = await import(
+    "../src/data/lastGroup"
+  ));
+}
 
 const A = "user_2pQx7AbCdEf";
 const B = "user_2pQx7AbCdEg";
 
-beforeEach(() => {
+beforeEach(async () => {
   device.items.clear();
   device.fail = false;
+  await startApp();
 });
 
 describe("per user (invariant 3)", () => {
@@ -124,6 +142,7 @@ describe("vergeten", () => {
 describe("een fout van het toestel ziet de user niet (A5)", () => {
   it("lezen faalt: niets", async () => {
     await saveLastGroup(A, "g1");
+    await startApp();
     device.fail = true;
     expect(await loadLastGroup(A)).toBeNull();
   });
@@ -133,5 +152,58 @@ describe("een fout van het toestel ziet de user niet (A5)", () => {
     await expect(saveLastGroup(A, "g1")).resolves.toBeUndefined();
     await expect(forgetLastGroup(A, "g1")).resolves.toBeUndefined();
     await expect(clearLastGroup(A)).resolves.toBeUndefined();
+  });
+});
+
+describe("meteen (besluit 2, A10)", () => {
+  it("een bezoek is meteen te lezen, nog voor het toestel klaar is", () => {
+    void saveLastGroup(A, "g1");
+    expect(lastGroupNow(A)).toBe("g1");
+  });
+
+  it("luisteraars horen het meteen", () => {
+    const heard: number[] = [];
+    subscribeLastGroup(() => heard.push(1));
+    void saveLastGroup(A, "g1");
+    expect(heard.length).toBeGreaterThan(0);
+  });
+
+  it("afmelden: daarna niets meer", () => {
+    let heard = 0;
+    const stop = subscribeLastGroup(() => heard++);
+    stop();
+    void saveLastGroup(A, "g1");
+    expect(heard).toBe(0);
+  });
+
+  it("nog niet gelezen: onbekend; na lezen de waarde van het toestel", async () => {
+    await saveLastGroup(A, "g1");
+    await startApp();
+    expect(lastGroupNow(A)).toBeUndefined();
+    await loadLastGroup(A);
+    expect(lastGroupNow(A)).toBe("g1");
+    await loadLastGroup(B);
+    expect(lastGroupNow(B)).toBeNull();
+  });
+
+  it("het bezoek van A verandert niets voor B", async () => {
+    await loadLastGroup(B);
+    void saveLastGroup(A, "g1");
+    expect(lastGroupNow(B)).toBeNull();
+  });
+
+  it("schrijven naar het toestel faalt: de rest van deze sessie toch de thuisgroep", async () => {
+    device.fail = true;
+    await saveLastGroup(A, "g1");
+    expect(lastGroupNow(A)).toBe("g1");
+  });
+
+  it("vergeten en wissen: daarna leest de knop geen groep meer", async () => {
+    await saveLastGroup(A, "g1");
+    await saveLastGroup(B, "g2");
+    await forgetLastGroup(A, "g1");
+    expect(lastGroupNow(A)).toBeNull();
+    void clearLastGroup(B);
+    expect(lastGroupNow(B)).toBeNull();
   });
 });

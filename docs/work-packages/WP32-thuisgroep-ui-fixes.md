@@ -93,7 +93,7 @@ De app onthoudt al een "laatst bezochte groep" (`src/data/lastGroup.ts`) en spri
 
 | Oud | WP32 |
 |---|---|
-| Home-knop gaat altijd naar de Home-groep (album-overzicht), vanaf elke tab | Tabel invariant 6. Vanaf een andere tab: zie open vraag 1 |
+| Home-knop gaat altijd naar de Home-groep (album-overzicht), vanaf elke tab | Tabel invariant 6 en besluit 1 |
 | Altijd een huisje; actief als je op het Home-scherm bent | Huisje, en `people` op de groepspagina van de thuisgroep |
 | Home-groep gezet door een tik op een groep in *Mijn groepen*; gewist via Instellingen en bij verlaten | Gezet door een bezoek (invariant 2); geen instelling (scope) |
 | Foto-detail: vaste verdeling, de foto ¾ en het informatieblok ¼ van het scherm; het blok vervaagt tijdens het bladeren | Invariant 9 (gedrag, geen layout overnemen) |
@@ -108,6 +108,8 @@ De app onthoudt al een "laatst bezochte groep" (`src/data/lastGroup.ts`) en spri
 - **A6. Account verwijderen** wist de waarde van die user pas als het verwijderen gelukt is. Mislukt het, dan blijft hij staan. Een andere user op het toestel houdt de zijne. Uitloggen wist niets (scope).
 - **A7. Toegankelijkheidslabel.** Het zichtbare label onder het icoon blijft "Home". Het VoiceOver-label bevat "Home" (dan werkt "tik Home" met Spraakbediening) en de bestemming: "Mijn groepen" of de naam van de thuisgroep. Op *Mijn groepen* noemt het "Mijn groepen".
 - **A8. Terugknop weg (invariant 7).** De pil verdwijnt van de groepspagina in alle toestanden. De meldingen "geen lid" en "laden lukt niet" houden hun knop "Naar Mijn groepen" in de inhoud (invariant 8). Terugvegen vanaf de linkerrand blijft werken.
+- **A9. "Vanaf *Mijn groepen* rechtstreeks naar die tab" (besluit 1).** Telt alleen de tab-wissel: stond de user op *Mijn groepen* op het moment dat hij een andere tab koos, dan brengt Home hem vanaf die tab terug naar *Mijn groepen*. Ook als hij binnen die tab dieper ging (Profiel → Uitnodigingen). Van daar naar nog een andere tab (*Mijn groepen* → Profiel → Instellingen) is niet meer rechtstreeks: dan de thuisgroep. *Toevoegen* openen en sluiten is geen tab-wissel. Na een koude start of een deep link op een andere tab is de herkomst onbekend: dan de thuisgroep.
+- **A10. "Meteen" (besluit 2).** Zodra een groepspagina de groep toont, is hij de thuisgroep. De Home-knop toont op diezelfde pagina meteen `people`, zonder te wachten op het schrijven naar het toestel. Mislukt dat schrijven, dan blijft de groep voor de rest van deze app-sessie toch de thuisgroep. Een bezoek als een andere user verandert niets voor de vorige.
 
 ### Foto's bladeren (B)
 
