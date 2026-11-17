@@ -68,7 +68,7 @@ Achtergrond: de meeste leden zitten in één groep, of altijd in dezelfde. De tw
 ## Acceptance — hoe weten we dat het klaar is
 
 - Tests (pure logica): de bepaling van de thuisgroep (invariant 1, 4, 5, 8) en de bestemming en het icoon van de Home-knop (invariant 6), per user (invariant 3).
-- B kijkt in de iOS-simulator: inloggen met één en met meerdere groepen, de Home-knop in alle drie de situaties, bladeren door een album met en zonder omschrijvingen, en elk scherm met een tekstveld met het toetsenbord open.
+- B kijkt in de iOS-simulator: inloggen met één en met meerdere groepen, de Home-knop in alle drie de situaties, bladeren door een album met en zonder omschrijvingen, en elk scherm met een tekstveld met het toetsenbord open, in de toestanden van C5.
 - Empirische gate (Wouter, TestFlight-build tegen dev): dezelfde punten op een toestel, plus een account met drie groepen (thuisgroep wisselen, uit de thuisgroep gezet worden).
 
 ---
@@ -116,24 +116,26 @@ De app onthoudt al een "laatst bezochte groep" (`src/data/lastGroup.ts`) en spri
 
 ### Toetsenbord (C)
 
-Inventaris van de schermen met een tekstveld:
+Inventaris van de schermen met een tekstveld, met de toestanden die het formulier langer maken (aanvulling Wouter 2026-11-17: het gaat vooral mis als er óók een melding staat):
 
-| Scherm | Waar | Velden | Knop |
-|---|---|---|---|
-| Inloggen | uitgelogd, met tabbalk eronder | E-mailadres, daarna Code | "Stuur code", "Log in" |
-| Uitnodigen | modaal | per rij Naam + E-mailadres (meerdere rijen), Bericht (meerregelig) | "Uitnodiging(en) versturen" |
-| Nieuwe groep | modaal | Naam, Omschrijving (meerregelig) | "Groep maken" |
-| Nieuw album | modaal | Naam | "Album maken" |
-| Bewerk groep | stack | Naam, Omschrijving (meerregelig), met cover en datum ertussen | "Bewaar" |
-| Bewerk album | stack | Naam, met cover en datum | "Bewaar" |
-| Profiel | tab | Naam | "Bewaar" |
-| Account verwijderen | Profiel | bevestigingswoord | "Account verwijderen" (WP29 fix-cyclus 3 al opgelost; hier alleen regressie) |
-| Idee / probleem doorgeven | Instellingen | Titel, Omschrijving (meerregelig) | "Idee doorgeven" / "Probleem melden" |
+| Scherm | Waar | Velden | Knop | Meldingen en extra blokken |
+|---|---|---|---|---|
+| Inloggen, stap e-mail | uitgelogd, wash-kop, tabbalk eronder | E-mailadres | "Stuur code" | boven: "Je account is verwijderd." (groen); "inloggegevens konden niet worden gewist" (rood) met "Opnieuw wissen" en eventueel "Wissen lukt nog steeds niet." Onder de knop: fout na versturen (ongeldig adres, te vaak, algemeen) |
+| Inloggen, stap code | idem | Code | "Log in" | dezelfde meldingen boven; onder: fout bij de code (verkeerd, verlopen, te veel pogingen), melding na "Stuur een nieuwe code" of "Ander e-mailadres", plus die twee links |
+| Uitnodigen | modaal | per rij Naam + E-mailadres, Bericht (meerregelig) | "Uitnodiging(en) versturen" | meerdere rijen ("Nog iemand uitnodigen"), een fout per rij, "… verstuurd" (groen) na een deels gelukte verzending, een lang bericht |
+| Nieuwe groep | modaal | Naam, Omschrijving (meerregelig) | "Groep maken" | fout bij de naam, algemene fout |
+| Nieuw album | modaal | Naam | "Album maken" | fout bij de naam, algemene fout |
+| Bewerk groep | stack | Naam, Omschrijving (meerregelig), met cover en datum ertussen | "Bewaar" | melding bij de cover, fout bij naam of datum, algemene fout, "Opgeslagen" |
+| Bewerk album | stack | Naam, met cover en datum | "Bewaar" | idem, zonder omschrijving |
+| Profiel | tab | Naam | "Bewaar" | fout, of "Je naam is opgeslagen." |
+| Account verwijderen | Profiel | bevestigingswoord | "Account verwijderen" | fout na mislukken (WP29 fix-cyclus 3 loste alleen de lege toestand op) |
+| Idee / probleem doorgeven | Instellingen | Titel, Omschrijving (meerregelig) | "Idee doorgeven" / "Probleem melden" | fout bij titel, fout bij omschrijving, algemene fout of succes |
 
 - **C1. Lange formulieren.** Bij Uitnodigen met meer rijen en bij Bewerk groep past niet alles boven het toetsenbord. Daar geldt: het veld waarin getypt wordt staat in beeld, en de knop is te bereiken door te scrollen terwijl het toetsenbord open is. Typt de user in het laatste veld vóór de knop, dan staan veld en knop allebei in beeld (zoals Inloggen, Nieuw album en Profiel).
 - **C2. Meerregelig.** Groeit een meerregelig veld tijdens het typen, dan blijft de regel met de cursor boven het toetsenbord.
 - **C3. Waar het toetsenbord meet.** Een modaal scherm en een scherm met een tabbalk eronder liggen elk anders ten opzichte van het toetsenbord dan een gewoon scherm in de stack. Beide kwamen uit de repetitie. Kijk elk scherm na op de kleinste iPhone die de app ondersteunt en met de grootste tekstgrootte.
 - **C4. Return-toets.** Het gedrag van de return-toets verandert niet in deze WP.
+- **C5. Met meldingen (eis voor B's simulator-check).** Invariant 11 geldt in elke toestand uit de laatste kolom, niet alleen in de lege begintoestand: elke melding die er kan staan, ook meerdere tegelijk, elke fout en elk extra blok. Een melding die verschijnt doordat de user op de knop tikt terwijl het toetsenbord open is (fout na versturen), staat ook in beeld. B kijkt per scherm minstens de lege toestand na, en de toestand met de meeste meldingen of blokken boven het veld. Inloggen dus met "Je account is verwijderd." erboven, en Uitnodigen met drie rijen, een fout per rij en een bericht. B noemt in zijn rapport per scherm welke toestanden hij zag.
 
 ### Open vragen aan regie
 
