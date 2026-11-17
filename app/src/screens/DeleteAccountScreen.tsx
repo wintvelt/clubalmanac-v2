@@ -50,6 +50,9 @@ export function DeleteAccountScreen() {
     inFlight.current = true;
     setBusy(true);
     setError(false);
+    // WP32 A6: de user-id vóór de aanroep vastleggen; daarna kan de sessie al
+    // weg zijn.
+    const userId = clerk.user?.id;
     // Vóór de aanroep: zodra hij lukt, is users.current `null`, en de poort
     // moet dan niet "Je account is nog niet klaar" tonen.
     setAccountDeleting(true);
@@ -64,7 +67,7 @@ export function DeleteAccountScreen() {
     }
     setAccountDeleted(true);
     // WP32 A6: pas na het gelukte verwijderen de thuisgroep van deze user weg.
-    await signOutAndWipe(signOut, clerk.user?.id);
+    await signOutAndWipe(signOut, userId);
     setAccountDeleting(false);
   }
 

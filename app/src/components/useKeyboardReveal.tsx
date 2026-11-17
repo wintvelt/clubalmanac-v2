@@ -10,7 +10,7 @@ import {
   type HostInstance,
   type ScrollViewInstance,
 } from "react-native";
-import { revealOffset } from "../lib/keyboardReveal";
+import { resizeOffset, revealOffset } from "../lib/keyboardReveal";
 
 // WP32 invariant 11 (C1–C5): met het toetsenbord open staat het veld waarin
 // getypt wordt in beeld, met daaronder zoveel mogelijk (de knop, een fout na
@@ -20,7 +20,9 @@ import { revealOffset } from "../lib/keyboardReveal";
 // toetsenbord: de ruimte die het toetsenbord over de ScrollView legt, komt
 // er onderaan bij (`keyboardSpace`), en het scherm kiest de scrollpositie als
 // het toetsenbord opent, als een ander veld focus krijgt en als de inhoud van
-// maat verandert (een melding verschijnt, een meerregelig veld groeit).
+// maat verandert (een melding verschijnt, een meerregelig veld groeit). Bij
+// een maatwijziging springt het scherm niet terug naar het veld (C5,
+// resizeOffset).
 
 // Ruimte boven het veld voor zijn label, en eronder.
 const MARGIN = 40;
@@ -49,11 +51,26 @@ export function useKeyboardReveal(
 ) {
   const inModalSheet = useContext(ModalSheetContext);
   const contentHeight = useRef(0);
+  // De hoogte van de inhoud zonder de ruimte voor het toetsenbord: verandert
+  // die, dan veranderde de inhoud zelf.
+  const ownHeight = useRef(0);
   const scrollY = useRef(0);
   const keyboardTop = useRef<number | null>(null);
   const [keyboardSpace, setKeyboardSpace] = useState(0);
+  const renderedSpace = useRef(0);
+  renderedSpace.current = keyboardSpace;
+  // De laatste meting: ScrollView, zichtbaar deel en het veld met focus.
+  const last = useRef<{
+    height: number;
+    visibleHeight: number;
+    input: unknown;
+    fieldTop: number;
+    fieldBottom: number;
+  } | null>(null);
 
-  const reveal = () => {
+  type Resize = { wasAtEnd: boolean; fieldWasInView: boolean };
+
+  const reveal = (resize?: Resize) => {
     const scroll = scrollRef.current;
     const top = keyboardTop.current;
     const input = TextInput.State.currentlyFocusedInput();
@@ -70,14 +87,17 @@ export function useKeyboardReveal(
         inner,
         (_fx, fieldTop, _fw, fieldHeight) => {
           setKeyboardSpace(Math.max(0, height - visibleHeight));
-          const offset = revealOffset({
+          const fieldBottom = fieldTop + fieldHeight;
+          last.current = { height, visibleHeight, input, fieldTop, fieldBottom };
+          const place = {
             fieldTop,
-            fieldBottom: fieldTop + fieldHeight,
+            fieldBottom,
             visibleHeight,
             maxOffset: contentHeight.current - height,
             margin: MARGIN,
             current: scrollY.current,
-          });
+          };
+          const offset = resize ? resizeOffset({ ...place, ...resize }) : revealOffset(place);
           if (Math.abs(offset - scrollY.current) > 1) scroll.scrollTo({ y: offset, animated: true });
         },
         () => {},
@@ -105,6 +125,7 @@ export function useKeyboardReveal(
       }),
       Keyboard.addListener("keyboardDidHide", () => {
         keyboardTop.current = null;
+        last.current = null;
         setKeyboardSpace(0);
       }),
     ];
@@ -117,8 +138,26 @@ export function useKeyboardReveal(
   return {
     keyboardSpace,
     onContentSizeChange: (_w: number, h: number) => {
+      const before = last.current;
+      const oldContent = contentHeight.current;
+      const own = h - renderedSpace.current;
+      const ownChanged = Math.abs(own - ownHeight.current) > 1;
       contentHeight.current = h;
-      if (keyboardTop.current !== null) revealRef.current();
+      ownHeight.current = own;
+      if (keyboardTop.current === null) return;
+      // Alleen de ruimte voor het toetsenbord veranderde (net geopend): de
+      // plek zoals bij openen, nu met de juiste hoogte.
+      if (!ownChanged || !before) {
+        revealRef.current();
+        return;
+      }
+      const y = scrollY.current;
+      const sameField = before.input === TextInput.State.currentlyFocusedInput();
+      revealRef.current({
+        wasAtEnd: y >= oldContent - before.height - MARGIN,
+        fieldWasInView:
+          sameField && before.fieldBottom > y && before.fieldTop < y + before.visibleHeight,
+      });
     },
     onScroll: (e: NativeSyntheticEvent<NativeScrollEvent>) => {
       scrollY.current = e.nativeEvent.contentOffset.y;
