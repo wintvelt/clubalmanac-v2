@@ -6,7 +6,6 @@ import {
   displayYear,
   encodeLastGroup,
   groupErrorKind,
-  homeTarget,
   memberSections,
   sortMyGroups,
   unreadBadge,
@@ -295,29 +294,7 @@ describe("groupErrorKind", () => {
   });
 });
 
-// --- homeTarget (invarianten 6 en 12) ---------------------------------------------
-
-describe("homeTarget", () => {
-  const groups = [{ _id: "g1" }, { _id: "g2" }];
-
-  it("geen onthouden groep: Mijn groepen, ook als de groepen nog laden", () => {
-    expect(homeTarget({ lastGroupId: null, myGroups: undefined })).toEqual({ kind: "myGroups", forget: false });
-    expect(homeTarget({ lastGroupId: null, myGroups: groups })).toEqual({ kind: "myGroups", forget: false });
-  });
-
-  it("onthouden groep, groepen nog onbekend: wachten, geen flits", () => {
-    expect(homeTarget({ lastGroupId: "g1", myGroups: undefined })).toEqual({ kind: "wait" });
-  });
-
-  it("onthouden groep waar je lid van bent: die groep", () => {
-    expect(homeTarget({ lastGroupId: "g2", myGroups: groups })).toEqual({ kind: "group", groupId: "g2" });
-  });
-
-  it("onthouden groep waar je geen lid meer van bent: Mijn groepen en vergeten", () => {
-    expect(homeTarget({ lastGroupId: "weg", myGroups: groups })).toEqual({ kind: "myGroups", forget: true });
-    expect(homeTarget({ lastGroupId: "g1", myGroups: [] })).toEqual({ kind: "myGroups", forget: true });
-  });
-});
+// WP32: homeTarget is vervangen door homeGroupOf en homeButton (tests/homeGroup.test.ts).
 
 // --- het geheugen voor de laatst bezochte groep (invariant 6) -------------------------
 
