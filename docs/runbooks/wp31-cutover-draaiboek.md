@@ -209,7 +209,7 @@ De dag van de schrijfstop. De vrijgave (T0.9) volgt na de review, mogelijk dagen
     Verwacht: een film-link zonder het deel na `?` geeft 403, mét geeft 206; de film speelt in de nieuwe app.
     Afwijking: na 24 uur nog niet te vinden → *Pricing and Availability* nakijken (status per land).
 11. **Rem op `reset`, en de backup aan:**
-    - de deploy-key **`migratie`** intrekken (Convex-dashboard → prod → Settings → Deploy keys), alleen die, en `MIGRATE_CONVEX_ADMIN_KEY_PROD` uit `.env.migrate` halen. Zonder die key kan geen migrate-commando prod nog wijzigen; een `reset` na de vrijgave zou alles wissen wat leden sindsdien deden. `backup` en `release` blijven;
+    - de deploy-key **`migratie`** intrekken (Convex-dashboard → prod → Settings → Deploy keys), alleen die, en `MIGRATE_CONVEX_ADMIN_KEY_PROD` uit `.env.migrate` halen. Zonder die key kan geen migrate-commando prod nog wijzigen; een `reset` na de vrijgave zou alles wissen wat leden sindsdien deden. `backup` blijft;
     - repo-variabele `BACKUP_ENABLED` = `true`: vanaf de 1e van de volgende maand draait de backup vanzelf. De gate (met de hand terugzetten) blijft bij T+30.
     Verwacht: `npm run migrate -- verify --target prod` stopt met "MIGRATE_CONVEX_ADMIN_KEY_PROD ontbreekt".
     Na elke review: controleren dat het demo-account nog bestaat (de reviewer kan *Account verwijderen* proberen).
