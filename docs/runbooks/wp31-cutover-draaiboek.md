@@ -24,7 +24,7 @@ Alles hieronder laat rijen achter op prod. Dat geeft niets: vóór de repetitie 
   ```
   Geen deploy-key in de shell plakken via de telefoon-app: die stuurt een Escape-teken mee, en dan geeft `npx convex deploy` alleen `TypeError: fetch failed`. *Gedaan 2026-11-16 (63954cb).*
   Verwacht: `npx convex deploy` noemt de prod-deployment en eindigt zonder fout.
-- [x] **Clerk prod** activeren, op **Hobby** (W8: sessie maximaal 7 dagen, leden loggen wekelijks opnieuw in). Instellingen gelijk aan dev: e-mailcode aan, wachtwoord uit, sign-up aan zonder verplichte naamvelden, bot sign-up protection uit (heet nu *Challenge suspicious sign-ups*, Configure → Protections: *Inactive*; daar ook *Block email subaddresses* op *Inactive* laten, anders werkt `+clerk_test` niet; *Prevent user enumeration* staat op *Active*, net als dev), *Verification required before session* aan (Configure → Email address; standaard aan, de webhook rekent erop, WP6). JWT-template `convex`: claim `email` = `{{user.primary_email_address}}`. Webhook naar `https://<prod>.eu-west-1.convex.site/clerk-webhook` met eigen Svix-secret. *Gedaan 2026-11-16/17.*
+- [x] **Clerk prod** activeren, op **Hobby** (W8: sessie maximaal 7 dagen, leden loggen wekelijks opnieuw in). Instellingen gelijk aan dev: e-mailcode aan, wachtwoord uit, sign-up aan zonder verplichte naamvelden, bot sign-up protection uit (heet nu *Challenge suspicious sign-ups*, Configure → Protections: *Inactive*; daar ook *Block email subaddresses* op *Inactive* laten, anders werkt `+clerk_test` niet; *Prevent user enumeration* staat op *Active*, net als dev; Customization → Emails: *Sign in from new device* uit, anders krijgt elk lid op T0 een Engelse waarschuwingsmail), *Verification required before session* aan (Configure → Email address; standaard aan, de webhook rekent erop, WP6). JWT-template `convex`: claim `email` = `{{user.primary_email_address}}`. Webhook naar `https://<prod>.eu-west-1.convex.site/clerk-webhook` met eigen Svix-secret. *Gedaan 2026-11-16/17.*
 - [x] **Clerk test mode aan op prod, permanent** (W4, besluit 2026-11-16). Dan logt de reviewer van Apple in met een `+clerk_test`-adres en code 424242, bij elke volgende review ook.
   Verwacht: in het Clerk-dashboard van de prod-instance staat *Test mode* aan.
   Restrisico (besluit staat): iedereen kan zich aanmelden met een `+clerk_test`-adres en code 424242, zonder mailbox, en bot sign-up protection staat uit. Zulke accounts tellen mee in de MAU van Clerk en zijn te scripten. Ze zien niets: zonder uitnodiging maakt de app geen user-rij (WP19b). Het demo-adres plus 424242 is een blijvend wachtwoord dat bij Apple ligt; het demo-account ziet alleen Demo. Kijk eens per kwartaal in Clerk prod → *Users* of er onbekende accounts bijkomen.
@@ -58,9 +58,9 @@ Alles hieronder laat rijen achter op prod. Dat geeft niets: vóór de repetitie 
 
 - [ ] **Herinnering in de oude app** (W2): in Blob bibliotheek een album met een banner, tekst zonder vaste datum ("Nieuwe app komt binnenkort"). Banner eerst via de S3-console onder `public/img/` zetten, dan één record `GA<groepId>` / `A…` met `name`, `photo.url` en `createdAt` (WP31 vraag 2).
   Verwacht: het album staat in je eigen oude app in Blob bibliotheek. Noteer de album-ID voor `excludeAlbumIds`.
-- [ ] **Extract en inspect** (alleen lezen): `npm run migrate -- extract`, `npm run migrate -- inspect`.
+- [x] **Extract en inspect** (alleen lezen): `AWS_PROFILE=clubalmanac npm run migrate -- extract` (het profiel van de lees-gebruiker op de server), `npm run migrate -- inspect`.
   Verwacht: 20 users, waarvan John Appleseed het reviewaccount; telling gelijk aan WP31 §Telling, of verklaarbaar.
-- [ ] **`scripts/.data/prod-config.json`: de uitsluitingen** (W5), eerst zonder Clerk-ID's:
+- [x] **`scripts/.data/prod-config.json`: de uitsluitingen** (W5), eerst zonder Clerk-ID's:
   ```json
   {
     "clerkIdByEmail": {},
@@ -70,7 +70,7 @@ Alles hieronder laat rijen achter op prod. Dat geeft niets: vóór de repetitie 
   }
   ```
   De groeps-ID's zijn die van "Test group", "Familievakantie", "testgroep 2" en "blob" (extract van 2026-11-06). Let op: "blob" is níet "Blob bibliotheek" (`GT3IgqXKFgBDKZA0`, 18 leden, de films). De transform hieronder zet de naam bij elke ID; daar zie je een verwisseling.
-- [ ] **Clerk pre-create** (Wouter), met `MIGRATE_CLERK_SECRET_KEY_PROD=sk_live_…` in `.env.migrate`:
+- [x] **Clerk pre-create** (Wouter), met `MIGRATE_CLERK_SECRET_KEY_PROD=sk_live_…` in `.env.migrate`:
   ```bash
   MIGRATE_ALLOW_PROD=yes npm run migrate -- clerk-ids --create --write
   npm run migrate -- clerk-ids
@@ -78,7 +78,7 @@ Alles hieronder laat rijen achter op prod. Dat geeft niets: vóór de repetitie 
   De eerste maakt de 19 leden (het extract min `excludeUserIds`) aan in Clerk prod, zonder wachtwoord en zonder mail, en zet `clerkIdByEmail` uit Clerk zelf: niet overtypen (een verwisselde ID laat het ene lid stil de groepen van het andere zien). De tweede leest alleen en vergelijkt elke ID met het primaire adres in Clerk.
   Verwacht: "19 aangemaakt" en daarna "in orde: clerkIdByEmail is gelijk aan Clerk prod (19 leden)", exitcode 0; geen mail bij de leden (invariant 8). De Clerk-users zonder lid (wegwerp uit de rooktests) staan als ID in de uitvoer.
   Afwijking: `ONTBREEKT` of `MAP KLOPT NIET` → niet verder. Een fout bij `--create` (bv. HTTP 422, adres ongeldig): het adres in het extract nakijken; opnieuw draaien slaat wie al bestaat over.
-- [ ] **Transform op prod** (alleen lokaal): `npm run migrate -- transform --target prod`.
+- [x] **Transform op prod** (alleen lokaal): `npm run migrate -- transform --target prod`.
   Verwacht: hij slaagt en drukt onder "uitgesloten via prod-config" precies deze regels af (aantallen van 2026-11-06):
   - `uitgesloten user U… "John Appleseed" (config): 1 lidmaatschap(pen), 32 foto('s), 30 publicatie(s)`
   - `uitgesloten groep G0O9PN5O6IRu9oMJ "Familievakantie" (config): 1 lidmaatschap(pen)`
@@ -88,7 +88,7 @@ Alles hieronder laat rijen achter op prod. Dat geeft niets: vóór de repetitie 
   - `uitgesloten album A… "<naam van het herinneringsalbum>" (config): geen andere rijen`
 
   Afwijking: een andere naam of een groot verschil in aantallen → verkeerde ID, config corrigeren. Een ID die niet in het extract staat, of een uitgesloten user die oprichter is van een groep die meegaat, stopt de transform zelf.
-- [ ] **Uitzondering in de schrijfstop opzoeken** (alleen lezen, AWS-prod). De tabel-policy van T0.2 laat alleen de stream-Lambda van `blob-images-api` door, niet de hele rol: bij Serverless delen alle functies van een service vaak één rol, ook handlers en Cognito-triggers zoals `cognitoSync`. Een Lambda neemt zijn rol aan met de functienaam als sessienaam; daarop zit de uitzondering. Noteer:
+- [x] **Uitzondering in de schrijfstop opzoeken** (alleen lezen, AWS-prod). De tabel-policy van T0.2 laat alleen de stream-Lambda van `blob-images-api` door, niet de hele rol: bij Serverless delen alle functies van een service vaak één rol, ook handlers en Cognito-triggers zoals `cognitoSync`. Een Lambda neemt zijn rol aan met de functienaam als sessienaam; daarop zit de uitzondering. Noteer:
   - de naam van de stream-functie en zijn rol (Lambda → functie → Configuration → Permissions);
   - de `RoleId` van die rol (begint met `AROA`):
     ```bash
@@ -101,9 +101,10 @@ Alles hieronder laat rijen achter op prod. Dat geeft niets: vóór de repetitie 
   ```
   Doe hetzelfde op AWS-dev voor de repetitie.
   Verwacht: een `RoleId` en een functienaam, ingevuld in de policy van T0.2.
-- [ ] **WP31 staat op prod:** gemerged in `main` en met `npm run deploy:prod` gedeployd; de repetitie heeft `photos.formatStatusPage` nodig.
+  *Gedaan 2026-11-17*, in AWS CloudShell (de lees-gebruiker op de server mag geen IAM lezen): per omgeving één stream-functie met een eigen rol. De ingevulde policies voor dev (repetitie) en prod (T0.2) staan in `scripts/.data/wp31-schrijfstop.md` (gitignored).
+- [x] **WP31 staat op prod:** gemerged in `main` en met `npm run deploy:prod` gedeployd; de repetitie heeft `photos.formatStatusPage` nodig.
   Verwacht: `npx convex run --prod photos:formatStatusPage '{"cursor":null,"batchSize":1}'` geeft een telling met `"cursor": null`.
-- [ ] **Generale repetitie op prod** (W6): T0.2 tot en met T0.7 hieronder, met deze verschillen:
+- [x] **Generale repetitie op prod** (W6): T0.2 tot en met T0.7 hieronder, met deze verschillen:
   - schrijfstop (T0.2) op de AWS-**dev**-tabel `blob-images-photos-dev` en bucket `blob-images-dev`, met de twee controles van T0.2 (tabel- en bucketnaam aangepast): beide geweigerd. Daarna de policies weghalen, de controles opnieuw: beide lukken. Ruim dan het testbestand en het testrecord op:
     ```bash
     aws s3 rm s3://blob-images-dev/protected/schrijfstop-test.txt
@@ -127,7 +128,13 @@ Alles hieronder laat rijen achter op prod. Dat geeft niets: vóór de repetitie 
     - met het wegwerp-account in de app *Account verwijderen*: de user is weg in Clerk prod (*Users*) en in Convex (`users`).
 
   Afwijking bij B1 of B3: niet naar T0. Meld het aan regie; dat is code.
-- [ ] **Na de repetitie prod leegmaken:** `MIGRATE_ALLOW_PROD=yes npm run migrate -- reset --target prod --yes --all`.
+
+  Uitslag 2026-11-17 (cutover-build 62): alles groen. `formaten` 1511/1511 en de eindtelling zonder fout (B1); `verify` groen (4540 bestanden); het album van 540 foto's opent en scrolt (B3); films spelen; R1-R4 en de demo zoals verwacht. `load-files` 15 min (5,9 MB/s), `formaten` ~78 min. Geleerd:
+  - bij de eerste prod-run eerst de storage-map van dev opzij zetten (`mv scripts/.data/storage-map.json scripts/.data/storage-map.dev-<datum>.json`), anders weigert `verify`; na `reset --all` is dat niet meer nodig;
+  - lange runs (`load-files`, `formaten`, `export`) in `tmux`: `nohup` houdt het Node-proces niet in leven als SSH wegvalt;
+  - de demo-uitnodiging moet echt aankomen: een bounce zet hem op verlopen. Gebruik een Gmail-adres met `+clerk_test`;
+  - gevonden en vóór T0 op te lossen (werkpakket): de foto springt bij het swipen, en het toetsenbord bedekt op meerdere schermen knoppen en velden.
+- [x] **Na de repetitie prod leegmaken:** `MIGRATE_ALLOW_PROD=yes npm run migrate -- reset --target prod --yes --all`.
   Verwacht: `npm run migrate -- verify --target prod` toont in de kolom van de deployment overal 0, en `storage: 0 objecten`. Exitcode 1 en "rood" horen hier bij: `verify` vergelijkt met `convex-records.json` van de repetitie. Kijk alleen naar die kolom. De filmlijst staat nog (valt buiten `reset`) en wijst naar een gewiste groep: op T0.5 opnieuw vullen is daarom verplicht.
 
 ## T-1 dag
@@ -163,7 +170,7 @@ De dag van de schrijfstop. De vrijgave (T0.9) volgt na de review, mogelijk dagen
        "Action": ["s3:PutObject", "s3:DeleteObject"],
        "Resource": "arn:aws:s3:::blob-images/protected/*" }
      ```
-   Controle per policy, met je eigen AWS-login (een Deny in een policy geldt ook voor een admin):
+   Controle per policy, met je eigen AWS-login in **CloudShell** (een Deny in een policy geldt ook voor een admin; de server heeft alleen de lees-gebruiker):
    ```bash
    echo test > schrijfstop-test.txt
    aws s3 cp schrijfstop-test.txt s3://blob-images/protected/schrijfstop-test.txt
@@ -177,13 +184,13 @@ De dag van de schrijfstop. De vrijgave (T0.9) volgt na de review, mogelijk dagen
    Afwijking: niet overal 0 → eerst `MIGRATE_ALLOW_PROD=yes npm run migrate -- reset --target prod --yes --all`, dan opnieuw.
 4. **Migratie**, in deze volgorde, elk met exitcode 0 ([`wp12-data-migratie.md`](./wp12-data-migratie.md) §Run 2 voor de meldingen):
    ```bash
-   npm run migrate -- extract
+   AWS_PROFILE=clubalmanac npm run migrate -- extract
    npm run migrate -- inspect
    npm run migrate -- clerk-ids                    # alleen lezen
    npm run migrate -- transform --target prod
-   MIGRATE_ALLOW_PROD=yes npm run migrate -- load-files --target prod     # ~18 min
+   MIGRATE_ALLOW_PROD=yes AWS_PROFILE=clubalmanac npm run migrate -- load-files --target prod     # ~15 min, in tmux
    MIGRATE_ALLOW_PROD=yes npm run migrate -- load-records --target prod
-   MIGRATE_ALLOW_PROD=yes npm run migrate -- formaten --target prod       # ~70 min, hervatbaar
+   MIGRATE_ALLOW_PROD=yes npm run migrate -- formaten --target prod       # ~80 min, in tmux, hervatbaar
    npm run migrate -- verify --target prod
    ```
    `MIGRATE_ALLOW_PROD=yes` alleen vóór het commando zelf, nooit met `export`: de review duurt dagen, en een vergeten `reset` in diezelfde shell wist dan prod.
@@ -200,7 +207,7 @@ De dag van de schrijfstop. De vrijgave (T0.9) volgt na de review, mogelijk dagen
 6. **Zelf inloggen** met een TestFlight-build (profiel `production`) tegen prod, met je eigen adres.
    Verwacht: precies 2 groepen, Blob bibliotheek en je groep met 1 album en 2 leden, met albums, foto's en profielfoto's; in Blob bibliotheek spelen de films; het herinneringsalbum, Test group, Familievakantie en testgroep 2 ontbreken. Na T0.7 komt Demo erbij (3).
    Afwijking: een andere groep, of een groep mist → niet indienen; §Terug.
-7. **Demo voor Apple** (W4, invariant 12): in de app een groep "Demo" maken, het adres `<naam>+clerk_test@<eigen domein>` uitnodigen als **lid** (geen admin), daarmee inloggen (code 424242) en een paar eigen, niet-persoonlijke foto's in een album zetten.
+7. **Demo voor Apple** (W4, invariant 12): in de app een groep "Demo" maken, het adres `wouter.intvelt+clerk_test@gmail.com` uitnodigen (moet echt mail ontvangen: een bounce zet de uitnodiging op verlopen) als **lid** (geen admin), daarmee inloggen (code 424242) en een paar eigen, niet-persoonlijke foto's in een album zetten.
    Verwacht: het demo-account ziet alleen Demo.
 8. **Indienen** in App Store Connect, met *Manually release this version* en gefaseerde release uit. Die keuze geldt per versie: een nieuwe versie (bv. 2.0.1 na een afwijzing) staat standaard weer op automatisch, dus bij **elke** indiening opnieuw nakijken. Inloggegevens voor de reviewer: het demo-adres en code 424242.
    Controle vóór indienen (invariant 13, handmatig: de app weigert een dev-build nog niet zelf): zoek het buildnummer op in het EAS-dashboard (*Builds*); daar moet bij die build profiel `production` staan, niet `dev` (die dient bij dezelfde app in).
@@ -257,4 +264,4 @@ Kort, in je eigen woorden aan te passen.
 1. **T-3 weken.** "Op {datum} gaat de oude app op slot: je kunt dan nog kijken, maar niets meer toevoegen. Een paar dagen later komt de nieuwe app, als gewone update in de App Store. Je logt dan in met je e-mailadres en een code die je per mail krijgt. Klopt het adres waarmee je in de app zit nog? Laat het weten als dat niet zo is."
 2. **T-1 dag.** "Morgen gaat de oude app op slot. Upload of nodig vandaag niemand meer uit; wat je na morgen toevoegt, gaat verloren."
 3. **T0.1.** "De oude app is nu op slot: kijken kan, toevoegen niet. Zodra de nieuwe app in de App Store staat, hoor je het."
-4. **T0.10.** "De nieuwe app staat in de App Store. Werk de app bij (of installeer hem opnieuw), log in met je e-mailadres en de code uit de mail; geen mail binnen een paar minuten? Kijk in je spam, want de code komt van een nieuwe afzender. Je ziet al je groepen, albums en foto's. Eén keer per week vraagt de app opnieuw om een code."
+4. **T0.10.** "De nieuwe app staat in de App Store. Werk de app bij (of installeer hem opnieuw), log in met je e-mailadres en de code uit de mail (een Engelstalige mail van clubalmanac met 6 cijfers); geen mail binnen een paar minuten? Kijk in je spam, want de code komt van een nieuwe afzender. Je ziet al je groepen, albums en foto's. Eén keer per week vraagt de app opnieuw om een code."
