@@ -17,9 +17,9 @@ WP5 introduceerde 5 env-vars; sinds WP19b (geen link in de uitnodigingsmail) zij
 
 | Env-var | Waarde dev | Waarde prod | Wat gebeurt bij ontbreken |
 |---|---|---|---|
-| `MAILJET_API_KEY` | dev-key uit Mailjet dashboard | prod-key uit Mailjet dashboard | `MAILJET_CREDS_MISSING:` throw vóór fetch (WP5-audit N-1 fix) |
-| `MAILJET_API_SECRET` | dev-secret | prod-secret | idem |
-| `MAILJET_WEBHOOK_SECRET` | gegenereerde random string, zelfde in Mailjet dashboard webhook-config | aparte prod-string | `/email-event` → 503, geen state-mutatie |
+| `MAILJET_API_KEY` | primary key uit Mailjet dashboard | dezelfde als dev (punt 3 hieronder) | `MAILJET_CREDS_MISSING:` throw vóór fetch (WP5-audit N-1 fix) |
+| `MAILJET_API_SECRET` | primary secret | dezelfde als dev | idem |
+| `MAILJET_WEBHOOK_SECRET` | gegenereerde random string, zelfde in Mailjet dashboard webhook-config | aparte prod-string. Mailjet heeft één event-URL per account; die wijst sinds 2026-11-16 naar prod (app.mailjet.com/account/triggers), dev krijgt geen bounce-events meer | `/email-event` → 503, geen state-mutatie |
 | `MAILJET_VERIFIED_SENDERS` | comma-sep van alle from-addresses die in code voorkomen (`invites@…`, `info@…`) | idem, met prod-domain | `UNVERIFIED_SENDER:` throw vóór elke send |
 | `CLUBALMANAC_STAGE` | `"dev"` | `"prod"` | throw bij `getStageLabel`-call op problem-report-pad (S-3 fix) |
 | `CLUBALMANAC_APP_STORE_ID` (WP19c) | `1663038609` (Apple ID van de app, openbaar) | idem | Geen throw: de uitnodigingsmail gaat zonder App Store-link, met een `console.error` die de env-var noemt. Geldt alleen als 6–12 cijfers |
