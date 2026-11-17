@@ -75,4 +75,67 @@ Achtergrond: de meeste leden zitten in één groep, of altijd in dezelfde. De tw
 
 ## Spec-criticus aanvullingen (A vult in)
 
-(Leeg in draft. A commit edits hier.)
+Bronnen: de oude app (`components/nav/TabBar.jsx`, `screens/PhotoDetail.jsx`), WP16 (§Routes, beslissing 4, invariant 6 en 12) en de huidige `app/`.
+
+### Wat er al is (WP16)
+
+De app onthoudt al een "laatst bezochte groep" (`src/data/lastGroup.ts`) en springt na inloggen of een koude start één keer naar die groep (`MyGroupsScreen`, `src/lib/homeDecision.ts`). WP32 verschilt op vijf punten:
+
+- **Eén waarde voor het hele toestel.** Logt user B in, dan overschrijft zijn bezoek de groep van A; logt A daarna weer in, dan is die weg. Invariant 3 vraagt een waarde per user.
+- **Geen terugval op de enige groep** (invariant 1). Daardoor wacht de keuze na inloggen nu niet op de groepenlijst als er niets is opgeslagen. Met de terugval moet hij dat wel: tot de lijst er is, weet de app niet of je in precies één groep zit (geen flits van *Mijn groepen*).
+- **Alleen de groepspagina telt als bezoek**, niet album, foto of film (invariant 2).
+- **De Home-knop** gaat nu naar de wortel van de stack, net als elke andere tab (WP16 §Routes). De tabel van invariant 6 vervangt dat.
+- **Account verwijderen** laat de opgeslagen waarde staan.
+
+### Pariteit oude app
+
+| Oud | WP32 |
+|---|---|
+| Home-knop gaat altijd naar de Home-groep (album-overzicht), vanaf elke tab | Tabel invariant 6. Vanaf een andere tab: zie open vraag 1 |
+| Altijd een huisje; actief als je op het Home-scherm bent | Huisje, en `people` op de groepspagina van de thuisgroep |
+| Home-groep gezet door een tik op een groep in *Mijn groepen*; gewist via Instellingen en bij verlaten | Gezet door een bezoek (invariant 2); geen instelling (scope) |
+| Foto-detail: vaste verdeling, de foto ¾ en het informatieblok ¼ van het scherm; het blok vervaagt tijdens het bladeren | Invariant 9 (gedrag, geen layout overnemen) |
+
+### Thuisgroep (A)
+
+- **A1. Wanneer telt een bezoek.** Elk scherm onder de groep in de Home-stack: de groepspagina, album, foto, kaart, locatie, film, draaien, bewerken, nieuw album, uitnodigen. Alleen als het scherm de inhoud van de groep echt toont: een groep waar de user geen lid van is (deep link, `NOT_MEMBER`) of die nog laadt, telt niet en overschrijft niets. Geen bezoek: *Mijn foto's* (ook het detail van een foto die in een album van de groep staat), *Toevoegen* met een album, een uitnodiging zien of afwijzen. Accepteren telt via het landen op de groepspagina.
+- **A2. Wanneer kiest de app na inloggen.** Zoals WP16 invariant 12: één keer per sessie, bij inloggen én bij een koude start met een bestaande sessie. Tot de opgeslagen waarde gelezen is én de groepenlijst er is: laden, geen flits van *Mijn groepen* of van een groep. Opent een deep link een ander scherm, dan kiest de app niets.
+- **A3. Bestemming "naar de thuisgroep".** De Home-stack wordt *Mijn groepen* met daarop de groepspagina van de thuisgroep. Wat erboven lag (album, foto, een andere groep) gaat weg. Terug vanaf de thuisgroep is dan *Mijn groepen*. "Naar *Mijn groepen*" laat alleen *Mijn groepen* over. Nooit twee keer dezelfde groep in de stack.
+- **A4. Thuisgroep nog onbekend** (opgeslagen waarde niet gelezen, of de groepenlijst laadt nog, of laden mislukt): de Home-knop gaat nooit naar een groep. Hij gedraagt zich als "geen thuisgroep".
+- **A5. Opslag per user.** De sleutel hoort bij de Clerk-user-id. Twee users op één toestel hebben elk hun eigen waarde, ook na elkaars bezoeken. Een id met tekens die het toestel-geheugen niet als sleutel aanneemt, mag niet stil mislukken of samenvallen met een ander id. Lezen of schrijven dat faalt, ziet de user niet: dan "geen opgeslagen waarde". De oude toestel-brede waarde van WP16 (alleen in testbuilds, nooit op prod) mag genegeerd of opgeruimd worden. Hij geldt nooit als waarde van een user.
+- **A6. Account verwijderen** wist de waarde van die user pas als het verwijderen gelukt is. Mislukt het, dan blijft hij staan. Een andere user op het toestel houdt de zijne. Uitloggen wist niets (scope).
+- **A7. Toegankelijkheidslabel.** Het zichtbare label onder het icoon blijft "Home". Het VoiceOver-label bevat "Home" (dan werkt "tik Home" met Spraakbediening) en de bestemming: "Mijn groepen" of de naam van de thuisgroep. Op *Mijn groepen* noemt het "Mijn groepen".
+- **A8. Terugknop weg (invariant 7).** De pil verdwijnt van de groepspagina in alle toestanden. De meldingen "geen lid" en "laden lukt niet" houden hun knop "Naar Mijn groepen" in de inhoud (invariant 8). Terugvegen vanaf de linkerrand blijft werken.
+
+### Foto's bladeren (B)
+
+- **B1. Beide foto-details.** Album (`PhotoDetailScreen`) en *Mijn foto's* (`MyPhotoDetailScreen`) hebben dezelfde opbouw en dezelfde fout.
+- **B2. Wat er nu varieert.** Een omschrijving per foto bestaat niet in v2. Het informatieblok toont: wie plaatste, datum · plaats (de plaats kan ontbreken of over twee regels lopen), en "In album(s):" met nul of meer regels. Die albumregels laden per foto apart en komen dus ná het tonen van de foto. Zo verspringt het fotogebied ook bij één foto, zonder te bladeren. Ook de melding na een actie (delen, draaien) staat tussen foto en blok.
+- **B3. Regel.** Het fotogebied verandert alleen bij het draaien van het toestel, een andere venstermaat of een andere tekstgrootte. Niet per foto, niet bij het laden van de albumregels, niet door de melding na een actie. Bij de grootste tekstgrootte, of met veel albums, blijft alle informatie leesbaar of bereikbaar. Er valt niets weg.
+- **B4. Tijdens het laden (invariant 10).** Nu staat er een grijs vlak over het hele gebied, en daarna verschijnt de foto passend (kleiner). De response heeft `width` en `height` (optioneel; de opgeslagen pixels, vóór de EXIF-draaiing). Alle gemigreerde foto's en alle HEIC-uploads missen ze (`scripts/migrate/transform.ts`, `convex/photoMetadata.ts`), dus op prod bijna elke foto. De neutrale laad-toestand is daarom de gewone. De vorm van de foto mag alleen als `width` en `height` er zijn, met een kwartslag-draaiing meegerekend. Geen backend-wijziging. Alleen het foto-detail: tegels en covers vullen hun vak en houden hun grijze laad-toestand.
+
+### Toetsenbord (C)
+
+Inventaris van de schermen met een tekstveld:
+
+| Scherm | Waar | Velden | Knop |
+|---|---|---|---|
+| Inloggen | uitgelogd, met tabbalk eronder | E-mailadres, daarna Code | "Stuur code", "Log in" |
+| Uitnodigen | modaal | per rij Naam + E-mailadres (meerdere rijen), Bericht (meerregelig) | "Uitnodiging(en) versturen" |
+| Nieuwe groep | modaal | Naam, Omschrijving (meerregelig) | "Groep maken" |
+| Nieuw album | modaal | Naam | "Album maken" |
+| Bewerk groep | stack | Naam, Omschrijving (meerregelig), met cover en datum ertussen | "Bewaar" |
+| Bewerk album | stack | Naam, met cover en datum | "Bewaar" |
+| Profiel | tab | Naam | "Bewaar" |
+| Account verwijderen | Profiel | bevestigingswoord | "Account verwijderen" (WP29 fix-cyclus 3 al opgelost; hier alleen regressie) |
+| Idee / probleem doorgeven | Instellingen | Titel, Omschrijving (meerregelig) | "Idee doorgeven" / "Probleem melden" |
+
+- **C1. Lange formulieren.** Bij Uitnodigen met meer rijen en bij Bewerk groep past niet alles boven het toetsenbord. Daar geldt: het veld waarin getypt wordt staat in beeld, en de knop is te bereiken door te scrollen terwijl het toetsenbord open is. Typt de user in het laatste veld vóór de knop, dan staan veld en knop allebei in beeld (zoals Inloggen, Nieuw album en Profiel).
+- **C2. Meerregelig.** Groeit een meerregelig veld tijdens het typen, dan blijft de regel met de cursor boven het toetsenbord.
+- **C3. Waar het toetsenbord meet.** Een modaal scherm en een scherm met een tabbalk eronder liggen elk anders ten opzichte van het toetsenbord dan een gewoon scherm in de stack. Beide kwamen uit de repetitie. Kijk elk scherm na op de kleinste iPhone die de app ondersteunt en met de grootste tekstgrootte.
+- **C4. Return-toets.** Het gedrag van de return-toets verandert niet in deze WP.
+
+### Open vragen aan regie
+
+1. **Home-knop vanaf een andere tab** (*Mijn foto's*, Profiel, Instellingen). (a) Naar de thuisgroep, zoals de rij "elders" en zoals de oude app. (b) De Home-tab openen zoals je hem verliet, zoals nu. Advies: (a). Dat past bij het productdoel "met de Home-knop direct in de groep". Nadeel: een open album op Home ben je kwijt. De tests volgen (a).
+2. **Wanneer wordt een bezochte groep de thuisgroep?** (a) Meteen: open je groep X, dan is X direct de thuisgroep en toont de knop daar `people`. De rij "andere groep" komt dan bijna niet meer voor. (b) Bij de volgende start: de thuisgroep ligt vast vanaf inloggen of een koude start, en een bezoek telt pas bij de volgende keer. Verlaten of eruit gezet worden telt wel meteen (invariant 8). In X brengt de Home-knop je dan naar je vaste groep. Advies: (b). De tabel noemt "andere groep" als gewone plek, en de knop blijft binnen een sessie voorspelbaar. Invariant 1 kan met beide. De pure tests hangen er niet van af, alleen het doorgeven van de waarde.
