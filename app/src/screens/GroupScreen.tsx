@@ -28,7 +28,8 @@ import {
   useDeparting,
   useNoticeUntilBlur,
 } from "../data/adminState";
-import { forgetLastGroup, saveLastGroup } from "../data/lastGroup";
+import { forgetLastGroup } from "../data/lastGroup";
+import { useMyGroups } from "../data/homeGroupState";
 import { useLiveQuery } from "../data/useLiveQuery";
 import {
   groupRights,
@@ -96,7 +97,7 @@ function GroupContent({ groupId }: { groupId: Id<"groups"> }) {
   // WP17a: met de cover (en zijn draaiing) voor de kop.
   const group = useLiveQuery(api.groups.getWithCover, { groupId });
   // WP28b: je rol voor de knoppen (groups.listMine, vondst 1).
-  const mine = useLiveQuery(api.groups.listMine, {});
+  const mine = useMyGroups();
   const me = useLiveQuery(api.users.profile, {});
   const role = mine?.find((g) => g._id === groupId)?.role;
   const rights =
@@ -104,18 +105,11 @@ function GroupContent({ groupId }: { groupId: Id<"groups"> }) {
   const departing = useDeparting(groupId);
   const notice = useNoticeUntilBlur(`group:${groupId}`);
   const [tab, setTab] = useState<Tab>("albums");
-  const { userId } = useAuth();
   // WP21: de films van je groepen (leeg zonder toegang). Bepaalt of de tab
   // Films er is; de tab zelf speelt niets af.
   const films = useLiveQuery(api.films.list, {});
   const hasFilms = groupHasFilms(films, groupId);
   const shownTab: Tab = tab === "films" && !hasFilms ? "albums" : tab;
-
-  // Beslissing 4: onthouden zodra de groep echt getoond wordt.
-  const shown = group !== undefined && group !== null;
-  useEffect(() => {
-    if (shown && userId) void saveLastGroup(userId, groupId);
-  }, [shown, userId, groupId]);
 
   if (group === null) return departing ? <Departing /> : <NotMember groupId={groupId} />;
 

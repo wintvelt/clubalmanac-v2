@@ -3,7 +3,6 @@ import { useState, type ReactNode } from "react";
 import { StyleSheet, useWindowDimensions, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { Id } from "../../../convex/_generated/dataModel";
-import { BackPill } from "../components/BackPill";
 import { Gradient } from "../components/Gradient";
 import { LetterTile } from "../components/LetterTile";
 import { Notice } from "../components/Notice";
@@ -42,7 +41,8 @@ export type CoverPhoto = { _id: string; exifOrientation?: number; hasFormats?: b
 // De kop van Groep (design.md §5, §7). Met een cover (WP17a): de foto over de
 // volle breedte (*groot*). Zonder cover, of als het beeld niet laadt: de
 // wash-tint met het vlak in het verloop met de eerste letter (WP16 besluit 2).
-// De terugknop-pil staat linksboven onder de statusbalk.
+// Geen terugknop-pil (WP32 invariant 7): Mijn groepen bereik je via de
+// Home-knop; terugvegen vanaf de linkerrand blijft werken.
 export function CoverHeader({ name, cover }: { name?: string; cover?: CoverPhoto | null }) {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
@@ -82,8 +82,8 @@ export function CoverHeader({ name, cover }: { name?: string; cover?: CoverPhoto
         <Gradient from={colors.washStart} to={colors.washEnd} />
       )}
       <View style={styles.coverColumn}>
-        <BackPill title="Mijn groepen" onPress={backToMyGroups} />
-        {/* Zonder cover staat de letter in de flow, onder de pil (WP16). */}
+        {/* WP32 invariant 7: geen terugknop-pil meer; Mijn groepen via de
+            Home-knop. Zonder cover staat de letter in de flow (WP16). */}
         {!cover && tile && <View style={styles.coverTile}>{tile}</View>}
       </View>
     </View>

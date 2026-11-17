@@ -33,7 +33,8 @@ const WHAT_GOES = [
 
 export function DeleteAccountScreen() {
   const deleteSelf = useMutation(api.users.deleteSelf);
-  const { signOut } = useClerk();
+  const clerk = useClerk();
+  const { signOut } = clerk;
   const [typed, setTyped] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(false);
@@ -49,6 +50,9 @@ export function DeleteAccountScreen() {
     inFlight.current = true;
     setBusy(true);
     setError(false);
+    // WP32 A6: de user-id vóór de aanroep vastleggen; daarna kan de sessie al
+    // weg zijn.
+    const userId = clerk.user?.id;
     // Vóór de aanroep: zodra hij lukt, is users.current `null`, en de poort
     // moet dan niet "Je account is nog niet klaar" tonen.
     setAccountDeleting(true);
@@ -62,7 +66,8 @@ export function DeleteAccountScreen() {
       return;
     }
     setAccountDeleted(true);
-    await signOutAndWipe(signOut);
+    // WP32 A6: pas na het gelukte verwijderen de thuisgroep van deze user weg.
+    await signOutAndWipe(signOut, userId);
     setAccountDeleting(false);
   }
 

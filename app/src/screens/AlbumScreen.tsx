@@ -20,6 +20,7 @@ import { useDeparting } from "../data/adminState";
 import { useAuthState } from "../data/authStateContext";
 import { useAppState } from "../data/useAppState";
 import { useSharePhoto } from "../data/share";
+import { useMyGroups } from "../data/homeGroupState";
 import { useLiveQuery } from "../data/useLiveQuery";
 import { groupRights } from "../lib/groupAdmin";
 import { albumMapPath, editAlbumPath, groupPath, photoPath } from "../lib/groupRoutes";
@@ -101,7 +102,7 @@ function AlbumContent({ groupId, albumId }: { groupId: Id<"groups">; albumId: Id
 
   const ctx = useMenuContext(groupId, me?._id);
   // WP28b: "Bewerk album" voor een admin (A-invariant 18).
-  const mine = useLiveQuery(api.groups.listMine, {});
+  const mine = useMyGroups();
   const founderId = mine?.find((g) => g._id === groupId)?.createdBy;
   const canEdit = ctx && founderId ? groupRights({ ...ctx, founderId }).editAlbum : false;
   const [feedback, setFeedback] = useState<Feedback | null>(null);

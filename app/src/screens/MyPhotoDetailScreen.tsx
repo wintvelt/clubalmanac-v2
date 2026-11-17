@@ -4,7 +4,6 @@ import {
   FlatList,
   StyleSheet,
   View,
-  type LayoutChangeEvent,
   type NativeScrollEvent,
   type NativeSyntheticEvent,
 } from "react-native";
@@ -21,7 +20,7 @@ import { formatPhotoDate, nextAfterRemoval } from "../lib/photos";
 import { size, space, useTheme } from "../theme";
 import { LoadError } from "./GroupParts";
 import { MY_PHOTOS_STEP, menuPhotoOf, useMyPhotos, type MyPhoto } from "./MyPhotosScreen";
-import { PhotoAlbums, ZoomablePhoto } from "./PhotoDetailScreen";
+import { PhotoAlbums, PhotoDetailLayout, ZoomablePhoto } from "./PhotoDetailScreen";
 import {
   ActionFeedback,
   SharingProgress,
@@ -99,11 +98,6 @@ function DetailContent({
     if (page && shown && shown.length > 0) flatList.current?.scrollToIndex({ index, animated: false });
   }, [index, page?.width]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const onLayout = (e: LayoutChangeEvent) => {
-    const { width, height } = e.nativeEvent.layout;
-    if (!page || page.width !== width || page.height !== height) setPage({ width, height });
-  };
-
   const onMomentumEnd = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
     if (!page) return;
     const i = Math.round(e.nativeEvent.contentOffset.x / page.width);
@@ -125,9 +119,11 @@ function DetailContent({
       {shown === undefined ? (
         <LoadingState label="Foto laden…" />
       ) : (
-        <>
-          <View style={styles.fill} onLayout={onLayout}>
-            {page && (
+        <PhotoDetailLayout
+          onPage={setPage}
+          scrollKey={feedback ?? menu.sharing}
+          photos={
+            page && (
               <FlatList
                 ref={flatList}
                 data={shown}
@@ -145,21 +141,25 @@ function DetailContent({
                 onEndReachedThreshold={3}
                 renderItem={({ item }) => <ZoomablePhoto photoId={item._id} photo={item} box={page} />}
               />
-            )}
-          </View>
-          {menu.sharing ? (
-            <View style={styles.feedback}>
-              <SharingProgress />
-            </View>
-          ) : (
-            feedback && (
-              <View style={styles.feedback}>
-                <ActionFeedback feedback={feedback} onClose={() => setFeedback(null)} />
-              </View>
             )
-          )}
-          {photo && <PhotoInfo photo={photo} />}
-        </>
+          }
+          below={
+            <>
+              {menu.sharing ? (
+                <View style={styles.feedback}>
+                  <SharingProgress />
+                </View>
+              ) : (
+                feedback && (
+                  <View style={styles.feedback}>
+                    <ActionFeedback feedback={feedback} onClose={() => setFeedback(null)} />
+                  </View>
+                )
+              )}
+              {photo && <PhotoInfo photo={photo} />}
+            </>
+          }
+        />
       )}
     </SafeAreaView>
   );
@@ -167,10 +167,9 @@ function DetailContent({
 
 // Datum en plaats, en in welke albums (geen eigenaar: het is jouw foto).
 function PhotoInfo({ photo }: { photo: MyPhoto }) {
-  const { colors } = useTheme();
   const meta = [formatPhotoDate(photo), photo.locationLabel].filter(Boolean).join(" · ");
   return (
-    <View style={[styles.info, { borderTopColor: colors.line }]}>
+    <View style={styles.info}>
       <View accessible accessibilityLabel={`Jouw foto, ${[formatPhotoDate(photo), photo.locationLabel].filter(Boolean).join(", ")}`}>
         <Text variant="bodyStrong">Jouw foto</Text>
         <Text variant="albumMeta" color="muted">
@@ -188,7 +187,6 @@ const styles = StyleSheet.create({
     gap: space.s,
     paddingHorizontal: size.screenMargin,
     paddingVertical: space.m,
-    borderTopWidth: StyleSheet.hairlineWidth,
   },
   feedback: {
     width: "100%",

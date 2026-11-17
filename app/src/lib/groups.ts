@@ -142,25 +142,6 @@ export function groupErrorKind(error: unknown): GroupErrorKind {
   return (data as { code?: unknown }).code === "NOT_MEMBER" ? "notMember" : "other";
 }
 
-// --- Home (invarianten 6 en 12) ----------------------------------------------------
-
-export type HomeTarget =
-  | { kind: "wait" }
-  | { kind: "group"; groupId: string }
-  | { kind: "myGroups"; forget: boolean };
-
-// Tot bekend is welke groepen je hebt: wachten, geen flits van een oude groep.
-export function homeTarget(input: {
-  lastGroupId: string | null;
-  myGroups: readonly { _id: string }[] | undefined;
-}): HomeTarget {
-  const { lastGroupId, myGroups } = input;
-  if (lastGroupId === null) return { kind: "myGroups", forget: false };
-  if (myGroups === undefined) return { kind: "wait" };
-  if (myGroups.some((g) => g._id === lastGroupId)) return { kind: "group", groupId: lastGroupId };
-  return { kind: "myGroups", forget: true };
-}
-
 // --- Geheugen voor de laatst bezochte groep (invariant 6) ---------------------------
 
 export function encodeLastGroup(userId: string, groupId: string): string {

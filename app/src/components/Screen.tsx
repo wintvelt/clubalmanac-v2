@@ -1,5 +1,6 @@
 import { useContext, useEffect, useRef, type ReactNode } from "react";
-import { KeyboardAvoidingView, ScrollView, StyleSheet, View, type ScrollViewInstance } from "react-native";
+import { KeyboardAvoidingView, ScrollView, StyleSheet, View, type HostInstance, type ScrollViewInstance } from "react-native";
+import { KeyboardRevealContext, keyboardByWindow, useKeyboardReveal } from "./useKeyboardReveal";
 import { HeaderHeightContext } from "expo-router/react-navigation";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { SignOutButton } from "../auth/SignOutButton";
@@ -46,30 +47,45 @@ export function Screen({
   // niet mee, en bleef de onderkant van het formulier onder het toetsenbord.
   const headerHeight = useContext(HeaderHeightContext) ?? 0;
   const scrollRef = useRef<ScrollViewInstance>(null);
+  const outerRef = useRef<HostInstance>(null);
+  const keyboard = useKeyboardReveal(scrollRef, outerRef);
   useEffect(() => {
     if (keepEndInView) scrollRef.current?.scrollToEnd({ animated: true });
   }, [keepEndInView]);
   return (
     <SafeAreaView
+      ref={outerRef}
       edges={header || underHeader ? ["left", "right", "bottom"] : ["top", "left", "right", "bottom"]}
       style={[styles.fill, { backgroundColor: colors[background] }]}
     >
+      {/* WP32: op iOS meet de ScrollView zelf (useKeyboardReveal); de
+          KeyboardAvoidingView blijft voor een ander platform. */}
       <KeyboardAvoidingView
+        enabled={!keyboardByWindow}
         behavior="padding"
         keyboardVerticalOffset={underHeader ? headerHeight : 0}
         style={styles.fill}
       >
         <ScrollView
           ref={scrollRef}
+          onContentSizeChange={keyboard.onContentSizeChange}
+          onScroll={keyboard.onScroll}
+          scrollEventThrottle={32}
           // Het toetsenbord maakt de lijst kleiner: dan opnieuw naar het einde.
           onLayout={() => {
             if (keepEndInView) scrollRef.current?.scrollToEnd({ animated: true });
           }}
           keyboardShouldPersistTaps="handled"
-          contentContainerStyle={[styles.scroll, centered && styles.centered]}
+          contentContainerStyle={[
+            styles.scroll,
+            centered && styles.centered,
+            keyboard.keyboardSpace > 0 && { paddingBottom: space.xxl + keyboard.keyboardSpace },
+          ]}
         >
           {header}
-          <View style={styles.column}>{reconnecting ? <ReconnectingState /> : children}</View>
+          <KeyboardRevealContext.Provider value={keyboard.onFieldFocus}>
+            <View style={styles.column}>{reconnecting ? <ReconnectingState /> : children}</View>
+          </KeyboardRevealContext.Provider>
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>

@@ -1,4 +1,5 @@
 import { restartClerk } from "../data/clerkRestart";
+import { clearLastGroup } from "../data/lastGroup";
 import { wipeClerkStorage } from "./deviceClerkStorage";
 
 // WP13 invarianten 6 + 11: uitloggen laat geen token achter. Clerk beëindigt de
@@ -7,7 +8,15 @@ import { wipeClerkStorage } from "./deviceClerkStorage";
 // Clerk vast zonder sessie: na de wis herstart de app Clerk (herladen), en
 // volgt het inlogscherm. Gedeeld door Uitloggen en Account verwijderen (WP29).
 // `false`: ook het herstarten mislukte.
-export async function signOutAndWipe(signOut: () => Promise<unknown>): Promise<boolean> {
+//
+// WP32 A6: `deletedUserId` alleen na een gelukt "Account verwijderen": dan gaat
+// ook de thuisgroep van die user van het toestel. Gewoon uitloggen wist hem
+// niet.
+export async function signOutAndWipe(
+  signOut: () => Promise<unknown>,
+  deletedUserId?: string | null,
+): Promise<boolean> {
+  if (deletedUserId) await clearLastGroup(deletedUserId);
   let failed = false;
   try {
     await signOut();

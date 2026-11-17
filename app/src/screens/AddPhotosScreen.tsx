@@ -15,6 +15,7 @@ import { EmptyState, LoadingState } from "../components/States";
 import { Text } from "../components/Text";
 import { api } from "../convexApi";
 import { useUploader } from "../data/upload";
+import { useMyGroups } from "../data/homeGroupState";
 import { useLiveQuery } from "../data/useLiveQuery";
 import { albumPath } from "../lib/groupRoutes";
 import {
@@ -446,7 +447,7 @@ function AlbumList({
   selectedId: string | null;
   onSelect: (album: NonNullable<Chosen["album"]>) => void;
 }) {
-  const groups = useLiveQuery(api.groups.listMine, {});
+  const groups = useMyGroups();
   if (groups === undefined) return <LoadingState label="Groepen laden…" />;
   if (groups.length === 0) {
     return <Text color="muted">Je bent nog geen lid van een groep, dus er is geen album om in te uploaden.</Text>;

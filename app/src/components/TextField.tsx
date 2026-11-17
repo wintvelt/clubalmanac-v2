@@ -1,7 +1,8 @@
-import { useState } from "react";
+import { useContext, useState } from "react";
 import { StyleSheet, TextInput, View, type TextInputProps } from "react-native";
 import { border, radius, size, space, typography, useTheme } from "../theme";
 import { Text } from "./Text";
+import { KeyboardRevealContext } from "./useKeyboardReveal";
 
 type Props = Omit<TextInputProps, "style"> & {
   // Altijd zichtbaar boven het veld, ook als het gevuld is.
@@ -15,6 +16,8 @@ type Props = Omit<TextInputProps, "style"> & {
 export function TextField({ label, invalid = false, editable = true, minHeight, onFocus, onBlur, ...rest }: Props) {
   const { colors, scheme } = useTheme();
   const [focused, setFocused] = useState(false);
+  // WP32 invariant 11: het scherm schuift het veld boven het toetsenbord.
+  const reveal = useContext(KeyboardRevealContext);
   const borderColor = invalid ? colors.danger : focused ? colors.primary : colors.fieldLine;
   return (
     <View style={styles.wrap}>
@@ -25,6 +28,7 @@ export function TextField({ label, invalid = false, editable = true, minHeight, 
         editable={editable}
         onFocus={(e) => {
           setFocused(true);
+          reveal?.();
           onFocus?.(e);
         }}
         onBlur={(e) => {
