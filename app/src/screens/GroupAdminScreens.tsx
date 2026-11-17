@@ -19,6 +19,7 @@ import { TextField } from "../components/TextField";
 import { api } from "../convexApi";
 import { clearDeparting, markDeparting, setNotice, useDeparting } from "../data/adminState";
 import { forgetLastGroup } from "../data/lastGroup";
+import { useMyGroups } from "../data/homeGroupState";
 import { useLiveQuery } from "../data/useLiveQuery";
 import {
   changedFields,
@@ -298,7 +299,7 @@ function EditFailed({
 }
 
 function useViewer(groupId: Id<"groups">) {
-  const mine = useLiveQuery(api.groups.listMine, {});
+  const mine = useMyGroups();
   const me = useLiveQuery(api.users.profile, {});
   const group = mine?.find((g) => g._id === groupId);
   if (!me || !group) return undefined;

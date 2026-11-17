@@ -66,6 +66,10 @@ type PhotoProps = {
   // WP20 besluit 10 (N5): nooit op schijf, ook met formaten. Voor een beeld dat
   // de kijker alleen tijdelijk mag hebben (de wachtrij van de webmaster).
   memoryOnly?: boolean;
+  // WP32 invariant 10, B4: tijdens het laden geen grijs vlak over het hele
+  // vak, alleen het beeld-icoon in het midden. Voor het foto-detail, waar het
+  // beeld passend (kleiner dan het vak) verschijnt.
+  neutralLoading?: boolean;
 };
 
 // Een foto, een album- of een groepscover. Tot het beeld er is: een grijs vlak
@@ -81,6 +85,7 @@ export function PhotoImage({
   fallback,
   accessibilityLabel,
   memoryOnly,
+  neutralLoading = false,
 }: PhotoProps) {
   const { colors } = useTheme();
   const [state, setState] = useState<"loading" | "loaded">("loading");
@@ -98,7 +103,11 @@ export function PhotoImage({
         box,
         // Grijs zolang het laadt; daarna niets, zodat een passend beeld (detail)
         // geen grijze balken krijgt.
-        { borderRadius: radius, overflow: "hidden", backgroundColor: state === "loaded" ? "transparent" : colors.line },
+        {
+          borderRadius: radius,
+          overflow: "hidden",
+          backgroundColor: state === "loaded" || neutralLoading ? "transparent" : colors.line,
+        },
       ]}
       accessible={accessibilityLabel !== undefined}
       accessibilityRole={accessibilityLabel !== undefined ? "image" : undefined}

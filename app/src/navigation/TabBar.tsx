@@ -1,9 +1,15 @@
-import { router, usePathname } from "expo-router";
+import { useAuth } from "@clerk/expo";
+import { router, useNavigationContainerRef, usePathname } from "expo-router";
 import type { BottomTabBarProps } from "expo-router/js-tabs";
+import { useRef } from "react";
 import { Pressable, StyleSheet, View } from "react-native";
 import { Gradient } from "../components/Gradient";
 import { Icon, type IconName } from "../components/Icon";
 import { Text } from "../components/Text";
+import { useGroupVisit, useHomeGroup } from "../data/homeGroupState";
+import { homeDecisions, homeSessionKey } from "../lib/homeDecision";
+import { groupPath } from "../lib/groupRoutes";
+import { homeButton, trackTabOrigin, type HomeButtonTarget, type TabOrigin } from "../lib/homeGroup";
 import { albumIdFromPath } from "../lib/upload";
 import { border, plusButton, radius, size, space, useTheme } from "../theme";
 
@@ -34,10 +40,23 @@ export function TabBar({
   plus = true,
 }: BottomTabBarProps & { plus?: boolean }) {
   const { colors } = useTheme();
+  const home = useHomeButton(plus, state, navigateToTab);
 
   const tabs = state.routes.map((route, index) => {
     const meta = TABS[route.name] ?? { label: route.name, icon: "info", weight: 1 };
     const focused = index === state.index;
+    // WP32 invariant 6: de Home-knop heeft een eigen icoon, bestemming en label.
+    if (route.name === HOME && home) {
+      return (
+        <TabItem
+          key={route.key}
+          meta={{ ...meta, icon: home.button.icon }}
+          focused={focused}
+          accessibilityLabel={home.button.accessibilityLabel}
+          onPress={home.onPress}
+        />
+      );
+    }
     // Een tik op de actieve tab brengt de stack van die tab terug naar het
     // begin (de native stack luistert naar tabPress). Een andere tab opent
     // zoals je hem verliet.
@@ -81,17 +100,19 @@ function TabItem({
   meta,
   focused,
   onPress,
+  accessibilityLabel = meta.label,
 }: {
   meta: TabMeta;
   focused: boolean;
   onPress: () => void;
+  accessibilityLabel?: string;
 }) {
   const { colors } = useTheme();
   const tint = focused ? colors.primary : colors.tabInactive;
   return (
     <Pressable
       accessibilityRole="tab"
-      accessibilityLabel={meta.label}
+      accessibilityLabel={accessibilityLabel}
       accessibilityState={{ selected: focused }}
       onPress={onPress}
       style={({ pressed }) => [styles.item, { flex: meta.weight }, pressed && styles.pressed]}
@@ -102,6 +123,70 @@ function TabItem({
       <Label text={meta.label} focused={focused} color={tint} />
     </Pressable>
   );
+}
+
+// --- Home (WP32) ---------------------------------------------------------------
+
+const HOME = "(home)";
+
+type NavState = { key?: string; routes: { name: string; params?: object; state?: NavState }[] };
+
+// De routes van de Home-stack, uit de hele navigatieboom.
+function homeStackRoutes(root: NavState | undefined): NavState["routes"] | undefined {
+  if (!root) return undefined;
+  for (const route of root.routes) {
+    if (route.name === HOME) return route.state?.routes ?? [];
+    const found = homeStackRoutes(route.state);
+    if (found) return found;
+  }
+  return undefined;
+}
+
+// Ingelogd (met +): de thuisgroep, de herkomst op deze tab (besluit 1) en een
+// bezoek (besluit 2). Uitgelogd is er geen Home.
+function useHomeButton(
+  loggedIn: boolean,
+  state: BottomTabBarProps["state"],
+  navigateToTab: BottomTabBarProps["navigateToTab"],
+) {
+  const pathname = usePathname();
+  const { userId, sessionId } = useAuth();
+  const navigation = useNavigationContainerRef();
+  const visiting = useGroupVisit(loggedIn ? pathname : null);
+  const homeGroup = useHomeGroup(undefined, visiting);
+  // Bijhouden in de render: het label klopt dan meteen bij een nieuw pad.
+  const origin = useRef<TabOrigin>({ pathname: null, cameFrom: null });
+  if (origin.current.pathname !== pathname) origin.current = trackTabOrigin(origin.current, pathname);
+
+  if (!loggedIn) return null;
+  const button = homeButton({ pathname, homeGroup, cameFrom: origin.current.cameFrom });
+  const homeRoute = state.routes.find((r) => r.name === HOME);
+
+  const go = (target: HomeButtonTarget) => {
+    if (target.kind === "none" || !homeRoute) return;
+    // Na een tik op Home kiest Mijn groepen niet alsnog zelf (A2).
+    homeDecisions.markDecided(homeSessionKey(userId, sessionId));
+    const onHome = state.routes[state.index]?.name === HOME;
+    const stack = homeStackRoutes(navigation.getRootState() as NavState | undefined) ?? [];
+    if (!onHome) navigateToTab(homeRoute.key);
+    if (target.kind === "myGroups") {
+      if (stack.length > 1) router.dismissAll();
+      return;
+    }
+    // A3: Mijn groepen met daarop de groepspagina; wat erboven lag gaat weg.
+    const second = stack[1];
+    const groupOnTop =
+      second?.name === "groep/[groupId]/index" &&
+      (second.params as { groupId?: string } | undefined)?.groupId === target.groupId;
+    if (groupOnTop) {
+      if (stack.length > 2) router.dismissTo(groupPath(target.groupId));
+      return;
+    }
+    if (stack.length > 1) router.dismissAll();
+    router.push(groupPath(target.groupId));
+  };
+
+  return { button, onPress: () => go(button.target) };
 }
 
 // Verhoogd, in het verloop. Eén modaal, ook bij dubbel tikken: de route is

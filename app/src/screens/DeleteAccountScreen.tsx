@@ -33,7 +33,8 @@ const WHAT_GOES = [
 
 export function DeleteAccountScreen() {
   const deleteSelf = useMutation(api.users.deleteSelf);
-  const { signOut } = useClerk();
+  const clerk = useClerk();
+  const { signOut } = clerk;
   const [typed, setTyped] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(false);
@@ -62,7 +63,8 @@ export function DeleteAccountScreen() {
       return;
     }
     setAccountDeleted(true);
-    await signOutAndWipe(signOut);
+    // WP32 A6: pas na het gelukte verwijderen de thuisgroep van deze user weg.
+    await signOutAndWipe(signOut, clerk.user?.id);
     setAccountDeleting(false);
   }
 

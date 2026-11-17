@@ -10,23 +10,18 @@ import { Screen } from "../components/Screen";
 import { EmptyState, LoadingState } from "../components/States";
 import { Text } from "../components/Text";
 import { UnreadLabel } from "../components/UnreadLabel";
-import { api } from "../convexApi";
 import { forgetDepartedIn, useNoticeUntilBlur } from "../data/adminState";
-import { forgetLastGroup, loadLastGroup } from "../data/lastGroup";
-import { useLiveQuery } from "../data/useLiveQuery";
+import { useHomeGroup, useMyGroups, type MyGroup } from "../data/homeGroupState";
 import { groupPath, newGroupPath } from "../lib/groupRoutes";
 import { homeDecisions, homeSessionKey } from "../lib/homeDecision";
-import { displayYear, homeTarget, roleLabel, sortMyGroups, unreadBadge } from "../lib/groups";
+import { displayYear, roleLabel, sortMyGroups, unreadBadge } from "../lib/groups";
 import { radius, size, space, useTheme } from "../theme";
-import type { FunctionReturnType } from "convex/server";
 import { GroupCoverTile, LargeTitleHeader, LoadError } from "./GroupParts";
-
-type MyGroup = FunctionReturnType<typeof api.groups.listMine>[number];
 
 // WP16: Mijn groepen, de wortel van de Home-stack. Per groep naam, "Sinds
 // <jaar>", je rol en de teller van de backend (besluit 4, invariant 10).
 // Bij een koude start en na inloggen kiest dit scherm één keer de Home-stack
-// (§Routes): met de laatst bezochte groep erop, als je daar nog lid van bent.
+// (§Routes): met de thuisgroep erop, als er een is (WP32 invariant 5).
 export function MyGroupsScreen() {
   return (
     <Screen header={<LargeTitleHeader title="Mijn groepen" />}>
@@ -38,7 +33,7 @@ export function MyGroupsScreen() {
 }
 
 function MyGroupsList() {
-  const groups = useLiveQuery(api.groups.listMine, {});
+  const groups = useMyGroups();
   const homeReady = useHomeDecision(groups);
   // WP28b: na verlaten of groep verwijderen (A-keuze 7).
   const notice = useNoticeUntilBlur("myGroups");
@@ -78,45 +73,39 @@ function MyGroupsList() {
   );
 }
 
-// Home kiest één keer per sessie (invariant 12). Het geheugen daarvan staat in
-// homeDecisions, buiten dit scherm: een remount na "reconnecting" of na
-// "Opnieuw" in de foutgrens kiest niet nog eens (fix-cyclus 1, S1). Een nieuwe
-// Clerk-sessie kiest opnieuw, met het geheugen van die user (invariant 6).
-// Opent een deep link een ander scherm boven dit scherm, dan kiest Home niets.
+// Home kiest één keer per sessie (WP16 invariant 12, WP32 invariant 5 en A2).
+// Het geheugen daarvan staat in homeDecisions, buiten dit scherm: een remount
+// na "reconnecting" of na "Opnieuw" in de foutgrens kiest niet nog eens
+// (fix-cyclus 1, S1). Een nieuwe Clerk-sessie kiest opnieuw, met de
+// thuisgroep van die user. Tot de opgeslagen waarde gelezen is én de lijst er
+// is: laden, geen flits. Opent een deep link een ander scherm boven dit
+// scherm, dan kiest Home niets.
 function useHomeDecision(groups: MyGroup[] | undefined): boolean {
   const { userId, sessionId } = useAuth();
   const sessionKey = homeSessionKey(userId, sessionId);
   const focused = useIsFocused();
-  // undefined: nog niet gelezen.
-  const [lastGroupId, setLastGroupId] = useState<string | null | undefined>(undefined);
+  const home = useHomeGroup(groups ?? []);
   // "pushing": de groep gaat erop. Tot hij dit scherm bedekt, blijft het
-  // laden staan, anders flitst de lijst nog even (invariant 12).
+  // laden staan, anders flitst de lijst nog even.
   const [phase, setPhase] = useState<"deciding" | "pushing" | "done">(() =>
     homeDecisions.isDecided(sessionKey) ? "done" : "deciding",
   );
   const decided = phase !== "deciding";
+  // Zonder lijst is de thuisgroep nog onbekend (useHomeGroup kreeg [] mee).
+  const target = decided || groups === undefined || home.kind === "unknown" ? null : home;
 
   useEffect(() => {
-    let current = true;
-    if (!userId) setLastGroupId(null);
-    else void loadLastGroup(userId).then((id) => current && setLastGroupId(id));
-    return () => {
-      current = false;
-    };
-  }, [userId]);
-
-  const target = decided || lastGroupId === undefined ? null : homeTarget({ lastGroupId, myGroups: groups });
-
-  useEffect(() => {
-    if (target === null || target.kind === "wait") return;
+    if (target === null) return;
+    // De Home-knop kan intussen al gekozen hebben.
+    if (homeDecisions.isDecided(sessionKey)) {
+      setPhase("done");
+      return;
+    }
     homeDecisions.markDecided(sessionKey);
     if (target.kind === "group" && focused) {
       router.push(groupPath(target.groupId));
       setPhase("pushing");
       return;
-    }
-    if (target.kind === "myGroups" && target.forget && userId && lastGroupId) {
-      void forgetLastGroup(userId, lastGroupId);
     }
     setPhase("done");
   }, [target?.kind, target?.kind === "group" ? target.groupId : null]); // eslint-disable-line react-hooks/exhaustive-deps

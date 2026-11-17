@@ -1,6 +1,6 @@
 import type { FunctionReturnType } from "convex/server";
 import { router, Stack, useLocalSearchParams } from "expo-router";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   FlatList,
   Pressable,
@@ -11,6 +11,7 @@ import {
   type LayoutChangeEvent,
   type NativeScrollEvent,
   type NativeSyntheticEvent,
+  type ScrollViewInstance,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import type { Id } from "../../../convex/_generated/dataModel";
@@ -135,11 +136,6 @@ function DetailContent({
     if (page && shown && shown.length > 0) list.current?.scrollToIndex({ index, animated: false });
   }, [index, page?.width]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const onLayout = (e: LayoutChangeEvent) => {
-    const { width, height } = e.nativeEvent.layout;
-    if (!page || page.width !== width || page.height !== height) setPage({ width, height });
-  };
-
   const onMomentumEnd = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
     if (!page) return;
     const i = Math.round(e.nativeEvent.contentOffset.x / page.width);
@@ -161,9 +157,11 @@ function DetailContent({
       {shown === undefined ? (
         <LoadingState label="Foto laden…" />
       ) : (
-        <>
-          <View style={styles.fill} onLayout={onLayout}>
-            {page && (
+        <PhotoDetailLayout
+          onPage={setPage}
+          scrollKey={feedback ?? menu.sharing}
+          photos={
+            page && (
               <FlatList
                 ref={list}
                 data={shown}
@@ -179,23 +177,91 @@ function DetailContent({
                 onMomentumScrollEnd={onMomentumEnd}
                 renderItem={({ item }) => <ZoomablePhoto photoId={item.albumPhoto.photoId} photo={item.photo} box={page} />}
               />
-            )}
-          </View>
-          {menu.sharing ? (
-            <View style={styles.feedback}>
-              <SharingProgress />
-            </View>
-          ) : (
-            feedback && (
-              <View style={styles.feedback}>
-                <ActionFeedback feedback={feedback} onClose={() => setFeedback(null)} />
-              </View>
             )
-          )}
-          {entry && <PhotoInfo entry={entry} />}
-        </>
+          }
+          below={
+            <>
+              {menu.sharing ? (
+                <View style={styles.feedback}>
+                  <SharingProgress />
+                </View>
+              ) : (
+                feedback && (
+                  <View style={styles.feedback}>
+                    <ActionFeedback feedback={feedback} onClose={() => setFeedback(null)} />
+                  </View>
+                )
+              )}
+              {entry && <PhotoInfo entry={entry} />}
+            </>
+          }
+        />
       )}
     </SafeAreaView>
+  );
+}
+
+// WP32 invariant 9 en 10, B1–B3: het fotogebied heeft een vaste maat, die
+// alleen meeverandert met de venstermaat en de tekstgrootte. Eronder een eigen
+// scrollgebied voor de melding na een actie en het informatieblok: hoe hoog
+// dat ook wordt (albumregels die later laden, een plaats over twee regels,
+// grote tekst), de foto verspringt niet en er valt niets weg.
+// WP17c: ook voor het detail in Mijn foto's.
+export function photoInfoHeight(areaHeight: number, fontScale: number): number {
+  return Math.round(Math.min(areaHeight * 0.5, Math.max(areaHeight * 0.22, INFO_BASE_HEIGHT * fontScale)));
+}
+
+// Avatar, naam, datum · plaats en één albumregel bij de gewone tekstgrootte.
+const INFO_BASE_HEIGHT = 150;
+
+export function PhotoDetailLayout({
+  photos,
+  below,
+  onPage,
+  scrollKey,
+}: {
+  photos: ReactNode;
+  below: ReactNode;
+  // De maat van het fotogebied, voor de pagina's van de lijst.
+  onPage: (page: { width: number; height: number }) => void;
+  // Verandert dit (een nieuwe melding), dan scrolt het blok naar boven.
+  scrollKey?: unknown;
+}) {
+  const { colors } = useTheme();
+  const { fontScale } = useWindowDimensions();
+  const [area, setArea] = useState<{ width: number; height: number } | null>(null);
+  const infoScroll = useRef<ScrollViewInstance>(null);
+  const infoHeight = area ? photoInfoHeight(area.height, fontScale) : 0;
+  const box = area ? { width: area.width, height: Math.max(0, area.height - infoHeight) } : null;
+
+  useEffect(() => {
+    if (box) onPage(box);
+  }, [box?.width, box?.height]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    infoScroll.current?.scrollTo({ y: 0, animated: true });
+  }, [scrollKey]);
+
+  const onLayout = (e: LayoutChangeEvent) => {
+    const { width, height } = e.nativeEvent.layout;
+    if (!area || area.width !== width || area.height !== height) setArea({ width, height });
+  };
+
+  return (
+    <View style={styles.fill} onLayout={onLayout}>
+      {box && (
+        <>
+          <View style={box}>{photos}</View>
+          <ScrollView
+            ref={infoScroll}
+            style={[{ height: infoHeight, borderTopColor: colors.line }, styles.infoScroll]}
+            contentContainerStyle={styles.infoScrollContent}
+          >
+            {below}
+          </ScrollView>
+        </>
+      )}
+    </View>
   );
 }
 
@@ -254,6 +320,7 @@ export function ZoomablePhoto({
           hasFormats={photo.hasFormats}
           box={box}
           fit="contain"
+          neutralLoading
         />
       </Pressable>
     </ScrollView>
@@ -262,11 +329,10 @@ export function ZoomablePhoto({
 
 // Eigenaar (avatar via het beeldpad, anders de letter), datum en plaats.
 function PhotoInfo({ entry }: { entry: Shown }) {
-  const { colors } = useTheme();
   const name = entry.owner?.name ?? null;
   const date = formatPhotoDate(entry.photo);
   return (
-    <View style={[styles.infoBlock, { borderTopColor: colors.line }]}>
+    <View style={styles.infoBlock}>
     <View
       style={styles.info}
       accessible
@@ -330,7 +396,9 @@ function PhotoAlbumsContent({ photoId, inset }: { photoId: Id<"photos">; inset: 
 
 const styles = StyleSheet.create({
   fill: { flex: 1 },
-  infoBlock: { borderTopWidth: StyleSheet.hairlineWidth, paddingVertical: space.m, gap: space.s },
+  infoScroll: { flexGrow: 0, flexShrink: 0, borderTopWidth: StyleSheet.hairlineWidth },
+  infoScrollContent: { paddingBottom: space.m },
+  infoBlock: { paddingVertical: space.m, gap: space.s },
   info: {
     flexDirection: "row",
     alignItems: "center",

@@ -8,6 +8,7 @@ import { QueryBoundary } from "../components/QueryBoundary";
 import { EmptyState, LoadingState } from "../components/States";
 import { Text } from "../components/Text";
 import { api } from "../convexApi";
+import { useMyGroups } from "../data/homeGroupState";
 import { useLiveQuery } from "../data/useLiveQuery";
 import { albumChoices } from "../lib/myPhotos";
 import { size, space, useTheme } from "../theme";
@@ -68,7 +69,7 @@ function Choices({
   fromAlbumId?: Id<"albums">;
   onChoose: (albumId: Id<"albums">) => void;
 }) {
-  const groups = useLiveQuery(api.groups.listMine, {});
+  const groups = useMyGroups();
   // Per groep een eigen live query (het aantal groepen wisselt); elke groep
   // meldt zijn albums hier.
   const [byGroup, setByGroup] = useState<ReadonlyMap<string, readonly Album[]>>(new Map());
