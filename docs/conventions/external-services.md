@@ -116,6 +116,8 @@ Beelden lopen via de httpActions `GET /beeld/foto/<photoId>` en `GET /beeld/prof
 
 `picked-quail-97.clerk.accounts.dev` is de dev instance. Free tier vanaf `accounts.clerk.dev` voor signup-mails (geen custom email domain — paid feature, niet nodig voor 16 signups).
 
+**Inloggen op dev:** Apple blokkeert mail van een Clerk-dev-instance naar @me.com/@icloud.com (`dev_email_provider_blocked`; de app toont dan de algemene melding). Op dev daarom alleen `+clerk_test`-adressen met code 424242, zonder mail: `dev1+clerk_test@example.com` (Dev Wouter, meerdere groepen) en `wouter+clerk_test@inc-management.com` (Gate Genodigde, één groep). Een adres hangt aan een Clerk-user; de backend koppelt op de Clerk-ID.
+
 Webmaster-rol via env-var `WEBMASTER_EMAILS` met case-insensitive match (audit-7 fix).
 
 **Prod (WP31):** Clerk Hobby, dus een sessie duurt op prod hooguit 7 dagen; leden loggen wekelijks opnieuw in met een code (W8, langer vraagt Pro). *Test mode* staat op prod permanent aan, zodat de reviewer van Apple inlogt met een `+clerk_test`-adres en code 424242 (W4). Iedereen met zo'n adres krijgt dan een Clerk-account, maar komt zonder uitnodiging de app niet in (WP19b). Het demo-account is lid van alleen de groep Demo. De Clerk-ID's van de 19 leden maakt en controleert `npm run migrate -- clerk-ids` (sleutel `MIGRATE_CLERK_SECRET_KEY_PROD` in `.env.migrate`, na T0 weg); inloggen gaat alleen op de Clerk-ID, het adres wordt niet vergeleken.
