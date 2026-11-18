@@ -198,3 +198,4 @@ Niet getest (simulator en toestel): de plekken van de haptics, welke knoppen kri
 1. **Stretch blijft bij "Beperk beweging"**: hij volgt de vinger en is geen animatie (advies A).
 2. **Tik bij elke gelukte actie met een rode bevestigingsknop** (optie a).
 3. **Geen tik bij andere verzendingen** (idee, probleem, bezwaar).
+4. **Na de audit:** B fixt (1) dat de terugpil op Album met VoiceOver aan niet vervaagt (invariant 14), en (2) dat de eerste swipe in het foto-detail rekent vanaf de echte startpositie (C1). (3) Bij "cover weghalen" geen tik: die actie heeft geen rode knop (besluit 2).
