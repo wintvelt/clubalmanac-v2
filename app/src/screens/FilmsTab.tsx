@@ -2,11 +2,11 @@ import { useAction } from "convex/react";
 import { Image } from "expo-image";
 import { router } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
-import { Pressable, StyleSheet, View } from "react-native";
+import { StyleSheet, View } from "react-native";
 import type { Id } from "../../../convex/_generated/dataModel";
 import { Gradient } from "../components/Gradient";
 import { Icon } from "../components/Icon";
-import { FadeIn, useArrivals, usePressMotion } from "../components/Motion";
+import { AnimatedPressable, FadeIn, PressShade, useArrivals, usePressMotion } from "../components/Motion";
 import Animated from "react-native-reanimated";
 import { Notice } from "../components/Notice";
 import { SmallButton } from "../components/SmallButton";
@@ -106,20 +106,21 @@ function FilmTile({
   }, [film._id, film.hasCover, getCover, onCoverFailed]);
 
   const label = `${film.title}, ${film.year}`;
-  // WP33 invariant 5, B1: de cover zoomt licht in bij indrukken, binnen zijn vak.
+  // WP33 B1 (besluit 5): de kaart krimpt en wordt iets donkerder, de cover
+  // zoomt erin, binnen zijn vak.
   const press = usePressMotion("tile");
   return (
-    <Pressable
+    <AnimatedPressable
       accessibilityRole="button"
       accessibilityLabel={label}
       accessibilityHint="Speelt de film af"
-      onPress={onPress}
+      onPress={press.withRelease(onPress)}
       onPressIn={press.onPressIn}
       onPressOut={press.onPressOut}
-      style={({ pressed }) => [styles.card, { backgroundColor: colors.surface }, pressed && { backgroundColor: colors.line }]}
+      style={[styles.card, { backgroundColor: colors.surface }, press.style]}
     >
       <View style={styles.cover}>
-        <Animated.View style={[StyleSheet.absoluteFill, press.style]}>
+        <Animated.View style={[StyleSheet.absoluteFill, press.coverStyle]}>
           <Gradient from={colors.gradStart} to={colors.gradEnd} radius={radius.albumTile} />
           <View style={styles.coverIcon}>
             <Icon name="film" size={40} color={colors.onGradient} />
@@ -145,7 +146,8 @@ function FilmTile({
           {film.year}
         </Text>
       </View>
-    </Pressable>
+      <PressShade style={press.shadeStyle} radius={radius.albumTile} />
+    </AnimatedPressable>
   );
 }
 

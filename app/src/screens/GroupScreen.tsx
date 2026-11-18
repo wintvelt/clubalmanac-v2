@@ -8,7 +8,7 @@ import type { Id } from "../../../convex/_generated/dataModel";
 import { Button } from "../components/Button";
 import { Icon } from "../components/Icon";
 import { LinkButton } from "../components/LinkButton";
-import { FadeIn, TileZoom, useArrivals, usePressMotion } from "../components/Motion";
+import { AnimatedPressable, FadeIn, PressShade, TileZoom, useArrivals, usePressMotion } from "../components/Motion";
 import { ProfileAvatar } from "../components/Photo";
 import { ListSection } from "../components/ListRow";
 import { Notice } from "../components/Notice";
@@ -249,22 +249,19 @@ function AlbumRow({
 }) {
   const { colors } = useTheme();
   const badge = unreadBadge(unreadCount);
-  // WP33 invariant 5: de cover zoomt licht in bij indrukken.
+  // WP33 B1 (besluit 5): de rij krimpt en wordt iets donkerder, de cover
+  // zoomt erin.
   const press = usePressMotion("tile");
   return (
-    <Pressable
+    <AnimatedPressable
       accessibilityRole="button"
       accessibilityLabel={[name, badge?.accessibilityLabel].filter(Boolean).join(", ")}
-      onPress={onPress}
+      onPress={press.withRelease(onPress)}
       onPressIn={press.onPressIn}
       onPressOut={press.onPressOut}
-      style={({ pressed }) => [
-        styles.card,
-        { backgroundColor: colors.surface },
-        pressed && { backgroundColor: colors.line },
-      ]}
+      style={[styles.card, { backgroundColor: colors.surface }, press.style]}
     >
-      <TileZoom zoom={press.style} size={size.albumTile} radius={radius.albumTile}>
+      <TileZoom zoom={press.coverStyle} size={size.albumTile} radius={radius.albumTile}>
         <AlbumCoverTile
           albumId={albumId}
           coverPhotoId={coverPhotoId}
@@ -280,7 +277,8 @@ function AlbumRow({
         <UnreadLabel count={unreadCount} />
       </View>
       <Icon name="chevron" size={20} color={colors.muted} />
-    </Pressable>
+      <PressShade style={press.shadeStyle} radius={radius.albumTile} />
+    </AnimatedPressable>
   );
 }
 

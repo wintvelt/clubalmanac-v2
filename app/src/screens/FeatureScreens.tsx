@@ -162,7 +162,7 @@ function FeatureCard({
             }
             accessibilityState={{ selected: vote.voted, busy: vote.busy }}
             disabled={vote.busy}
-            onPress={vote.onToggle}
+            onPress={press.withRelease(vote.onToggle)}
             onPressIn={press.onPressIn}
             onPressOut={press.onPressOut}
             hitSlop={space.s}

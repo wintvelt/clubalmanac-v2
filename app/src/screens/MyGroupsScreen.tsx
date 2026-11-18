@@ -1,10 +1,10 @@
 import { useAuth } from "@clerk/expo";
 import { router, useIsFocused } from "expo-router";
 import { useEffect, useState } from "react";
-import { Pressable, StyleSheet, View } from "react-native";
+import { StyleSheet, View } from "react-native";
 import { Icon } from "../components/Icon";
 import { LinkButton } from "../components/LinkButton";
-import { FadeIn, TileZoom, useArrivals, usePressMotion } from "../components/Motion";
+import { AnimatedPressable, FadeIn, PressShade, TileZoom, useArrivals, usePressMotion } from "../components/Motion";
 import { Notice } from "../components/Notice";
 import { QueryBoundary } from "../components/QueryBoundary";
 import { Screen } from "../components/Screen";
@@ -126,22 +126,19 @@ function GroupCard({ group }: { group: MyGroup }) {
   const { colors } = useTheme();
   const meta = `Sinds ${displayYear(group)} · ${roleLabel(group.role)}`;
   const badge = unreadBadge(group.unreadCount);
-  // WP33 invariant 5: de cover zoomt licht in bij indrukken.
+  // WP33 B1 (besluit 5): de kaart krimpt en wordt iets donkerder, de cover
+  // zoomt erin.
   const press = usePressMotion("tile");
   return (
-    <Pressable
+    <AnimatedPressable
       accessibilityRole="button"
       accessibilityLabel={[group.name, meta, badge?.accessibilityLabel].filter(Boolean).join(", ")}
-      onPress={() => router.push(groupPath(group._id))}
+      onPress={press.withRelease(() => router.push(groupPath(group._id)))}
       onPressIn={press.onPressIn}
       onPressOut={press.onPressOut}
-      style={({ pressed }) => [
-        styles.card,
-        { backgroundColor: colors.surface },
-        pressed && { backgroundColor: colors.line },
-      ]}
+      style={[styles.card, { backgroundColor: colors.surface }, press.style]}
     >
-      <TileZoom zoom={press.style} size={size.groupTile} radius={radius.groupPhoto}>
+      <TileZoom zoom={press.coverStyle} size={size.groupTile} radius={radius.groupPhoto}>
         <GroupCoverTile
           groupId={group._id}
           coverPhotoId={group.coverPhotoId}
@@ -158,7 +155,8 @@ function GroupCard({ group }: { group: MyGroup }) {
         <UnreadLabel count={group.unreadCount} />
       </View>
       <Icon name="chevron" size={20} color={colors.muted} />
-    </Pressable>
+      <PressShade style={press.shadeStyle} radius={radius.card} />
+    </AnimatedPressable>
   );
 }
 

@@ -1,10 +1,11 @@
 import type { FunctionReturnType } from "convex/server";
 import { router } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { FlatList, Pressable, StyleSheet, useWindowDimensions, View } from "react-native";
+import { FlatList, StyleSheet, useWindowDimensions, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import type { Id } from "../../../convex/_generated/dataModel";
 import { PhotoImage } from "../components/Photo";
+import { AnimatedPressable, PressShade, usePressMotion } from "../components/Motion";
 import { QueryBoundary } from "../components/QueryBoundary";
 import { Screen } from "../components/Screen";
 import { SegmentedTabs } from "../components/SegmentedTabs";
@@ -318,8 +319,11 @@ function MyTile({
   onPress: () => void;
   onMenu?: () => void;
 }) {
+  // WP33 B2 (besluit 5): de tegel krimpt en wordt iets donkerder, ook tijdens
+  // selecteren en bij lang drukken.
+  const press = usePressMotion("tile");
   return (
-    <Pressable
+    <AnimatedPressable
       accessibilityRole="button"
       accessibilityLabel={`Foto van ${formatPhotoDate(photo)}`}
       accessibilityState={selected === undefined ? undefined : { selected }}
@@ -328,9 +332,11 @@ function MyTile({
       onAccessibilityAction={(e) => {
         if (e.nativeEvent.actionName === "menu") onMenu?.();
       }}
-      onPress={onPress}
+      onPress={press.withRelease(onPress)}
       onLongPress={onMenu}
-      style={({ pressed }) => [{ width: tile, height: tile }, pressed && styles.pressed]}
+      onPressIn={press.onPressIn}
+      onPressOut={press.onPressOut}
+      style={[{ width: tile, height: tile }, press.style]}
     >
       <PhotoImage
         photoId={photo._id as Id<"photos">}
@@ -338,9 +344,11 @@ function MyTile({
         exifOrientation={photo.exifOrientation}
         hasFormats={photo.hasFormats}
         box={{ width: tile, height: tile }}
+        retryPress={press}
       />
       {selected !== undefined && <SelectMark selected={selected} />}
-    </Pressable>
+      <PressShade style={press.shadeStyle} />
+    </AnimatedPressable>
   );
 }
 
@@ -355,5 +363,4 @@ const styles = StyleSheet.create({
   },
   header: { paddingVertical: space.l, gap: space.m },
   barRow: { flexDirection: "row", flexWrap: "wrap", gap: space.s },
-  pressed: { opacity: 0.7 },
 });
