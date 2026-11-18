@@ -11,7 +11,7 @@ import Animated, {
 } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { scheduleOnRN } from "react-native-worklets";
-import { screenReaderOn, useReduceMotion } from "../data/accessibility";
+import { screenReaderOn, useReduceMotion, useScreenReader } from "../data/accessibility";
 import {
   appearFeedback,
   headerFade,
@@ -203,6 +203,8 @@ export function useHeaderItemVisible(): () => boolean {
 
 // Een element in de kop (de pil, de letter-tegel): beweegt met de cover mee,
 // vervaagt en krimpt licht, en is weg voordat het onder de statusbalk komt.
+// Met VoiceOver aan vervaagt het niet: iOS slaat een onzichtbaar element over,
+// en de pil is op Album de enige terugknop (invariant 14, besluit 4).
 export function HeaderItem({ style, children }: { style?: StyleProp<ViewStyle>; children: ReactNode }) {
   const frame = useContext(FrameContext);
   const ref = useRef<HostInstance>(null);
@@ -210,10 +212,12 @@ export function HeaderItem({ style, children }: { style?: StyleProp<ViewStyle>; 
   const offset = frame?.offset ?? null;
   const layout = frame?.layout ?? { height: 0, topInset: 0 };
   const reduceMotion = frame?.reduceMotion ?? true;
+  const screenReader = useScreenReader();
   const animated = useAnimatedStyle(() => {
     const y = offset ? offset.value : 0;
     const m = headerMotion(y, layout, { cover: false, reduceMotion });
-    const f = top === null ? { opacity: 1, scale: 1 } : headerFade(y, top, layout, { reduceMotion });
+    const f =
+      top === null || screenReader ? { opacity: 1, scale: 1 } : headerFade(y, top, layout, { reduceMotion });
     return { opacity: f.opacity, transform: [{ translateY: m.coverTop + y }, { scale: f.scale }] };
   });
   // De plek in rust, ten opzichte van de bovenkant van de kop.
@@ -279,7 +283,10 @@ export function useSwipeInfo(index: number, count: number, pageWidth: number) {
 
   // Voor de horizontale lijst (Animated.FlatList), op de UI-thread.
   const onScroll = useAnimatedScrollHandler({
-    onBeginDrag: () => {
+    onBeginDrag: (e) => {
+      // Bij het openen op een foto komt er geen scroll-gebeurtenis: neem bij
+      // het begin van de swipe de echte positie over (C1, besluit 4).
+      offset.value = e.contentOffset.x;
       swiping.value = true;
     },
     onScroll: (e) => {

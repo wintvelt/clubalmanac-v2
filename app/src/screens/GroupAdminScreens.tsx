@@ -465,8 +465,6 @@ function EditForm({
           try {
             await removeCover();
             setCoverStatus({ kind: "success", text: "Cover weggehaald" });
-            // WP33 invariant 10 (besluit 2, rij "cover weghalen").
-            successTap();
           } catch (error) {
             setCoverStatus({ kind: "error", text: refusalOf(error, texts.cover).text });
           } finally {
