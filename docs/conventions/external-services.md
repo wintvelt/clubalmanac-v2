@@ -204,6 +204,16 @@ Gate-commando's (Wouter, in `app/`, Node 24 actief):
 
 Blokkeert een stap (overeenkomsten, lidmaatschap, Apple-mail met ITMS-code), noteer de letterlijke melding in WP14 §Uitkomsten spike.
 
+#### Lokaal bouwen (WP34)
+
+Een build op de server zelf kost geen EAS-tegoed. In `app/`:
+
+- Bouwen: `eas build -p ios --profile dev --local --output ../builds/<naam>.ipa`. `builds/` is gitignored.
+- Uploaden: `eas submit -p ios --profile dev --path ../builds/<naam>.ipa`. Daarna verder vanaf stap 7 hierboven.
+- **Vereisten**: Xcode, CocoaPods en fastlane (`brew install cocoapods fastlane`).
+- **Apple WWDR G3-tussencertificaat** in de login-keychain. Zonder stopt de build met *"Distribution certificate … hasn't been imported successfully"*. Download `AppleWWDRCAG3.cer` van apple.com/certificateauthority en dubbelklik (Sleutelhangertoegang, login-keychain).
+- `EAS_LOCAL_BUILD_SKIP_CLEANUP=1` alleen bij debuggen: de werkmap in `$TMPDIR/eas-build-local-nodejs/` blijft dan staan en is ±4 GB. Daarna weggooien.
+
 ## AWS (alleen migratie, WP12)
 
 De data-migratie leest de oude AWS-omgeving: DynamoDB-tabel `blob-images-photos-prod` en S3-bucket `blob-images`, beide in **eu-central-1** (Frankfurt). Doel is Convex in eu-west-1 (Dublin).
