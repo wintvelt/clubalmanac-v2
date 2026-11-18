@@ -53,3 +53,6 @@ coverage/
 
 # WP-Design: screenshots oude app met echte data, niet committen (repo is publiek)
 docs/design/oude-app/
+
+# Lokale EAS-builds (eas build --local)
+builds/

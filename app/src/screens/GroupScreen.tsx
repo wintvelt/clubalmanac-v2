@@ -8,6 +8,7 @@ import type { Id } from "../../../convex/_generated/dataModel";
 import { Button } from "../components/Button";
 import { Icon } from "../components/Icon";
 import { LinkButton } from "../components/LinkButton";
+import { FadeIn, TileZoom, useArrivals, usePressMotion } from "../components/Motion";
 import { ProfileAvatar } from "../components/Photo";
 import { ListSection } from "../components/ListRow";
 import { Notice } from "../components/Notice";
@@ -28,6 +29,7 @@ import {
   useDeparting,
   useNoticeUntilBlur,
 } from "../data/adminState";
+import { successTap } from "../data/haptics";
 import { forgetLastGroup } from "../data/lastGroup";
 import { useMyGroups } from "../data/homeGroupState";
 import { useLiveQuery } from "../data/useLiveQuery";
@@ -192,6 +194,8 @@ function NotMember({ groupId }: { groupId: Id<"groups"> }) {
 
 function AlbumsTab({ groupId, canCreate }: { groupId: Id<"groups">; canCreate: boolean }) {
   const albums = useLiveQuery(api.albums.listByGroupWithUnread, { groupId });
+  // WP33 D4: een album dat binnenkomt (ook van een ander lid), fadet in.
+  const arrivals = useArrivals(albums?.map((a) => a._id));
   if (albums === undefined) return <LoadingState label="Albums laden…" />;
   // WP28b: "Nieuw album" op een eigen regel boven de jaren, ook in de lege toestand.
   const create = canCreate ? (
@@ -212,14 +216,15 @@ function AlbumsTab({ groupId, canCreate }: { groupId: Id<"groups">; canCreate: b
         <View key={year} style={styles.year}>
           <YearHeading year={year} />
           {inYear.map((album) => (
-            <AlbumRow
-              key={album._id}
-              albumId={album._id}
-              coverPhotoId={album.coverPhotoId}
-              name={album.name}
-              unreadCount={album.unreadCount}
-              onPress={() => router.push(albumPath(groupId, album._id))}
-            />
+            <FadeIn key={album._id} active={arrivals.has(album._id)}>
+              <AlbumRow
+                albumId={album._id}
+                coverPhotoId={album.coverPhotoId}
+                name={album.name}
+                unreadCount={album.unreadCount}
+                onPress={() => router.push(albumPath(groupId, album._id))}
+              />
+            </FadeIn>
           ))}
         </View>
       ))}
@@ -244,25 +249,31 @@ function AlbumRow({
 }) {
   const { colors } = useTheme();
   const badge = unreadBadge(unreadCount);
+  // WP33 invariant 5: de cover zoomt licht in bij indrukken.
+  const press = usePressMotion("tile");
   return (
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={[name, badge?.accessibilityLabel].filter(Boolean).join(", ")}
       onPress={onPress}
+      onPressIn={press.onPressIn}
+      onPressOut={press.onPressOut}
       style={({ pressed }) => [
         styles.card,
         { backgroundColor: colors.surface },
         pressed && { backgroundColor: colors.line },
       ]}
     >
-      <AlbumCoverTile
-        albumId={albumId}
-        coverPhotoId={coverPhotoId}
-        name={name}
-        size={size.albumTile}
-        radius={radius.albumTile}
-        variant="albumName"
-      />
+      <TileZoom zoom={press.style} size={size.albumTile} radius={radius.albumTile}>
+        <AlbumCoverTile
+          albumId={albumId}
+          coverPhotoId={coverPhotoId}
+          name={name}
+          size={size.albumTile}
+          radius={radius.albumTile}
+          variant="albumName"
+        />
+      </TileZoom>
       <View style={styles.text}>
         {/* Albumnamen breken over regels, nooit afgekapt (design.md §3). */}
         <Text variant="albumName">{name}</Text>
@@ -290,6 +301,8 @@ function MembersTab({ groupId, groupName, founderId }: { groupId: Id<"groups">; 
   const [status, setStatus] = useState<MemberStatus>(null);
   const [busy, setBusy] = useState(false);
   const inFlight = useRef(false);
+  // WP33 D4: een lid dat binnenkomt, fadet in.
+  const arrivals = useArrivals(members?.map((m) => m.membership._id));
 
   if (members === undefined || me === undefined) return <LoadingState label="Leden laden…" />;
   const sections = memberSections(members, { meId: me?._id ?? null, founderId });
@@ -322,13 +335,18 @@ function MembersTab({ groupId, groupName, founderId }: { groupId: Id<"groups">; 
           await removeMember({ groupId, userId: target.userId });
           break;
       }
+      // WP33 invariant 10 (besluit 2): gelukt na een rode bevestigingsknop
+      // (uit de groep halen, verlaten): een tik als de groene melding verschijnt.
+      const tap = confirmation?.destructive === true;
       if (leaving) {
         if (clerkUserId) void forgetLastGroup(clerkUserId, groupId);
         setNotice("myGroups", `Je hebt ${groupName} verlaten`);
         toMyGroups();
+        if (tap) successTap();
         return;
       }
       setStatus({ kind: "success", text: memberSuccess(action, target.name) });
+      if (tap) successTap();
     } catch (error) {
       if (leaving) clearDeparting(groupId);
       setStatus({ kind: "error", text: refusalOf(error, action).text });
@@ -387,17 +405,18 @@ function MembersTab({ groupId, groupName, founderId }: { groupId: Id<"groups">; 
                 ? memberActions(viewer, { userId: m.membership.userId, role: m.membership.role as Role })
                 : [];
               return (
-                <MemberRow
-                  key={m.membership._id}
-                  name={name}
-                  meta={meta}
-                  user={m.user}
-                  onPress={
-                    actions.length > 0 && !busy
-                      ? () => openMenu(actions, { userId: m.membership.userId, name })
-                      : undefined
-                  }
-                />
+                <FadeIn key={m.membership._id} active={arrivals.has(m.membership._id)}>
+                  <MemberRow
+                    name={name}
+                    meta={meta}
+                    user={m.user}
+                    onPress={
+                      actions.length > 0 && !busy
+                        ? () => openMenu(actions, { userId: m.membership.userId, name })
+                        : undefined
+                    }
+                  />
+                </FadeIn>
               );
             })}
           </ListSection>

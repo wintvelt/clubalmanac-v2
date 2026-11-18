@@ -8,6 +8,7 @@ import { Notice } from "../components/Notice";
 import { SmallButton } from "../components/SmallButton";
 import { Text } from "../components/Text";
 import { api } from "../convexApi";
+import { successTap } from "../data/haptics";
 import { useLiveQuery } from "../data/useLiveQuery";
 import { locationPath, myLocationPath, myRotatePath, rotatePath } from "../lib/groupRoutes";
 import { placeShareActions, placeShareLabel, shareNotice, type PlaceShareAction } from "../lib/placeShare";
@@ -161,11 +162,14 @@ export function usePhotoMenu({
     }
   }, [photoIds]);
 
+  // WP33 invariant 10 (besluit 2): `tap` na een rode bevestigingsknop; de
+  // tik komt als de groene melding verschijnt, nooit bij een fout.
   const attempt = useCallback(
-    async (run: () => Promise<unknown>, done: Feedback, failed: Feedback = FAILED) => {
+    async (run: () => Promise<unknown>, done: Feedback, failed: Feedback = FAILED, tap = false) => {
       try {
         await run();
         onFeedback(done);
+        if (tap) successTap();
       } catch {
         onFeedback(failed);
       }
@@ -250,24 +254,25 @@ export function usePhotoMenu({
           return;
         }
         case "removeFromAlbum": {
-          const run = () => void attempt(() => removeFromAlbum({ albumId, photoId }), SUCCESS.removeFromAlbum);
+          const run = (confirmed: boolean) =>
+            void attempt(() => removeFromAlbum({ albumId, photoId }), SUCCESS.removeFromAlbum, FAILED, confirmed);
           // Besluit 3: alleen bij de foto van een ander; die zet alleen de eigenaar terug.
           if (ctx && photo.ownerId !== ctx.me) {
             confirm(
               "Uit dit album halen?",
               "Dit is de foto van een ander. Alleen de eigenaar kan hem weer in het album zetten.",
               "Uit album halen",
-              run,
+              () => run(true),
             );
           } else {
-            run();
+            run(false);
           }
           return;
         }
         case "delete":
           // Invariant 2: altijd eerst vragen, en zeggen wat er weggaat.
           confirm("Foto overal verwijderen?", deleteWhat(1), "Verwijderen", () =>
-            void attempt(() => removePhoto({ photoId }), SUCCESS.delete),
+            void attempt(() => removePhoto({ photoId }), SUCCESS.delete, FAILED, true),
           );
           return;
         case "flag":
@@ -276,7 +281,7 @@ export function usePhotoMenu({
             "Foto melden als ongepast?",
             "De eigenaar krijgt hiervan bericht, zonder jouw naam. Maakt de eigenaar geen bezwaar, dan wordt de foto na 14 dagen verwijderd.",
             "Melden",
-            () => void attempt(() => flagPhoto({ photoId }), SUCCESS.flag, FLAG_FAILED),
+            () => void attempt(() => flagPhoto({ photoId }), SUCCESS.flag, FLAG_FAILED, true),
           );
           return;
       }
@@ -360,7 +365,9 @@ export function useSelectionActions({
       if (action === "addToAlbum" && !target) return;
       onFeedback(null);
       const plan = selectionPlan(action, selected, ctx);
-      const finish = async () => {
+      // WP33 invariant 10 (besluit 2): na een rode bevestigingsknop een tik,
+      // alleen als alles lukte (deels mislukt: geen tik).
+      const finish = async (confirmed = false) => {
         if (busy.current) return;
         busy.current = true;
         onBusyChange?.(true);
@@ -386,7 +393,7 @@ export function useSelectionActions({
         }
         const done = plan.allowed.length - failed - alreadyIn;
         const summary = selectionSummary(action, { done, notAllowed: plan.notAllowed.length, failed, alreadyIn });
-        onFeedback(
+        const feedback: Feedback =
           summary === null
             ? { kind: "success", title: `${photos(done)} ${DONE[action]}` }
             : {
@@ -394,8 +401,9 @@ export function useSelectionActions({
                 kind: failed > 0 || plan.notAllowed.length > 0 ? "error" : "success",
                 title: done > 0 ? `${photos(done)} ${DONE[action]}` : "Er is niets veranderd",
                 message: summary,
-              },
-        );
+              };
+        onFeedback(feedback);
+        if (confirmed && feedback.kind === "success" && done > 0) successTap();
         onDone();
       };
       if (plan.allowed.length === 0) {
@@ -410,7 +418,7 @@ export function useSelectionActions({
       if (action === "delete") {
         const rest = notMine > 0 ? ` ${photos(notMine)} van anderen blijven staan.` : "";
         const n = plan.allowed.length;
-        confirm(`${photos(n)} overal verwijderen?`, `${deleteWhat(n)}${rest}`, "Verwijderen", () => void finish());
+        confirm(`${photos(n)} overal verwijderen?`, `${deleteWhat(n)}${rest}`, "Verwijderen", () => void finish(true));
         return;
       }
       // Besluit 3: bevestigen als er een foto van een ander bij zit.
@@ -420,7 +428,7 @@ export function useSelectionActions({
           `${photos(plan.allowed.length)} uit dit album halen?`,
           `Daarbij ${othersAllowed === 1 ? "is 1 foto" : `zijn ${othersAllowed} foto's`} van een ander. Alleen de eigenaar kan die weer in het album zetten.`,
           "Uit album halen",
-          () => void finish(),
+          () => void finish(true),
         );
         return;
       }

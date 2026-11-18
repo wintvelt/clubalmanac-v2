@@ -2,7 +2,7 @@ import type { FunctionReturnType } from "convex/server";
 import { router, Stack, useLocalSearchParams } from "expo-router";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
-  FlatList,
+  type FlatList,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -13,8 +13,10 @@ import {
   type NativeSyntheticEvent,
   type ScrollViewInstance,
 } from "react-native";
+import Animated from "react-native-reanimated";
 import { SafeAreaView } from "react-native-safe-area-context";
 import type { Id } from "../../../convex/_generated/dataModel";
+import { useSwipeInfo } from "../components/Motion";
 import { PhotoImage, ProfileAvatar } from "../components/Photo";
 import { QueryBoundary } from "../components/QueryBoundary";
 import { Screen } from "../components/Screen";
@@ -131,6 +133,10 @@ function DetailContent({
     exifOrientation: entry.photo.exifOrientation,
   };
   const hasActions = menu.hasActions(menuPhoto);
+  // WP33 invariant 7: het informatieblok vervaagt mee met de swipe en toont
+  // de gegevens van de foto die het dichtst bij is (C1–C3).
+  const swipe = useSwipeInfo(index, ids.length, page?.width ?? 0);
+  const infoEntry = shown?.[swipe.infoIndex] ?? entry;
 
   useEffect(() => {
     if (page && shown && shown.length > 0) list.current?.scrollToIndex({ index, animated: false });
@@ -162,9 +168,11 @@ function DetailContent({
           scrollKey={feedback ?? menu.sharing}
           photos={
             page && (
-              <FlatList
+              <Animated.FlatList
                 ref={list}
                 data={shown}
+                onScroll={swipe.onScroll}
+                scrollEventThrottle={16}
                 horizontal
                 pagingEnabled
                 showsHorizontalScrollIndicator={false}
@@ -192,7 +200,11 @@ function DetailContent({
                   </View>
                 )
               )}
-              {entry && <PhotoInfo entry={entry} />}
+              {infoEntry && (
+                <Animated.View style={swipe.infoStyle}>
+                  <PhotoInfo entry={infoEntry} />
+                </Animated.View>
+              )}
             </>
           }
         />

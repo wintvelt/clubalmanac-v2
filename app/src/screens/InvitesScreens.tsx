@@ -10,6 +10,7 @@ import { InviteCover } from "../components/InviteCover";
 import { LetterTile } from "../components/LetterTile";
 import { LinkButton } from "../components/LinkButton";
 import { ListSection } from "../components/ListRow";
+import { FadeIn, useArrivals } from "../components/Motion";
 import { Notice } from "../components/Notice";
 import { ProfileAvatar } from "../components/Photo";
 import { Screen } from "../components/Screen";
@@ -18,6 +19,7 @@ import { EmptyState, LoadingState } from "../components/States";
 import { Text } from "../components/Text";
 import { TextField } from "../components/TextField";
 import { api } from "../convexApi";
+import { successTap } from "../data/haptics";
 import { useLiveQuery } from "../data/useLiveQuery";
 import { groupPath, invitePath } from "../lib/groupRoutes";
 import {
@@ -121,6 +123,8 @@ export function InviteScreen() {
       setSent(ok);
       if (left.length === 0) setMessage("");
       setBusy(false);
+      // WP33 invariant 10: de groene melding verschijnt, ook als andere rijen mislukten.
+      if (ok > 0) successTap();
     });
 
   return (
@@ -205,6 +209,8 @@ export function InvitedSection({ groupId }: { groupId: Id<"groups"> }) {
   const remove = useMutation(api.invites.remove);
   const [status, setStatus] = useState<{ kind: "error" | "success"; text: string } | null>(null);
   const once = useOnce();
+  // WP33 D4: een uitnodiging die binnenkomt, fadet in.
+  const arrivals = useArrivals(invites?.map((i) => i._id));
 
   if (invites === undefined || invites.length === 0) {
     return (
@@ -223,6 +229,8 @@ export function InvitedSection({ groupId }: { groupId: Id<"groups"> }) {
       try {
         await remove({ inviteId: invite._id });
         setStatus({ kind: "success", text: `De uitnodiging aan ${who} is ingetrokken.` });
+        // WP33 invariant 10 (besluit 2): gelukt na een rode bevestigingsknop.
+        successTap();
       } catch (error) {
         setStatus({ kind: "error", text: inviteRefusalText(error, "remove") });
       }
@@ -236,7 +244,9 @@ export function InvitedSection({ groupId }: { groupId: Id<"groups"> }) {
       {status && <Notice kind={status.kind} message={status.text} />}
       <ListSection>
         {invites.map((invite) => (
-          <PendingRow key={invite._id} invite={invite} onPress={() => void withdraw(invite)} />
+          <FadeIn key={invite._id} active={arrivals.has(invite._id)}>
+            <PendingRow invite={invite} onPress={() => void withdraw(invite)} />
+          </FadeIn>
         ))}
       </ListSection>
       <LinkButton title="Uitnodigen" icon="mail" onPress={() => router.push(invitePath(groupId))} />
@@ -287,6 +297,8 @@ export function ReceivedInvitesScreen() {
   const [status, setStatus] = useState<{ kind: "error" | "success"; text: string } | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const once = useOnce();
+  // WP33 D4: een uitnodiging die binnenkomt, fadet in.
+  const arrivals = useArrivals(invites?.map((i) => i._id));
 
   if (invites === undefined) return <LoadingState label="Uitnodigingen laden…" />;
 
@@ -302,6 +314,8 @@ export function ReceivedInvitesScreen() {
         } else {
           await decline({ inviteId: invite._id });
           setStatus({ kind: "success", text: `Je hebt de uitnodiging voor ${invite.group.name} afgewezen.` });
+          // WP33 invariant 10 (besluit 2): gelukt na een rode bevestigingsknop.
+          successTap();
         }
       } catch (error) {
         setStatus(
@@ -321,14 +335,15 @@ export function ReceivedInvitesScreen() {
         <EmptyState icon="mail" title="Geen uitnodigingen" text="Als iemand je uitnodigt voor een groep, zie je dat hier." />
       ) : (
         invites.map((invite) => (
-          <ReceivedCard
-            key={invite._id}
-            invite={invite}
-            busy={busyId === invite._id}
-            disabled={busyId !== null}
-            onAccept={() => void act(invite, "accept")}
-            onDecline={() => void act(invite, "decline")}
-          />
+          <FadeIn key={invite._id} active={arrivals.has(invite._id)}>
+            <ReceivedCard
+              invite={invite}
+              busy={busyId === invite._id}
+              disabled={busyId !== null}
+              onAccept={() => void act(invite, "accept")}
+              onDecline={() => void act(invite, "decline")}
+            />
+          </FadeIn>
         ))
       )}
     </Screen>

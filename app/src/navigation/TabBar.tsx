@@ -5,7 +5,9 @@ import { useRef } from "react";
 import { Pressable, StyleSheet, View } from "react-native";
 import { Gradient } from "../components/Gradient";
 import { Icon, type IconName } from "../components/Icon";
+import { AnimatedPressable, usePressMotion } from "../components/Motion";
 import { Text } from "../components/Text";
+import { successTap } from "../data/haptics";
 import { useGroupVisit, useHomeGroup } from "../data/homeGroupState";
 import { homeDecisions, homeSessionKey } from "../lib/homeDecision";
 import { groupPath } from "../lib/groupRoutes";
@@ -164,6 +166,9 @@ function useHomeButton(
 
   const go = (target: HomeButtonTarget) => {
     if (target.kind === "none" || !homeRoute) return;
+    // WP33 invariant 10: Home gaat naar een ander scherm; op Mijn groepen zelf
+    // doet Home niets, en tikt dus ook niet.
+    successTap();
     // Na een tik op Home kiest Mijn groepen niet alsnog zelf (A2).
     homeDecisions.markDecided(homeSessionKey(userId, sessionId));
     const onHome = state.routes[state.index]?.name === HOME;
@@ -195,15 +200,19 @@ function useHomeButton(
 function PlusButton() {
   const { colors, scheme } = useTheme();
   const pathname = usePathname();
+  // WP33 invariant 6: de +-knop krimpt bij indrukken.
+  const press = usePressMotion("button");
   return (
-    <Pressable
+    <AnimatedPressable
       accessibilityRole="button"
       accessibilityLabel="Foto's toevoegen"
       onPress={() => {
         const albumId = albumIdFromPath(pathname);
         router.push(albumId ? { pathname: "/toevoegen", params: { albumId } } : "/toevoegen");
       }}
-      style={({ pressed }) => [styles.item, { flex: PLUS_WEIGHT }, pressed && styles.pressed]}
+      onPressIn={press.onPressIn}
+      onPressOut={press.onPressOut}
+      style={[styles.item, { flex: PLUS_WEIGHT }, press.dim && styles.pressed, press.style]}
     >
       {/* Geen rand en geen achtergrond op dit vlak: een rand verschuift het
           verloop (absoluteFill begint binnen de rand) en een effen kleur komt
@@ -215,7 +224,7 @@ function PlusButton() {
         <Icon name="plus" size={34} color={colors.onGradient} filled />
       </View>
       <Label text="Toevoegen" focused={false} color={colors.tabInactive} />
-    </Pressable>
+    </AnimatedPressable>
   );
 }
 

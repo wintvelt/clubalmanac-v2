@@ -1,28 +1,36 @@
-import { Pressable, StyleSheet, View } from "react-native";
+import { StyleSheet, View } from "react-native";
 import { photoLayers, radius, size, space } from "../theme";
 import { Icon } from "./Icon";
+import { AnimatedPressable, useHeaderItemVisible, usePressMotion } from "./Motion";
 import { Text } from "./Text";
 
 type Props = { title: string; onPress: () => void };
 
 // Terugknop op een cover (design.md §7): een zwevende pil linksboven, onder de
 // statusbalk, minstens 44 pt hoog, wit op de pil-laag (§2). VoiceOver leest
-// "Terug naar <scherm>" (§9).
+// "Terug naar <scherm>" (§9). WP33: krimpt bij indrukken; vervaagd in de kop
+// doet een tik niets (A3), VoiceOver bedient hem wel.
 export function BackPill({ title, onPress }: Props) {
+  const press = usePressMotion("button");
+  const visible = useHeaderItemVisible();
   return (
-    <Pressable
+    <AnimatedPressable
       accessibilityRole="button"
       accessibilityLabel={`Terug naar ${title}`}
-      onPress={onPress}
+      onPress={() => {
+        if (visible()) onPress();
+      }}
+      onPressIn={press.onPressIn}
+      onPressOut={press.onPressOut}
       hitSlop={space.xs}
-      style={({ pressed }) => [styles.pill, pressed && styles.pressed]}
+      style={[styles.pill, press.dim && styles.pressed, press.style]}
     >
       <View style={[StyleSheet.absoluteFill, styles.layer]} />
       <Icon name="back" size={20} color={photoLayers.text} />
       <Text variant="backPill" style={styles.text}>
         {title}
       </Text>
-    </Pressable>
+    </AnimatedPressable>
   );
 }
 

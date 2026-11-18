@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { Pressable, StyleSheet, View } from "react-native";
 import { Icon } from "../components/Icon";
 import { LinkButton } from "../components/LinkButton";
+import { FadeIn, TileZoom, useArrivals, usePressMotion } from "../components/Motion";
 import { Notice } from "../components/Notice";
 import { QueryBoundary } from "../components/QueryBoundary";
 import { Screen } from "../components/Screen";
@@ -37,6 +38,8 @@ function MyGroupsList() {
   const homeReady = useHomeDecision(groups);
   // WP28b: na verlaten of groep verwijderen (A-keuze 7).
   const notice = useNoticeUntilBlur("myGroups");
+  // WP33 D4: een groep die binnenkomt, fadet in.
+  const arrivals = useArrivals(groups?.map((g) => g._id));
   // Een groep die hier weer staat (nieuwe uitnodiging), is niet meer vertrokken.
   useEffect(() => {
     if (groups) forgetDepartedIn(groups.map((g) => g._id));
@@ -67,7 +70,9 @@ function MyGroupsList() {
     <View style={styles.list}>
       {top}
       {sortMyGroups(groups).map((group) => (
-        <GroupCard key={group._id} group={group} />
+        <FadeIn key={group._id} active={arrivals.has(group._id)}>
+          <GroupCard group={group} />
+        </FadeIn>
       ))}
     </View>
   );
@@ -121,24 +126,30 @@ function GroupCard({ group }: { group: MyGroup }) {
   const { colors } = useTheme();
   const meta = `Sinds ${displayYear(group)} · ${roleLabel(group.role)}`;
   const badge = unreadBadge(group.unreadCount);
+  // WP33 invariant 5: de cover zoomt licht in bij indrukken.
+  const press = usePressMotion("tile");
   return (
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={[group.name, meta, badge?.accessibilityLabel].filter(Boolean).join(", ")}
       onPress={() => router.push(groupPath(group._id))}
+      onPressIn={press.onPressIn}
+      onPressOut={press.onPressOut}
       style={({ pressed }) => [
         styles.card,
         { backgroundColor: colors.surface },
         pressed && { backgroundColor: colors.line },
       ]}
     >
-      <GroupCoverTile
-        groupId={group._id}
-        coverPhotoId={group.coverPhotoId}
-        name={group.name}
-        size={size.groupTile}
-        radius={radius.groupPhoto}
-      />
+      <TileZoom zoom={press.style} size={size.groupTile} radius={radius.groupPhoto}>
+        <GroupCoverTile
+          groupId={group._id}
+          coverPhotoId={group.coverPhotoId}
+          name={group.name}
+          size={size.groupTile}
+          radius={radius.groupPhoto}
+        />
+      </TileZoom>
       <View style={styles.text}>
         <Text variant="groupName">{group.name}</Text>
         <Text variant="meta" color="muted">

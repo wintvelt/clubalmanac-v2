@@ -16,6 +16,7 @@ import { Text } from "../components/Text";
 import { api } from "../convexApi";
 import { useAuthState } from "../data/authStateContext";
 import { useLiveQuery } from "../data/useLiveQuery";
+import { successTap } from "../data/haptics";
 import { useLocationDraft } from "../lib/locationDraft";
 import { MIDDLE_NL, spotRegion, type Point } from "../lib/placeShare";
 import { size, space, useTheme } from "../theme";
@@ -115,6 +116,8 @@ function LocationEditor({
           onPress: () => {
             void run(null, { kind: "success", title: "Locatie is weggehaald" }).then((ok) => {
               if (!ok) return;
+              // WP33 invariant 10 (besluit 2): gelukt na de rode bevestigingsknop.
+              successTap();
               // Zonder plek begint de speld in midden-Nederland (useLocationDraft); de kaart gaat mee.
               map.current?.animateToRegion(MIDDLE_NL, 300);
             });

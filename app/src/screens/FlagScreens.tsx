@@ -3,6 +3,7 @@ import type { FunctionReturnType } from "convex/server";
 import { useRef, useState, type ReactNode } from "react";
 import { Alert, StyleSheet, View } from "react-native";
 import { Button } from "../components/Button";
+import { FadeIn, useArrivals } from "../components/Motion";
 import { Notice } from "../components/Notice";
 import { PhotoImage } from "../components/Photo";
 import { QueryBoundary } from "../components/QueryBoundary";
@@ -10,6 +11,7 @@ import { Screen } from "../components/Screen";
 import { EmptyState, LoadingState } from "../components/States";
 import { Text } from "../components/Text";
 import { api } from "../convexApi";
+import { successTap } from "../data/haptics";
 import { useLiveQuery } from "../data/useLiveQuery";
 import { flagDay, flagQueueOrder, flagStage, flagStageLabel, ownFlagView, removalDay, type FlagDates } from "../lib/flags";
 import { radius, space, useTheme } from "../theme";
@@ -87,9 +89,13 @@ function FlagDatesText({ photo, deleteAt }: { photo: FlagDates; deleteAt: number
   );
 }
 
-function Card({ children }: { children: ReactNode }) {
+function Card({ children, fadeIn = false }: { children: ReactNode; fadeIn?: boolean }) {
   const { colors } = useTheme();
-  return <View style={[styles.card, { backgroundColor: colors.surface }]}>{children}</View>;
+  return (
+    <FadeIn active={fadeIn} style={[styles.card, { backgroundColor: colors.surface }]}>
+      {children}
+    </FadeIn>
+  );
 }
 
 // --- Eigenaar: "Gemelde foto's" ----------------------------------------------------------
@@ -116,6 +122,8 @@ function MyFlaggedContent() {
   const remove = useMutation(api.photos.remove);
   const [status, setStatus] = useState<Status>(null);
   const { anyBusy, isBusy, run } = useBusy();
+  // WP33 D4: een gemelde foto die binnenkomt, fadet in.
+  const arrivals = useArrivals(photos?.map((p) => p._id));
 
   if (photos === undefined) {
     return (
@@ -148,6 +156,8 @@ function MyFlaggedContent() {
       try {
         await remove({ photoId: p._id });
         setStatus({ kind: "success", text: "De foto is verwijderd." });
+        // WP33 invariant 10: een bevestigde verwijdering is gelukt.
+        successTap();
       } catch {
         setStatus({ kind: "error", text: "De foto is niet verwijderd. Probeer het later opnieuw." });
       }
@@ -168,7 +178,7 @@ function MyFlaggedContent() {
         photos.map((p) => {
           const view = ownFlagView(p);
           return (
-            <Card key={p._id}>
+            <Card key={p._id} fadeIn={arrivals.has(p._id)}>
               <View style={styles.head}>
                 <PhotoImage
                   photoId={p._id}
@@ -256,6 +266,8 @@ function FlagQueueContent() {
   const removeFlagged = useMutation(api.photos.removeFlagged);
   const [status, setStatus] = useState<Status>(null);
   const { anyBusy, isBusy, run } = useBusy();
+  // WP33 D4: een melding die binnenkomt, fadet in.
+  const arrivals = useArrivals(all?.map((p) => p._id));
 
   if (all === undefined) {
     return (
@@ -296,6 +308,8 @@ function FlagQueueContent() {
       try {
         await decide({ photoId: p._id, approve: false });
         setStatus({ kind: "success", text: "Het bezwaar is afgewezen. De eigenaar krijgt een mail." });
+        // WP33 invariant 10 (besluit 2): gelukt na de rode bevestigingsknop.
+        successTap();
       } catch {
         setStatus({ kind: "error", text: "Dat lukte niet. Er is niets veranderd. Probeer het later opnieuw." });
       }
@@ -313,6 +327,8 @@ function FlagQueueContent() {
       try {
         await removeFlagged({ photoId: p._id });
         setStatus({ kind: "success", text: "De foto is verwijderd. De eigenaar krijgt een mail." });
+        // WP33 invariant 10: een bevestigde verwijdering is gelukt.
+        successTap();
       } catch {
         setStatus({ kind: "error", text: "Dat lukte niet. Er is niets veranderd. Probeer het later opnieuw." });
       }
@@ -335,7 +351,7 @@ function FlagQueueContent() {
           const deleteAt = stage === "appealed" ? null : (p.flaggedDeleteDate ?? null);
           const disabledFor = (a: Action) => anyBusy && !isBusy(p._id, a);
           return (
-            <Card key={p._id}>
+            <Card key={p._id} fadeIn={arrivals.has(p._id)}>
               <View style={styles.head}>
                 <PhotoImage
                   photoId={p._id}

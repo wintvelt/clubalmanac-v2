@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Image, StyleSheet, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useClerkWipeFailed, wipeClerkStorage } from "../auth/deviceClerkStorage";
@@ -15,6 +15,7 @@ import { Screen } from "../components/Screen";
 import { Text } from "../components/Text";
 import { TextField } from "../components/TextField";
 import { setAccountDeleted, useAccountDeleted } from "../data/accountDeletion";
+import { successTap } from "../data/haptics";
 import { wipeRetryShown } from "../lib/wipeRetry";
 import { size, space, useTheme } from "../theme";
 
@@ -115,12 +116,23 @@ export function LoginScreen() {
   );
 }
 
+let deletedTapped = false;
+
 // WP29 invariant 7: na Account verwijderen de korte bevestiging. Hij hoort bij
 // de app-sessie, niet bij dit exemplaar van het scherm: rond het uitloggen
 // wordt het inlogscherm weggehaald en opnieuw neergezet (fix-cyclus 3). Hij
 // eindigt pas bij een nieuwe login (startLogin) of een herstart van de app.
 function AccountDeletedNotice() {
   const deleted = useAccountDeleted();
+  // WP33 invariant 10: één tik als de bevestiging verschijnt, ook al wordt
+  // het inlogscherm rond het uitloggen opnieuw neergezet.
+  useEffect(() => {
+    if (!deleted) deletedTapped = false;
+    else if (!deletedTapped) {
+      deletedTapped = true;
+      successTap();
+    }
+  }, [deleted]);
   if (!deleted) return null;
   return <Notice kind="success" message="Je account is verwijderd." />;
 }

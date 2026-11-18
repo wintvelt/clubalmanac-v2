@@ -17,6 +17,7 @@ import { api } from "../convexApi";
 import { useUploader } from "../data/upload";
 import { useMyGroups } from "../data/homeGroupState";
 import { useLiveQuery } from "../data/useLiveQuery";
+import { successTap } from "../data/haptics";
 import { albumPath } from "../lib/groupRoutes";
 import {
   UPLOAD_PARALLEL,
@@ -161,6 +162,10 @@ export function AddPhotosScreen({ albumId }: { albumId?: string }) {
     };
     try {
       await Promise.all(Array.from({ length: UPLOAD_PARALLEL }, worker));
+      // WP33 invariant 10: de groene melding "… toegevoegd aan …" verschijnt
+      // (alle foto's in het album, ook na "Opnieuw"). Deels mislukt: geen tik.
+      const s = batchSummary(itemsRef.current ?? []);
+      if (s.done && s.allInAlbum) successTap();
     } finally {
       running.current = false;
       setBusy(false);

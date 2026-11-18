@@ -60,6 +60,7 @@ WP1-WP4 liepen vóór de formele spec-doc-discipline (geen WP-file). Status uit 
 | Phase 4 Track B | Webapp | — | na T0 (besluit 2026-11-15); oude webapp uit sinds 2026-11-15 |
 | WP31 | Overstap naar prod (fase 5): draaiboek van T-4 weken tot T+30 met schrijfstop, cutover-groep, Clerk pre-create, foto's en data naar prod, App Store-vrijgave op T0, films en controles per stap. A→besluiten→draaiboek→red-team→generale repetitie. | [`WP31-cutover.md`](./WP31-cutover.md) | draft 2026-11-15 |
 | WP32 | Thuisgroep (na inloggen en via Home direct naar de groep die je het laatst bezocht, lokaal opgeslagen) plus twee UI-fixes uit de generale repetitie: foto verspringt bij bladeren, toetsenbord bedekt velden en knoppen. App-WP, vóór de cutover-build. | [`WP32-thuisgroep-ui-fixes.md`](./WP32-thuisgroep-ui-fixes.md) | draft 2026-11-17 |
+| WP33 | Subtiele animaties: groepskop en albumkop bewegen bij scrollen, tegels en knoppen reageren op indrukken, informatieblok vervaagt bij swipen, meldingen en tegels faden in, haptics; uit bij "Beperk beweging". App-WP, vóór de cutover-build. | [`WP33-animaties.md`](./WP33-animaties.md) | draft 2026-11-18 |
 | Phase 5 | Hard cutover | [`WP31-cutover.md`](./WP31-cutover.md) | zie WP31 |
 
 Per WP-start: trigger [`phase-kickoff`](https://github.com/anthropics/claude-code) skill in een regie-sessie, draft-spec hier neerzetten, A→B→audit-flow doorlopen.

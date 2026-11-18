@@ -1,5 +1,6 @@
 import { useContext, useEffect, useRef, type ReactNode } from "react";
-import { KeyboardAvoidingView, ScrollView, StyleSheet, View, type HostInstance, type ScrollViewInstance } from "react-native";
+import { KeyboardAvoidingView, StyleSheet, View, type HostInstance, type ScrollViewInstance } from "react-native";
+import Animated, { useAnimatedRef, useScrollOffset } from "react-native-reanimated";
 import { KeyboardRevealContext, keyboardByWindow, useKeyboardReveal } from "./useKeyboardReveal";
 import { HeaderHeightContext } from "expo-router/react-navigation";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -7,6 +8,7 @@ import { SignOutButton } from "../auth/SignOutButton";
 import { useAuthState, useReconnect } from "../data/authStateContext";
 import { reconnectView } from "../lib/reconnectView";
 import { size, space, useTheme } from "../theme";
+import { ScrollOffsetContext } from "./Motion";
 import { Notice } from "./Notice";
 import { SmallButton } from "./SmallButton";
 import { LoadingState } from "./States";
@@ -47,6 +49,9 @@ export function Screen({
   // niet mee, en bleef de onderkant van het formulier onder het toetsenbord.
   const headerHeight = useContext(HeaderHeightContext) ?? 0;
   const scrollRef = useRef<ScrollViewInstance>(null);
+  // WP33: de scrollpositie op de UI-thread, voor de bewegende kop.
+  const animatedRef = useAnimatedRef<Animated.ScrollView>();
+  const offset = useScrollOffset(animatedRef);
   const outerRef = useRef<HostInstance>(null);
   const keyboard = useKeyboardReveal(scrollRef, outerRef);
   useEffect(() => {
@@ -66,11 +71,15 @@ export function Screen({
         keyboardVerticalOffset={underHeader ? headerHeight : 0}
         style={styles.fill}
       >
-        <ScrollView
-          ref={scrollRef}
+        <Animated.ScrollView
+          ref={(node: ScrollViewInstance | null) => {
+            scrollRef.current = node;
+            animatedRef(node as never);
+          }}
           onContentSizeChange={keyboard.onContentSizeChange}
           onScroll={keyboard.onScroll}
-          scrollEventThrottle={32}
+          // WP33 F3: elk frame, voor de kop.
+          scrollEventThrottle={16}
           // Het toetsenbord maakt de lijst kleiner: dan opnieuw naar het einde.
           onLayout={() => {
             if (keepEndInView) scrollRef.current?.scrollToEnd({ animated: true });
@@ -82,11 +91,11 @@ export function Screen({
             keyboard.keyboardSpace > 0 && { paddingBottom: space.xxl + keyboard.keyboardSpace },
           ]}
         >
-          {header}
+          <ScrollOffsetContext.Provider value={offset}>{header}</ScrollOffsetContext.Provider>
           <KeyboardRevealContext.Provider value={keyboard.onFieldFocus}>
             <View style={styles.column}>{reconnecting ? <ReconnectingState /> : children}</View>
           </KeyboardRevealContext.Provider>
-        </ScrollView>
+        </Animated.ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
   );

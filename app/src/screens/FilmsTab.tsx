@@ -6,6 +6,8 @@ import { Pressable, StyleSheet, View } from "react-native";
 import type { Id } from "../../../convex/_generated/dataModel";
 import { Gradient } from "../components/Gradient";
 import { Icon } from "../components/Icon";
+import { FadeIn, useArrivals, usePressMotion } from "../components/Motion";
+import Animated from "react-native-reanimated";
 import { Notice } from "../components/Notice";
 import { SmallButton } from "../components/SmallButton";
 import { EmptyState } from "../components/States";
@@ -32,6 +34,8 @@ export function FilmsTab({ groupId, films }: { groupId: Id<"groups">; films: Fil
   const onCoverFailed = useCallback((filmId: string) => {
     setFailed((prev) => (prev.has(filmId) ? prev : new Set(prev).add(filmId)));
   }, []);
+  // WP33 D4: een film die binnenkomt, fadet in.
+  const arrivals = useArrivals(films.map((f) => f._id));
   const retryCovers = () => {
     setFailed(new Set());
     setRound((r) => r + 1);
@@ -54,12 +58,13 @@ export function FilmsTab({ groupId, films }: { groupId: Id<"groups">; films: Fil
             {section.title}
           </Text>
           {section.films.map((film) => (
-            <FilmTile
-              key={`${film._id}:${round}`}
-              film={film}
-              onCoverFailed={onCoverFailed}
-              onPress={() => router.push(filmPath(groupId, film._id))}
-            />
+            <FadeIn key={`${film._id}:${round}`} active={arrivals.has(film._id)}>
+              <FilmTile
+                film={film}
+                onCoverFailed={onCoverFailed}
+                onPress={() => router.push(filmPath(groupId, film._id))}
+              />
+            </FadeIn>
           ))}
         </View>
       ))}
@@ -101,32 +106,38 @@ function FilmTile({
   }, [film._id, film.hasCover, getCover, onCoverFailed]);
 
   const label = `${film.title}, ${film.year}`;
+  // WP33 invariant 5, B1: de cover zoomt licht in bij indrukken, binnen zijn vak.
+  const press = usePressMotion("tile");
   return (
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={label}
       accessibilityHint="Speelt de film af"
       onPress={onPress}
+      onPressIn={press.onPressIn}
+      onPressOut={press.onPressOut}
       style={({ pressed }) => [styles.card, { backgroundColor: colors.surface }, pressed && { backgroundColor: colors.line }]}
     >
       <View style={styles.cover}>
-        <Gradient from={colors.gradStart} to={colors.gradEnd} radius={radius.albumTile} />
-        <View style={styles.coverIcon}>
-          <Icon name="film" size={40} color={colors.onGradient} />
-        </View>
-        {cover && !coverFailed && (
-          <Image
-            source={cover}
-            style={StyleSheet.absoluteFill}
-            contentFit="cover"
-            transition={150}
-            accessible={false}
-            onError={() => {
-              setCoverFailed(true);
-              onCoverFailed(film._id);
-            }}
-          />
-        )}
+        <Animated.View style={[StyleSheet.absoluteFill, press.style]}>
+          <Gradient from={colors.gradStart} to={colors.gradEnd} radius={radius.albumTile} />
+          <View style={styles.coverIcon}>
+            <Icon name="film" size={40} color={colors.onGradient} />
+          </View>
+          {cover && !coverFailed && (
+            <Image
+              source={cover}
+              style={StyleSheet.absoluteFill}
+              contentFit="cover"
+              transition={150}
+              accessible={false}
+              onError={() => {
+                setCoverFailed(true);
+                onCoverFailed(film._id);
+              }}
+            />
+          )}
+        </Animated.View>
       </View>
       <View style={styles.text}>
         <Text variant="albumName">{film.title}</Text>
