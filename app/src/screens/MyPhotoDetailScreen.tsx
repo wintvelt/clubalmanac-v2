@@ -1,13 +1,15 @@
 import { router, Stack, useLocalSearchParams } from "expo-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  FlatList,
+  type FlatList,
   StyleSheet,
   View,
   type NativeScrollEvent,
   type NativeSyntheticEvent,
 } from "react-native";
+import Animated from "react-native-reanimated";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { useSwipeInfo } from "../components/Motion";
 import { QueryBoundary } from "../components/QueryBoundary";
 import { Screen } from "../components/Screen";
 import { LoadingState } from "../components/States";
@@ -93,6 +95,9 @@ function DetailContent({
   const menu = usePhotoMenu({ place: null, ctx, photoIds: ids, onFeedback: setFeedback , sharePhoto: useSharePhoto() });
   const menuPhoto = photo ? menuPhotoOf(photo) : undefined;
   const hasActions = menu.hasActions(menuPhoto);
+  // WP33 invariant 7, C5: het informatieblok vervaagt mee met de swipe.
+  const swipe = useSwipeInfo(index, ids.length, page?.width ?? 0);
+  const infoPhoto = shown?.[swipe.infoIndex] ?? photo;
 
   useEffect(() => {
     if (page && shown && shown.length > 0) flatList.current?.scrollToIndex({ index, animated: false });
@@ -124,9 +129,11 @@ function DetailContent({
           scrollKey={feedback ?? menu.sharing}
           photos={
             page && (
-              <FlatList
+              <Animated.FlatList
                 ref={flatList}
                 data={shown}
+                onScroll={swipe.onScroll}
+                scrollEventThrottle={16}
                 horizontal
                 pagingEnabled
                 showsHorizontalScrollIndicator={false}
@@ -156,7 +163,11 @@ function DetailContent({
                   </View>
                 )
               )}
-              {photo && <PhotoInfo photo={photo} />}
+              {infoPhoto && (
+                <Animated.View style={swipe.infoStyle}>
+                  <PhotoInfo photo={infoPhoto} />
+                </Animated.View>
+              )}
             </>
           }
         />

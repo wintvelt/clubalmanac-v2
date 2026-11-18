@@ -2,9 +2,10 @@ import { useMutation } from "convex/react";
 import type { FunctionReturnType } from "convex/server";
 import { router, useLocalSearchParams } from "expo-router";
 import { useRef, useState, type ReactNode } from "react";
-import { ActionSheetIOS, Alert, Pressable, StyleSheet, View } from "react-native";
+import { ActionSheetIOS, Alert, StyleSheet, View } from "react-native";
 import { Button } from "../components/Button";
 import { Icon } from "../components/Icon";
+import { AnimatedPressable, FadeIn, useArrivals, usePressMotion } from "../components/Motion";
 import { Notice } from "../components/Notice";
 import { QueryBoundary } from "../components/QueryBoundary";
 import { Screen } from "../components/Screen";
@@ -14,6 +15,7 @@ import { EmptyState, LoadingState } from "../components/States";
 import { Text } from "../components/Text";
 import { TextField } from "../components/TextField";
 import { api } from "../convexApi";
+import { successTap } from "../data/haptics";
 import { useLiveQuery } from "../data/useLiveQuery";
 import {
   DESCRIPTION_MAX_LENGTH,
@@ -119,6 +121,8 @@ function useWebmasterActions(setStatus: (s: Status) => void) {
       try {
         await remove({ featureId: f._id });
         setStatus({ kind: "success", text: `"${f.title}" is verwijderd.` });
+        // WP33 invariant 10: een bevestigde verwijdering is gelukt.
+        successTap();
       } catch {
         setStatus({ kind: "error", text: "Dat lukte niet. Er is niets veranderd. Probeer het later opnieuw." });
       }
@@ -137,6 +141,8 @@ function FeatureCard({
   webmaster?: { onStatus: () => void; onRemove: () => void };
 }) {
   const { colors } = useTheme();
+  // WP33 invariant 6: de stemknop krimpt bij indrukken.
+  const press = usePressMotion("button");
   return (
     <View style={[styles.card, { backgroundColor: colors.surface }]}>
       <View style={styles.head}>
@@ -147,7 +153,7 @@ function FeatureCard({
           </Text>
         </View>
         {vote && (
-          <Pressable
+          <AnimatedPressable
             accessibilityRole="button"
             accessibilityLabel={
               vote.voted
@@ -157,18 +163,21 @@ function FeatureCard({
             accessibilityState={{ selected: vote.voted, busy: vote.busy }}
             disabled={vote.busy}
             onPress={vote.onToggle}
+            onPressIn={press.onPressIn}
+            onPressOut={press.onPressOut}
             hitSlop={space.s}
-            style={({ pressed }) => [
+            style={[
               styles.vote,
               { borderColor: colors.primary, backgroundColor: vote.voted ? colors.tabPill : "transparent" },
-              pressed && styles.pressed,
+              press.dim && styles.pressed,
+              press.style,
             ]}
           >
             <Icon name="vote" size={20} color={colors.primary} filled={vote.voted} />
             <Text variant="smallButton" color="primary">
               {String(feature.upvoteCount)}
             </Text>
-          </Pressable>
+          </AnimatedPressable>
         )}
       </View>
       {feature.description ? <Text>{feature.description}</Text> : null}
@@ -198,6 +207,8 @@ function IdeasContent() {
   const [busyId, setBusyId] = useState<string | null>(null);
   const inFlight = useRef(false);
   const actions = useWebmasterActions(setStatus);
+  // WP33 D4: een idee dat binnenkomt, fadet in.
+  const arrivals = useArrivals(ideas?.map((f) => f._id));
 
   if (ideas === undefined || mine === undefined) {
     return (
@@ -237,14 +248,15 @@ function IdeasContent() {
         <EmptyState icon="idea" title="Nog geen ideeën" text="Heb je een idee voor de app? Geef het door." />
       ) : (
         sortIdeas(ideas).map((f) => (
-          <FeatureCard
-            key={f._id}
-            feature={f}
-            vote={{ voted: voted.has(f._id), busy: busyId === f._id, onToggle: () => void toggle(f) }}
-            webmaster={
-              webmaster ? { onStatus: () => actions.chooseStatus(f), onRemove: () => actions.removeFeature(f) } : undefined
-            }
-          />
+          <FadeIn key={f._id} active={arrivals.has(f._id)}>
+            <FeatureCard
+              feature={f}
+              vote={{ voted: voted.has(f._id), busy: busyId === f._id, onToggle: () => void toggle(f) }}
+              webmaster={
+                webmaster ? { onStatus: () => actions.chooseStatus(f), onRemove: () => actions.removeFeature(f) } : undefined
+              }
+            />
+          </FadeIn>
         ))
       )}
     </Screen>
@@ -263,6 +275,8 @@ function ProblemsContent() {
   const webmaster = useLiveQuery(api.users.isWebmaster, {});
   const [status, setStatus] = useState<Status>(null);
   const actions = useWebmasterActions(setStatus);
+  // WP33 D4: een probleem dat binnenkomt, fadet in.
+  const arrivals = useArrivals(problems?.map((f) => f._id));
 
   if (problems === undefined || webmaster === undefined) {
     return (
@@ -288,13 +302,14 @@ function ProblemsContent() {
         <Text color="muted">Nog geen meldingen.</Text>
       ) : (
         sortProblems(problems).map((f) => (
-          <FeatureCard
-            key={f._id}
-            feature={f}
-            webmaster={
-              webmaster ? { onStatus: () => actions.chooseStatus(f), onRemove: () => actions.removeFeature(f) } : undefined
-            }
-          />
+          <FadeIn key={f._id} active={arrivals.has(f._id)}>
+            <FeatureCard
+              feature={f}
+              webmaster={
+                webmaster ? { onStatus: () => actions.chooseStatus(f), onRemove: () => actions.removeFeature(f) } : undefined
+              }
+            />
+          </FadeIn>
         ))
       )}
     </Screen>

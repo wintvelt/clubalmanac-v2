@@ -1,10 +1,11 @@
 import { router } from "expo-router";
 import { useState, type ReactNode } from "react";
-import { StyleSheet, useWindowDimensions, View } from "react-native";
+import { StyleSheet, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { Id } from "../../../convex/_generated/dataModel";
 import { Gradient } from "../components/Gradient";
 import { LetterTile } from "../components/LetterTile";
+import { CoverFailed, HeaderItem, MotionHeader } from "../components/Motion";
 import { Notice } from "../components/Notice";
 import { CoverScrim, PhotoImage } from "../components/Photo";
 import { QueryBoundary } from "../components/QueryBoundary";
@@ -43,50 +44,51 @@ export type CoverPhoto = { _id: string; exifOrientation?: number; hasFormats?: b
 // wash-tint met het vlak in het verloop met de eerste letter (WP16 besluit 2).
 // Geen terugknop-pil (WP32 invariant 7): Mijn groepen bereik je via de
 // Home-knop; terugvegen vanaf de linkerrand blijft werken.
+// WP33: de kop beweegt bij scrollen en trekken (MotionHeader).
 export function CoverHeader({ name, cover }: { name?: string; cover?: CoverPhoto | null }) {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
-  const { width } = useWindowDimensions();
-  // Bij grote tekst kan de kop hoger worden dan het vaste vlak; de cover groeit mee.
-  const [measured, setMeasured] = useState(0);
-  const height = Math.max(insets.top + size.cover, measured);
+  // Een cover die niet laadt: de kop zonder cover, ook zonder zoom (WP33 A6).
+  const [failed, setFailed] = useState<string | null>(null);
+  const photo = cover && failed !== cover._id ? cover : null;
   const tile =
     name !== undefined ? (
       <LetterTile name={name} size={size.groupTile * 1.5} radius={radius.groupPhoto} variant="largeTitle" />
     ) : null;
-  // Mislukt het beeld: de wash-tint met de letter in het midden.
-  const fallback = (
-    <>
-      <Gradient from={colors.washStart} to={colors.washEnd} />
-      <View style={styles.coverFallbackTile}>{tile}</View>
-    </>
-  );
+  const wash = <Gradient from={colors.washStart} to={colors.washEnd} />;
   return (
-    <View
-      style={[styles.cover, { paddingTop: insets.top + space.s, minHeight: insets.top + size.cover }]}
-      onLayout={(e) => setMeasured(Math.ceil(e.nativeEvent.layout.height))}
+    <MotionHeader
+      minHeight={insets.top + size.cover}
+      style={{ paddingTop: insets.top + space.s }}
+      zoom={photo !== null}
+      backdrop={(box) =>
+        photo ? (
+          <>
+            <PhotoImage
+              photoId={photo._id}
+              format="groot"
+              exifOrientation={photo.exifOrientation}
+              hasFormats={photo.hasFormats}
+              box={box}
+              fallback={<CoverFailed onFail={() => setFailed(photo._id)}>{wash}</CoverFailed>}
+            />
+            <CoverScrim height={box.height} />
+          </>
+        ) : (
+          wash
+        )
+      }
     >
-      {cover ? (
-        <View style={StyleSheet.absoluteFill}>
-          <PhotoImage
-            photoId={cover._id}
-            format="groot"
-            exifOrientation={cover.exifOrientation}
-            hasFormats={cover.hasFormats}
-            box={{ width, height }}
-            fallback={fallback}
-          />
-          <CoverScrim height={height} />
-        </View>
-      ) : (
-        <Gradient from={colors.washStart} to={colors.washEnd} />
-      )}
       <View style={styles.coverColumn}>
         {/* WP32 invariant 7: geen terugknop-pil meer; Mijn groepen via de
             Home-knop. Zonder cover staat de letter in de flow (WP16). */}
-        {!cover && tile && <View style={styles.coverTile}>{tile}</View>}
+        {!photo && tile && (
+          <View style={styles.coverTile}>
+            <HeaderItem>{tile}</HeaderItem>
+          </View>
+        )}
       </View>
-    </View>
+    </MotionHeader>
   );
 }
 
@@ -157,7 +159,6 @@ const styles = StyleSheet.create({
     alignSelf: "center",
     paddingHorizontal: size.screenMargin,
   },
-  cover: { width: "100%", overflow: "hidden" },
   coverColumn: {
     flex: 1,
     width: "100%",
@@ -168,5 +169,4 @@ const styles = StyleSheet.create({
     gap: space.l,
   },
   coverTile: { flex: 1, alignItems: "center", justifyContent: "center" },
-  coverFallbackTile: { ...StyleSheet.absoluteFill, alignItems: "center", justifyContent: "center" },
 });

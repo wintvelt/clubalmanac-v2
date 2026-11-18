@@ -2,13 +2,15 @@ import { useMutation } from "convex/react";
 import type { FunctionReturnType } from "convex/server";
 import { router, Stack, useIsFocused, useLocalSearchParams } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { FlatList, Pressable, StyleSheet, useWindowDimensions, View } from "react-native";
+import { Pressable, StyleSheet, useWindowDimensions, View } from "react-native";
+import Animated, { useAnimatedRef, useScrollOffset } from "react-native-reanimated";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import type { Id } from "../../../convex/_generated/dataModel";
 import { BackPill } from "../components/BackPill";
 import { Gradient } from "../components/Gradient";
 import { Icon } from "../components/Icon";
 import { LetterTile } from "../components/LetterTile";
+import { CoverFailed, HeaderItem, MotionHeader, ScrollOffsetContext } from "../components/Motion";
 import { SmallButton } from "../components/SmallButton";
 import { CoverScrim, PhotoImage } from "../components/Photo";
 import { QueryBoundary } from "../components/QueryBoundary";
@@ -138,13 +140,20 @@ function AlbumContent({ groupId, albumId }: { groupId: Id<"groups">; albumId: Id
   const columns = columnsFor(width);
   const tile = Math.floor((width - GAP * (columns - 1)) / columns);
   const loading = shown === undefined || me === undefined;
+  // WP33: de scrollpositie op de UI-thread, voor de bewegende kop.
+  const listRef = useAnimatedRef<Animated.FlatList<Entry>>();
+  const offset = useScrollOffset(listRef);
 
   return (
     <SafeAreaView edges={["left", "right"]} style={[styles.fill, { backgroundColor: colors.bg }]}>
       {/* De titel is de terugknop-tekst op het foto-detail. */}
       <Stack.Screen options={{ title: album?.name ?? "Album" }} />
-      <FlatList
+      <ScrollOffsetContext.Provider value={offset}>
+      <Animated.FlatList
+        ref={listRef}
         key={columns}
+        // WP33 F3: elk frame, voor de kop.
+        scrollEventThrottle={16}
         data={loading ? [] : shown}
         numColumns={columns}
         keyExtractor={(e) => e.albumPhoto._id}
@@ -225,6 +234,7 @@ function AlbumContent({ groupId, albumId }: { groupId: Id<"groups">; albumId: Id
         windowSize={5}
         removeClippedSubviews
       />
+      </ScrollOffsetContext.Provider>
       <AlbumChoiceSheet
         visible={choosing}
         fromAlbumId={albumId}
@@ -459,9 +469,9 @@ function AlbumHeader({
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   const minHeight = insets.top + Math.round(Math.min(width * 0.6, size.cover * 1.6));
-  // Bij grote tekst kan de kop hoger worden; de cover groeit mee.
-  const [measured, setMeasured] = useState(0);
-  const height = Math.max(minHeight, measured);
+  // Een cover die niet laadt: de kop zonder cover, ook zonder zoom (WP33 A6).
+  const [failed, setFailed] = useState<string | null>(null);
+  const photo = album?.cover && failed !== album.cover._id ? album.cover : null;
   const back = () => {
     if (router.canGoBack()) router.back();
     else router.replace(groupPath(groupId));
@@ -472,37 +482,43 @@ function AlbumHeader({
     album !== undefined ? (
       <LetterTile name={album.name} size={size.groupTile * 1.5} radius={radius.albumTile} variant="largeTitle" />
     ) : null;
+  const wash = <Gradient from={colors.washStart} to={colors.washEnd} />;
   return (
     <View style={{ marginBottom: space.l }}>
-      <View
-        style={{ width, minHeight, paddingTop: insets.top + space.s, overflow: "hidden" }}
-        onLayout={(e) => setMeasured(Math.ceil(e.nativeEvent.layout.height))}
+      {/* WP33: de kop beweegt bij scrollen en trekken; pil en letter vervagen. */}
+      <MotionHeader
+        minHeight={minHeight}
+        style={{ paddingTop: insets.top + space.s }}
+        zoom={photo !== null}
+        backdrop={(box) =>
+          photo ? (
+            <>
+              <PhotoImage
+                photoId={photo._id}
+                format="groot"
+                exifOrientation={photo.exifOrientation}
+                hasFormats={photo.hasFormats}
+                box={box}
+                fallback={<CoverFailed onFail={() => setFailed(photo._id)}>{wash}</CoverFailed>}
+              />
+              <CoverScrim height={box.height} />
+            </>
+          ) : (
+            wash
+          )
+        }
       >
-        {album?.cover ? (
-          <View style={StyleSheet.absoluteFill}>
-            <PhotoImage
-              photoId={album.cover._id}
-              format="groot"
-              exifOrientation={album.cover.exifOrientation}
-              hasFormats={album.cover.hasFormats}
-              box={{ width, height }}
-              fallback={
-                <>
-                  <Gradient from={colors.washStart} to={colors.washEnd} />
-                  <View style={[StyleSheet.absoluteFill, styles.center]}>{tile}</View>
-                </>
-              }
-            />
-            <CoverScrim height={height} />
-          </View>
-        ) : (
-          <Gradient from={colors.washStart} to={colors.washEnd} />
-        )}
         <View style={styles.headerColumn}>
-          <BackPill title="Groep" onPress={back} />
-          {!album?.cover && tile && <View style={styles.headerTile}>{tile}</View>}
+          <HeaderItem style={styles.pillItem}>
+            <BackPill title="Groep" onPress={back} />
+          </HeaderItem>
+          {!photo && tile && (
+            <View style={styles.headerTile}>
+              <HeaderItem>{tile}</HeaderItem>
+            </View>
+          )}
         </View>
-      </View>
+      </MotionHeader>
       {album !== undefined && (
         <View style={[styles.column, styles.intro]}>
           <Text variant="title" accessibilityRole="header">
@@ -542,6 +558,7 @@ const styles = StyleSheet.create({
     gap: space.l,
   },
   headerTile: { flex: 1, alignItems: "center", justifyContent: "center" },
+  pillItem: { alignSelf: "flex-start" },
   pressed: { opacity: 0.7 },
   newLabel: {
     position: "absolute",

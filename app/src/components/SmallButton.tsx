@@ -1,6 +1,7 @@
-import { Pressable, StyleSheet } from "react-native";
+import { StyleSheet } from "react-native";
 import { border, radius, size, space, useTheme } from "../theme";
 import { Icon, type IconName } from "./Icon";
+import { AnimatedPressable, usePressMotion } from "./Motion";
 import { Text } from "./Text";
 
 type Props = {
@@ -18,25 +19,24 @@ type Props = {
 export function SmallButton({ title, onPress, icon, disabled = false, tone = "primary", accessibilityLabel }: Props) {
   const { colors } = useTheme();
   const tint = tone === "danger" ? colors.danger : colors.primary;
+  // WP33 invariant 6: krimpt bij indrukken; uit krimpt hij niet (B4).
+  const press = usePressMotion("button");
   return (
-    <Pressable
+    <AnimatedPressable
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel}
       accessibilityState={{ disabled }}
       disabled={disabled}
       onPress={onPress}
-      style={({ pressed }) => [
-        styles.button,
-        { borderColor: tint },
-        pressed && styles.pressed,
-        disabled && styles.disabled,
-      ]}
+      onPressIn={press.onPressIn}
+      onPressOut={press.onPressOut}
+      style={[styles.button, { borderColor: tint }, press.dim && styles.pressed, disabled && styles.disabled, press.style]}
     >
       {icon && <Icon name={icon} size={18} color={tint} />}
       <Text variant="smallButton" color={tone === "danger" ? "danger" : "primary"}>
         {title}
       </Text>
-    </Pressable>
+    </AnimatedPressable>
   );
 }
 

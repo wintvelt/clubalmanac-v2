@@ -1,6 +1,7 @@
-import { ActivityIndicator, Pressable, StyleSheet, View } from "react-native";
+import { ActivityIndicator, StyleSheet, View } from "react-native";
 import { border, radius, size, space, useTheme } from "../theme";
 import { Icon, type IconName } from "./Icon";
+import { AnimatedPressable, usePressMotion } from "./Motion";
 import { Text } from "./Text";
 
 type Props = {
@@ -29,20 +30,25 @@ export function Button({
   const inactive = busy || disabled;
   const cta = variant === "cta";
   const fg = cta ? colors.onCta : colors.primary;
+  // WP33 invariant 6: krimpt bij indrukken; uit of bezig krimpt hij niet (B4).
+  const press = usePressMotion("button");
   return (
-    <Pressable
+    <AnimatedPressable
       accessibilityRole="button"
       accessibilityLabel={busy ? (busyTitle ?? title) : title}
       accessibilityState={{ disabled: inactive, busy }}
       disabled={inactive}
       onPress={onPress}
-      style={({ pressed }) => [
+      onPressIn={press.onPressIn}
+      onPressOut={press.onPressOut}
+      style={[
         styles.button,
         cta
           ? { backgroundColor: colors.cta }
           : { borderWidth: border.secondaryButton, borderColor: colors.primary },
-        pressed && styles.pressed,
+        press.dim && styles.pressed,
         disabled && styles.disabled,
+        press.style,
       ]}
     >
       <View style={styles.content}>
@@ -55,7 +61,7 @@ export function Button({
           {busy ? (busyTitle ?? title) : title}
         </Text>
       </View>
-    </Pressable>
+    </AnimatedPressable>
   );
 }
 

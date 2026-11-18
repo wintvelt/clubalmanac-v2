@@ -18,6 +18,7 @@ import type { Id } from "../../../convex/_generated/dataModel";
 import { api } from "../convexApi";
 import { useUploader } from "../data/upload";
 import { useLiveQuery } from "../data/useLiveQuery";
+import { successTap } from "../data/haptics";
 import { nameErrorText } from "../lib/nameError";
 import {
   PROFILE_PHOTO_HINT,
@@ -237,7 +238,10 @@ function ProfilePhotoBlock({ me }: { me: Me }) {
     setBusy(kind);
     setFeedback(null);
     try {
-      setFeedback(await work());
+      const result = await work();
+      setFeedback(result);
+      // WP33 invariant 10 (besluit 2): weghalen na de rode bevestigingsknop is gelukt.
+      if (kind === "remove" && result?.kind === "success") successTap();
     } finally {
       inFlight.current = false;
       setBusy(null);

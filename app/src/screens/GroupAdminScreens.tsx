@@ -18,6 +18,7 @@ import { Text } from "../components/Text";
 import { TextField } from "../components/TextField";
 import { api } from "../convexApi";
 import { clearDeparting, markDeparting, setNotice, useDeparting } from "../data/adminState";
+import { successTap } from "../data/haptics";
 import { forgetLastGroup } from "../data/lastGroup";
 import { useMyGroups } from "../data/homeGroupState";
 import { useLiveQuery } from "../data/useLiveQuery";
@@ -338,6 +339,8 @@ function EditGroupContent({ groupId }: { groupId: Id<"groups"> }) {
         if (userId) void forgetLastGroup(userId, groupId);
         setNotice("myGroups", `${name} is verwijderd`);
         toMyGroups();
+        // WP33 invariant 10: de verwijdering is gelukt; de groene melding verschijnt.
+        successTap();
       }}
     />
   );
@@ -372,6 +375,8 @@ function EditAlbumContent({ groupId, albumId }: { groupId: Id<"groups">; albumId
         }
         setNotice(`group:${groupId}`, `${name} is verwijderd`);
         router.dismissTo(groupPath(groupId));
+        // WP33 invariant 10: de verwijdering is gelukt; de groene melding verschijnt.
+        successTap();
       }}
     />
   );
@@ -460,6 +465,8 @@ function EditForm({
           try {
             await removeCover();
             setCoverStatus({ kind: "success", text: "Cover weggehaald" });
+            // WP33 invariant 10 (besluit 2, rij "cover weghalen").
+            successTap();
           } catch (error) {
             setCoverStatus({ kind: "error", text: refusalOf(error, texts.cover).text });
           } finally {

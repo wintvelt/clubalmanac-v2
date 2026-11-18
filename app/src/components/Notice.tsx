@@ -2,6 +2,7 @@ import { useEffect, type ReactNode } from "react";
 import { AccessibilityInfo, StyleSheet, useWindowDimensions, View } from "react-native";
 import { border, radius, size, space, useTheme } from "../theme";
 import { Icon } from "./Icon";
+import { FadeIn } from "./Motion";
 import { Text } from "./Text";
 
 type Props = {
@@ -29,8 +30,12 @@ export function Notice({ kind, title, message, children }: Props) {
     if (spoken) AccessibilityInfo.announceForAccessibility(spoken);
   }, [title, message]);
 
+  // WP33 invariant 8, D1, D2: fadet kort in als hij verschijnt (ook na een
+  // nieuwe poging), niet opnieuw als alleen de tekst verandert. Alleen
+  // doorzichtigheid: plek en maat staan meteen goed (WP32 C5). VoiceOver leest
+  // hem meteen voor (hierboven), niet pas na de fade.
   return (
-    <View
+    <FadeIn
       accessibilityRole={kind === "error" ? "alert" : "summary"}
       accessibilityLiveRegion="polite"
       style={[
@@ -45,7 +50,7 @@ export function Notice({ kind, title, message, children }: Props) {
         {message && <Text variant={title ? "meta" : "body"}>{message}</Text>}
         {children}
       </View>
-    </View>
+    </FadeIn>
   );
 }
 
