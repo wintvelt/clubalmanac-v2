@@ -22,7 +22,10 @@ const MESSAGE_BY_CODE: Record<string, string> = {
   verification_expired: LOGIN_MESSAGES.expiredCode,
   verification_failed: LOGIN_MESSAGES.tooManyAttempts,
   user_locked: LOGIN_MESSAGES.locked,
+  // Elke rate-limit-code van Clerk (HTTP 429): de user moet even wachten.
   too_many_requests: LOGIN_MESSAGES.rateLimited,
+  verification_code_rate_limit_exceeded: LOGIN_MESSAGES.rateLimited,
+  signup_rate_limit_exceeded: LOGIN_MESSAGES.rateLimited,
   form_param_format_invalid: LOGIN_MESSAGES.invalidEmail,
 };
 
