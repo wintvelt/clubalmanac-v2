@@ -2,7 +2,7 @@ import { useMutation } from "convex/react";
 import type { FunctionReturnType } from "convex/server";
 import { router, Stack, useIsFocused, useLocalSearchParams } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { Pressable, StyleSheet, useWindowDimensions, View } from "react-native";
+import { StyleSheet, useWindowDimensions, View } from "react-native";
 import Animated, { useAnimatedRef, useScrollOffset } from "react-native-reanimated";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import type { Id } from "../../../convex/_generated/dataModel";
@@ -10,7 +10,7 @@ import { BackPill } from "../components/BackPill";
 import { Gradient } from "../components/Gradient";
 import { Icon } from "../components/Icon";
 import { LetterTile } from "../components/LetterTile";
-import { CoverFailed, HeaderItem, MotionHeader, ScrollOffsetContext } from "../components/Motion";
+import { AnimatedPressable, CoverFailed, HeaderItem, MotionHeader, PressShade, ScrollOffsetContext, usePressMotion } from "../components/Motion";
 import { SmallButton } from "../components/SmallButton";
 import { CoverScrim, PhotoImage } from "../components/Photo";
 import { QueryBoundary } from "../components/QueryBoundary";
@@ -379,8 +379,11 @@ function Tile({
   const label = [`Foto van ${formatPhotoDate(entry.photo)}`, isNew && "nieuw", isMine && "jouw foto"]
     .filter(Boolean)
     .join(", ");
+  // WP33 B2 (besluit 5): de tegel krimpt en wordt iets donkerder, ook tijdens
+  // selecteren en bij lang drukken.
+  const press = usePressMotion("tile");
   return (
-    <Pressable
+    <AnimatedPressable
       accessibilityRole="button"
       accessibilityLabel={label}
       accessibilityState={selected === undefined ? undefined : { selected }}
@@ -389,9 +392,11 @@ function Tile({
       onAccessibilityAction={(e) => {
         if (e.nativeEvent.actionName === "menu") onMenu?.();
       }}
-      onPress={onPress}
+      onPress={press.withRelease(onPress)}
       onLongPress={onMenu}
-      style={({ pressed }) => [{ width: tile, height: tile }, pressed && styles.pressed]}
+      onPressIn={press.onPressIn}
+      onPressOut={press.onPressOut}
+      style={[{ width: tile, height: tile }, press.style]}
     >
       <PhotoImage
         photoId={entry.albumPhoto.photoId}
@@ -399,11 +404,13 @@ function Tile({
         exifOrientation={entry.photo.exifOrientation}
         hasFormats={entry.photo.hasFormats}
         box={{ width: tile, height: tile }}
+        retryPress={press}
       />
       {isNew && <NewLabel />}
       {isMine && <MineBadge />}
       {selected !== undefined && <SelectMark selected={selected} />}
-    </Pressable>
+      <PressShade style={press.shadeStyle} />
+    </AnimatedPressable>
   );
 }
 
@@ -559,7 +566,6 @@ const styles = StyleSheet.create({
   },
   headerTile: { flex: 1, alignItems: "center", justifyContent: "center" },
   pillItem: { alignSelf: "flex-start" },
-  pressed: { opacity: 0.7 },
   newLabel: {
     position: "absolute",
     top: space.xs,

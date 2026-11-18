@@ -17,9 +17,9 @@ export function BackPill({ title, onPress }: Props) {
     <AnimatedPressable
       accessibilityRole="button"
       accessibilityLabel={`Terug naar ${title}`}
-      onPress={() => {
+      onPress={press.withRelease(() => {
         if (visible()) onPress();
-      }}
+      })}
       onPressIn={press.onPressIn}
       onPressOut={press.onPressOut}
       hitSlop={space.xs}

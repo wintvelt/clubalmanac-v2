@@ -28,8 +28,9 @@ const FADE_SCALE = 0.85;
 // Ze zijn weg ruim voordat hun bovenkant de statusbalk raakt.
 const FADE_MARGIN = 0.8;
 
-// Indrukken: knoppen krimpen (de iOS-manier), de cover in een tegel zoomt in.
-const PRESS = { button: 0.97, tile: 1.06, duration: 100 } as const;
+// Indrukken (besluit 5): knoppen en tegels krimpen duidelijk; een tegel wordt
+// iets donkerder en de cover erin zoomt in. In plus terug samen 150 ms (B6).
+const PRESS = { scale: 0.94, coverZoom: 1.15, shade: 0.12, inDuration: 70, outDuration: 80 } as const;
 // Verschijnen: alleen doorzichtigheid (D1).
 const APPEAR = { fromOpacity: 0, duration: 200 } as const;
 
@@ -99,10 +100,47 @@ export function infoOpacity(position: number, shownIndex: number, count: number,
 }
 
 // Indrukken: de schaal en de duur, voor een knop of de cover in een tegel.
-export function pressFeedback(kind: "button" | "tile", reduceMotion: boolean): { scale: number; duration: number } {
+export type PressFeedback = {
+  // De hele knop of tegel krimpt hiertoe.
+  scale: number;
+  // De cover in een tegel zoomt hiertoe in, binnen zijn vak.
+  coverZoom: number;
+  // Dekking van de donkere laag over een tegel.
+  shade: number;
+  // Het dimmen van een knop van vóór WP33: alleen met "Beperk beweging".
+  dim: boolean;
+  inDuration: number;
+  outDuration: number;
+};
+
+export function pressFeedback(kind: "button" | "tile", reduceMotion: boolean): PressFeedback {
   "worklet";
-  if (reduceMotion) return { scale: 1, duration: 0 };
-  return { scale: PRESS[kind], duration: PRESS.duration };
+  const tile = kind === "tile";
+  // Een tegel wordt met en zonder "Beperk beweging" even donker (F2, F4).
+  const shade = tile ? PRESS.shade : 0;
+  if (reduceMotion) return { scale: 1, coverZoom: 1, shade, dim: !tile, inDuration: 0, outDuration: 0 };
+  return {
+    scale: PRESS.scale,
+    coverZoom: tile ? PRESS.coverZoom : 1,
+    shade,
+    dim: false,
+    inDuration: PRESS.inDuration,
+    outDuration: PRESS.outDuration,
+  };
+}
+
+// Loslaten, `heldMs` na het indrukken (B6): was de eindstand nog niet bereikt,
+// dan eerst daarheen (`delay`), dan terugveren (`duration`). De actie zelf
+// wacht hier niet op (B5).
+export function pressRelease(
+  heldMs: number,
+  kind: "button" | "tile",
+  reduceMotion: boolean,
+): { delay: number; duration: number } {
+  "worklet";
+  const { inDuration, outDuration } = pressFeedback(kind, reduceMotion);
+  const held = heldMs > 0 ? heldMs : 0;
+  return { delay: held < inDuration ? inDuration - held : 0, duration: outDuration };
 }
 
 // Verschijnen van een melding, tegel of rij: vanaf deze doorzichtigheid in

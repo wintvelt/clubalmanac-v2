@@ -92,8 +92,8 @@ Bronnen: de oude app (`components/GroupHeaderNew.jsx`, `screens/Group.jsx`, `scr
 | Groepskop klikt na het scrollen open of dicht | Niet (invariant 4) |
 | Groepskop liggend: smalle vaste balk, beweegt niet | Landschap: B kiest (scope) |
 | Album: cover scrolt gewoon mee, geen parallax; na 96 pt verschijnt een balk | Album krijgt dezelfde kop-beweging als de groep (nieuw) |
-| Tegels groep, album en film: cover zoomt naar 1,1× in 300 ms bij indrukken | Invariant 5, ook de filmkaart (B1) |
-| Fototegel in het raster: geen indruk-animatie | Geen zoom (B2) |
+| Tegels groep, album en film: cover zoomt naar 1,1× in 300 ms bij indrukken | De tegel krimpt en de cover zoomt erin, ook de filmkaart (B1, besluit 5) |
+| Fototegel in het raster: geen indruk-animatie | Krimpt en wordt donkerder (B2, besluit 5): nieuw |
 | Knoppen: *groeien* naar 1,05× in 100 ms | Krimpen (invariant 6): bewuste afwijking |
 | Foto-detail: informatieblok vervaagt naar 0 halverwege de swipe; de gegevens wisselen precies daar | Invariant 7 en C1 |
 | Meldingen: een modaal zonder animatie | Invariant 8 (meldingen staan in v2 in het scherm) |
@@ -119,20 +119,22 @@ Bronnen: de oude app (`components/GroupHeaderNew.jsx`, `screens/Group.jsx`, `scr
 
 ### Indrukken (B)
 
-- **B1. Tegels (invariant 5)**: de groepskaart op *Mijn groepen*, de albumrij op de groepspagina en de filmkaart. Alleen de kleine cover zoomt, binnen zijn afgeronde vak. Een letter-tegel zonder cover mag hetzelfde doen. Of de kaart daarnaast blijft oplichten: B kiest in de simulator en meldt. Wouter beoordeelt het op het toestel.
-- **B2. Geen zoom**: fototegels in het album en in *Mijn foto's* (zoals v1; de selectie-markering en het lang drukken blijven het signaal).
-- **B3. Knoppen (invariant 6).** Inventaris:
+- **B1. Tegels met een cover (invariant 5, besluit 5)**: de groepskaart op *Mijn groepen*, de albumrij op de groepspagina en de filmkaart. De hele kaart krimpt en wordt iets donkerder; de kleine cover zoomt daarbinnen in, binnen zijn afgeronde vak. Een letter-tegel zonder cover zoomt net zo. Het donkerder worden vervangt het oplichten van de kaart van nu: geen dubbel effect.
+- **B2. Foto-tegels (besluit 5)**: de tegels in het fotoraster van het album en van *Mijn foto's* (de enige foto-tegels waarop je tikt). De hele tegel krimpt en wordt iets donkerder, zonder zoom erin. Dat vervangt het doorzichtiger worden van nu. Ook tijdens selecteren en bij lang drukken (de tegel veert terug bij loslaten, ook als het menu opent). "Opnieuw laden" op een foto-tegel in het raster reageert als de tegel. Niet: foto's op de kaart, de duimpjes bij Toevoegen, gemelde foto's, covers in een kop (geen tegels, of niet om op te tikken).
+- **B3. Knoppen (invariant 6, besluit 5).** Inventaris:
 
 | Krimpen | Blijft zoals nu (alleen dimmen of oplichten) |
 |---|---|
 | `Button` (hoofdknop en tweede knop), `SmallButton`, de terugknop-pil, de stemknop bij een idee, de +-knop in de tabbalk | Tekstknoppen: `LinkButton`, "Sluiten" en "Annuleren" in een modaal, "Acties" in de navigatiebalk |
 | | Lijstrijen: `ListRow`, leden, uitnodigingen, de albumkeuze bij Toevoegen |
 | | De gewone tabs in de tabbalk en `SegmentedTabs` (iOS schaalt die ook niet) |
-| | De foto-tegel "Opnieuw laden" en de zoombare foto in het detail |
+| | "Opnieuw laden" buiten het raster, de zoombare foto in het detail |
 
-  De rechterkolom volgt iOS. Is regie het oneens met een rij: zeggen, dan schuift die naar links.
+  Knoppen worden niet donkerder: alleen krimpen, zoals iOS. Met "Beperk beweging" dimmen ze zoals nu.
 - **B4. Uit, bezig, geannuleerd.** Een uitgeschakelde of bezige knop krimpt niet. Begint de user te scrollen met de vinger op een tegel of knop, dan veert die terug en gebeurt er niets. Komt de user terug op een scherm, dan staat geen tegel of knop nog half ingedrukt.
 - **B5. Nooit later.** De actie gebeurt bij loslaten, zoals nu. Een tik wacht niet tot een animatie klaar is.
+- **B6. Een snelle tik is zichtbaar (besluit 5).** Indrukken gaat in en terug in samen rond 150 ms. Laat de vinger los voordat de tegel of knop helemaal ingedrukt is, dan gaat hij eerst door tot de eindstand en veert dan terug. Wie langer drukt, ziet hem pas terugveren bij loslaten. Het donkerder worden loopt mee met de schaal. Opent de tik een ander scherm, dan speelt de animatie gewoon af onder de overgang; komt de user terug, dan staat er niets half ingedrukt (B4).
+- **B7. Maten (A kiest de grens, zie de tests).** Knoppen en tegels krimpen tot tussen 0,92 en 0,96. De cover in een tegel zoomt tot tussen 1,1 en 1,2 (nu 1,06). Een tegel wordt donkerder met een donkere laag van 8 tot 20 % dekking. In plus terug samen 120 tot 200 ms.
 
 ### Foto-detail (C)
 
@@ -171,9 +173,9 @@ Regel: een tik precies wanneer de groene melding of de bestemming verschijnt, no
 ### Overal (F)
 
 - **F1. "Beperk beweging" live.** Zet de user het aan of uit terwijl de app openstaat, dan geldt het meteen of uiterlijk zodra hij terug is in de app. Geen herstart nodig. Let op: niet elke manier om de instelling te lezen geeft een wijziging door.
-- **F2. Eindstand bij "Beperk beweging"** is het gedrag van nu: de kop scrolt gewoon mee, de cover op 1×, de letter-tegel en de pil zonder vervagen. Knoppen en tegels zonder schaal, met het bestaande dimmen of oplichten. Meldingen, tegels en rijen meteen zichtbaar. Het informatieblok blijft zichtbaar tijdens het swipen. De bestaande fade van 150 ms bij het laden van een foto valt buiten dit WP en blijft.
+- **F2. Eindstand bij "Beperk beweging"** is het gedrag van nu: de kop scrolt gewoon mee, de cover op 1×, de letter-tegel en de pil zonder vervagen. Knoppen en tegels zonder schaal en zonder wachten op de eindstand. Knoppen dimmen zoals nu; tegels worden net zo donkerder als zonder "Beperk beweging", meteen. Meldingen, tegels en rijen meteen zichtbaar. Het informatieblok blijft zichtbaar tijdens het swipen. De bestaande fade van 150 ms bij het laden van een foto valt buiten dit WP en blijft.
 - **F3. Vloeiend.** De kop volgt het scrollen elk frame, ook op de kleinste iPhone. Een kop die achterloopt of schokt telt als "trager" (invariant 12). Dat geldt ook voor het vervagen van het informatieblok.
-- **F4. Dezelfde maten overal.** Eén schaal voor knoppen, één zoom voor tegels, één duur voor indrukken en één voor verschijnen. Alle animaties uit dit WP halen hun waarden uit één plek, ook de uitzondering bij "Beperk beweging". Zo regelen de tests het in één keer.
+- **F4. Dezelfde maten overal.** Eén schaal voor knoppen, één voor tegels, één zoom voor de cover, één donkerte voor tegels, één duur voor indrukken en één voor verschijnen. Alle animaties uit dit WP halen hun waarden uit één plek, ook de uitzondering bij "Beperk beweging". Zo regelen de tests het in één keer.
 
 ### Tests (A kiest de grens)
 
@@ -181,7 +183,8 @@ Regel: een tik precies wanneer de groene melding of de bestemming verschijnt, no
 - de kop als functie van de scrollpositie, de gemeten hoogte en de statusbalk: waar de cover staat, hoe hoog en hoe ver ingezoomd (A1, A4, A5, invarianten 1–3);
 - vervagen en krimpen van een element in de kop (A2, A4);
 - de doorzichtigheid van het informatieblok tijdens het swipen (invariant 7, C1–C3);
-- de waarden voor indrukken en verschijnen (invarianten 5, 6, 8, 9 en 12, F4);
+- de waarden voor indrukken en verschijnen (invarianten 5, 6, 8, 9 en 12, F4, besluit 5);
+- het terugveren na een snelle tik (B6);
 - "Beperk beweging" zet alles op de eindstand (invariant 11, F2);
 - welke items nieuw binnenkomen (D4).
 
@@ -199,3 +202,8 @@ Niet getest (simulator en toestel): de plekken van de haptics, welke knoppen kri
 2. **Tik bij elke gelukte actie met een rode bevestigingsknop** (optie a).
 3. **Geen tik bij andere verzendingen** (idee, probleem, bezwaar).
 4. **Na de audit:** B fixt (1) dat de terugpil op Album met VoiceOver aan niet vervaagt (invariant 14), en (2) dat de eerste swipe in het foto-detail rekent vanaf de echte startpositie (C1). (3) Bij "cover weghalen" geen tik: die actie heeft geen rode knop (besluit 2).
+5. **Na de gate (2026-11-18): indrukken te zwak.** Op het toestel was bij knoppen en tegels geen animatie te zien, en foto-tegels hadden er geen. Aangepast (wijzigt invariant 5 en 6):
+   - **Alle tegels**, ook foto-tegels in een album en in *Mijn foto's*: de hele tegel krimpt duidelijk (rond 0,94×) en wordt iets donkerder. Bij groeps- en albumtegels zoomt de cover daarbinnen duidelijker in dan nu.
+   - **Knoppen** krimpen duidelijker (rond 0,94×).
+   - **Een snelle tik speelt de animatie altijd zichtbaar af** (in en terug, rond 150 ms), ook als de vinger al los is voordat de eindstand bereikt is. De actie of navigatie wacht daar niet op (invariant 12 blijft).
+   - "Beperk beweging": zoals nu (geen schaal, wel dimmen).

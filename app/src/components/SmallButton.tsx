@@ -27,7 +27,7 @@ export function SmallButton({ title, onPress, icon, disabled = false, tone = "pr
       accessibilityLabel={accessibilityLabel}
       accessibilityState={{ disabled }}
       disabled={disabled}
-      onPress={onPress}
+      onPress={press.withRelease(onPress)}
       onPressIn={press.onPressIn}
       onPressOut={press.onPressOut}
       style={[styles.button, { borderColor: tint }, press.dim && styles.pressed, disabled && styles.disabled, press.style]}

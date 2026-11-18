@@ -38,7 +38,7 @@ export function Button({
       accessibilityLabel={busy ? (busyTitle ?? title) : title}
       accessibilityState={{ disabled: inactive, busy }}
       disabled={inactive}
-      onPress={onPress}
+      onPress={press.withRelease(onPress)}
       onPressIn={press.onPressIn}
       onPressOut={press.onPressOut}
       style={[

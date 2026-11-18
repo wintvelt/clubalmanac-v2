@@ -1,11 +1,13 @@
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 import { Pressable, StyleSheet, useWindowDimensions, View, type HostInstance, type StyleProp, type ViewStyle } from "react-native";
 import Animated, {
+  Easing,
   ReduceMotion,
   useAnimatedReaction,
   useAnimatedScrollHandler,
   useAnimatedStyle,
   useSharedValue,
+  withSequence,
   withTiming,
   type SharedValue,
 } from "react-native-reanimated";
@@ -19,6 +21,7 @@ import {
   infoOpacity,
   newlyArrived,
   pressFeedback,
+  pressRelease,
   type HeaderLayout,
 } from "../lib/motion";
 
@@ -31,42 +34,72 @@ const OWN = ReduceMotion.Never;
 
 export const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
-// --- Indrukken (invarianten 5 en 6, B4, B5) ------------------------------------
+// --- Indrukken (invarianten 5 en 6, B1–B6, besluit 5) -------------------------
 //
-// Voor een Pressable: krimpen (knop) of inzoomen (de cover in een tegel) bij
-// indrukken, terug bij loslaten of annuleren (scrollen). De actie zelf blijft
-// bij loslaten en wacht niet op de animatie. `pressed` is voor het bestaande
-// dimmen, dat alleen nog geldt met "Beperk beweging" (F2).
+// Voor een Pressable: de hele knop of tegel krimpt bij indrukken; een tegel
+// wordt ook iets donkerder en de cover erin zoomt in. Een snelle tik gaat eerst
+// door tot de eindstand en veert dan terug (B6); wie langer drukt, ziet hem
+// terugveren bij loslaten of annuleren (scrollen, B4). De actie zelf blijft bij
+// loslaten en wacht niet op de animatie (B5): alles loopt op de UI-thread.
+// `dim` is het dimmen van een knop van vóór WP33, alleen met "Beperk beweging"
+// (F2).
 export function usePressMotion(kind: "button" | "tile") {
   const reduceMotion = useReduceMotion();
-  const scale = useSharedValue(1);
+  const f = pressFeedback(kind, reduceMotion);
+  // 0 = los, 1 = helemaal ingedrukt. Schaal, zoom en donkerte lopen mee.
+  const progress = useSharedValue(0);
+  const pressedAt = useRef(0);
+  const down = useRef(false);
   const [pressed, setPressed] = useState(false);
-  const to = (down: boolean) => {
-    setPressed(down);
-    const { scale: target, duration } = pressFeedback(kind, reduceMotion);
-    const value = down ? target : 1;
-    scale.value = duration > 0 ? withTiming(value, { duration, reduceMotion: OWN }) : value;
+  const onPressIn = () => {
+    down.current = true;
+    setPressed(true);
+    pressedAt.current = Date.now();
+    progress.value = f.inDuration > 0 ? withTiming(1, { duration: f.inDuration, easing: EASE, reduceMotion: OWN }) : 1;
   };
-  const style = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }));
-  return {
-    style,
-    // Dimmen of oplichten zoals vóór WP33: alleen als er geen schaal is.
-    dim: pressed && reduceMotion,
-    pressed,
-    onPressIn: () => to(true),
-    onPressOut: () => to(false),
+  // Eén keer per indrukken: bij de tik zelf (withRelease), anders bij
+  // onPressOut (lang drukken, annuleren).
+  const release = () => {
+    if (!down.current) return;
+    down.current = false;
+    setPressed(false);
+    const { delay, duration } = pressRelease(Date.now() - pressedAt.current, kind, reduceMotion);
+    progress.value =
+      duration > 0
+        ? withSequence(
+            withTiming(1, { duration: delay, easing: Easing.linear, reduceMotion: OWN }),
+            withTiming(0, { duration, easing: EASE, reduceMotion: OWN }),
+          )
+        : 0;
   };
+  // Pressable stuurt onPressOut pas minstens 130 ms na indrukken, met een timer
+  // op de JS-thread; opent de tik een scherm, dan loopt die timer uit en bleef
+  // de tegel te lang ingedrukt. Daarom begint het terugveren al bij de tik, vóór
+  // de actie, die er niet op wacht (B5, B6).
+  const withRelease =
+    <A extends unknown[]>(action: ((...args: A) => void) | undefined) =>
+    (...args: A) => {
+      release();
+      action?.(...args);
+    };
+  const style = useAnimatedStyle(() => ({ transform: [{ scale: 1 + (f.scale - 1) * progress.value }] }));
+  const coverStyle = useAnimatedStyle(() => ({ transform: [{ scale: 1 + (f.coverZoom - 1) * progress.value }] }));
+  const shadeStyle = useAnimatedStyle(() => ({ opacity: f.shade * progress.value }));
+  return { style, coverStyle, shadeStyle, dim: pressed && f.dim, pressed, onPressIn, onPressOut: release, withRelease };
 }
 
-// De cover van een tegel: zoomt binnen zijn afgeronde vak; kader en tekst
-// blijven staan (B1).
+const EASE = Easing.out(Easing.quad);
+
+type PressMotion = ReturnType<typeof usePressMotion>;
+
+// De cover van een tegel: zoomt binnen zijn afgeronde vak (B1).
 export function TileZoom({
   zoom,
   size,
   radius,
   children,
 }: {
-  zoom: ReturnType<typeof usePressMotion>["style"];
+  zoom: PressMotion["coverStyle"];
   size: number;
   radius: number;
   children: ReactNode;
@@ -75,6 +108,19 @@ export function TileZoom({
     <View style={{ width: size, height: size, borderRadius: radius, overflow: "hidden" }}>
       <Animated.View style={zoom}>{children}</Animated.View>
     </View>
+  );
+}
+
+// De donkere laag over een ingedrukte tegel (B1, B2). Als laatste kind van de
+// tegel, zodat hij over alles valt; vangt geen tikken.
+export function PressShade({ style, radius = 0 }: { style: PressMotion["shadeStyle"]; radius?: number }) {
+  return (
+    <Animated.View
+      pointerEvents="none"
+      accessible={false}
+      importantForAccessibility="no-hide-descendants"
+      style={[StyleSheet.absoluteFill, { backgroundColor: "#000", borderRadius: radius }, style]}
+    />
   );
 }
 

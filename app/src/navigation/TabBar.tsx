@@ -206,10 +206,10 @@ function PlusButton() {
     <AnimatedPressable
       accessibilityRole="button"
       accessibilityLabel="Foto's toevoegen"
-      onPress={() => {
+      onPress={press.withRelease(() => {
         const albumId = albumIdFromPath(pathname);
         router.push(albumId ? { pathname: "/toevoegen", params: { albumId } } : "/toevoegen");
-      }}
+      })}
       onPressIn={press.onPressIn}
       onPressOut={press.onPressOut}
       style={[styles.item, { flex: PLUS_WEIGHT }, press.dim && styles.pressed, press.style]}

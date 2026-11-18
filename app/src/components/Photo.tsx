@@ -70,6 +70,8 @@ type PhotoProps = {
   // vak, alleen het beeld-icoon in het midden. Voor het foto-detail, waar het
   // beeld passend (kleiner dan het vak) verschijnt.
   neutralLoading?: boolean;
+  // WP33 B2: "Opnieuw laden" in een foto-tegel reageert als de tegel zelf.
+  retryPress?: { onPressIn: () => void; onPressOut: () => void };
 };
 
 // Een foto, een album- of een groepscover. Tot het beeld er is: een grijs vlak
@@ -86,6 +88,7 @@ export function PhotoImage({
   accessibilityLabel,
   memoryOnly,
   neutralLoading = false,
+  retryPress,
 }: PhotoProps) {
   const { colors } = useTheme();
   const [state, setState] = useState<"loading" | "loaded">("loading");
@@ -147,6 +150,8 @@ export function PhotoImage({
             setState("loading");
             retry();
           }}
+          onPressIn={retryPress?.onPressIn}
+          onPressOut={retryPress?.onPressOut}
           style={[StyleSheet.absoluteFill, styles.center, { backgroundColor: colors.surface }]}
         >
           <Icon name="refresh" size={Math.min(28, box.width / 3)} color={colors.muted} />
