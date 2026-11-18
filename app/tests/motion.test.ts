@@ -6,13 +6,15 @@ import {
   infoOpacity,
   newlyArrived,
   pressFeedback,
+  pressRelease,
   type HeaderLayout,
 } from "../src/lib/motion";
 
 // WP33: subtiele animaties. Pure logica; de schermen, de haptics en of het
 // subtiel genoeg is, toetst B in de simulator en Wouter op een toestel.
 // Spec: docs/work-packages/WP33-animaties.md, invarianten 1–3, 5–9, 11 en 12,
-// A-aanvullingen A1, A2, A4, A5, C1–C3, D4, F2 en F4, open vraag 1.
+// A-aanvullingen A1, A2, A4, A5, B1, B2, B6, B7, C1–C3, D4, F2 en F4, open
+// vraag 1, besluit 5.
 //
 // Afspraken voor de kop (Groep en Album; geen navigatiebalk):
 // - `offset`: de scrollpositie van het scherm. 0 = bovenaan, positief = de
@@ -314,27 +316,103 @@ describe("informatieblok tijdens het swipen", () => {
 
 // --- Indrukken en verschijnen (invarianten 5, 6, 8, 9, 12; F4) ----------------------
 
-describe("indrukken", () => {
-  it("knoppen krimpen licht, kort (invariant 6, 12)", () => {
+// Besluit 5 (na de gate): indrukken moet op het toestel duidelijk te zien zijn.
+// `pressFeedback(kind, reduceMotion)`:
+// - `scale`: de hele knop of tegel krimpt hiertoe;
+// - `coverZoom`: de cover in een tegel zoomt hiertoe in, binnen zijn vak
+//   (een foto-tegel heeft geen cover erin en gebruikt dit niet; knop: 1);
+// - `shade`: dekking van een donkere laag over de tegel (knop: 0);
+// - `dim`: het bestaande dimmen of oplichten van een knop (alleen met
+//   "Beperk beweging");
+// - `inDuration`, `outDuration`: in ms, indrukken en terugveren.
+// `pressRelease(heldMs, kind, reduceMotion)`: na loslaten, `heldMs` na het
+// indrukken: hoe lang nog wachten (`delay`) en hoe lang het terugveren duurt
+// (`duration`), beide in ms. De actie zelf wacht hier niet op (B5).
+
+const KINDS = ["button", "tile"] as const;
+
+describe("indrukken (invarianten 5, 6, 12; besluit 5)", () => {
+  it("knoppen krimpen duidelijk, rond 0,94×, en worden niet donkerder (B3, B7)", () => {
     const f = pressFeedback("button", false);
-    expect(f.scale).toBeGreaterThanOrEqual(0.94);
-    expect(f.scale).toBeLessThanOrEqual(0.99);
-    expect(f.duration).toBeGreaterThanOrEqual(60);
-    expect(f.duration).toBeLessThanOrEqual(150);
+    expect(f.scale).toBeGreaterThanOrEqual(0.92);
+    expect(f.scale).toBeLessThanOrEqual(0.96);
+    expect(f.coverZoom).toBe(1);
+    expect(f.shade).toBe(0);
+    expect(f.dim).toBe(false);
   });
 
-  it("de cover in een tegel zoomt licht in, kort (invariant 5, 12)", () => {
+  it("tegels (ook foto-tegels) krimpen duidelijk, rond 0,94×, en worden iets donkerder (B1, B2, B7)", () => {
     const f = pressFeedback("tile", false);
-    expect(f.scale).toBeGreaterThanOrEqual(1.03);
-    expect(f.scale).toBeLessThanOrEqual(1.12);
-    expect(f.duration).toBeGreaterThanOrEqual(60);
-    expect(f.duration).toBeLessThanOrEqual(150);
+    expect(f.scale).toBeGreaterThanOrEqual(0.92);
+    expect(f.scale).toBeLessThanOrEqual(0.96);
+    expect(f.shade).toBeGreaterThanOrEqual(0.08);
+    expect(f.shade).toBeLessThanOrEqual(0.2);
+    // Het donkerder worden vervangt het oplichten of dimmen van nu.
+    expect(f.dim).toBe(false);
   });
 
-  it("Beperk beweging: geen schaal en geen duur (invariant 11)", () => {
-    for (const kind of ["button", "tile"] as const) {
-      expect(pressFeedback(kind, true)).toEqual({ scale: 1, duration: 0 });
+  it("de cover in een tegel zoomt duidelijker in dan voor de gate (1,06×), binnen een krimpende tegel (B1, B7)", () => {
+    const f = pressFeedback("tile", false);
+    expect(f.coverZoom).toBeGreaterThanOrEqual(1.1);
+    expect(f.coverZoom).toBeLessThanOrEqual(1.2);
+  });
+
+  it.each(KINDS)("%s: in en terug samen rond 150 ms, elk deel zichtbaar lang (B6, B7, invariant 12)", (kind) => {
+    const f = pressFeedback(kind, false);
+    expect(f.inDuration).toBeGreaterThanOrEqual(50);
+    expect(f.outDuration).toBeGreaterThanOrEqual(60);
+    expect(f.inDuration + f.outDuration).toBeGreaterThanOrEqual(120);
+    expect(f.inDuration + f.outDuration).toBeLessThanOrEqual(200);
+  });
+
+  it("Beperk beweging: geen schaal, geen zoom, geen duur; knoppen dimmen, tegels worden donkerder (invariant 11, F2)", () => {
+    const button = pressFeedback("button", true);
+    expect(button).toMatchObject({ scale: 1, coverZoom: 1, shade: 0, dim: true, inDuration: 0, outDuration: 0 });
+    const tile = pressFeedback("tile", true);
+    expect(tile).toMatchObject({ scale: 1, coverZoom: 1, dim: false, inDuration: 0, outDuration: 0 });
+    // Dezelfde donkerte als zonder "Beperk beweging" (F4: één donkerte).
+    expect(tile.shade).toBe(pressFeedback("tile", false).shade);
+  });
+});
+
+describe("loslaten na een snelle tik (B6, besluit 5)", () => {
+  it.each(KINDS)("%s: losgelaten vóór de eindstand: eerst door tot de eindstand, dan terug", (kind) => {
+    const { inDuration, outDuration } = pressFeedback(kind, false);
+    for (const held of range(0, inDuration, 5)) {
+      const r = pressRelease(held, kind, false);
+      // Het terugveren begint precies als de eindstand bereikt is.
+      expect(held + r.delay).toBeCloseTo(inDuration, 6);
+      expect(r.duration).toBe(outDuration);
     }
+  });
+
+  it.each(KINDS)("%s: een tik van 0 ms is even lang zichtbaar als in plus terug", (kind) => {
+    const { inDuration, outDuration } = pressFeedback(kind, false);
+    const r = pressRelease(0, kind, false);
+    expect(r.delay + r.duration).toBe(inDuration + outDuration);
+  });
+
+  it.each(KINDS)("%s: langer ingedrukt: meteen terug bij loslaten, niet later", (kind) => {
+    const { inDuration, outDuration } = pressFeedback(kind, false);
+    for (const held of [inDuration, inDuration + 1, 300, 600, 5000]) {
+      expect(pressRelease(held, kind, false)).toEqual({ delay: 0, duration: outDuration });
+    }
+  });
+
+  it.each(KINDS)("%s: elke tik is minstens 120 ms zichtbaar, van indrukken tot terug", (kind) => {
+    for (const held of range(0, 400, 10)) {
+      const r = pressRelease(held, kind, false);
+      expect(held + r.delay + r.duration).toBeGreaterThanOrEqual(120);
+      expect(r.delay).toBeGreaterThanOrEqual(0);
+    }
+  });
+
+  it.each(KINDS)("%s: een klok die terugloopt (negatieve tijd) telt als een tik van 0 ms", (kind) => {
+    expect(pressRelease(-30, kind, false)).toEqual(pressRelease(0, kind, false));
+  });
+
+  it.each(KINDS)("%s: Beperk beweging: meteen terug, zonder duur (invariant 11, F2)", (kind) => {
+    for (const held of [-5, 0, 20, 500]) expect(pressRelease(held, kind, true)).toEqual({ delay: 0, duration: 0 });
   });
 });
 
