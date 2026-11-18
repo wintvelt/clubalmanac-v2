@@ -192,3 +192,9 @@ Niet getest (simulator en toestel): de plekken van de haptics, welke knoppen kri
 1. **Trekken met "Beperk beweging".** Invariant 11 zegt "geen stretch", invariant 2 "geen lege rand boven de cover". Met "Beperk beweging" aan en zonder stretch ziet de user bij trekken weer de lege band van nu. Advies: de stretch blijft ook dan. Hij volgt de vinger en is geen animatie (Apple zet bij "Beperk beweging" vooral parallax, zoom en schuiven uit). De tests volgen het advies, in een eigen `describe`.
 2. **Tik bij de twijfel-verwijderingen** (tabel E). (a) Bij elke actie met een rode bevestigingsknop die lukt. (b) Alleen als er echt iets weg is (de rijen "ja"). Advies: (a). Eén regel die de user kan voelen: rood bevestigd, tik.
 3. **Tik bij een andere verzending** (idee of probleem doorgeven, bezwaar). Advies: nee. Invariant 10 noemt alleen uitnodigingen en foto's, en zo blijft de tik zeldzaam.
+
+### Besluiten Wouter 2026-11-18 (regie)
+
+1. **Stretch blijft bij "Beperk beweging"**: hij volgt de vinger en is geen animatie (advies A).
+2. **Tik bij elke gelukte actie met een rode bevestigingsknop** (optie a).
+3. **Geen tik bij andere verzendingen** (idee, probleem, bezwaar).
