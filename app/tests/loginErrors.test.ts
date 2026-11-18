@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { emailStepResult, loginErrorMessage } from "../src/lib/loginErrors";
+import { emailStepResult, LOGIN_MESSAGES, loginErrorMessage } from "../src/lib/loginErrors";
 
 // WP13 invariant 17 + acceptance-gate 4: leesbare foutmelding bij code-login.
 // - Geen account-enumeratie: na de e-mailstap is een onbekend adres niet te
@@ -176,4 +176,46 @@ describe("emailStepResult — geen account-enumeratie (invariant 17)", () => {
       expect(() => emailStepResult(input)).not.toThrow();
     }
   });
+});
+
+// Fix na WP32: op dev weigerde Clerk "Stuur code" met HTTP 429 en code
+// verification_code_rate_limit_exceeded ("Too many verification code
+// requests"). De user zag de algemene melding over de internetverbinding.
+// Elke rate-limit-code van Clerk geeft de rate-limit-melding:
+// - too_many_requests: algemene 429 van Clerk.
+// - verification_code_rate_limit_exceeded: te vaak een code aangevraagd
+//   (gezien op dev, staat niet in de typings van @clerk/shared 4.45.1).
+// - signup_rate_limit_exceeded: te veel aanmeldingen (constante in
+//   @clerk/shared 4.45.1); kan langskomen via sign-in-or-up (WP19b).
+// too_many_unverified_identifications hoort hier niet bij: dat gaat over te
+// veel onbevestigde adressen op één account, niet over wachten.
+function clerk429(code: string, message: string) {
+  return { ...clerkError(code, message), status: 429 };
+}
+
+const RATE_LIMIT_ERRORS = {
+  too_many_requests: clerk429("too_many_requests", "Too many requests."),
+  verification_code_rate_limit_exceeded: clerk429(
+    "verification_code_rate_limit_exceeded",
+    "Too many verification code requests",
+  ),
+  signup_rate_limit_exceeded: clerk429(
+    "signup_rate_limit_exceeded",
+    "Too many sign-ups. Please try again later.",
+  ),
+};
+
+describe("rate-limit van Clerk: de rate-limit-melding", () => {
+  for (const [code, err] of Object.entries(RATE_LIMIT_ERRORS)) {
+    it(`${code}: loginErrorMessage geeft de rate-limit-melding`, () => {
+      expect(loginErrorMessage(err)).toBe(LOGIN_MESSAGES.rateLimited);
+    });
+
+    it(`${code}: "Stuur code" (emailStepResult) toont de rate-limit-melding`, () => {
+      expect(emailStepResult(err)).toEqual({
+        kind: "error",
+        message: LOGIN_MESSAGES.rateLimited,
+      });
+    });
+  }
 });
