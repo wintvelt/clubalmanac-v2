@@ -199,3 +199,8 @@ Niet getest (simulator en toestel): de plekken van de haptics, welke knoppen kri
 2. **Tik bij elke gelukte actie met een rode bevestigingsknop** (optie a).
 3. **Geen tik bij andere verzendingen** (idee, probleem, bezwaar).
 4. **Na de audit:** B fixt (1) dat de terugpil op Album met VoiceOver aan niet vervaagt (invariant 14), en (2) dat de eerste swipe in het foto-detail rekent vanaf de echte startpositie (C1). (3) Bij "cover weghalen" geen tik: die actie heeft geen rode knop (besluit 2).
+5. **Na de gate (2026-11-18): indrukken te zwak.** Op het toestel was bij knoppen en tegels geen animatie te zien, en foto-tegels hadden er geen. Aangepast (wijzigt invariant 5 en 6):
+   - **Alle tegels**, ook foto-tegels in een album en in *Mijn foto's*: de hele tegel krimpt duidelijk (rond 0,94×) en wordt iets donkerder. Bij groeps- en albumtegels zoomt de cover daarbinnen duidelijker in dan nu.
+   - **Knoppen** krimpen duidelijker (rond 0,94×).
+   - **Een snelle tik speelt de animatie altijd zichtbaar af** (in en terug, rond 150 ms), ook als de vinger al los is voordat de eindstand bereikt is. De actie of navigatie wacht daar niet op (invariant 12 blijft).
+   - "Beperk beweging": zoals nu (geen schaal, wel dimmen).
