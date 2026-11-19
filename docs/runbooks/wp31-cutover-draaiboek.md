@@ -213,7 +213,7 @@ De dag van de schrijfstop. De vrijgave (T0.9) volgt na de review, mogelijk dagen
    Afwijking: een andere groep, of een groep mist → niet indienen; §Terug.
 7. **Demo voor Apple** (W4, invariant 12): in de app een groep "Demo" maken, het adres `wouter.intvelt+clerk_test@gmail.com` uitnodigen (moet echt mail ontvangen: een bounce zet de uitnodiging op verlopen) als **lid** (geen admin), daarmee inloggen (code 424242) en een paar eigen, niet-persoonlijke foto's in een album zetten.
    Verwacht: het demo-account ziet alleen Demo.
-8. **Indienen** in App Store Connect, met *Manually release this version* en gefaseerde release uit. Die keuze geldt per versie: een nieuwe versie (bv. 2.0.1 na een afwijzing) staat standaard weer op automatisch, dus bij **elke** indiening opnieuw nakijken. Inloggegevens voor de reviewer: het demo-adres en code 424242.
+8. **Indienen** in App Store Connect, met *Manually release this version* en gefaseerde release uit. Die keuze geldt per versie: een nieuwe versie (bv. 2.0.1 na een afwijzing) staat standaard weer op automatisch, dus bij **elke** indiening opnieuw nakijken. Inloggegevens voor de reviewer: het demo-adres en code 424242. Alle velden van 2.0.0 staan al klaar: [`app-store-2.0.0.md`](./app-store-2.0.0.md).
    Controle vóór indienen (invariant 13, handmatig: de app weigert een dev-build nog niet zelf): zoek het buildnummer op in het EAS-dashboard (*Builds*); daar moet bij die build profiel `production` staan, niet `dev` (die dient bij dezelfde app in).
    Verwacht: status *Waiting for Review*, daarna *Pending Developer Release*.
    Afwijking: afgewezen → zie §Terug, "Afgewezen review".
