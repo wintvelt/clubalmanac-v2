@@ -5,7 +5,7 @@ Status-overzicht van de AWS → Convex migratie. WP's updaten dit doc bij elke c
 **Huidige stand 2026-11-19**:
 - Fase 1 tot en met 3 ✅ afgerond.
 - Fase 4: de iPhone-app is klaar (WP13 tot en met WP34). De webapp komt na T0.
-- Fase 5 (cutover): T-4 en de generale repetitie op prod zijn klaar, en cutover-build 70 staat in TestFlight. Nog open: *Cannot Sell App* bij Apple, dan de datum van de schrijfstop en bericht 1 (T-3).
+- Fase 5 (cutover): T-4 en de generale repetitie op prod zijn klaar, en cutover-build 70 staat in TestFlight, en App Store Connect staat klaar voor 2.0.0. *Cannot Sell App* is verklaard: Apple haalde 1.6.0 uit de winkel, en goedkeuring van 2.0.0 zet hem terug. Nog open: de datum van de schrijfstop en bericht 1 (T-3).
 
 Cross-refs: [`work-packages/README.md`](./work-packages/README.md) (WP-overzicht), [`conventions/audit-track-record.md`](./conventions/audit-track-record.md) (bugs + recurring patterns), [`cascade-matrix.md`](./cascade-matrix.md) (cross-flow afhankelijkheden).
 
@@ -167,11 +167,11 @@ Dus: communicatie en blokkade gaan **buiten de oude app om**.
 
 ### Cutover stappenplan
 
-**Stand 2026-11-19:** T-4 klaar op *Cannot Sell App* na. Generale repetitie op prod groen (2026-11-17), daarna `reset --all`. Cutover-build 70 (`main` na WP34) staat in TestFlight.
+**Stand 2026-11-19:** T-4 klaar; *Cannot Sell App* lost op met de goedkeuring van 2.0.0 (draaiboek T-4). Generale repetitie op prod groen (2026-11-17), daarna `reset --all`. Cutover-build 70 (`main` na WP34) staat in TestFlight.
 
 Per stap wie, wat, verwacht en bij afwijking: [`wp31-cutover-draaiboek.md`](./runbooks/wp31-cutover-draaiboek.md). Punt zonder terugkeer: *Release This Version* in App Store Connect.
 
-- [ ] T-4 weken: Convex prod, Clerk prod (Hobby, test mode permanent aan), Mailjet prod, env-vars (zonder `WEBMASTER_EMAILS`), rooktests WP5/WP6/WP29, IAM-user films (alleen `s3:GetObject` op `blob-videos/*`), "Cannot Sell App" oplossen (Agreements of Developer Support; kan weken duren), backend via `npm run deploy:prod`, cutover-build met `pk_live`, backup-stack ([`infra/backup.md`](../infra/backup.md)), workflow nog uit
+- [x] T-4 weken: Convex prod, Clerk prod (Hobby, test mode permanent aan), Mailjet prod, env-vars (zonder `WEBMASTER_EMAILS`), rooktests WP5/WP6/WP29, IAM-user films (alleen `s3:GetObject` op `blob-videos/*`), "Cannot Sell App" verklaren (app uit de winkel; terug na goedkeuring 2.0.0), backend via `npm run deploy:prod`, cutover-build met `pk_live`, backup-stack ([`infra/backup.md`](../infra/backup.md)), workflow nog uit
 - [ ] T-3 weken: datum van de schrijfstop, bericht 1 (met adres-check)
 - [ ] T-1 week: herinneringsalbum, `prod-config.json` met uitsluitingen, Clerk pre-create en ID-map met `clerk-ids --create --write`, rol van de schrijfstop-uitzondering nagekeken, WP31 op prod, generale repetitie op prod (gate: schrijfstop op AWS-dev, `formaten` exit 0, `verify` groen, Wouter ziet 3 groepen, album van 540 foto's opent), daarna `reset --all`
 - [ ] T0: schrijfstop → migratie → `WEBMASTER_EMAILS`, filmlijst en anker-export met bestanden → demo-account → indienen met handmatige release → *Release This Version* → Nederland en België op *Available* → leden inlichten en `blob-videos` dicht, zodra de app in de App Store staat → migratie-key intrekken, backup aan
