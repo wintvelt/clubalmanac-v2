@@ -2,7 +2,7 @@
 
 Tussen 2026-04 en 2026-06 hebben 18 audit-cycli op clubalmanac-v2 backend de volgende productie-bugs ontdekt en gefixt vóór cutover.
 
-## 16 productie-bugs gevonden
+## 17 productie-bugs gevonden
 
 1. **U8** (audit-2): user-delete miste M2-cascade (founder/admin succession + group cleanup) — pure record-delete zonder downstream effect
 2. **AP4** (audit-4): album-photo delete miste group-cover cleanup — dangling cover-refs mogelijk
@@ -21,6 +21,8 @@ Tussen 2026-04 en 2026-06 hebben 18 audit-cycli op clubalmanac-v2 backend de vol
 14. **Beeld-gate als verbodslijst** (WP24-audit S1): elk beeld zonder foto-rij was over te nemen, ook andermans profielbeeld (het id staat in het publiek profiel). Fix: toestemmingslijst, `photos.create` intern.
 15. **`Blob.slice` op het beeldpad** (WP17a-audit B1): het type-sniffen van octet-stream-beelden (44% op dev) crashte in de Convex-runtime. Dezelfde valkuil als WP7; nu in [`convex-runtimes.md`](./convex-runtimes.md).
 16. **Profielfoto maakt de foto van een ander openbaar** (WP17a-red-team R1): met een openbare profielfoto kon een lid elke foto die hij mocht zien als profielfoto zetten, en daarmee voor iedereen ophalen. Fix: als profielfoto alleen een eigen beeld (invariant 16).
+17. **Clerk-issuer vast in de code** (WP31, inlogtest op prod, geen audit): `convex/auth.config.ts` had sinds fase 1 het adres van dev-Clerk vast. Elke prod-login gaf "Verbinden met de server lukt niet". Geen audit zag het, want elke audit las alleen de eigen diff, en de fout bestond pas op een tweede deployment. Fix (#28): de issuer komt uit `CLERK_FRONTEND_API_URL`.
+
 ## Plus
 
 - Dead code geëlimineerd (U9)
@@ -85,6 +87,12 @@ Tussen 2026-04 en 2026-06 hebben 18 audit-cycli op clubalmanac-v2 backend de vol
 - **WP21 (clubfilms bekijken) afgesloten 2026-11-15**: A, B, audit en red-team als sub-sessies vanuit regie (Setup 2 + 6, security en kosten hoog). Ondertekende S3-links van 3 uur vanuit de backend, eigen ondertekening zonder AWS-SDK. Audit: geen blockers, drie should-fix: films bleven staan als hun groep verdween, de handtekening-test controleerde alleen zichzelf (weer de gedeelde bron, nu met een vaste uitkomst van de AWS-SDK), en de dagelijkse controle mailt op prod tot T0. Red-team: geen weg naar een film zonder toegang; wel ontbrak de T0-stap "bucket dicht" en een kostenalarm (AWS Budgets $15 gezet). De gate vond wat geen review vond: slepen in de tijdbalk van de speler startte het terug-veeggebaar, en een film speelde door buiten beeld. Lessen:
   - Een inline videospeler met native bediening in een stack-scherm: zet het terug-veeggebaar uit, anders kun je niet spoelen. Unit-tests zien dat niet.
   - Check bij een gate na een fix dat de simulator de nieuwe code draait. Een Metro met `CI=1` laadt wijzigingen niet opnieuw; regie testte de fix op de oude bundle en zag een fout die al opgelost was. Start Metro zonder `CI=1`, of herstart hem na elke commit.
+- **WP31 (cutover-voorbereiding) T-4 en repetitie klaar 2026-11-17**: A (spec-criticus, leest de oude backend), B voor draaiboek en code, red-team op het draaiboek ("wat als stap N halverwege faalt"), drie fix-rondes (Setup 2 + 6 + 5). De T-4-setup en de generale repetitie op prod (cutover-build 62) waren groen; de lessen staan in het [draaiboek](../runbooks/wp31-cutover-draaiboek.md). Open tot T0: *Cannot Sell App* bij Apple, de datum en bericht 1. Cutover-build nu 70 (2026-11-19). Les:
+  - Een waarde die per deployment verschilt en vast in de code staat, ziet geen audit (bug 17). Zoek bij elke nieuwe deployment in de code naar het adres van de oude.
+- **WP32 (thuisgroep en UI-fixes) afgesloten 2026-11-18**: A, B en audit als sub-sessies vanuit regie (Setup 2). Audit: twee fixes. Een melding na een tik liet het scherm terugspringen naar het veld (C5), en Account verwijderen wiste de thuisgroep niet, omdat de user-id na de mutation al weg was (A6). Uit de groep gezet en dan Home: die groep opent met "geen lid", een bewuste afwijking van invariant 8. Gate groen.
+- **WP33 (animaties) afgesloten 2026-11-18**: A, B en audit als sub-sessies vanuit regie (Setup 2). Audit: drie fixes (de pil vervaagde ook met VoiceOver, de eerste swipe sprong, een tik bij cover weghalen). De gate vond wat geen test kon vinden: indrukken was te subtiel om te zien. Besluit 5 maakte het duidelijker, ook op foto-tegels, met een snelle tik die altijd zichtbaar is. Zoom-overgang naar het foto-detail: backlog, na T0. Les:
+  - Of een animatie zichtbaar is, beslist alleen een toestel. Zet in de spec maten met een bandbreedte en kijk na de eerste build, niet pas bij de gate.
+- **WP34 (afhankelijkheden, lokaal bouwen) afgesloten 2026-11-18**: solo, zoals WP30. Drie Expo-patches. Picomatch (Dependabot, hoog) is niet op te lossen: ook de nieuwste versie is kwetsbaar, en het pakket zit alleen in de bouwtools. Lokaal bouwen kost geen EAS-tegoed. Gate op build 69 groen.
 
 ## Recurring-pattern-kandidaten (WP23)
 
