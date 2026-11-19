@@ -5,7 +5,7 @@ Status-overzicht van de AWS → Convex migratie. WP's updaten dit doc bij elke c
 **Huidige stand 2026-11-19**:
 - Fase 1 tot en met 3 ✅ afgerond.
 - Fase 4: de iPhone-app is klaar (WP13 tot en met WP34). De webapp komt na T0.
-- Fase 5 (cutover): T-4 en de generale repetitie op prod zijn klaar, en cutover-build 70 staat in TestFlight, en App Store Connect staat klaar voor 2.0.0. *Cannot Sell App* is verklaard: Apple haalde 1.6.0 uit de winkel, en goedkeuring van 2.0.0 zet hem terug. Versneld (besluit 2026-11-19): geen T-3 en T-1 dag; op de T0-dag eerst het herinneringsalbum, dan de schrijfstop en direct het bericht.
+- Fase 5 (cutover): T-4 en de generale repetitie op prod zijn klaar, en cutover-build 70 staat in TestFlight, en App Store Connect staat klaar voor 2.0.0. *Cannot Sell App* is verklaard: Apple haalde 1.6.0 uit de winkel, en goedkeuring van 2.0.0 zet hem terug. Versneld (besluit 2026-11-19): geen T-3 en T-1 dag. **T0 was 2026-11-19:** schrijfstop, migratie (`verify` groen), filmlijst, anker-export en demo-groep klaar; 2.0.0 is ingediend en staat op *Waiting for Review*. Volgende stap: na de goedkeuring *Release This Version* (T0.9).
 
 Cross-refs: [`work-packages/README.md`](./work-packages/README.md) (WP-overzicht), [`conventions/audit-track-record.md`](./conventions/audit-track-record.md) (bugs + recurring patterns), [`cascade-matrix.md`](./cascade-matrix.md) (cross-flow afhankelijkheden).
 
@@ -167,14 +167,14 @@ Dus: communicatie en blokkade gaan **buiten de oude app om**.
 
 ### Cutover stappenplan
 
-**Stand 2026-11-19:** T-4 klaar; *Cannot Sell App* lost op met de goedkeuring van 2.0.0 (draaiboek T-4). Generale repetitie op prod groen (2026-11-17), daarna `reset --all`. Cutover-build 70 (`main` na WP34) staat in TestFlight.
+**Stand 2026-11-19:** T0.1 tot en met T0.8 gedaan: schrijfstop (beide controles geweigerd), migratie met `verify` groen (19 users, 2 groepen, 15 albums, 1511 foto's, 4540 storage-objecten), `formaten` 67 min, filmlijst 9 items, anker `backups/wp31-prod-t0.zip` (5,3 GiB), demo-groep, 2.0.0 (build 70) ingediend met handmatige release. Wacht op de review; daarna T0.9.
 
 Per stap wie, wat, verwacht en bij afwijking: [`wp31-cutover-draaiboek.md`](./runbooks/wp31-cutover-draaiboek.md). Punt zonder terugkeer: *Release This Version* in App Store Connect.
 
 - [x] T-4 weken: Convex prod, Clerk prod (Hobby, test mode permanent aan), Mailjet prod, env-vars (zonder `WEBMASTER_EMAILS`), rooktests WP5/WP6/WP29, IAM-user films (alleen `s3:GetObject` op `blob-videos/*`), "Cannot Sell App" verklaren (app uit de winkel; terug na goedkeuring 2.0.0), backend via `npm run deploy:prod`, cutover-build met `pk_live`, backup-stack ([`infra/backup.md`](../infra/backup.md)), workflow nog uit
 - [x] T-3 weken: vervallen, versneld naar de T0-dag (adres-check zit in bericht 3)
-- [ ] T-1 week: herinneringsalbum, `prod-config.json` met uitsluitingen, Clerk pre-create en ID-map met `clerk-ids --create --write`, rol van de schrijfstop-uitzondering nagekeken, WP31 op prod, generale repetitie op prod (gate: schrijfstop op AWS-dev, `formaten` exit 0, `verify` groen, Wouter ziet 3 groepen, album van 540 foto's opent), daarna `reset --all`
-- [ ] T0: schrijfstop → migratie → `WEBMASTER_EMAILS`, filmlijst en anker-export met bestanden → demo-account → indienen met handmatige release → *Release This Version* → Nederland en België op *Available* → leden inlichten en `blob-videos` dicht, zodra de app in de App Store staat → migratie-key intrekken, backup aan
+- [x] T-1 week: herinneringsalbum, `prod-config.json` met uitsluitingen, Clerk pre-create en ID-map met `clerk-ids --create --write`, rol van de schrijfstop-uitzondering nagekeken, WP31 op prod, generale repetitie op prod (gate: schrijfstop op AWS-dev, `formaten` exit 0, `verify` groen, Wouter ziet 3 groepen, album van 540 foto's opent), daarna `reset --all`
+- [ ] T0 (tot en met indienen gedaan 2026-11-19): schrijfstop → migratie → `WEBMASTER_EMAILS`, filmlijst en anker-export met bestanden → demo-account → indienen met handmatige release → *Release This Version* → Nederland en België op *Available* → leden inlichten en `blob-videos` dicht, zodra de app in de App Store staat → migratie-key intrekken, backup aan
 - [ ] T+1: alle leden ingelogd
 - [ ] Een week na T0.10: backup met de hand en teruggezet (gate B4)
 - [ ] T+30: kwartaal-herinnering backup, `scripts/.data/` en prod-sleutels opgeruimd, AWS opgeruimd behalve `blob-images` en `blob-videos`

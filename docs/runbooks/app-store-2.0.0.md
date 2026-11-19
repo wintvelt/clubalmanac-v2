@@ -1,6 +1,6 @@
 # App Store Connect: versie 2.0.0
 
-Wat er in App Store Connect staat voor 2.0.0, per veld. Klaargezet 2026-11-19; build 70 is gekoppeld. **Indienen** (*Add for Review*) pas op T0.8 van het [draaiboek](./wp31-cutover-draaiboek.md), als prod gevuld is en de demo-groep bestaat.
+Wat er in App Store Connect staat voor 2.0.0, per veld. Klaargezet en ingediend 2026-11-19 (22:38); build 70 is gekoppeld. **Indienen** (*Add for Review*) pas op T0.8 van het [draaiboek](./wp31-cutover-draaiboek.md), als prod gevuld is en de demo-groep bestaat.
 
 ## Versie 2.0.0 (Distribution → iOS App → 2.0.0)
 
@@ -48,6 +48,18 @@ Clubalmanac is helemaal opnieuw gebouwd.
 - Een kaart per album, en foto's delen via het deelmenu.
 - Licht en donker, zoals je iPhone staat.
 - Je account verwijderen kan in de app, op Profiel.
+```
+
+De app heeft ook een **English (U.S.)**-lokalisatie; daar is *What's New* verplicht (taalmenu rechtsboven):
+
+```
+Clubalmanac has been completely rebuilt.
+- Sign in with your email address and a code by email, no password.
+- All your groups, albums and photos are back.
+- My photos: everything you shared, in one place.
+- A map per album, and share photos via the share sheet.
+- Light and dark mode, following your iPhone.
+- Delete your account in the app, under Profile.
 ```
 
 **Copyright:** `2026 Vaatje`
