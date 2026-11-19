@@ -32,7 +32,7 @@ Alles hieronder laat rijen achter op prod. Dat geeft niets: vóór de repetitie 
 - [x] **Inlogtest op prod** met de cutover-build (2026-11-17): eerst "Verbinden met de server lukt niet", want `convex/auth.config.ts` had het adres van dev-Clerk vast in de code (sinds fase 1; opgelost in #28: de issuer komt uit `CLERK_FRONTEND_API_URL`). Daarna, na een nieuwe deploy: inlogcode komt aan, en de app toont "Je hebt eerst een uitnodiging nodig". Daarna de eigen Clerk-user in Clerk prod verwijderd (anders telt de pre-create 18 in plaats van 19).
   De overige rooktests (uitnodigen, bounce, account verwijderen) staan in de gate van de generale repetitie: prod is nu leeg, en zonder lid met groep kan niemand uitnodigen (besluit Wouter 2026-11-17).
 - [x] **"Cannot Sell App" verklaard.** Stand 2026-11-16 (App Store Connect → app → *Pricing and Availability*): België, Luxemburg, Nederland, Zwitserland en het VK op *Cannot Sell App*, de rest *Not Available*. Oorzaak (gevonden 2026-11-19, App Store Connect → app → *Messages*): Apple haalde 1.6.0 op 2026-07-28 uit de winkel, na drie jaar zonder update en te weinig downloads (*App Store Improvement Notice* van 2026-04-27). Volgens Apple komt de app terug zodra een update is goedgekeurd: dat is 2.0.0 op T0.8. Een nieuw app-record is niet nodig. De overeenkomsten en de DSA-traderstatus stonden in orde (*Free Apps Agreement* actief; DSA *Active* sinds 16 Aug 2024); de traderstatus niet wijzigen vóór T0.
-  Gevolg: *Available* komt pas na de goedkeuring, dus pas tussen T0.8 en T0.9, en dat controleert T0.9. De oude app blijft tot dan alleen-lezen. Komt na goedkeuring toch *Cannot Sell App*: zie *Afwijking* bij T0.9. Vraag bij bericht 1 na of een lid in Luxemburg, Zwitserland of het VK woont.
+  Gevolg: *Available* komt pas na de goedkeuring, dus pas tussen T0.8 en T0.9, en dat controleert T0.9. De oude app blijft tot dan alleen-lezen. Komt na goedkeuring toch *Cannot Sell App*: zie *Afwijking* bij T0.9. Bericht 3 vraagt of een lid buiten Nederland of België woont.
 - [x] **Cutover-build** met profiel `production` (`pk_live`, prod-URL). Die build wist eenmalig de Clerk-cache-sleutels van de oude `pk_test`-key (WP15a). Gefaseerde release uit (W10). Vooraf in Expo (expo.dev → project → Environment variables, omgeving *production*, visibility *Plain text*): `EXPO_PUBLIC_CONVEX_URL` = `https://deafening-shark-296.eu-west-1.convex.cloud` en `EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY` = `pk_live_…`. Lokaal bouwen (geen EAS-tegoed, zie [`external-services.md`](../conventions/external-services.md) §Lokaal bouwen) vanaf `main`, in tmux zodat een verbroken SSH-verbinding de build niet stopt, en daarna uploaden:
   ```bash
   tmux new -s prod "cd ~/Code/clubalmanac-v2-release && git pull && cd app && npm ci && npx eas-cli build --platform ios --profile production --local --output ../builds/cutover-prod.ipa; exec zsh"
@@ -45,15 +45,19 @@ Alles hieronder laat rijen achter op prod. Dat geeft niets: vóór de repetitie 
 - [x] **Backup-bucket en -workflow** klaarzetten: [`infra/backup.md`](../../infra/backup.md) stap 1-3. Repo-variabele `BACKUP_ENABLED` **niet** zetten: zonder die variabele slaat de workflow elke run over (grijs, niet rood). Prod is tot T0 leeg of bevat de repetitie. *Gedaan 2026-11-16.*
   Verwacht: op de 1e van de maand staat er een run *Backup* met status *skipped*.
 
-## T-3 weken — datum en leden
+## Versneld (besluit Wouter 2026-11-19)
 
-- [ ] Datum van de schrijfstop (T0.1) vastleggen. T0 zelf is de dag van de vrijgave, en die hangt van Apple af.
-- [ ] Bericht 1 naar de leden (WhatsApp en mail, tekst in §Teksten). Vraagt ook of hun e-mailadres nog klopt: wie dat niet meer leest, kan op T0 de code niet ontvangen.
-  Afwijking: een lid heeft een nieuw adres. Liefst laten inloggen met het oude adres; anders zie WP31 §Edge cases, "Lid zonder bereikbaar adres".
+Geen vooraankondiging: T-3 weken (datum, bericht 1) en T-1 dag (bericht 2) vervallen. Volgorde op de dag zelf:
+1. het herinneringsalbum (eerste punt van T-1 week): vóór de schrijfstop, daarna kan het niet meer;
+2. de schrijfstop (T0.2);
+3. direct daarna het bericht aan de leden (T0.1, bericht 3, met de vragen uit bericht 1);
+4. T0.3 tot en met T0.8.
+
+Risico, geaccepteerd: een lid dat zijn adres niet meer leest, merkt dat pas bij het inloggen (T0.10); zie WP31 §Edge cases, "Lid zonder bereikbaar adres". Wie vlak voor de stop iets uploadt, krijgt een foutmelding.
 
 ## T-1 week — voorbereiden en repetitie op prod
 
-- [ ] **Herinnering in de oude app** (W2): in Blob bibliotheek een album met een banner, tekst zonder vaste datum ("Nieuwe app komt binnenkort"). Banner eerst via de S3-console onder `public/img/` zetten, dan één record `GA<groepId>` / `A…` met `name`, `photo.url` en `createdAt` (WP31 vraag 2).
+- [ ] **Herinnering in de oude app** (W2): in Blob bibliotheek een album met een banner, tekst zonder vaste datum ("Nieuwe app komt binnenkort"). Op de T0-dag zelf, vóór de schrijfstop (§Versneld). Banner eerst via de S3-console onder `public/img/` zetten, dan één record `GA<groepId>` / `A…` met `name`, `photo.url` en `createdAt` (WP31 vraag 2).
   Verwacht: het album staat in je eigen oude app in Blob bibliotheek. Noteer de album-ID voor `excludeAlbumIds`.
 - [x] **Extract en inspect** (alleen lezen): `AWS_PROFILE=clubalmanac npm run migrate -- extract` (het profiel van de lees-gebruiker op de server), `npm run migrate -- inspect`.
   Verwacht: 20 users, waarvan John Appleseed het reviewaccount; telling gelijk aan WP31 §Telling, of verklaarbaar.
@@ -134,15 +138,11 @@ Alles hieronder laat rijen achter op prod. Dat geeft niets: vóór de repetitie 
 - [x] **Na de repetitie prod leegmaken:** `MIGRATE_ALLOW_PROD=yes npm run migrate -- reset --target prod --yes --all`.
   Verwacht: `npm run migrate -- verify --target prod` toont in de kolom van de deployment overal 0, en `storage: 0 objecten`. Exitcode 1 en "rood" horen hier bij: `verify` vergelijkt met `convex-records.json` van de repetitie. Kijk alleen naar die kolom. De filmlijst staat nog (valt buiten `reset`) en wijst naar een gewiste groep: op T0.5 opnieuw vullen is daarom verplicht.
 
-## T-1 dag
-
-- [ ] Bericht 2 naar de leden (§Teksten): morgen kan de oude app alleen nog kijken; niet uploaden of uitnodigen.
-
 ## T0 — de overstap
 
 De dag van de schrijfstop. De vrijgave (T0.9) volgt na de review, mogelijk dagen later.
 
-1. **Leden melden** dat de oude app vanaf nu alleen kijkt (bericht 3). Een uitnodiging die iemand toch stuurt, mailt nog wel maar bestaat daarna niet (W11, geaccepteerd).
+1. **Leden melden** dat de oude app vanaf nu alleen kijkt (bericht 3), direct ná de schrijfstop van T0.2 (§Versneld). Een uitnodiging die iemand toch stuurt, mailt nog wel maar bestaat daarna niet (W11, geaccepteerd).
 2. **Schrijfstop** (W1). Twee policies, geen code:
    - Op tabel `blob-images-photos-prod` (eu-central-1) een resource policy:
      ```json
@@ -258,7 +258,6 @@ De dag van de schrijfstop. De vrijgave (T0.9) volgt na de review, mogelijk dagen
 
 Kort, in je eigen woorden aan te passen.
 
-1. **T-3 weken.** "Op {datum} gaat de oude app op slot: je kunt dan nog kijken, maar niets meer toevoegen. Een paar dagen later komt de nieuwe app, als gewone update in de App Store. Je logt dan in met je e-mailadres en een code die je per mail krijgt. Klopt het adres waarmee je in de app zit nog? Laat het weten als dat niet zo is."
-2. **T-1 dag.** "Morgen gaat de oude app op slot. Upload of nodig vandaag niemand meer uit; wat je na morgen toevoegt, gaat verloren."
-3. **T0.1.** "De oude app is nu op slot: kijken kan, toevoegen niet. Zodra de nieuwe app in de App Store staat, hoor je het."
+1. en 2. vervallen (§Versneld).
+3. **T0.1.** "De oude app is nu op slot: kijken kan, toevoegen niet. Over een paar dagen komt de nieuwe app, als gewone update in de App Store; je logt dan in met je e-mailadres en een code per mail. Klopt het adres waarmee je in de app zit nog, en woon je buiten Nederland of België? Laat het weten. Zodra de nieuwe app er is, hoor je het."
 4. **T0.10.** "De nieuwe app staat in de App Store. Werk de app bij (of installeer hem opnieuw), log in met je e-mailadres en de code uit de mail (een Engelstalige mail van clubalmanac met 6 cijfers); geen mail binnen een paar minuten? Kijk in je spam, want de code komt van een nieuwe afzender. Je ziet al je groepen, albums en foto's. Eén keer per week vraagt de app opnieuw om een code."
