@@ -210,6 +210,7 @@ Een build op de server zelf kost geen EAS-tegoed. In `app/`:
 
 - Bouwen: `eas build -p ios --profile dev --local --output ../builds/<naam>.ipa`. `builds/` is gitignored.
 - Uploaden: `eas submit -p ios --profile dev --path ../builds/<naam>.ipa`. Daarna verder vanaf stap 7 hierboven.
+- Bouw via SSH in **tmux** (`tmux new -s <naam> "…; exec zsh"`, terug met `tmux attach -t <naam>`). Valt de verbinding weg zonder tmux, dan blijft de build hangen op een vraag die niemand meer ziet.
 - **Vereisten**: Xcode, CocoaPods en fastlane (`brew install cocoapods fastlane`).
 - **Apple WWDR G3-tussencertificaat** in de login-keychain. Zonder stopt de build met *"Distribution certificate … hasn't been imported successfully"*. Download `AppleWWDRCAG3.cer` van apple.com/certificateauthority en dubbelklik (Sleutelhangertoegang, login-keychain).
 - `EAS_LOCAL_BUILD_SKIP_CLEANUP=1` alleen bij debuggen: de werkmap in `$TMPDIR/eas-build-local-nodejs/` blijft dan staan en is ±4 GB. Daarna weggooien.

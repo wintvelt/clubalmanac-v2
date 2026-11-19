@@ -40,11 +40,15 @@ Alles hieronder laat rijen achter op prod. Dat geeft niets: vóór de repetitie 
   3. Is alles daar actief en blijft *Cannot Sell App* staan: Apple Developer Support (developer.apple.com/contact), onderwerp App Store Connect, met de app-ID `1663038609` en de melding. Antwoord kan dagen duren.
   Verwacht: elk aangezet land waar een lid woont op *Available* (minstens Nederland en België; vraag bij bericht 1 na of iemand in Luxemburg, Zwitserland of het VK woont), ruim vóór de datum van de schrijfstop (T-3 weken). Daarmee is ook 1.6.0 tot T0 weer te downloaden; dat is geen probleem.
   Afwijking: op T-3 weken nog *Cannot Sell App* → de datum van de schrijfstop nog niet vastleggen. Zonder verkoop is er geen T0.
-- [ ] **Cutover-build** met profiel `production` (`pk_live`, prod-URL). Die build wist eenmalig de Clerk-cache-sleutels van de oude `pk_test`-key (WP15a). Gefaseerde release uit (W10). Vooraf in Expo (expo.dev → project → Environment variables, omgeving *production*, visibility *Plain text*): `EXPO_PUBLIC_CONVEX_URL` = `https://deafening-shark-296.eu-west-1.convex.cloud` en `EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY` = `pk_live_…`. Bouwen vanuit de release-clone:
+- [x] **Cutover-build** met profiel `production` (`pk_live`, prod-URL). Die build wist eenmalig de Clerk-cache-sleutels van de oude `pk_test`-key (WP15a). Gefaseerde release uit (W10). Vooraf in Expo (expo.dev → project → Environment variables, omgeving *production*, visibility *Plain text*): `EXPO_PUBLIC_CONVEX_URL` = `https://deafening-shark-296.eu-west-1.convex.cloud` en `EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY` = `pk_live_…`. Lokaal bouwen (geen EAS-tegoed, zie [`external-services.md`](../conventions/external-services.md) §Lokaal bouwen) vanaf `main`, in tmux zodat een verbroken SSH-verbinding de build niet stopt, en daarna uploaden:
   ```bash
-  cd ~/Code/clubalmanac-v2-release/app && npm ci && npx eas-cli build --platform ios --profile production --auto-submit
+  tmux new -s prod "cd ~/Code/clubalmanac-v2-release && git pull && cd app && npm ci && npx eas-cli build --platform ios --profile production --local --output ../builds/cutover-prod.ipa; exec zsh"
   ```
-  Verwacht: de build-log noemt beide variabelen uit de omgeving *production*; de build staat in TestFlight. De waarschuwing over Expo Go is onschuldig.
+  ```bash
+  cd ~/Code/clubalmanac-v2-release/app && npx eas-cli submit --platform ios --profile production --path ../builds/cutover-prod.ipa
+  ```
+  Verwacht: de build staat in TestFlight. De waarschuwing over Expo Go is onschuldig. **Niet inloggen met deze build vóór T0.6**: prod blijft leeg tot `load-records`.
+  *Gedaan 2026-11-19:* build 70 (2.0.0), vanaf `main` `d4b226d` (na WP32-WP34). In de bundle gecontroleerd: `pk_live`, prod-URL, geen `pk_test`-sleutel. Build 62 van de repetitie vervalt.
 - [x] **Backup-bucket en -workflow** klaarzetten: [`infra/backup.md`](../../infra/backup.md) stap 1-3. Repo-variabele `BACKUP_ENABLED` **niet** zetten: zonder die variabele slaat de workflow elke run over (grijs, niet rood). Prod is tot T0 leeg of bevat de repetitie. *Gedaan 2026-11-16.*
   Verwacht: op de 1e van de maand staat er een run *Backup* met status *skipped*.
 
