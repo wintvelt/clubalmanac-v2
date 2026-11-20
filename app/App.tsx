@@ -3,6 +3,7 @@ import { ConvexReactClient } from "convex/react";
 import { StatusBar } from "expo-status-bar";
 import { useState, type ReactNode } from "react";
 import { SafeAreaProvider } from "react-native-safe-area-context";
+import { CLERK_WEB_SCRIPTS } from "./src/auth/clerkWebScripts";
 import { deviceClerkStorage } from "./src/auth/deviceClerkStorage";
 import { ConvexProviderWithClerkRetry } from "./src/data/convexConnection";
 import { ImageHostProvider } from "./src/data/images";
@@ -56,6 +57,8 @@ function Providers({ env, children }: { env: ClientEnv; children: ReactNode }) {
         publishableKey={env.clerkPublishableKey}
         tokenCache={storage.tokenCache}
         __experimental_resourceCache={storage.resourceCache}
+        // WP35: op het web vaste versies van de Clerk-scripts; op iOS leeg.
+        {...CLERK_WEB_SCRIPTS}
       >
         <ImageHostProvider convexUrl={env.convexUrl}>
           <ConvexPerSession convex={convex}>{children}</ConvexPerSession>

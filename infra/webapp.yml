@@ -34,6 +34,34 @@ Parameters:
     Description: >-
       ARN van de bestaande IAM-identity-provider voor
       token.actions.githubusercontent.com (dezelfde als bij clubalmanac-site).
+  GitHubEnvironment:
+    Type: String
+    Default: webapp
+    Description: >-
+      Naam van de GitHub-environment van de deploy-job. Alleen een job in die
+      environment mag de rol aannemen; de environment laat alleen main toe.
+  # Content-Security-Policy (red-team L3): de prod-hosts, nooit die van dev.
+  ConvexDeployment:
+    Type: String
+    AllowedPattern: "^[a-z0-9]+(-[a-z0-9]+)*(\\.[a-z0-9-]+)?$"
+    Description: >-
+      De prod-deployment van Convex zonder .convex.cloud, zoals hij in
+      EXPO_PUBLIC_CONVEX_URL staat (bv. happy-otter-123.eu-west-1). Wordt
+      https://<dit>.convex.cloud, wss://<dit>.convex.cloud en
+      https://<dit>.convex.site.
+  ClerkFrontendApiHost:
+    Type: String
+    AllowedPattern: "^(?!.*\\.clerk\\.accounts\\.dev$)[a-z0-9]+([.-][a-z0-9]+)*$"
+    Description: >-
+      De Frontend API-host van de Clerk-prod-instance (Clerk-dashboard →
+      Domains, bv. clerk.clubalmanac.com). Geen *.clerk.accounts.dev: dat is dev.
+  FilmsHost:
+    Type: String
+    AllowedPattern: "^[a-z0-9][a-z0-9.-]*\\.s3\\.[a-z0-9-]+\\.amazonaws\\.com$"
+    Description: >-
+      S3-host van de films en hun covers (WP21, ondertekende links):
+      <FILMS_S3_BUCKET>.s3.<FILMS_S3_REGION>.amazonaws.com, met de waarden van
+      de Convex-prod-env-vars. Niet in de repo (WP21 A-invariant 9).
 
 Resources:
   WebappBucket:
@@ -170,6 +198,28 @@ Resources:
           ReferrerPolicy:
             ReferrerPolicy: strict-origin-when-cross-origin
             Override: true
+          # Red-team L3. Scripts alleen van hier en van Clerk (die laadt
+          # clerk-js en ui van zijn Frontend API); verbindingen naar Convex
+          # (client, websocket, beeldpaden) en Clerk; beelden ook als blob:
+          # (het beeldgeheugen), de profielfoto van .convex.site, de tegels van
+          # OpenStreetMap en de filmcovers; films van S3. 'unsafe-inline' bij
+          # style-src: react-native-web en Clerk zetten stijlen in de pagina.
+          # Na de eerste prod-deploy: console controleren (runbook).
+          ContentSecurityPolicy:
+            Override: true
+            ContentSecurityPolicy: !Sub >-
+              default-src 'self';
+              script-src 'self' https://${ClerkFrontendApiHost};
+              connect-src 'self' https://${ConvexDeployment}.convex.cloud wss://${ConvexDeployment}.convex.cloud https://${ConvexDeployment}.convex.site https://${ClerkFrontendApiHost};
+              img-src 'self' blob: data: https://${ConvexDeployment}.convex.site https://tile.openstreetmap.org https://${FilmsHost} https://img.clerk.com;
+              media-src 'self' https://${FilmsHost};
+              style-src 'self' 'unsafe-inline';
+              font-src 'self' data:;
+              worker-src 'self' blob:;
+              object-src 'none';
+              frame-ancestors 'none';
+              base-uri 'self';
+              form-action 'self'
         CustomHeadersConfig:
           Items:
             - Header: X-Robots-Tag
@@ -251,8 +301,11 @@ Resources:
             Condition:
               StringEquals:
                 token.actions.githubusercontent.com:aud: sts.amazonaws.com
-                # Alleen een run op main, niet vanuit een PR of andere branch.
-                token.actions.githubusercontent.com:sub: !Sub "repo:${GitHubRepo}:ref:refs/heads/main"
+                # Alleen de deploy-job van de workflow Webapp: een job met
+                # `environment: webapp` krijgt dit subject, niet de branch
+                # (red-team M1: anders mag elke workflow op main de rol). De
+                # environment zelf laat alleen main toe.
+                token.actions.githubusercontent.com:sub: !Sub "repo:${GitHubRepo}:environment:${GitHubEnvironment}"
       Policies:
         - PolicyName: webapp-deploy
           PolicyDocument:

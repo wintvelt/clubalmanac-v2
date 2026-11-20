@@ -31,19 +31,32 @@ Op een telefoon in hetzelfde netwerk: `npx expo start --web --host lan` en het a
 
 ## Eenmalig opzetten op prod (Wouter)
 
-In deze volgorde. Stap 1 tot en met 4 kunnen vóór de merge; stap 5 tot en met 9 na de merge van de PR naar `main`.
+In deze volgorde. Stap 1 tot en met 7 kunnen vóór de merge; stap 8 tot en met 12 na de merge van de PR naar `main`.
 
 1. **Certificate Manager**, regio **US East (N. Virginia) us-east-1** (CloudFront neemt alleen daar een certificaat) **→ Request certificate → Request a public certificate**. Domeinnaam `app.clubalmanac.com`, validatie **DNS validation**. Open het certificaat → **Create records in Route 53** → **Create records**. Wacht tot de status *Issued* is (meestal een paar minuten). Noteer het **ARN**.
 2. **Route 53 → Hosted zones** → `clubalmanac.com`: noteer de **Hosted zone ID**.
 3. **IAM → Identity providers** → `token.actions.githubusercontent.com`: noteer de **ARN** (dezelfde als bij `clubalmanac-site`).
-4. **CloudFormation**, regio **eu-west-1 (Ireland)** **→ Create stack → With new resources → Upload a template file** → `infra/webapp.yml`. Stacknaam `clubalmanac-webapp`. Parameters: `CertificateArn` uit stap 1, `HostedZoneId` uit stap 2, `GitHubOidcProviderArn` uit stap 3; de rest laten staan. Vink onderaan aan dat de stack IAM-resources mag maken. Wacht op *CREATE_COMPLETE* (de distributie kost ~5 minuten) en open **Outputs**.
-5. **GitHub → repo → Settings → Secrets and variables → Actions → Variables → New repository variable**, vijf keer:
+4. **De prod-hosts voor de Content-Security-Policy** noteren:
+   - **Convex:** de prod-`EXPO_PUBLIC_CONVEX_URL` zonder `https://` en zonder `.convex.cloud` (bv. `happy-otter-123.eu-west-1`).
+   - **Clerk-dashboard, prod-instance → Configure → Domains**: de host bij **Frontend API** (bv. `clerk.clubalmanac.com`). Niet een `….clerk.accounts.dev`: dat is dev, en de stack weigert hem.
+   - **Films:** `<bucket>.s3.<regio>.amazonaws.com`, met de bucket en regio van prod:
+
+     ```bash
+     npx convex env get FILMS_S3_BUCKET --prod
+     ```
+
+     ```bash
+     npx convex env get FILMS_S3_REGION --prod
+     ```
+5. **CloudFormation**, regio **eu-west-1 (Ireland)** **→ Create stack → With new resources → Upload a template file** → `infra/webapp.yml`. Stacknaam `clubalmanac-webapp`. Parameters: `CertificateArn` uit stap 1, `HostedZoneId` uit stap 2, `GitHubOidcProviderArn` uit stap 3, `ConvexDeployment`, `ClerkFrontendApiHost` en `FilmsHost` uit stap 4; de rest laten staan (`GitHubEnvironment` = `webapp`). Vink onderaan aan dat de stack IAM-resources mag maken. Wacht op *CREATE_COMPLETE* (de distributie kost ~5 minuten) en open **Outputs**.
+6. **GitHub → repo → Settings → Environments → New environment.** Name `webapp` → **Configure environment**. Bij **Deployment branches and tags**: kies **Selected branches and tags** → **Add deployment branch or tag rule** → Ref type **Branch**, Name pattern `main` → **Add rule**. Verder niets: geen geheimen, de variabelen staan op repo-niveau. Alleen een job in deze environment mag de deploy-rol aannemen (de trust van de rol in de stack), en de environment laat alleen `main` toe.
+7. **GitHub → repo → Settings → Secrets and variables → Actions → Variables → New repository variable**, vijf keer:
    - `WEBAPP_BUCKET` = output `BucketName`
    - `WEBAPP_DISTRIBUTION_ID` = output `DistributionId`
    - `WEBAPP_DEPLOY_ROLE_ARN` = output `DeployRoleArn`
    - `WEBAPP_CONVEX_URL` = de prod-`EXPO_PUBLIC_CONVEX_URL` (`https://….convex.cloud`, dezelfde als in de EAS-omgeving *production*)
    - `WEBAPP_CLERK_PUBLISHABLE_KEY` = de prod-`EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY` (`pk_live_…`)
-6. **Convex prod**, de toegestane origin, dan de backend (vanuit de release-clone, [`scripts/deploy-prod.sh`](../../scripts/deploy-prod.sh)):
+8. **Convex prod**, de toegestane origin, dan de backend (vanuit de release-clone, [`scripts/deploy-prod.sh`](../../scripts/deploy-prod.sh)):
 
    ```bash
    npx convex env set CLUBALMANAC_WEB_ORIGINS "https://app.clubalmanac.com" --prod
@@ -53,10 +66,10 @@ In deze volgorde. Stap 1 tot en met 4 kunnen vóór de merge; stap 5 tot en met 
    npm run deploy:prod
    ```
 
-7. **Clerk-dashboard, prod-instance → Configure → Domains**: `app.clubalmanac.com` is een subdomein van het domein van de instance, dus er hoeft niets bij (geen satellite-domein). Check alleen dat het domein `clubalmanac.com` er staat en groen is. Laat **Attack protection → Bot sign-up protection** uit (WP19b besluit 3; met hem aan vraagt Clerk op het web een captcha die de app niet heeft).
-8. **GitHub → Actions → Webapp → Run workflow** (branch `main`). Check dat hij groen is.
-9. **Controle:** https://app.clubalmanac.com toont het inlogscherm; http:// stuurt door naar https://; een diep adres (bv. `/profiel`) herladen geeft de app, geen foutpagina; https://clubalmanac.com/privacy/nl werkt nog. Inloggen, een album openen (beelden laden), uitloggen.
-10. **Pas als stap 9 goed is**, de web-link in de uitnodigingsmail aanzetten:
+9. **Clerk-dashboard, prod-instance → Configure → Domains**: `app.clubalmanac.com` is een subdomein van het domein van de instance, dus er hoeft niets bij (geen satellite-domein). Check alleen dat het domein `clubalmanac.com` er staat en groen is. Laat **Attack protection → Bot sign-up protection** uit (WP19b besluit 3; met hem aan vraagt Clerk op het web een captcha die de app niet heeft, en die de Content-Security-Policy ook blokkeert).
+10. **GitHub → Actions → Webapp → Run workflow** (branch `main`). Twee jobs: *build* en dan *deploy* (in de environment `webapp`). Check dat beide groen zijn.
+11. **Controle:** https://app.clubalmanac.com toont het inlogscherm; http:// stuurt door naar https://; een diep adres (bv. `/profiel`) herladen geeft de app, geen foutpagina; https://clubalmanac.com/privacy/nl werkt nog. Open de **console** van de browser (Chrome: *Weergave → Ontwikkelaar → JavaScript-console*) en doe: inloggen, een album openen (beelden laden), de kaart, een film afspelen, uitloggen. Er mag geen melding met *Content Security Policy* of *Refused to* staan. Staat die er wel: noteer de geblokkeerde host en meld hem; de CSP staat in `infra/webapp.yml` (`WebappHeadersPolicy`).
+12. **Pas als stap 11 goed is**, de web-link in de uitnodigingsmail aanzetten:
 
     ```bash
     npx convex env set CLUBALMANAC_WEB_URL "https://app.clubalmanac.com" --prod
@@ -69,6 +82,10 @@ In deze volgorde. Stap 1 tot en met 4 kunnen vóór de merge; stap 5 tot en met 
 Na een merge met app-wijzigingen: eerst de Convex-backend naar prod (als die ook veranderde), dan **Actions → Webapp → Run workflow** op `main`. De workflow bouwt, zet eerst de bundels (met hash, een jaar in de cache), dan `index.html` (`no-cache`) en leegt de cache van `index.html`. Een open tabblad krijgt de nieuwe versie bij herladen. Oude bundels blijven 7 dagen staan (een open tabblad breekt niet), daarna ruimt een volgende deploy ze op; de bucket houdt oude versies nog 30 dagen.
 
 **Terugzetten:** de vorige commit van `main` opnieuw deployen kan niet met de knop (die bouwt `main`). Revert de commit via een PR, of zet in S3 de vorige versie van `index.html` terug (*Show versions*) en leeg de cache van `/index.html`.
+
+## Clerk-versie ophogen
+
+Op het web laadt Clerk zijn scripts (`clerk-js` en `@clerk/ui`) van de Frontend API. De versies staan vast in [`app/src/auth/clerkWebScripts.web.ts`](../../app/src/auth/clerkWebScripts.web.ts) (nu `clerk-js` 6.46.2, `ui` 1.44.2). Bij een update van `@clerk/expo`: haal die twee regels tijdelijk weg, kijk lokaal (`npx expo start --web`, Netwerk, filter `npm/@clerk/`) welke versies hij dan laadt, test inloggen en uitloggen, en zet die versies erin.
 
 ## Bekend
 
