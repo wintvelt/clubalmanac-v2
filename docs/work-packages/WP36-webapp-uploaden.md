@@ -207,3 +207,14 @@ Tegen een wegwerp-referentie (buiten de commit): root `tests/http` + `tests/imag
 - **B4.** Pagina weggegooid tijdens een ronde: accepteren (advies), of de upload-id's per tabblad bewaren in `sessionStorage`?
 - **B5.** Android-emulator op de Mac installeren voor de gate (advies; ~10–14 GB, gratis), of alleen Chrome met apparaat-emulatie plus één Android-lid na de livegang?
 - **B6.** Profielfoto op het web: automatisch een vierkant uit het midden (advies), of de hele foto?
+
+## Besluiten Wouter na A (2026-11-20)
+
+Alle zes volgens het advies van A:
+
+- **B1.** De plaats ontbreekt op Android meestal; dat accepteren we. Geen tweede knop "Kies via Bestanden".
+- **B2.** Geen HEIC-decoder: per foto de melding "formaat".
+- **B3.** Grens 100 MP per foto.
+- **B4.** Een weggegooide pagina tijdens een ronde accepteren; geen `sessionStorage`.
+- **B5.** Android-emulator op de Mac voor de gate van WP35 en WP36. Regie installeert hem.
+- **B6.** Profielfoto op het web: automatisch een vierkant uit het midden.
