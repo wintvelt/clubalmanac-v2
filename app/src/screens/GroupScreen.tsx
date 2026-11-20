@@ -15,6 +15,7 @@ import { Notice } from "../components/Notice";
 import { QueryBoundary } from "../components/QueryBoundary";
 import { Screen } from "../components/Screen";
 import { SegmentedTabs } from "../components/SegmentedTabs";
+import { useWideLayout } from "../components/wideLayout";
 import { InvitedSection } from "./InvitesScreens";
 import { SmallButton } from "../components/SmallButton";
 import { EmptyState, LoadingState } from "../components/States";
@@ -60,6 +61,7 @@ import { radius, size, space, useTheme } from "../theme";
 import { toMyGroups } from "./AlbumParts";
 import { FilmsTab } from "./FilmsTab";
 import { AlbumCoverTile, backToMyGroups, CoverHeader, LoadError } from "./GroupParts";
+import { WideSide, WideSplit } from "./WideSide";
 
 type Tab = "albums" | "films" | "leden";
 const TABS = [
@@ -115,7 +117,46 @@ function GroupContent({ groupId }: { groupId: Id<"groups"> }) {
   const hasFilms = groupHasFilms(films, groupId);
   const shownTab: Tab = tab === "films" && !hasFilms ? "albums" : tab;
 
+  const wide = useWideLayout();
+
   if (group === null) return departing ? <Departing /> : <NotMember groupId={groupId} />;
+
+  // WP35 (alleen web, breed venster): links de cover, titel en tabs; rechts de inhoud.
+  if (wide) {
+    const tabs = hasFilms ? TABS_WITH_FILMS : TABS;
+    return (
+      <WideSplit
+        side={
+          <WideSide
+            name={group?.name}
+            cover={group?.cover}
+            description={group?.description}
+            meta={group ? `Opgericht ${displayYear(group)}` : undefined}
+          >
+            {group !== undefined && <SegmentedTabs tabs={tabs} selected={shownTab} onSelect={setTab} />}
+          </WideSide>
+        }
+      >
+        <Stack.Screen options={{ title: group?.name ?? "Groep" }} />
+        <Screen>
+          {group === undefined ? (
+            <LoadingState label="Groep laden…" />
+          ) : (
+            <>
+              {notice && <Notice kind="success" message={notice} />}
+              {shownTab === "albums" ? (
+                <AlbumsTab groupId={groupId} canCreate={rights?.createAlbum ?? false} />
+              ) : shownTab === "films" ? (
+                <FilmsTab groupId={groupId} films={(films ?? []).filter((f) => f.groupId === groupId)} />
+              ) : (
+                <MembersTab groupId={groupId} groupName={group.name} founderId={group.createdBy} />
+              )}
+            </>
+          )}
+        </Screen>
+      </WideSplit>
+    );
+  }
 
   return (
     <Screen header={<CoverHeader name={group?.name} cover={group?.cover} />}>

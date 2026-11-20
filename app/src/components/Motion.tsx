@@ -191,7 +191,7 @@ const PULL_ROOM = 2000;
 // precies waar de inhoud begint. `children` staan erop (de pil, de
 // letter-tegel), in een HeaderItem.
 export function MotionHeader({
-  minHeight,
+  minHeight: screenMinHeight,
   style,
   backdrop,
   zoom,
@@ -212,6 +212,7 @@ export function MotionHeader({
   // WP35: op iOS de volle breedte; op een breed web-venster de kolombreedte.
   const frame = coverFrame(windowWidth, PULL_ROOM);
   const width = frame.width;
+  const minHeight = frame.height ?? screenMinHeight;
   // Bij grote tekst kan de kop hoger worden dan het vaste vlak (A5).
   const [measured, setMeasured] = useState(0);
   const height = Math.max(minHeight, measured);

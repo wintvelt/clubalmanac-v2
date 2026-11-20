@@ -6,6 +6,8 @@ export type CoverFrame = {
   width: number;
   // Ruimte boven de kop voor de cover die bij trekken meerekt.
   pullRoom: number;
+  // Alleen op het web: de hoogte van de cover; anders bepaalt het scherm hem.
+  height?: number;
   // Alleen op het web: een gecentreerde, afgeronde cover met wat ruimte erboven.
   // `contentTop`: extra ruimte boven de inhoud (pil, letter) binnen de cover.
   inset: { radius: number; top: number; contentTop: number } | null;

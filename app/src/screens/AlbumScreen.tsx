@@ -18,6 +18,7 @@ import { Screen } from "../components/Screen";
 import { EmptyState, LoadingState } from "../components/States";
 import { Text } from "../components/Text";
 import { api } from "../convexApi";
+import { useWideLayout } from "../components/wideLayout";
 import { useDeparting } from "../data/adminState";
 import { READ_ONLY } from "../data/readOnly";
 import { useAuthState } from "../data/authStateContext";
@@ -32,6 +33,8 @@ import { formatPhotoDate, keepNewMarkers, shouldMarkSeen, sortAlbumPhotos } from
 import { photoLayers, radius, size, space, useTheme } from "../theme";
 import { AlbumChoiceSheet } from "./AlbumChoice";
 import { AlbumReadFailed } from "./AlbumParts";
+import { WideSide, WideSplit } from "./WideSide";
+import { SIDE_WIDTH, wideGrid } from "../lib/wideLayout";
 import {
   ActionFeedback,
   SharingProgress,
@@ -139,8 +142,48 @@ function AlbumContent({ groupId, albumId }: { groupId: Id<"groups">; albumId: Id
       return next;
     });
 
-  const columns = columnsFor(width);
-  const tile = Math.floor((width - GAP * (columns - 1)) / columns);
+  // WP35 (alleen web, breed venster): de kop staat links in een vaste kolom;
+  // rechts tegels van vaste maat, zoveel als er passen.
+  const wide = useWideLayout();
+  const grid = wide ? wideGrid(width - SIDE_WIDTH - 2 * size.screenMargin, GAP) : null;
+  const columns = grid ? grid.columns : columnsFor(width);
+  const tile = grid ? grid.tile : Math.floor((width - GAP * (columns - 1)) / columns);
+  // "Selecteer", "Kaart" en "Bewerk album": onder de titel, in de kop of de kolom.
+  const action =
+    !selecting && (canEdit || (ctx && shown && shown.length > 0)) ? (
+      <View style={styles.barRow}>
+        {!READ_ONLY && ctx && shown && shown.length > 0 ? (
+          <SmallButton
+            title="Selecteer"
+            icon="check"
+            onPress={() => {
+              setFeedback(null);
+              setSelecting(true);
+            }}
+          />
+        ) : null}
+        {ctx && shown && shown.length > 0 ? (
+          <SmallButton
+            title="Kaart"
+            icon="map"
+            onPress={() => {
+              setFeedback(null);
+              router.push(albumMapPath(groupId, albumId));
+            }}
+          />
+        ) : null}
+        {canEdit ? (
+          <SmallButton
+            title="Bewerk album"
+            icon="edit"
+            onPress={() => {
+              setFeedback(null);
+              router.push(editAlbumPath(groupId, albumId));
+            }}
+          />
+        ) : null}
+      </View>
+    ) : null;
   const loading = shown === undefined || me === undefined;
   // WP33: de scrollpositie op de UI-thread, voor de bewegende kop.
   const listRef = useAnimatedRef<Animated.FlatList<Entry>>();
@@ -150,6 +193,20 @@ function AlbumContent({ groupId, albumId }: { groupId: Id<"groups">; albumId: Id
     <SafeAreaView edges={["left", "right"]} style={[styles.fill, { backgroundColor: colors.bg }]}>
       {/* De titel is de terugknop-tekst op het foto-detail. */}
       <Stack.Screen options={{ title: album?.name ?? "Album" }} />
+      <WideOrNot
+        wide={wide}
+        side={
+          <WideSide
+            back={{ title: "Groep", onPress: () => backToGroup(groupId) }}
+            name={album?.name}
+            cover={album?.cover}
+            description={album?.description}
+            meta={album ? albumMeta(album, shown?.length) : undefined}
+          >
+            {action}
+          </WideSide>
+        }
+      >
       <ScrollOffsetContext.Provider value={offset}>
       <Animated.FlatList
         ref={listRef}
@@ -160,51 +217,11 @@ function AlbumContent({ groupId, albumId }: { groupId: Id<"groups">; albumId: Id
         numColumns={columns}
         keyExtractor={(e) => e.albumPhoto._id}
         columnWrapperStyle={columns > 1 ? { gap: GAP } : undefined}
-        contentContainerStyle={styles.list}
+        contentContainerStyle={wide ? [styles.list, styles.wideList] : styles.list}
         ItemSeparatorComponent={Separator}
         extraData={listState}
         ListHeaderComponent={
-          <AlbumHeader
-            groupId={groupId}
-            album={album}
-            count={shown?.length}
-            action={
-              !selecting && (canEdit || (ctx && shown && shown.length > 0)) ? (
-                <View style={styles.barRow}>
-                  {!READ_ONLY && ctx && shown && shown.length > 0 ? (
-                    <SmallButton
-                      title="Selecteer"
-                      icon="check"
-                      onPress={() => {
-                        setFeedback(null);
-                        setSelecting(true);
-                      }}
-                    />
-                  ) : null}
-                  {ctx && shown && shown.length > 0 ? (
-                    <SmallButton
-                      title="Kaart"
-                      icon="map"
-                      onPress={() => {
-                        setFeedback(null);
-                        router.push(albumMapPath(groupId, albumId));
-                      }}
-                    />
-                  ) : null}
-                  {canEdit ? (
-                    <SmallButton
-                      title="Bewerk album"
-                      icon="edit"
-                      onPress={() => {
-                        setFeedback(null);
-                        router.push(editAlbumPath(groupId, albumId));
-                      }}
-                    />
-                  ) : null}
-                </View>
-              ) : null
-            }
-          />
+          wide ? undefined : <AlbumHeader groupId={groupId} album={album} count={shown?.length} action={action} />
         }
         ListEmptyComponent={
           <View style={styles.column}>
@@ -237,6 +254,7 @@ function AlbumContent({ groupId, albumId }: { groupId: Id<"groups">; albumId: Id
         removeClippedSubviews
       />
       </ScrollOffsetContext.Provider>
+      </WideOrNot>
       <AlbumChoiceSheet
         visible={choosing}
         fromAlbumId={albumId}
@@ -270,6 +288,25 @@ function AlbumContent({ groupId, albumId }: { groupId: Id<"groups">; albumId: Id
       )}
     </SafeAreaView>
   );
+}
+
+// WP35: in de brede web-layout de lijst rechts naast de vaste kolom; anders
+// alleen de lijst (iOS altijd).
+function WideOrNot({ wide, side, children }: { wide: boolean; side: ReactNode; children: ReactNode }) {
+  if (!wide) return <>{children}</>;
+  return <WideSplit side={side}>{children}</WideSplit>;
+}
+
+function backToGroup(groupId: Id<"groups">) {
+  if (router.canGoBack()) router.back();
+  else router.replace(groupPath(groupId));
+}
+
+// Jaar en aantal foto's onder de titel.
+function albumMeta(album: Album, count: number | undefined): string {
+  return [displayYear(album), count === undefined ? null : count === 1 ? "1 foto" : `${count} foto's`]
+    .filter(Boolean)
+    .join(" · ");
 }
 
 function menuPhotoOf(entry: Entry & { photo: NonNullable<Entry["photo"]> }): MenuPhoto {
@@ -481,10 +518,7 @@ function AlbumHeader({
   // Een cover die niet laadt: de kop zonder cover, ook zonder zoom (WP33 A6).
   const [failed, setFailed] = useState<string | null>(null);
   const photo = album?.cover && failed !== album.cover._id ? album.cover : null;
-  const back = () => {
-    if (router.canGoBack()) router.back();
-    else router.replace(groupPath(groupId));
-  };
+  const back = () => backToGroup(groupId);
   // N1 (audit, pariteit): zonder cover de letter van het album, zoals in de
   // albumlijst, onder de pil in de flow (WP16-kop).
   const tile =
@@ -535,9 +569,7 @@ function AlbumHeader({
           </Text>
           {album.description ? <Text>{album.description}</Text> : null}
           <Text variant="meta" color="muted">
-            {[displayYear(album), count === undefined ? null : count === 1 ? "1 foto" : `${count} foto's`]
-              .filter(Boolean)
-              .join(" · ")}
+            {albumMeta(album, count)}
           </Text>
           {action ? <View style={styles.headerAction}>{action}</View> : null}
         </View>
@@ -549,6 +581,8 @@ function AlbumHeader({
 const styles = StyleSheet.create({
   fill: { flex: 1 },
   list: { paddingBottom: space.xxl },
+  // WP35: de rasterkolom rechts in de brede web-layout.
+  wideList: { padding: size.screenMargin, paddingTop: space.xl },
   column: {
     width: "100%",
     maxWidth: size.maxTextColumn,
