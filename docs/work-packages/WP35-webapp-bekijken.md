@@ -12,6 +12,9 @@ Een lid zonder iPhone, bijvoorbeeld op een Android-telefoon van de zaak, opent `
 2. **Eerst bekijken.** Uploaden, groepsbeheer, melden en de andere acties komen in een volgende WP.
 3. **Adres `app.clubalmanac.com`.** `clubalmanac.com` blijft zoals hij is, met de privacyverklaring waar App Store Connect naar linkt.
 4. Kosten: ruim binnen €15 per maand (de hosting op AWS bestaat al, Clerk blijft gratis).
+5. **Kaart op het web met OpenStreetMap** (bijvoorbeeld Leaflet), met dezelfde punten als de iPhone-kaart; tikken op een punt opent de foto. Alleen bekijken, met de bronvermelding die OpenStreetMap vraagt. Geen betaalde kaartdienst.
+6. **Uitnodigingen op het web:** een bestaand lid accepteert of wijst een uitnodiging af in Profiel, zoals in de app. Een nieuw lid logt op het web in met het uitgenodigde adres en is dan meteen lid (WP19b, ongewijzigd).
+7. **De uitnodigingsmail** krijgt naast de App Store-knop een regel voor wie geen iPhone heeft, met een link naar `app.clubalmanac.com`.
 
 ## Wat er is
 
@@ -29,15 +32,15 @@ Een lid zonder iPhone, bijvoorbeeld op een Android-telefoon van de zaak, opent `
 4. **Alleen de eigen webadressen.** De backend staat verzoeken uit de browser alleen toe vanaf `app.clubalmanac.com` (prod) en het lokale dev-adres (dev), niet vanaf elk domein.
 5. **Inloggen zoals in de app**: e-mail en code, zonder wachtwoord. Uitloggen haalt in die browser de sessie weg, en een volgende gebruiker op dezelfde computer ziet geen beelden van de vorige.
 6. **De iPhone-app verandert niet.** Elke aanpassing in gedeelde code laat iOS hetzelfde doen en eruitzien. De hele testsuite blijft groen.
-7. **Alleen lezen.** Op het web staat geen knop die iets wijzigt of die op het web niet werkt. Wat ontbreekt, is weg, geen knop met een foutmelding.
+7. **Alleen lezen, op uitnodigingen na.** Behalve een uitnodiging accepteren of afwijzen staat op het web geen knop die iets wijzigt of die op het web niet werkt. Wat ontbreekt, is weg, geen knop met een foutmelding.
 8. **Geen stille mislukking.** Een beeld of film die niet laadt, geeft een nette tegel of een NL-melding met opnieuw proberen, zoals in de app.
 9. **Telefoon eerst.** Het werkt op een telefoonbreedte in Chrome op Android en in Safari, en ook op een laptop.
 10. **Een nieuwe versie komt aan.** Na een deploy krijgt de browser de nieuwe versie, en blijft er geen oude versie in de cache hangen.
 
 ## Scope
 
-- **In:** de web-build van de app; inloggen en uitloggen; Mijn groepen; Groep (albums per jaar, leden); album (raster, ongelezen-tellers); foto-detail met bladeren; Mijn foto's; Profiel (bekijken, uitloggen); de films; de info-pagina's; licht en donker. Hosting op `app.clubalmanac.com` met een deploy vanaf `main`, en een manier om de web-build lokaal tegen dev te draaien voor de gate.
-- **Bewust niet:** uploaden en alle andere acties (foto-menu, selectie, draaien, verwijderen, covers, profielfoto, naam wijzigen); groepsbeheer en uitnodigen; melden, ideeën en problemen; account verwijderen; delen; een installeerbare webapp (PWA) of meldingen; de Android-app. De kaart: zie vraag 6.
+- **In:** de web-build van de app; inloggen en uitloggen; Mijn groepen; Groep (albums per jaar, leden); album (raster, ongelezen-tellers); foto-detail met bladeren; Mijn foto's; Profiel (bekijken, uitloggen, uitnodigingen accepteren of afwijzen); de albumkaart (OpenStreetMap); de films; de info-pagina's; licht en donker. De web-link in de uitnodigingsmail. Hosting op `app.clubalmanac.com` met een deploy vanaf `main`, en een manier om de web-build lokaal tegen dev te draaien voor de gate.
+- **Bewust niet:** uploaden en alle andere acties (foto-menu, selectie, draaien, verwijderen, covers, profielfoto, naam wijzigen); groepsbeheer en uitnodigen; melden, ideeën en problemen; account verwijderen; delen; een installeerbare webapp (PWA) of meldingen; de Android-app; locaties wijzigen.
 
 ## Open vragen voor A (rapporteren aan regie)
 
@@ -46,8 +49,8 @@ Een lid zonder iPhone, bijvoorbeeld op een Android-telefoon van de zaak, opent `
 3. **Clerk in de browser.** Wat moet er in Clerk dev en prod veranderen (toegestane origins, domein, `authorizedParties` of iets vergelijkbaars in [`convex/auth.config.ts`](../../convex/auth.config.ts)), waar bewaart Clerk de sessie op het web, en hoe lang blijft iemand ingelogd?
 4. **Inventaris.** Welke schermen en modules starten niet op het web of crashen? Per stuk: verbergen, een web-variant, of niets doen. Het iOS-actiemenu zit ook in schermen die alleen-lezen wel nodig hebben (bijvoorbeeld Profiel)?
 5. **Films.** Speelt een ondertekende S3-link in de browser, inclusief spoelen, zonder CORS-wijziging op `blob-videos`?
-6. **Kaart.** De albumkaart gebruikt Apple Maps, en die werkt niet in de browser. Verbergen op het web, of een gratis OpenStreetMap-kaart? Besluit voor Wouter; regie stelt verbergen voor.
-7. **Uitnodigingen.** Een bestaand lid accepteert een uitnodiging in Profiel (WP19b). Hoort dat bij "alleen lezen", of mag het op het web? Besluit voor Wouter.
+6. **Kaart** (besluit 5). Welke bibliotheek en welke tegels, binnen het gebruiksbeleid van OpenStreetMap? Weegt de web-variant van het kaartscherm iets mee in de iOS-code?
+7. **Uitnodigingen** (besluit 6 en 7). Werkt het aanmelden van een nieuw lid via Clerk op het web zoals in de app? Wat moet er in de mail (HTML en tekst, licht en donker) en komt het adres uit een env-var per deployment?
 8. **Hosting.** Wat is nodig voor `app.clubalmanac.com` (CloudFront-distributie, certificaat, DNS in Route 53, routes die bij een herlaad naar de app terugvallen, korte cache op het startbestand)? Liefst als CloudFormation zoals [`infra/site.yml`](../../infra/site.yml), met een deploy-rol zonder AWS-sleutels in GitHub. Wouter maakt de stack zelf aan.
 
 A rapporteert ook wat hier ontbreekt of niet klopt. Oude code is hier nauwelijks bron: het gaat om pariteit met de nieuwe iPhone-app.
@@ -71,7 +74,7 @@ A rapporteert ook wat hier ontbreekt of niet klopt. Oude code is hier nauwelijks
 ## Acceptance
 
 - **Tests:** beelden vanuit de browser met en zonder geldige login, als lid, ex-lid en niet-lid (dezelfde weigering); CORS alleen voor de toegestane origins; geen token in een URL; fail-loud bij ontbrekende origins; de bestaande toegangstests blijven groen; de hele suite groen.
-- **Gate door Wouter, eerst dev, in een echte browser** (laptop en telefoon, Android als het kan): inloggen met een code; groepen, albums en het album van 540 foto's (scrollen zonder fout); foto-detail en bladeren; Mijn foto's; Profiel; een film afspelen en spoelen; uitloggen en als een ander inloggen (geen beelden van de vorige); een beeldlink kopiëren naar een privévenster (werkt niet). Daarna een iOS-build in de simulator: niets veranderd.
+- **Gate door Wouter, eerst dev, in een echte browser** (laptop en telefoon, Android als het kan): inloggen met een code; groepen, albums en het album van 540 foto's (scrollen zonder fout); foto-detail en bladeren; Mijn foto's; Profiel; een film afspelen en spoelen; de albumkaart; een uitnodiging accepteren; een nieuw lid (wegwerpadres) aanmelden via de link in de mail; uitloggen en als een ander inloggen (geen beelden van de vorige); een beeldlink kopiëren naar een privévenster (werkt niet). Daarna een iOS-build in de simulator: niets veranderd.
 - **Daarna prod:** deploy naar `app.clubalmanac.com`, dezelfde korte ronde, en `clubalmanac.com/privacy/nl` werkt nog.
 
 ---
