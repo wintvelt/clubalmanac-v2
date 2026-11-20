@@ -5,7 +5,8 @@ import {
   type NativeStackNavigationOptions,
   type Theme as NavigationTheme,
 } from "expo-router";
-import { Pressable, StyleSheet } from "react-native";
+import { HeaderBackButton, type HeaderBackButtonProps } from "expo-router/react-navigation";
+import { Platform, Pressable, StyleSheet } from "react-native";
 import { Text } from "../components/Text";
 import { size, space, useTheme } from "../theme";
 
@@ -41,7 +42,23 @@ export function useStackScreenOptions(): NativeStackNavigationOptions {
     headerShadowVisible: false,
     headerBackButtonDisplayMode: "default",
     contentStyle: { backgroundColor: colors.bg },
+    ...(Platform.OS === "web" ? { headerLeft: webBackButton } : {}),
   };
+}
+
+// Alleen op het web (iOS heeft zijn eigen terugknop). Past de naam van het
+// vorige scherm niet naast de titel, dan toont de standaardknop "Back"; hier
+// "Terug". Ook de voorleestekst in het NL.
+function webBackButton(props: HeaderBackButtonProps & { canGoBack?: boolean }) {
+  if (!props.canGoBack) return null;
+  const { canGoBack: _canGoBack, ...rest } = props;
+  return (
+    <HeaderBackButton
+      {...rest}
+      truncatedLabel="Terug"
+      accessibilityLabel={rest.label ? `Terug naar ${rest.label}` : "Terug"}
+    />
+  );
 }
 
 // Modale schermen: "Sluiten" rechtsboven (design.md §7). Zonder scherm eronder
