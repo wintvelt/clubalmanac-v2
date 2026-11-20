@@ -50,7 +50,7 @@ In deze volgorde. Stap 1 tot en met 7 kunnen vóór de merge; stap 8 tot en met 
 3. **IAM → Identity providers** → `token.actions.githubusercontent.com`: noteer de **ARN** (dezelfde als bij `clubalmanac-site`).
 4. **De prod-hosts voor de Content-Security-Policy** noteren:
    - **Convex:** de prod-`EXPO_PUBLIC_CONVEX_URL` zonder `https://` en zonder `.convex.cloud` (bv. `happy-otter-123.eu-west-1`).
-   - **Clerk-dashboard, prod-instance → Configure → Domains**: de host bij **Frontend API** (bv. `clerk.clubalmanac.com`). Niet een `….clerk.accounts.dev`: dat is dev, en de stack weigert hem.
+   - **Clerk-dashboard, prod-instance → Configure → Developers → Domains**: de host bij **Frontend API** (bv. `clerk.clubalmanac.com`). Niet een `….clerk.accounts.dev`: dat is dev, en de stack weigert hem.
    - **Films:** `<bucket>.s3.<regio>.amazonaws.com`, met de bucket en regio van prod:
 
      ```bash
@@ -75,10 +75,12 @@ In deze volgorde. Stap 1 tot en met 7 kunnen vóór de merge; stap 8 tot en met 
    ```
 
    ```bash
-   npm run deploy:prod
+   cd ~/Code/clubalmanac-v2-release && git pull --ff-only && CONVEX_DEPLOYMENT=dev:glorious-pheasant-759 npm run deploy:prod
    ```
 
-9. **Clerk-dashboard, prod-instance → Configure → Domains**: `app.clubalmanac.com` is een subdomein van het domein van de instance, dus er hoeft niets bij (geen satellite-domein). Check alleen dat het domein `clubalmanac.com` er staat en groen is. Laat **Attack protection → Bot sign-up protection** uit (WP19b besluit 3; met hem aan vraagt Clerk op het web een captcha die de app niet heeft, en die de Content-Security-Policy ook blokkeert).
+   De release-clone heeft geen `.env.local`; de dev-naam wijst alleen het project aan, de deploy gaat naar prod (`deafening-shark-296`, Convex vraagt om bevestiging). Zonder die regel: `No CONVEX_DEPLOYMENT set`.
+
+9. **Clerk-dashboard, prod-instance → Configure → Developers → Domains**: `app.clubalmanac.com` is een subdomein van het domein van de instance, dus er hoeft niets bij (geen satellite-domein). Check dat `clubalmanac.com` er staat als *Verified*. Staat op de tab **Allowed subdomains** *Enable allowed subdomains* aan, dan moet `app.clubalmanac.com` in de lijst. Laat **Protect → Challenge suspicious sign-ups** op *Inactive* (WP19b besluit 3; aan vraagt Clerk op het web een captcha die de app niet heeft, en die de Content-Security-Policy ook blokkeert).
 10. **GitHub → Actions → Webapp → Run workflow** (branch `main`). Twee jobs: *build* en dan *deploy* (in de environment `webapp`). Check dat beide groen zijn.
 11. **Controle:** https://app.clubalmanac.com toont het inlogscherm; http:// stuurt door naar https://; een diep adres (bv. `/profiel`) herladen geeft de app, geen foutpagina; https://clubalmanac.com/privacy/nl werkt nog. Open de **console** van de browser (Chrome: *Weergave → Ontwikkelaar → JavaScript-console*) en doe: inloggen, een album openen (beelden laden), de kaart, een film afspelen, uitloggen. Upload ook één foto in een album (zoals in §Uploaden controleren, stap 1–2) en zet en verwijder een profielfoto; zet daarna je eigen foto terug. Er mag geen melding met *Content Security Policy* of *Refused to* staan. Staat die er wel: noteer de geblokkeerde host en meld hem; de CSP staat in `infra/webapp.yml` (`WebappHeadersPolicy`). Na de livegang laat één lid met Android één ronde doen (B5): komen de foto's rechtop en met datum binnen?
 12. **Pas als stap 11 goed is**, de web-link in de uitnodigingsmail aanzetten:
