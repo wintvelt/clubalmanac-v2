@@ -134,7 +134,9 @@ Per feature: het gedrag van de oude app is de checklist, data komt via `useQuery
 
 Besluit Wouter 2026-11-15: niemand gebruikt de oude webapp. Volgorde: eerst de oude webapp uitzetten (vóór de overstap), dan de iPhone-app overzetten, later een nieuwe webapp toevoegen. **Oude webapp uit sinds 2026-11-15**: clubalmanac.com toont een pagina die naar de app verwijst plus de privacyverklaring ([`site/README.md`](../site/README.md)), dev.clubalmanac.com is uitgeschakeld. Keuzes voor de nieuwe (Expo Web of apart, scope, hosting, kaarten op het web) pas dan.
 
-[WP35](./work-packages/WP35-webapp-bekijken.md) (2026-11-20): code klaar. Expo Web op `app.clubalmanac.com`, alleen bekijken plus uitnodigingen accepteren; beelden met de header in een begrensd geheugen, CORS alleen voor de eigen adressen, kaart via OpenStreetMap, op breed scherm een zijkolom. Audit en red-team verwerkt (deploy-rol via de GitHub-environment `webapp`, CSP). Open: de opzet op prod (runbook [`webapp.md`](./runbooks/webapp.md) stap 1–12) en de gate in de browser op prod.
+[WP35](./work-packages/WP35-webapp-bekijken.md) (2026-11-20): code klaar. Expo Web op `app.clubalmanac.com`, alleen bekijken plus uitnodigingen accepteren; beelden met de header in een begrensd geheugen, CORS alleen voor de eigen adressen, kaart via OpenStreetMap, op breed scherm een zijkolom. Audit en red-team verwerkt (deploy-rol via de GitHub-environment `webapp`, CSP). Prod-opzet stap 1–7 gedaan.
+
+[WP36](./work-packages/WP36-webapp-uploaden.md) (2026-11-20): code klaar. Foto's uploaden vanuit de browser (vooral Chrome op Android) en de profielfoto zetten of weghalen, via de bestaande `/upload` met CORS; verkleinen en EXIF lezen in de browser, datum en plaats als headers. Audit en red-team verwerkt. Gate op een Android-emulator (Chrome) tegen dev: uploaden, terug tijdens een ronde, kaart, film, profiel, uitloggen. Niet getest: Safari, een echte HEIC, 50 grote foto's. Open voor WP35 en WP36 samen: runbook [`webapp.md`](./runbooks/webapp.md) stap 8–12 na de merge.
 
 ## Fase 5: Lancering — hard cutover — open
 
