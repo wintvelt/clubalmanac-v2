@@ -134,6 +134,8 @@ Per feature: het gedrag van de oude app is de checklist, data komt via `useQuery
 
 Besluit Wouter 2026-11-15: niemand gebruikt de oude webapp. Volgorde: eerst de oude webapp uitzetten (vóór de overstap), dan de iPhone-app overzetten, later een nieuwe webapp toevoegen. **Oude webapp uit sinds 2026-11-15**: clubalmanac.com toont een pagina die naar de app verwijst plus de privacyverklaring ([`site/README.md`](../site/README.md)), dev.clubalmanac.com is uitgeschakeld. Keuzes voor de nieuwe (Expo Web of apart, scope, hosting, kaarten op het web) pas dan.
 
+[WP35](./work-packages/WP35-webapp-bekijken.md) (2026-11-20): code klaar. Expo Web op `app.clubalmanac.com`, alleen bekijken plus uitnodigingen accepteren; beelden met de header in een begrensd geheugen, CORS alleen voor de eigen adressen, kaart via OpenStreetMap, op breed scherm een zijkolom. Audit en red-team verwerkt (deploy-rol via de GitHub-environment `webapp`, CSP). Open: de opzet op prod (runbook [`webapp.md`](./runbooks/webapp.md) stap 1–12) en de gate in de browser op prod.
+
 ## Fase 5: Lancering — hard cutover — open
 
 Geen parallel draaien. Bij 20 users en een 3 jaar oude oude app is parallel draaien absurd veel werk (dual-write, sync layer, Cognito↔Clerk mapping). Hard cut.
