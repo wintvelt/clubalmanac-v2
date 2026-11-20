@@ -221,3 +221,15 @@ Niet in unit-tests (gate): W5, W6, W7, de kaart, de films, de hosting, invariant
 - **B4.** Privacyverklaring: een zin over de kaart van OpenStreetMap (en de cookies van Clerk op het web) erbij (advies)?
 - **B5.** Gedeelde computer: alleen de 7 dagen van Clerk accepteren, of ook een regel op het inlogscherm van het web (advies)?
 - Tekst van de mailregel (vraag 7): het voorstel, of een eigen tekst.
+
+### Besluiten Wouter na A (2026-11-20)
+
+Alle adviezen van A overgenomen:
+
+- **B1:** route A. Beelden op het web met de header ophalen en uit een begrensd geheugen tonen (W3). Terugval naar een korte ondertekende link alleen als het album van 540 in de gate te traag laadt; dat is dan een nieuw besluit.
+- **B2:** invariant 3 wordt *"geen nieuw openbaar beeld"*. De profielfoto blijft openbaar (WP17a besluit 8).
+- **B3:** de web-deploy start met de hand (*Run workflow* op `main`), na de Convex-deploy.
+- **B4:** de privacyverklaring krijgt een zin over de kaart van OpenStreetMap en de inlogcookies van Clerk op het web. Daarna `node scripts/site/build.mjs` en `site/` meecommitten ([`site/README.md`](../../site/README.md)).
+- **B5:** het inlogscherm op het web krijgt de regel *"Op een gedeelde computer: log uit als je klaar bent."* Sessieduur blijft 7 dagen (Clerk).
+- **Mailregel:** *"Geen iPhone? Open Clubalmanac in je browser: app.clubalmanac.com"*, met de link.
+- **Certificaat:** Wouter vraagt het met de hand aan in ACM `us-east-1` en geeft het ARN als parameter aan `infra/webapp.yml`.
