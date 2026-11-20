@@ -27,7 +27,8 @@ import {
 // in de header en zonder de HTTP-cache van de browser (`no-store`: niets op
 // schijf). De bytes gaan als `blob:`-URL in een begrensd geheugen
 // (src/lib/imageMemory.ts): bij de grens gaat het langst niet gebruikte beeld
-// eruit en wordt zijn URL vrijgegeven. De sleutel bevat de user, dus een
+// eruit en wordt zijn URL vrijgegeven, behalve een beeld dat nog in beeld
+// staat (`hold`). De sleutel bevat de user, dus een
 // volgende user in deze browser krijgt nooit een beeld van de vorige.
 // Uitloggen leegt het geheugen (`wipeImageCache`).
 //
@@ -95,6 +96,14 @@ function useTokenImageLoad(
   const key = userId ? imageMemoryKey(userId, kind, id, variant) : null;
   const held = key ? memory.get(key) : undefined;
   const hit = held !== undefined;
+
+  // Zolang dit beeld in beeld staat, gooit het geheugen het niet weg (en trekt
+  // het zijn `blob:`-URL niet in): src/lib/imageMemory.ts.
+  useEffect(() => {
+    if (key === null) return;
+    memory.hold(key);
+    return () => memory.unhold(key);
+  }, [key]);
 
   const request = tokenRequest(load);
   const requestAttempt = hit ? undefined : request?.attempt;

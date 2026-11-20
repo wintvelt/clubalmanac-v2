@@ -8,12 +8,22 @@
 //   het vrijgegeven. Lezen telt als gebruik.
 // - Een nieuw beeld onder dezelfde sleutel geeft het oude vrij.
 // - Leegmaken (uitloggen) geeft alles precies één keer vrij.
+// - Een beeld dat in beeld staat (`hold`), gaat er bij de grens niet uit. Een
+//   weggegooid beeld trekt zijn `blob:`-URL in; iOS Safari decodeert een beeld
+//   dat even uit beeld was opnieuw vanaf die URL, dat mislukt, de app haalt het
+//   opnieuw op en duwt zo een ander beeld eruit: een eindeloze lus van
+//   wisselende foto's. Zolang er meer in beeld staat dan de grens, groeit het
+//   geheugen tijdelijk tot wat in beeld staat.
 
 export type ImageMemory<V> = {
   get(key: string): V | undefined;
   put(key: string, value: V): void;
   /** Haalt één beeld eruit en geeft het vrij (een beeld dat niet te tonen was). */
   delete(key: string): void;
+  /** Dit beeld staat in beeld: niet weggooien bij de grens. Telt per scherm. */
+  hold(key: string): void;
+  /** Het scherm toont het niet meer. */
+  unhold(key: string): void;
   size(): number;
   clear(): void;
 };
@@ -23,6 +33,19 @@ export function createImageMemory<V>(opts: { limit: number; release: (value: V) 
   // Een Map houdt de volgorde van invoegen: de eerste sleutel is de langst
   // niet gebruikte. Gebruik zet hem achteraan.
   const entries = new Map<string, V>();
+  // Hoeveel schermen een sleutel nu tonen (ook al voordat hij binnen is).
+  const holds = new Map<string, number>();
+
+  const evict = () => {
+    if (entries.size <= limit) return;
+    for (const key of [...entries.keys()]) {
+      if (entries.size <= limit) return;
+      if ((holds.get(key) ?? 0) > 0) continue;
+      const evicted = entries.get(key) as V;
+      entries.delete(key);
+      release(evicted);
+    }
+  };
 
   const release = (value: V) => {
     try {
@@ -47,18 +70,22 @@ export function createImageMemory<V>(opts: { limit: number; release: (value: V) 
         if (old !== value) release(old);
       }
       entries.set(key, value);
-      while (entries.size > limit) {
-        const oldest = entries.keys().next().value as string;
-        const evicted = entries.get(oldest) as V;
-        entries.delete(oldest);
-        release(evicted);
-      }
+      evict();
     },
     delete(key) {
       if (!entries.has(key)) return;
       const value = entries.get(key) as V;
       entries.delete(key);
       release(value);
+    },
+    hold(key) {
+      holds.set(key, (holds.get(key) ?? 0) + 1);
+    },
+    unhold(key) {
+      const n = (holds.get(key) ?? 0) - 1;
+      if (n > 0) holds.set(key, n);
+      else holds.delete(key);
+      evict();
     },
     size() {
       return entries.size;
