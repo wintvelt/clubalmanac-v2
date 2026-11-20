@@ -1,7 +1,7 @@
 AWSTemplateFormatVersion: "2010-09-09"
 Description: >-
   De webapp op app.clubalmanac.com (WP35): de web-build van app/ (Expo Web) in
-  een privé-bucket, achter een eigen CloudFront-distributie met certificaat,
+  een prive-bucket, achter een eigen CloudFront-distributie met certificaat,
   DNS-records, een terugval naar index.html voor diepe adressen, en een
   deploy-rol voor GitHub Actions (OIDC, alleen vanaf main). clubalmanac.com en
   zijn distributie (infra/site.yml) worden niet aangeraakt. Deployen in
@@ -53,8 +53,8 @@ Parameters:
     Type: String
     AllowedPattern: "^(?!.*\\.clerk\\.accounts\\.dev$)[a-z0-9]+([.-][a-z0-9]+)*$"
     Description: >-
-      De Frontend API-host van de Clerk-prod-instance (Clerk-dashboard →
-      Domains, bv. clerk.clubalmanac.com). Geen *.clerk.accounts.dev: dat is dev.
+      De Frontend API-host van de Clerk-prod-instance (Clerk-dashboard > Configure >
+      Developers > Domains, bv. clerk.clubalmanac.com). Geen *.clerk.accounts.dev: dat is dev.
   FilmsHost:
     Type: String
     AllowedPattern: "^[a-z0-9][a-z0-9.-]*\\.s3\\.[a-z0-9-]+\\.amazonaws\\.com$"
@@ -204,13 +204,17 @@ Resources:
           # (het beeldgeheugen), de profielfoto van .convex.site, de tegels van
           # OpenStreetMap en de filmcovers; films van S3. 'unsafe-inline' bij
           # style-src: react-native-web en Clerk zetten stijlen in de pagina.
+          # Clerk Protect (bootstrap.js, verbinding en frame): *.protect.clerk.com,
+          # zoals de CSP-gids van Clerk. Geen challenges.cloudflare.com: de
+          # bot-bescherming staat uit.
           # Na de eerste prod-deploy: console controleren (runbook).
           ContentSecurityPolicy:
             Override: true
             ContentSecurityPolicy: !Sub >-
               default-src 'self';
-              script-src 'self' https://${ClerkFrontendApiHost};
-              connect-src 'self' https://${ConvexDeployment}.convex.cloud wss://${ConvexDeployment}.convex.cloud https://${ConvexDeployment}.convex.site https://${ClerkFrontendApiHost};
+              script-src 'self' https://${ClerkFrontendApiHost} https://*.protect.clerk.com;
+              connect-src 'self' https://${ConvexDeployment}.convex.cloud wss://${ConvexDeployment}.convex.cloud https://${ConvexDeployment}.convex.site https://${ClerkFrontendApiHost} https://*.protect.clerk.com:*;
+              frame-src 'self' https://*.protect.clerk.com;
               img-src 'self' blob: data: https://${ConvexDeployment}.convex.site https://tile.openstreetmap.org https://${FilmsHost} https://img.clerk.com;
               media-src 'self' https://${FilmsHost};
               style-src 'self' 'unsafe-inline';
@@ -334,7 +338,7 @@ Outputs:
     Description: Zet als repo-variabele WEBAPP_DISTRIBUTION_ID.
     Value: !Ref WebappDistribution
   DistributionDomain:
-    Description: Het CloudFront-adres (voor een test vóór de DNS er is).
+    Description: Het CloudFront-adres (voor een test voordat de DNS er is).
     Value: !GetAtt WebappDistribution.DomainName
   DeployRoleArn:
     Description: Zet als repo-variabele WEBAPP_DEPLOY_ROLE_ARN.
