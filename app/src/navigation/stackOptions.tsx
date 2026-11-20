@@ -6,8 +6,9 @@ import {
   type Theme as NavigationTheme,
 } from "expo-router";
 import { HeaderBackButton, type HeaderBackButtonProps } from "expo-router/react-navigation";
-import { Platform, Pressable, StyleSheet } from "react-native";
+import { Platform, Pressable, StyleSheet, useWindowDimensions } from "react-native";
 import { Text } from "../components/Text";
+import { WIDE_FROM } from "../lib/wideLayout";
 import { size, space, useTheme } from "../theme";
 
 // Het thema van de navigator volgt de iOS-modus, net als de app (WP-Design
@@ -46,15 +47,24 @@ export function useStackScreenOptions(): NativeStackNavigationOptions {
   };
 }
 
-// Alleen op het web (iOS heeft zijn eigen terugknop). Past de naam van het
-// vorige scherm niet naast de titel, dan toont de standaardknop "Back"; hier
-// "Terug". Ook de voorleestekst in het NL.
+// Alleen op het web (iOS heeft zijn eigen terugknop). De standaardknop meet of
+// de naam van het vorige scherm naast de titel past; op een smal scherm gaf
+// dat een lus (met naam past het niet, zonder wel) en een flikkerende kop.
+// Daarom een vaste keuze per breedte, zonder meting: smal alleen het pijltje,
+// breed (WIDE_FROM) altijd de naam. De voorleestekst in het NL.
 function webBackButton(props: HeaderBackButtonProps & { canGoBack?: boolean }) {
   if (!props.canGoBack) return null;
-  const { canGoBack: _canGoBack, ...rest } = props;
+  return <WebBackButton {...props} />;
+}
+
+function WebBackButton(props: HeaderBackButtonProps & { canGoBack?: boolean }) {
+  const wide = useWindowDimensions().width >= WIDE_FROM;
+  const { canGoBack: _canGoBack, titleLayout: _titleLayout, screenLayout: _screenLayout, ...rest } = props;
   return (
     <HeaderBackButton
       {...rest}
+      displayMode={wide ? "default" : "minimal"}
+      // Wordt onzichtbaar meegerenderd; nooit een Engels "Back" in de pagina.
       truncatedLabel="Terug"
       accessibilityLabel={rest.label ? `Terug naar ${rest.label}` : "Terug"}
     />
