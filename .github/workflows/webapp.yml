@@ -1,0 +1,144 @@
+name: Webapp
+
+# Zet de web-build van app/ op app.clubalmanac.com (bucket clubalmanac-webapp
+# achter een eigen CloudFront-distributie). Opzet en eenmalige stappen:
+# docs/runbooks/webapp.md en infra/webapp.yml.
+#
+# WP35 besluit B3: alleen met de hand (Run workflow op main), na de
+# Convex-deploy naar prod. Automatisch bij elke merge kan de webapp voorlopen
+# op de backend en dan stil breken.
+#
+# Red-team L1: twee jobs. `build` installeert de pakketten en bouwt, zonder
+# deployrecht (geen id-token) en met `npm ci --ignore-scripts`: geen
+# installatiescript van een pakket draait. `deploy` haalt alleen het artefact
+# op en draait de AWS CLI, in de GitHub-environment `webapp` (red-team M1:
+# alleen die environment mag de deploy-rol aannemen, en hij laat alleen main
+# toe).
+
+on:
+  workflow_dispatch:
+
+# Twee deploys tegelijk zouden elkaars upload kunnen doorkruisen.
+concurrency:
+  group: webapp-deploy
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    env:
+      # Publiek (ze staan in de bundel), van prod.
+      EXPO_PUBLIC_CONVEX_URL: ${{ vars.WEBAPP_CONVEX_URL }}
+      EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY: ${{ vars.WEBAPP_CLERK_PUBLISHABLE_KEY }}
+    steps:
+      - name: Variabelen aanwezig
+        run: |
+          test -n "$EXPO_PUBLIC_CONVEX_URL" || { echo "repo-variabele WEBAPP_CONVEX_URL ontbreekt"; exit 1; }
+          test -n "$EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY" || { echo "repo-variabele WEBAPP_CLERK_PUBLISHABLE_KEY ontbreekt"; exit 1; }
+          # Alleen prod: een dev-sleutel van Clerk hoort niet op app.clubalmanac.com.
+          case "$EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY" in
+            pk_live_*) ;;
+            *) echo "WEBAPP_CLERK_PUBLISHABLE_KEY is geen prod-sleutel (pk_live_…)"; exit 1 ;;
+          esac
+          case "$EXPO_PUBLIC_CONVEX_URL" in
+            https://*.convex.cloud) ;;
+            *) echo "WEBAPP_CONVEX_URL is geen Convex-client-URL (https://….convex.cloud)"; exit 1 ;;
+          esac
+
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version-file: .nvmrc
+          cache: "npm"
+          cache-dependency-path: |
+            package-lock.json
+            app/package-lock.json
+      # De app importeert convex/_generated uit de root; die leunt op de
+      # root-dependencies. --ignore-scripts: de web-build heeft geen
+      # installatiescript nodig (getest met een schone kopie, 2026-11-20).
+      - run: npm ci --ignore-scripts
+      - run: npm ci --ignore-scripts
+        working-directory: app
+
+      - name: Web-build
+        working-directory: app
+        run: npx expo export --platform web --output-dir dist
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: webapp-dist
+          path: app/dist
+          if-no-files-found: error
+          retention-days: 7
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    environment: webapp
+    permissions:
+      id-token: write
+      contents: read
+    env:
+      WEBAPP_BUCKET: ${{ vars.WEBAPP_BUCKET }}
+      WEBAPP_DISTRIBUTION_ID: ${{ vars.WEBAPP_DISTRIBUTION_ID }}
+      WEBAPP_DEPLOY_ROLE_ARN: ${{ vars.WEBAPP_DEPLOY_ROLE_ARN }}
+    steps:
+      - name: Variabelen aanwezig
+        run: |
+          for v in WEBAPP_BUCKET WEBAPP_DISTRIBUTION_ID WEBAPP_DEPLOY_ROLE_ARN; do
+            test -n "${!v}" || { echo "repo-variabele $v ontbreekt"; exit 1; }
+          done
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: webapp-dist
+          path: dist
+
+      - uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4.3.1
+        with:
+          role-to-assume: ${{ env.WEBAPP_DEPLOY_ROLE_ARN }}
+          aws-region: eu-west-1
+
+      # Invariant 10: eerst de bestanden met een hash in de naam (lang en
+      # immutable), dan de rest met een korte cache, en als laatste index.html
+      # met no-cache. Zo wijst index.html nooit naar een bundel die er nog niet
+      # is. Geen --delete: een open tabblad laadt nog een oude bundel; die
+      # ruimt de stap hieronder pas na 7 dagen op.
+      - name: Uploaden
+        working-directory: dist
+        run: |
+          aws s3 sync . "s3://$WEBAPP_BUCKET/" \
+            --exclude "*" --include "_expo/static/*" --include "assets/*" \
+            --cache-control "public, max-age=31536000, immutable"
+          aws s3 sync . "s3://$WEBAPP_BUCKET/" \
+            --exclude "_expo/static/*" --exclude "assets/*" --exclude "index.html" \
+            --cache-control "public, max-age=300"
+          aws s3 cp index.html "s3://$WEBAPP_BUCKET/index.html" \
+            --content-type "text/html; charset=utf-8" \
+            --cache-control "no-cache"
+
+      - name: Cache legen
+        run: |
+          aws cloudfront create-invalidation \
+            --distribution-id "$WEBAPP_DISTRIBUTION_ID" --paths "/index.html" "/"
+
+      # Oude bundels: weg als ze niet in deze build zitten en ouder zijn dan
+      # 7 dagen. De versies blijven nog 30 dagen (bucket-lifecycle).
+      - name: Oude bundels opruimen
+        working-directory: dist
+        run: |
+          cutoff=$(date -u -d '7 days ago' +%Y-%m-%dT%H:%M:%S)
+          aws s3api list-objects-v2 --bucket "$WEBAPP_BUCKET" --prefix "_expo/static/" \
+            --query "Contents[?LastModified<'$cutoff'].Key" --output text \
+            | tr '\t' '\n' | grep -v '^None$' | grep -v '^$' \
+            | while read -r key; do
+                if [ ! -f "$key" ]; then
+                  echo "weg: $key"
+                  aws s3 rm "s3://$WEBAPP_BUCKET/$key"
+                fi
+              done

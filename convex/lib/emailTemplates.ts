@@ -111,6 +111,8 @@ export function inviteTemplate(opts: {
   photo?: { width: number };
   /** De vaste link naar de app in de App Store; zonder: geen link. */
   appStoreUrl?: string;
+  /** WP35 besluit 7: het vaste adres van de webapp (een https-origin); zonder: geen regel. */
+  webUrl?: string;
 }): TemplateBlock {
   const groupRef = opts.groupName ?? "clubalmanac";
   const subject = opts.groupName
@@ -131,6 +133,14 @@ export function inviteTemplate(opts: {
     ? `${p("Heb je een iPhone? Installeer Clubalmanac uit de App Store.")}
 <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 20px;"><tr><td class="ca-cta" style="background:${LIGHT.cta};border-radius:12px;"><a class="ca-cta" href="${escapeHtml(opts.appStoreUrl)}" style="display:inline-block;padding:14px 24px;background:${LIGHT.cta};color:${LIGHT.onCta};border-radius:12px;font-family:${FONT};font-size:18px;font-weight:700;text-decoration:none;">Naar de App Store</a></td></tr></table>`
     : "";
+  // WP35 besluit 7: een regel voor wie geen iPhone heeft, onder de App Store-knop.
+  // De linktekst is de host (bv. app.clubalmanac.com), het adres zelf staat in href.
+  const webHost = opts.webUrl ? new URL(opts.webUrl).host : "";
+  const webHtml = opts.webUrl
+    ? p(
+        `Geen iPhone? Open Clubalmanac in je browser: <a class="ca-text" href="${escapeHtml(opts.webUrl)}" style="color:${LIGHT.text};font-weight:600;text-decoration:underline;">${escapeHtml(webHost)}</a>`,
+      )
+    : "";
 
   const body = [
     `<p class="ca-muted" style="margin:0 0 16px;color:${LIGHT.muted};font-size:16px;font-weight:600;">Clubalmanac</p>`,
@@ -140,6 +150,7 @@ export function inviteTemplate(opts: {
     messageHtml,
     p(`Installeer de app Clubalmanac en log in met dit e-mailadres: <strong>${escapeHtml(opts.inviteeEmail)}</strong>. Na het inloggen zie je de uitnodiging in de app.`),
     appStoreHtml,
+    webHtml,
     `<p class="ca-muted" style="margin:0 0 16px;color:${LIGHT.muted};font-size:16px;">Deze uitnodiging is geldig tot <span style="white-space:nowrap;">${escapeHtml(opts.expirationDate)}</span>.</p>`,
     p("Groet,<br>Clubalmanac", "margin:0;"),
   ]
@@ -152,13 +163,16 @@ export function inviteTemplate(opts: {
   const appStoreText = opts.appStoreUrl
     ? `\nHeb je een iPhone? Installeer Clubalmanac uit de App Store:\n${opts.appStoreUrl}\n`
     : "";
+  const webText = opts.webUrl
+    ? `\nGeen iPhone? Open Clubalmanac in je browser:\n${opts.webUrl}\n`
+    : "";
 
   const textPart = `${greetingText}
 
 ${opts.inviterName} nodigt je uit om lid te worden van ${groupRef} op Clubalmanac.
 ${messageText}
 Installeer de app Clubalmanac en log in met dit e-mailadres: ${opts.inviteeEmail}. Na het inloggen zie je de uitnodiging in de app.
-${appStoreText}
+${appStoreText}${webText}
 Deze uitnodiging is geldig tot ${opts.expirationDate}.
 
 ${SIGNATURE_TEXT}`;

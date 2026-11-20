@@ -508,6 +508,29 @@ function appStoreUrlFromEnv(): string | undefined {
   return undefined;
 }
 
+// WP35 besluit 7, A-invariant W4: het vaste adres van de webapp, voor wie geen
+// iPhone heeft. Uit `CLUBALMANAC_WEB_URL`, alleen geldig als exacte
+// `https://`-origin (geen pad, geen query, geen `/` aan het eind). Anders geen
+// regel, en een fout in de log (niet stil); de mail gaat. Op dev leeg: daar is
+// geen gehoste webapp.
+const WEB_URL_ENV = "CLUBALMANAC_WEB_URL";
+
+function webUrlFromEnv(): string | undefined {
+  const raw = process.env[WEB_URL_ENV];
+  if (raw !== undefined && raw !== "") {
+    try {
+      const url = new URL(raw);
+      if (url.protocol === "https:" && url.origin === raw) return url.origin;
+    } catch {
+      // valt door naar de log hieronder
+    }
+  }
+  console.error(
+    `[sendInviteEmail] ${WEB_URL_ENV} ${raw === undefined || raw === "" ? "ontbreekt" : "is geen https-origin zonder pad"}; de uitnodiging gaat zonder web-link`,
+  );
+  return undefined;
+}
+
 // Mailjet-action voor de vier invite-mail-kinds.
 //
 // Recipient-resolutie:
@@ -555,6 +578,7 @@ export const sendInviteEmail = internalAction({
       assertMailjetReady(INVITES_SENDER);
       const photo = await inviteMailPhoto(ctx, inviteId);
       const appStoreUrl = appStoreUrlFromEnv();
+      const webUrl = webUrlFromEnv();
       const render = (withPhoto: { width: number } | null) =>
         inviteTemplate({
           inviterName,
@@ -565,6 +589,7 @@ export const sendInviteEmail = internalAction({
           expirationDate: formatNlDate(data.invite.expiresAt),
           ...(withPhoto ? { photo: { width: withPhoto.width } } : {}),
           ...(appStoreUrl ? { appStoreUrl } : {}),
+          ...(webUrl ? { webUrl } : {}),
         });
       if (photo) {
         const tpl = render(photo);

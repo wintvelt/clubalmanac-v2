@@ -24,6 +24,7 @@ import {
   type SelectionAction,
 } from "../lib/photoActions";
 import { size, space, useTheme } from "../theme";
+import { READ_ONLY } from "../data/readOnly";
 
 // WP17b: het foto-menu (detail: knop "Acties" rechtsboven; raster: lang
 // drukken) en het selectiemenu. Het menu toont alleen wat de user mag
@@ -110,7 +111,8 @@ export function menuActions(
   // voor Mijn foto's; wie hem vergeet, krijgt een typefout.
   place: MenuPlace,
 ): MenuAction[] {
-  if (!ctx || !photo) return [];
+  // WP35 A-invariant W5: op het web geen foto-menu (alleen bekijken).
+  if (READ_ONLY || !ctx || !photo) return [];
   // WP17d A-invariant 6: delen bij elke foto met formaten, locatie bij een
   // eigen foto. Bovenaan; verwijderen (rood) blijft onderaan.
   const placeShare = placeShareActions({ me: ctx.me, ownerId: photo.ownerId, hasFormats: photo.hasFormats === true });

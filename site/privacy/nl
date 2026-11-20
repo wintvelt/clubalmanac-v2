@@ -34,7 +34,8 @@
 <p><em>Hoe lang.</em> Zolang je account bestaat. Verwijder je je account op Profiel, dan verwijderen we al je gegevens en je login, meestal binnen een paar minuten.</p>
 <p><em>Wie verwerkt je gegevens voor ons.</em> Met deze bedrijven is er een verwerkersovereenkomst of gelden hun standaardvoorwaarden voor verwerkers:</p>
 <ul><li>Convex: opslag van alle gegevens en foto's, op servers in Dublin (Ierland, EU).</li><li>Clerk: inloggen. Clerk bewaart je e-mailadres en je inlogsessies. Clerk is een Amerikaans bedrijf. De doorgifte buiten de EU valt onder het EU-VS Data Privacy Framework.</li><li>Mailjet: het versturen van e-mail, vanuit Frankrijk (EU).</li><li>Photon (Komoot): zet de GPS-gegevens van een foto om in een plaatsnaam. Alleen de coördinaten gaan erheen, niet je naam of e-mailadres. Komoot zit in Duitsland (EU).</li></ul>
-<p><em>Cookies.</em> De app gebruikt geen cookies en geen trackers.</p>
+<p><em>Kaart op het web.</em> De albumkaart in de webapp (app.clubalmanac.com) laadt de kaart van OpenStreetMap (OpenStreetMap Foundation, Verenigd Koninkrijk). Uit welke stukken kaart je browser opvraagt, is af te leiden waar de foto's ongeveer liggen; je naam en e-mailadres gaan niet mee.</p>
+<p><em>Cookies.</em> De app gebruikt geen trackers. De iPhone-app gebruikt geen cookies; in de webapp zet Clerk alleen de cookies die nodig zijn om ingelogd te blijven.</p>
 <p><em>Inzien, aanpassen of verwijderen.</em> Je hebt het recht je gegevens in te zien, te laten aanpassen of te laten verwijderen. Je naam pas je zelf aan op Profiel. Voor de rest, en voor bezwaar of het overdragen van je gegevens, mail je wouter@clubalmanac.com. We reageren binnen vier weken.</p>
 <p>Je kunt ook een klacht indienen bij de Autoriteit Persoonsgegevens (autoriteitpersoonsgegevens.nl).</p>
 <p><em>Beveiliging.</em> We nemen passende maatregelen tegen misbruik, verlies en onbevoegde toegang. Denk je dat er toch iets mis is, mail ons dan.</p>

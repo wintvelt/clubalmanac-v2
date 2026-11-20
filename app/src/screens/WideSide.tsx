@@ -1,0 +1,114 @@
+import type { ReactNode } from "react";
+import { ScrollView, StyleSheet, View } from "react-native";
+import { BackPill } from "../components/BackPill";
+import { Gradient } from "../components/Gradient";
+import { PhotoImage } from "../components/Photo";
+import { Text } from "../components/Text";
+import { initialOf } from "../lib/groups";
+import { SIDE_WIDTH } from "../lib/wideLayout";
+import { radius, size, space, useTheme } from "../theme";
+import type { CoverPhoto } from "./GroupParts";
+
+// WP35 (besluit Wouter 2026-11-20): de brede web-layout van Groep en Album.
+// Links deze vaste kolom: terugknop-pil (Album), de cover in 4:3 met afgeronde
+// hoeken (zonder cover, of als hij niet laadt: het verloop met de letter), de
+// titel, de regels eronder en de knoppen. Rechts scrolt de inhoud; deze kolom
+// blijft staan (scrolt alleen zelf als hij hoger is dan het venster).
+// Alleen gebruikt als useWideLayout() waar is, dus nooit op iOS.
+
+const COVER_WIDTH = SIDE_WIDTH - 2 * size.screenMargin;
+const COVER_HEIGHT = Math.round((COVER_WIDTH * 3) / 4);
+
+export function WideSplit({ side, children }: { side: ReactNode; children: ReactNode }) {
+  return (
+    <View style={styles.split}>
+      <ScrollView style={styles.side} contentContainerStyle={styles.sideContent}>
+        {side}
+      </ScrollView>
+      <View style={styles.main}>{children}</View>
+    </View>
+  );
+}
+
+export function WideSide({
+  back,
+  name,
+  cover,
+  description,
+  meta,
+  children,
+}: {
+  back?: { title: string; onPress: () => void };
+  name: string | undefined;
+  cover: CoverPhoto | null | undefined;
+  description?: string;
+  meta?: string;
+  // Knoppen en tabs onder de titel.
+  children?: ReactNode;
+}) {
+  return (
+    <>
+      {back && (
+        <View style={styles.pill}>
+          <BackPill title={back.title} onPress={back.onPress} />
+        </View>
+      )}
+      <SideCover name={name} cover={cover} />
+      {name !== undefined && (
+        <View style={styles.intro}>
+          <Text variant="title" accessibilityRole="header">
+            {name}
+          </Text>
+          {description ? <Text>{description}</Text> : null}
+          {meta ? (
+            <Text variant="meta" color="muted">
+              {meta}
+            </Text>
+          ) : null}
+        </View>
+      )}
+      {children}
+    </>
+  );
+}
+
+function SideCover({ name, cover }: { name: string | undefined; cover: CoverPhoto | null | undefined }) {
+  const { colors } = useTheme();
+  const box = { width: COVER_WIDTH, height: COVER_HEIGHT };
+  const letter = (
+    <View style={[box, styles.letter]} accessible={false}>
+      <Gradient from={colors.gradStart} to={colors.gradEnd} radius={radius.groupPhoto} />
+      {name !== undefined && (
+        <Text variant="largeTitle" color="onGradient" maxFontSizeMultiplier={1}>
+          {initialOf(name)}
+        </Text>
+      )}
+    </View>
+  );
+  if (!cover) return letter;
+  return (
+    <View style={[box, styles.coverClip]}>
+      <PhotoImage
+        photoId={cover._id}
+        format="groot"
+        exifOrientation={cover.exifOrientation}
+        hasFormats={cover.hasFormats}
+        box={box}
+        radius={radius.groupPhoto}
+        fallback={letter}
+      />
+    </View>
+  );
+}
+
+
+const styles = StyleSheet.create({
+  split: { flex: 1, flexDirection: "row" },
+  side: { width: SIDE_WIDTH, flexGrow: 0, flexShrink: 0 },
+  sideContent: { padding: size.screenMargin, paddingTop: space.xl, gap: space.l },
+  main: { flex: 1, minWidth: 0 },
+  pill: { alignSelf: "flex-start" },
+  intro: { gap: space.xs },
+  letter: { alignItems: "center", justifyContent: "center" },
+  coverClip: { borderRadius: radius.groupPhoto, overflow: "hidden" },
+});

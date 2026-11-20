@@ -15,6 +15,7 @@ import { Notice } from "../components/Notice";
 import { QueryBoundary } from "../components/QueryBoundary";
 import { Screen } from "../components/Screen";
 import { SegmentedTabs } from "../components/SegmentedTabs";
+import { useWideLayout } from "../components/wideLayout";
 import { InvitedSection } from "./InvitesScreens";
 import { SmallButton } from "../components/SmallButton";
 import { EmptyState, LoadingState } from "../components/States";
@@ -31,6 +32,7 @@ import {
 } from "../data/adminState";
 import { successTap } from "../data/haptics";
 import { forgetLastGroup } from "../data/lastGroup";
+import { READ_ONLY } from "../data/readOnly";
 import { useMyGroups } from "../data/homeGroupState";
 import { useLiveQuery } from "../data/useLiveQuery";
 import {
@@ -59,6 +61,7 @@ import { radius, size, space, useTheme } from "../theme";
 import { toMyGroups } from "./AlbumParts";
 import { FilmsTab } from "./FilmsTab";
 import { AlbumCoverTile, backToMyGroups, CoverHeader, LoadError } from "./GroupParts";
+import { WideSide, WideSplit } from "./WideSide";
 
 type Tab = "albums" | "films" | "leden";
 const TABS = [
@@ -102,8 +105,9 @@ function GroupContent({ groupId }: { groupId: Id<"groups"> }) {
   const mine = useMyGroups();
   const me = useLiveQuery(api.users.profile, {});
   const role = mine?.find((g) => g._id === groupId)?.role;
+  // WP35 W5: op het web geen rechten: niets bewerken, geen nieuw album.
   const rights =
-    group && me && role ? groupRights({ me: me._id, role, founderId: group.createdBy }) : undefined;
+    !READ_ONLY && group && me && role ? groupRights({ me: me._id, role, founderId: group.createdBy }) : undefined;
   const departing = useDeparting(groupId);
   const notice = useNoticeUntilBlur(`group:${groupId}`);
   const [tab, setTab] = useState<Tab>("albums");
@@ -113,7 +117,46 @@ function GroupContent({ groupId }: { groupId: Id<"groups"> }) {
   const hasFilms = groupHasFilms(films, groupId);
   const shownTab: Tab = tab === "films" && !hasFilms ? "albums" : tab;
 
+  const wide = useWideLayout();
+
   if (group === null) return departing ? <Departing /> : <NotMember groupId={groupId} />;
+
+  // WP35 (alleen web, breed venster): links de cover, titel en tabs; rechts de inhoud.
+  if (wide) {
+    const tabs = hasFilms ? TABS_WITH_FILMS : TABS;
+    return (
+      <WideSplit
+        side={
+          <WideSide
+            name={group?.name}
+            cover={group?.cover}
+            description={group?.description}
+            meta={group ? `Opgericht ${displayYear(group)}` : undefined}
+          >
+            {group !== undefined && <SegmentedTabs tabs={tabs} selected={shownTab} onSelect={setTab} />}
+          </WideSide>
+        }
+      >
+        <Stack.Screen options={{ title: group?.name ?? "Groep" }} />
+        <Screen>
+          {group === undefined ? (
+            <LoadingState label="Groep laden…" />
+          ) : (
+            <>
+              {notice && <Notice kind="success" message={notice} />}
+              {shownTab === "albums" ? (
+                <AlbumsTab groupId={groupId} canCreate={rights?.createAlbum ?? false} />
+              ) : shownTab === "films" ? (
+                <FilmsTab groupId={groupId} films={(films ?? []).filter((f) => f.groupId === groupId)} />
+              ) : (
+                <MembersTab groupId={groupId} groupName={group.name} founderId={group.createdBy} />
+              )}
+            </>
+          )}
+        </Screen>
+      </WideSplit>
+    );
+  }
 
   return (
     <Screen header={<CoverHeader name={group?.name} cover={group?.cover} />}>
@@ -305,10 +348,12 @@ function MembersTab({ groupId, groupName, founderId }: { groupId: Id<"groups">; 
   if (members === undefined || me === undefined) return <LoadingState label="Leden laden…" />;
   const sections = memberSections(members, { meId: me?._id ?? null, founderId });
   const myRole = members.find((m) => m.membership.userId === me?._id)?.membership.role;
-  const viewer = me && myRole ? { me: me._id as string, role: myRole, founderId } : undefined;
+  // WP35 W5: op het web geen acties bij een lid.
+  const viewer = !READ_ONLY && me && myRole ? { me: me._id as string, role: myRole, founderId } : undefined;
   const iAmFounder = viewer !== undefined && viewer.me === founderId;
   // WP19b A-invariant 12: uitnodigen en "Uitgenodigd" alleen voor een admin.
-  const iAmAdmin = myRole === "admin";
+  // WP35 W5: op het web niet uitnodigen.
+  const iAmAdmin = !READ_ONLY && myRole === "admin";
 
   async function run(action: MemberAction, target: { userId: Id<"users">; name: string | null }) {
     if (inFlight.current) return;

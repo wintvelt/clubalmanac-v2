@@ -14,6 +14,7 @@ import Animated, {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { scheduleOnRN } from "react-native-worklets";
 import { screenReaderOn, useReduceMotion, useScreenReader } from "../data/accessibility";
+import { coverFrame } from "./coverFrame";
 import {
   appearFeedback,
   headerFade,
@@ -190,7 +191,7 @@ const PULL_ROOM = 2000;
 // precies waar de inhoud begint. `children` staan erop (de pil, de
 // letter-tegel), in een HeaderItem.
 export function MotionHeader({
-  minHeight,
+  minHeight: screenMinHeight,
   style,
   backdrop,
   zoom,
@@ -207,7 +208,11 @@ export function MotionHeader({
   const offset = useContext(ScrollOffsetContext);
   const reduceMotion = useReduceMotion();
   const insets = useSafeAreaInsets();
-  const { width } = useWindowDimensions();
+  const { width: windowWidth } = useWindowDimensions();
+  // WP35: op iOS de volle breedte; op een breed web-venster de kolombreedte.
+  const frame = coverFrame(windowWidth, PULL_ROOM);
+  const width = frame.width;
+  const minHeight = frame.height ?? screenMinHeight;
   // Bij grote tekst kan de kop hoger worden dan het vaste vlak (A5).
   const [measured, setMeasured] = useState(0);
   const height = Math.max(minHeight, measured);
@@ -225,15 +230,33 @@ export function MotionHeader({
     <FrameContext.Provider value={{ offset, layout: { height, topInset }, reduceMotion, root }}>
       <View
         ref={root}
-        style={[{ width: "100%", minHeight }, style]}
+        style={[{ width: "100%", minHeight }, frame.inset && { marginTop: frame.inset.top }, style]}
         onLayout={(e) => setMeasured(Math.ceil(e.nativeEvent.layout.height))}
       >
-        <View style={[styles.clip, { top: -PULL_ROOM, height: height + PULL_ROOM }]} pointerEvents="none">
-          <Animated.View style={[{ position: "absolute", top: PULL_ROOM, left: 0, width, height }, backdropStyle]}>
+        <View
+          style={[
+            styles.clip,
+            { top: -frame.pullRoom, height: height + frame.pullRoom },
+            frame.inset && {
+              left: "50%",
+              right: undefined,
+              width,
+              marginLeft: -width / 2,
+              borderRadius: frame.inset.radius,
+            },
+          ]}
+          pointerEvents="none"
+        >
+          <Animated.View style={[{ position: "absolute", top: frame.pullRoom, left: 0, width, height }, backdropStyle]}>
             {backdrop({ width, height })}
           </Animated.View>
         </View>
-        {children}
+        {frame.inset ? (
+          // WP35: op het web staat de inhoud (pil, letter) binnen de cover.
+          <View style={{ flex: 1, width, alignSelf: "center", paddingTop: frame.inset.contentTop }}>{children}</View>
+        ) : (
+          children
+        )}
       </View>
     </FrameContext.Provider>
   );

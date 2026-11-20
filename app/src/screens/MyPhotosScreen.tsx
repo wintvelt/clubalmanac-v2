@@ -14,6 +14,7 @@ import { EmptyState, LoadingState } from "../components/States";
 import { Text } from "../components/Text";
 import { api } from "../convexApi";
 import { useAuthState } from "../data/authStateContext";
+import { READ_ONLY } from "../data/readOnly";
 import { useSharePhoto } from "../data/share";
 import { useLiveQuery } from "../data/useLiveQuery";
 import { myPhotoPath } from "../lib/groupRoutes";
@@ -176,7 +177,8 @@ function MyPhotosContent() {
                 setFilter(key);
               }}
             />
-            {!selecting && ctx && hasPhotos ? (
+            {/* WP35 W5: op het web geen selectie (alleen bekijken). */}
+            {!READ_ONLY && !selecting && ctx && hasPhotos ? (
               <View style={styles.barRow}>
                 <SmallButton
                   title="Selecteer"

@@ -23,6 +23,7 @@ WP5 introduceerde 5 env-vars; sinds WP19b (geen link in de uitnodigingsmail) zij
 | `MAILJET_VERIFIED_SENDERS` | comma-sep van alle from-addresses die in code voorkomen (`invites@…`, `info@…`) | idem, met prod-domain | `UNVERIFIED_SENDER:` throw vóór elke send |
 | `CLUBALMANAC_STAGE` | `"dev"` | `"prod"` | throw bij `getStageLabel`-call op problem-report-pad (S-3 fix) |
 | `CLUBALMANAC_APP_STORE_ID` (WP19c) | `1663038609` (Apple ID van de app, openbaar) | idem | Geen throw: de uitnodigingsmail gaat zonder App Store-link, met een `console.error` die de env-var noemt. Geldt alleen als 6–12 cijfers |
+| `CLUBALMANAC_WEB_URL` (WP35) | leeg (geen gehoste dev-webapp) | `https://app.clubalmanac.com`, pas als de webapp live is ([runbook](../runbooks/webapp.md) stap 12) | Geen throw: de uitnodigingsmail gaat zonder de regel "Geen iPhone? …", met een `console.error` die de env-var noemt (ook op dev, bij elke uitnodiging). Geldt alleen als exacte `https://`-origin: geen pad, geen `/` aan het eind |
 
 ### Rotation
 
@@ -101,6 +102,18 @@ Beelden lopen via de httpActions `GET /beeld/foto/<photoId>` en `GET /beeld/prof
 - **Bandbreedte:** Usage, regel **Data egress** (GB, ook het origineel zolang WP25 nog geen verkleinde versies heeft). De beeldpaden tellen daarnaast mee in **Function calls** (HTTP action). Wil je de bytes per verzoek: een log stream geeft `network_egress_bytes` per `function_execution`. Meet een album door Usage vóór en na het openen te vergelijken, op een rustig moment.
 - **Covers en profielfoto's:** per groeps- of albumkaart met een cover loopt `groups:getWithCover` of `albums:getWithCover` (voor de draaiing) zolang het scherm in beeld is. `/beeld/profiel` is openbaar en heeft geen login nodig. De app cachet een profielfoto niet (dezelfde URL geeft na een wissel een ander beeld), dus elke avatar in beeld is één verzoek.
 
+### CORS voor de webapp (WP35)
+
+De webapp haalt een foto of uitnodigingscover op met `fetch` en het token in de `Authorization`-header; de browser vraagt eerst `OPTIONS` (preflight). CORS staat alleen op `/beeld/foto/*` en `/beeld/uitnodiging/*` (`convex/lib/webCors.ts`), niet op `/beeld/profiel/*` (openbaar, een gewone `<img>`), `/upload` of de webhooks. Nooit `*`, nooit `Allow-Credentials`.
+
+| Env-var | Dev | Prod | Bij ontbreken of ongeldig |
+|---|---|---|---|
+| `CLUBALMANAC_WEB_ORIGINS` | `http://localhost:8081` (Expo web-dev; komma-gescheiden meer, bv. het LAN-adres voor een telefoon) | `https://app.clubalmanac.com` | Een verzoek uit de browser krijgt geen CORS-header (beelden laden niet, preflight 403) en de log toont een fout met de naam. De iPhone (geen `Origin`) merkt niets. Alleen exacte origins tellen (schema, host, poort; geen pad, geen `/` aan het eind); op prod alleen `https://` |
+
+- **Logs:** filter op `[webCors]`. Elk beeldverzoek uit de browser logt de fout zolang de var ontbreekt of een ongeldige waarde heeft.
+- **Verkeer:** een beeld kost op het web de eerste keer twee function calls (preflight en beeld); de browser onthoudt de preflight een uur per URL. De webapp bewaart beelden niet op schijf, dus elke nieuwe pagina-lading haalt ze opnieuw (album van 540 × *klein* ≈ 19 MB).
+- De Convex-client (`.convex.cloud`) laat elke origin toe; de queries beschermt het Clerk-token, net als in de app.
+
 ### Test-only functies (WP26)
 
 | Env-var | Dev | Prod | Bij ontbreken |
@@ -167,7 +180,11 @@ Clerk-dashboard voor de app-login (per instance, dev al gedaan, prod in fase 5):
 - **Configure → Native applications**: Native API aan.
 - **JWT-template `convex`**: bestaat al (WP4); zonder template weigert Convex het token.
 
+**Op het web (WP35).** `@clerk/expo` draait in de browser als gewone Clerk: de sessie staat in de cookies van Clerk, niet in de eigen opslag (`src/auth/deviceClerkStorage.web.ts` is een lege variant; `tokenCache` en de resource-cache gebruikt Clerk daar niet). Uitloggen (`signOut`) haalt de sessie weg en leegt het beeldgeheugen. Sessieduur zoals de app, hooguit 7 dagen; een tabblad sluiten logt niet uit. Dev staat `localhost` al toe. Prod: `app.clubalmanac.com` is een subdomein van het domein van de prod-instance, dus geen satellite-domein ([runbook](../runbooks/webapp.md) stap 9). De scripts van Clerk (`clerk-js`, `@clerk/ui`) staan op het web op een vaste versie (`src/auth/clerkWebScripts.web.ts`; ophogen: runbook §Clerk-versie ophogen). `convex/auth.config.ts` blijft gelijk: het token uit de browser heeft dezelfde issuer en JWT-template.
+
 **Offline starten en uitloggen (WP15a F12, F13).** `App.tsx` geeft `ClerkProvider` de props `__experimental_resourceCache` en `tokenCache` uit één eigen opslag (`src/auth/clerkStorage.ts`, op de keychain via `src/auth/deviceClerkStorage.ts`). Clerk bewaart daarin de laatste client, omgeving en het client-token. Zonder netwerk start hij daaruit (status `degraded`). Uitloggen wist alles, ook offline en ook als `signOut` faalt; daarna staat er alleen de vlag `clubalmanac_clerk_wiped`, tot de volgende login. De wis ruimt ook de sleutels van build 42 op (opslag van `@clerk/expo`). `__experimental_resourceCache` is een **experimentele API**: check bij elke Clerk-upgrade of de prop nog bestaat, dezelfde sleutels gebruikt en hetzelfde doet. Test met een koude start in vliegtuigmodus, ook na uitloggen in vliegtuigmodus (dan moet het inlogscherm komen). Clerk opnieuw starten = de app herladen (`reloadAppAsync` uit `expo`, `src/data/clerkRestart.ts`): Clerk is een singleton, een nieuwe `key` op `ClerkProvider` laadt niets opnieuw.
+
+- **Web (WP35):** de web-build krijgt dezelfde twee vars van prod als GitHub-repo-variabelen `WEBAPP_CONVEX_URL` en `WEBAPP_CLERK_PUBLISHABLE_KEY`; de workflow *Webapp* weigert een sleutel die niet met `pk_live_` begint. Lokaal leest `npx expo start --web` gewoon `app/.env.local`.
 
 ### EAS-build en TestFlight (WP14)
 
@@ -274,6 +291,14 @@ De lijst staat niet in de repo (WP21 invariant 9: de repo is publiek, de bestand
 Tekenen gebeurt lokaal, dus een ingetrokken of verlopen sleutel merkt Convex zelf niet. De cron `film link check` (dagelijks 05:00 UTC) leest één byte van een cover met een ondertekende link en mailt `WEBMASTER_EMAILS` als dat niet lukt (zonder link, geheim of bestandsnaam). Rotatie: nieuwe sleutel aanmaken, beide `FILMS_S3_*`-sleutel-vars zetten, de check handmatig draaien (`npx convex run films:checkLinks`), dan de oude sleutel intrekken. Een link die al is uitgegeven, werkt met de oude sleutel tot hij verloopt of de sleutel wordt ingetrokken.
 
 S3 rekent uitgaand verkeer: 100 GB per maand gratis per account, daarboven ~$0,09 per GB. De grootste film helemaal kijken is ~6,2 GB. De app speelt niets vanzelf af, laadt geen film vooruit en bewaart geen film op de telefoon; covers (samen ~21 MB) staan in de cache van de app.
+
+## Webapp: app.clubalmanac.com (WP35)
+
+Expo Web van `app/`, alleen bekijken. Stack [`infra/webapp.yml`](../../infra/webapp.yml) (bucket `clubalmanac-webapp`, eigen CloudFront-distributie, certificaat uit ACM us-east-1, DNS in Route 53, deploy-rol via OIDC). Deploy met de hand: Action *Webapp* op `main`, na de Convex-deploy. Repo-variabelen `WEBAPP_BUCKET`, `WEBAPP_DISTRIBUTION_ID`, `WEBAPP_DEPLOY_ROLE_ARN`, `WEBAPP_CONVEX_URL`, `WEBAPP_CLERK_PUBLISHABLE_KEY`. Deploy in twee jobs: *build* (`npm ci --ignore-scripts`, geen deployrecht) en *deploy* (alleen het artefact en de AWS CLI) in GitHub-environment `webapp`, de enige die de deploy-rol mag aannemen. Content-Security-Policy in de response-headers-policy van de stack, met de prod-hosts van Convex en Clerk als parameters. Opzet en controle: [`docs/runbooks/webapp.md`](../runbooks/webapp.md).
+
+- **Kaart:** Leaflet met tegels van `tile.openstreetmap.org`, zonder sleutel. Gebruiksbeleid: de bronvermelding staat zichtbaar met een link, de browser stuurt een `Referer` mee (de distributie zet `Referrer-Policy: strict-origin-when-cross-origin`; nooit `no-referrer`), en er wordt niets vooraf of in bulk geladen. Bij veel meer verkeer: een eigen tegeldienst.
+- **Beelden:** met de header opgehaald (`no-store`) en als `blob:` in een begrensd geheugen per user (`app/src/data/images.web.tsx`); geen token in een URL.
+- **Films:** dezelfde ondertekende S3-link als de app; een `<video>` zonder `crossOrigin` speelt hem en spoelt, zonder CORS op `blob-videos`.
 
 ## Backup: GitHub Action naar S3 (WP31 B4)
 
