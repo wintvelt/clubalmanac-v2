@@ -1,3 +1,4 @@
+import type { FailReason } from "../lib/upload";
 import type { WebPhoto } from "./upload";
 
 // WP36: de ingangen naar de kiezer van de browser. Op iOS doen ze niets: daar
@@ -5,6 +6,9 @@ import type { WebPhoto } from "./upload";
 // web-variant staat in webPick.web.ts; Metro kiest hem voor de web-build.
 
 export type AddPick = Promise<File[] | null>;
+
+/** De gekozen profielfoto, al gecontroleerd en omgezet; of waarom die niet kan. */
+export type ProfilePick = { photo: WebPhoto } | { reason: FailReason };
 
 /** In de tik op "+" of "Foto's toevoegen": de kiezer openen voor `toevoegen`. */
 export function startAddPick(): void {}
@@ -14,7 +18,7 @@ export function listenAddPick(_listener: (pick: AddPick) => void): () => void {
   return () => {};
 }
 
-/** Profiel: één foto kiezen, in de tik. `null`: geannuleerd. */
-export function pickProfilePhoto(): Promise<WebPhoto | null> {
+/** Profiel: één foto kiezen, in de tik, en meteen controleren. `null`: geannuleerd. */
+export function pickProfilePhoto(): Promise<ProfilePick | null> {
   return Promise.resolve(null);
 }

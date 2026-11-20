@@ -308,8 +308,19 @@ function ProfilePhotoBlock({ me }: { me: Me }) {
     setAttempt(null);
     // WP36 U9: in de tik zelf; null is annuleren.
     if (WEB_UPLOAD) {
-      const photo = await pickProfilePhoto();
-      if (photo) await confirmAndSave(photo);
+      // Eerst het bestand controleren, dan pas de vraag "openbaar".
+      let picked: Awaited<ReturnType<typeof pickProfilePhoto>>;
+      try {
+        picked = await pickProfilePhoto();
+      } catch {
+        picked = { reason: "formaat" };
+      }
+      if (!picked) return;
+      if ("reason" in picked) {
+        setFeedback({ kind: "error", text: `Profielfoto niet opgeslagen. ${reasonText(picked.reason)}.` });
+        return;
+      }
+      await confirmAndSave(picked.photo);
       return;
     }
     let result: ImagePicker.ImagePickerResult;

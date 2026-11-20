@@ -1,3 +1,4 @@
+import type { FailReason } from "../lib/upload";
 import type { WebPhoto } from "./upload";
 import { openFilePicker, webPhotoOf } from "./webConvert";
 
@@ -7,6 +8,7 @@ import { openFilePicker, webPhotoOf } from "./webConvert";
 // op dat scherm een knop "Foto's kiezen".
 
 export type AddPick = Promise<File[] | null>;
+export type ProfilePick = { photo: WebPhoto } | { reason: FailReason };
 
 let pending: AddPick | null = null;
 const listeners = new Set<(pick: AddPick) => void>();
@@ -32,9 +34,13 @@ export function listenAddPick(listener: (pick: AddPick) => void): () => void {
   };
 }
 
-export async function pickProfilePhoto(): Promise<WebPhoto | null> {
+// Eerst het bestand omzetten en controleren, dan pas de vraag "openbaar";
+// de upload (en opnieuw proberen) gebruikt deze omgezette foto.
+export async function pickProfilePhoto(): Promise<ProfilePick | null> {
   const files = await openFilePicker(false);
   const file = files?.[0];
   if (!file) return null;
-  return (await webPhotoOf(file, { profile: true })).photo;
+  const converted = await (await webPhotoOf(file, { profile: true })).photo.prepare();
+  if (!converted.ok) return { reason: converted.reason };
+  return { photo: { web: true, prepare: async () => converted } };
 }

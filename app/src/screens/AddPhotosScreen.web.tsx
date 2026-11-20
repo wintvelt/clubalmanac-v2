@@ -1,6 +1,6 @@
 import { Image } from "expo-image";
 import { activateKeepAwakeAsync, deactivateKeepAwake } from "expo-keep-awake";
-import { router, Stack } from "expo-router";
+import { router, Stack, usePreventRemove } from "expo-router";
 import { useEffect, useRef, useState } from "react";
 import { StyleSheet, View } from "react-native";
 import { Button } from "../components/Button";
@@ -9,6 +9,7 @@ import { Screen } from "../components/Screen";
 import { SmallButton } from "../components/SmallButton";
 import { EmptyState, LoadingState } from "../components/States";
 import { Text } from "../components/Text";
+import { askConfirmation } from "../data/confirm";
 import { useUploader, type WebPhoto } from "../data/upload";
 import { openFilePicker, webPhotoOf } from "../data/webConvert";
 import { listenAddPick, type AddPick } from "../data/webPick";
@@ -38,6 +39,9 @@ import { AlbumChoice, RoundResult, THUMB, addPhotosStyles, type ChosenAlbum } fr
 // - U7: de vaste id per foto komt uit de inhoud (`webAssetId`).
 // - U10: tijdens een ronde vraagt de browser "Pagina verlaten?" bij sluiten of
 //   herladen, en blijft het scherm aan (de Wake Lock opnieuw na terugkeer).
+//   Een terug-gebaar (de terugknop van de browser of van Android) haalt het
+//   scherm niet zonder vraag weg; wie toch gaat, stopt de foto's die nog
+//   wachten.
 
 const KEEP_AWAKE_TAG = "wp36-upload";
 const THUMBS = 7;
@@ -55,6 +59,9 @@ export function AddPhotosScreen({ albumId }: { albumId?: string }) {
   const [items, setItems] = useState<UploadItem[] | null>(null);
   const itemsRef = useRef<UploadItem[] | null>(null);
   const running = useRef(false);
+  // Gezet als de user tijdens een ronde toch weggaat: geen nieuwe uploads meer.
+  const stopped = useRef(false);
+  const [leaving, setLeaving] = useState(false);
   const [busy, setBusy] = useState(false);
   const thumbs = useThumbs();
   // Alleen de laatste keuze telt (een oude kiezer die alsnog antwoordt niet).
@@ -130,6 +137,21 @@ export function AddPhotosScreen({ albumId }: { albumId?: string }) {
     return () => window.removeEventListener("beforeunload", ask);
   }, [busy]);
 
+  // `gestureEnabled` werkt op het web niet: het terug-gebaar hier tegenhouden.
+  usePreventRemove(busy && !leaving, ({ repeat }) => {
+    void askConfirmation({
+      title: "Uploaden is nog bezig",
+      message: "Ga je nu weg, dan komen de foto's die nog wachten niet in het album.",
+      button: "Weggaan",
+      destructive: true,
+    }).then((leave) => {
+      if (!leave) return;
+      stopped.current = true;
+      setLeaving(true);
+      repeat();
+    });
+  });
+
   // `fresh`: de foto's die eerder "uitgelogd" kregen; die halen een vers token.
   async function runRound(start: UploadItem[], fresh: ReadonlySet<string> = new Set()) {
     if (running.current || !album) return;
@@ -140,6 +162,7 @@ export function AddPhotosScreen({ albumId }: { albumId?: string }) {
     const photos = new Map(picked.map((p) => [p.key, p.photo]));
     const worker = async () => {
       for (;;) {
+        if (stopped.current) return;
         const current = itemsRef.current ?? [];
         const next = current.find((i) => i.state === "wacht");
         if (!next) return;

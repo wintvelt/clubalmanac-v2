@@ -38,7 +38,7 @@ Op een telefoon in hetzelfde netwerk: `npx expo start --web --host lan` en het a
 3. De **+** in de tabbalk: kiezer, dan een album kiezen. Annuleer de kiezer één keer: de knop **Foto's kiezen** staat er.
 4. Netwerk uit (Chrome: *Ontwikkelaarstools → Netwerk → Offline*) tijdens een ronde: per foto "Geen verbinding met internet", **Opnieuw proberen** na netwerk aan maakt geen dubbele foto's. **Meer foto's** met dezelfde foto ook niet.
 5. Een HEIC in Chrome: "Dit soort foto kan de browser niet openen", de andere foto's gaan door.
-6. Herladen tijdens een ronde: de browser vraagt eerst of je de pagina wilt verlaten.
+6. Herladen tijdens een ronde: de browser vraagt eerst of je de pagina wilt verlaten. Terug (de terugknop van de browser of Android) tijdens een ronde: eerst de vraag "Uploaden is nog bezig"; na **Annuleren** blijf je, ook bij een tweede keer terug.
 7. **Profiel → Foto kiezen**: melding "openbaar" (OK), dan een vierkant uit het midden als profielfoto. **Profielfoto weghalen** na bevestiging: overal de letter.
 
 ## Eenmalig opzetten op prod (Wouter)
@@ -80,7 +80,7 @@ In deze volgorde. Stap 1 tot en met 7 kunnen vóór de merge; stap 8 tot en met 
 
 9. **Clerk-dashboard, prod-instance → Configure → Domains**: `app.clubalmanac.com` is een subdomein van het domein van de instance, dus er hoeft niets bij (geen satellite-domein). Check alleen dat het domein `clubalmanac.com` er staat en groen is. Laat **Attack protection → Bot sign-up protection** uit (WP19b besluit 3; met hem aan vraagt Clerk op het web een captcha die de app niet heeft, en die de Content-Security-Policy ook blokkeert).
 10. **GitHub → Actions → Webapp → Run workflow** (branch `main`). Twee jobs: *build* en dan *deploy* (in de environment `webapp`). Check dat beide groen zijn.
-11. **Controle:** https://app.clubalmanac.com toont het inlogscherm; http:// stuurt door naar https://; een diep adres (bv. `/profiel`) herladen geeft de app, geen foutpagina; https://clubalmanac.com/privacy/nl werkt nog. Open de **console** van de browser (Chrome: *Weergave → Ontwikkelaar → JavaScript-console*) en doe: inloggen, een album openen (beelden laden), de kaart, een film afspelen, uitloggen. Upload ook één foto in een album (zoals in §Uploaden controleren, stap 1–2) en zet en verwijder een profielfoto. Er mag geen melding met *Content Security Policy* of *Refused to* staan. Na de livegang laat één lid met Android één ronde doen (B5): komen de foto's rechtop en met datum binnen? Staat die er wel: noteer de geblokkeerde host en meld hem; de CSP staat in `infra/webapp.yml` (`WebappHeadersPolicy`).
+11. **Controle:** https://app.clubalmanac.com toont het inlogscherm; http:// stuurt door naar https://; een diep adres (bv. `/profiel`) herladen geeft de app, geen foutpagina; https://clubalmanac.com/privacy/nl werkt nog. Open de **console** van de browser (Chrome: *Weergave → Ontwikkelaar → JavaScript-console*) en doe: inloggen, een album openen (beelden laden), de kaart, een film afspelen, uitloggen. Upload ook één foto in een album (zoals in §Uploaden controleren, stap 1–2) en zet en verwijder een profielfoto; zet daarna je eigen foto terug. Er mag geen melding met *Content Security Policy* of *Refused to* staan. Staat die er wel: noteer de geblokkeerde host en meld hem; de CSP staat in `infra/webapp.yml` (`WebappHeadersPolicy`). Na de livegang laat één lid met Android één ronde doen (B5): komen de foto's rechtop en met datum binnen?
 12. **Pas als stap 11 goed is**, de web-link in de uitnodigingsmail aanzetten:
 
     ```bash

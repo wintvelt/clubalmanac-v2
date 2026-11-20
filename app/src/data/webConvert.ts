@@ -1,7 +1,7 @@
 import { fitWithin, type FailReason } from "../lib/upload";
 import {
   WEB_HEAD_BYTES,
-  imageHeaderSize,
+  imageSizeOfFile,
   isSafeToSend,
   profileSquare,
   tooManyPixels,
@@ -61,15 +61,22 @@ export function openFilePicker(multiple: boolean): Promise<File[] | null> {
   });
 }
 
-type HeadInfo = { assetId: string | null; headers: Record<string, string>; width: number; height: number };
+/** `size` null: een JPEG zonder maat; weigeren, niet decoderen (U6). */
+type HeadInfo = {
+  assetId: string | null;
+  headers: Record<string, string>;
+  size: { width: number; height: number } | null;
+};
 
 async function readHead(file: File): Promise<HeadInfo> {
   try {
     const head = new Uint8Array(await file.slice(0, WEB_HEAD_BYTES).arrayBuffer());
-    const { width, height } = imageHeaderSize(head);
-    return { assetId: webAssetId(file.size, head), headers: webMetadataHeaders(head), width, height };
+    const size = await imageSizeOfFile(head, file.size, async (offset, length) =>
+      new Uint8Array(await file.slice(offset, offset + length).arrayBuffer()),
+    );
+    return { assetId: webAssetId(file.size, head), headers: webMetadataHeaders(head), size };
   } catch {
-    return { assetId: null, headers: {}, width: 0, height: 0 };
+    return { assetId: null, headers: {}, size: { width: 0, height: 0 } };
   }
 }
 
@@ -129,7 +136,8 @@ async function convert(
   profile: boolean,
   onThumb: ((url: string) => void) | undefined,
 ): Promise<Converted> {
-  if (tooManyPixels(info.width, info.height)) return fail("te_groot");
+  if (!info.size) return fail("formaat");
+  if (tooManyPixels(info.size.width, info.size.height)) return fail("te_groot");
   const url = URL.createObjectURL(file);
   const img = new Image();
   const canvas = document.createElement("canvas");
@@ -169,9 +177,11 @@ async function convert(
     const blob = await toBlob(canvas, JPEG_QUALITY);
     if (!blob) return fail("te_groot");
     if (blob.size > MAX_JPEG_BYTES) return fail("te_groot");
+    // Een browser zonder JPEG-omzetter geeft PNG terug.
+    if (blob.type !== "image/jpeg") return fail("formaat");
     // U4: fail-closed. Een canvas maakt geen EXIF; komt er toch GPS in, dan
     // gaat de foto niet.
-    if (!isSafeToSend(new Uint8Array(await blob.arrayBuffer()))) return fail("formaat");
+    if (!isSafeToSend(new Uint8Array(await blob.arrayBuffer()))) return fail("locatie");
     return { ok: true, body: blob, headers: profile ? {} : info.headers };
   } finally {
     canvas.width = 0;

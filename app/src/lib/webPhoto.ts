@@ -168,6 +168,18 @@ const TAG_GPS_IFD = 0x8825;
 const TAG_DATE_TIME_ORIGINAL = 0x9003;
 const TAG_CREATE_DATE = 0x9004;
 
+// Dezelfde vormen als de backend (convex/lib/upload.ts: `EXIF_DATE`,
+// `DECIMAL`). Een header met een regeleinde laat `fetch` gooien (dan ziet de
+// user "Geen verbinding"); wat de backend toch weggooit, gaat niet mee.
+const EXIF_DATE = /^\d{4}:\d{2}:\d{2} \d{2}:\d{2}:\d{2}$/;
+const DECIMAL = /^[+-]?\d+(\.\d+)?$/;
+
+/** Graden als decimaal getal zonder e-notatie (`String(1e-7)` is "1e-7"). */
+function degreesText(value: number): string | undefined {
+  const text = value.toFixed(7).replace(/\.?0+$/, "");
+  return DECIMAL.test(text) ? text : undefined;
+}
+
 function degrees(dms: number[] | undefined, ref: string | undefined, negative: "S" | "W"): number | undefined {
   if (!dms) return undefined;
   const [d, m, s] = dms as [number, number, number];
@@ -199,7 +211,9 @@ export function webMetadataHeaders(bytes: Uint8Array): Record<string, string> {
       try {
         const exif = readIfd(r, r.u32(exifPtr.valueOffset));
         const pick = (tag: number) => asciiOf(r, exif.find((e) => e.tag === tag))?.trim();
-        const taken = [pick(TAG_DATE_TIME_ORIGINAL), pick(TAG_CREATE_DATE)].find((v) => v !== undefined && v !== "");
+        const taken = [pick(TAG_DATE_TIME_ORIGINAL), pick(TAG_CREATE_DATE)].find(
+          (v) => v !== undefined && EXIF_DATE.test(v),
+        );
         if (taken) headers["X-Taken-At"] = taken;
       } catch {
         // Een kapotte EXIF-IFD: geen datum.
@@ -219,8 +233,12 @@ export function webMetadataHeaders(bytes: Uint8Array): Record<string, string> {
           Math.abs(lon) <= 180 &&
           !(lat === 0 && lon === 0)
         ) {
-          headers["X-Latitude"] = String(lat);
-          headers["X-Longitude"] = String(lon);
+          const latText = degreesText(lat);
+          const lonText = degreesText(lon);
+          if (latText !== undefined && lonText !== undefined) {
+            headers["X-Latitude"] = latText;
+            headers["X-Longitude"] = lonText;
+          }
         }
       } catch {
         // Een kapotte GPS-IFD: geen plaats.
@@ -333,6 +351,71 @@ export function imageHeaderSize(bytes: Uint8Array): { width: number; height: num
     return none;
   }
   return none;
+}
+
+/** Leest `length` bytes vanaf `offset` uit het bestand (minder aan het eind). */
+export type ReadBytes = (offset: number, length: number) => Promise<Uint8Array>;
+
+const WINDOW = 64 * 1024;
+/** Meer segmenten vóór het beeld heeft geen echte foto. */
+const MAX_SEGMENTS = 4096;
+
+/**
+ * U6: de maat van een gekozen bestand, zonder te decoderen. Bij een JPEG
+ * staat de SOF soms na meer dan `WEB_HEAD_BYTES` aan APP-stukken; dan de
+ * stukken aflopen in het hele bestand. `null`: een JPEG zonder maat (geen SOF
+ * vóór het beeld, of een stuk dat buiten het bestand loopt). Weiger die; niet
+ * alsnog decoderen. Een ander formaat: de maat uit de kop, of 0×0.
+ */
+export async function imageSizeOfFile(
+  head: Uint8Array,
+  fileSize: number,
+  read: ReadBytes,
+): Promise<{ width: number; height: number } | null> {
+  const fromHead = imageHeaderSize(head);
+  if (!isJpeg(head) || (fromHead.width > 0 && fromHead.height > 0)) return fromHead;
+
+  let winStart = 0;
+  let win = head;
+  const at = async (offset: number, length: number): Promise<Uint8Array | null> => {
+    if (offset < 0 || offset + length > fileSize) return null;
+    if (offset < winStart || offset + length > winStart + win.length) {
+      winStart = offset;
+      win = await read(offset, Math.max(length, WINDOW));
+      if (win.length < length) return null;
+    }
+    return win.subarray(offset - winStart, offset - winStart + length);
+  };
+
+  let p = 2;
+  for (let n = 0; n < MAX_SEGMENTS; n += 1) {
+    const m = await at(p, 2);
+    if (!m || m[0] !== 0xff) return null;
+    const marker = m[1]!;
+    if (marker === 0xff) {
+      p += 1;
+      continue;
+    }
+    if (marker === 0xd9 || marker === 0xda) return null;
+    if (marker === 0x01 || (marker >= 0xd0 && marker <= 0xd7)) {
+      p += 2;
+      continue;
+    }
+    const len = await at(p + 2, 2);
+    if (!len) return null;
+    const length = (len[0]! << 8) | len[1]!;
+    if (length < 2) return null;
+    const sof = marker >= 0xc0 && marker <= 0xcf && marker !== 0xc4 && marker !== 0xc8 && marker !== 0xcc;
+    if (sof) {
+      const b = await at(p + 4, 5);
+      if (!b || length < 7) return null;
+      const height = (b[1]! << 8) | b[2]!;
+      const width = (b[3]! << 8) | b[4]!;
+      return width > 0 && height > 0 ? { width, height } : null;
+    }
+    p += 2 + length;
+  }
+  return null;
 }
 
 // --- U7: een vaste id uit de inhoud -------------------------------------------
