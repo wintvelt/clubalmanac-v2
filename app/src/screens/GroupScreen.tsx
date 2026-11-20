@@ -31,6 +31,7 @@ import {
 } from "../data/adminState";
 import { successTap } from "../data/haptics";
 import { forgetLastGroup } from "../data/lastGroup";
+import { READ_ONLY } from "../data/readOnly";
 import { useMyGroups } from "../data/homeGroupState";
 import { useLiveQuery } from "../data/useLiveQuery";
 import {
@@ -102,8 +103,9 @@ function GroupContent({ groupId }: { groupId: Id<"groups"> }) {
   const mine = useMyGroups();
   const me = useLiveQuery(api.users.profile, {});
   const role = mine?.find((g) => g._id === groupId)?.role;
+  // WP35 W5: op het web geen rechten: niets bewerken, geen nieuw album.
   const rights =
-    group && me && role ? groupRights({ me: me._id, role, founderId: group.createdBy }) : undefined;
+    !READ_ONLY && group && me && role ? groupRights({ me: me._id, role, founderId: group.createdBy }) : undefined;
   const departing = useDeparting(groupId);
   const notice = useNoticeUntilBlur(`group:${groupId}`);
   const [tab, setTab] = useState<Tab>("albums");
@@ -305,10 +307,12 @@ function MembersTab({ groupId, groupName, founderId }: { groupId: Id<"groups">; 
   if (members === undefined || me === undefined) return <LoadingState label="Leden laden…" />;
   const sections = memberSections(members, { meId: me?._id ?? null, founderId });
   const myRole = members.find((m) => m.membership.userId === me?._id)?.membership.role;
-  const viewer = me && myRole ? { me: me._id as string, role: myRole, founderId } : undefined;
+  // WP35 W5: op het web geen acties bij een lid.
+  const viewer = !READ_ONLY && me && myRole ? { me: me._id as string, role: myRole, founderId } : undefined;
   const iAmFounder = viewer !== undefined && viewer.me === founderId;
   // WP19b A-invariant 12: uitnodigen en "Uitgenodigd" alleen voor een admin.
-  const iAmAdmin = myRole === "admin";
+  // WP35 W5: op het web niet uitnodigen.
+  const iAmAdmin = !READ_ONLY && myRole === "admin";
 
   async function run(action: MemberAction, target: { userId: Id<"users">; name: string | null }) {
     if (inFlight.current) return;

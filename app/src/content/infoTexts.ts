@@ -98,7 +98,16 @@ const PRIVACY: readonly InfoBlock[] = [
       "Photon (Komoot): zet de GPS-gegevens van een foto om in een plaatsnaam. Alleen de coördinaten gaan erheen, niet je naam of e-mailadres. Komoot zit in Duitsland (EU).",
     ],
   },
-  { kind: "paragraph", lead: "Cookies.", text: "De app gebruikt geen cookies en geen trackers." },
+  {
+    kind: "paragraph",
+    lead: "Kaart op het web.",
+    text: "De albumkaart in de webapp (app.clubalmanac.com) laadt de kaart van OpenStreetMap (OpenStreetMap Foundation, Verenigd Koninkrijk). Uit welke stukken kaart je browser opvraagt, is af te leiden waar de foto's ongeveer liggen; je naam en e-mailadres gaan niet mee.",
+  },
+  {
+    kind: "paragraph",
+    lead: "Cookies.",
+    text: "De app gebruikt geen trackers. De iPhone-app gebruikt geen cookies; in de webapp zet Clerk alleen de cookies die nodig zijn om ingelogd te blijven.",
+  },
   {
     kind: "paragraph",
     lead: "Inzien, aanpassen of verwijderen.",

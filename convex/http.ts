@@ -13,6 +13,7 @@ import {
 } from "./lib/testGate";
 import { parseLocation, parseTakenAt, uploadImageType } from "./lib/upload";
 import { stripJpegMetadata } from "./lib/jpegMeta";
+import { webPreflightResponse, withWebCors } from "./lib/webCors";
 
 // Cascade matrix IB1: Mailjet bounce-webhook → internal.invites.handleBounce.
 // Voltooit IB1 cascade per docs/cascade-matrix.md (bounce → status=expired
@@ -517,50 +518,66 @@ async function imageResponse(
   });
 }
 
+// WP35 A-invariant W1: de webapp haalt een foto of uitnodigingscover op met
+// de header, dus de browser vraagt eerst `OPTIONS`. De CORS-header komt op
+// elk antwoord aan een toegestane origin (lib/webCors); de toegang zelf
+// verandert niet. Het profielpad is openbaar (besluit 8) en heeft geen CORS
+// nodig: een gewone `<img>` toont hem.
+const webPreflight = httpAction(async (_ctx, request) => webPreflightResponse(request));
+
+http.route({ pathPrefix: PHOTO_PREFIX, method: "OPTIONS", handler: webPreflight });
+http.route({ pathPrefix: INVITE_PREFIX, method: "OPTIONS", handler: webPreflight });
+
 http.route({
   pathPrefix: PHOTO_PREFIX,
   method: "GET",
-  handler: httpAction(async (ctx, request) => {
-    const format = parseImageFormat(
-      new URL(request.url).searchParams.get("formaat"),
-    );
-    if (format === "ongeldig") return BAD_FORMAT();
+  handler: httpAction(async (ctx, request) =>
+    withWebCors(request, await photoImageRoute(ctx, request)),
+  ),
+});
 
-    // Zelfde JWT-throw-handling als `/upload`: een ongeldige token is 401,
-    // geen 500.
-    let identity;
-    try {
-      identity = await ctx.auth.getUserIdentity();
-    } catch {
-      return new Response("Unauthorized", { status: 401 });
-    }
-    if (!identity) return new Response("Unauthorized", { status: 401 });
+type ImageRouteCtx = Parameters<Parameters<typeof httpAction>[0]>[0];
 
-    // WP17d besluit 4 (A-invariant 9): een origineel gaat alleen door de
-    // schoonmaker naar buiten, voor elk lid en ook voor de eigenaar. Een
-    // formaat (door ons gemaakt, zonder EXIF) gaat ongewijzigd mee.
-    const photoId = idFromPath(request, PHOTO_PREFIX);
-    if (format === "origineel") {
-      const storageId = await ctx.runQuery(internal.images.photoImage, { photoId });
-      return await cleanOriginalResponse(ctx, storageId, "private, max-age=3600", {
-        Vary: "Authorization",
-      });
-    }
-    const choice = await ctx.runQuery(internal.images.photoImageInFormat, {
-      photoId,
-      formaat: format,
-    });
-    if (!choice) return NOT_FOUND();
-    if (choice.fallback) {
-      return await cleanOriginalResponse(ctx, choice.storageId, FALLBACK_CACHE_PHOTO, {
-        Vary: "Authorization",
-      });
-    }
-    return await imageResponse(ctx, choice.storageId, "private, max-age=3600", {
+async function photoImageRoute(ctx: ImageRouteCtx, request: Request): Promise<Response> {
+  const format = parseImageFormat(
+    new URL(request.url).searchParams.get("formaat"),
+  );
+  if (format === "ongeldig") return BAD_FORMAT();
+
+  // Zelfde JWT-throw-handling als `/upload`: een ongeldige token is 401,
+  // geen 500.
+  let identity;
+  try {
+    identity = await ctx.auth.getUserIdentity();
+  } catch {
+    return new Response("Unauthorized", { status: 401 });
+  }
+  if (!identity) return new Response("Unauthorized", { status: 401 });
+
+  // WP17d besluit 4 (A-invariant 9): een origineel gaat alleen door de
+  // schoonmaker naar buiten, voor elk lid en ook voor de eigenaar. Een
+  // formaat (door ons gemaakt, zonder EXIF) gaat ongewijzigd mee.
+  const photoId = idFromPath(request, PHOTO_PREFIX);
+  if (format === "origineel") {
+    const storageId = await ctx.runQuery(internal.images.photoImage, { photoId });
+    return await cleanOriginalResponse(ctx, storageId, "private, max-age=3600", {
       Vary: "Authorization",
     });
-  }),
-});
+  }
+  const choice = await ctx.runQuery(internal.images.photoImageInFormat, {
+    photoId,
+    formaat: format,
+  });
+  if (!choice) return NOT_FOUND();
+  if (choice.fallback) {
+    return await cleanOriginalResponse(ctx, choice.storageId, FALLBACK_CACHE_PHOTO, {
+      Vary: "Authorization",
+    });
+  }
+  return await imageResponse(ctx, choice.storageId, "private, max-age=3600", {
+    Vary: "Authorization",
+  });
+}
 
 http.route({
   pathPrefix: PROFILE_PREFIX,
@@ -598,35 +615,39 @@ http.route({
 http.route({
   pathPrefix: INVITE_PREFIX,
   method: "GET",
-  handler: httpAction(async (ctx, request) => {
-    // `origineel` uitgeschreven geeft hier ook *groot* (A-invariant 15).
-    const raw = new URL(request.url).searchParams.get("formaat");
-    const format = raw === "origineel" ? "origineel" : parseImageFormat(raw);
-    if (format === "ongeldig") return BAD_FORMAT();
+  handler: httpAction(async (ctx, request) =>
+    withWebCors(request, await inviteImageRoute(ctx, request)),
+  ),
+});
 
-    let identity;
-    try {
-      identity = await ctx.auth.getUserIdentity();
-    } catch {
-      return new Response("Unauthorized", { status: 401 });
-    }
-    if (!identity) return new Response("Unauthorized", { status: 401 });
+async function inviteImageRoute(ctx: ImageRouteCtx, request: Request): Promise<Response> {
+  // `origineel` uitgeschreven geeft hier ook *groot* (A-invariant 15).
+  const raw = new URL(request.url).searchParams.get("formaat");
+  const format = raw === "origineel" ? "origineel" : parseImageFormat(raw);
+  if (format === "ongeldig") return BAD_FORMAT();
 
-    const choice = await ctx.runQuery(internal.images.inviteCoverInFormat, {
-      inviteId: idFromPath(request, INVITE_PREFIX),
-      formaat: format === "origineel" ? "groot" : format,
-    });
-    if (!choice) return NOT_FOUND();
-    if (choice.fallback) {
-      return await cleanOriginalResponse(ctx, choice.storageId, FALLBACK_CACHE_PHOTO, {
-        Vary: "Authorization",
-      });
-    }
-    return await imageResponse(ctx, choice.storageId, "private, no-cache", {
+  let identity;
+  try {
+    identity = await ctx.auth.getUserIdentity();
+  } catch {
+    return new Response("Unauthorized", { status: 401 });
+  }
+  if (!identity) return new Response("Unauthorized", { status: 401 });
+
+  const choice = await ctx.runQuery(internal.images.inviteCoverInFormat, {
+    inviteId: idFromPath(request, INVITE_PREFIX),
+    formaat: format === "origineel" ? "groot" : format,
+  });
+  if (!choice) return NOT_FOUND();
+  if (choice.fallback) {
+    return await cleanOriginalResponse(ctx, choice.storageId, FALLBACK_CACHE_PHOTO, {
       Vary: "Authorization",
     });
-  }),
-});
+  }
+  return await imageResponse(ctx, choice.storageId, "private, no-cache", {
+    Vary: "Authorization",
+  });
+}
 
 // WP17d besluit 2 en 4 (A-invariant 8, 9 en 10): een origineel gaat nooit
 // ongewijzigd naar buiten. Een JPEG gaat zonder metadata en zonder wat na het

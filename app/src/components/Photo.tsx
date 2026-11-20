@@ -9,6 +9,7 @@ import { photoLayers, useTheme } from "../theme";
 import { Icon } from "./Icon";
 import { LetterTile } from "./LetterTile";
 import type { TypeRoleName } from "../theme";
+import { SVG_FILL, useSvgId } from "./svgFill";
 
 // WP17a: beelden uit het beeldpad. Elk beeld staat rechtop volgens
 // `exifOrientation` uit Convex (invariant 4, WP8 §Frontend-contract).
@@ -256,16 +257,17 @@ function ProfileImage({
 export function CoverScrim({ height }: { height: number }) {
   const { top, at100, bottom } = photoLayers.coverScrim;
   const at = Math.min(1, 100 / Math.max(height, 1));
+  const id = useSvgId("scrim");
   return (
-    <Svg style={StyleSheet.absoluteFill} pointerEvents="none">
+    <Svg style={StyleSheet.absoluteFill} pointerEvents="none" {...SVG_FILL}>
       <Defs>
-        <LinearGradient id="scrim" x1="0" y1="0" x2="0" y2="1">
+        <LinearGradient id={id} x1="0" y1="0" x2="0" y2="1">
           <Stop offset={0} stopColor="#000000" stopOpacity={top} />
           <Stop offset={at} stopColor="#000000" stopOpacity={at100} />
           <Stop offset={1} stopColor="#000000" stopOpacity={bottom} />
         </LinearGradient>
       </Defs>
-      <Rect width="100%" height="100%" fill="url(#scrim)" />
+      <Rect width="100%" height="100%" fill={`url(#${id})`} />
     </Svg>
   );
 }

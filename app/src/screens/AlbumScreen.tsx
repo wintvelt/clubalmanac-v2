@@ -19,6 +19,7 @@ import { EmptyState, LoadingState } from "../components/States";
 import { Text } from "../components/Text";
 import { api } from "../convexApi";
 import { useDeparting } from "../data/adminState";
+import { READ_ONLY } from "../data/readOnly";
 import { useAuthState } from "../data/authStateContext";
 import { useAppState } from "../data/useAppState";
 import { useSharePhoto } from "../data/share";
@@ -106,7 +107,8 @@ function AlbumContent({ groupId, albumId }: { groupId: Id<"groups">; albumId: Id
   // WP28b: "Bewerk album" voor een admin (A-invariant 18).
   const mine = useMyGroups();
   const founderId = mine?.find((g) => g._id === groupId)?.createdBy;
-  const canEdit = ctx && founderId ? groupRights({ ...ctx, founderId }).editAlbum : false;
+  // WP35 W5: op het web niets bewerken of selecteren; de kaart blijft.
+  const canEdit = !READ_ONLY && ctx && founderId ? groupRights({ ...ctx, founderId }).editAlbum : false;
   const [feedback, setFeedback] = useState<Feedback | null>(null);
   const [selecting, setSelecting] = useState(false);
   const [picked, setPicked] = useState<ReadonlySet<string>>(new Set());
@@ -169,7 +171,7 @@ function AlbumContent({ groupId, albumId }: { groupId: Id<"groups">; albumId: Id
             action={
               !selecting && (canEdit || (ctx && shown && shown.length > 0)) ? (
                 <View style={styles.barRow}>
-                  {ctx && shown && shown.length > 0 ? (
+                  {!READ_ONLY && ctx && shown && shown.length > 0 ? (
                     <SmallButton
                       title="Selecteer"
                       icon="check"

@@ -31,6 +31,7 @@ import {
   type Feedback,
   type MenuContext,
 } from "./PhotoMenu";
+import { WebPager } from "../components/WebPager";
 
 // WP17c kernvondst 5: het detail vanuit Mijn foto's. Swipen door je eigen
 // foto's, in de volgorde en met de schakelaar van het raster (dezelfde live
@@ -103,14 +104,16 @@ function DetailContent({
     if (page && shown && shown.length > 0) flatList.current?.scrollToIndex({ index, animated: false });
   }, [index, page?.width]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const onMomentumEnd = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
-    if (!page) return;
-    const i = Math.round(e.nativeEvent.contentOffset.x / page.width);
+  const showPage = (i: number) => {
     const id = ids[i];
     if (id && id !== current) {
       setCurrent(id);
       setFeedback(null);
     }
+  };
+  const onMomentumEnd = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
+    if (!page) return;
+    showPage(Math.round(e.nativeEvent.contentOffset.x / page.width));
   };
 
   return (
@@ -129,6 +132,7 @@ function DetailContent({
           scrollKey={feedback ?? menu.sharing}
           photos={
             page && (
+              <>
               <Animated.FlatList
                 ref={flatList}
                 data={shown}
@@ -148,6 +152,9 @@ function DetailContent({
                 onEndReachedThreshold={3}
                 renderItem={({ item }) => <ZoomablePhoto photoId={item._id} photo={item} box={page} />}
               />
+              {/* WP35: op het web bladeren met knoppen en pijltjes; op iOS niets. */}
+              <WebPager list={flatList} index={index} count={ids.length} pageWidth={page.width} onSettle={showPage} />
+              </>
             )
           }
           below={

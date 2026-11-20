@@ -39,6 +39,7 @@ import {
   type Feedback,
   type MenuPhoto,
 } from "./PhotoMenu";
+import { WebPager } from "../components/WebPager";
 
 type Entry = FunctionReturnType<typeof api.albums.listPhotos>[number];
 type Shown = Entry & { photo: NonNullable<Entry["photo"]> };
@@ -142,14 +143,16 @@ function DetailContent({
     if (page && shown && shown.length > 0) list.current?.scrollToIndex({ index, animated: false });
   }, [index, page?.width]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const onMomentumEnd = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
-    if (!page) return;
-    const i = Math.round(e.nativeEvent.contentOffset.x / page.width);
+  const showPage = (i: number) => {
     const id = ids[i];
     if (id && id !== current) {
       setCurrent(id);
       setFeedback(null);
     }
+  };
+  const onMomentumEnd = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
+    if (!page) return;
+    showPage(Math.round(e.nativeEvent.contentOffset.x / page.width));
   };
 
   return (
@@ -168,6 +171,7 @@ function DetailContent({
           scrollKey={feedback ?? menu.sharing}
           photos={
             page && (
+              <>
               <Animated.FlatList
                 ref={list}
                 data={shown}
@@ -185,6 +189,9 @@ function DetailContent({
                 onMomentumScrollEnd={onMomentumEnd}
                 renderItem={({ item }) => <ZoomablePhoto photoId={item.albumPhoto.photoId} photo={item.photo} box={page} />}
               />
+              {/* WP35: op het web bladeren met knoppen en pijltjes; op iOS niets. */}
+              <WebPager list={list} index={index} count={ids.length} pageWidth={page.width} onSettle={showPage} />
+              </>
             )
           }
           below={

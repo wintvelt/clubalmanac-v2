@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Image, StyleSheet, View } from "react-native";
+import { Image, Platform, StyleSheet, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useClerkWipeFailed, wipeClerkStorage } from "../auth/deviceClerkStorage";
 import {
@@ -67,6 +67,12 @@ export function LoginScreen() {
             busy={login.busy}
           />
           <Feedback feedback={login.feedback} action="send" />
+          {/* WP35 besluit B5: op het web blijft de sessie in de browser staan. */}
+          {Platform.OS === "web" && (
+            <Text variant="meta" color="muted">
+              Op een gedeelde computer: log uit als je klaar bent.
+            </Text>
+          )}
         </>
       ) : (
         <>

@@ -12,6 +12,7 @@ import { useGroupVisit, useHomeGroup } from "../data/homeGroupState";
 import { homeDecisions, homeSessionKey } from "../lib/homeDecision";
 import { groupPath } from "../lib/groupRoutes";
 import { homeButton, trackTabOrigin, type HomeButtonTarget, type TabOrigin } from "../lib/homeGroup";
+import { READ_ONLY } from "../data/readOnly";
 import { albumIdFromPath } from "../lib/upload";
 import { border, plusButton, radius, size, space, useTheme } from "../theme";
 
@@ -84,7 +85,8 @@ export function TabBar({
       ]}
     >
       <View accessibilityRole="tablist" style={styles.row}>
-        {plus ? (
+        {/* WP35 W5: op het web geen + (uploaden is een actie). */}
+        {plus && !READ_ONLY ? (
           <>
             {tabs.slice(0, half)}
             <PlusButton />

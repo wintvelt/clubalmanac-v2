@@ -2,7 +2,7 @@ import { useMutation } from "convex/react";
 import type { FunctionReturnType } from "convex/server";
 import { router, useLocalSearchParams } from "expo-router";
 import { useRef, useState } from "react";
-import { Alert, Pressable, StyleSheet, Switch, View } from "react-native";
+import { Pressable, StyleSheet, Switch, View } from "react-native";
 import type { Id } from "../../../convex/_generated/dataModel";
 import { Button } from "../components/Button";
 import { Icon } from "../components/Icon";
@@ -19,6 +19,7 @@ import { EmptyState, LoadingState } from "../components/States";
 import { Text } from "../components/Text";
 import { TextField } from "../components/TextField";
 import { api } from "../convexApi";
+import { askConfirmation as confirm } from "../data/confirm";
 import { successTap } from "../data/haptics";
 import { useLiveQuery } from "../data/useLiveQuery";
 import { groupPath, invitePath } from "../lib/groupRoutes";
@@ -41,21 +42,8 @@ import { radius, size, space, useTheme } from "../theme";
 // en het blok "Uitgenodigd" in Leden. Spec: docs/work-packages/
 // WP19b-uitnodigen-aanmelden.md §Scherm in de app.
 
-type Confirmation = { title: string; message: string; button: string; destructive: boolean };
-
-function confirm(c: Confirmation): Promise<boolean> {
-  return new Promise((resolve) => {
-    Alert.alert(
-      c.title,
-      c.message,
-      [
-        { text: "Annuleren", style: "cancel", onPress: () => resolve(false) },
-        { text: c.button, style: c.destructive ? "destructive" : "default", onPress: () => resolve(true) },
-      ],
-      { cancelable: true, onDismiss: () => resolve(false) },
-    );
-  });
-}
+// De bevestiging (afwijzen, intrekken) staat in src/data/confirm.ts; op het
+// web vraagt de browser het (WP35 A-invariant W7).
 
 // Eén aanroep tegelijk, ook bij dubbel tikken.
 function useOnce() {

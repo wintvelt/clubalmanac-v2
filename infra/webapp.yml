@@ -1,0 +1,288 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >-
+  De webapp op app.clubalmanac.com (WP35): de web-build van app/ (Expo Web) in
+  een privé-bucket, achter een eigen CloudFront-distributie met certificaat,
+  DNS-records, een terugval naar index.html voor diepe adressen, en een
+  deploy-rol voor GitHub Actions (OIDC, alleen vanaf main). clubalmanac.com en
+  zijn distributie (infra/site.yml) worden niet aangeraakt. Deployen in
+  eu-west-1 (Ierland, net als site.yml); het certificaat staat in us-east-1
+  (eis van CloudFront) en komt als parameter binnen. Runbook:
+  docs/runbooks/webapp.md.
+
+Parameters:
+  DomainName:
+    Type: String
+    Default: app.clubalmanac.com
+    Description: Het adres van de webapp.
+  CertificateArn:
+    Type: String
+    AllowedPattern: "^arn:aws:acm:us-east-1:[0-9]{12}:certificate/[0-9a-f-]+$"
+    Description: >-
+      ARN van het ACM-certificaat voor DomainName, aangevraagd in us-east-1
+      (N. Virginia) met DNS-validatie. CloudFront neemt alleen een certificaat
+      uit us-east-1.
+  HostedZoneId:
+    Type: AWS::Route53::HostedZone::Id
+    Description: Hosted zone van clubalmanac.com in Route 53.
+  GitHubRepo:
+    Type: String
+    Default: wintvelt/clubalmanac-v2
+    Description: owner/naam van de repo die mag deployen.
+  GitHubOidcProviderArn:
+    Type: String
+    AllowedPattern: "^arn:aws:iam::[0-9]{12}:oidc-provider/token\\.actions\\.githubusercontent\\.com$"
+    Description: >-
+      ARN van de bestaande IAM-identity-provider voor
+      token.actions.githubusercontent.com (dezelfde als bij clubalmanac-site).
+
+Resources:
+  WebappBucket:
+    Type: AWS::S3::Bucket
+    # Bij een mislukte eerste create gaat de lege bucket mee terug, anders
+    # blokkeert de vaste naam een nieuwe poging.
+    DeletionPolicy: RetainExceptOnCreate
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketName: clubalmanac-webapp
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: BucketOwnerEnforced
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      # Oude versies blijven 30 dagen: een foute deploy is terug te zetten.
+      VersioningConfiguration:
+        Status: Enabled
+      LifecycleConfiguration:
+        Rules:
+          - Id: oude-versies-weg
+            Status: Enabled
+            NoncurrentVersionExpiration:
+              NoncurrentDays: 30
+
+  WebappOriginAccessControl:
+    Type: AWS::CloudFront::OriginAccessControl
+    Properties:
+      OriginAccessControlConfig:
+        Name: clubalmanac-webapp
+        Description: CloudFront leest clubalmanac-webapp
+        OriginAccessControlOriginType: s3
+        SigningBehavior: always
+        SigningProtocol: sigv4
+
+  WebappBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref WebappBucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: AlleenCloudFrontLeest
+            Effect: Allow
+            Principal:
+              Service: cloudfront.amazonaws.com
+            Action: s3:GetObject
+            Resource: !Sub "${WebappBucket.Arn}/*"
+            Condition:
+              StringEquals:
+                AWS:SourceArn: !Sub "arn:aws:cloudfront::${AWS::AccountId}:distribution/${WebappDistribution}"
+          - Sid: AlleenTls
+            Effect: Deny
+            Principal: "*"
+            Action: "s3:*"
+            Resource:
+              - !GetAtt WebappBucket.Arn
+              - !Sub "${WebappBucket.Arn}/*"
+            Condition:
+              Bool:
+                aws:SecureTransport: "false"
+
+  # Diepe adressen (bv. /groep/<id>/album/<id>) bestaan niet als bestand: een
+  # pad zonder bestandsextensie krijgt index.html, de app kiest de route. Een
+  # ontbrekend bestand met extensie blijft een fout (geen eigen foutpagina die
+  # een 200 geeft).
+  WebappRouteFunction:
+    Type: AWS::CloudFront::Function
+    Properties:
+      Name: clubalmanac-webapp-routes
+      AutoPublish: true
+      FunctionConfig:
+        Comment: Pad zonder extensie naar /index.html
+        Runtime: cloudfront-js-2.0
+      FunctionCode: |
+        function handler(event) {
+          var request = event.request;
+          var last = request.uri.split("/").pop();
+          if (last.indexOf(".") === -1) {
+            request.uri = "/index.html";
+          }
+          return request;
+        }
+
+  # Invariant 10: de cache volgt de Cache-Control van de deploy. index.html
+  # heeft no-cache (MinTTL 0, dus elke keer opnieuw gevraagd); de bundels
+  # hebben een hash in de naam en zijn een jaar geldig. Geen cookies, headers
+  # of query in de sleutel: de webapp is statisch.
+  WebappCachePolicy:
+    Type: AWS::CloudFront::CachePolicy
+    Properties:
+      CachePolicyConfig:
+        Name: clubalmanac-webapp
+        Comment: Volgt Cache-Control van de bestanden; index.html no-cache
+        MinTTL: 0
+        DefaultTTL: 86400
+        MaxTTL: 31536000
+        ParametersInCacheKeyAndForwardedToOrigin:
+          EnableAcceptEncodingGzip: true
+          EnableAcceptEncodingBrotli: true
+          CookiesConfig:
+            CookieBehavior: none
+          HeadersConfig:
+            HeaderBehavior: none
+          QueryStringsConfig:
+            QueryStringBehavior: none
+
+  # Spec §Vraag 8. Referrer-Policy strict-origin-when-cross-origin, niet
+  # no-referrer: de tegelservers van OpenStreetMap vragen een Referer.
+  WebappHeadersPolicy:
+    Type: AWS::CloudFront::ResponseHeadersPolicy
+    Properties:
+      ResponseHeadersPolicyConfig:
+        Name: clubalmanac-webapp
+        Comment: Beveiligingsheaders van app.clubalmanac.com
+        SecurityHeadersConfig:
+          StrictTransportSecurity:
+            AccessControlMaxAgeSec: 31536000
+            IncludeSubdomains: false
+            Preload: false
+            Override: true
+          ContentTypeOptions:
+            Override: true
+          FrameOptions:
+            FrameOption: DENY
+            Override: true
+          ReferrerPolicy:
+            ReferrerPolicy: strict-origin-when-cross-origin
+            Override: true
+        CustomHeadersConfig:
+          Items:
+            - Header: X-Robots-Tag
+              Value: noindex
+              Override: true
+
+  WebappDistribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Comment: app.clubalmanac.com (webapp, WP35)
+        Enabled: true
+        Aliases:
+          - !Ref DomainName
+        ViewerCertificate:
+          AcmCertificateArn: !Ref CertificateArn
+          SslSupportMethod: sni-only
+          MinimumProtocolVersion: TLSv1.2_2021
+        DefaultRootObject: index.html
+        HttpVersion: http2and3
+        IPV6Enabled: true
+        # Europa en Noord-Amerika: de goedkoopste klasse.
+        PriceClass: PriceClass_100
+        Origins:
+          - Id: webapp-bucket
+            DomainName: !GetAtt WebappBucket.RegionalDomainName
+            OriginAccessControlId: !GetAtt WebappOriginAccessControl.Id
+            S3OriginConfig:
+              OriginAccessIdentity: ""
+        DefaultCacheBehavior:
+          TargetOriginId: webapp-bucket
+          ViewerProtocolPolicy: redirect-to-https
+          AllowedMethods: [GET, HEAD]
+          CachedMethods: [GET, HEAD]
+          Compress: true
+          CachePolicyId: !Ref WebappCachePolicy
+          ResponseHeadersPolicyId: !Ref WebappHeadersPolicy
+          FunctionAssociations:
+            - EventType: viewer-request
+              FunctionARN: !GetAtt WebappRouteFunction.FunctionMetadata.FunctionARN
+
+  # Alias-records naar de distributie. Z2FDTNDATAQYW2 is de vaste hosted
+  # zone van CloudFront.
+  WebappRecordA:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneId: !Ref HostedZoneId
+      Name: !Ref DomainName
+      Type: A
+      AliasTarget:
+        DNSName: !GetAtt WebappDistribution.DomainName
+        HostedZoneId: Z2FDTNDATAQYW2
+        EvaluateTargetHealth: false
+
+  WebappRecordAAAA:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneId: !Ref HostedZoneId
+      Name: !Ref DomainName
+      Type: AAAA
+      AliasTarget:
+        DNSName: !GetAtt WebappDistribution.DomainName
+        HostedZoneId: Z2FDTNDATAQYW2
+        EvaluateTargetHealth: false
+
+  WebappDeployRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: clubalmanac-webapp-deploy
+      Description: GitHub Actions (main van clubalmanac-v2) zet de web-build in de bucket en leegt de cache.
+      MaxSessionDuration: 3600
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Federated: !Ref GitHubOidcProviderArn
+            Action: sts:AssumeRoleWithWebIdentity
+            Condition:
+              StringEquals:
+                token.actions.githubusercontent.com:aud: sts.amazonaws.com
+                # Alleen een run op main, niet vanuit een PR of andere branch.
+                token.actions.githubusercontent.com:sub: !Sub "repo:${GitHubRepo}:ref:refs/heads/main"
+      Policies:
+        - PolicyName: webapp-deploy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: BucketLijst
+                Effect: Allow
+                Action: s3:ListBucket
+                Resource: !GetAtt WebappBucket.Arn
+              - Sid: BestandenSchrijven
+                Effect: Allow
+                Action:
+                  - s3:PutObject
+                  - s3:DeleteObject
+                Resource: !Sub "${WebappBucket.Arn}/*"
+              - Sid: CacheLegen
+                Effect: Allow
+                Action: cloudfront:CreateInvalidation
+                Resource: !Sub "arn:aws:cloudfront::${AWS::AccountId}:distribution/${WebappDistribution}"
+
+Outputs:
+  BucketName:
+    Description: Zet als repo-variabele WEBAPP_BUCKET.
+    Value: !Ref WebappBucket
+  DistributionId:
+    Description: Zet als repo-variabele WEBAPP_DISTRIBUTION_ID.
+    Value: !Ref WebappDistribution
+  DistributionDomain:
+    Description: Het CloudFront-adres (voor een test vóór de DNS er is).
+    Value: !GetAtt WebappDistribution.DomainName
+  DeployRoleArn:
+    Description: Zet als repo-variabele WEBAPP_DEPLOY_ROLE_ARN.
+    Value: !GetAtt WebappDeployRole.Arn

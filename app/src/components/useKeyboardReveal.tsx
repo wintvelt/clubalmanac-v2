@@ -164,6 +164,9 @@ export function useKeyboardReveal(
     },
     // Een ander veld krijgt focus terwijl het toetsenbord al open is.
     onFieldFocus: () => {
+      // WP35: op het web geen toetsenbord van het toestel om voor te wijken
+      // (en geen TextInput.State); de browser scrolt het veld zelf in beeld.
+      if (!keyboardByWindow) return;
       setTimeout(() => revealRef.current(), 0);
     },
   };

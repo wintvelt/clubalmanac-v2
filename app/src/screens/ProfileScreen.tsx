@@ -17,6 +17,7 @@ import { TextField } from "../components/TextField";
 import type { Id } from "../../../convex/_generated/dataModel";
 import { api } from "../convexApi";
 import { useUploader } from "../data/upload";
+import { READ_ONLY } from "../data/readOnly";
 import { useLiveQuery } from "../data/useLiveQuery";
 import { successTap } from "../data/haptics";
 import { nameErrorText } from "../lib/nameError";
@@ -77,6 +78,8 @@ export function ProfileScreen() {
       </Screen>
     );
   }
+
+  if (READ_ONLY) return <ReadOnlyProfile me={me} />;
 
   const value = draft ?? me.name ?? "";
   const dirty = nameIsDirty(draft, me.name);
@@ -157,6 +160,45 @@ export function ProfileScreen() {
           />
         </ListSection>
       </View>
+    </Screen>
+  );
+}
+
+// WP35 A-invariant W5: op het web alleen bekijken. De foto, de naam en het
+// e-mailadres, en de uitnodigingen (accepteren of afwijzen kan wel). Geen
+// profielfoto kiezen, geen naam wijzigen, geen meldingen, geen account
+// verwijderen. Uitloggen staat bij Instellingen.
+function ReadOnlyProfile({ me }: { me: Me }) {
+  return (
+    <Screen underHeader>
+      <View style={styles.photo}>
+        <ProfileAvatar
+          userId={me._id}
+          name={me.name}
+          size={size.profileAvatar}
+          variant="largeTitle"
+          exifOrientation={me.profileOrientation}
+          version={me.profileVersion}
+          hasFormats={me.profileHasFormats}
+        />
+      </View>
+
+      <View style={styles.group}>
+        <Text variant="fieldLabel">Naam</Text>
+        <Text color={me.name ? "text" : "muted"}>{me.name || "Naam onbekend"}</Text>
+      </View>
+
+      <View style={styles.group}>
+        <Text variant="fieldLabel">E-mailadres</Text>
+        <Text>{me.email}</Text>
+        <Text variant="meta" color="muted">
+          Met dit adres log je in.
+        </Text>
+      </View>
+
+      <ListSection>
+        <ListRow title="Uitnodigingen" icon="mail" onPress={() => router.push("/profiel/uitnodigingen")} />
+      </ListSection>
     </Screen>
   );
 }

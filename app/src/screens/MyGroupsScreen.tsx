@@ -18,6 +18,7 @@ import { homeDecisions, homeSessionKey } from "../lib/homeDecision";
 import { displayYear, roleLabel, sortMyGroups, unreadBadge } from "../lib/groups";
 import { radius, size, space, useTheme } from "../theme";
 import { GroupCoverTile, LargeTitleHeader, LoadError } from "./GroupParts";
+import { READ_ONLY } from "../data/readOnly";
 
 // WP16: Mijn groepen, de wortel van de Home-stack. Per groep naam, "Sinds
 // <jaar>", je rol en de teller van de backend (besluit 4, invariant 10).
@@ -51,7 +52,10 @@ function MyGroupsList() {
   const top = (
     <>
       {notice && <Notice kind="success" message={notice} />}
-      <LinkButton title="Nieuwe groep" icon="plus" tone="action" onPress={() => router.push(newGroupPath())} />
+      {/* WP35 W5: op het web geen nieuwe groep (alleen bekijken). */}
+      {!READ_ONLY && (
+        <LinkButton title="Nieuwe groep" icon="plus" tone="action" onPress={() => router.push(newGroupPath())} />
+      )}
     </>
   );
   if (groups.length === 0) {

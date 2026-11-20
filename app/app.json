@@ -16,6 +16,13 @@
         "usesNonExemptEncryption": false
       }
     },
+    "web": {
+      "bundler": "metro",
+      "output": "single",
+      "favicon": "./assets/icon/icon-light.png",
+      "name": "Clubalmanac",
+      "lang": "nl"
+    },
     "plugins": [
       "expo-status-bar",
       "expo-secure-store",
