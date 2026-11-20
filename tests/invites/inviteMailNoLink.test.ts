@@ -26,6 +26,8 @@ beforeEach(() => {
   // WP19c A-invariant 9: zonder Apple ID geen App Store-link, dus "geen link"
   // blijft hier gelden. Met de ID: tests/invites/inviteMailAppStore.test.ts.
   delete process.env.CLUBALMANAC_APP_STORE_ID;
+  // WP35 A-invariant W4: zonder webadres ook geen web-link.
+  delete process.env.CLUBALMANAC_WEB_URL;
 });
 afterEach(() => {
   delete process.env.MAILJET_VERIFIED_SENDERS;

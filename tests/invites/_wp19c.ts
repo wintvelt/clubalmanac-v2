@@ -14,6 +14,8 @@ export const APP_STORE_ENV = "CLUBALMANAC_APP_STORE_ID";
 /** De Apple ID van de app (besluit 3, openbaar). */
 export const APPLE_APP_ID = "1663038609";
 export const APP_STORE_URL = `https://apps.apple.com/app/id${APPLE_APP_ID}`;
+/** WP35 besluit 7, A-invariant W4: het adres van de webapp. Uit in deze helpers. */
+export const WEB_URL_ENV = "CLUBALMANAC_WEB_URL";
 
 export type Attachment = {
   ContentType?: string;
@@ -44,6 +46,7 @@ export function mailEnv(appStoreId?: string): void {
   process.env.MAILJET_API_KEY = "k";
   process.env.MAILJET_API_SECRET = "s";
   delete process.env.CLUBALMANAC_APP_URL;
+  delete process.env[WEB_URL_ENV];
   if (appStoreId === undefined) delete process.env[APP_STORE_ENV];
   else process.env[APP_STORE_ENV] = appStoreId;
 }
@@ -53,6 +56,7 @@ export function clearMailEnv(): void {
   delete process.env.MAILJET_API_KEY;
   delete process.env.MAILJET_API_SECRET;
   delete process.env[APP_STORE_ENV];
+  delete process.env[WEB_URL_ENV];
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
   smtp.reset();

@@ -74,7 +74,7 @@ async function snapshot(res: Response) {
 const holds = (body: string, bytes: Uint8Array) => body.includes(Array.from(bytes).join(","));
 
 describe("routes (inventaris http-paden)", () => {
-  it("de bestaande routes blijven, plus alleen de drie beeldpaden (WP19b: uitnodiging)", () => {
+  it("de bestaande routes blijven, plus alleen de drie beeldpaden (WP19b: uitnodiging) en hun preflight (WP35)", () => {
     const routes = http.getRoutes().map(([path, method]) => `${method} ${path}`);
     const others = routes.filter((r) => !r.includes("/beeld/")).sort();
     expect(others).toEqual(
@@ -90,11 +90,27 @@ describe("routes (inventaris http-paden)", () => {
     // WP19b A-invariant 15: de cover voor een genodigde, op invite-id.
     expect(http.lookup("/beeld/uitnodiging/abc", "GET")).not.toBeNull();
     const beeld = routes.filter((r) => r.includes("/beeld/")).sort();
-    expect(beeld).toEqual(["GET /beeld/foto/*", "GET /beeld/profiel/*", "GET /beeld/uitnodiging/*"]);
+    // WP35 A-invariant W1: `OPTIONS` (de preflight van de webapp) alleen op
+    // de twee paden met een token; het profielpad is openbaar en heeft geen
+    // CORS nodig, `/upload` is niet in WP35.
+    expect(beeld).toEqual(
+      [
+        "GET /beeld/foto/*",
+        "GET /beeld/profiel/*",
+        "GET /beeld/uitnodiging/*",
+        "OPTIONS /beeld/foto/*",
+        "OPTIONS /beeld/uitnodiging/*",
+      ].sort(),
+    );
+    expect(http.lookup(profilePath("abc"), "OPTIONS")).toBeNull();
+    for (const path of ["/upload", "/email-event", "/clerk-webhook", "/_test/whoami"]) {
+      expect(http.lookup(path, "OPTIONS")).toBeNull();
+    }
     // Alleen lezen: geen andere methode op de beeldpaden.
     for (const method of ["POST", "PUT", "PATCH", "DELETE"] as const) {
       expect(http.lookup(photoPath("abc"), method)).toBeNull();
       expect(http.lookup(profilePath("abc"), method)).toBeNull();
+      expect(http.lookup("/beeld/uitnodiging/abc", method)).toBeNull();
     }
   });
 });
