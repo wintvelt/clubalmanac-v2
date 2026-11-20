@@ -3,6 +3,7 @@ import { router, Stack, useLocalSearchParams } from "expo-router";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   type FlatList,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -170,29 +171,44 @@ function DetailContent({
           onPage={setPage}
           scrollKey={feedback ?? menu.sharing}
           photos={
-            page && (
-              <>
-              <Animated.FlatList
-                ref={list}
-                data={shown}
-                onScroll={swipe.onScroll}
-                scrollEventThrottle={16}
-                horizontal
-                pagingEnabled
-                showsHorizontalScrollIndicator={false}
-                keyExtractor={(e) => e.albumPhoto._id}
-                getItemLayout={(_, i) => ({ length: page.width, offset: page.width * i, index: i })}
-                initialScrollIndex={index}
-                initialNumToRender={1}
-                windowSize={3}
-                maxToRenderPerBatch={2}
-                onMomentumScrollEnd={onMomentumEnd}
-                renderItem={({ item }) => <ZoomablePhoto photoId={item.albumPhoto.photoId} photo={item.photo} box={page} />}
+            page &&
+            (Platform.OS === "web" ? (
+              // Webapp-fix 3: op het web één foto tegelijk, zonder horizontale lijst.
+              <WebPager
+                index={index}
+                count={ids.length}
+                onChange={showPage}
+                photoId={current}
+                photoAt={(i) => {
+                  const e = shown[i];
+                  return e && { photoId: e.albumPhoto.photoId, hasFormats: e.photo.hasFormats };
+                }}
+                renderPage={(i) => {
+                  const e = shown[i];
+                  return e ? (
+                    <ZoomablePhoto key={e.albumPhoto._id} photoId={e.albumPhoto.photoId} photo={e.photo} box={page} />
+                  ) : null;
+                }}
               />
-              {/* WP35: op het web bladeren met knoppen en pijltjes; op iOS niets. */}
-              <WebPager list={list} index={index} count={ids.length} pageWidth={page.width} onSettle={showPage} photoId={current} />
-              </>
-            )
+            ) : (
+                <Animated.FlatList
+                  ref={list}
+                  data={shown}
+                  onScroll={swipe.onScroll}
+                  scrollEventThrottle={16}
+                  horizontal
+                  pagingEnabled
+                  showsHorizontalScrollIndicator={false}
+                  keyExtractor={(e) => e.albumPhoto._id}
+                  getItemLayout={(_, i) => ({ length: page.width, offset: page.width * i, index: i })}
+                  initialScrollIndex={index}
+                  initialNumToRender={1}
+                  windowSize={3}
+                  maxToRenderPerBatch={2}
+                  onMomentumScrollEnd={onMomentumEnd}
+                  renderItem={({ item }) => <ZoomablePhoto photoId={item.albumPhoto.photoId} photo={item.photo} box={page} />}
+                />
+            ))
           }
           below={
             <>
