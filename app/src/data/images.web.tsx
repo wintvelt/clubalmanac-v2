@@ -2,6 +2,7 @@ import { useAuth } from "@clerk/expo";
 import type { ImageSource } from "expo-image";
 import { createContext, useContext, useEffect, useReducer, useState, type ReactNode } from "react";
 import { createImageMemory, imageMemoryKey, type ImageMemoryKind } from "../lib/imageMemory";
+import { webImageMemoryLimit } from "../lib/wideLayout";
 import {
   inviteCoverUrl,
   photoImageUrl,
@@ -38,9 +39,13 @@ import {
 // fout) is dezelfde als op iOS: src/lib/imageRetry.ts. `fetch` geeft de
 // status, dus een 401 met een verlopen token leidt tot een vers token.
 
-// Een album-scherm toont tientallen tegels tegelijk; 200 beelden *klein*
-// (gemiddeld ~35 kB) is ~7 MB. Een detail-beeld (*groot*) telt ook als één.
-const MEMORY_LIMIT = 200;
+// De grens volgt het scherm: alles wat de albumlijst tegelijk rendert, past er
+// ruim in (src/lib/wideLayout.ts). Het scherm verandert niet tijdens een sessie;
+// het venster wel, maar dat is nooit groter dan het scherm.
+const MEMORY_LIMIT = webImageMemoryLimit(
+  typeof screen === "undefined" ? 0 : screen.width,
+  typeof screen === "undefined" ? 0 : screen.height,
+);
 
 type Held = { url: string };
 

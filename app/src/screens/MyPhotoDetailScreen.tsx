@@ -153,7 +153,7 @@ function DetailContent({
                 renderItem={({ item }) => <ZoomablePhoto photoId={item._id} photo={item} box={page} />}
               />
               {/* WP35: op het web bladeren met knoppen en pijltjes; op iOS niets. */}
-              <WebPager list={flatList} index={index} count={ids.length} pageWidth={page.width} onSettle={showPage} />
+              <WebPager list={flatList} index={index} count={ids.length} pageWidth={page.width} onSettle={showPage} photoId={current} />
               </>
             )
           }

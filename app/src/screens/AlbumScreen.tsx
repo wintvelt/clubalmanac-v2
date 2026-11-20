@@ -34,7 +34,7 @@ import { photoLayers, radius, size, space, useTheme } from "../theme";
 import { AlbumChoiceSheet } from "./AlbumChoice";
 import { AlbumReadFailed } from "./AlbumParts";
 import { WideSide, WideSplit } from "./WideSide";
-import { SIDE_WIDTH, wideGrid } from "../lib/wideLayout";
+import { SIDE_WIDTH, WIDE_WINDOW_SIZE, wideGrid } from "../lib/wideLayout";
 import {
   ActionFeedback,
   SharingProgress,
@@ -250,7 +250,8 @@ function AlbumContent({ groupId, albumId }: { groupId: Id<"groups">; albumId: Id
           );
         }}
         initialNumToRender={columns * 6}
-        windowSize={5}
+        // WP35: in de brede web-layout minder schermen vooruit (beeldgeheugen).
+        windowSize={grid ? WIDE_WINDOW_SIZE : 5}
         removeClippedSubviews
       />
       </ScrollOffsetContext.Provider>

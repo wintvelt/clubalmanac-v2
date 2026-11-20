@@ -1,3 +1,4 @@
+import { useIsFocused, useNavigation } from "expo-router";
 import { useEffect, useRef, type RefObject } from "react";
 import { Pressable, StyleSheet, View } from "react-native";
 import { photoLayers } from "../theme";
@@ -7,13 +8,19 @@ import { Icon } from "./Icon";
 // `onMomentumScrollEnd` (en geen sleep-gebeurtenissen), dus het scherm hoort
 // niet welke foto er na het swipen staat. Deze laag luistert naar het scrollen
 // van de lijst zelf en meldt de foto als het scrollen stilstaat. Met een muis
-// is er niet te swipen: knoppen links en rechts, en de pijltjestoetsen.
+// is er niet te swipen: knoppen links en rechts, en de pijltjestoetsen. De
+// pijltjes werken alleen in het scherm dat in beeld is (niet in een detail
+// onder een ander scherm of in een andere tab). De adresbalk volgt de foto in
+// beeld (`photoId`), zonder een nieuwe stap in de geschiedenis per foto, zodat
+// verversen of de link delen deze foto geeft.
 export type WebPagerProps = {
   list: RefObject<unknown>;
   index: number;
   count: number;
   pageWidth: number;
   onSettle: (index: number) => void;
+  /** De foto in beeld; de route-parameter `photoId` volgt hem. */
+  photoId?: string;
 };
 
 // Zo lang na het laatste scroll-event staat de lijst stil.
@@ -29,9 +36,19 @@ function scrollNode(list: RefObject<unknown>): HTMLElement | null {
   return node instanceof HTMLElement ? node : null;
 }
 
-export function WebPager({ list, index, count, pageWidth, onSettle }: WebPagerProps) {
+export function WebPager({ list, index, count, pageWidth, onSettle, photoId }: WebPagerProps) {
   const settle = useRef(onSettle);
   settle.current = onSettle;
+  const focused = useIsFocused();
+  const navigation = useNavigation();
+
+  // De adresbalk: setParams van dít scherm vervangt de URL (geen nieuwe stap).
+  const shownId = useRef(photoId);
+  useEffect(() => {
+    if (!photoId || shownId.current === photoId) return;
+    shownId.current = photoId;
+    navigation.setParams({ photoId } as never);
+  }, [photoId, navigation]);
 
   useEffect(() => {
     const node = scrollNode(list);
@@ -65,6 +82,7 @@ export function WebPager({ list, index, count, pageWidth, onSettle }: WebPagerPr
   indexRef.current = index;
 
   useEffect(() => {
+    if (!focused) return;
     const onKey = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement | null;
       if (target && /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName)) return;
@@ -73,7 +91,7 @@ export function WebPager({ list, index, count, pageWidth, onSettle }: WebPagerPr
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, []);
+  }, [focused]);
 
   if (count < 2) return null;
   return (

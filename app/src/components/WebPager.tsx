@@ -8,6 +8,7 @@ export type WebPagerProps = {
   count: number;
   pageWidth: number;
   onSettle: (index: number) => void;
+  photoId?: string;
 };
 
 export function WebPager(_props: WebPagerProps) {

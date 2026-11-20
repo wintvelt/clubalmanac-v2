@@ -92,15 +92,17 @@ function addVary(headers: Headers, value: string): void {
 }
 
 /**
- * Het antwoord met de CORS-header voor een toegestane origin. Een verzoek met
- * een andere origin krijgt alleen `Vary: Origin` erbij (het antwoord hangt van
- * de origin af); een verzoek zonder `Origin` blijft ongewijzigd.
+ * Het antwoord met de CORS-header voor een toegestane origin. Elk antwoord op
+ * een verzoek met `Origin` krijgt `Vary: Origin, Authorization`, ook een 400,
+ * 401 of 404 (W1): het hangt van beide af. Een verzoek zonder `Origin` (de
+ * iPhone-app) blijft ongewijzigd.
  */
 export function withWebCors(request: Request, response: Response): Response {
   if (request.headers.get("Origin") === null) return response;
   const origin = allowedWebOrigin(request);
   const headers = new Headers(response.headers);
   addVary(headers, "Origin");
+  addVary(headers, "Authorization");
   if (origin) headers.set("Access-Control-Allow-Origin", origin);
   return new Response(response.body, {
     status: response.status,
