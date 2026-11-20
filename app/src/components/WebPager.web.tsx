@@ -1,6 +1,7 @@
 import { useIsFocused, useNavigation } from "expo-router";
 import { useEffect, useRef, type RefObject } from "react";
 import { Pressable, StyleSheet, View } from "react-native";
+import { pagerSettle } from "../lib/webPager";
 import { photoLayers } from "../theme";
 import { Icon } from "./Icon";
 
@@ -13,6 +14,11 @@ import { Icon } from "./Icon";
 // onder een ander scherm of in een andere tab). De adresbalk volgt de foto in
 // beeld (`photoId`), zonder een nieuwe stap in de geschiedenis per foto, zodat
 // verversen of de link delen deze foto geeft.
+//
+// Alleen een gebaar van de user (aanraken, trackpad) bladert. Schuift de lijst
+// zonder gebaar (de beginpositie, of Safari die de scroll-snap opnieuw zet als
+// de gerenderde foto's wisselen), dan gaat hij terug naar de foto in beeld;
+// anders ontstond op de iPhone een lus van wisselende foto's (src/lib/webPager.ts).
 export type WebPagerProps = {
   list: RefObject<unknown>;
   index: number;
@@ -50,20 +56,53 @@ export function WebPager({ list, index, count, pageWidth, onSettle, photoId }: W
     navigation.setParams({ photoId } as never);
   }, [photoId, navigation]);
 
+  const indexRef = useRef(index);
+  indexRef.current = index;
+
   useEffect(() => {
     const node = scrollNode(list);
     if (!node || pageWidth <= 0) return;
     let timer: ReturnType<typeof setTimeout> | undefined;
+    // Een gebaar loopt van de aanraking tot het scrollen erna stilstaat (ook
+    // het uitlopen na loslaten).
+    let touching = false;
+    let gesture = false;
+    const onTouchStart = () => {
+      touching = true;
+      gesture = true;
+    };
+    const onTouchEnd = () => {
+      touching = false;
+    };
+    const onWheel = () => {
+      gesture = true;
+    };
     const onScroll = () => {
       if (timer) clearTimeout(timer);
       timer = setTimeout(() => {
-        const i = Math.round(node.scrollLeft / pageWidth);
-        settle.current(Math.max(0, Math.min(count - 1, i)));
+        const step = pagerSettle({
+          gesture,
+          scrollLeft: node.scrollLeft,
+          pageWidth,
+          index: indexRef.current,
+          count,
+        });
+        if (!touching) gesture = false;
+        if (step.kind === "show") settle.current(step.index);
+        if (step.kind === "restore") node.scrollLeft = step.left;
       }, SETTLE_MS);
     };
+    node.addEventListener("touchstart", onTouchStart, { passive: true });
+    node.addEventListener("touchend", onTouchEnd, { passive: true });
+    node.addEventListener("touchcancel", onTouchEnd, { passive: true });
+    node.addEventListener("wheel", onWheel, { passive: true });
     node.addEventListener("scroll", onScroll, { passive: true });
     return () => {
       if (timer) clearTimeout(timer);
+      node.removeEventListener("touchstart", onTouchStart);
+      node.removeEventListener("touchend", onTouchEnd);
+      node.removeEventListener("touchcancel", onTouchEnd);
+      node.removeEventListener("wheel", onWheel);
       node.removeEventListener("scroll", onScroll);
     };
   }, [list, pageWidth, count]);
@@ -78,8 +117,6 @@ export function WebPager({ list, index, count, pageWidth, onSettle, photoId }: W
   };
   const goRef = useRef(go);
   goRef.current = go;
-  const indexRef = useRef(index);
-  indexRef.current = index;
 
   useEffect(() => {
     if (!focused) return;
