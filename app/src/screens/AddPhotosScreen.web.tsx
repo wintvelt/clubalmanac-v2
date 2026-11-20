@@ -24,7 +24,7 @@ import {
   type UploadOutcome,
 } from "../lib/upload";
 import { CloseButton } from "../navigation/stackOptions";
-import { useTheme } from "../theme";
+import { space, useTheme } from "../theme";
 import { AlbumChoice, RoundResult, THUMB, addPhotosStyles, type ChosenAlbum } from "./AddPhotosParts";
 
 // WP36: "Foto's toevoegen" in de browser. Hetzelfde verloop als op iOS
@@ -207,7 +207,14 @@ export function AddPhotosScreen({ albumId }: { albumId?: string }) {
           headerBackVisible: false,
           headerLeft: () => null,
           gestureEnabled: !busy,
-          headerRight: busy ? () => null : () => <CloseButton />,
+          // De kop van het web geeft rechts geen marge (iOS wel).
+          headerRight: busy
+            ? () => null
+            : () => (
+                <View style={local.headerRight}>
+                  <CloseButton />
+                </View>
+              ),
         }}
       />
 
@@ -348,4 +355,5 @@ function WebThumbs({
 
 const local = StyleSheet.create({
   placeholder: { width: THUMB, height: THUMB, alignItems: "center", justifyContent: "center" },
+  headerRight: { paddingRight: space.s },
 });
