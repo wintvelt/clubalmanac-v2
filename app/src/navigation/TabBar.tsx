@@ -12,7 +12,7 @@ import { useGroupVisit, useHomeGroup } from "../data/homeGroupState";
 import { homeDecisions, homeSessionKey } from "../lib/homeDecision";
 import { groupPath } from "../lib/groupRoutes";
 import { homeButton, trackTabOrigin, type HomeButtonTarget, type TabOrigin } from "../lib/homeGroup";
-import { READ_ONLY } from "../data/readOnly";
+import { startAddPick } from "../data/webPick";
 import { albumIdFromPath } from "../lib/upload";
 import { border, plusButton, radius, size, space, useTheme } from "../theme";
 
@@ -85,8 +85,8 @@ export function TabBar({
       ]}
     >
       <View accessibilityRole="tablist" style={styles.row}>
-        {/* WP35 W5: op het web geen + (uploaden is een actie). */}
-        {plus && !READ_ONLY ? (
+        {/* WP36 (besluit 3): de + ook op het web. */}
+        {plus ? (
           <>
             {tabs.slice(0, half)}
             <PlusButton />
@@ -210,6 +210,8 @@ function PlusButton() {
       accessibilityLabel="Foto's toevoegen"
       onPress={press.withRelease(() => {
         const albumId = albumIdFromPath(pathname);
+        // WP36 U9: op het web opent de kiezer in de tik; op iOS niets.
+        startAddPick();
         router.push(albumId ? { pathname: "/toevoegen", params: { albumId } } : "/toevoegen");
       })}
       onPressIn={press.onPressIn}

@@ -20,7 +20,8 @@ import { Text } from "../components/Text";
 import { api } from "../convexApi";
 import { useWideLayout } from "../components/wideLayout";
 import { useDeparting } from "../data/adminState";
-import { READ_ONLY } from "../data/readOnly";
+import { READ_ONLY, WEB_UPLOAD } from "../data/readOnly";
+import { startAddPick } from "../data/webPick";
 import { useAuthState } from "../data/authStateContext";
 import { useAppState } from "../data/useAppState";
 import { useSharePhoto } from "../data/share";
@@ -149,9 +150,23 @@ function AlbumContent({ groupId, albumId }: { groupId: Id<"groups">; albumId: Id
   const columns = grid ? grid.columns : columnsFor(width);
   const tile = grid ? grid.tile : Math.floor((width - GAP * (columns - 1)) / columns);
   // "Selecteer", "Kaart" en "Bewerk album": onder de titel, in de kop of de kolom.
+  // WP36 (besluit 3, U11): op het web ook "Foto's toevoegen", voor elk lid
+  // van de groep (zoals de + op iOS); de kiezer opent in de tik (U9).
+  const webAdd = WEB_UPLOAD && ctx !== undefined;
   const action =
-    !selecting && (canEdit || (ctx && shown && shown.length > 0)) ? (
+    !selecting && (canEdit || webAdd || (ctx && shown && shown.length > 0)) ? (
       <View style={styles.barRow}>
+        {webAdd ? (
+          <SmallButton
+            title="Foto's toevoegen"
+            icon="plus"
+            onPress={() => {
+              setFeedback(null);
+              startAddPick();
+              router.push({ pathname: "/toevoegen", params: { albumId } });
+            }}
+          />
+        ) : null}
         {!READ_ONLY && ctx && shown && shown.length > 0 ? (
           <SmallButton
             title="Selecteer"

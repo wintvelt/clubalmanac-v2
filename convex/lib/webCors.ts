@@ -17,6 +17,8 @@
 // - De toegang verandert niet: de header komt op elk antwoord aan een
 //   toegestane origin (200, 400, 401, 404), zodat de app een 401 ziet en een
 //   vers token haalt.
+// - WP36: ook `/upload` (A-invariant U1), met een eigen preflight (`POST` en
+//   de headers van de app); de beeldpaden houden `GET` en `Authorization`.
 
 export const WEB_ORIGINS_ENV = "CLUBALMANAC_WEB_ORIGINS";
 
@@ -111,12 +113,28 @@ export function withWebCors(request: Request, response: Response): Response {
   });
 }
 
+/** Wat een preflight toestaat: de methode en de headers die de webapp stuurt. */
+export type PreflightRule = { methods: string; headers: string };
+
+/** De beeldpaden (WP35 W1): alleen lezen, alleen het token. */
+export const IMAGE_PREFLIGHT: PreflightRule = { methods: "GET", headers: "Authorization" };
+
+/**
+ * `/upload` (WP36 A-invariant U1): `POST` met precies de headers van de
+ * iPhone-app. Geen `X-Filename`: de webapp stuurt geen bestandsnaam.
+ */
+export const UPLOAD_PREFLIGHT: PreflightRule = {
+  methods: "POST",
+  headers: "Authorization, Content-Type, X-Upload-Id, X-Album-Id, X-Taken-At, X-Latitude, X-Longitude",
+};
+
 /**
  * De preflight (`OPTIONS`): 204 met de CORS-headers voor een toegestane
  * origin, anders 403 zonder. Hangt niet af van het pad of het id: een
- * bestaand en een onbekend beeld geven hetzelfde antwoord.
+ * bestaand en een onbekend beeld geven hetzelfde antwoord. Geen login nodig:
+ * een browser stuurt bij een preflight geen token.
  */
-export function webPreflightResponse(request: Request): Response {
+export function webPreflightResponse(request: Request, rule: PreflightRule = IMAGE_PREFLIGHT): Response {
   const origin = allowedWebOrigin(request);
   if (!origin) {
     return new Response(null, { status: 403, headers: { Vary: "Origin" } });
@@ -125,8 +143,8 @@ export function webPreflightResponse(request: Request): Response {
     status: 204,
     headers: {
       "Access-Control-Allow-Origin": origin,
-      "Access-Control-Allow-Methods": "GET",
-      "Access-Control-Allow-Headers": "Authorization",
+      "Access-Control-Allow-Methods": rule.methods,
+      "Access-Control-Allow-Headers": rule.headers,
       "Access-Control-Max-Age": PREFLIGHT_MAX_AGE,
       Vary: "Origin",
     },

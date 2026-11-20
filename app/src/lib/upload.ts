@@ -29,7 +29,10 @@ export type FailReason =
   | "limiet"
   | "te_groot"
   | "geen_foto"
-  | "geen_album";
+  | "geen_album"
+  // WP36 A-invariant U5: een beeld dat de browser niet kan lezen (HEIC in
+  // Chrome). Alleen op het web; opnieuw proberen helpt niet.
+  | "formaat";
 
 export type UploadState = "wacht" | "bezig" | "klaar" | "mislukt";
 
@@ -229,6 +232,7 @@ const REASON_TEXT: Record<FailReason, string> = {
   te_groot: "Het bestand is te groot",
   geen_foto: "Dit bestand is geen foto",
   geen_album: "Dit album is niet (meer) beschikbaar",
+  formaat: "Dit soort foto kan de browser niet openen",
 };
 
 /** De reden in het NL, voor de melding na een ronde. */

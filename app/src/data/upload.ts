@@ -7,6 +7,7 @@ import {
   fitWithin,
   metadataHeaders,
   uploadOutcome,
+  type FailReason,
   type UploadOutcome,
 } from "../lib/upload";
 import { useSiteUrl } from "./images";
@@ -23,8 +24,27 @@ import { useSiteUrl } from "./images";
 
 const JPEG_QUALITY = 0.85;
 
+/**
+ * WP36: een foto uit de kiezer van de browser (src/data/webPick.web.ts). Het
+ * omzetten naar een JPEG zonder EXIF en de headers voor datum en plaats zitten
+ * in `prepare`; elke poging zet opnieuw om vanuit het bestand.
+ */
+export type WebPhoto = {
+  web: true;
+  prepare: () => Promise<
+    { ok: true; body: Blob; headers: Record<string, string> } | { ok: false; reason: FailReason }
+  >;
+};
+
+export type UploadAsset = ImagePickerAsset | WebPhoto;
+
+function isWebPhoto(asset: UploadAsset): asset is WebPhoto {
+  return (asset as Partial<WebPhoto>).web === true;
+}
+
 export type UploadRequest = {
-  asset: ImagePickerAsset;
+  /** Uit `expo-image-picker` (iOS) of uit de browser (WP36). */
+  asset: UploadAsset;
   uploadId: string;
   /** Zonder album: de profielfoto. */
   albumId?: string;
@@ -59,12 +79,20 @@ export function useUploader() {
     async ({ asset, uploadId, albumId, freshToken = false }: UploadRequest): Promise<UploadOutcome> => {
       if (site === null) return { ok: false, reason: "server" };
 
-      let jpegUri: string;
-      try {
-        jpegUri = await toUploadJpeg(asset);
-      } catch {
-        // Niet te lezen als beeld (of niet van iCloud te halen): vaste reden.
-        return { ok: false, reason: "geen_foto" };
+      // WP36: de browser zet zelf om; het iOS-pad hieronder is ongewijzigd.
+      let web: { body: Blob; headers: Record<string, string> } | null = null;
+      let jpegUri = "";
+      if (isWebPhoto(asset)) {
+        const prepared = await asset.prepare();
+        if (!prepared.ok) return { ok: false, reason: prepared.reason };
+        web = prepared;
+      } else {
+        try {
+          jpegUri = await toUploadJpeg(asset);
+        } catch {
+          // Niet te lezen als beeld (of niet van iCloud te halen): vaste reden.
+          return { ok: false, reason: "geen_foto" };
+        }
       }
 
       const { getToken, sessionClaims, isSignedIn } = authRef.current;
@@ -81,10 +109,17 @@ export function useUploader() {
       if (!token) return { ok: false, reason: "uitgelogd" };
 
       let body: Blob;
-      try {
-        body = await (await fetch(jpegUri)).blob();
-      } catch {
-        return { ok: false, reason: "geen_foto" };
+      let meta: Record<string, string>;
+      if (web) {
+        body = web.body;
+        meta = web.headers;
+      } else {
+        try {
+          body = await (await fetch(jpegUri)).blob();
+        } catch {
+          return { ok: false, reason: "geen_foto" };
+        }
+        meta = metadataHeaders((asset as ImagePickerAsset).exif);
       }
 
       // Fix-cyclus 1, invariant 20: één termijn voor versturen én het
@@ -108,7 +143,7 @@ export function useUploader() {
                 "Content-Type": "image/jpeg",
                 "X-Upload-Id": uploadId,
                 ...(albumId ? { "X-Album-Id": albumId } : {}),
-                ...metadataHeaders(asset.exif),
+                ...meta,
               },
               body,
               signal: controller.signal,
