@@ -2,7 +2,7 @@ import { useAction } from "convex/react";
 import { useIsFocused } from "expo-router";
 import { useVideoPlayer, VideoView } from "expo-video";
 import { useEffect, useReducer, useRef, useState } from "react";
-import { StyleSheet, View } from "react-native";
+import { Platform, StyleSheet, View } from "react-native";
 import type { Id } from "../../../convex/_generated/dataModel";
 import { Notice } from "../components/Notice";
 import { SmallButton } from "../components/SmallButton";
@@ -109,7 +109,7 @@ export function FilmPlayer({ filmId, title }: { filmId: Id<"films">; title: stri
       <View style={styles.video}>
         <VideoView
           player={player}
-          style={StyleSheet.absoluteFill}
+          style={[StyleSheet.absoluteFill, Platform.OS === "web" && styles.webFill]}
           nativeControls
           contentFit="contain"
           fullscreenOptions={{ enable: true }}
@@ -154,4 +154,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#000",
   },
   overlay: { ...StyleSheet.absoluteFill, alignItems: "center", justifyContent: "center" },
+  // Op het web is `<video>` een replaced element: zonder maat krijgt hij zijn
+  // eigen maat (1920×1080) en valt de bediening buiten beeld.
+  webFill: { width: "100%", height: "100%" },
 });

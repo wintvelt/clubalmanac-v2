@@ -82,6 +82,7 @@ describe("routes (inventaris http-paden)", () => {
         "GET /_test/whoami",
         "POST /clerk-webhook",
         "POST /email-event",
+        "OPTIONS /upload",
         "POST /upload",
       ].sort(),
     );
@@ -92,7 +93,7 @@ describe("routes (inventaris http-paden)", () => {
     const beeld = routes.filter((r) => r.includes("/beeld/")).sort();
     // WP35 A-invariant W1: `OPTIONS` (de preflight van de webapp) alleen op
     // de twee paden met een token; het profielpad is openbaar en heeft geen
-    // CORS nodig, `/upload` is niet in WP35.
+    // CORS nodig. `/upload` krijgt zijn preflight in WP36 (hierboven).
     expect(beeld).toEqual(
       [
         "GET /beeld/foto/*",
@@ -103,7 +104,10 @@ describe("routes (inventaris http-paden)", () => {
       ].sort(),
     );
     expect(http.lookup(profilePath("abc"), "OPTIONS")).toBeNull();
-    for (const path of ["/upload", "/email-event", "/clerk-webhook", "/_test/whoami"]) {
+    // WP36 A-invariant U1: de webapp uploadt; `/upload` heeft nu ook een
+    // preflight. De webhooks en `/_test/whoami` niet.
+    expect(http.lookup("/upload", "OPTIONS")).not.toBeNull();
+    for (const path of ["/email-event", "/clerk-webhook", "/_test/whoami"]) {
       expect(http.lookup(path, "OPTIONS")).toBeNull();
     }
     // Alleen lezen: geen andere methode op de beeldpaden.

@@ -13,7 +13,7 @@ import {
 } from "./lib/testGate";
 import { parseLocation, parseTakenAt, uploadImageType } from "./lib/upload";
 import { stripJpegMetadata } from "./lib/jpegMeta";
-import { webPreflightResponse, withWebCors } from "./lib/webCors";
+import { UPLOAD_PREFLIGHT, webPreflightResponse, withWebCors } from "./lib/webCors";
 
 // Cascade matrix IB1: Mailjet bounce-webhook → internal.invites.handleBounce.
 // Voltooit IB1 cascade per docs/cascade-matrix.md (bounce → status=expired
@@ -248,160 +248,173 @@ const UPLOAD_LIMIT = () =>
 const UPLOAD_TOO_LARGE = () =>
   Response.json({ error: "Bestand te groot" }, { status: 413 });
 
+// WP36 A-invariant U1 en U2: de webapp uploadt ook. De browser vraagt eerst
+// `OPTIONS /upload` (zonder login); elk antwoord van `/upload` aan een
+// toegestane origin draagt de CORS-header, ook een 400, 401, 403, 404, 409,
+// 413 of 415, zodat de app de reden ziet. De toegang verandert niet; zonder
+// `Origin` (de iPhone-app) blijft het antwoord ongewijzigd.
+http.route({
+  path: "/upload",
+  method: "OPTIONS",
+  handler: httpAction(async (_ctx, request) => webPreflightResponse(request, UPLOAD_PREFLIGHT)),
+});
+
 http.route({
   path: "/upload",
   method: "POST",
-  handler: httpAction(async (ctx, request) => {
-    // Zelfde JWT-throw-handling als `/_test/whoami` (WP4 follow-up).
-    // Convex throwt op invalid signature/issuer i.p.v. null te retourneren —
-    // empirisch gepind in tests/integration/clerk/jwtRoundtrip.test.ts.
-    // Try/catch geeft consistente 401 voor zowel "geen header" als "invalid
-    // token", voorkomt 500-leak van auth-error-detail.
-    let identity;
-    try {
-      identity = await ctx.auth.getUserIdentity();
-    } catch {
-      return Response.json({ error: "Unauthorized" }, { status: 401 });
-    }
-    if (!identity) {
-      return Response.json({ error: "Unauthorized" }, { status: 401 });
-    }
+  handler: httpAction(async (ctx, request) => withWebCors(request, await uploadRoute(ctx, request))),
+});
 
-    const user = await ctx.runQuery(internal.users.getBySubjectInternal, {
-      subject: identity.subject,
-    });
-    if (!user) {
-      return Response.json({ error: "Unauthorized" }, { status: 401 });
-    }
+async function uploadRoute(ctx: ImageRouteCtx, request: Request): Promise<Response> {
+  // Zelfde JWT-throw-handling als `/_test/whoami` (WP4 follow-up).
+  // Convex throwt op invalid signature/issuer i.p.v. null te retourneren —
+  // empirisch gepind in tests/integration/clerk/jwtRoundtrip.test.ts.
+  // Try/catch geeft consistente 401 voor zowel "geen header" als "invalid
+  // token", voorkomt 500-leak van auth-error-detail.
+  let identity;
+  try {
+    identity = await ctx.auth.getUserIdentity();
+  } catch {
+    return Response.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  if (!identity) {
+    return Response.json({ error: "Unauthorized" }, { status: 401 });
+  }
 
-    // Server-side trim: defensie tegen client-bugs / proxy-rewrites die een
-    // UUID met leading/trailing whitespace doorsturen. "   " mag niet als
-    // legitieme idempotency-key tellen.
-    const rawId = request.headers.get("X-Upload-Id");
-    const clientUploadId = rawId?.trim() ?? "";
-    if (clientUploadId.length === 0) {
-      return Response.json(
-        { error: "Missing X-Upload-Id" },
-        { status: 400 },
-      );
-    }
+  const user = await ctx.runQuery(internal.users.getBySubjectInternal, {
+    subject: identity.subject,
+  });
+  if (!user) {
+    return Response.json({ error: "Unauthorized" }, { status: 401 });
+  }
 
-    // WP18 A-invariant 15: album vóór alles wat iets achterlaat.
-    const rawAlbumId = request.headers.get("X-Album-Id");
-    let albumId: Id<"albums"> | undefined;
-    if (rawAlbumId !== null) {
-      const found = await ctx.runQuery(internal.uploads.uploadAlbum, {
-        ownerId: user._id,
-        albumId: rawAlbumId.trim(),
-      });
-      if (!found) return UPLOAD_ALBUM_NOT_FOUND();
-      albumId = found;
-    }
+  // Server-side trim: defensie tegen client-bugs / proxy-rewrites die een
+  // UUID met leading/trailing whitespace doorsturen. "   " mag niet als
+  // legitieme idempotency-key tellen.
+  const rawId = request.headers.get("X-Upload-Id");
+  const clientUploadId = rawId?.trim() ?? "";
+  if (clientUploadId.length === 0) {
+    return Response.json(
+      { error: "Missing X-Upload-Id" },
+      { status: 400 },
+    );
+  }
 
-    // WP18 A-invariant 14: een opgegeven lengte boven de grens hoeft niet
-    // eerst gelezen te worden.
-    const declared = Number(request.headers.get("Content-Length") ?? "");
-    if (Number.isFinite(declared) && declared > MAX_UPLOAD_BYTES) {
-      return UPLOAD_TOO_LARGE();
-    }
-
-    // WP18 A-invariant 13: de body vóór de reservering lezen. Breekt de
-    // verbinding af tijdens het versturen, dan staat er nog geen reservering
-    // en kan dezelfde upload-id meteen opnieuw.
-    let bytes: Uint8Array;
-    try {
-      bytes = new Uint8Array(await request.arrayBuffer());
-    } catch {
-      return Response.json({ error: "Upload afgebroken" }, { status: 400 });
-    }
-    if (bytes.byteLength > MAX_UPLOAD_BYTES) return UPLOAD_TOO_LARGE();
-    const imageType = uploadImageType(bytes);
-    if (!imageType) {
-      return Response.json(
-        { error: "Alleen foto's (JPEG, PNG of HEIC)" },
-        { status: 415 },
-      );
-    }
-
-    const reservation = await ctx.runMutation(internal.uploads.reserve, {
+  // WP18 A-invariant 15: album vóór alles wat iets achterlaat.
+  const rawAlbumId = request.headers.get("X-Album-Id");
+  let albumId: Id<"albums"> | undefined;
+  if (rawAlbumId !== null) {
+    const found = await ctx.runQuery(internal.uploads.uploadAlbum, {
       ownerId: user._id,
-      clientUploadId,
-      albumId,
+      albumId: rawAlbumId.trim(),
     });
+    if (!found) return UPLOAD_ALBUM_NOT_FOUND();
+    albumId = found;
+  }
 
-    if (reservation.kind === "hit") {
-      return Response.json({ photoId: reservation.photoId }, { status: 200 });
+  // WP18 A-invariant 14: een opgegeven lengte boven de grens hoeft niet
+  // eerst gelezen te worden.
+  const declared = Number(request.headers.get("Content-Length") ?? "");
+  if (Number.isFinite(declared) && declared > MAX_UPLOAD_BYTES) {
+    return UPLOAD_TOO_LARGE();
+  }
+
+  // WP18 A-invariant 13: de body vóór de reservering lezen. Breekt de
+  // verbinding af tijdens het versturen, dan staat er nog geen reservering
+  // en kan dezelfde upload-id meteen opnieuw.
+  let bytes: Uint8Array;
+  try {
+    bytes = new Uint8Array(await request.arrayBuffer());
+  } catch {
+    return Response.json({ error: "Upload afgebroken" }, { status: 400 });
+  }
+  if (bytes.byteLength > MAX_UPLOAD_BYTES) return UPLOAD_TOO_LARGE();
+  const imageType = uploadImageType(bytes);
+  if (!imageType) {
+    return Response.json(
+      { error: "Alleen foto's (JPEG, PNG of HEIC)" },
+      { status: 415 },
+    );
+  }
+
+  const reservation = await ctx.runMutation(internal.uploads.reserve, {
+    ownerId: user._id,
+    clientUploadId,
+    albumId,
+  });
+
+  if (reservation.kind === "hit") {
+    return Response.json({ photoId: reservation.photoId }, { status: 200 });
+  }
+  if (reservation.kind === "conflict") {
+    return Response.json(
+      { error: "Upload in progress" },
+      { status: 409 },
+    );
+  }
+  if (reservation.kind === "limit") return UPLOAD_LIMIT();
+  if (reservation.kind === "noAlbum") return UPLOAD_ALBUM_NOT_FOUND();
+
+  const reservationId = reservation.reservationId;
+
+  const filename = request.headers.get("X-Filename") ?? undefined;
+  const takenAt = parseTakenAt(request.headers.get("X-Taken-At"));
+  const location = parseLocation(
+    request.headers.get("X-Latitude"),
+    request.headers.get("X-Longitude"),
+  );
+
+  let storageId;
+  try {
+    storageId = await ctx.storage.store(
+      new Blob([bytes as BlobPart], { type: imageType }),
+    );
+  } catch (e) {
+    await ctx.runMutation(internal.uploads.deleteReservation, {
+      reservationId,
+    });
+    throw e;
+  }
+
+  let photoId;
+  try {
+    photoId = await ctx.runMutation(
+      internal.photos.createFromUploadInternal,
+      {
+        storageId,
+        ownerId: user._id,
+        reservationId,
+        filename,
+        mimeType: imageType,
+        albumId,
+        takenAt,
+        latitude: location?.latitude,
+        longitude: location?.longitude,
+      },
+    );
+  } catch (e) {
+    try {
+      await ctx.storage.delete(storageId);
+    } catch {
+      // best-effort
     }
-    if (reservation.kind === "conflict") {
+    await ctx.runMutation(internal.uploads.deleteReservation, {
+      reservationId,
+    });
+    const message = e instanceof Error ? e.message : "";
+    if (message === "PHOTO_LIMIT_REACHED") return UPLOAD_LIMIT();
+    if (message === UPLOAD_NO_ALBUM_ACCESS) return UPLOAD_ALBUM_NOT_FOUND();
+    if (message === UPLOAD_RESERVATION_GONE) {
       return Response.json(
         { error: "Upload in progress" },
         { status: 409 },
       );
     }
-    if (reservation.kind === "limit") return UPLOAD_LIMIT();
-    if (reservation.kind === "noAlbum") return UPLOAD_ALBUM_NOT_FOUND();
+    throw e;
+  }
 
-    const reservationId = reservation.reservationId;
-
-    const filename = request.headers.get("X-Filename") ?? undefined;
-    const takenAt = parseTakenAt(request.headers.get("X-Taken-At"));
-    const location = parseLocation(
-      request.headers.get("X-Latitude"),
-      request.headers.get("X-Longitude"),
-    );
-
-    let storageId;
-    try {
-      storageId = await ctx.storage.store(
-        new Blob([bytes as BlobPart], { type: imageType }),
-      );
-    } catch (e) {
-      await ctx.runMutation(internal.uploads.deleteReservation, {
-        reservationId,
-      });
-      throw e;
-    }
-
-    let photoId;
-    try {
-      photoId = await ctx.runMutation(
-        internal.photos.createFromUploadInternal,
-        {
-          storageId,
-          ownerId: user._id,
-          reservationId,
-          filename,
-          mimeType: imageType,
-          albumId,
-          takenAt,
-          latitude: location?.latitude,
-          longitude: location?.longitude,
-        },
-      );
-    } catch (e) {
-      try {
-        await ctx.storage.delete(storageId);
-      } catch {
-        // best-effort
-      }
-      await ctx.runMutation(internal.uploads.deleteReservation, {
-        reservationId,
-      });
-      const message = e instanceof Error ? e.message : "";
-      if (message === "PHOTO_LIMIT_REACHED") return UPLOAD_LIMIT();
-      if (message === UPLOAD_NO_ALBUM_ACCESS) return UPLOAD_ALBUM_NOT_FOUND();
-      if (message === UPLOAD_RESERVATION_GONE) {
-        return Response.json(
-          { error: "Upload in progress" },
-          { status: 409 },
-        );
-      }
-      throw e;
-    }
-
-    return Response.json({ photoId }, { status: 200 });
-  }),
-});
+  return Response.json({ photoId }, { status: 200 });
+}
 
 // WP17a: het beeldpad (besluit 1: vorm B). Bij elk verzoek de toegangsregel
 // uit convex/images.ts, dan de bytes uit storage. De client kent geen
