@@ -1,52 +1,42 @@
 import { useIsFocused, useNavigation } from "expo-router";
-import { useEffect, useRef, type RefObject } from "react";
+import { useEffect, useRef } from "react";
 import { Pressable, StyleSheet, View } from "react-native";
-import { pagerSettle } from "../lib/webPager";
+import { usePhotoLoad } from "../data/images";
+import { neighbours, stepIndex, swipeIndex } from "../lib/webPager";
 import { photoLayers } from "../theme";
 import { Icon } from "./Icon";
+import type { WebPagerProps } from "./WebPager";
 
-// WP35: bladeren in het foto-detail op het web. react-native-web geeft geen
-// `onMomentumScrollEnd` (en geen sleep-gebeurtenissen), dus het scherm hoort
-// niet welke foto er na het swipen staat. Deze laag luistert naar het scrollen
-// van de lijst zelf en meldt de foto als het scrollen stilstaat. Met een muis
-// is er niet te swipen: knoppen links en rechts, en de pijltjestoetsen. De
-// pijltjes werken alleen in het scherm dat in beeld is (niet in een detail
-// onder een ander scherm of in een andere tab). De adresbalk volgt de foto in
-// beeld (`photoId`), zonder een nieuwe stap in de geschiedenis per foto, zodat
-// verversen of de link delen deze foto geeft.
-//
-// Alleen een gebaar van de user (aanraken, trackpad) bladert. Schuift de lijst
-// zonder gebaar (de beginpositie, of Safari die de scroll-snap opnieuw zet als
-// de gerenderde foto's wisselen), dan gaat hij terug naar de foto in beeld;
-// anders ontstond op de iPhone een lus van wisselende foto's (src/lib/webPager.ts).
-export type WebPagerProps = {
-  list: RefObject<unknown>;
-  index: number;
-  count: number;
-  pageWidth: number;
-  onSettle: (index: number) => void;
-  /** De foto in beeld; de route-parameter `photoId` volgt hem. */
-  photoId?: string;
-};
+// WP35, webapp-fix 3 (besluit Wouter): het foto-detail op het web toont één
+// foto tegelijk, zonder horizontale scrollcontainer. In WebKit liep de
+// horizontale lijst zelf weg terwijl beelden binnenkwamen (scrollLeft sprong
+// elke seconde naar een andere foto, eindeloos beelden ophalen). Nu verandert
+// alleen de user de foto:
+// - de knoppen ‹ › links en rechts;
+// - de pijltoetsen, alleen in het scherm dat in beeld is;
+// - een veeg (aanraken, of slepen met de muis) over de drempel
+//   (src/lib/webPager.ts).
+// De buren worden voorgeladen, maar veranderen de index nooit. De adresbalk
+// volgt de foto in beeld (`photoId`), zonder een nieuwe stap in de
+// geschiedenis per foto: verversen of de link delen geeft deze foto, terug
+// gaat naar het album.
+export type { WebPagerProps };
 
-// Zo lang na het laatste scroll-event staat de lijst stil.
-const SETTLE_MS = 120;
-
-type ScrollableList = {
-  getScrollableNode?: () => unknown;
-  scrollToIndex?: (p: { index: number; animated: boolean }) => void;
-};
-
-function scrollNode(list: RefObject<unknown>): HTMLElement | null {
-  const node = (list.current as ScrollableList | null)?.getScrollableNode?.();
-  return node instanceof HTMLElement ? node : null;
-}
-
-export function WebPager({ list, index, count, pageWidth, onSettle, photoId }: WebPagerProps) {
-  const settle = useRef(onSettle);
-  settle.current = onSettle;
+export function WebPager({ index, count, onChange, photoId, renderPage, photoAt, onNearEnd }: WebPagerProps) {
   const focused = useIsFocused();
   const navigation = useNavigation();
+  const change = useRef(onChange);
+  change.current = onChange;
+  const state = useRef({ index, count });
+  state.current = { index, count };
+
+  const go = (to: number) => {
+    const { index: i, count: n } = state.current;
+    const next = stepIndex(i, to - i, n);
+    if (next !== i) change.current(next);
+  };
+  const goRef = useRef(go);
+  goRef.current = go;
 
   // De adresbalk: setParams van dít scherm vervangt de URL (geen nieuwe stap).
   const shownId = useRef(photoId);
@@ -56,91 +46,106 @@ export function WebPager({ list, index, count, pageWidth, onSettle, photoId }: W
     navigation.setParams({ photoId } as never);
   }, [photoId, navigation]);
 
-  const indexRef = useRef(index);
-  indexRef.current = index;
-
   useEffect(() => {
-    const node = scrollNode(list);
-    if (!node || pageWidth <= 0) return;
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    // Een gebaar loopt van de aanraking tot het scrollen erna stilstaat (ook
-    // het uitlopen na loslaten).
-    let touching = false;
-    let gesture = false;
-    const onTouchStart = () => {
-      touching = true;
-      gesture = true;
-    };
-    const onTouchEnd = () => {
-      touching = false;
-    };
-    const onWheel = () => {
-      gesture = true;
-    };
-    const onScroll = () => {
-      if (timer) clearTimeout(timer);
-      timer = setTimeout(() => {
-        const step = pagerSettle({
-          gesture,
-          scrollLeft: node.scrollLeft,
-          pageWidth,
-          index: indexRef.current,
-          count,
-        });
-        if (!touching) gesture = false;
-        if (step.kind === "show") settle.current(step.index);
-        if (step.kind === "restore") node.scrollLeft = step.left;
-      }, SETTLE_MS);
-    };
-    node.addEventListener("touchstart", onTouchStart, { passive: true });
-    node.addEventListener("touchend", onTouchEnd, { passive: true });
-    node.addEventListener("touchcancel", onTouchEnd, { passive: true });
-    node.addEventListener("wheel", onWheel, { passive: true });
-    node.addEventListener("scroll", onScroll, { passive: true });
-    return () => {
-      if (timer) clearTimeout(timer);
-      node.removeEventListener("touchstart", onTouchStart);
-      node.removeEventListener("touchend", onTouchEnd);
-      node.removeEventListener("touchcancel", onTouchEnd);
-      node.removeEventListener("wheel", onWheel);
-      node.removeEventListener("scroll", onScroll);
-    };
-  }, [list, pageWidth, count]);
-
-  const go = (to: number) => {
-    if (to < 0 || to > count - 1) return;
-    // Zonder animatie: een vloeiende scroll hangt van animatie-frames af en
-    // valt in een tabblad op de achtergrond stil; de snap klopt zo altijd.
-    (list.current as ScrollableList | null)?.scrollToIndex?.({ index: to, animated: false });
-    // Meteen melden: niet wachten tot het scrollen stilstaat.
-    settle.current(to);
-  };
-  const goRef = useRef(go);
-  goRef.current = go;
+    if (onNearEnd && count > 0 && index >= count - 3) onNearEnd();
+  }, [index, count]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!focused) return;
     const onKey = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement | null;
       if (target && /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName)) return;
-      if (e.key === "ArrowLeft") goRef.current(indexRef.current - 1);
-      if (e.key === "ArrowRight") goRef.current(indexRef.current + 1);
+      if (e.key === "ArrowLeft") goRef.current(state.current.index - 1);
+      if (e.key === "ArrowRight") goRef.current(state.current.index + 1);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [focused]);
 
-  if (count < 2) return null;
+  // Vegen: van neerzetten tot loslaten, één vinger (twee is knijpen).
+  // react-native-web: de ref van een View is het DOM-element.
+  const area = useRef<HTMLElement | null>(null);
+  useEffect(() => {
+    const node = area.current;
+    if (!node || typeof node.addEventListener !== "function") return;
+    // Verticaal en knijpen doet de browser; horizontaal is van ons.
+    node.style.touchAction = "pan-y pinch-zoom";
+    let start: { x: number; y: number } | null = null;
+    const finish = (x: number, y: number) => {
+      if (!start) return;
+      const { index: i, count: n } = state.current;
+      const to = swipeIndex({ dx: x - start.x, dy: y - start.y, width: node.clientWidth, index: i, count: n });
+      start = null;
+      if (to !== i) change.current(to);
+    };
+    const onTouchStart = (e: TouchEvent) => {
+      const t = e.touches[0];
+      start = e.touches.length === 1 && t ? { x: t.clientX, y: t.clientY } : null;
+    };
+    const onTouchMove = (e: TouchEvent) => {
+      if (e.touches.length > 1) start = null;
+    };
+    const onTouchEnd = (e: TouchEvent) => {
+      const t = e.changedTouches[0];
+      if (t) finish(t.clientX, t.clientY);
+    };
+    const onTouchCancel = () => {
+      start = null;
+    };
+    const onPointerDown = (e: PointerEvent) => {
+      if (e.pointerType === "mouse" && e.button === 0) start = { x: e.clientX, y: e.clientY };
+    };
+    const onPointerUp = (e: PointerEvent) => {
+      if (e.pointerType === "mouse") finish(e.clientX, e.clientY);
+    };
+    // Geen sleep-plaatje van de foto bij slepen met de muis.
+    const onDragStart = (e: DragEvent) => e.preventDefault();
+    node.addEventListener("touchstart", onTouchStart, { passive: true });
+    node.addEventListener("touchmove", onTouchMove, { passive: true });
+    node.addEventListener("touchend", onTouchEnd, { passive: true });
+    node.addEventListener("touchcancel", onTouchCancel, { passive: true });
+    node.addEventListener("pointerdown", onPointerDown);
+    window.addEventListener("pointerup", onPointerUp);
+    node.addEventListener("dragstart", onDragStart);
+    return () => {
+      node.removeEventListener("touchstart", onTouchStart);
+      node.removeEventListener("touchmove", onTouchMove);
+      node.removeEventListener("touchend", onTouchEnd);
+      node.removeEventListener("touchcancel", onTouchCancel);
+      node.removeEventListener("pointerdown", onPointerDown);
+      window.removeEventListener("pointerup", onPointerUp);
+      node.removeEventListener("dragstart", onDragStart);
+    };
+  }, []);
+
   return (
-    <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
-      {index > 0 && (
-        <Arrow side="left" label="Vorige foto" icon="back" onPress={() => go(index - 1)} />
-      )}
-      {index < count - 1 && (
-        <Arrow side="right" label="Volgende foto" icon="chevron" onPress={() => go(index + 1)} />
+    <View
+      ref={(n: unknown) => {
+        area.current = n as HTMLElement | null;
+      }}
+      style={styles.fill}
+    >
+      {renderPage(index)}
+      {neighbours(index, count).map((i) => {
+        const p = photoAt(i);
+        return p ? <Preload key={p.photoId} photoId={p.photoId} hasFormats={p.hasFormats} /> : null;
+      })}
+      {count > 1 && (
+        <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
+          {index > 0 && <Arrow side="left" label="Vorige foto" icon="back" onPress={() => go(index - 1)} />}
+          {index < count - 1 && (
+            <Arrow side="right" label="Volgende foto" icon="chevron" onPress={() => go(index + 1)} />
+          )}
+        </View>
       )}
     </View>
   );
+}
+
+// Haalt het beeld van een buurfoto alvast op (in het beeldgeheugen); toont niets.
+function Preload({ photoId, hasFormats }: { photoId: string; hasFormats?: boolean }) {
+  usePhotoLoad(photoId, "groot", hasFormats === true);
+  return null;
 }
 
 function Arrow({
@@ -167,6 +172,7 @@ function Arrow({
 }
 
 const styles = StyleSheet.create({
+  fill: { flex: 1, overflow: "hidden", userSelect: "none" },
   arrow: {
     position: "absolute",
     top: "50%",

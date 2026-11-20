@@ -1,35 +1,37 @@
-// Het foto-detail op het web (WebPager.web.tsx): wat te doen als het scrollen
-// van de lijst stilstaat. Puur, zodat de terugkoppellus te testen is.
-//
-// De lus (iPhone Safari): de lijst rendert alleen de foto's rond de foto in
-// beeld. Wisselt die, dan verandert de inhoud van de lijst en zet Safari de
-// scroll-snap zelf op een andere plek. Telde dat als een nieuwe foto, dan
-// wisselde de foto in beeld weer, en zo verder: een detail dat met een andere
-// foto opent en daarna blijft springen. Daarom telt alleen een gebaar van de
-// user (aanraken, trackpad) als bladeren; elke andere verschuiving gaat terug
-// naar de foto in beeld.
+// Het foto-detail op het web (WebPager.web.tsx): één foto tegelijk, zonder
+// horizontale scrollcontainer (besluit Wouter na webapp-fix 3). In WebKit liep
+// de horizontale lijst zelf weg (scrollLeft sprong elke seconde naar een andere
+// foto terwijl beelden binnenkwamen). Nu verandert alleen de user de foto: de
+// pijltjes, de pijltoetsen, of een veeg over de drempel.
 
-export type PagerSettle =
-  | { kind: "show"; index: number }
-  | { kind: "restore"; left: number }
-  | { kind: "none" };
+/** Zoveel moet een veeg minstens horizontaal gaan (px). */
+export const SWIPE_MIN_PX = 50;
+/** Of zoveel van de breedte, als dat minder is (smalle vakken). */
+export const SWIPE_MIN_SHARE = 0.18;
+/** Een veeg is horizontaal: minstens zoveel keer zo breed als hoog. */
+export const SWIPE_RATIO = 1.5;
+
+/** Eén stap, binnen de grenzen; buiten de lijst: dezelfde index. */
+export function stepIndex(index: number, delta: number, count: number): number {
+  if (count < 1) return 0;
+  const to = index + delta;
+  if (to < 0 || to > count - 1) return Math.max(0, Math.min(count - 1, index));
+  return to;
+}
 
 /**
- * `gesture`: de user raakte de lijst aan (of veegde met een trackpad) sinds
- * de vorige keer stilstaan. `index`: de foto in beeld volgens het scherm.
+ * De index na een veeg. `dx` en `dy`: van het neerzetten tot het loslaten.
+ * Naar links vegen (dx < 0) is de volgende foto. Te kort, te schuin of buiten
+ * de lijst: dezelfde index.
  */
-export function pagerSettle(p: {
-  gesture: boolean;
-  scrollLeft: number;
-  pageWidth: number;
-  index: number;
-  count: number;
-}): PagerSettle {
-  if (!(p.pageWidth > 0) || p.count < 1) return { kind: "none" };
-  if (p.gesture) {
-    const i = Math.round(p.scrollLeft / p.pageWidth);
-    return { kind: "show", index: Math.max(0, Math.min(p.count - 1, i)) };
-  }
-  const left = p.index * p.pageWidth;
-  return Math.abs(p.scrollLeft - left) > 1 ? { kind: "restore", left } : { kind: "none" };
+export function swipeIndex(p: { dx: number; dy: number; width: number; index: number; count: number }): number {
+  const threshold = Math.min(SWIPE_MIN_PX, Math.max(1, p.width) * SWIPE_MIN_SHARE);
+  const ax = Math.abs(p.dx);
+  if (!(ax >= threshold) || ax < Math.abs(p.dy) * SWIPE_RATIO) return stepIndex(p.index, 0, p.count);
+  return stepIndex(p.index, p.dx < 0 ? 1 : -1, p.count);
+}
+
+/** De buren om voor te laden: vorige en volgende, binnen de lijst. */
+export function neighbours(index: number, count: number): number[] {
+  return [index - 1, index + 1].filter((i) => i >= 0 && i < count);
 }
