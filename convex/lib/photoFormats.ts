@@ -192,7 +192,11 @@ export async function makeFormatImages(bytes: Uint8Array): Promise<FormatImages>
     exifOrientation = undefined;
   } else {
     // Alleen het eerste beeld van een animatie (`pages: 1` is de standaard).
-    source = sharp(bytes, { pages: 1 });
+    // `failOn: "none"`: een JPEG met een afgekapt of beschadigd einde
+    // ("premature end of JPEG image") krijgt toch formaten, zoals een browser
+    // hem ook toont (met een grijze onderkant). Bytes die geen beeld zijn,
+    // falen nog steeds op het lezen van de kop.
+    source = sharp(bytes, { pages: 1, failOn: "none" });
     const meta = await source.metadata();
     if (!meta.width || !meta.height) throw new Error("geen beeld: afmetingen onbekend");
     width = meta.width;
