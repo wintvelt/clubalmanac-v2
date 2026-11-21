@@ -39,3 +39,24 @@ export const MAX_UPLOAD_BYTES = 15 * 1024 * 1024;
  * het staan, dan is Clerk blijvend mislukt.
  */
 export const ACCOUNT_DELETION_REPORT_AFTER_MS = 60 * 60 * 1000;
+
+/**
+ * WP37 A-keuze: de langste duur van een filmpje (3:00). De grens telt
+ * afgerond op hele seconden, zoals de tegel hem toont: tot 180,499 s mag, dus
+ * "3:00" wordt nooit geweigerd (`videoTooLong`).
+ */
+export const MAX_VIDEO_MS = 180_000;
+
+/** WP37 A-keuze: het grootste filmpje in R2 (120 MiB), ruim boven 3 minuten op 4 Mbit/s. */
+export const MAX_VIDEO_BYTES = 120 * 1024 * 1024;
+
+/** WP37 A-invariant 20: zoveel video-uploads mag een user tegelijk open hebben. */
+export const MAX_OPEN_VIDEO_UPLOADS = 3;
+
+/** WP37 A-invariant 20: zo lang blijft een video-upload open (een upload van 85 MB kan lang duren). */
+export const VIDEO_UPLOAD_OPEN_MS = 24 * 60 * 60 * 1000;
+
+/** Langer dan 3:00, afgerond op hele seconden (A-keuze). */
+export function videoTooLong(durationMs: number): boolean {
+  return Math.round(durationMs / 1000) > MAX_VIDEO_MS / 1000;
+}

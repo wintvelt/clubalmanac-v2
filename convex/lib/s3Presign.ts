@@ -1,4 +1,5 @@
 // WP21: een ondertekende S3-GET-link (SigV4 in de query), zonder AWS-SDK.
+// WP37: dezelfde signer voor R2 (`presignRequest`: elke methode, eigen host).
 //
 // Standaard S3-presign: `UNSIGNED-PAYLOAD`, alleen `host` ondertekend, het pad
 // per segment RFC 3986-gecodeerd, virtual-hosted host
@@ -55,36 +56,70 @@ export async function presignS3Get(
   expiresInSeconds: number,
   nowMs: number,
 ): Promise<PresignedLink> {
-  const signedAtMs = Math.floor(nowMs / 1000) * 1000;
+  return await presignRequest({
+    method: "GET",
+    host: `${creds.bucket}.s3.${creds.region}.amazonaws.com`,
+    path: `/${encodeKey(key)}`,
+    region: creds.region,
+    accessKeyId: creds.accessKeyId,
+    secretAccessKey: creds.secretAccessKey,
+    expiresInSeconds,
+    nowMs,
+  });
+}
+
+/** Een sleutel als pad: per segment RFC 3986-gecodeerd. */
+export function encodeKey(key: string): string {
+  return key.split("/").map(rfc3986).join("/");
+}
+
+/**
+ * WP37: een ondertekend verzoek in de query (SigV4, `UNSIGNED-PAYLOAD`, alleen
+ * `host` ondertekend) voor elke methode en elke host, ook R2 (regio `auto`,
+ * pad-stijl). `path` is al gecodeerd; `query` zijn extra parameters (bv. voor
+ * een lijst), die de handtekening mee dekt. De handtekening dekt methode, pad
+ * en query.
+ */
+export async function presignRequest(opts: {
+  method: "GET" | "PUT" | "HEAD" | "DELETE";
+  host: string;
+  path: string;
+  region: string;
+  accessKeyId: string;
+  secretAccessKey: string;
+  expiresInSeconds: number;
+  nowMs: number;
+  query?: Record<string, string>;
+}): Promise<PresignedLink> {
+  const signedAtMs = Math.floor(opts.nowMs / 1000) * 1000;
   const date = amzDate(signedAtMs);
   const day = date.slice(0, 8);
-  const scope = `${day}/${creds.region}/s3/aws4_request`;
-  const host = `${creds.bucket}.s3.${creds.region}.amazonaws.com`;
-  const path = `/${key.split("/").map(rfc3986).join("/")}`;
+  const scope = `${day}/${opts.region}/s3/aws4_request`;
 
   const params: Record<string, string> = {
+    ...(opts.query ?? {}),
     "X-Amz-Algorithm": ALGORITHM,
     "X-Amz-Content-Sha256": UNSIGNED_PAYLOAD,
-    "X-Amz-Credential": `${creds.accessKeyId}/${scope}`,
+    "X-Amz-Credential": `${opts.accessKeyId}/${scope}`,
     "X-Amz-Date": date,
-    "X-Amz-Expires": String(expiresInSeconds),
+    "X-Amz-Expires": String(opts.expiresInSeconds),
     "X-Amz-SignedHeaders": "host",
   };
   const query = Object.entries(params)
     .map(([k, v]) => [rfc3986(k), rfc3986(v)] as const)
-    .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+    .sort(([a, av], [b, bv]) => (a < b ? -1 : a > b ? 1 : av < bv ? -1 : av > bv ? 1 : 0))
     .map(([k, v]) => `${k}=${v}`)
     .join("&");
 
-  const canonicalRequest = ["GET", path, query, `host:${host}\n`, "host", UNSIGNED_PAYLOAD].join("\n");
+  const canonicalRequest = [opts.method, opts.path, query, `host:${opts.host}\n`, "host", UNSIGNED_PAYLOAD].join("\n");
   const stringToSign = [ALGORITHM, date, scope, await sha256Hex(canonicalRequest)].join("\n");
 
-  let signingKey = await hmac(new TextEncoder().encode(`AWS4${creds.secretAccessKey}`), day);
-  for (const part of [creds.region, "s3", "aws4_request"]) signingKey = await hmac(signingKey, part);
+  let signingKey = await hmac(new TextEncoder().encode(`AWS4${opts.secretAccessKey}`), day);
+  for (const part of [opts.region, "s3", "aws4_request"]) signingKey = await hmac(signingKey, part);
   const signature = hex(await hmac(signingKey, stringToSign));
 
   return {
-    url: `https://${host}${path}?${query}&X-Amz-Signature=${signature}`,
-    expiresAt: signedAtMs + expiresInSeconds * 1000,
+    url: `https://${opts.host}${opts.path}?${query}&X-Amz-Signature=${signature}`,
+    expiresAt: signedAtMs + opts.expiresInSeconds * 1000,
   };
 }

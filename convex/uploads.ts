@@ -6,6 +6,8 @@ import {
   type MutationCtx,
 } from "./_generated/server";
 import { getMembership } from "./groups";
+import { internal } from "./_generated/api";
+import { VIDEO_UPLOAD_OPEN_MS } from "./lib/constants";
 
 // Internal helpers voor de POST /upload httpAction (convex/http.ts) en
 // voor de dagelijkse cleanup-cron (convex/crons.ts).
@@ -67,6 +69,11 @@ export const reserve = internalMutation({
 
     if (existing) {
       const now = Date.now();
+      // WP37: een video-upload met deze id is geen foto; hij loopt via
+      // `videos.startUpload` en `POST /upload/video`, en blijft een dag open.
+      if (existing.videoKey !== undefined && existing.status === "in_progress") {
+        return { kind: "conflict" as const };
+      }
       if (existing.status === "in_progress") {
         if (now - existing.createdAt < STALE_IN_PROGRESS_MS) {
           return { kind: "conflict" as const };
@@ -107,7 +114,7 @@ export const reserve = internalMutation({
 // A-invariant 24: de bestaande foto in het album, als lid. Staat hij er al,
 // dan niets. De uploader is de toevoeger; `addedAt` laat de teller bij de
 // andere leden oplopen (invariant 8).
-async function placeInAlbum(
+export async function placeInAlbum(
   ctx: MutationCtx,
   ownerId: Id<"users">,
   albumId: Id<"albums">,
@@ -168,6 +175,10 @@ export const deleteReservation = internalMutation({
 //   completed   ouder dan 7d   → retry-safety horizon
 //   in_progress ouder dan 30min → stale-reservation cleanup (audit-12 §2)
 // Boundary <= cutoff (consistent met FL1 + invites).
+// WP37 A-invariant 20: een open video-upload blijft een dag (een upload van
+// 85 MB kan lang duren); daarna gaan reservering én object in R2 weg. Een
+// afgeronde video-reservering gaat na 7 dagen weg zoals elke andere; het
+// filmpje blijft.
 export const cleanupOld = internalMutation({
   args: {},
   handler: async (ctx) => {
@@ -189,6 +200,17 @@ export const cleanupOld = internalMutation({
         q.eq("status", "in_progress").lte("createdAt", inProgressCutoff),
       )
       .collect();
-    for (const r of staleInProgress) await ctx.db.delete(r._id);
+    const videoCutoff = now - VIDEO_UPLOAD_OPEN_MS;
+    const keys: string[] = [];
+    for (const r of staleInProgress) {
+      if (r.videoKey !== undefined) {
+        if (r.createdAt > videoCutoff) continue;
+        keys.push(r.videoKey);
+      }
+      await ctx.db.delete(r._id);
+    }
+    if (keys.length > 0) {
+      await ctx.scheduler.runAfter(0, internal.videos.deleteObjects, { keys });
+    }
   },
 });

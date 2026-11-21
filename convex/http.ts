@@ -14,6 +14,7 @@ import {
 import { parseLocation, parseTakenAt, uploadImageType } from "./lib/upload";
 import { stripJpegMetadata } from "./lib/jpegMeta";
 import { UPLOAD_PREFLIGHT, webPreflightResponse, withWebCors } from "./lib/webCors";
+import { videoUploadRoute } from "./videos";
 
 // Cascade matrix IB1: Mailjet bounce-webhook → internal.invites.handleBounce.
 // Voltooit IB1 cascade per docs/cascade-matrix.md (bounce → status=expired
@@ -415,6 +416,17 @@ async function uploadRoute(ctx: ImageRouteCtx, request: Request): Promise<Respon
 
   return Response.json({ photoId }, { status: 200 });
 }
+
+// WP37: een filmpje afronden (stap 3 van drie, zie convex/videos.ts): de
+// poster met datum en plaats; de backend bekijkt het object in R2 en maakt pas
+// dan de rij. Geen CORS en geen OPTIONS: de webapp uploadt geen filmpjes
+// (besluit 4). Er is geen GET-pad naar een filmpje: afspelen loopt via de
+// ondertekende link van `videos.playUrl` (A-invariant 26).
+http.route({
+  path: "/upload/video",
+  method: "POST",
+  handler: httpAction(async (ctx, request) => await videoUploadRoute(ctx, request)),
+});
 
 // WP17a: het beeldpad (besluit 1: vorm B). Bij elk verzoek de toegangsregel
 // uit convex/images.ts, dan de bytes uit storage. De client kent geen

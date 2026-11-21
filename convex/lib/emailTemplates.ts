@@ -560,6 +560,58 @@ ${SIGNATURE_TEXT}`;
   return { subject, htmlPart, textPart };
 }
 
+// WP37 A-invariant 22: de dagelijkse R2-check van de filmpjes. Aantallen,
+// foto-id's van filmpjes zonder bestand en de sleutels van wees-objecten;
+// nooit een link of geheim. De check wist niets: de webmaster beslist.
+export function videoStorageCheckTemplate(opts: {
+  stage: string;
+  timestamp: string;
+  /** Kon de check niet draaien (config, R2 onbereikbaar): de soort fout. */
+  failure?: string;
+  orphans: { key: string; lastModified: number }[];
+  missing: string[];
+}): TemplateBlock {
+  const subject = opts.failure
+    ? `Filmpjes: de R2-check kon niet draaien (${opts.stage})`
+    : `Filmpjes: ${opts.orphans.length} wees-object(en) en ${opts.missing.length} ontbrekend(e) bestand(en) in R2 (${opts.stage})`;
+  const lines: string[] = [];
+  if (opts.failure) {
+    lines.push(`De dagelijkse check van de filmpjes in R2 kon niet draaien: ${opts.failure}.`);
+    lines.push(
+      "Controleer de R2_*-env-vars in Convex, het R2-token (Object Read & Write op de bucket) en of de bucket er nog is. Zolang dit faalt, kunnen leden geen filmpjes toevoegen of afspelen.",
+    );
+  } else {
+    lines.push(
+      `De dagelijkse check van de filmpjes in R2 vond ${opts.orphans.length} wees-object(en) (geen filmpje en geen open upload, ouder dan een dag) en ${opts.missing.length} filmpje(s) waarvan het bestand ontbreekt.`,
+    );
+    if (opts.missing.length > 0) lines.push(`Filmpjes zonder bestand (foto-id): ${opts.missing.join(", ")}`);
+    if (opts.orphans.length > 0) {
+      lines.push(
+        `Wees-objecten (sleutel, laatst gewijzigd): ${opts.orphans
+          .map((o) => `${o.key} (${new Date(o.lastModified).toISOString()})`)
+          .join(", ")}`,
+      );
+    }
+    lines.push(
+      "De check wist niets. Zie docs/conventions/external-services.md, sectie Cloudflare R2, voor wat je met een wees-object of een ontbrekend bestand doet.",
+    );
+  }
+  const htmlPart = `
+<p>Hi Admin,</p>
+<p>${escapeHtml(opts.stage)} omgeving, ${escapeHtml(opts.timestamp)}.</p>
+${lines.map((l) => `<p>${escapeHtml(l)}</p>`).join("\n")}
+${SIGNATURE_HTML}
+`.trim();
+  const textPart = `Hi Admin,
+
+${opts.stage} omgeving, ${opts.timestamp}.
+
+${lines.join("\n\n")}
+
+${SIGNATURE_TEXT}`;
+  return { subject, htmlPart, textPart };
+}
+
 // Helper: NL-style date format voor invite-expiry. Output bv. "31-12-2026".
 export function formatNlDate(timestamp: number): string {
   const d = new Date(timestamp);

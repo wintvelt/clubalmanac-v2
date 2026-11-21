@@ -203,13 +203,22 @@ const photosPhase: Phase = async (ctx, user) => {
   return photos.length > 0;
 };
 
-/** WP18 A-invariant 22: zijn upload-reserveringen, ook "nog bezig". */
+/**
+ * WP18 A-invariant 22: zijn upload-reserveringen, ook "nog bezig". WP37
+ * A-invariant 21: van een open video-upload gaat ook het object in R2 weg
+ * (een afgerond filmpje nam zijn object al mee bij de foto's).
+ */
 const reservationsPhase: Phase = async (ctx, user) => {
   const rows = await ctx.db
     .query("uploadIdempotency")
     .withIndex("by_owner_and_clientUploadId", (q) => q.eq("ownerId", user._id))
     .take(ROWS_PER_STEP);
-  for (const r of rows) await ctx.db.delete(r._id);
+  const keys: string[] = [];
+  for (const r of rows) {
+    if (r.videoKey !== undefined && r.status === "in_progress") keys.push(r.videoKey);
+    await ctx.db.delete(r._id);
+  }
+  if (keys.length > 0) await ctx.scheduler.runAfter(0, internal.videos.deleteObjects, { keys });
   return rows.length > 0;
 };
 
