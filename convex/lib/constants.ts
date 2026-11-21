@@ -53,6 +53,9 @@ export const MAX_VIDEO_BYTES = 120 * 1024 * 1024;
 /** WP37 A-invariant 20: zoveel video-uploads mag een user tegelijk open hebben. */
 export const MAX_OPEN_VIDEO_UPLOADS = 3;
 
+/** WP37 A-invariant 36: zoveel keer `startUpload` per user in 24 uur (glijdend). */
+export const MAX_VIDEO_REQUESTS_PER_DAY = 30;
+
 /** WP37 A-invariant 20: zo lang blijft een video-upload open (een upload van 85 MB kan lang duren). */
 export const VIDEO_UPLOAD_OPEN_MS = 24 * 60 * 60 * 1000;
 

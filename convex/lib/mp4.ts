@@ -19,7 +19,9 @@
 //   metadata-spoor (toestemmingslijst, geen verbodslijst). De tabellen van de
 //   sporen worden niet doorzocht.
 // - Elk spoor telt (A-invariant 29) en de duur is de langste die het bestand
-//   noemt: `mvhd`, en per spoor `tkhd` en `mdhd` (A-invariant 30). `mvhd` met
+//   noemt: `mvhd`, en per spoor `tkhd`, de som van de `elst`-segmenten (in de
+//   tijdschaal van de film), `mdhd` en de som van `stts` (in de tijdschaal van
+//   het spoor) (A-invariant 30). `mvhd` met
 //   duur 0 of een gefragmenteerd bestand (`mvex`): weigeren.
 
 import { MAX_VIDEO_BYTES, videoTooLong } from "./constants";
@@ -167,6 +169,9 @@ type Track = { handler: string | null; codec: string | null; width: number; heig
 function parseTrack(b: Uint8Array, trak: Box, s: State, depth: number): Track {
   const track: Track = { handler: null, codec: null, width: 0, height: 0 };
   let mdia = 0;
+  // stts telt in de tijdschaal van het spoor (uit mdhd, mogelijk later gelezen).
+  let mediaTimescale = 0;
+  let sttsTotal = 0;
   let tkhd = 0;
   const leafs = new Set(["tref", "tapt", "load", "imap", "clip", "matt", "kmat"]);
 
@@ -197,15 +202,38 @@ function parseTrack(b: Uint8Array, trak: Box, s: State, depth: number): Track {
       case "trak/edts":
         for (const child of strictChildren(b, box)) visit(child, "edts", level + 1);
         return;
-      case "edts/elst":
+      case "edts/elst": {
+        // A-invariant 30: de som van de segmenten, in de tijdschaal van de film.
+        const version = b[box.payload];
+        const count = u32(b, box.payload + 4);
+        const entry = version === 1 ? 20 : 12;
+        if (box.payload + 8 + count * entry > box.end) throw new Refusal("geen_mp4");
+        let total = 0;
+        for (let k = 0; k < count; k++) {
+          const at = box.payload + 8 + k * entry;
+          total += version === 1 ? u64(b, at) : u32(b, at);
+        }
+        s.maxMs = Math.max(s.maxMs, durationMs(total, s.timescale));
         return;
+      }
       case "mdia/mdhd": {
         const version = b[box.payload];
         const need = version === 1 ? 32 : 20;
         if (box.payload + need > box.end) throw new Refusal("geen_mp4");
         const timescale = version === 1 ? u32(b, box.payload + 20) : u32(b, box.payload + 12);
         const dur = version === 1 ? u64(b, box.payload + 24) : u32(b, box.payload + 16);
+        mediaTimescale = timescale;
         s.maxMs = Math.max(s.maxMs, durationMs(dur, timescale));
+        return;
+      }
+      case "stbl/stts": {
+        // A-invariant 30: aantal × duur per regel, in de tijdschaal van het spoor.
+        const count = u32(b, box.payload + 4);
+        if (box.payload + 8 + count * 8 > box.end) throw new Refusal("geen_mp4");
+        for (let k = 0; k < count; k++) {
+          const at = box.payload + 8 + k * 8;
+          sttsTotal += u32(b, at) * u32(b, at + 4);
+        }
         return;
       }
       case "mdia/hdlr":
@@ -235,6 +263,10 @@ function parseTrack(b: Uint8Array, trak: Box, s: State, depth: number): Track {
   };
   for (const child of strictChildren(b, trak)) visit(child, "trak", depth + 1);
   if (mdia !== 1 || tkhd !== 1) throw new Refusal("geen_mp4");
+  if (sttsTotal > 0) {
+    if (mediaTimescale === 0) throw new Refusal("geen_mp4");
+    s.maxMs = Math.max(s.maxMs, durationMs(sttsTotal, mediaTimescale));
+  }
   return track;
 }
 

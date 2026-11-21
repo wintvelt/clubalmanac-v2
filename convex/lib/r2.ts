@@ -150,13 +150,19 @@ export async function readHead(cfg: R2Config, key: string, length: number): Prom
 
 /**
  * CopyObject binnen de bucket, alleen als de bron nog de ETag `ifMatch` heeft
- * (A-invariant 12). `false`: de bron is intussen anders (412) of weg (404).
- * De `x-amz-*`-headers zijn mee ondertekend.
+ * (A-invariant 12), met `content-type: video/mp4` en REPLACE. `false`: de bron
+ * is intussen anders (412) of weg (404); er is dan niets gekopieerd. Elke
+ * andere uitkomst (geen antwoord, geen `CopyObjectResult`) gooit `R2Error`:
+ * de kopie kan dan toch gelukt zijn. De headers zijn mee ondertekend.
  */
 export async function copyObject(cfg: R2Config, from: string, to: string, ifMatch: string): Promise<boolean> {
+  // A-invariant 12: het type opnieuw zetten (REPLACE), zodat R2 het als
+  // video/mp4 bewaart, wat de app bij de PUT ook meestuurde.
   const headers = {
+    "content-type": "video/mp4",
     "x-amz-copy-source": `/${encodeKey(cfg.bucket)}/${encodeKey(from)}`,
     "x-amz-copy-source-if-match": ifMatch,
+    "x-amz-metadata-directive": "REPLACE",
   };
   const { url } = await presignR2(cfg, "PUT", to, SERVER_LINK_SECONDS, Date.now(), { headers });
   let res: Response;

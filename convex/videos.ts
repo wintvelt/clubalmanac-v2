@@ -16,6 +16,7 @@ import { FORMATS_RETRY_DELAY_MS } from "./photos";
 import { getWebmasterEmails } from "./lib/auth";
 import {
   MAX_OPEN_VIDEO_UPLOADS,
+  MAX_VIDEO_REQUESTS_PER_DAY,
   MAX_UPLOAD_BYTES,
   MAX_VIDEO_BYTES,
   VIDEO_UPLOAD_OPEN_MS,
@@ -65,8 +66,11 @@ import { parseLocation, parseTakenAt, uploadImageType } from "./lib/upload";
 
 /** Besluit B5: een afspeellink geldt 1 uur. */
 export const VIDEO_LINK_SECONDS = 3600;
-/** A-invariant 11: een upload-link geldt hooguit een uur. */
-export const VIDEO_PUT_SECONDS = 3600;
+/**
+ * A-invariant 11: een upload-link geldt 15 minuten. R2 toetst de geldigheid
+ * bij de start van het verzoek, dus een lange upload loopt door.
+ */
+export const VIDEO_PUT_SECONDS = 900;
 /** Het eerste stuk dat de backend leest; de index van 3 minuten past ruim. */
 const INDEX_READ_BYTES = 512 * 1024;
 /** Een index die groter is, leest de backend niet (en weigert het filmpje). */
@@ -76,7 +80,11 @@ const MAX_BOXES_AFTER_INDEX = 32;
 
 export const VIDEO_NOT_FOUND = { code: "VIDEO_NOT_FOUND" } as const;
 
-type RefuseReason = "uitgelogd" | "geen_album" | "limiet" | "te_lang" | "te_groot" | "bezig";
+const DAY_MS = 24 * 60 * 60 * 1000;
+/** A-invariant 22: een object onder uploads/ zonder reservering is pas na 2 dagen een melding. */
+const UPLOADS_STALE_MS = 2 * DAY_MS;
+
+type RefuseReason = "uitgelogd" | "geen_album" | "limiet" | "te_lang" | "te_groot" | "bezig" | "te_vaak";
 type Gate = { kind: "ok"; userId: Id<"users"> } | { kind: "refused"; reason: RefuseReason };
 type Reserved =
   | { kind: "upload"; key: string }
@@ -100,6 +108,7 @@ const REFUSE_REASON = v.union(
   v.literal("te_lang"),
   v.literal("te_groot"),
   v.literal("bezig"),
+  v.literal("te_vaak"),
 );
 
 /** A-invariant 11: de app PUT onder dit prefix; een R2-lifecycle-regel wist het na 1 dag. */
@@ -170,6 +179,23 @@ export const reserveVideo = internalMutation({
     }
     const now = Date.now();
 
+    // A-invariant 36: hooguit 30 geslaagde aanvragen in 24 uur, ook herhalingen.
+    const dayAgo = now - DAY_MS;
+    const recent = await ctx.db
+      .query("videoUploadRequests")
+      .withIndex("by_owner_and_at", (q) => q.eq("ownerId", ownerId).gt("at", dayAgo))
+      .take(MAX_VIDEO_REQUESTS_PER_DAY);
+    if (recent.length >= MAX_VIDEO_REQUESTS_PER_DAY) return { kind: "refused" as const, reason: "te_vaak" as const };
+    const stale = await ctx.db
+      .query("videoUploadRequests")
+      .withIndex("by_owner_and_at", (q) => q.eq("ownerId", ownerId).lte("at", dayAgo))
+      .take(50);
+    for (const r of stale) await ctx.db.delete(r._id);
+    const counted = async <T>(result: T): Promise<T> => {
+      await ctx.db.insert("videoUploadRequests", { ownerId, at: now });
+      return result;
+    };
+
     const existing = await ctx.db
       .query("uploadIdempotency")
       .withIndex("by_owner_and_clientUploadId", (q) => q.eq("ownerId", ownerId).eq("clientUploadId", clientUploadId))
@@ -183,12 +209,12 @@ export const reserveVideo = internalMutation({
           if (!(await placeInAlbum(ctx, ownerId, albumId, photo._id))) {
             return { kind: "refused" as const, reason: "geen_album" as const };
           }
-          return { kind: "done" as const, photoId: photo._id };
+          return await counted({ kind: "done" as const, photoId: photo._id });
         }
         await ctx.db.delete(existing._id);
       } else if (now - existing.createdAt < VIDEO_UPLOAD_OPEN_MS) {
         if (existing.albumId !== albumId) await ctx.db.patch(existing._id, { albumId });
-        return { kind: "upload" as const, key: existing.videoKey };
+        return await counted({ kind: "upload" as const, key: existing.videoKey });
       } else {
         // Verlopen maar nog niet opgeruimd: weg, met zijn object.
         await ctx.db.delete(existing._id);
@@ -215,7 +241,7 @@ export const reserveVideo = internalMutation({
       videoKey: newKey,
       albumId,
     });
-    return { kind: "upload" as const, key: newKey };
+    return await counted({ kind: "upload" as const, key: newKey });
   },
 });
 
@@ -496,30 +522,35 @@ export async function videoUploadRoute(ctx: ActionCtx, request: Request): Promis
   const { size, etag, info } = examined;
 
   // A-invariant 11, 12: naar een eindsleutel waarvoor nooit een PUT is
-  // getekend, alleen als het object nog is wat de backend bekeek; dan de
-  // tijdelijke weg. Alleen de eindsleutel komt in de rij.
+  // getekend, alleen als het object nog is wat de backend bekeek, met het type
+  // video/mp4. Gaat er na het versturen iets mis, dan gaat de eindsleutel
+  // best-effort weer weg.
   const finalKey = newFinalKey();
-  try {
-    if (!(await copyObject(cfg, state.key, finalKey, etag))) {
-      return json({ error: "Het filmpje is nog niet helemaal binnen", reason: "niet_binnen" }, 409);
+  const dropFinal = async () => {
+    try {
+      await deleteObject(cfg, finalKey);
+    } catch {
+      // De R2-check meldt het wees-object.
     }
+  };
+  let copied: boolean;
+  try {
+    copied = await copyObject(cfg, state.key, finalKey, etag);
   } catch (e) {
     console.warn(`[videos] ${e instanceof Error ? e.message : "kopie mislukt"}`);
+    await dropFinal();
     return json({ error: "Opslag niet bereikbaar" }, 502);
   }
-  try {
-    await deleteObject(cfg, state.key);
-  } catch {
-    // De lifecycle-regel op uploads/ (en de opruimronde) halen hem later weg.
-  }
+  if (!copied) return json({ error: "Het filmpje is nog niet helemaal binnen", reason: "niet_binnen" }, 409);
 
   // A-invariant 14: de kloktijd van de opname (zoals bij foto's); zonder
   // datum geen takenAt. Plaats alleen in de rij, niet in het bestand.
   const takenAt = parseTakenAt(request.headers.get("X-Taken-At"));
   const location = parseLocation(request.headers.get("X-Latitude"), request.headers.get("X-Longitude"));
 
-  const storageId = await ctx.storage.store(new Blob([poster as BlobPart], { type: "image/jpeg" }));
+  let storageId: Id<"_storage"> | null = null;
   try {
+    storageId = await ctx.storage.store(new Blob([poster as BlobPart], { type: "image/jpeg" }));
     const photoId: Id<"photos"> = await ctx.runMutation(internal.videos.createFromUpload, {
       reservationId: state.reservationId,
       ownerId: user._id,
@@ -535,19 +566,23 @@ export async function videoUploadRoute(ctx: ActionCtx, request: Request): Promis
       latitude: location?.latitude,
       longitude: location?.longitude,
     });
+    // Eerst de rij, dan pas de tijdelijke sleutel weg (A-invariant 12).
+    try {
+      await deleteObject(cfg, state.key);
+    } catch {
+      // De lifecycle-regel op uploads/ haalt hem later weg.
+    }
     return json({ photoId }, 200);
   } catch (e) {
     // De rij kwam er niet: de poster en de eindsleutel weer weg (A-invariant 12).
-    try {
-      await ctx.storage.delete(storageId);
-    } catch {
-      // best-effort
+    if (storageId !== null) {
+      try {
+        await ctx.storage.delete(storageId);
+      } catch {
+        // best-effort
+      }
     }
-    try {
-      await deleteObject(cfg, finalKey);
-    } catch {
-      // De R2-check meldt het wees-object.
-    }
+    await dropFinal();
     const message = e instanceof Error ? e.message : "";
     if (message === VIDEO_RESERVATION_GONE) {
       // Een gelijktijdige poging kan het al afgerond hebben.
@@ -555,8 +590,8 @@ export async function videoUploadRoute(ctx: ActionCtx, request: Request): Promis
       if (again.kind === "done") return json({ photoId: again.photoId }, 200);
       return json({ error: "Geen open video-upload", reason: "verlopen" }, 404);
     }
-    // Het tijdelijke object is al weg: deze upload-id begint opnieuw.
-    await ctx.runMutation(internal.videos.abandonUpload, { reservationId: state.reservationId });
+    // Deze upload is klaar: het tijdelijke object en de reservering weg.
+    await discard(ctx, cfg, state.reservationId, state.key);
     if (message === VIDEO_LIMIT_REACHED) return json({ error: "Photo limiet bereikt" }, 403);
     if (message === VIDEO_NO_ALBUM_ACCESS) return json({ error: "Album niet gevonden", reason: "geen_album" }, 404);
     throw e;
@@ -585,7 +620,8 @@ async function examine(cfg: R2Config, key: string): Promise<Examined> {
     const { size, etag } = found;
     if (size > MAX_VIDEO_BYTES) return { kind: "too_big" };
     if (size === 0 || !etag) return { kind: "refused", reason: "geen_mp4" };
-    const same = (e: string | null) => e === null || e === etag;
+    // Een antwoord zonder ETag laat niets door (A-invariant 12).
+    const same = (e: string | null) => e === etag;
 
     let first = await readRange(cfg, key, 0, Math.min(size, INDEX_READ_BYTES) - 1);
     if (!same(first.etag)) return { kind: "changed" };
@@ -736,8 +772,15 @@ export const checkStorage = internalAction({
       const inventory: Inventory = await ctx.runQuery(internal.videos.storageInventory, {});
       const known = new Set([...inventory.videos.map((v) => v.key), ...inventory.open]);
       const present = new Set(objects.map((o) => o.key));
-      const orphans = objects
-        .filter((o) => !known.has(o.key) && now - o.lastModified > VIDEO_UPLOAD_OPEN_MS)
+      // A-invariant 22: onder uploads/ ruimt de lifecycle-regel van R2 op (1
+      // dag); staat er na 2 dagen nog iets zonder reservering, dan werkt die
+      // regel niet: een eigen signaal. Elders: een wees na een dag.
+      const unknown = objects.filter((o) => !known.has(o.key));
+      const orphans = unknown
+        .filter((o) => !o.key.startsWith(TMP_PREFIX) && now - o.lastModified > VIDEO_UPLOAD_OPEN_MS)
+        .map((o) => ({ key: o.key, lastModified: o.lastModified }));
+      const staleUploads = unknown
+        .filter((o) => o.key.startsWith(TMP_PREFIX) && now - o.lastModified > UPLOADS_STALE_MS)
         .map((o) => ({ key: o.key, lastModified: o.lastModified }));
       const missing = inventory.videos.filter((v) => !present.has(v.key)).map((v) => v.photoId);
       // A-invariant 22: een grootte die afwijkt van wat de backend bekeek, en
@@ -747,8 +790,8 @@ export const checkStorage = internalAction({
         .filter((v) => sizes.has(v.key) && sizes.get(v.key) !== v.bytes)
         .map((v) => v.photoId);
       const tooBig = objects.filter((o) => o.size > MAX_VIDEO_BYTES).map((o) => o.key);
-      if (orphans.length > 0 || missing.length > 0 || wrongSize.length > 0 || tooBig.length > 0) {
-        report = { ...base, orphans, missing, wrongSize, tooBig };
+      if (orphans.length > 0 || missing.length > 0 || wrongSize.length > 0 || tooBig.length > 0 || staleUploads.length > 0) {
+        report = { ...base, orphans, missing, wrongSize, tooBig, staleUploads };
       }
     } catch (e) {
       const failure = e instanceof Error ? e.message : "onbekende fout";

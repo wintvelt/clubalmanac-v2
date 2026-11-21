@@ -219,7 +219,13 @@ const reservationsPhase: Phase = async (ctx, user) => {
     await ctx.db.delete(r._id);
   }
   if (keys.length > 0) await ctx.scheduler.runAfter(0, internal.videos.deleteObjects, { keys });
-  return rows.length > 0;
+  // WP37 A-invariant 36: zijn aanvragen voor de daggrens.
+  const requests = await ctx.db
+    .query("videoUploadRequests")
+    .withIndex("by_owner_and_at", (q) => q.eq("ownerId", user._id))
+    .take(ROWS_PER_STEP);
+  for (const r of requests) await ctx.db.delete(r._id);
+  return rows.length > 0 || requests.length > 0;
 };
 
 /** U8: één lidmaatschap per stap, met de M1/M2/M3-cascade (internalRemoveMember). */

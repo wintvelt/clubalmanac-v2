@@ -207,6 +207,15 @@ export default defineSchema({
     // WP18 A-invariant 26: een foto wissen leest alleen zijn eigen reservering.
     .index("by_photo", ["photoId"]),
 
+  // WP37 A-invariant 36: elke geslaagde `videos.startUpload` (een link of een
+  // filmpje terug), voor de grens van 30 per user per 24 uur (glijdend). Een
+  // rij ouder dan 24 uur ruimt `reserveVideo` zelf op; account verwijderen
+  // wist ze (WP29, fase reserveringen). Geen publieke query leest deze tabel.
+  videoUploadRequests: defineTable({
+    ownerId: v.id("users"),
+    at: v.number(),
+  }).index("by_owner_and_at", ["ownerId", "at"]),
+
   // ──────────────────────────────────────────────────────────────────
   // Invites
   // ──────────────────────────────────────────────────────────────────

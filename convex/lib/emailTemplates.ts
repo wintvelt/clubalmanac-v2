@@ -574,12 +574,15 @@ export function videoStorageCheckTemplate(opts: {
   wrongSize?: string[];
   /** Objecten (sleutel) boven 120 MiB. */
   tooBig?: string[];
+  /** Objecten onder uploads/ zonder reservering, ouder dan 2 dagen: de opruimregel van R2 werkt niet. */
+  staleUploads?: { key: string; lastModified: number }[];
 }): TemplateBlock {
   const wrongSize = opts.wrongSize ?? [];
   const tooBig = opts.tooBig ?? [];
+  const staleUploads = opts.staleUploads ?? [];
   const subject = opts.failure
     ? `Filmpjes: de R2-check kon niet draaien (${opts.stage})`
-    : `Filmpjes: ${opts.orphans.length} wees, ${opts.missing.length} ontbrekend, ${wrongSize.length + tooBig.length} met een verkeerde grootte in R2 (${opts.stage})`;
+    : `Filmpjes: ${staleUploads.length > 0 ? "de opruimregel van R2 werkt niet; " : ""}${opts.orphans.length} wees, ${opts.missing.length} ontbrekend, ${wrongSize.length + tooBig.length} met een verkeerde grootte in R2 (${opts.stage})`;
   const lines: string[] = [];
   if (opts.failure) {
     lines.push(`De dagelijkse check van de filmpjes in R2 kon niet draaien: ${opts.failure}.`);
@@ -595,6 +598,11 @@ export function videoStorageCheckTemplate(opts: {
       lines.push(`Filmpjes waarvan het bestand een andere grootte heeft dan de backend bekeek (foto-id): ${wrongSize.join(", ")}`);
     }
     if (tooBig.length > 0) lines.push(`Objecten boven 120 MiB (sleutel): ${tooBig.join(", ")}`);
+    if (staleUploads.length > 0) {
+      lines.push(
+        `De opruimregel van R2 werkt niet: ${staleUploads.length} object(en) onder uploads/ zonder upload staan er langer dan 2 dagen (de lifecycle-regel had ze na 1 dag moeten wissen). Controleer de regel uploads-na-1-dag op de bucket. Sleutels: ${staleUploads.map((o) => o.key).join(", ")}`,
+      );
+    }
     if (opts.orphans.length > 0) {
       lines.push(
         `Wees-objecten (sleutel, laatst gewijzigd): ${opts.orphans
