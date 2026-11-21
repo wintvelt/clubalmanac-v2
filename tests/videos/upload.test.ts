@@ -272,8 +272,12 @@ describe("POST /upload/video: afronden (A-invariant 12, 14)", () => {
     expect(row.takenAt).toBe(Date.UTC(2026, 6, 14, 15, 32, 10));
     expect(row.latitude).toBe(41.7151);
     expect(row.longitude).toBe(44.8271);
-    const poster = await t.run(async (ctx) => ctx.storage.get(row.storageId));
-    expect(new Uint8Array(await poster!.arrayBuffer()).subarray(0, 3)).toEqual(new Uint8Array([0xff, 0xd8, 0xff]));
+    // convex-test kan geen Blob over de t.run-grens teruggeven: de bytes lezen binnen de closure.
+    const posterStart = await t.run(async (ctx) => {
+      const blob = await ctx.storage.get(row.storageId);
+      return blob ? Array.from(new Uint8Array(await blob.arrayBuffer()).subarray(0, 3)) : null;
+    });
+    expect(posterStart).toEqual([0xff, 0xd8, 0xff]);
     const placed = await t.run(async (ctx) => ctx.db.query("albumPhotos").collect());
     expect(placed.map((p) => [p.albumId, p.photoId, p.addedBy])).toEqual([[w.albums.georgie, photoId, w.users.alice]]);
     const left = await leftovers(t, r2(), w.users.alice);
