@@ -179,6 +179,23 @@ export const reserveVideo = internalMutation({
     }
     const now = Date.now();
 
+    const existing = await ctx.db
+      .query("uploadIdempotency")
+      .withIndex("by_owner_and_clientUploadId", (q) => q.eq("ownerId", ownerId).eq("clientUploadId", clientUploadId))
+      .first();
+    // Een afgeronde upload-id: het bestaande filmpje, weer in het gevraagde
+    // album (zoals WP18 A-invariant 24), zonder daggrens en zonder mee te
+    // tellen: het filmpje is er al (A-invariant 36).
+    if (existing && existing.videoKey !== undefined && existing.status === "completed") {
+      const photo = existing.photoId ? await ctx.db.get(existing.photoId) : null;
+      if (photo) {
+        if (!(await placeInAlbum(ctx, ownerId, albumId, photo._id))) {
+          return { kind: "refused" as const, reason: "geen_album" as const };
+        }
+        return { kind: "done" as const, photoId: photo._id };
+      }
+    }
+
     // A-invariant 36: hooguit 30 geslaagde aanvragen in 24 uur, ook herhalingen.
     const dayAgo = now - DAY_MS;
     const recent = await ctx.db
@@ -196,21 +213,10 @@ export const reserveVideo = internalMutation({
       return result;
     };
 
-    const existing = await ctx.db
-      .query("uploadIdempotency")
-      .withIndex("by_owner_and_clientUploadId", (q) => q.eq("ownerId", ownerId).eq("clientUploadId", clientUploadId))
-      .first();
     if (existing) {
       if (existing.videoKey === undefined) return { kind: "refused" as const, reason: "bezig" as const };
       if (existing.status === "completed") {
-        const photo = existing.photoId ? await ctx.db.get(existing.photoId) : null;
-        if (photo) {
-          // Zoals WP18 A-invariant 24: weer in het gevraagde album.
-          if (!(await placeInAlbum(ctx, ownerId, albumId, photo._id))) {
-            return { kind: "refused" as const, reason: "geen_album" as const };
-          }
-          return await counted({ kind: "done" as const, photoId: photo._id });
-        }
+        // Het filmpje is weg (zie hierboven): deze upload-id begint opnieuw.
         await ctx.db.delete(existing._id);
       } else if (now - existing.createdAt < VIDEO_UPLOAD_OPEN_MS) {
         if (existing.albumId !== albumId) await ctx.db.patch(existing._id, { albumId });
