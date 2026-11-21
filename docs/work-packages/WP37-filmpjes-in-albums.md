@@ -243,3 +243,14 @@ A paste twee bestaande tests aan: `tests/images/httpRoute.test.ts` (route `POST 
 ## Besluiten Wouter na A (2026-11-21)
 
 Alle dertien aanbevelingen van A (§Besluiten voor Wouter) zijn akkoord: eigen module in Swift voor comprimeren, poster en metadata; datum en plaats uit het bestand zelf; de backend bekijkt elk bestand in R2; grenzen 3:00, 120 MiB en 3 open uploads; afspeellink 1 uur; cover ja, profielfoto nee; telt als één voor de limiet; ook in Mijn foto's; uploaden ook vanaf de iPad-app; R2 in de maandelijkse backup; uploaden op de achtergrond, comprimeren met de app open; clubfilms niet in WP37; Wouter maakt het Cloudflare-account aan (twee EU-buckets, een token per bucket). De RED tests van A gelden ongewijzigd.
+
+## Gate deel 1: echte R2 op dev (regie, 2026-11-21)
+
+Met een tijdelijke action op dev (daarna weggehaald) tegen `clubalmanac-videos-dev` (EU):
+- PUT met de ondertekende `content-length`: 200. Dezelfde link met andere grootte: 403, object ongewijzigd.
+- PUT-link met een niet-ondertekende `x-amz-meta-*` of `x-amz-copy-source`: 403, geen object.
+- CopyObject met een verkeerde `x-amz-copy-source-if-match`: 412 (geen kopie); met de juiste ETag: kopie met `CopyObjectResult`, `content-type: video/mp4` (REPLACE), juiste grootte.
+- Ondertekende GET met `response-content-type=video/mp4` en Range: 206, `video/mp4`. Verlopen link: 403.
+- `videos:checkStorage` op dev: draait zonder melding. Opgeruimd: alle proefobjecten weg.
+
+Nog op de iPhone: achtergrond-upload (Content-Length, start na 15 min), datum en plaats uit de kiezer, duur van het verkleinen, afspelen op alle schermen.
