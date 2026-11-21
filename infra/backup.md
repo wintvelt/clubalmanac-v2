@@ -6,7 +6,7 @@ Tot de vrijgave staat de workflow uit: zonder repo-variabele `BACKUP_ENABLED` sl
 
 De actions in de workflow staan vast op een commit-SHA (publieke repo, en de job heeft een key die prod kan exporteren). Bijwerken: de SHA van de nieuwe tag opzoeken met `git ls-remote https://github.com/<owner>/<action>.git refs/tags/<tag>`.
 
-Sinds WP37 neemt dezelfde run ook de filmpjes uit Cloudflare R2 mee (prod-bucket `clubalmanac-videos-prod`), onder `r2-videos/<sleutel>` in dezelfde bucket: alleen nieuwe objecten gaan erheen, een filmpje dat uit R2 weg is, krijgt een delete-marker. De vorige versie van een gewist filmpje blijft nog een half jaar staan en gaat dan weg (lifecycle-regel `filmpjes-half-jaar`), net als bij de export. Zie *Filmpjes in R2* hieronder.
+Sinds WP37 neemt dezelfde run ook de filmpjes uit Cloudflare R2 mee (prod-bucket `clubalmanac-videos-prod`), onder `r2-videos/<sleutel>` in dezelfde bucket, pas nadat de Convex-export in S3 staat (een probleem met R2 raakt die dus niet). `rclone` kopieert van bucket naar bucket, zonder de filmpjes op de schijf van de runner te zetten. Alleen nieuwe objecten gaan erheen, een filmpje dat uit R2 weg is, krijgt een delete-marker. De vorige versie van een gewist filmpje blijft nog een half jaar staan en gaat dan weg (lifecycle-regel `filmpjes-half-jaar`), net als bij de export. Zie *Filmpjes in R2* hieronder.
 
 Kosten: ~$0,80 per run aan Convex-bandbreedte (6 GB lezen) plus ~$0,15 per maand opslag (6 × 6 GB; ~$0,20 met de versies van het halfjaar). Terughalen kost $0,03 per GB.
 
@@ -50,13 +50,15 @@ Eenmalig, als R2 op prod draait ([`external-services.md`](../docs/conventions/ex
 1. **Stack bijwerken** met de nieuwe `infra/backup.yml` (CloudFormation → stack `clubalmanac-convex-backup` → *Update* → *Replace current template*, op de laptop). Nieuw: de rol mag onder `r2-videos/` lijsten, schrijven en een delete-marker zetten (geen bestanden lezen, geen versies wissen); de regel `laatste-zes` geldt alleen voor `convex-prod/`; regel `filmpjes-half-jaar` voor `r2-videos/`.
 2. **Environment `prod-backup`**: geheimen `R2_BACKUP_ACCESS_KEY_ID` en `R2_BACKUP_SECRET_ACCESS_KEY` van het alleen-lezen token `clubalmanac-videos-backup`.
 3. **Repo-variabelen**: `R2_BACKUP_ENDPOINT` (`https://<account-id>.eu.r2.cloudflarestorage.com`) en `R2_BACKUP_BUCKET` (`clubalmanac-videos-prod`). Zonder `R2_BACKUP_BUCKET` slaat de run de filmpjes over met een gele waarschuwing; dat is alleen bedoeld voor de tijd vóór R2 op prod.
-4. **Met de hand draaien** (Actions → Backup → *Run workflow*). Verwacht: de stap *Filmpjes uit R2 ophalen* noemt het aantal objecten en bytes (gelijk aan de bucket in het Cloudflare-dashboard), *Filmpjes uploaden* eindigt met "klaar". Rood bij ophalen met `AccessDenied` of `InvalidAccessKeyId`: token of endpoint nalopen. Rood bij uploaden met `AccessDenied`: stap 1 is niet gedaan.
+4. **Met de hand draaien** (Actions → Backup → *Run workflow*). Verwacht: *Uploaden* (Convex) groen, daarna noemt *Filmpjes uit R2 naar de backup* het aantal objecten en bytes (`rclone size`, gelijk aan de bucket in het Cloudflare-dashboard) en eindigt met "klaar". Ook objecten onder `uploads/` (open uploads) gaan mee; de lifecycle-regel van R2 haalt ze daar weg, en de volgende run zet er een delete-marker op. Rood met `AccessDenied` of `InvalidAccessKeyId` bij `r2:`: token of endpoint nalopen. Rood met `AccessDenied` bij `s3backup:`: stap 1 is niet gedaan.
 
 Eén filmpje terughalen (met je eigen AWS-login, en daarna met de Cloudflare-sleutel terug in de bucket onder dezelfde sleutel):
 
 ```bash
 aws s3 cp s3://clubalmanac-convex-backup/r2-videos/videos/<sleutel>.mp4 ./backups/
 ```
+
+De sleutel staat in de rij van het filmpje (`photos.video.key`, Convex-dashboard → Data).
 
 Een gewist filmpje (delete-marker): `aws s3api list-object-versions --bucket clubalmanac-convex-backup --prefix r2-videos/videos/<sleutel>.mp4` en dan `get-object` met de `--version-id`, zoals hieronder. Kosten: de filmpjes staan als Glacier IR (~$0,004 per GB per maand); lezen uit R2 valt in het gratis deel.
 

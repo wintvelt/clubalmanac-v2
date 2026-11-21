@@ -294,7 +294,10 @@ S3 rekent uitgaand verkeer: 100 GB per maand gratis per account, daarboven ~$0,0
 
 ## Cloudflare R2: filmpjes van leden (WP37)
 
-Filmpjes die leden in een album zetten, staan in Cloudflare R2; de rij (met de poster als beeld) staat in Convex. Geen publieke bucket: de app krijgt alleen kortlevende ondertekende links van de backend (PUT bij het uploaden, GET van 1 uur bij het afspelen), voor precies één sleutel die de backend koos. De backend bekijkt elk bestand in R2 (grootte, duur, codec, GPS) voordat het in het album komt. Zie [WP37](../work-packages/WP37-filmpjes-in-albums.md) en `convex/videos.ts`.
+Filmpjes die leden in een album zetten, staan in Cloudflare R2; de rij (met de poster als beeld) staat in Convex. Geen publieke bucket: de app krijgt alleen kortlevende ondertekende links van de backend, voor precies één sleutel die de backend koos. Twee prefixen in elke bucket:
+
+- `uploads/…`: hier PUT de app het filmpje, met een link van hooguit een uur waarin de grootte vastligt. De backend bekijkt het object (grootte, duur, sporen, codec, GPS, wat na de index staat).
+- `videos/…`: na de controle kopieert de backend het (CopyObject, alleen als het nog hetzelfde object is) naar een eindsleutel en wist hij het tijdelijke object. Voor `videos/` tekent de backend nooit een PUT; afspelen is een GET van 1 uur. Zie [WP37](../work-packages/WP37-filmpjes-in-albums.md) en `convex/videos.ts`.
 
 Kosten: 10 GB opslag, 1 miljoen schrijf- en 10 miljoen leesverzoeken per maand gratis; uitgaand verkeer gratis. Daarboven $0,015 per GB per maand. 10 GB is ~6 uur filmpje (28 MB per minuut).
 
@@ -307,9 +310,10 @@ Kosten: 10 GB opslag, 1 miljoen schrijf- en 10 miljoen leesverzoeken per maand g
    - `clubalmanac-videos-prod`: *Object Read & Write*, alleen bucket `clubalmanac-videos-prod`.
    - `clubalmanac-videos-backup`: *Object Read only*, alleen bucket `clubalmanac-videos-prod` (voor de backup, zie hieronder).
    Bij elk token toont Cloudflare één keer de *Access Key ID* en de *Secret Access Key*, en het S3-adres voor de EU-jurisdictie: `https://<account-id>.eu.r2.cloudflarestorage.com`. Bewaar ze in de wachtwoordmanager.
-4. **Convex env-vars** per deployment (tabel hieronder), dev met het dev-token, prod met het prod-token. Zet het geheim in het dashboard (Settings → Environment Variables), niet op de opdrachtregel (shell-geschiedenis).
-5. **Controle op dev**: `npx convex run videos:checkStorage`. Verwacht: geen mail (lege bucket, geen filmpjes). Een mail "kon niet draaien" met `R2_CONFIG_MISSING` of `HTTP 403` betekent een env-var of token die niet klopt. Daarna op een iPhone met de dev-build een filmpje toevoegen en afspelen (WP37-gate). Ondertekende links op het EU-adres zijn alleen hier echt te toetsen; de tests gebruiken een nep-R2.
-6. **Prod**, bij de release: dezelfde env-vars op prod, `npx convex run --prod videos:checkStorage`, en de backup van R2 aanzetten ([`infra/backup.md`](../../infra/backup.md), *Filmpjes in R2*).
+4. **Lifecycle-regel per bucket** (bucket → *Settings* → *Object lifecycle rules* → *Add rule*): naam `uploads-na-1-dag`, *prefix* `uploads/`, actie *Delete uploaded objects after* **1 day**. Zo verdwijnt een tijdelijk object dat na afronden of weigeren nog via een geldige link neerkwam, ook als de opruimronde het niet ziet. Niet voor `videos/`: daar wist alleen de backend.
+5. **Convex env-vars** per deployment (tabel hieronder), dev met het dev-token, prod met het prod-token. Zet het geheim in het dashboard (Settings → Environment Variables), niet op de opdrachtregel (shell-geschiedenis).
+6. **Controle op dev**: `npx convex run videos:checkStorage`. Verwacht: geen mail (lege bucket, geen filmpjes). Een mail "kon niet draaien" met `R2_CONFIG_MISSING` of `HTTP 403` betekent een env-var of token die niet klopt. Daarna op een iPhone met de dev-build een filmpje toevoegen en afspelen (WP37-gate). Ondertekende links op het EU-adres zijn alleen hier echt te toetsen; de tests gebruiken een nep-R2.
+7. **Prod**, bij de release: dezelfde env-vars op prod, `npx convex run --prod videos:checkStorage`, en de backup van R2 aanzetten ([`infra/backup.md`](../../infra/backup.md), *Filmpjes in R2*).
 
 ### Env-vars per deployment (dev en prod)
 
@@ -324,10 +328,11 @@ Wie geen toegang heeft, krijgt altijd de gewone weigering (`VIDEO_UPLOAD_REFUSED
 
 ### Bewaking en opruimen
 
-- **Dagelijkse R2-check** (cron `video storage check`, 05:15 UTC): legt de lijst in R2 naast de filmpjes en de open uploads in Convex. Eén mail aan `WEBMASTER_EMAILS` bij een *wees-object* (geen filmpje en geen open upload, ouder dan een dag) of een *ontbrekend bestand* (een filmpje waarvan het object weg is), of als de check niet kon draaien. De check wist niets.
+- **Dagelijkse R2-check** (cron `video storage check`, 05:15 UTC): legt de lijst in R2 naast de filmpjes en de open uploads in Convex. Eén mail aan `WEBMASTER_EMAILS` bij een *wees-object* (geen filmpje en geen open upload, ouder dan een dag), een *ontbrekend bestand* (een filmpje waarvan het object weg is), een filmpje waarvan het object *een andere grootte* heeft dan de backend bekeek, of een object *boven 120 MiB*, of als de check niet kon draaien. De check wist niets.
+  - Andere grootte of boven 120 MiB: het object is na de controle veranderd of er staat iets dat er niet hoort. Onder `uploads/` ruimt de lifecycle-regel het op; onder `videos/` het filmpje laten verwijderen (de eigenaar of de webmaster via melden) en de eigenaar vragen het opnieuw toe te voegen.
   - Wees-object: meestal een upload die strandde (de app is herstart, de opruimronde haalde de reservering weg terwijl R2 niet bereikbaar was) of een wis-stap die R2 niet bereikte. Controleer dat de sleutel bij geen filmpje hoort en wis hem in het Cloudflare-dashboard (bucket → object → *Delete*).
   - Ontbrekend bestand: het filmpje speelt niet af. Haal het object terug uit de backup (`s3://clubalmanac-convex-backup/r2-videos/<sleutel>`) en zet het met dezelfde sleutel terug in de bucket, of laat de eigenaar het filmpje verwijderen en opnieuw toevoegen.
-- **Opruimen** gebeurt elders: een open video-upload blijft een dag staan; daarna haalt de opruimronde (`cleanup old upload idempotency`, 03:30 UTC) reservering én object weg. Verwijderen (ook door de webmaster, na 14 dagen gemeld, en account verwijderen) wist het object in R2. Mislukt dat, dan meldt de check het wees-object.
+- **Opruimen** gebeurt elders: een open video-upload blijft een dag staan; daarna haalt de opruimronde (`cleanup old upload idempotency`, 03:30 UTC) reservering én tijdelijk object weg, en de lifecycle-regel wist alles onder `uploads/` na een dag. Verwijderen (ook door de webmaster, na 14 dagen gemeld, en account verwijderen) wist het object in R2. Mislukt dat, dan meldt de check het wees-object.
 - **Integriteitscheck** (WP10): de poster is het beeld van de rij, dus een filmpje zonder poster of formaten valt onder de gewone meldingen.
 
 ## Webapp: app.clubalmanac.com (WP35)
