@@ -216,8 +216,9 @@ export function AddPhotosScreen({ albumId }: { albumId?: string }) {
     }
   }
 
-  // WP37: de filmpjes één voor één. `fresh`: na "uitgelogd" een vers token.
-  async function runVideos(start: VideoItem[]) {
+  // WP37: de filmpjes één voor één. `fresh`: na "uitgelogd" een vers token
+  // (A-invariant 33).
+  async function runVideos(start: VideoItem[], fresh: ReadonlySet<string> = new Set()) {
     if (videoRunning.current || !album) return;
     videoRunning.current = true;
     setVideoBusy(true);
@@ -237,6 +238,7 @@ export function AddPhotosScreen({ albumId }: { albumId?: string }) {
                 asset,
                 uploadId: next.uploadId,
                 albumId: target,
+                freshToken: fresh.has(next.key),
                 onProgress: (progress) => patchVideo(next.key, { progress }),
               })
             : { ok: false, reason: "server" };
@@ -280,12 +282,14 @@ export function AddPhotosScreen({ albumId }: { albumId?: string }) {
   function retryVideos() {
     const current = videoItemsRef.current;
     if (!current) return;
+    const fresh = new Set(current.filter((i) => i.reason === "uitgelogd").map((i) => i.key));
     void runVideos(
       current.map((i) =>
         i.state === "mislukt" && i.reason !== undefined && videoRetryable(i.reason)
           ? { key: i.key, uploadId: i.uploadId, state: "wacht" }
           : i,
       ),
+      fresh,
     );
   }
 

@@ -33,7 +33,7 @@ import { groupRights } from "../lib/groupAdmin";
 import { albumMapPath, editAlbumPath, groupPath, photoPath } from "../lib/groupRoutes";
 import { displayYear } from "../lib/groups";
 import { formatPhotoDate, keepNewMarkers, shouldMarkSeen, sortAlbumPhotos } from "../lib/photos";
-import { filterEntries, MEDIA_FILTER_LABELS, showMediaFilter, videoLabel, type MediaFilter } from "../lib/videos";
+import { filterEntries, MEDIA_FILTER_LABELS, mediaCountText, showMediaFilter, videoLabel, type MediaFilter } from "../lib/videos";
 import { photoLayers, radius, size, space, useTheme } from "../theme";
 import { AlbumChoiceSheet } from "./AlbumChoice";
 import { AlbumReadFailed } from "./AlbumParts";
@@ -71,12 +71,12 @@ export function AlbumScreen() {
   const departing = useDeparting(aid);
   // In "reconnecting" toont Screen laden of een fout met "Opnieuw" en
   // "Uitloggen" (WP15a F1); de kop blijft staan.
-  if (reconnecting) return <Screen header={<AlbumHeader groupId={gid} album={undefined} count={undefined} />}>{null}</Screen>;
+  if (reconnecting) return <Screen header={<AlbumHeader groupId={gid} album={undefined} counts={undefined} />}>{null}</Screen>;
   return (
     <QueryBoundary
       key={aid}
       fallback={(error, reset) => (
-        <Screen header={<AlbumHeader groupId={gid} album={undefined} count={undefined} />}>
+        <Screen header={<AlbumHeader groupId={gid} album={undefined} counts={undefined} />}>
           {departing ? (
             <LoadingState label="Bezig…" />
           ) : (
@@ -241,7 +241,7 @@ function AlbumContent({ groupId, albumId }: { groupId: Id<"groups">; albumId: Id
             name={album?.name}
             cover={album?.cover}
             description={album?.description}
-            meta={album ? albumMeta(album, shown?.length) : undefined}
+            meta={album ? albumMeta(album, mediaCounts(shown)) : undefined}
           >
             {headerAction}
           </WideSide>
@@ -261,7 +261,7 @@ function AlbumContent({ groupId, albumId }: { groupId: Id<"groups">; albumId: Id
         ItemSeparatorComponent={Separator}
         extraData={listState}
         ListHeaderComponent={
-          wide ? undefined : <AlbumHeader groupId={groupId} album={album} count={shown?.length} action={headerAction} />
+          wide ? undefined : <AlbumHeader groupId={groupId} album={album} counts={mediaCounts(shown)} action={headerAction} />
         }
         ListEmptyComponent={
           <View style={styles.column}>
@@ -344,11 +344,17 @@ function backToGroup(groupId: Id<"groups">) {
   else router.replace(groupPath(groupId));
 }
 
-// Jaar en aantal foto's onder de titel.
-function albumMeta(album: Album, count: number | undefined): string {
-  return [displayYear(album), count === undefined ? null : count === 1 ? "1 foto" : `${count} foto's`]
+// Jaar en aantal foto's onder de titel; WP37 A-invariant 34: filmpjes apart.
+function albumMeta(album: Album, counts: { photos: number; videos: number } | undefined): string {
+  return [displayYear(album), counts === undefined ? null : mediaCountText(counts.photos, counts.videos)]
     .filter(Boolean)
     .join(" · ");
+}
+
+function mediaCounts(entries: readonly { photo: { video?: unknown } | null }[] | undefined) {
+  if (entries === undefined) return undefined;
+  const videos = entries.filter((e) => e.photo?.video !== undefined).length;
+  return { photos: entries.length - videos, videos };
 }
 
 function menuPhotoOf(entry: Entry & { photo: NonNullable<Entry["photo"]> }): MenuPhoto {
@@ -551,12 +557,12 @@ function MineBadge() {
 function AlbumHeader({
   groupId,
   album,
-  count,
+  counts,
   action,
 }: {
   groupId: Id<"groups">;
   album: Album | undefined;
-  count: number | undefined;
+  counts: { photos: number; videos: number } | undefined;
   // WP17b: "Selecteer", op een eigen regel (design.md §3).
   action?: ReactNode;
 }) {
@@ -618,7 +624,7 @@ function AlbumHeader({
           </Text>
           {album.description ? <Text>{album.description}</Text> : null}
           <Text variant="meta" color="muted">
-            {albumMeta(album, count)}
+            {albumMeta(album, counts)}
           </Text>
           {action ? <View style={styles.headerAction}>{action}</View> : null}
         </View>

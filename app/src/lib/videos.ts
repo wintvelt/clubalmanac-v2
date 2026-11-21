@@ -146,6 +146,8 @@ export type VideoFailReason =
   | "limiet"
   | "geen_album"
   | "uitgelogd"
+  // A-invariant 32: de upload stond langer dan een dag open (of is weg); opnieuw proberen vraagt een nieuwe aan.
+  | "verlopen"
   | "server";
 
 const MESSAGES: Record<VideoFailReason, string> = {
@@ -162,6 +164,7 @@ const MESSAGES: Record<VideoFailReason, string> = {
   limiet: "Je limiet voor foto's en filmpjes is bereikt.",
   geen_album: "Dit album is niet (meer) beschikbaar.",
   uitgelogd: "Je bent niet meer ingelogd.",
+  verlopen: "Het versturen duurde te lang en is gestopt. Probeer het opnieuw.",
   server: "Er ging iets mis bij Clubalmanac.",
 };
 
@@ -169,7 +172,8 @@ export function videoFailMessage(reason: VideoFailReason): string {
   return MESSAGES[reason];
 }
 
-const RETRYABLE = new Set<VideoFailReason>(["netwerk", "niet_binnen", "server", "bezig", "comprimeren"]);
+// A-invariant 33: `uitgelogd` met een vers token, zoals bij foto's; `verlopen` met een nieuwe aanvraag.
+const RETRYABLE = new Set<VideoFailReason>(["netwerk", "niet_binnen", "server", "bezig", "comprimeren", "uitgelogd", "verlopen"]);
 
 /** Heeft opnieuw proberen zin? Niet bij een vaste reden. */
 export function videoRetryable(reason: VideoFailReason): boolean {
@@ -204,7 +208,8 @@ export function finishOutcome(status: number | null, body: unknown): VideoFinish
     case 403:
       return { ok: false, reason: "limiet" };
     case 404:
-      return { ok: false, reason: "geen_album" };
+      // A-invariant 32: alleen met reden `geen_album` is het album weg; anders verlopen.
+      return { ok: false, reason: field("reason") === "geen_album" ? "geen_album" : "verlopen" };
     case 409:
       return { ok: false, reason: field("reason") === "niet_binnen" ? "niet_binnen" : "bezig" };
     case 413:
@@ -219,6 +224,17 @@ export function finishOutcome(status: number | null, body: unknown): VideoFinish
     default:
       return { ok: false, reason: "server" };
   }
+}
+
+// --- de albumkop (A-invariant 34) ----------------------------------------------
+
+/** "38 foto's · 2 filmpjes"; zonder filmpjes alleen de foto's (invariant 10). */
+export function mediaCountText(photos: number, videos: number): string {
+  const p = photos === 1 ? "1 foto" : `${photos} foto's`;
+  const v = videos === 1 ? "1 filmpje" : `${videos} filmpjes`;
+  if (videos === 0) return p;
+  if (photos === 0) return v;
+  return `${p} · ${v}`;
 }
 
 // --- afspelen (A-invariant 23) -------------------------------------------------

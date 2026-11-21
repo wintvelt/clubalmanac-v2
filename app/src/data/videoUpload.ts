@@ -206,8 +206,8 @@ export function useVideoUploader() {
       try {
         poster = await (await fetch(ready.poster.uri)).blob();
       } catch {
-        await forget(uploadId);
-        return { ok: false, reason: "comprimeren" };
+        // Opnieuw proberen kan: het verkleinde bestand en de poster blijven (A-invariant 33).
+        return done({ ok: false, reason: "comprimeren" });
       }
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), UPLOAD_TIMEOUT_MS);
