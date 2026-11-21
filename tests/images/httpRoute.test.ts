@@ -84,6 +84,8 @@ describe("routes (inventaris http-paden)", () => {
         "POST /email-event",
         "OPTIONS /upload",
         "POST /upload",
+        // WP37 A-invariant 26: afronden van een filmpje (poster + controle in R2).
+        "POST /upload/video",
       ].sort(),
     );
     expect(http.lookup(photoPath("abc"), "GET")).not.toBeNull();
