@@ -1,7 +1,7 @@
 import { StyleSheet } from "react-native";
 import Svg, { Defs, LinearGradient, Rect, Stop } from "react-native-svg";
 import { gradientStops } from "../theme";
-import { SVG_FILL, useSvgId } from "./svgFill";
+import { SVG_FILL, useSvgId, useSvgRedraw } from "./svgFill";
 
 type Props = { from: string; to: string; radius?: number; angle?: 135 | 90 };
 
@@ -11,8 +11,10 @@ type Props = { from: string; to: string; radius?: number; angle?: 135 | 90 };
 export function Gradient({ from, to, radius = 0, angle = 135 }: Props) {
   const [start, full, end] = gradientStops;
   const id = useSvgId("grad");
+  // Een vlak dat meegroeit (de kop, het jaarstreepje): opnieuw tekenen.
+  const { redraw, layout } = useSvgRedraw();
   return (
-    <Svg style={StyleSheet.absoluteFill} pointerEvents="none" {...SVG_FILL}>
+    <Svg key={redraw} {...layout} style={StyleSheet.absoluteFill} pointerEvents="none" {...SVG_FILL}>
       <Defs>
         <LinearGradient id={id} x1="0" y1="0" x2="1" y2={angle === 135 ? "1" : "0"}>
           <Stop offset={start} stopColor={from} />

@@ -9,7 +9,7 @@ import { photoLayers, useTheme } from "../theme";
 import { Icon } from "./Icon";
 import { LetterTile } from "./LetterTile";
 import type { TypeRoleName } from "../theme";
-import { SVG_FILL, useSvgId } from "./svgFill";
+import { SVG_FILL, useSvgId, useSvgRedraw } from "./svgFill";
 
 // WP17a: beelden uit het beeldpad. Elk beeld staat rechtop volgens
 // `exifOrientation` uit Convex (invariant 4, WP8 §Frontend-contract).
@@ -263,8 +263,10 @@ export function CoverScrim({ height }: { height: number }) {
   const { top, at100, bottom } = photoLayers.coverScrim;
   const at = Math.min(1, 100 / Math.max(height, 1));
   const id = useSvgId("scrim");
+  // Na draaien even breed als de cover (geen naad).
+  const { redraw, layout } = useSvgRedraw();
   return (
-    <Svg style={StyleSheet.absoluteFill} pointerEvents="none" {...SVG_FILL}>
+    <Svg key={redraw} {...layout} style={StyleSheet.absoluteFill} pointerEvents="none" {...SVG_FILL}>
       <Defs>
         <LinearGradient id={id} x1="0" y1="0" x2="0" y2="1">
           <Stop offset={0} stopColor="#000000" stopOpacity={top} />

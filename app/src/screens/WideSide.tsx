@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { ScrollView, StyleSheet, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { BackPill } from "../components/BackPill";
 import { Gradient } from "../components/Gradient";
 import { PhotoImage } from "../components/Photo";
@@ -9,19 +10,24 @@ import { SIDE_WIDTH } from "../lib/wideLayout";
 import { radius, size, space, useTheme } from "../theme";
 import type { CoverPhoto } from "./GroupParts";
 
-// WP35 (besluit Wouter 2026-11-20): de brede web-layout van Groep en Album.
+// WP35 (besluit Wouter 2026-11-20): de brede layout van Groep en Album.
 // Links deze vaste kolom: terugknop-pil (Album), de cover in 4:3 met afgeronde
 // hoeken (zonder cover, of als hij niet laadt: het verloop met de letter), de
 // titel, de regels eronder en de knoppen. Rechts scrolt de inhoud; deze kolom
 // blijft staan (scrolt alleen zelf als hij hoger is dan het venster).
-// Alleen gebruikt als useWideLayout() waar is, dus nooit op iOS.
+// Alleen gebruikt als useWideLayout() waar is: een breed web-venster, of een
+// liggende iPad. Geen bewegende kop (WP33): de cover staat stil.
 
 const COVER_WIDTH = SIDE_WIDTH - 2 * size.screenMargin;
 const COVER_HEIGHT = Math.round((COVER_WIDTH * 3) / 4);
 
+// Beide kolommen beginnen onder de statusbalk (op iOS; in de browser is die
+// marge 0). Links en rechts heeft een iPad geen veilige marge; onderaan staat
+// de tabbalk.
 export function WideSplit({ side, children }: { side: ReactNode; children: ReactNode }) {
+  const insets = useSafeAreaInsets();
   return (
-    <View style={styles.split}>
+    <View style={[styles.split, { paddingTop: insets.top }]}>
       <ScrollView style={styles.side} contentContainerStyle={styles.sideContent}>
         {side}
       </ScrollView>
