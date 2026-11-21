@@ -148,6 +148,8 @@ export type VideoFailReason =
   | "uitgelogd"
   // A-invariant 32: de upload stond langer dan een dag open (of is weg); opnieuw proberen vraagt een nieuwe aan.
   | "verlopen"
+  // A-invariant 36: meer dan 30 aanvragen in 24 uur; pas later weer.
+  | "te_vaak"
   | "server";
 
 const MESSAGES: Record<VideoFailReason, string> = {
@@ -165,6 +167,7 @@ const MESSAGES: Record<VideoFailReason, string> = {
   geen_album: "Dit album is niet (meer) beschikbaar.",
   uitgelogd: "Je bent niet meer ingelogd.",
   verlopen: "Het versturen duurde te lang en is gestopt. Probeer het opnieuw.",
+  te_vaak: "Je hebt vandaag al veel filmpjes verstuurd. Probeer het later of morgen weer.",
   server: "Er ging iets mis bij Clubalmanac.",
 };
 
@@ -180,8 +183,25 @@ export function videoRetryable(reason: VideoFailReason): boolean {
   return RETRYABLE.has(reason);
 }
 
-const START_REASONS = new Set<VideoFailReason>(["uitgelogd", "geen_album", "limiet", "te_lang", "te_groot", "bezig"]);
+const START_REASONS = new Set<VideoFailReason>(["uitgelogd", "geen_album", "limiet", "te_lang", "te_groot", "bezig", "te_vaak"]);
 const FINISH_REASONS = new Set<VideoFailReason>(["geen_mp4", "index_achteraan", "te_lang", "te_groot", "codec", "locatie"]);
+
+type RetryItem = { key: string; uploadId: string; state: "wacht" | "bezig" | "klaar" | "mislukt"; reason?: VideoFailReason };
+
+/**
+ * A-invariant 33: "Filmpjes opnieuw proberen". De herhaalbare filmpjes weer op
+ * "wacht" met dezelfde upload-id (zoals `retryBatch` bij foto's), en `fresh`:
+ * de filmpjes die `uitgelogd` kregen, die een vers token meekrijgen.
+ */
+export function videoRetryRound<I extends RetryItem>(items: readonly I[]): { items: I[]; fresh: Set<string> } {
+  const fresh = new Set<string>();
+  const next = items.map((i) => {
+    if (i.state !== "mislukt" || i.reason === undefined || !videoRetryable(i.reason)) return i;
+    if (i.reason === "uitgelogd") fresh.add(i.key);
+    return { ...i, state: "wacht" as const, reason: undefined };
+  });
+  return { items: next, fresh };
+}
 
 /** De reden van een weigering van `videos.startUpload` (`ConvexError` met `VIDEO_UPLOAD_REFUSED`). */
 export function startRefusalReason(data: unknown): VideoFailReason | null {

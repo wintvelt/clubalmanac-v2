@@ -26,7 +26,14 @@ import {
   type UploadItem,
   type UploadOutcome,
 } from "../lib/upload";
-import { formatDuration, videoFailMessage, videoRetryable, videoTooLong, type VideoFailReason } from "../lib/videos";
+import {
+  formatDuration,
+  videoFailMessage,
+  videoRetryable,
+  videoRetryRound,
+  videoTooLong,
+  type VideoFailReason,
+} from "../lib/videos";
 import { CloseButton } from "../navigation/stackOptions";
 import { useTheme } from "../theme";
 import { AlbumChoice, RoundResult, addPhotosStyles as styles, type ChosenAlbum } from "./AddPhotosParts";
@@ -282,15 +289,9 @@ export function AddPhotosScreen({ albumId }: { albumId?: string }) {
   function retryVideos() {
     const current = videoItemsRef.current;
     if (!current) return;
-    const fresh = new Set(current.filter((i) => i.reason === "uitgelogd").map((i) => i.key));
-    void runVideos(
-      current.map((i) =>
-        i.state === "mislukt" && i.reason !== undefined && videoRetryable(i.reason)
-          ? { key: i.key, uploadId: i.uploadId, state: "wacht" }
-          : i,
-      ),
-      fresh,
-    );
+    // A-invariant 33: elk filmpje dat `uitgelogd` kreeg, met een vers token.
+    const round = videoRetryRound(current);
+    void runVideos(round.items, round.fresh);
   }
 
   function retry() {
