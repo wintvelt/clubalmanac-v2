@@ -9,7 +9,7 @@ import { Icon } from "../components/Icon";
 import { Notice } from "../components/Notice";
 import { Screen } from "../components/Screen";
 import { SmallButton } from "../components/SmallButton";
-import { EmptyState } from "../components/States";
+import { EmptyState, LoadingState } from "../components/States";
 import { Text } from "../components/Text";
 import { useUploader } from "../data/upload";
 import { useVideoUploader, type VideoProgress } from "../data/videoUpload";
@@ -92,6 +92,9 @@ export function AddPhotosScreen({ albumId }: { albumId?: string }) {
   const videoRunning = useRef(false);
   const [videoBusy, setVideoBusy] = useState(false);
   const [pickerFailed, setPickerFailed] = useState(false);
+  // WP37 A-invariant 38: de kiezer is dicht, maar iOS kopieert de gekozen
+  // originelen nog naar de app; zolang "Je keuze ophalen…".
+  const [fetching, setFetching] = useState(false);
   const [album, setAlbum] = useState<Chosen["album"]>(null);
   const [initialAlbumId] = useState(albumId ?? null);
   const [items, setItems] = useState<UploadItem[] | null>(null);
@@ -116,6 +119,7 @@ export function AddPhotosScreen({ albumId }: { albumId?: string }) {
 
   async function pick() {
     setPickerFailed(false);
+    setFetching(true);
     let result: ImagePicker.ImagePickerResult;
     try {
       result = await ImagePicker.launchImageLibraryAsync({
@@ -131,6 +135,9 @@ export function AddPhotosScreen({ albumId }: { albumId?: string }) {
     } catch {
       setPickerFailed(true);
       return;
+    } finally {
+      // Gekozen, geannuleerd of mislukt: de ophaal-toestand weer weg.
+      setFetching(false);
     }
     if (result.canceled) return;
     // Opnieuw kiezen vervangt de keuze; een nieuwe keuze is een nieuwe ronde.
@@ -341,7 +348,9 @@ export function AddPhotosScreen({ albumId }: { albumId?: string }) {
         </Notice>
       )}
 
-      {!anyPicked && !pickerFailed ? (
+      {fetching ? <LoadingState label="Je keuze ophalen…" /> : null}
+
+      {!fetching && !anyPicked && !pickerFailed ? (
         <EmptyState
           icon="photos"
           title="Kies foto's"
@@ -349,7 +358,7 @@ export function AddPhotosScreen({ albumId }: { albumId?: string }) {
         />
       ) : null}
 
-      {anyPicked && (
+      {!fetching && anyPicked && (
         <View style={styles.section}>
           <Text variant="bodyStrong">{selectionText(picked.length, videos.length)}</Text>
           {picked.length > 0 && <Thumbs picked={picked} items={items} />}
@@ -357,7 +366,7 @@ export function AddPhotosScreen({ albumId }: { albumId?: string }) {
         </View>
       )}
 
-      {!inRound && (
+      {!fetching && !inRound && (
         <SmallButton
           title={anyPicked ? "Andere foto's kiezen" : "Foto's kiezen"}
           icon="photos"
@@ -374,7 +383,7 @@ export function AddPhotosScreen({ albumId }: { albumId?: string }) {
         />
       )}
 
-      {!inRound && anyPicked && (
+      {!fetching && !inRound && anyPicked && (
         <Button
           title={uploadTitle}
           icon="plus"

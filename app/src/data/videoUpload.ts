@@ -15,6 +15,7 @@ import {
   type Poster,
 } from "../../modules/clubalmanac-video";
 import { api } from "../convexApi";
+import { withOneRetry } from "../lib/actionRetry";
 import { UPLOAD_TIMEOUT_MS } from "../lib/upload";
 import {
   finishOutcome,
@@ -173,15 +174,19 @@ export function useVideoUploader() {
       // Stap 3: de link (of het filmpje dat al binnen is).
       let start: Awaited<ReturnType<typeof startUpload>>;
       try {
-        start = await startUpload({
-          uploadId,
-          albumId: albumId as Id<"albums">,
-          durationMs: ready.compressed.durationMs,
-          bytes: ready.compressed.bytes,
-        });
+        // A-invariant 37: valt de verbinding weg, dan één nieuwe poging.
+        start = await withOneRetry(() =>
+          startUpload({
+            uploadId,
+            albumId: albumId as Id<"albums">,
+            durationMs: ready.compressed.durationMs,
+            bytes: ready.compressed.bytes,
+          }),
+        );
       } catch (e) {
-        const reason = e instanceof ConvexError ? startRefusalReason(e.data) : null;
-        return done({ ok: false, reason: reason ?? "server" });
+        // Een weigering van de backend heeft een reden; anders viel de verbinding twee keer weg.
+        if (e instanceof ConvexError) return done({ ok: false, reason: startRefusalReason(e.data) ?? "server" });
+        return done({ ok: false, reason: "netwerk" });
       }
       if (start.kind === "done") return done({ ok: true, photoId: start.photoId });
 

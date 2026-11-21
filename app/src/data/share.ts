@@ -6,6 +6,7 @@ import * as Sharing from "expo-sharing";
 import { useCallback } from "react";
 import type { Id } from "../../../convex/_generated/dataModel";
 import { api } from "../convexApi";
+import { withOneRetry } from "../lib/actionRetry";
 import { photoImageUrl } from "../lib/imageUrls";
 import { shareEdits } from "../lib/placeShare";
 import { useSiteUrl } from "./images";
@@ -33,7 +34,7 @@ export function useSharePhoto() {
     async (photo: { photoId: string; exifOrientation?: number; isVideo?: boolean }): Promise<"shared" | "unavailable"> => {
       if (!site || !(await Sharing.isAvailableAsync())) return "unavailable";
       if (photo.isVideo) {
-        const { url } = await playUrl({ photoId: photo.photoId as Id<"photos"> });
+        const { url } = await withOneRetry(() => playUrl({ photoId: photo.photoId as Id<"photos"> }));
         const dir = new Directory(Paths.cache, `delen-${Date.now()}`);
         dir.create({ intermediates: true, idempotent: true });
         try {

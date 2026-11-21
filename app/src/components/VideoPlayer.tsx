@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import { Platform, Pressable, StyleSheet, View } from "react-native";
 import type { Id } from "../../../convex/_generated/dataModel";
 import { api } from "../convexApi";
+import { withOneRetry } from "../lib/actionRetry";
 import { formatDuration, linkExpired, videoPlayerSource } from "../lib/videos";
 import { photoLayers, radius, space } from "../theme";
 import { Icon } from "./Icon";
@@ -91,7 +92,7 @@ export function VideoPage({
     setPhase("loading");
     try {
       if (!link.current || linkExpired(link.current, Date.now())) {
-        link.current = await getLink({ photoId });
+        link.current = await withOneRetry(() => getLink({ photoId }));
       }
       await player.replaceAsync(videoPlayerSource(link.current));
       if (position.current > 0) player.currentTime = position.current;
