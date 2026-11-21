@@ -3,6 +3,8 @@ name: Backup
 # Maandelijkse volledige export van Convex-prod, met bestanden, naar de
 # backup-bucket in eu-west-1 (WP31 B4). Opzet, controle en terugzetten:
 # infra/backup.md. Bucket en rol: infra/backup.yml.
+# WP37: daarna de filmpjes uit Cloudflare R2 (prod-bucket, alleen-lezen
+# token) naar het prefix r2-videos/ van dezelfde bucket.
 #
 # De deploy-key van prod kan prod ook wijzigen. Deze workflow doet daarom
 # niets anders dan exporteren en de namen (geen waarden) van de env-vars
@@ -39,6 +41,9 @@ jobs:
     env:
       BACKUP_BUCKET: ${{ vars.BACKUP_BUCKET }}
       BACKUP_ROLE_ARN: ${{ vars.BACKUP_ROLE_ARN }}
+      # WP37: leeg tot R2 op prod draait (infra/backup.md, Filmpjes in R2).
+      R2_BACKUP_ENDPOINT: ${{ vars.R2_BACKUP_ENDPOINT }}
+      R2_BACKUP_BUCKET: ${{ vars.R2_BACKUP_BUCKET }}
     steps:
       - name: Variabelen aanwezig
         env:
@@ -96,6 +101,28 @@ jobs:
           fi
           wc -l < env-names.txt
 
+      # WP37: de filmpjes uit R2, vóór de AWS-rol (dan zijn de AWS-env-vars
+      # van deze stap de enige). Zonder R2_BACKUP_BUCKET: een waarschuwing
+      # (geel), geen rode run, zolang R2 op prod nog niet draait.
+      - name: Filmpjes uit R2 ophalen
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_BACKUP_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_BACKUP_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+          AWS_REQUEST_CHECKSUM_CALCULATION: when_required
+          AWS_RESPONSE_CHECKSUM_VALIDATION: when_required
+        run: |
+          mkdir -p r2
+          if [ -z "$R2_BACKUP_BUCKET" ]; then
+            echo "::warning::R2_BACKUP_BUCKET niet gezet: de filmpjes in R2 zitten niet in deze backup"
+            exit 0
+          fi
+          test -n "$R2_BACKUP_ENDPOINT" || { echo "repo-variabele R2_BACKUP_ENDPOINT ontbreekt"; exit 1; }
+          test -n "$AWS_ACCESS_KEY_ID" || { echo "geheim R2_BACKUP_ACCESS_KEY_ID ontbreekt in environment prod-backup"; exit 1; }
+          test -n "$AWS_SECRET_ACCESS_KEY" || { echo "geheim R2_BACKUP_SECRET_ACCESS_KEY ontbreekt in environment prod-backup"; exit 1; }
+          aws s3 sync "s3://$R2_BACKUP_BUCKET" r2/ --endpoint-url "$R2_BACKUP_ENDPOINT" --only-show-errors
+          echo "filmpjes: $(find r2 -type f | wc -l) objecten, $(du -sb r2 | cut -f1) bytes"
+
       - uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4.3.1
         with:
           role-to-assume: ${{ env.BACKUP_ROLE_ARN }}
@@ -110,3 +137,12 @@ jobs:
           aws s3 cp env-names.txt "s3://$BACKUP_BUCKET/convex-prod/env-names.txt" \
             --storage-class GLACIER_IR --metadata "exported-at=$stamp,run=$GITHUB_RUN_ID" --no-progress
           echo "klaar: export van $stamp in s3://$BACKUP_BUCKET/convex-prod/"
+
+      # WP37: dezelfde sleutels als in R2. Alleen nieuwe of gewijzigde
+      # objecten gaan erheen; een filmpje dat uit R2 weg is, krijgt hier een
+      # delete-marker (de vorige versie blijft een half jaar, zoals de export).
+      - name: Filmpjes uploaden
+        if: env.R2_BACKUP_BUCKET != ''
+        run: |
+          aws s3 sync r2/ "s3://$BACKUP_BUCKET/r2-videos/" --delete --storage-class GLACIER_IR --only-show-errors
+          echo "klaar: filmpjes in s3://$BACKUP_BUCKET/r2-videos/"

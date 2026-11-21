@@ -292,6 +292,44 @@ Tekenen gebeurt lokaal, dus een ingetrokken of verlopen sleutel merkt Convex zel
 
 S3 rekent uitgaand verkeer: 100 GB per maand gratis per account, daarboven ~$0,09 per GB. De grootste film helemaal kijken is ~6,2 GB. De app speelt niets vanzelf af, laadt geen film vooruit en bewaart geen film op de telefoon; covers (samen ~21 MB) staan in de cache van de app.
 
+## Cloudflare R2: filmpjes van leden (WP37)
+
+Filmpjes die leden in een album zetten, staan in Cloudflare R2; de rij (met de poster als beeld) staat in Convex. Geen publieke bucket: de app krijgt alleen kortlevende ondertekende links van de backend (PUT bij het uploaden, GET van 1 uur bij het afspelen), voor precies één sleutel die de backend koos. De backend bekijkt elk bestand in R2 (grootte, duur, codec, GPS) voordat het in het album komt. Zie [WP37](../work-packages/WP37-filmpjes-in-albums.md) en `convex/videos.ts`.
+
+Kosten: 10 GB opslag, 1 miljoen schrijf- en 10 miljoen leesverzoeken per maand gratis; uitgaand verkeer gratis. Daarboven $0,015 per GB per maand. 10 GB is ~6 uur filmpje (28 MB per minuut).
+
+### Opzetten (eenmalig, Wouter)
+
+1. **Account**: maak op dash.cloudflare.com een account en zet R2 aan (R2 Object Storage → *Purchase R2 Plan*; R2 vraagt een betaalmiddel, ook voor het gratis deel).
+2. **Buckets**, twee keer (*Create bucket*): naam `clubalmanac-videos-dev` en `clubalmanac-videos-prod`, *Location*: **Specify jurisdiction → European Union (EU)**. Dat kan later niet meer worden gewijzigd; een *location hint* is geen garantie. Default storage class *Standard*. *Public access* blijft uit (geen r2.dev-adres, geen eigen domein). Geen CORS-regel: afspelen in de browser heeft die niet nodig, en de webapp uploadt geen filmpjes.
+3. **Tokens** (R2 → *Manage API tokens* → *Create Account API token*):
+   - `clubalmanac-videos-dev`: *Object Read & Write*, alleen bucket `clubalmanac-videos-dev`.
+   - `clubalmanac-videos-prod`: *Object Read & Write*, alleen bucket `clubalmanac-videos-prod`.
+   - `clubalmanac-videos-backup`: *Object Read only*, alleen bucket `clubalmanac-videos-prod` (voor de backup, zie hieronder).
+   Bij elk token toont Cloudflare één keer de *Access Key ID* en de *Secret Access Key*, en het S3-adres voor de EU-jurisdictie: `https://<account-id>.eu.r2.cloudflarestorage.com`. Bewaar ze in de wachtwoordmanager.
+4. **Convex env-vars** per deployment (tabel hieronder), dev met het dev-token, prod met het prod-token. Zet het geheim in het dashboard (Settings → Environment Variables), niet op de opdrachtregel (shell-geschiedenis).
+5. **Controle op dev**: `npx convex run videos:checkStorage`. Verwacht: geen mail (lege bucket, geen filmpjes). Een mail "kon niet draaien" met `R2_CONFIG_MISSING` of `HTTP 403` betekent een env-var of token die niet klopt. Daarna op een iPhone met de dev-build een filmpje toevoegen en afspelen (WP37-gate). Ondertekende links op het EU-adres zijn alleen hier echt te toetsen; de tests gebruiken een nep-R2.
+6. **Prod**, bij de release: dezelfde env-vars op prod, `npx convex run --prod videos:checkStorage`, en de backup van R2 aanzetten ([`infra/backup.md`](../../infra/backup.md), *Filmpjes in R2*).
+
+### Env-vars per deployment (dev en prod)
+
+| Env-var | Waarde | Wat gebeurt bij ontbreken of leeg |
+|---|---|---|
+| `R2_ENDPOINT` | `https://<account-id>.eu.r2.cloudflarestorage.com` | uploaden en afspelen falen voor een lid met `R2_CONFIG_MISSING: <naam>`; de dagelijkse check mailt |
+| `R2_ACCESS_KEY_ID` | Access Key ID van het token van deze omgeving | idem |
+| `R2_SECRET_ACCESS_KEY` | het geheim van dat token | idem |
+| `R2_BUCKET` | `clubalmanac-videos-dev` of `clubalmanac-videos-prod` | idem |
+
+Wie geen toegang heeft, krijgt altijd de gewone weigering (`VIDEO_UPLOAD_REFUSED` of `VIDEO_NOT_FOUND`), ook zonder config. Het geheim staat nooit in een antwoord, fout, log of mail. Rotatie: nieuw token met dezelfde rechten, beide sleutel-vars zetten, `videos:checkStorage` draaien, dan het oude token intrekken. Een uitgegeven link werkt met het oude token tot hij verloopt (hooguit een uur) of het token is ingetrokken.
+
+### Bewaking en opruimen
+
+- **Dagelijkse R2-check** (cron `video storage check`, 05:15 UTC): legt de lijst in R2 naast de filmpjes en de open uploads in Convex. Eén mail aan `WEBMASTER_EMAILS` bij een *wees-object* (geen filmpje en geen open upload, ouder dan een dag) of een *ontbrekend bestand* (een filmpje waarvan het object weg is), of als de check niet kon draaien. De check wist niets.
+  - Wees-object: meestal een upload die strandde (de app is herstart, de opruimronde haalde de reservering weg terwijl R2 niet bereikbaar was) of een wis-stap die R2 niet bereikte. Controleer dat de sleutel bij geen filmpje hoort en wis hem in het Cloudflare-dashboard (bucket → object → *Delete*).
+  - Ontbrekend bestand: het filmpje speelt niet af. Haal het object terug uit de backup (`s3://clubalmanac-convex-backup/r2-videos/<sleutel>`) en zet het met dezelfde sleutel terug in de bucket, of laat de eigenaar het filmpje verwijderen en opnieuw toevoegen.
+- **Opruimen** gebeurt elders: een open video-upload blijft een dag staan; daarna haalt de opruimronde (`cleanup old upload idempotency`, 03:30 UTC) reservering én object weg. Verwijderen (ook door de webmaster, na 14 dagen gemeld, en account verwijderen) wist het object in R2. Mislukt dat, dan meldt de check het wees-object.
+- **Integriteitscheck** (WP10): de poster is het beeld van de rij, dus een filmpje zonder poster of formaten valt onder de gewone meldingen.
+
 ## Webapp: app.clubalmanac.com (WP35)
 
 Expo Web van `app/`: bekijken, plus foto's uploaden en de eigen profielfoto (WP36). Stack [`infra/webapp.yml`](../../infra/webapp.yml) (bucket `clubalmanac-webapp`, eigen CloudFront-distributie, certificaat uit ACM us-east-1, DNS in Route 53, deploy-rol via OIDC). Deploy met de hand: Action *Webapp* op `main`, na de Convex-deploy. Repo-variabelen `WEBAPP_BUCKET`, `WEBAPP_DISTRIBUTION_ID`, `WEBAPP_DEPLOY_ROLE_ARN`, `WEBAPP_CONVEX_URL`, `WEBAPP_CLERK_PUBLISHABLE_KEY`. Deploy in twee jobs: *build* (`npm ci --ignore-scripts`, geen deployrecht) en *deploy* (alleen het artefact en de AWS CLI) in GitHub-environment `webapp`, de enige die de deploy-rol mag aannemen. Content-Security-Policy in de response-headers-policy van de stack, met de prod-hosts van Convex en Clerk als parameters. Opzet en controle: [`docs/runbooks/webapp.md`](../runbooks/webapp.md).
@@ -303,7 +341,7 @@ Expo Web van `app/`: bekijken, plus foto's uploaden en de eigen profielfoto (WP3
 
 ## Backup: GitHub Action naar S3 (WP31 B4)
 
-Elke maand een volledige export van Convex-prod met bestanden naar bucket `clubalmanac-convex-backup` (eu-west-1). Geheim `CONVEX_PROD_DEPLOY_KEY` in GitHub-environment `prod-backup` (alleen `main`), repo-variabelen `BACKUP_BUCKET`, `BACKUP_ROLE_ARN` en `BACKUP_ENABLED` (pas `true` bij de vrijgave, draaiboek T0.11; zonder slaat de workflow over). Actions vast op commit-SHA. Per sleutel blijven minstens de laatste 6 versies, plus alles van het laatste half jaar. Opzet, controle en terugzetten: [`infra/backup.md`](../../infra/backup.md). ~$1 per maand.
+Elke maand een volledige export van Convex-prod met bestanden naar bucket `clubalmanac-convex-backup` (eu-west-1), en sinds WP37 de filmpjes uit R2 (prefix `r2-videos/`, met een alleen-lezen R2-token). Geheim `CONVEX_PROD_DEPLOY_KEY` in GitHub-environment `prod-backup` (alleen `main`), repo-variabelen `BACKUP_BUCKET`, `BACKUP_ROLE_ARN` en `BACKUP_ENABLED` (pas `true` bij de vrijgave, draaiboek T0.11; zonder slaat de workflow over). Actions vast op commit-SHA. Per sleutel blijven minstens de laatste 6 versies, plus alles van het laatste half jaar. Opzet, controle en terugzetten: [`infra/backup.md`](../../infra/backup.md). ~$1 per maand.
 
 ## Productie-blind-spots
 

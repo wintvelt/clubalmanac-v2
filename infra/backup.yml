@@ -9,6 +9,8 @@ Description: >-
   automatisch weg. Stoppen de runs, dan
   blijven de laatste 6 gewoon staan. Deployen in eu-west-1 (Ierland, net als
   de Convex-backend). Opzet en terugzetten: infra/backup.md.
+  WP37: ook de filmpjes uit Cloudflare R2, onder `r2-videos/` (zelfde sleutels
+  als in R2); een gewist filmpje blijft daar nog een half jaar als vorige versie.
 
 Parameters:
   GitHubRepo:
@@ -60,9 +62,20 @@ Resources:
           # minstens 90 dagen.
           - Id: laatste-zes
             Status: Enabled
+            Prefix: convex-prod/
             NoncurrentVersionExpiration:
               NoncurrentDays: 180
               NewerNoncurrentVersions: 5
+          # WP37: per filmpje is er meestal maar één versie, dus "laatste zes"
+          # zou een gewist filmpje nooit weghalen. Hier gaat een vorige versie
+          # (ook die achter een delete-marker) na een half jaar weg, en daarna
+          # de lege delete-marker.
+          - Id: filmpjes-half-jaar
+            Status: Enabled
+            Prefix: r2-videos/
+            NoncurrentVersionExpiration:
+              NoncurrentDays: 180
+            ExpiredObjectDeleteMarker: true
           - Id: halve-uploads-weg
             Status: Enabled
             AbortIncompleteMultipartUpload:
@@ -115,6 +128,25 @@ Resources:
                 Effect: Allow
                 Action: s3:PutObject
                 Resource: !Sub "${BackupBucket.Arn}/convex-prod/*"
+              # WP37: de filmpjes synchroniseren. Lijsten (alleen dit prefix)
+              # om te weten wat er al staat, schrijven, en een delete-marker
+              # zetten voor een filmpje dat uit R2 weg is. Geen lezen van de
+              # bestanden, en geen versies wissen.
+              - Sid: FilmpjesSchrijven
+                Effect: Allow
+                Action:
+                  - s3:PutObject
+                  - s3:DeleteObject
+                Resource: !Sub "${BackupBucket.Arn}/r2-videos/*"
+              - Sid: FilmpjesLijsten
+                Effect: Allow
+                Action: s3:ListBucket
+                Resource: !GetAtt BackupBucket.Arn
+                Condition:
+                  StringLike:
+                    s3:prefix:
+                      - r2-videos/
+                      - r2-videos/*
 
 Outputs:
   BucketName:
