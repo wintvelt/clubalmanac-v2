@@ -22,7 +22,7 @@ import {
   VIDEO_TARGET,
   videoMetadataHeaders,
   videoRetryable,
-  videoTooLong,
+  videoTooLongToSend,
   type VideoFailReason,
   type VideoFinishOutcome,
 } from "../lib/videos";
@@ -101,7 +101,7 @@ async function prepare(
   } catch {
     return "comprimeren";
   }
-  if (videoTooLong(compressed.durationMs)) {
+  if (videoTooLongToSend(compressed.durationMs)) {
     await removeFile(compressed.uri);
     return "te_lang";
   }
@@ -163,7 +163,9 @@ export function useVideoUploader() {
       };
       if (site === null) return { ok: false, reason: "server" };
       // De kiezer geeft de duur al: te lang hoeft niet eerst verkleind.
-      if (typeof asset.duration === "number" && videoTooLong(asset.duration)) return done({ ok: false, reason: "te_lang" });
+      if (typeof asset.duration === "number" && videoTooLongToSend(asset.duration)) {
+        return done({ ok: false, reason: "te_lang" });
+      }
 
       const ready = await prepare(asset, uploadId, onProgress);
       if (typeof ready === "string") return done({ ok: false, reason: ready });

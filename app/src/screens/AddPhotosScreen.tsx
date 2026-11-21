@@ -31,7 +31,7 @@ import {
   videoFailMessage,
   videoRetryable,
   videoRetryRound,
-  videoTooLong,
+  videoTooLongToSend,
   type VideoFailReason,
 } from "../lib/videos";
 import { CloseButton } from "../navigation/stackOptions";
@@ -278,7 +278,7 @@ export function AddPhotosScreen({ albumId }: { albumId?: string }) {
     ).map((i): VideoItem => {
       const duration = videos.find((v) => v.key === i.key)?.asset.duration;
       // Te lang: meteen zeggen, niet eerst verkleinen.
-      return typeof duration === "number" && videoTooLong(duration)
+      return typeof duration === "number" && videoTooLongToSend(duration)
         ? { key: i.key, uploadId: i.uploadId, state: "mislukt", reason: "te_lang" }
         : { key: i.key, uploadId: i.uploadId, state: "wacht" };
     });

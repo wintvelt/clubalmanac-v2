@@ -30,6 +30,20 @@ export function videoTooLong(ms: number): boolean {
   return Math.round(ms / 1000) > MAX_VIDEO_SECONDS;
 }
 
+/**
+ * A-keuze: zo lang mag een filmpje zijn om het te versturen (180,4 s). De
+ * backend meet ook de AAC-aanloop van het geluid (~70 ms langer dan wat de app
+ * meet, A-invariant 30) en laat tot 180,499 s door: met 100 ms marge komt wat de
+ * app verstuurt ook binnen, en een te lang filmpje wordt al vóór het verkleinen
+ * en versturen geweigerd.
+ */
+const MAX_SEND_MS = 180_400;
+
+/** Te lang om te versturen? Geen getal of negatief: niet (de backend toetst het bestand zelf). */
+export function videoTooLongToSend(ms: number): boolean {
+  return Number.isFinite(ms) && ms > MAX_SEND_MS;
+}
+
 // --- filter (besluit 1, invariant 10) ----------------------------------------
 
 export type MediaFilter = "alle" | "fotos" | "videos";
