@@ -27,6 +27,7 @@
 // en daar is geen native code of WASM nodig om te laden.
 
 import type SharpModule from "sharp";
+import type { OutputInfo, Sharp as SharpPipeline } from "sharp";
 
 export const KLEIN_MAX = 512;
 export const GROOT_MAX = 1600;
@@ -55,6 +56,11 @@ export type FormatImages = {
 // HEIF-familie met HEVC-inhoud, herkend aan de eerste bytes (ISO-BMFF `ftyp`
 // plus merk). AVIF (`avif`, `avis`) leest sharp zelf.
 const HEIC_BRANDS = new Set(["heic", "heix", "hevc", "hevx", "heim", "heis", "mif1", "msf1"]);
+
+/** JPEG, herkend aan de eerste bytes (SOI plus het begin van een marker). */
+function isJpeg(b: Uint8Array): boolean {
+  return b.length >= 3 && b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff;
+}
 
 function isHeicLike(b: Uint8Array): boolean {
   if (b.length < 12) return false;
@@ -161,6 +167,22 @@ function validOrientation(o: unknown): number | undefined {
   return typeof o === "number" && Number.isInteger(o) && o >= 1 && o <= 8 ? o : undefined;
 }
 
+const LENIENT = "none" as const;
+
+/**
+ * Eén decode: *groot* als ruwe sRGB-pixels zonder alfa, zonder metadata.
+ * Geen `.rotate()`: de pixels blijven zoals ze in het bestand staan.
+ */
+async function decodeGroot(source: SharpPipeline): Promise<{ data: Buffer; info: OutputInfo }> {
+  return await source
+    .flatten({ background: WHITE })
+    .toColourspace("srgb")
+    .resize(GROOT_MAX, GROOT_MAX, { fit: "inside", withoutEnlargement: true })
+    .removeAlpha()
+    .raw()
+    .toBuffer({ resolveWithObject: true });
+}
+
 /**
  * Maakt *klein* en *groot* uit de bytes van een origineel. Gooit bij bytes die
  * geen beeld zijn; dan is er geen formaat (invariant 18).
@@ -196,7 +218,7 @@ export async function makeFormatImages(bytes: Uint8Array): Promise<FormatImages>
     // ("premature end of JPEG image") krijgt toch formaten, zoals een browser
     // hem ook toont (met een grijze onderkant). Bytes die geen beeld zijn,
     // falen nog steeds op het lezen van de kop.
-    source = sharp(bytes, { pages: 1, failOn: "none" });
+    source = sharp(bytes, { pages: 1, failOn: LENIENT });
     const meta = await source.metadata();
     if (!meta.width || !meta.height) throw new Error("geen beeld: afmetingen onbekend");
     width = meta.width;
@@ -204,15 +226,21 @@ export async function makeFormatImages(bytes: Uint8Array): Promise<FormatImages>
     exifOrientation = validOrientation(meta.orientation);
   }
 
-  // Eén decode: *groot* als ruwe sRGB-pixels zonder alfa, zonder metadata.
-  // Geen `.rotate()`: de pixels blijven zoals ze in het bestand staan.
-  const grootRaw = await source
-    .flatten({ background: WHITE })
-    .toColourspace("srgb")
-    .resize(GROOT_MAX, GROOT_MAX, { fit: "inside", withoutEnlargement: true })
-    .removeAlpha()
-    .raw()
-    .toBuffer({ resolveWithObject: true });
+  let grootRaw: { data: Buffer; info: OutputInfo };
+  try {
+    grootRaw = await decodeGroot(source);
+  } catch (e) {
+    if (heic || !isJpeg(bytes)) throw e;
+    // Terugval, alleen voor een JPEG en alleen één keer. Bij veel beschadigde
+    // data (bv. restart-markers met een kapot einde: "found marker 0xd9
+    // instead of RST3") stopt de decode ook met `failOn: "none"`, op een
+    // grens aan het aantal waarschuwingen (bescherming tegen DoS).
+    // `unlimited` zet die grens uit. De eerste poging houdt de grenzen.
+    console.warn(
+      `[photoFormats] JPEG-decode mislukt, opnieuw zonder grenzen: ${e instanceof Error ? e.message : String(e)}`,
+    );
+    grootRaw = await decodeGroot(sharp(bytes, { pages: 1, failOn: LENIENT, unlimited: true }));
+  }
 
   const raw = {
     width: grootRaw.info.width,
