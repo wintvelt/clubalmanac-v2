@@ -168,7 +168,11 @@ function DetailContent({
                   onMomentumScrollEnd={onMomentumEnd}
                   onEndReached={list.loadMore}
                   onEndReachedThreshold={3}
-                  renderItem={({ item }) => <ZoomablePhoto photoId={item._id} photo={item} box={page} />}
+                  // WP37: weg-vegen stopt een filmpje.
+                  extraData={current}
+                  renderItem={({ item }) => (
+                    <ZoomablePhoto photoId={item._id} photo={item} box={page} active={item._id === current} />
+                  )}
                 />
             ))
           }
@@ -203,8 +207,11 @@ function PhotoInfo({ photo }: { photo: MyPhoto }) {
   const meta = [formatPhotoDate(photo), photo.locationLabel].filter(Boolean).join(" · ");
   return (
     <View style={styles.info}>
-      <View accessible accessibilityLabel={`Jouw foto, ${[formatPhotoDate(photo), photo.locationLabel].filter(Boolean).join(", ")}`}>
-        <Text variant="bodyStrong">Jouw foto</Text>
+      <View
+        accessible
+        accessibilityLabel={`${photo.video ? "Jouw filmpje" : "Jouw foto"}, ${[formatPhotoDate(photo), photo.locationLabel].filter(Boolean).join(", ")}`}
+      >
+        <Text variant="bodyStrong">{photo.video ? "Jouw filmpje" : "Jouw foto"}</Text>
         <Text variant="albumMeta" color="muted">
           {meta}
         </Text>
