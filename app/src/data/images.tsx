@@ -109,10 +109,14 @@ function useTokenImageLoad(target: (site: string) => { uri: string; cacheKey: st
   };
 }
 
-export function useProfileSource(userId: string, format: ImageFormat): ImageSource | null {
+export function useProfileSource(
+  userId: string,
+  format: ImageFormat,
+  version?: string,
+): ImageSource | null {
   const site = useSiteUrl();
   if (site === null) return null;
-  return { uri: profileImageUrl(site, userId, format) };
+  return { uri: profileImageUrl(site, userId, format, version) };
 }
 
 // Besluit 3: de beeldcache op het toestel gaat weg bij uitloggen, net als de

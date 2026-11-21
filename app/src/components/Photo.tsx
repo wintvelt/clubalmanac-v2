@@ -173,17 +173,19 @@ type AvatarProps = {
   exifOrientation?: number;
   // WP25 A-invariant 26: `profileHasFormats` van hetzelfde object. Wisselt het,
   // of wisselt de stand, dan bouwt het beeld opnieuw op en haalt het de bytes
-  // opnieuw: de URL blijft gelijk, ook na een nieuwe profielfoto.
+  // opnieuw.
   hasFormats?: boolean;
   // WP17b invariant 14: `profileVersion` van hetzelfde object. Een nieuwe
-  // versie is een nieuw beeld: alles bouwt opnieuw op, ook na een fout.
+  // versie is een nieuw beeld: alles bouwt opnieuw op, ook na een fout. De
+  // versie staat ook in de URL; anders toont een browser het oude beeld uit
+  // zijn geheugen.
   version?: string;
 };
 
 // Profielfoto, rond. Geen profielfoto, een gewist beeld of een fout: de
 // letter, zonder fout-toestand (invariant 14). Decoratief: de rij eromheen
 // draagt de naam. Openbaar (besluit 8), en zonder cache (invariant 3, audit
-// S6): dezelfde URL geeft na een wissel een ander beeld.
+// S6): zonder versie geeft dezelfde URL na een wissel een ander beeld.
 export function ProfileAvatar({
   userId,
   name,
@@ -206,6 +208,7 @@ export function ProfileAvatar({
       letter={letter}
       exifOrientation={exifOrientation}
       hasFormats={hasFormats === true}
+      version={version}
     />
   );
 }
@@ -217,6 +220,7 @@ function ProfileImage({
   letter,
   exifOrientation,
   hasFormats,
+  version,
 }: {
   userId: string;
   size: number;
@@ -224,8 +228,9 @@ function ProfileImage({
   letter: ReactNode;
   exifOrientation: number | undefined;
   hasFormats: boolean;
+  version: string | undefined;
 }) {
-  const source = useProfileSource(userId, format);
+  const source = useProfileSource(userId, format, version);
   const [state, setState] = useState<"loading" | "loaded" | "failed">("loading");
   if (source === null || state === "failed") return <>{letter}</>;
   return (
