@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { internal } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
 import { withUser } from "../_helpers/auth";
+import { concat, gpsAnywhere, GPS_JPEG, isJpeg } from "../_helpers/jpeg";
 import { movie } from "./_boxes";
 import {
   as,
@@ -9,6 +10,7 @@ import {
   ENV,
   expectUploadRefusal,
   expectValidR2Signature,
+  FINAL_PREFIX,
   finish,
   FIXED_NOW,
   fixture,
@@ -21,8 +23,10 @@ import {
   PLAIN,
   POSTER,
   putAsApp,
+  r2SignatureProblem,
   seedWorld,
   start,
+  TMP_PREFIX,
   useVideosEnv,
   videosApi,
   type R,
@@ -31,8 +35,13 @@ import {
 
 // WP37 — een filmpje toevoegen: aanvragen (`videos.startUpload`), de PUT naar
 // R2 door de app, en afronden met de poster (`POST /upload/video`).
-//   Invariant 1, 4, 5, 7; A-invariant 11, 12, 14, 20, 24, 25.
+//   Invariant 1, 4, 5, 7; A-invariant 11, 12, 14, 15, 20, 24, 25, 30, 32.
+// De tijdelijke sleutel en wat een oude link nog kan: tempKey.test.ts. Wat er
+// na de index mag staan: afterIndex.test.ts.
 // Spec: docs/work-packages/WP37-filmpjes-in-albums.md §Testcontract.
+
+/** A-invariant 30: de duur van plain.mp4 is de langste in het bestand (mdhd van het geluid, 91136/44100 s). */
+const PLAIN_MS = 2067;
 
 const env = useVideosEnv();
 const r2 = () => env.r2;
@@ -44,7 +53,7 @@ async function rowOf(t: T, photoId: string): Promise<R | null> {
 // --- aanvragen ------------------------------------------------------------------
 
 describe("startUpload: een link voor precies één nieuwe sleutel (A-invariant 11)", () => {
-  it("geeft een ondertekende PUT op de bucket, hooguit een uur geldig", async () => {
+  it("geeft een ondertekende PUT op een tijdelijke sleutel onder uploads/, hooguit een uur geldig", async () => {
     const t = newT();
     const w = await seedWorld(t);
     const res = (await start(as.alice(t), { uploadId: "v1", albumId: w.albums.georgie })) as R;
@@ -52,11 +61,24 @@ describe("startUpload: een link voor precies één nieuwe sleutel (A-invariant 1
     expect(Object.keys(res).sort()).toEqual(["expiresAt", "kind", "url"]);
     const link = parseR2Link(res.url);
     expect(link.bucket).toBe(ENV.R2_BUCKET);
-    await expectValidR2Signature(link, "PUT");
+    expect(link.key.startsWith(TMP_PREFIX), link.key).toBe(true);
+    await expectValidR2Signature(link, "PUT", PLAIN.byteLength);
     expect(link.expiresS).toBeGreaterThan(0);
     expect(link.expiresS).toBeLessThanOrEqual(3600);
     expect(link.dateMs).toBe(FIXED_NOW);
     expect(res.expiresAt).toBe(link.dateMs + link.expiresS * 1000);
+  });
+
+  it("de handtekening legt content-length vast op de opgegeven grootte (A-invariant 11)", async () => {
+    const t = newT();
+    const w = await seedWorld(t);
+    const res = (await start(as.alice(t), { uploadId: "v1", albumId: w.albums.georgie, bytes: 4_000_000 })) as R;
+    const link = parseR2Link(res.url);
+    expect(link.params["X-Amz-SignedHeaders"]).toBe("content-length;host");
+    expect(await r2SignatureProblem(link, "PUT", 4_000_000)).toBeNull();
+    expect(await r2SignatureProblem(link, "PUT", 4_000_001)).not.toBeNull();
+    expect(await r2SignatureProblem(link, "PUT", 5 * 1024 ** 3)).not.toBeNull();
+    expect(await r2SignatureProblem(link, "PUT")).not.toBeNull();
   });
 
   it("de link geldt niet voor GET (de handtekening dekt de methode)", async () => {
@@ -267,7 +289,12 @@ describe("POST /upload/video: afronden (A-invariant 12, 14)", () => {
     const { photoId } = (await res.json()) as R;
     const row = (await rowOf(t, photoId))!;
     expect(row.ownerId).toBe(w.users.alice);
-    expect(row.video).toEqual({ key, durationMs: 2000, bytes: PLAIN.byteLength });
+    // A-invariant 11, 12: de rij heeft de eindsleutel, niet de sleutel van de PUT.
+    expect(row.video.key.startsWith(FINAL_PREFIX), row.video.key).toBe(true);
+    expect(row.video.key).not.toBe(key);
+    expect(row.video).toEqual({ key: row.video.key, durationMs: PLAIN_MS, bytes: PLAIN.byteLength });
+    expect(r2().keys()).toEqual([row.video.key]);
+    expect(r2().bytesOf(row.video.key)).toEqual(PLAIN);
     // A-invariant 14: de kloktijd van de opname, gelezen als UTC (zoals foto's).
     expect(row.takenAt).toBe(Date.UTC(2026, 6, 14, 15, 32, 10));
     expect(row.latitude).toBe(41.7151);
@@ -293,7 +320,7 @@ describe("POST /upload/video: afronden (A-invariant 12, 14)", () => {
     const w = await seedWorld(t);
     const { res } = await fullUpload(as.alice(t), r2(), { uploadId: "v1", albumId: w.albums.georgie, durationMs: 9000 });
     const { photoId } = (await res.json()) as R;
-    expect((await rowOf(t, photoId))!.video.durationMs).toBe(2000);
+    expect((await rowOf(t, photoId))!.video.durationMs).toBe(PLAIN_MS);
   });
 
   it("zonder datum en plaats: geen takenAt (niet 'nu') en geen plek (invariant 3)", async () => {
@@ -320,12 +347,15 @@ describe("POST /upload/video: afronden (A-invariant 12, 14)", () => {
     expect(left.albumPhotos).toBe(1);
   });
 
-  it("opnieuw PUT na een mislukte poging overschrijft hetzelfde object (één bestand)", async () => {
+  it("opnieuw PUT na een mislukte poging gaat naar dezelfde sleutel (één bestand)", async () => {
     const t = newT();
     const w = await seedWorld(t);
     const s1 = (await start(as.alice(t), { uploadId: "v1", albumId: w.albums.georgie })) as R;
-    await putAsApp(r2(), s1.url, PLAIN.subarray(0, 500)); // halverwege afgebroken
+    // Halverwege afgebroken: R2 slaat een PUT met minder bytes dan ondertekend niet op.
+    expect(await r2().putViaLink(s1.url, PLAIN.subarray(0, 500))).toBe(403);
+    expect(r2().objects.size).toBe(0);
     const s2 = (await start(as.alice(t), { uploadId: "v1", albumId: w.albums.georgie })) as R;
+    expect(parseR2Link(s2.url).key).toBe(parseR2Link(s1.url).key);
     await putAsApp(r2(), s2.url, PLAIN);
     const res = await finish(as.alice(t), { uploadId: "v1" });
     expect(res.status).toBe(200);
@@ -447,11 +477,13 @@ describe("POST /upload/video: wat er niet in mag (invariant 2, 7, A-invariant 12
   });
 });
 
-/** Een weigering van de route zelf, niet de 404 van de router voor een onbekend pad. */
-async function expectRouteRefusal(res: Response, status: number): Promise<void> {
+/** Een weigering van de route zelf, niet de 404 van de router voor een onbekend pad (A-invariant 32: met reden). */
+async function expectRouteRefusal(res: Response, status: number, reason?: string): Promise<void> {
   expect(res.status).toBe(status);
   expect(res.headers.get("Content-Type") ?? "").toMatch(/application\/json/);
-  expect(typeof ((await res.json()) as R).error).toBe("string");
+  const body = (await res.json()) as R;
+  expect(typeof body.error).toBe("string");
+  if (reason !== undefined) expect(body.reason).toBe(reason);
 }
 
 describe("POST /upload/video: wie mag afronden (invariant 1)", () => {
@@ -472,7 +504,8 @@ describe("POST /upload/video: wie mag afronden (invariant 1)", () => {
   it("een onbekende upload-id: 404 van de route zelf (JSON met een fout, geen 'route bestaat niet')", async () => {
     const t = newT();
     await seedWorld(t);
-    await expectRouteRefusal(await finish(as.alice(t), { uploadId: "bestaat-niet" }), 404);
+    const res = await finish(as.alice(t), { uploadId: "bestaat-niet" });
+    await expectRouteRefusal(res, 404, "verlopen");
   });
 
   it("de upload-id van een ander: 404, en zijn upload blijft onaangeroerd", async () => {
@@ -480,7 +513,7 @@ describe("POST /upload/video: wie mag afronden (invariant 1)", () => {
     const w = await seedWorld(t);
     const s = (await start(as.alice(t), { uploadId: "v1", albumId: w.albums.georgie })) as R;
     const key = await putAsApp(r2(), s.url, PLAIN);
-    expect((await finish(as.bob(t), { uploadId: "v1" })).status).toBe(404);
+    await expectRouteRefusal(await finish(as.bob(t), { uploadId: "v1" }), 404, "verlopen");
     expect(r2().objects.has(key)).toBe(true);
     expect((await leftovers(t, r2(), w.users.bob)).photos).toBe(0);
     expect((await finish(as.alice(t), { uploadId: "v1" })).status).toBe(200);
@@ -499,7 +532,7 @@ describe("POST /upload/video: wie mag afronden (invariant 1)", () => {
       await ctx.db.delete(m!._id);
     });
     const res = await finish(as.bob(t), { uploadId: "v1" });
-    expect(res.status).toBe(404);
+    await expectRouteRefusal(res, 404, "geen_album");
     expect(r2().objects.has(key)).toBe(false);
     const left = await leftovers(t, r2(), w.users.bob);
     expect(left.photos).toBe(0);
@@ -523,7 +556,7 @@ describe("POST /upload/video: wie mag afronden (invariant 1)", () => {
     await t.run(async (ctx) =>
       ctx.db.insert("uploadIdempotency", { ownerId: w.users.alice, clientUploadId: "foto-1", status: "in_progress", createdAt: Date.now() }),
     );
-    await expectRouteRefusal(await finish(as.alice(t), { uploadId: "foto-1" }), 404);
+    await expectRouteRefusal(await finish(as.alice(t), { uploadId: "foto-1" }), 404, "verlopen");
     expect((await leftovers(t, r2(), w.users.alice)).photos).toBe(0);
   });
 
@@ -534,7 +567,8 @@ describe("POST /upload/video: wie mag afronden (invariant 1)", () => {
     expect(res.status).toBe(200);
     const reads = r2().calls.filter((c) => c.key === key && c.method === "GET");
     expect(reads.length).toBeGreaterThan(0);
-    for (const c of reads) expect(c.range, "een GET zonder Range leest het hele filmpje").toMatch(/^bytes=0-\d+$/);
+    // A-invariant 31: elke GET heeft een begrensde Range (ook de koppen na de index).
+    for (const c of reads) expect(c.range, "een GET zonder grens leest het hele filmpje").toMatch(/^bytes=\d+-\d+$/);
     for (const c of r2().calls) expect(c.signed).toBe(true);
   });
 });
@@ -548,7 +582,105 @@ describe("POST /upload/video: na een dag is een open upload weg", () => {
     vi.setSystemTime(FIXED_NOW + DAY_MS + 60_000);
     await t.mutation(internal.uploads.cleanupOld, {});
     await t.finishAllScheduledFunctions(vi.runAllTimers);
-    expect((await finish(as.alice(t), { uploadId: "v1" })).status).toBe(404);
+    await expectRouteRefusal(await finish(as.alice(t), { uploadId: "v1" }), 404, "verlopen");
     expect(r2().objects.size).toBe(0);
+  });
+
+  it("afronden na een dag, ook zonder opruimronde: 404 verlopen, geen rij (audit: vervalcheck in finishState)", async () => {
+    const t = newT();
+    const w = await seedWorld(t);
+    const s = (await start(as.alice(t), { uploadId: "v1", albumId: w.albums.georgie })) as R;
+    await putAsApp(r2(), s.url, PLAIN);
+    vi.setSystemTime(FIXED_NOW + DAY_MS + 60_000);
+    await expectRouteRefusal(await finish(as.alice(t), { uploadId: "v1" }), 404, "verlopen");
+    const left = await leftovers(t, r2(), w.users.alice);
+    expect(left.photos).toBe(0);
+    expect(left.storage).toBe(0);
+    expect(left.albumPhotos).toBe(0);
+  });
+
+  it("net binnen de dag: afronden lukt nog", async () => {
+    const t = newT();
+    const w = await seedWorld(t);
+    const s = (await start(as.alice(t), { uploadId: "v1", albumId: w.albums.georgie })) as R;
+    await putAsApp(r2(), s.url, PLAIN);
+    vi.setSystemTime(FIXED_NOW + DAY_MS - 60_000);
+    expect((await finish(as.alice(t), { uploadId: "v1" })).status).toBe(200);
+  });
+});
+
+// --- testgaten uit de audit (fixronde 1) ----------------------------------------
+
+describe("foto- en video-uploads met dezelfde upload-id (A-invariant 20)", () => {
+  it("een foto-upload (POST /upload) met de id van een open video-upload: 409, de video-upload blijft", async () => {
+    const t = newT();
+    const w = await seedWorld(t);
+    const s = (await start(as.alice(t), { uploadId: "v1", albumId: w.albums.georgie })) as R;
+    const before = (await t.run(async (ctx) => ctx.db.query("uploadIdempotency").collect())) as R[];
+    const res = await as.alice(t).fetch("/upload", {
+      method: "POST",
+      headers: { "Content-Type": "image/jpeg", "X-Upload-Id": "v1", "X-Album-Id": w.albums.georgie },
+      body: POSTER as BodyInit,
+    });
+    expect(res.status).toBe(409);
+    const after = (await t.run(async (ctx) => ctx.db.query("uploadIdempotency").collect())) as R[];
+    expect(after).toEqual(before);
+    expect((await leftovers(t, r2(), w.users.alice)).photos).toBe(0);
+    // En de video-upload rondt gewoon af.
+    await putAsApp(r2(), s.url, PLAIN);
+    expect((await finish(as.alice(t), { uploadId: "v1" })).status).toBe(200);
+  });
+
+  it("een video-aanvraag met de id van een lopende foto-upload: bezig, de foto-reservering blijft", async () => {
+    const t = newT();
+    const w = await seedWorld(t);
+    await t.run(async (ctx) =>
+      ctx.db.insert("uploadIdempotency", { ownerId: w.users.alice, clientUploadId: "foto-1", status: "in_progress", createdAt: Date.now() }),
+    );
+    expectUploadRefusal(await outcome(() => start(as.alice(t), { uploadId: "foto-1", albumId: w.albums.georgie })), "bezig");
+    const rows = (await t.run(async (ctx) => ctx.db.query("uploadIdempotency").collect())) as R[];
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.videoKey).toBeUndefined();
+    expect(r2().calls).toEqual([]);
+  });
+});
+
+describe("de poster (A-invariant 15)", () => {
+  it("een poster met GPS in de EXIF wordt zonder metadata opgeslagen", async () => {
+    const t = newT();
+    const w = await seedWorld(t);
+    expect(gpsAnywhere(GPS_JPEG), "sanity: de test-JPEG heeft GPS").toBeGreaterThan(0);
+    const s = (await start(as.alice(t), { uploadId: "v1", albumId: w.albums.georgie })) as R;
+    await putAsApp(r2(), s.url, PLAIN);
+    const res = await finish(as.alice(t), { uploadId: "v1", poster: GPS_JPEG });
+    expect(res.status).toBe(200);
+    const row = (await rowOf(t, ((await res.json()) as R).photoId))!;
+    // convex-test geeft geen Blob over de t.run-grens: de bytes binnen de closure lezen.
+    const stored = await t.run(async (ctx) => {
+      const blob = await ctx.storage.get(row.storageId);
+      return blob ? Array.from(new Uint8Array(await blob.arrayBuffer())) : null;
+    });
+    expect(stored).not.toBeNull();
+    const bytes = new Uint8Array(stored!);
+    expect(isJpeg(bytes)).toBe(true);
+    expect(gpsAnywhere(bytes)).toBe(0);
+    expect(new TextDecoder("latin1").decode(bytes)).not.toMatch(/Exif\0\0/);
+  });
+
+  it("een poster boven 15 MiB: 400, geen rij en niets opgeslagen; het filmpje blijft voor een nieuwe poging", async () => {
+    const t = newT();
+    const w = await seedWorld(t);
+    const s = (await start(as.alice(t), { uploadId: "v1", albumId: w.albums.georgie })) as R;
+    const key = await putAsApp(r2(), s.url, PLAIN);
+    const big = concat(POSTER, new Uint8Array(15 * 1024 * 1024 + 1 - POSTER.byteLength));
+    expect(big.byteLength).toBe(15 * 1024 * 1024 + 1);
+    const res = await finish(as.alice(t), { uploadId: "v1", poster: big });
+    expect(res.status).toBe(400);
+    const left = await leftovers(t, r2(), w.users.alice);
+    expect(left.photos).toBe(0);
+    expect(left.storage).toBe(0);
+    expect(left.reservations).toBe(1);
+    expect(r2().objects.has(key)).toBe(true);
+    expect((await finish(as.alice(t), { uploadId: "v1" })).status).toBe(200);
   });
 });

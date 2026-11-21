@@ -25,7 +25,7 @@ import {
 //   A-invariant 17: dezelfde regel als het beeldpad, ook de uitzondering voor
 //   de webmaster bij een gemeld filmpje. Per verzoek opnieuw bepaald.
 //   A-invariant 18: één weigering. A-invariant 24: toegang vóór config.
-//   Besluit B5: 1 uur.
+//   Besluit B5: 1 uur. Fixronde 1: `response-content-type=video/mp4`.
 // Spec: docs/work-packages/WP37-filmpjes-in-albums.md §Testcontract.
 
 const env = useVideosEnv();
@@ -50,6 +50,17 @@ describe("playUrl: de link (B5, A-invariant 11)", () => {
     expect(link.expiresS).toBe(3600);
     expect(link.dateMs).toBe(FIXED_NOW);
     expect(res.expiresAt).toBe(FIXED_NOW + 3600 * 1000);
+  });
+
+  it("de link zegt R2 het filmpje als video/mp4 te sturen, in de handtekening (fixronde 1)", async () => {
+    const t = newT();
+    const w = await world(t);
+    const link = parseR2Link(((await play(as.bob(t), w.video.photoId)) as R).url);
+    expect(link.params["response-content-type"]).toBe("video/mp4");
+    // expectValidR2Signature rekent elke query-parameter mee: zonder handtekening erover klopt hij niet.
+    await expectValidR2Signature(link, "GET");
+    const changed = { ...link, params: { ...link.params, "response-content-type": "text/html" } };
+    await expect(expectValidR2Signature(changed, "GET")).rejects.toThrow();
   });
 
   it("de link is niet bruikbaar voor PUT of een andere sleutel", async () => {

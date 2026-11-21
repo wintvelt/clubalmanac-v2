@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import { inspectMp4, videoProblem } from "../../convex/lib/mp4";
 import { MAX_OPEN_VIDEO_UPLOADS, MAX_VIDEO_BYTES, MAX_VIDEO_MS } from "../../convex/lib/constants";
 import { fixture, MAX_VIDEO_BYTES_ORACLE } from "./_videos";
-import { ascii, box, ftyp, full, mdat, mdtaMeta, movie, mvhd, trak, u16, u32, zeros } from "./_boxes";
+import { ascii, BAD_SIZE, box, bytes as cat, ftyp, full, mdat, mdtaMeta, movie, mvhd, nested, trak, u16, u32, zeros } from "./_boxes";
 
 // WP37 — de backend bekijkt het bestand zelf (invariant 2 en 7, A-invariant
 // 12, 13, 25). `inspectMp4` krijgt het begin van het bestand zoals de backend
@@ -33,7 +33,9 @@ describe("inspectMp4 op testfilmpjes van AVFoundation", () => {
   it("plain.mp4: mp42, 2 s, H.264 108×192, AAC, geen locatie", () => {
     const i = info(fixture("plain.mp4"));
     expect(i.brand).toBe("mp42");
-    expect(i.durationMs).toBe(2000);
+    // A-invariant 30: de langste duur in het bestand. mvhd en tkhd zeggen
+    // 2000 ms, mdhd van het geluid 91136/44100 s = 2067 ms (AAC-aanloop).
+    expect(i.durationMs).toBe(2067);
     expect(i.video).toEqual({ codec: "avc1", width: 108, height: 192 });
     expect(i.audio).toEqual({ codec: "mp4a" });
     expect(i.hasLocation).toBe(false);
@@ -79,7 +81,7 @@ describe("inspectMp4 op testfilmpjes van AVFoundation", () => {
   it("het begin van plain.mp4 tot net na de index is genoeg", () => {
     const bytes = fixture("plain.mp4");
     // ftyp (28) + moov (1895): de beelddata erna hoeft er niet bij.
-    expect(info(bytes.subarray(0, 28 + 1895)).durationMs).toBe(2000);
+    expect(info(bytes.subarray(0, 28 + 1895)).durationMs).toBe(2067);
   });
 });
 
@@ -268,5 +270,171 @@ describe.skipIf(!existsSync(SAMPLE))("Wouters voorbeeld (alleen lokaal)", () => 
     expect(r.info.audio).toEqual({ codec: "mp4a" });
     expect(r.info.hasLocation).toBe(false);
     expect(videoProblem(r, 33_509_535)).toBeNull();
+  });
+});
+
+// --- fixronde 1: strikt lezen (A-invariant 28–30) -------------------------------
+
+/** Geweigerd, om welke reden ook (de reden zelf is niet het punt). */
+function refused(bytes: Uint8Array): void {
+  let problem: ReturnType<typeof videoProblem> | "exception";
+  try {
+    problem = videoProblem(inspectMp4(bytes), 30_000_000);
+  } catch {
+    problem = "exception";
+  }
+  expect(problem, "verwacht een weigering").not.toBeNull();
+  expect(problem, "een exception is geen weigering").not.toBe("exception");
+}
+
+const XYZ = box("\xa9xyz", u16(18), u16(0x15c7), ascii("+52.3676+004.9041/"));
+
+describe("een kind dat niet heel in zijn ouder past: weigeren (A-invariant 28, audit S1)", () => {
+  it("sanity: dezelfde film zonder kapot kind mag", () => {
+    expect(videoProblem(inspectMp4(movie()), 30_000_000)).toBeNull();
+  });
+
+  it("in moov: een kop van 4 bytes, met daarna een udta met ©xyz", () => {
+    refused(movie({ moovExtra: [BAD_SIZE, box("udta", XYZ)] }));
+  });
+
+  it("in moov: een kop van 4 bytes zonder iets erna", () => {
+    refused(movie({ moovExtra: [BAD_SIZE] }));
+  });
+
+  it("in moov: een kind dat langer is dan wat er van moov over is", () => {
+    refused(movie({ moovExtra: [[...u32(4096), ...ascii("udta"), ...XYZ]] }));
+  });
+
+  it("in moov: losse bytes aan het eind (geen hele kop)", () => {
+    refused(movie({ moovExtra: [[0, 0, 0, 0]] }));
+  });
+
+  it("in trak", () => {
+    refused(movie({ tracks: [trak("vide", "avc1", [...BAD_SIZE, ...box("udta", XYZ)]), trak("soun", "mp4a")] }));
+  });
+
+  it.each([
+    ["mdia", { mdiaExtra: [...BAD_SIZE, ...box("udta", XYZ)] }],
+    ["minf", { minfExtra: [...BAD_SIZE, ...box("udta", XYZ)] }],
+    ["stbl", { stblExtra: [...BAD_SIZE, ...box("udta", XYZ)] }],
+  ])("in %s", (_naam, timing) => {
+    refused(movie({ tracks: [trak("vide", "avc1", [], 108, 192, timing), trak("soun", "mp4a")] }));
+  });
+});
+
+describe("toestemmingslijst vóór en in moov (A-invariant 28)", () => {
+  it.each([
+    ["free", box("free", zeros(16))],
+    ["skip", box("skip", zeros(16))],
+    ["wide", box("wide")],
+  ])("vóór moov: %s zonder locatie mag", (_naam, b) => {
+    expect(videoProblem(inspectMp4(movie({ beforeMoov: [b] })), 30_000_000)).toBeNull();
+  });
+
+  it.each([
+    ["free met ©xyz", box("free", XYZ)],
+    ["skip met ISO6709-tekst", box("skip", ascii("com.apple.quicktime.location.ISO6709 +52.3676+004.9041/"))],
+    ["uuid", box("uuid", zeros(16), XYZ)],
+    ["udta", box("udta", XYZ)],
+    ["een onbekend blok zonder locatie", box("abcd", zeros(16))],
+    ["een onbekend blok met ©xyz", box("abcd", XYZ)],
+  ])("vóór moov: %s → geweigerd", (_naam, b) => {
+    refused(movie({ beforeMoov: [b] }));
+  });
+
+  it.each([
+    ["©xyz", box("abcd", XYZ)],
+    ["ISO6709-tekst", box("abcd", ascii("com.apple.quicktime.location.ISO6709"))],
+    ["loci", box("abcd", box("loci", full(0), u16(0x55c4), [0], u32(0x3436), u32(0x4e7), u32(0), ascii("earth"), [0], [0]))],
+  ])("een onbekend kind van moov met %s wordt niet stil toegelaten", (_naam, b) => {
+    refused(movie({ moovExtra: [b] }));
+  });
+
+  it("een onbekend kind van een trak met ©xyz wordt niet stil toegelaten", () => {
+    refused(movie({ tracks: [trak("vide", "avc1", box("abcd", XYZ)), trak("soun", "mp4a")] }));
+  });
+});
+
+describe("elk spoor telt (A-invariant 29)", () => {
+  it("een tweede beeldspoor (mebx): codec", () => {
+    const tracks = [trak("vide", "avc1"), trak("vide", "mebx"), trak("soun", "mp4a")];
+    expect(videoProblem(inspectMp4(movie({ tracks })), 30_000_000)).toBe("codec");
+  });
+
+  it("twee beeldsporen in H.264: codec (precies één beeldspoor)", () => {
+    const tracks = [trak("vide", "avc1"), trak("vide", "avc1"), trak("soun", "mp4a")];
+    expect(videoProblem(inspectMp4(movie({ tracks })), 30_000_000)).toBe("codec");
+  });
+
+  it("een tweede geluidsspoor met ac-3: codec", () => {
+    const tracks = [trak("vide", "avc1"), trak("soun", "mp4a"), trak("soun", "ac-3")];
+    expect(videoProblem(inspectMp4(movie({ tracks })), 30_000_000)).toBe("codec");
+  });
+
+  it("twee AAC-sporen mogen", () => {
+    const tracks = [trak("vide", "avc1"), trak("soun", "mp4a"), trak("soun", "mp4a")];
+    expect(videoProblem(inspectMp4(movie({ tracks })), 30_000_000)).toBeNull();
+  });
+
+  it("het beeldspoor als tweede spoor (geluid eerst) mag", () => {
+    const tracks = [trak("soun", "mp4a"), trak("vide", "avc1")];
+    expect(videoProblem(inspectMp4(movie({ tracks })), 30_000_000)).toBeNull();
+  });
+});
+
+describe("de duur is de langste die het bestand noemt (A-invariant 30)", () => {
+  it("mvhd 1 minuut, mdhd van het beeld 4 minuten: 240000 ms, te_lang", () => {
+    const tracks = [trak("vide", "avc1", [], 108, 192, { mdhd: [1000, 240_000] }), trak("soun", "mp4a")];
+    const r = inspectMp4(movie({ timescale: 1000, duration: 60_000, tracks }));
+    expect(info(movie({ timescale: 1000, duration: 60_000, tracks })).durationMs).toBe(240_000);
+    expect(videoProblem(r, 30_000_000)).toBe("te_lang");
+  });
+
+  it("mvhd 1 minuut, mdhd van het geluid 4 minuten (andere tijdschaal): te_lang", () => {
+    const tracks = [trak("vide", "avc1"), trak("soun", "mp4a", [], 0, 0, { mdhd: [48_000, 48_000 * 240] })];
+    expect(videoProblem(inspectMp4(movie({ timescale: 1000, duration: 60_000, tracks })), 30_000_000)).toBe("te_lang");
+  });
+
+  it("mvhd 1 minuut, tkhd 4 minuten (in de tijdschaal van de film): te_lang", () => {
+    const tracks = [trak("vide", "avc1", [], 108, 192, { tkhdDuration: 600 * 240 }), trak("soun", "mp4a")];
+    const bytes = movie({ timescale: 600, duration: 600 * 60, tracks });
+    expect(info(bytes).durationMs).toBe(240_000);
+    expect(videoProblem(inspectMp4(bytes), 30_000_000)).toBe("te_lang");
+  });
+
+  it("mvhd met duur 0: geweigerd", () => {
+    refused(movie({ timescale: 1000, duration: 0 }));
+  });
+
+  it("gefragmenteerd (mvex in moov): geweigerd", () => {
+    refused(movie({ moovExtra: [box("mvex", box("trex", full(0), u32(1), u32(1), u32(0), u32(0), u32(0)))] }));
+  });
+
+  it("Wouters voorbeeld-vorm: mdhd iets anders dan mvhd (ffmpeg) blijft binnen de afronding", () => {
+    // Gemeten in daatfilmpje.mp4: mvhd 72773/1000, beeld-mdhd 87327600/1200000, geluid-mdhd 3491840/48000.
+    const tracks = [
+      trak("vide", "avc1", [], 1080, 1920, { mdhd: [1_200_000, 87_327_600], tkhdDuration: 72_773 }),
+      trak("soun", "mp4a", [], 0, 0, { mdhd: [48_000, 3_491_840], tkhdDuration: 72_747 }),
+    ];
+    expect(info(movie({ timescale: 1000, duration: 72_773, tracks })).durationMs).toBe(72_773);
+  });
+});
+
+describe("diepte begrensd (A-invariant 28; red-team: 60.000 geneste blokken gaf een RangeError)", () => {
+  it("60.000 geneste mdia-blokken in een trak: geen exception, wel een weigering", () => {
+    const bomb = nested("mdia", 60_000);
+    const trakBytes = cat(u32(8 + 92 + bomb.length), ascii("trak"), trak("vide", "avc1").slice(8, 8 + 92), bomb);
+    const moovBody = cat(mvhd(600, 1200), trakBytes);
+    const file = cat(ftyp("mp42"), u32(8 + moovBody.length), ascii("moov"), moovBody, mdat());
+    refused(file);
+  });
+
+  it("60.000 geneste edts-blokken: idem", () => {
+    const bomb = nested("edts", 60_000);
+    const inner = trak("vide", "avc1").slice(8);
+    const trakBytes = cat(u32(8 + inner.length + bomb.length), ascii("trak"), inner, bomb);
+    const moovBody = cat(mvhd(600, 1200), trakBytes);
+    refused(cat(ftyp("mp42"), u32(8 + moovBody.length), ascii("moov"), moovBody, mdat()));
   });
 });

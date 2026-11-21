@@ -9,9 +9,10 @@ import { DAY_MS, ENV, FIXED_NOW, HOUR_MS, newT, PLAIN, seedVideo, seedWorld, use
 //   Invariant 5: geen wezen die niemand ziet. A-invariant 20: een video-
 //   upload blijft een dag open, daarna gaan reservering en object weg.
 //   A-invariant 22: de check meldt wees-objecten (geen rij, geen open
-//   reservering, ouder dan een dag) en ontbrekende bestanden (rij zonder
-//   object), met één mail aan de webmaster; schoon = geen mail. De check
-//   wist niets (WP10-discipline: melden, niet herstellen).
+//   reservering, ouder dan een dag), ontbrekende bestanden (rij zonder
+//   object), een grootte die afwijkt van `video.bytes` en objecten boven
+//   120 MiB (fixronde 1), met één mail aan de webmaster; schoon = geen mail.
+//   De check wist niets (WP10-discipline: melden, niet herstellen).
 // Spec: docs/work-packages/WP37-filmpjes-in-albums.md §A-invarianten.
 
 const env = useVideosEnv();
@@ -126,6 +127,41 @@ describe("videos.checkStorage (A-invariant 22)", () => {
     await check(t);
     expect(env.r2.calls.length).toBeGreaterThan(0);
     for (const c of env.r2.calls) expect(c.signed).toBe(true);
+  });
+
+  it("een object waarvan de grootte afwijkt van video.bytes: mail met het foto-id; niets gewist (fixronde 1)", async () => {
+    const t = newT();
+    const w = await seedWorld(t);
+    const v = await seedVideo(t, env.r2, { ownerId: w.users.alice, albumId: w.albums.georgie });
+    env.r2.sizes.set(v.key, PLAIN.byteLength + 4096);
+    await check(t);
+    expect(env.r2.mails).toHaveLength(1);
+    expect(mailText()).toContain(v.photoId);
+    expect(env.r2.deletes()).toEqual([]);
+  });
+
+  it("een object boven 120 MiB, ook onder uploads/ van een open upload: mail (fixronde 1)", async () => {
+    const t = newT();
+    const w = await seedWorld(t);
+    env.r2.put("uploads/groot.mp4", PLAIN, FIXED_NOW - HOUR_MS);
+    env.r2.sizes.set("uploads/groot.mp4", 120 * 1024 * 1024 + 1);
+    await openVideoReservation(t, w.users.alice, "uploads/groot.mp4", FIXED_NOW - HOUR_MS);
+    await check(t);
+    expect(env.r2.mails).toHaveLength(1);
+    expect(env.r2.deletes()).toEqual([]);
+  });
+
+  it("precies de juiste grootte en precies 120 MiB: geen mail", async () => {
+    const t = newT();
+    const w = await seedWorld(t);
+    const v = await seedVideo(t, env.r2, { ownerId: w.users.alice, albumId: w.albums.georgie });
+    await t.run(async (ctx) => {
+      const row = await ctx.db.get(v.photoId);
+      await ctx.db.patch(v.photoId, { video: { ...(row as unknown as { video: { key: string; durationMs: number } }).video, bytes: 120 * 1024 * 1024 } } as never);
+    });
+    env.r2.sizes.set(v.key, 120 * 1024 * 1024);
+    await check(t);
+    expect(env.r2.mails).toEqual([]);
   });
 
   it("cron 'video storage check': dagelijks 05:15 UTC", () => {

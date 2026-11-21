@@ -115,16 +115,35 @@ export function useVideosEnv(): { r2: FakeR2 } {
 
 // --- nep-R2 ------------------------------------------------------------------
 
-export type R2Call = { method: string; bucket: string; key: string | null; url: string; signed: boolean; range: string | null };
+/** A-invariant 11: de app PUT onder dit prefix; het filmpje in het album staat onder FINAL_PREFIX. */
+export const TMP_PREFIX = "uploads/";
+export const FINAL_PREFIX = "videos/";
+
+export type R2Call = {
+  method: string;
+  bucket: string;
+  key: string | null;
+  url: string;
+  signed: boolean;
+  range: string | null;
+  /** Bij een CopyObject: de bron (`bucket/sleutel`) en de if-match. */
+  copySource?: string;
+  copyIfMatch?: string | null;
+};
+
+type StoredObject = { bytes: Uint8Array; lastModified: number; etag: string };
 
 export class FakeR2 {
-  objects = new Map<string, { bytes: Uint8Array; lastModified: number }>();
+  objects = new Map<string, StoredObject>();
   calls: R2Call[] = [];
   mails: Array<Record<string, unknown>> = [];
   /** Zet op true om elk R2-verzoek met een netwerkfout te laten falen. */
   down = false;
   /** Een grootte die HEAD en de lijst melden, zonder 120 MiB in het geheugen. */
   sizes = new Map<string, number>();
+  /** Na elke beantwoorde GET op een object (bv. om het object daarna te wisselen). */
+  onGet: ((key: string, range: string | null) => void) | null = null;
+  private version = 0;
 
   reset(): void {
     this.objects.clear();
@@ -132,14 +151,56 @@ export class FakeR2 {
     this.mails = [];
     this.down = false;
     this.sizes.clear();
+    this.onGet = null;
+    this.version = 0;
   }
 
+  /** Een object direct neerzetten (zoals een PUT); elke versie een eigen ETag. */
   put(key: string, bytes: Uint8Array, lastModified = Date.now()): void {
-    this.objects.set(key, { bytes, lastModified });
+    this.version += 1;
+    this.objects.set(key, { bytes, lastModified, etag: `"v${this.version}"` });
+  }
+
+  bytesOf(key: string): Uint8Array | undefined {
+    return this.objects.get(key)?.bytes;
+  }
+
+  keys(): string[] {
+    return [...this.objects.keys()].sort();
   }
 
   deletes(): string[] {
     return this.calls.filter((c) => c.method === "DELETE" && c.key !== null).map((c) => c.key!);
+  }
+
+  copies(): R2Call[] {
+    return this.calls.filter((c) => c.copySource !== undefined);
+  }
+
+  /** De bytes die de backend in totaal met GET las (som van de ranges). */
+  bytesRead(key: string): number {
+    let total = 0;
+    for (const c of this.calls) {
+      if (c.method !== "GET" || c.key !== key) continue;
+      const m = c.range?.match(/^bytes=(\d+)-(\d+)$/);
+      const size = this.sizes.get(key) ?? this.objects.get(key)?.bytes.byteLength ?? 0;
+      total += m ? Math.min(Number(m[2]), size - 1) - Number(m[1]) + 1 : size;
+    }
+    return total;
+  }
+
+  /**
+   * Wat R2 doet met een PUT op een ondertekende link van de app (iemand die de
+   * link heeft, ook na afronden of weigeren): de handtekening moet kloppen voor
+   * PUT met precies deze grootte, en de link mag niet verlopen zijn. Anders 403
+   * en niets opgeslagen.
+   */
+  async putViaLink(url: string, bytes: Uint8Array): Promise<number> {
+    const link = parseR2Link(url);
+    const problem = await r2SignatureProblem(link, "PUT", bytes.byteLength);
+    if (problem !== null || Date.now() > link.dateMs + link.expiresS * 1000 || link.bucket !== ENV.R2_BUCKET) return 403;
+    this.put(link.key, bytes);
+    return 200;
   }
 
   install(): void {
@@ -179,13 +240,31 @@ export class FakeR2 {
       rawKey = u.pathname.slice(1);
     }
     const key = rawKey === "" ? null : rawKey.split("/").map(decodeURIComponent).join("/");
-    const signed =
-      (headers.get("authorization") ?? "").startsWith("AWS4-HMAC-SHA256") || u.searchParams.has("X-Amz-Signature");
+    const authorization = headers.get("authorization") ?? "";
+    const signed = authorization.startsWith("AWS4-HMAC-SHA256") || u.searchParams.has("X-Amz-Signature");
     const range = headers.get("range");
-    this.calls.push({ method, bucket, key, url: u.href, signed, range });
+    const copySource = headers.get("x-amz-copy-source");
+    const call: R2Call = { method, bucket, key, url: u.href, signed, range };
+    if (copySource !== null) {
+      call.copySource = copySource;
+      call.copyIfMatch = headers.get("x-amz-copy-source-if-match");
+    }
+    this.calls.push(call);
     if (this.down) throw new TypeError("fetch failed");
     if (bucket !== ENV.R2_BUCKET) return new Response("<Error><Code>NoSuchBucket</Code></Error>", { status: 404 });
     if (!signed) return new Response("<Error><Code>AccessDenied</Code></Error>", { status: 403 });
+    // Zoals S3: een x-amz-*-header die niet mee ondertekend is, wordt geweigerd
+    // ("There were headers present in the request which were not signed").
+    const signedHeaders = (
+      u.searchParams.get("X-Amz-SignedHeaders") ?? /SignedHeaders=([^,\s]+)/.exec(authorization)?.[1] ?? ""
+    )
+      .toLowerCase()
+      .split(";");
+    for (const [name] of headers) {
+      if (name.startsWith("x-amz-") && !signedHeaders.includes(name)) {
+        return new Response("<Error><Code>AccessDenied</Code><Message>HeadersNotSigned</Message></Error>", { status: 403 });
+      }
+    }
 
     if (key === null) {
       if (method !== "GET") return new Response(null, { status: 405 });
@@ -208,6 +287,27 @@ export class FakeR2 {
       this.sizes.delete(key);
       return new Response(null, { status: 204 });
     }
+    if (method === "PUT" && copySource !== null) {
+      // CopyObject: bron `/<bucket>/<sleutel>` (of zonder de eerste schuine streep), url-gecodeerd.
+      const decoded = decodeURIComponent(copySource.replace(/^\//, ""));
+      const slash = decoded.indexOf("/");
+      const srcBucket = slash < 0 ? decoded : decoded.slice(0, slash);
+      const srcKey = slash < 0 ? "" : decoded.slice(slash + 1);
+      const src = srcBucket === ENV.R2_BUCKET ? this.objects.get(srcKey) : undefined;
+      if (!src) return new Response("<Error><Code>NoSuchKey</Code></Error>", { status: 404 });
+      const ifMatch = headers.get("x-amz-copy-source-if-match");
+      const strip = (s: string) => s.trim().replace(/^"|"$/g, "");
+      if (ifMatch !== null && strip(ifMatch) !== strip(src.etag)) {
+        return new Response("<Error><Code>PreconditionFailed</Code></Error>", { status: 412 });
+      }
+      this.put(key, src.bytes.slice());
+      const copied = this.objects.get(key)!;
+      if (this.sizes.has(srcKey)) this.sizes.set(key, this.sizes.get(srcKey)!);
+      return new Response(
+        `<?xml version="1.0" encoding="UTF-8"?><CopyObjectResult><ETag>${escapeXml(copied.etag)}</ETag><LastModified>${new Date(copied.lastModified).toISOString()}</LastModified></CopyObjectResult>`,
+        { status: 200, headers: { "Content-Type": "application/xml" } },
+      );
+    }
     if (method === "PUT") {
       const bytes = new Uint8Array(await new Response(body).arrayBuffer());
       this.put(key, bytes);
@@ -218,22 +318,30 @@ export class FakeR2 {
     if (method === "HEAD") {
       return new Response(null, {
         status: 200,
-        headers: { "Content-Length": String(this.sizes.get(key) ?? size), "Content-Type": "video/mp4", ETag: '"etag"' },
+        headers: { "Content-Length": String(this.sizes.get(key) ?? size), "Content-Type": "video/mp4", ETag: obj.etag },
       });
     }
     if (method === "GET") {
       const m = range?.match(/^bytes=(\d+)-(\d*)$/);
+      let res: Response;
       if (m) {
         const start = Number(m[1]);
         const end = m[2] === "" ? size - 1 : Math.min(Number(m[2]), size - 1);
         if (start >= size) return new Response(null, { status: 416 });
         const part = obj.bytes.slice(start, end + 1);
-        return new Response(part, {
+        res = new Response(part, {
           status: 206,
-          headers: { "Content-Range": `bytes ${start}-${end}/${size}`, "Content-Length": String(part.byteLength) },
+          headers: {
+            "Content-Range": `bytes ${start}-${end}/${size}`,
+            "Content-Length": String(part.byteLength),
+            ETag: obj.etag,
+          },
         });
+      } else {
+        res = new Response(obj.bytes.slice(), { status: 200, headers: { "Content-Length": String(size), ETag: obj.etag } });
       }
-      return new Response(obj.bytes.slice(), { status: 200, headers: { "Content-Length": String(size) } });
+      this.onGet?.(key, range);
+      return res;
     }
     return new Response(null, { status: 405 });
   }
@@ -295,31 +403,42 @@ async function hmac(key: ArrayBuffer | Uint8Array<ArrayBuffer>, msg: string): Pr
 }
 
 /**
- * Herbereken de SigV4-handtekening (query, regio `auto`, alleen `host`) met
- * het test-geheim. Klopt hij, dan opent R2 met deze link precies dit pad, met
- * precies deze methode, en niets anders.
+ * Herbereken de SigV4-handtekening (query, regio `auto`) met het test-geheim.
+ * GET: alleen `host` ondertekend. PUT (A-invariant 11): `content-length;host`,
+ * met `contentLength` als waarde; een andere grootte of geen grootte klopt
+ * niet. Klopt hij, dan opent R2 met deze link precies dit pad, met precies
+ * deze methode (en bij PUT precies deze grootte), en niets anders. `null` als
+ * hij klopt, anders wat er mis is.
  */
-export async function expectValidR2Signature(link: ParsedLink, method: "GET" | "PUT"): Promise<void> {
+export async function r2SignatureProblem(link: ParsedLink, method: "GET" | "PUT", contentLength?: number): Promise<string | null> {
   const p = link.params;
-  expect(p["X-Amz-Algorithm"]).toBe("AWS4-HMAC-SHA256");
-  expect(p["X-Amz-SignedHeaders"], "alleen host ondertekend").toBe("host");
+  if (p["X-Amz-Algorithm"] !== "AWS4-HMAC-SHA256") return "X-Amz-Algorithm";
+  const wantSigned = method === "PUT" ? "content-length;host" : "host";
+  if (p["X-Amz-SignedHeaders"] !== wantSigned) return `X-Amz-SignedHeaders is ${p["X-Amz-SignedHeaders"]}, verwacht ${wantSigned}`;
+  if (method === "PUT" && (contentLength === undefined || !Number.isInteger(contentLength))) return "PUT zonder grootte";
   const day = (p["X-Amz-Date"] ?? "").slice(0, 8);
   const scope = `${day}/auto/s3/aws4_request`;
-  expect(p["X-Amz-Credential"]).toBe(`${ENV.R2_ACCESS_KEY_ID}/${scope}`);
-  const signature = p["X-Amz-Signature"];
-  expect(signature, "X-Amz-Signature ontbreekt").toMatch(/^[0-9a-f]{64}$/);
+  if (p["X-Amz-Credential"] !== `${ENV.R2_ACCESS_KEY_ID}/${scope}`) return "X-Amz-Credential";
+  const signature = p["X-Amz-Signature"] ?? "";
+  if (!/^[0-9a-f]{64}$/.test(signature)) return "X-Amz-Signature ontbreekt";
   const canonicalQuery = Object.entries(p)
     .filter(([k]) => k !== "X-Amz-Signature")
     .map(([k, v]) => [rfc3986(k), rfc3986(v)] as const)
     .sort(([a, av], [b, bv]) => (a < b ? -1 : a > b ? 1 : av < bv ? -1 : av > bv ? 1 : 0))
     .map(([k, v]) => `${k}=${v}`)
     .join("&");
-  const canonicalRequest = [method, link.url.pathname, canonicalQuery, `host:${link.url.host}\n`, "host", "UNSIGNED-PAYLOAD"].join("\n");
+  const canonicalHeaders =
+    method === "PUT" ? `content-length:${contentLength}\nhost:${link.url.host}\n` : `host:${link.url.host}\n`;
+  const canonicalRequest = [method, link.url.pathname, canonicalQuery, canonicalHeaders, wantSigned, "UNSIGNED-PAYLOAD"].join("\n");
   const stringToSign = ["AWS4-HMAC-SHA256", p["X-Amz-Date"], scope, await sha256Hex(canonicalRequest)].join("\n");
   let key: ArrayBuffer = await hmac(new TextEncoder().encode(`AWS4${ENV.R2_SECRET_ACCESS_KEY}`), day);
   for (const part of ["auto", "s3", "aws4_request"]) key = await hmac(key, part);
   const expected = Array.from(new Uint8Array(await hmac(key, stringToSign)), (b) => b.toString(16).padStart(2, "0")).join("");
-  expect(signature, `handtekening klopt niet voor ${method} op dit pad`).toBe(expected);
+  return signature === expected ? null : `handtekening klopt niet voor ${method} op dit pad${method === "PUT" ? ` met grootte ${contentLength}` : ""}`;
+}
+
+export async function expectValidR2Signature(link: ParsedLink, method: "GET" | "PUT", contentLength?: number): Promise<void> {
+  expect(await r2SignatureProblem(link, method, contentLength)).toBeNull();
 }
 
 // --- wereld ------------------------------------------------------------------
@@ -468,13 +587,23 @@ export async function start(
   });
 }
 
-/** De app PUT het bestand naar de ondertekende link (controleert de link eerst). */
+/**
+ * De app PUT het bestand naar de ondertekende link (controleert de link
+ * eerst, met de grootte van het bestand, zoals R2). Geeft de tijdelijke sleutel.
+ */
 export async function putAsApp(r2: FakeR2, url: string, bytes: Uint8Array): Promise<string> {
   const link = parseR2Link(url);
   expect(link.bucket).toBe(ENV.R2_BUCKET);
-  await expectValidR2Signature(link, "PUT");
+  await expectValidR2Signature(link, "PUT", bytes.byteLength);
   r2.put(link.key, bytes);
   return link.key;
+}
+
+/** De sleutel in de rij van een filmpje (de eindsleutel). */
+export async function videoKeyOf(t: T, photoId: string): Promise<string> {
+  const row = (await t.run(async (ctx) => ctx.db.get(photoId as Id<"photos">))) as R | null;
+  expect(row?.video?.key, "de rij heeft geen video.key").toBeTruthy();
+  return row!.video.key as string;
 }
 
 export function finish(

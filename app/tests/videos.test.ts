@@ -3,8 +3,10 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import {
   filterEntries,
+  finishOutcome,
   formatDuration,
   locationFromISO6709,
+  mediaCountText,
   showMediaFilter,
   takenAtFromQuickTime,
   VIDEO_TARGET,
@@ -27,6 +29,8 @@ import { listFiles } from "./support/sourceScan";
 //   kloktijd naar de backend, in de vorm van `X-Taken-At` (zoals bij foto's).
 //   Invariant 5: per reden een NL-melding, en of opnieuw proberen zin heeft.
 //   A-invariant 23: geen filmpje in de schijfcache.
+//   Fixronde 1: `uitgelogd` en `verlopen` opnieuw te proberen (A-invariant 32,
+//   33); de albumkop telt filmpjes apart (A-invariant 34).
 // Spec: docs/work-packages/WP37-filmpjes-in-albums.md §Testcontract.
 
 describe("formatDuration (besluit 1)", () => {
@@ -143,6 +147,7 @@ describe("meldingen (invariant 5)", () => {
     "limiet",
     "geen_album",
     "uitgelogd",
+    "verlopen",
     "server",
   ];
 
@@ -161,11 +166,61 @@ describe("meldingen (invariant 5)", () => {
     expect(t).toMatch(/Foto's/);
   });
 
-  it("opnieuw proberen alleen waar het kan helpen", () => {
-    for (const r of ["netwerk", "niet_binnen", "server", "bezig", "comprimeren"] as const) expect(videoRetryable(r)).toBe(true);
-    for (const r of ["te_lang", "te_groot", "locatie", "codec", "geen_mp4", "index_achteraan", "limiet", "geen_album", "uitgelogd"] as const) {
-      expect(videoRetryable(r)).toBe(false);
+  it("opnieuw proberen alleen waar het kan helpen; uitgelogd met een vers token, zoals bij foto's (A-invariant 33)", () => {
+    for (const r of ["netwerk", "niet_binnen", "server", "bezig", "comprimeren", "uitgelogd", "verlopen"] as const) {
+      expect(videoRetryable(r), r).toBe(true);
     }
+    for (const r of ["te_lang", "te_groot", "locatie", "codec", "geen_mp4", "index_achteraan", "limiet", "geen_album"] as const) {
+      expect(videoRetryable(r), r).toBe(false);
+    }
+  });
+
+  it("verlopen zegt dat het te lang duurde en dat opnieuw proberen kan, anders dan geen_album", () => {
+    const t = videoFailMessage("verlopen");
+    expect(t).not.toBe(videoFailMessage("geen_album"));
+    expect(t).toMatch(/opnieuw/i);
+    expect(t).not.toMatch(/album/i);
+  });
+});
+
+describe("finishOutcome: het antwoord van POST /upload/video (A-invariant 32)", () => {
+  it("200 met een photoId: klaar", () => {
+    expect(finishOutcome(200, { photoId: "p1" })).toEqual({ ok: true, photoId: "p1" });
+  });
+
+  it("404 verlopen en 404 geen_album zijn verschillende redenen", () => {
+    expect(finishOutcome(404, { error: "x", reason: "verlopen" })).toEqual({ ok: false, reason: "verlopen" });
+    expect(finishOutcome(404, { error: "x", reason: "geen_album" })).toEqual({ ok: false, reason: "geen_album" });
+  });
+
+  it("een 404 zonder (bekende) reden telt als verlopen", () => {
+    expect(finishOutcome(404, { error: "x" })).toEqual({ ok: false, reason: "verlopen" });
+    expect(finishOutcome(404, null)).toEqual({ ok: false, reason: "verlopen" });
+    expect(finishOutcome(404, { reason: "iets" })).toEqual({ ok: false, reason: "verlopen" });
+  });
+
+  it("de andere antwoorden blijven", () => {
+    expect(finishOutcome(null, null)).toEqual({ ok: false, reason: "netwerk" });
+    expect(finishOutcome(401, {})).toEqual({ ok: false, reason: "uitgelogd" });
+    expect(finishOutcome(403, {})).toEqual({ ok: false, reason: "limiet" });
+    expect(finishOutcome(409, { reason: "niet_binnen" })).toEqual({ ok: false, reason: "niet_binnen" });
+    expect(finishOutcome(413, {})).toEqual({ ok: false, reason: "te_groot" });
+    expect(finishOutcome(422, { reason: "locatie" })).toEqual({ ok: false, reason: "locatie" });
+    expect(finishOutcome(500, {})).toEqual({ ok: false, reason: "server" });
+  });
+});
+
+describe("de albumkop telt filmpjes apart (A-invariant 34)", () => {
+  it.each([
+    [38, 2, "38 foto's · 2 filmpjes"],
+    [38, 0, "38 foto's"],
+    [0, 2, "2 filmpjes"],
+    [1, 1, "1 foto · 1 filmpje"],
+    [1, 0, "1 foto"],
+    [0, 1, "1 filmpje"],
+    [0, 0, "0 foto's"],
+  ])("%i foto's en %i filmpjes → %s", (photos, videos, text) => {
+    expect(mediaCountText(photos, videos)).toBe(text);
   });
 });
 
@@ -208,5 +263,18 @@ describe("afspelen zonder schijfcache (A-invariant 23)", () => {
   it("iemand vraagt api.videos.playUrl en api.videos.startUpload", () => {
     expect(files.some((f) => /api\.videos\.playUrl\b/.test(read(f)))).toBe(true);
     expect(files.some((f) => /api\.videos\.startUpload\b/.test(read(f)))).toBe(true);
+  });
+
+  it("de albumkop gebruikt mediaCountText (A-invariant 34)", () => {
+    expect(read("screens/AlbumScreen.tsx")).toMatch(/\bmediaCountText\(/);
+  });
+
+  it("opnieuw proberen na uitgelogd geeft het filmpje een vers token mee (A-invariant 33)", () => {
+    // De aanroep van de video-uploader in het toevoeg-scherm geeft freshToken mee, zoals bij foto's.
+    const src = read("screens/AddPhotosScreen.tsx");
+    const at = src.indexOf("uploadVideo({");
+    expect(at, "geen aanroep van uploadVideo({ ... }) gevonden").toBeGreaterThanOrEqual(0);
+    const call = src.slice(at, at + 600);
+    expect(call).toMatch(/\bfreshToken\b/);
   });
 });
