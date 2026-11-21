@@ -1,6 +1,6 @@
 # App Store Connect: versie 2.0.1
 
-Alleen wat verandert ten opzichte van [2.0.0](./app-store-2.0.0.md). Naam en ondertitel kun je alleen wijzigen terwijl er een nieuwe versie in *Prepare for Submission* staat. Indienen pas als de build van 2.0.1 er is. Kies dan opnieuw *Manually release this version*: een nieuwe versie staat standaard op automatisch.
+Alleen wat verandert ten opzichte van [2.0.0](./app-store-2.0.0.md). Inhoud (besluit Wouter 2026-11-21): de iPad liggend met de zijkolom (PR 50), de nieuwe naam en de Engelse teksten. Overige wensen in 2.0.2. Naam en ondertitel kun je alleen wijzigen terwijl er een nieuwe versie in *Prepare for Submission* staat. Indienen pas als de build van 2.0.1 er is. Kies dan opnieuw *Manually release this version*: een nieuwe versie staat standaard op automatisch.
 
 ## Stap 1: nieuwe versie aanmaken
 
@@ -61,4 +61,40 @@ Also in your browser, at app.clubalmanac.com. The app is in Dutch.
 photo album,club,association,group,photo sharing,private,friends,family,memories
 ```
 
-*What's New*: volgt, als de inhoud van 2.0.1 vastligt.
+*What's New*
+
+```
+- On iPad in landscape: the group and album with the cover in a column on the left.
+- Small improvements.
+```
+
+**Nederlands**, *What's New*:
+
+```
+- Op de iPad liggend: de groep en het album met de cover in een kolom links.
+- Kleine verbeteringen.
+```
+
+## Stap 4: bouwen en uploaden (op de server)
+
+Na de merge van de 2.0.1-PR. Duurt ongeveer een half uur; tmux houdt hem draaiend als de verbinding wegvalt.
+
+```
+tmux new -s build "cd ~/Code/clubalmanac-v2-release && git pull --ff-only && cd app && npm ci && npx eas-cli build --platform ios --profile production --local --output ../builds/2.0.1.ipa; exec zsh"
+```
+
+```
+cd ~/Code/clubalmanac-v2-release/app && npx eas-cli submit --platform ios --profile production --path ../builds/2.0.1.ipa
+```
+
+## Stap 5: testen in TestFlight
+
+Op de iPhone en de iPad, tegen prod:
+- inloggen, groep en album openen, een foto schermvullend en swipen;
+- een foto uploaden en weer verwijderen;
+- profielfoto wijzigen: de nieuwe staat er meteen;
+- iPad: liggend de zijkolom op Groep en Album, rechtop zoals 2.0.0; draaien zonder naad in de cover.
+
+## Stap 6: indienen
+
+iOS App → 2.0.1 → *Build*: de nieuwe build kiezen → *Manually release this version* → **Add for Review**. Na goedkeuring **Release This Version**.
