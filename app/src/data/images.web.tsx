@@ -176,11 +176,17 @@ function useTokenImageLoad(
 }
 
 // Besluit 8 (WP17a): een profielfoto is openbaar; een gewone `<img>` toont hem
-// zonder token en zonder CORS (WP35 besluit B2).
-export function useProfileSource(userId: string, format: ImageFormat): ImageSource | null {
+// zonder token en zonder CORS (WP35 besluit B2). De browser hergebruikt een
+// beeld voor dezelfde URL uit zijn geheugen, ook na een remount en ondanks
+// `no-cache`; daarom gaat `profileVersion` mee in de URL.
+export function useProfileSource(
+  userId: string,
+  format: ImageFormat,
+  version?: string,
+): ImageSource | null {
   const site = useSiteUrl();
   if (site === null) return null;
-  return { uri: profileImageUrl(site, userId, format) };
+  return { uri: profileImageUrl(site, userId, format, version) };
 }
 
 // Uitloggen (W6): het geheugen leeg en alle `blob:`-URL's vrij. Op het web

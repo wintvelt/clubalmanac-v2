@@ -16,9 +16,19 @@ export function photoImageUrl(siteUrl: string, photoId: string, format: ImageFor
   return `${siteUrl}/beeld/foto/${encodeURIComponent(photoId)}?formaat=${format}`;
 }
 
-// Besluit 8: openbaar, ook uitgelogd; geen token nodig.
-export function profileImageUrl(siteUrl: string, userId: string, format: ImageFormat): string {
-  return `${siteUrl}/beeld/profiel/${encodeURIComponent(userId)}?formaat=${format}`;
+// Besluit 8: openbaar, ook uitgelogd; geen token nodig. Met `version`
+// (`profileVersion` uit de user-vorm, al openbaar) is een nieuwe profielfoto
+// een nieuwe URL: een browser hergebruikt anders het beeld dat hij voor
+// dezelfde URL al in zijn geheugen heeft, ook ondanks `no-cache`. Het
+// profielpad leest alleen `formaat` en negeert `versie` (convex/http.ts).
+export function profileImageUrl(
+  siteUrl: string,
+  userId: string,
+  format: ImageFormat,
+  version?: string,
+): string {
+  const base = `${siteUrl}/beeld/profiel/${encodeURIComponent(userId)}?formaat=${format}`;
+  return version === undefined ? base : `${base}&versie=${encodeURIComponent(version)}`;
 }
 
 // WP19b A-invariant 15: de cover van de groep bij een ontvangen uitnodiging,
