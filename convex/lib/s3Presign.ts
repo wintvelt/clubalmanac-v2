@@ -77,8 +77,10 @@ export function encodeKey(key: string): string {
  * WP37: een ondertekend verzoek in de query (SigV4, `UNSIGNED-PAYLOAD`, alleen
  * `host` ondertekend) voor elke methode en elke host, ook R2 (regio `auto`,
  * pad-stijl). `path` is al gecodeerd; `query` zijn extra parameters (bv. voor
- * een lijst), die de handtekening mee dekt. De handtekening dekt methode, pad
- * en query.
+ * een lijst), die de handtekening mee dekt. `headers` worden mee ondertekend
+ * (namen in kleine letters, bv. `content-length` of `x-amz-copy-source`); de
+ * aanroeper stuurt ze met precies die waarde mee. De handtekening dekt
+ * methode, pad, query en die headers.
  */
 export async function presignRequest(opts: {
   method: "GET" | "PUT" | "HEAD" | "DELETE";
@@ -90,11 +92,19 @@ export async function presignRequest(opts: {
   expiresInSeconds: number;
   nowMs: number;
   query?: Record<string, string>;
+  headers?: Record<string, string>;
 }): Promise<PresignedLink> {
   const signedAtMs = Math.floor(opts.nowMs / 1000) * 1000;
   const date = amzDate(signedAtMs);
   const day = date.slice(0, 8);
   const scope = `${day}/${opts.region}/s3/aws4_request`;
+
+  const signed: [string, string][] = [
+    ["host", opts.host] as [string, string],
+    ...Object.entries(opts.headers ?? {}).map(([k, v]) => [k.toLowerCase(), v.trim()] as [string, string]),
+  ].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
+  const signedHeaders = signed.map(([k]) => k).join(";");
+  const canonicalHeaders = signed.map(([k, v]) => `${k}:${v}\n`).join("");
 
   const params: Record<string, string> = {
     ...(opts.query ?? {}),
@@ -103,7 +113,7 @@ export async function presignRequest(opts: {
     "X-Amz-Credential": `${opts.accessKeyId}/${scope}`,
     "X-Amz-Date": date,
     "X-Amz-Expires": String(opts.expiresInSeconds),
-    "X-Amz-SignedHeaders": "host",
+    "X-Amz-SignedHeaders": signedHeaders,
   };
   const query = Object.entries(params)
     .map(([k, v]) => [rfc3986(k), rfc3986(v)] as const)
@@ -111,7 +121,7 @@ export async function presignRequest(opts: {
     .map(([k, v]) => `${k}=${v}`)
     .join("&");
 
-  const canonicalRequest = [opts.method, opts.path, query, `host:${opts.host}\n`, "host", UNSIGNED_PAYLOAD].join("\n");
+  const canonicalRequest = [opts.method, opts.path, query, canonicalHeaders, signedHeaders, UNSIGNED_PAYLOAD].join("\n");
   const stringToSign = [ALGORITHM, date, scope, await sha256Hex(canonicalRequest)].join("\n");
 
   let signingKey = await hmac(new TextEncoder().encode(`AWS4${opts.secretAccessKey}`), day);

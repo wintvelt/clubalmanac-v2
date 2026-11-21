@@ -55,13 +55,18 @@ function objectPath(cfg: R2Config, key: string): string {
   return `/${encodeKey(cfg.bucket)}/${encodeKey(key)}`;
 }
 
-/** Een ondertekende link op precies deze sleutel, met precies deze methode. */
+/**
+ * Een ondertekende link op precies deze sleutel, met precies deze methode.
+ * `extra.query` (bv. `response-content-type`) en `extra.headers` (bv.
+ * `content-length`, `x-amz-copy-source`) zijn mee ondertekend.
+ */
 export async function presignR2(
   cfg: R2Config,
   method: "GET" | "PUT" | "HEAD" | "DELETE",
   key: string,
   expiresInSeconds: number,
   nowMs: number,
+  extra: { query?: Record<string, string>; headers?: Record<string, string> } = {},
 ): Promise<PresignedLink> {
   return await presignRequest({
     method,
@@ -72,6 +77,7 @@ export async function presignR2(
     secretAccessKey: cfg.secretAccessKey,
     expiresInSeconds,
     nowMs,
+    ...extra,
   });
 }
 
@@ -99,31 +105,71 @@ async function serverFetch(
   }
 }
 
-/** De grootte van een object, of `null` als het er niet staat. */
-export async function headObject(cfg: R2Config, key: string): Promise<{ size: number } | null> {
+/** De grootte en de ETag van een object, of `null` als het er niet staat. */
+export async function headObject(cfg: R2Config, key: string): Promise<{ size: number; etag: string | null } | null> {
   const res = await serverFetch(cfg, "HEAD", key);
   await res.body?.cancel();
   if (res.status === 404) return null;
   if (!res.ok) throw new R2Error("HEAD", res.status);
   const size = Number(res.headers.get("Content-Length") ?? "");
   if (!Number.isFinite(size) || size < 0) throw new R2Error("HEAD", res.status);
-  return { size };
+  return { size, etag: res.headers.get("ETag") };
 }
 
-/** De eerste `length` bytes van een object (een range-verzoek). */
-export async function readHead(cfg: R2Config, key: string, length: number): Promise<Uint8Array> {
-  const res = await serverFetch(cfg, "GET", key, { Range: `bytes=0-${Math.max(0, length - 1)}` });
+/**
+ * Bytes `start` tot en met `end` van een object (een begrensd range-verzoek),
+ * met de ETag van wat R2 stuurde.
+ */
+export async function readRange(
+  cfg: R2Config,
+  key: string,
+  start: number,
+  end: number,
+): Promise<{ bytes: Uint8Array; etag: string | null }> {
+  const res = await serverFetch(cfg, "GET", key, { Range: `bytes=${start}-${Math.max(start, end)}` });
   if (res.status === 416) {
     await res.body?.cancel();
-    return new Uint8Array();
+    return { bytes: new Uint8Array(), etag: null };
   }
   if (!res.ok) {
     await res.body?.cancel();
     throw new R2Error("GET", res.status);
   }
+  const etag = res.headers.get("ETag");
   const bytes = new Uint8Array(await res.arrayBuffer());
+  const length = end - start + 1;
   // Een server die de Range negeert, stuurt alles; meer dan gevraagd telt niet.
-  return bytes.byteLength > length ? bytes.subarray(0, length) : bytes;
+  if (res.status === 200 && start > 0) return { bytes: bytes.subarray(start, start + length), etag };
+  return { bytes: bytes.byteLength > length ? bytes.subarray(0, length) : bytes, etag };
+}
+
+/** De eerste `length` bytes van een object. */
+export async function readHead(cfg: R2Config, key: string, length: number): Promise<Uint8Array> {
+  return (await readRange(cfg, key, 0, Math.max(0, length - 1))).bytes;
+}
+
+/**
+ * CopyObject binnen de bucket, alleen als de bron nog de ETag `ifMatch` heeft
+ * (A-invariant 12). `false`: de bron is intussen anders (412) of weg (404).
+ * De `x-amz-*`-headers zijn mee ondertekend.
+ */
+export async function copyObject(cfg: R2Config, from: string, to: string, ifMatch: string): Promise<boolean> {
+  const headers = {
+    "x-amz-copy-source": `/${encodeKey(cfg.bucket)}/${encodeKey(from)}`,
+    "x-amz-copy-source-if-match": ifMatch,
+  };
+  const { url } = await presignR2(cfg, "PUT", to, SERVER_LINK_SECONDS, Date.now(), { headers });
+  let res: Response;
+  try {
+    res = await fetch(url, { method: "PUT", headers });
+  } catch {
+    throw new R2Error("COPY", null);
+  }
+  const text = await res.text();
+  if (res.status === 412 || res.status === 404) return false;
+  // S3 kan een fout ook met 200 geven, met de fout in de body.
+  if (!res.ok || !text.includes("CopyObjectResult")) throw new R2Error("COPY", res.status);
+  return true;
 }
 
 /** Wis een object. Een object dat er niet staat, is ook weg. */

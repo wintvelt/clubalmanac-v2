@@ -57,8 +57,13 @@ function standalone(marker: number): boolean {
 /**
  * Het eerste beeld van de JPEG zonder metadata-segmenten, met alleen de stand
  * terug. `null` als het geen JPEG is of de structuur niet te volgen is.
+ * WP37: met `keepOrientation: false` ook zonder stand (een poster is rechtop
+ * gemaakt; er blijft dan geen EXIF-segment over).
  */
-export function stripJpegMetadata(bytes: Uint8Array): Uint8Array | null {
+export function stripJpegMetadata(
+  bytes: Uint8Array,
+  opts: { keepOrientation?: boolean } = {},
+): Uint8Array | null {
   if (bytes.length < 4 || bytes[0] !== 0xff || bytes[1] !== SOI) return null;
   const kept: Uint8Array[] = [];
   let orientation: number | undefined;
@@ -115,7 +120,7 @@ export function stripJpegMetadata(bytes: Uint8Array): Uint8Array | null {
     }
     i = end;
   }
-  if (orientation !== undefined && orientation >= 2 && orientation <= 8) {
+  if (opts.keepOrientation !== false && orientation !== undefined && orientation >= 2 && orientation <= 8) {
     kept.splice(afterApp0, 0, orientationSegment(orientation));
   }
   const total = 2 + kept.reduce((n, s) => n + s.length, 0);

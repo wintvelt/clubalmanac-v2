@@ -24,15 +24,16 @@ import {
 import { videoStorageCheckTemplate } from "./lib/emailTemplates";
 import { stripJpegMetadata } from "./lib/jpegMeta";
 import { INFO_SENDER, sendMailjetMessage } from "./lib/mailjet";
-import { inspectMp4, mp4IndexEnd, videoProblem } from "./lib/mp4";
+import { afterIndexHeader, inspectMp4, mp4IndexEnd, videoProblem, type Mp4Info, type VideoProblem } from "./lib/mp4";
 import {
   deleteObject,
+  copyObject,
   headObject,
   listObjects,
   presignR2,
   R2Error,
   r2Config,
-  readHead,
+  readRange,
   type R2Config,
 } from "./lib/r2";
 import { parseLocation, parseTakenAt, uploadImageType } from "./lib/upload";
@@ -43,13 +44,16 @@ import { parseLocation, parseTakenAt, uploadImageType } from "./lib/upload";
 //
 // Toevoegen in drie stappen (A-antwoord 5):
 //   1. `startUpload` (action): toegang tot het album, de grenzen, een
-//      reservering per upload-id met een sleutel die de backend kiest, en een
-//      ondertekende PUT voor alleen die sleutel (A-invariant 11, 20).
+//      reservering per upload-id met een tijdelijke sleutel (`uploads/…`) die
+//      de backend kiest, en een ondertekende PUT voor alleen die sleutel, met
+//      de grootte in de handtekening (A-invariant 11, 20).
 //   2. De app PUT het bestand naar R2.
 //   3. `POST /upload/video` (httpAction, `videoUploadRoute`): de poster en
-//      datum en plaats. De backend bekijkt het object in R2 (grootte, index,
-//      duur, codec, locatie) en maakt pas dan de rij (A-invariant 12, 13, 25).
-//      Geweigerd: object en reservering weg.
+//      datum en plaats. De backend bekijkt het tijdelijke object (grootte,
+//      index, sporen, duur, codec, locatie, wat na de index staat), kopieert
+//      het naar een eindsleutel (`videos/…`, nooit een PUT-link) als het nog
+//      hetzelfde object is, wist het tijdelijke, en maakt pas dan de rij
+//      (A-invariant 12, 13, 25, 28–31). Geweigerd: object en reservering weg.
 // Afspelen: `playUrl` (action), een ondertekende GET van 1 uur voor wie het
 // beeld van de rij mag zien (A-invariant 17, 18).
 // Wissen: elk wis-pad van de rij plant `deleteObjects` (A-invariant 21).
@@ -67,6 +71,8 @@ export const VIDEO_PUT_SECONDS = 3600;
 const INDEX_READ_BYTES = 512 * 1024;
 /** Een index die groter is, leest de backend niet (en weigert het filmpje). */
 const MAX_INDEX_BYTES = 8 * 1024 * 1024;
+/** A-invariant 31: zoveel koppen mogen na de index staan. */
+const MAX_BOXES_AFTER_INDEX = 32;
 
 export const VIDEO_NOT_FOUND = { code: "VIDEO_NOT_FOUND" } as const;
 
@@ -81,7 +87,7 @@ type FinishState =
   | { kind: "none" }
   | { kind: "done"; photoId: Id<"photos"> }
   | { kind: "open"; reservationId: Id<"uploadIdempotency">; key: string; albumOk: boolean; atLimit: boolean };
-type Inventory = { videos: { photoId: Id<"photos">; key: string }[]; open: string[] };
+type Inventory = { videos: { photoId: Id<"photos">; key: string; bytes: number }[]; open: string[] };
 
 function refuse(reason: RefuseReason): never {
   throw new ConvexError({ code: "VIDEO_UPLOAD_REFUSED", reason });
@@ -96,11 +102,23 @@ const REFUSE_REASON = v.union(
   v.literal("bezig"),
 );
 
-/** A-invariant 11: een willekeurige sleutel, nooit afgeleid van iets uit het verzoek. */
-function newVideoKey(): string {
+/** A-invariant 11: de app PUT onder dit prefix; een R2-lifecycle-regel wist het na 1 dag. */
+export const TMP_PREFIX = "uploads/";
+/** A-invariant 11: het filmpje in het album; hiervoor wordt nooit een PUT getekend. */
+export const FINAL_PREFIX = "videos/";
+
+function randomHex(): string {
   const bytes = crypto.getRandomValues(new Uint8Array(16));
-  const hex = Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
-  return `videos/${hex}.mp4`;
+  return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+/** A-invariant 11: willekeurige sleutels, nooit afgeleid van iets uit het verzoek. */
+function newUploadKey(): string {
+  return `${TMP_PREFIX}${randomHex()}.mp4`;
+}
+
+function newFinalKey(): string {
+  return `${FINAL_PREFIX}${randomHex()}.mp4`;
 }
 
 // --- aanvragen -----------------------------------------------------------------
@@ -225,7 +243,7 @@ export const startUpload = action({
     if (gate.kind === "refused") refuse(gate.reason);
     // Een duur of grootte die geen getal boven nul is, telt als buiten de grens.
     if (!(Number.isFinite(durationMs) && durationMs > 0) || videoTooLong(durationMs)) refuse("te_lang");
-    if (!(Number.isFinite(bytes) && bytes > 0) || bytes > MAX_VIDEO_BYTES) refuse("te_groot");
+    if (!(Number.isInteger(bytes) && bytes > 0) || bytes > MAX_VIDEO_BYTES) refuse("te_groot");
     const clientUploadId = uploadId.trim();
     if (clientUploadId === "") throw new ConvexError({ code: "VIDEO_UPLOAD_ID_MISSING" });
 
@@ -234,11 +252,15 @@ export const startUpload = action({
       ownerId: gate.userId,
       clientUploadId,
       albumId,
-      newKey: newVideoKey(),
+      newKey: newUploadKey(),
     });
     if (reserved.kind === "refused") refuse(reserved.reason);
     if (reserved.kind === "done") return { kind: "done" as const, photoId: reserved.photoId };
-    const link = await presignR2(cfg, "PUT", reserved.key, VIDEO_PUT_SECONDS, Date.now());
+    // A-invariant 11: de handtekening legt de grootte vast; een ander aantal
+    // bytes (of een veel groter bestand) weigert R2.
+    const link = await presignR2(cfg, "PUT", reserved.key, VIDEO_PUT_SECONDS, Date.now(), {
+      headers: { "content-length": String(bytes) },
+    });
     return { kind: "upload" as const, url: link.url, expiresAt: link.expiresAt };
   },
 });
@@ -305,6 +327,9 @@ export const createFromUpload = internalMutation({
     reservationId: v.id("uploadIdempotency"),
     ownerId: v.id("users"),
     storageId: v.id("_storage"),
+    /** De tijdelijke sleutel van de reservering. */
+    uploadKey: v.string(),
+    /** De eindsleutel, die in de rij komt. */
     key: v.string(),
     durationMs: v.number(),
     bytes: v.number(),
@@ -321,7 +346,7 @@ export const createFromUpload = internalMutation({
       !reservation ||
       reservation.ownerId !== args.ownerId ||
       reservation.status !== "in_progress" ||
-      reservation.videoKey !== args.key
+      reservation.videoKey !== args.uploadKey
     ) {
       throw new Error(VIDEO_RESERVATION_GONE);
     }
@@ -415,7 +440,8 @@ export async function videoUploadRoute(ctx: ActionCtx, request: Request): Promis
   if (clientUploadId === "") return json({ error: "Missing X-Upload-Id" }, 400);
 
   const state: FinishState = await ctx.runQuery(internal.videos.finishState, { ownerId: user._id, clientUploadId });
-  if (state.kind === "none") return json({ error: "Geen open video-upload" }, 404);
+  // A-invariant 32: onbekend, van een ander of verlopen is `verlopen`.
+  if (state.kind === "none") return json({ error: "Geen open video-upload", reason: "verlopen" }, 404);
   if (state.kind === "done") return json({ photoId: state.photoId }, 200);
 
   // De poster, vóór alles wat iets in R2 aanraakt.
@@ -429,7 +455,8 @@ export async function videoUploadRoute(ctx: ActionCtx, request: Request): Promis
   }
   if (posterBytes.byteLength > MAX_UPLOAD_BYTES) return json({ error: "Poster te groot" }, 400);
   // A-invariant 15: zonder metadata opgeslagen (geen GPS in storage).
-  const poster = uploadImageType(posterBytes) === "image/jpeg" ? stripJpegMetadata(posterBytes) : null;
+  const poster =
+    uploadImageType(posterBytes) === "image/jpeg" ? stripJpegMetadata(posterBytes, { keepOrientation: false }) : null;
   if (!poster) return json({ error: "De poster moet een JPEG zijn" }, 415);
 
   if (state.atLimit) return json({ error: "Photo limiet bereikt" }, 403);
@@ -445,40 +472,46 @@ export async function videoUploadRoute(ctx: ActionCtx, request: Request): Promis
 
   if (!state.albumOk) {
     await discard(ctx, cfg, state.reservationId, state.key);
-    return json({ error: "Album niet gevonden" }, 404);
+    return json({ error: "Album niet gevonden", reason: "geen_album" }, 404);
   }
 
-  // A-invariant 12: het object in R2 bekijken (grootte, dan het begin).
-  let size: number;
-  let head: Uint8Array;
+  // A-invariant 12: het tijdelijke object in R2 bekijken (grootte, het begin,
+  // wat na de index staat). Een exception tijdens het bekijken is een
+  // weigering (A-invariant 28); alleen R2 onbereikbaar is een serverfout.
+  const examined = await examine(cfg, state.key);
+  if (examined.kind === "r2") return json({ error: "Opslag niet bereikbaar" }, 502);
+  if (examined.kind === "missing") return json({ error: "Het filmpje is nog niet binnen", reason: "niet_binnen" }, 409);
+  if (examined.kind === "changed") {
+    // Het object veranderde tijdens het bekijken: opnieuw afronden bekijkt het opnieuw.
+    return json({ error: "Het filmpje is nog niet helemaal binnen", reason: "niet_binnen" }, 409);
+  }
+  if (examined.kind === "too_big") {
+    await discard(ctx, cfg, state.reservationId, state.key);
+    return json({ error: "Bestand te groot" }, 413);
+  }
+  if (examined.kind === "refused") {
+    await discard(ctx, cfg, state.reservationId, state.key);
+    return json({ error: "Dit filmpje kan er niet in", reason: examined.reason }, 422);
+  }
+  const { size, etag, info } = examined;
+
+  // A-invariant 11, 12: naar een eindsleutel waarvoor nooit een PUT is
+  // getekend, alleen als het object nog is wat de backend bekeek; dan de
+  // tijdelijke weg. Alleen de eindsleutel komt in de rij.
+  const finalKey = newFinalKey();
   try {
-    const found = await headObject(cfg, state.key);
-    if (!found) return json({ error: "Het filmpje is nog niet binnen", reason: "niet_binnen" }, 409);
-    size = found.size;
-    if (size > MAX_VIDEO_BYTES) {
-      await discard(ctx, cfg, state.reservationId, state.key);
-      return json({ error: "Bestand te groot" }, 413);
-    }
-    head = size > 0 ? await readHead(cfg, state.key, Math.min(size, INDEX_READ_BYTES)) : new Uint8Array();
-    const end = mp4IndexEnd(head);
-    if (end !== null && end > head.byteLength && end <= size && end <= MAX_INDEX_BYTES) {
-      head = await readHead(cfg, state.key, end);
+    if (!(await copyObject(cfg, state.key, finalKey, etag))) {
+      return json({ error: "Het filmpje is nog niet helemaal binnen", reason: "niet_binnen" }, 409);
     }
   } catch (e) {
-    if (e instanceof R2Error) {
-      console.warn(`[videos] ${e.message}`);
-      return json({ error: "Opslag niet bereikbaar" }, 502);
-    }
-    throw e;
+    console.warn(`[videos] ${e instanceof Error ? e.message : "kopie mislukt"}`);
+    return json({ error: "Opslag niet bereikbaar" }, 502);
   }
-
-  const inspection = inspectMp4(head);
-  const problem = videoProblem(inspection, size);
-  if (problem !== null || !inspection.ok) {
-    await discard(ctx, cfg, state.reservationId, state.key);
-    return json({ error: "Dit filmpje kan er niet in", reason: problem ?? "geen_mp4" }, 422);
+  try {
+    await deleteObject(cfg, state.key);
+  } catch {
+    // De lifecycle-regel op uploads/ (en de opruimronde) halen hem later weg.
   }
-  const info = inspection.info;
 
   // A-invariant 14: de kloktijd van de opname (zoals bij foto's); zonder
   // datum geen takenAt. Plaats alleen in de rij, niet in het bestand.
@@ -491,7 +524,8 @@ export async function videoUploadRoute(ctx: ActionCtx, request: Request): Promis
       reservationId: state.reservationId,
       ownerId: user._id,
       storageId,
-      key: state.key,
+      uploadKey: state.key,
+      key: finalKey,
       durationMs: info.durationMs,
       bytes: size,
       ...(info.video && info.video.width > 0 && info.video.height > 0
@@ -503,24 +537,90 @@ export async function videoUploadRoute(ctx: ActionCtx, request: Request): Promis
     });
     return json({ photoId }, 200);
   } catch (e) {
+    // De rij kwam er niet: de poster en de eindsleutel weer weg (A-invariant 12).
     try {
       await ctx.storage.delete(storageId);
     } catch {
       // best-effort
     }
-    const message = e instanceof Error ? e.message : "";
-    if (message === VIDEO_LIMIT_REACHED) return json({ error: "Photo limiet bereikt" }, 403);
-    if (message === VIDEO_NO_ALBUM_ACCESS) {
-      await discard(ctx, cfg, state.reservationId, state.key);
-      return json({ error: "Album niet gevonden" }, 404);
+    try {
+      await deleteObject(cfg, finalKey);
+    } catch {
+      // De R2-check meldt het wees-object.
     }
+    const message = e instanceof Error ? e.message : "";
     if (message === VIDEO_RESERVATION_GONE) {
       // Een gelijktijdige poging kan het al afgerond hebben.
       const again: FinishState = await ctx.runQuery(internal.videos.finishState, { ownerId: user._id, clientUploadId });
       if (again.kind === "done") return json({ photoId: again.photoId }, 200);
-      return json({ error: "Geen open video-upload" }, 404);
+      return json({ error: "Geen open video-upload", reason: "verlopen" }, 404);
     }
+    // Het tijdelijke object is al weg: deze upload-id begint opnieuw.
+    await ctx.runMutation(internal.videos.abandonUpload, { reservationId: state.reservationId });
+    if (message === VIDEO_LIMIT_REACHED) return json({ error: "Photo limiet bereikt" }, 403);
+    if (message === VIDEO_NO_ALBUM_ACCESS) return json({ error: "Album niet gevonden", reason: "geen_album" }, 404);
     throw e;
+  }
+}
+
+type Examined =
+  | { kind: "ok"; size: number; etag: string; info: Mp4Info }
+  | { kind: "missing" }
+  | { kind: "changed" }
+  | { kind: "too_big" }
+  | { kind: "refused"; reason: VideoProblem }
+  | { kind: "r2" };
+
+/**
+ * Het tijdelijke object bekijken (A-invariant 12, 28, 31): HEAD (grootte,
+ * ETag), het eerste stuk (512 KiB; een grotere index helemaal, tot 8 MiB),
+ * `inspectMp4`, en dan de koppen na de index, elk met een klein range-verzoek.
+ * Elke GET is begrensd; het hele bestand wordt nooit gelezen. Wisselt de ETag
+ * tijdens het lezen: `changed`.
+ */
+async function examine(cfg: R2Config, key: string): Promise<Examined> {
+  try {
+    const found = await headObject(cfg, key);
+    if (!found) return { kind: "missing" };
+    const { size, etag } = found;
+    if (size > MAX_VIDEO_BYTES) return { kind: "too_big" };
+    if (size === 0 || !etag) return { kind: "refused", reason: "geen_mp4" };
+    const same = (e: string | null) => e === null || e === etag;
+
+    let first = await readRange(cfg, key, 0, Math.min(size, INDEX_READ_BYTES) - 1);
+    if (!same(first.etag)) return { kind: "changed" };
+    let head = first.bytes;
+    const indexEnd = mp4IndexEnd(head);
+    if (indexEnd !== null && indexEnd > head.byteLength && indexEnd <= size && indexEnd <= MAX_INDEX_BYTES) {
+      first = await readRange(cfg, key, 0, indexEnd - 1);
+      if (!same(first.etag)) return { kind: "changed" };
+      head = first.bytes;
+    }
+    const inspection = inspectMp4(head);
+    const problem = videoProblem(inspection, size);
+    if (problem !== null || !inspection.ok) return { kind: "refused", reason: problem ?? "geen_mp4" };
+
+    // A-invariant 31: na de index alleen beelddata, tot precies het einde.
+    let offset = mp4IndexEnd(head);
+    if (offset === null) return { kind: "refused", reason: "geen_mp4" };
+    let count = 0;
+    while (offset < size) {
+      count += 1;
+      if (count > MAX_BOXES_AFTER_INDEX) return { kind: "refused", reason: "geen_mp4" };
+      const part = await readRange(cfg, key, offset, Math.min(size, offset + 16) - 1);
+      if (!same(part.etag)) return { kind: "changed" };
+      const next = afterIndexHeader(part.bytes, offset, size);
+      if (next === null || next <= offset) return { kind: "refused", reason: "geen_mp4" };
+      offset = next;
+    }
+    return { kind: "ok", size, etag, info: inspection.info };
+  } catch (e) {
+    if (e instanceof R2Error) {
+      console.warn(`[videos] ${e.message}`);
+      return { kind: "r2" };
+    }
+    console.warn(`[videos] een filmpje bekijken gaf een fout; geweigerd als geen_mp4`);
+    return { kind: "refused", reason: "geen_mp4" };
   }
 }
 
@@ -556,7 +656,10 @@ export const playUrl = action({
     const key: string | null = await ctx.runQuery(internal.videos.keyForViewer, { photoId });
     if (key === null) throw new ConvexError(VIDEO_NOT_FOUND);
     const cfg = r2Config();
-    return await presignR2(cfg, "GET", key, VIDEO_LINK_SECONDS, Date.now());
+    // A-invariant 17: R2 stuurt het als video/mp4, ook als het object een ander type heeft.
+    return await presignR2(cfg, "GET", key, VIDEO_LINK_SECONDS, Date.now(), {
+      query: { "response-content-type": "video/mp4" },
+    });
   },
 });
 
@@ -594,13 +697,13 @@ export const deleteObjects = internalAction({
 export const storageInventory = internalQuery({
   args: {},
   returns: v.object({
-    videos: v.array(v.object({ photoId: v.id("photos"), key: v.string() })),
+    videos: v.array(v.object({ photoId: v.id("photos"), key: v.string(), bytes: v.number() })),
     open: v.array(v.string()),
   }),
   handler: async (ctx) => {
-    const videos: { photoId: Id<"photos">; key: string }[] = [];
+    const videos: { photoId: Id<"photos">; key: string; bytes: number }[] = [];
     for (const p of await ctx.db.query("photos").collect()) {
-      if (p.video) videos.push({ photoId: p._id, key: p.video.key });
+      if (p.video) videos.push({ photoId: p._id, key: p.video.key, bytes: p.video.bytes });
     }
     const open = (
       await ctx.db
@@ -637,15 +740,24 @@ export const checkStorage = internalAction({
         .filter((o) => !known.has(o.key) && now - o.lastModified > VIDEO_UPLOAD_OPEN_MS)
         .map((o) => ({ key: o.key, lastModified: o.lastModified }));
       const missing = inventory.videos.filter((v) => !present.has(v.key)).map((v) => v.photoId);
-      if (orphans.length > 0 || missing.length > 0) report = { ...base, orphans, missing };
+      // A-invariant 22: een grootte die afwijkt van wat de backend bekeek, en
+      // elk object boven de grens (ook onder uploads/).
+      const sizes = new Map(objects.map((o) => [o.key, o.size]));
+      const wrongSize = inventory.videos
+        .filter((v) => sizes.has(v.key) && sizes.get(v.key) !== v.bytes)
+        .map((v) => v.photoId);
+      const tooBig = objects.filter((o) => o.size > MAX_VIDEO_BYTES).map((o) => o.key);
+      if (orphans.length > 0 || missing.length > 0 || wrongSize.length > 0 || tooBig.length > 0) {
+        report = { ...base, orphans, missing, wrongSize, tooBig };
+      }
     } catch (e) {
       const failure = e instanceof Error ? e.message : "onbekende fout";
-      report = { ...base, failure, orphans: [], missing: [] };
+      report = { ...base, failure, orphans: [], missing: [], wrongSize: [], tooBig: [] };
     }
     if (report === null) return null;
 
     console.warn(
-      `[videos.checkStorage] ${report.failure ?? `${report.orphans.length} wees, ${report.missing.length} ontbrekend`}`,
+      `[videos.checkStorage] ${report.failure ?? `${report.orphans.length} wees, ${report.missing.length} ontbrekend, ${report.wrongSize?.length ?? 0} andere grootte, ${report.tooBig?.length ?? 0} te groot`}`,
     );
     const webmasters = getWebmasterEmails();
     if (webmasters.length === 0) {

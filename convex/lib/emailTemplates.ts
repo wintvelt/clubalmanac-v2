@@ -570,10 +570,16 @@ export function videoStorageCheckTemplate(opts: {
   failure?: string;
   orphans: { key: string; lastModified: number }[];
   missing: string[];
+  /** Filmpjes (foto-id) waarvan het object een andere grootte heeft dan bekeken. */
+  wrongSize?: string[];
+  /** Objecten (sleutel) boven 120 MiB. */
+  tooBig?: string[];
 }): TemplateBlock {
+  const wrongSize = opts.wrongSize ?? [];
+  const tooBig = opts.tooBig ?? [];
   const subject = opts.failure
     ? `Filmpjes: de R2-check kon niet draaien (${opts.stage})`
-    : `Filmpjes: ${opts.orphans.length} wees-object(en) en ${opts.missing.length} ontbrekend(e) bestand(en) in R2 (${opts.stage})`;
+    : `Filmpjes: ${opts.orphans.length} wees, ${opts.missing.length} ontbrekend, ${wrongSize.length + tooBig.length} met een verkeerde grootte in R2 (${opts.stage})`;
   const lines: string[] = [];
   if (opts.failure) {
     lines.push(`De dagelijkse check van de filmpjes in R2 kon niet draaien: ${opts.failure}.`);
@@ -585,6 +591,10 @@ export function videoStorageCheckTemplate(opts: {
       `De dagelijkse check van de filmpjes in R2 vond ${opts.orphans.length} wees-object(en) (geen filmpje en geen open upload, ouder dan een dag) en ${opts.missing.length} filmpje(s) waarvan het bestand ontbreekt.`,
     );
     if (opts.missing.length > 0) lines.push(`Filmpjes zonder bestand (foto-id): ${opts.missing.join(", ")}`);
+    if (wrongSize.length > 0) {
+      lines.push(`Filmpjes waarvan het bestand een andere grootte heeft dan de backend bekeek (foto-id): ${wrongSize.join(", ")}`);
+    }
+    if (tooBig.length > 0) lines.push(`Objecten boven 120 MiB (sleutel): ${tooBig.join(", ")}`);
     if (opts.orphans.length > 0) {
       lines.push(
         `Wees-objecten (sleutel, laatst gewijzigd): ${opts.orphans

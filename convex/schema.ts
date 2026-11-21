@@ -157,8 +157,9 @@ export default defineSchema({
     flaggedAppealDate: v.optional(v.number()),
     flaggedAppealDenyDate: v.optional(v.number()),
     // WP37: een filmpje. Dan is `storageId` de poster (het beeld van de rij,
-    // met *klein* en *groot*), en staat het bestand in R2 onder `key` (door
-    // de backend gekozen, A-invariant 11). `durationMs` en `bytes` komen uit
+    // met *klein* en *groot*), en staat het bestand in R2 onder `key`: de
+    // eindsleutel (`videos/…`), door de backend gekozen, waarvoor nooit een PUT
+    // is getekend (A-invariant 11). `durationMs` en `bytes` komen uit
     // het bestand zelf, zoals de backend het bekeek (A-invariant 12). Alleen
     // `durationMs` verlaat de backend (A-invariant 19).
     video: v.optional(
@@ -193,8 +194,10 @@ export default defineSchema({
     photoId: v.optional(v.id("photos")),
     createdAt: v.number(),
     completedAt: v.optional(v.number()),
-    // WP37: een video-upload (`videos.startUpload`). De sleutel in R2 die de
-    // backend koos, en het album waar het filmpje in komt. Open blijft hij
+    // WP37: een video-upload (`videos.startUpload`). De tijdelijke sleutel in
+    // R2 (`uploads/…`) die de backend koos en waarheen de app PUT, en het album
+    // waar het filmpje in komt. Het filmpje zelf krijgt bij het afronden een
+    // eindsleutel (`photos.video.key`, A-invariant 11, 12). Open blijft hij
     // VIDEO_UPLOAD_OPEN_MS (een dag), niet 30 minuten (A-invariant 20).
     videoKey: v.optional(v.string()),
     albumId: v.optional(v.id("albums")),
