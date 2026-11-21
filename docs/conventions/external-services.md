@@ -296,8 +296,10 @@ S3 rekent uitgaand verkeer: 100 GB per maand gratis per account, daarboven ~$0,0
 
 Filmpjes die leden in een album zetten, staan in Cloudflare R2; de rij (met de poster als beeld) staat in Convex. Geen publieke bucket: de app krijgt alleen kortlevende ondertekende links van de backend, voor precies één sleutel die de backend koos. Twee prefixen in elke bucket:
 
-- `uploads/…`: hier PUT de app het filmpje, met een link van hooguit een uur waarin de grootte vastligt. De backend bekijkt het object (grootte, duur, sporen, codec, GPS, wat na de index staat).
-- `videos/…`: na de controle kopieert de backend het (CopyObject, alleen als het nog hetzelfde object is) naar een eindsleutel en wist hij het tijdelijke object. Voor `videos/` tekent de backend nooit een PUT; afspelen is een GET van 1 uur. Zie [WP37](../work-packages/WP37-filmpjes-in-albums.md) en `convex/videos.ts`.
+- `uploads/…`: hier PUT de app het filmpje, met een link van 15 minuten waarin de grootte vastligt (R2 toetst de geldigheid bij de start, dus een lange upload loopt door). De backend bekijkt het object (grootte, duur, sporen, codec, GPS, wat na de index staat).
+- `videos/…`: na de controle kopieert de backend het (CopyObject, alleen als het nog hetzelfde object is, met type `video/mp4`) naar een eindsleutel, maakt de rij en wist dan pas het tijdelijke object. Voor `videos/` tekent de backend nooit een PUT; afspelen is een GET van 1 uur.
+
+Per lid hooguit 30 keer "upload aanvragen" per 24 uur (glijdend); de 31e krijgt in de app "Je hebt vandaag al veel filmpjes verstuurd". Dat begrenst wat een lid met links kan neerzetten. Zie [WP37](../work-packages/WP37-filmpjes-in-albums.md) en `convex/videos.ts`.
 
 Kosten: 10 GB opslag, 1 miljoen schrijf- en 10 miljoen leesverzoeken per maand gratis; uitgaand verkeer gratis. Daarboven $0,015 per GB per maand. 10 GB is ~6 uur filmpje (28 MB per minuut).
 
@@ -328,7 +330,7 @@ Wie geen toegang heeft, krijgt altijd de gewone weigering (`VIDEO_UPLOAD_REFUSED
 
 ### Bewaking en opruimen
 
-- **Dagelijkse R2-check** (cron `video storage check`, 05:15 UTC): legt de lijst in R2 naast de filmpjes en de open uploads in Convex. Eén mail aan `WEBMASTER_EMAILS` bij een *wees-object* (geen filmpje en geen open upload, ouder dan een dag), een *ontbrekend bestand* (een filmpje waarvan het object weg is), een filmpje waarvan het object *een andere grootte* heeft dan de backend bekeek, of een object *boven 120 MiB*, of als de check niet kon draaien. De check wist niets.
+- **Dagelijkse R2-check** (cron `video storage check`, 05:15 UTC): legt de lijst in R2 naast de filmpjes en de open uploads in Convex. Eén mail aan `WEBMASTER_EMAILS` bij een *wees-object* (onder `videos/` zonder filmpje, ouder dan een dag), bij *"de opruimregel van R2 werkt niet"* (een object onder `uploads/` zonder open upload, ouder dan 2 dagen: controleer de lifecycle-regel `uploads-na-1-dag` op de bucket), een *ontbrekend bestand* (een filmpje waarvan het object weg is), een filmpje waarvan het object *een andere grootte* heeft dan de backend bekeek, of een object *boven 120 MiB*, of als de check niet kon draaien. De check wist niets.
   - Andere grootte of boven 120 MiB: het object is na de controle veranderd of er staat iets dat er niet hoort. Onder `uploads/` ruimt de lifecycle-regel het op; onder `videos/` het filmpje laten verwijderen (de eigenaar of de webmaster via melden) en de eigenaar vragen het opnieuw toe te voegen.
   - Wees-object: meestal een upload die strandde (de app is herstart, de opruimronde haalde de reservering weg terwijl R2 niet bereikbaar was) of een wis-stap die R2 niet bereikte. Controleer dat de sleutel bij geen filmpje hoort en wis hem in het Cloudflare-dashboard (bucket → object → *Delete*).
   - Ontbrekend bestand: het filmpje speelt niet af. Haal het object terug uit de backup (`s3://clubalmanac-convex-backup/r2-videos/<sleutel>`) en zet het met dezelfde sleutel terug in de bucket, of laat de eigenaar het filmpje verwijderen en opnieuw toevoegen.

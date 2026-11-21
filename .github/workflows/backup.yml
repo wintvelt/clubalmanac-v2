@@ -122,8 +122,11 @@ jobs:
       # R2 onder r2-videos/; alleen nieuwe objecten (de sleutels veranderen
       # nooit, dus de grootte volstaat); een filmpje dat uit R2 weg is, krijgt
       # een delete-marker (de vorige versie blijft een half jaar, zoals de
-      # export). Zonder R2_BACKUP_BUCKET: een gele waarschuwing, geen rode run,
-      # zolang R2 op prod nog niet draait.
+      # export). Niet: de tijdelijke uploads (uploads/). Hooguit 25 wissingen
+      # per run: een lege of verkeerde bron maakt de backup niet leeg (dan rood,
+      # zie infra/backup.md). NO_HEAD: de rol mag bewust niet lezen
+      # (GetObject/HeadObject). Zonder R2_BACKUP_BUCKET: een gele waarschuwing,
+      # geen rode run, zolang R2 op prod nog niet draait.
       - name: Filmpjes uit R2 naar de backup
         env:
           RCLONE_CONFIG_R2_TYPE: s3
@@ -139,6 +142,7 @@ jobs:
           RCLONE_CONFIG_S3BACKUP_REGION: eu-west-1
           RCLONE_CONFIG_S3BACKUP_STORAGE_CLASS: GLACIER_IR
           RCLONE_CONFIG_S3BACKUP_NO_CHECK_BUCKET: "true"
+          RCLONE_CONFIG_S3BACKUP_NO_HEAD: "true"
         run: |
           if [ -z "$R2_BACKUP_BUCKET" ]; then
             echo "::warning::R2_BACKUP_BUCKET niet gezet: de filmpjes in R2 zitten niet in deze backup"
@@ -147,7 +151,9 @@ jobs:
           test -n "$R2_BACKUP_ENDPOINT" || { echo "repo-variabele R2_BACKUP_ENDPOINT ontbreekt"; exit 1; }
           test -n "$RCLONE_CONFIG_R2_ACCESS_KEY_ID" || { echo "geheim R2_BACKUP_ACCESS_KEY_ID ontbreekt in environment prod-backup"; exit 1; }
           test -n "$RCLONE_CONFIG_R2_SECRET_ACCESS_KEY" || { echo "geheim R2_BACKUP_SECRET_ACCESS_KEY ontbreekt in environment prod-backup"; exit 1; }
+          sudo apt-get update -qq
           sudo apt-get install -y -qq rclone > /dev/null
-          rclone size "r2:$R2_BACKUP_BUCKET"
-          rclone sync "r2:$R2_BACKUP_BUCKET" "s3backup:$BACKUP_BUCKET/r2-videos" --size-only --stats-one-line --stats 0
+          rclone version | head -1
+          rclone size "r2:$R2_BACKUP_BUCKET" "--exclude=uploads/**"
+          rclone sync "r2:$R2_BACKUP_BUCKET" "s3backup:$BACKUP_BUCKET/r2-videos/" "--exclude=uploads/**" --max-delete=25 --size-only --stats-one-line --stats=0
           echo "klaar: filmpjes in s3://$BACKUP_BUCKET/r2-videos/"
