@@ -1,3 +1,4 @@
+import { ConvexError } from "convex/values";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createHookRuntime } from "./support/hookRuntime";
 
@@ -12,7 +13,10 @@ import { createHookRuntime } from "./support/hookRuntime";
 // Hier draait de echte `useVideoUploader` (src/data/videoUpload.ts) in de
 // kleine hook-runtime, met een nagebootste Clerk, Convex-action, module voor
 // filmpjes, achtergrond-upload en `fetch`.
-// Spec: docs/work-packages/WP37-filmpjes-in-albums.md §A-invarianten 32, 33.
+//   - Gate op de iPhone (A-invariant 37): valt de verbinding weg terwijl
+//     `startUpload` loopt (een gewone Error, geen ConvexError), dan één
+//     automatische nieuwe poging; lukt ook die niet, dan `netwerk`, niet `server`.
+// Spec: docs/work-packages/WP37-filmpjes-in-albums.md §A-invarianten 32, 33, 37.
 
 const rt = vi.hoisted(() => ({ runtime: null as unknown as ReturnType<typeof createHookRuntime> }));
 
@@ -35,6 +39,8 @@ const fake = vi.hoisted(() => ({
   finish: [] as Array<{ status: number; body: unknown } | "netwerk">,
   posterFails: 0,
   compressedMs: 2000,
+  /** Fouten voor de volgende aanroepen van startUpload, op volgorde. */
+  startErrors: [] as unknown[],
 }));
 
 vi.mock("@clerk/expo", () => ({
@@ -53,6 +59,8 @@ vi.mock("expo-image", () => ({ Image: { clearMemoryCache: async () => true, clea
 vi.mock("convex/react", () => ({
   useAction: () => async () => {
     fake.starts += 1;
+    const err = fake.startErrors.shift();
+    if (err !== undefined) throw err;
     return { kind: "upload", url: "https://r2.invalid/uploads/x.mp4?X-Amz-Signature=abc", expiresAt: Date.now() + 3_600_000 };
   },
 }));
@@ -115,6 +123,7 @@ beforeEach(() => {
   fake.finish = [];
   fake.posterFails = 0;
   fake.compressedMs = 2000;
+  fake.startErrors = [];
   vi.stubGlobal("fetch", vi.fn(fakeFetch));
 });
 
@@ -215,5 +224,41 @@ describe("vóór het versturen al weigeren boven 180,4 s (fixronde 3)", () => {
     fake.compressedMs = 180_400;
     const out = await upload({ asset: { ...ASSET, duration: 180_400 }, uploadId, albumId: "album-1" });
     expect(out).toEqual({ ok: true, photoId: "p1" });
+  });
+});
+
+describe("startUpload valt weg: één automatische nieuwe poging (A-invariant 37)", () => {
+  const LOST = "Connection lost while action was in flight";
+
+  it("eerste aanroep weg, tweede lukt: het filmpje komt binnen, zonder opnieuw te verkleinen", async () => {
+    const upload = await mount();
+    fake.startErrors.push(new Error(LOST));
+    expect(await run(upload)).toEqual({ ok: true, photoId: "p1" });
+    expect(fake.starts).toBe(2);
+    expect(fake.compress).toBe(1);
+  });
+
+  it("twee keer weg: reden netwerk (niet server), het verkleinde bestand blijft, en opnieuw proberen lukt", async () => {
+    const upload = await mount();
+    fake.startErrors.push(new Error(LOST), new Error(LOST));
+    expect(await run(upload)).toEqual({ ok: false, reason: "netwerk" });
+    expect(fake.starts, "meer dan één automatische nieuwe poging").toBe(2);
+    expect(fake.removed).not.toContain(COMPRESSED);
+    expect(await run(upload)).toEqual({ ok: true, photoId: "p1" });
+    expect(fake.compress).toBe(1);
+  });
+
+  it("een weigering van de backend (ConvexError) wordt niet herhaald", async () => {
+    const upload = await mount();
+    fake.startErrors.push(new ConvexError({ code: "VIDEO_UPLOAD_REFUSED", reason: "te_vaak" }));
+    expect(await run(upload)).toEqual({ ok: false, reason: "te_vaak" });
+    expect(fake.starts).toBe(1);
+  });
+
+  it("een ConvexError zonder bekende code blijft server, zonder nieuwe poging", async () => {
+    const upload = await mount();
+    fake.startErrors.push(new ConvexError({ code: "IETS_ANDERS" }));
+    expect(await run(upload)).toEqual({ ok: false, reason: "server" });
+    expect(fake.starts).toBe(1);
   });
 });
