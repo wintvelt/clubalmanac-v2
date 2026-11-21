@@ -79,6 +79,7 @@ A rapporteert ook wat hier ontbreekt of niet klopt. Oude code is hier geen bron:
 ### Gemeten
 
 - **Wouters voorbeeld** (`builds/video/daatfilmpje.mp4`): 72,8 s, 33,5 MB, gemiddeld 3,7 Mbit/s (beeld 3,5, geluid AAC 129 kbit/s), H.264 1080 × 1920 rechtop zonder draai-matrix, 30 fps, de index (`moov`) vooraan. **Geen datum en geen plaats**: de maaktijd is nul en de enige metadata is `©too = Lavf58.76.100`. Het bestand is dus met ffmpeg gemaakt, niet door een iPhone. De kwaliteit is een goed doel; over datum en GPS zegt het niets.
+- **Een echt iPhone-origineel** (`builds/video/iphonefilmpje.MOV`, gitignored, regie 2026-11-21): iPhone 15 Pro, 4K HEVC HDR (HLG, BT.2020, 10 bit), 24 fps, liggend, 18,8 s, 73,7 MB, met `creationdate` (met tijdzone), `location.ISO6709` en de nauwkeurigheid, en 5 `mebx`-sporen. De index staat achteraan (`ftyp`, `wide`, `mdat`, `moov`), dus de backend weigert het origineel met `index_achteraan`. B's `VideoProcessing.swift`, los gedraaid op de server: in 5,9 s een mp4 met H.264 1920 × 1080 en AAC, 8,9 MB (3,6 Mbit/s), BT.709 SDR, zonder metadata en zonder locatie; de kleuren op hetzelfde frame zijn vrijwel gelijk aan het origineel. Datum en plaats komen uit het origineel. `inspectMp4` en `videoProblem` laten de uitvoer door. Dat dekt de HDR-, de liggende en de locatie-opname op de server. Op het toestel blijft voor de gate: de duur van het comprimeren, of de kiezer datum en plaats meegeeft, en afspelen.
 - **Testfilmpjes**: AVFoundation schrijft een locatie in een `.mp4` niet als tekst maar als een binair `loci`-blok (3GPP), en de datum als `udta/date`. In een `.mov` (zoals de iPhone opneemt) staat de locatie als `©xyz` én als `com.apple.quicktime.location.ISO6709` onder `meta/keys`. Een controle die alleen op de tekst `ISO6709` let, mist dus het `.mp4`-geval.
 
 ### Antwoorden op de open vragen
@@ -97,7 +98,7 @@ A rapporteert ook wat hier ontbreekt of niet klopt. Oude code is hier geen bron:
 
 ### Wat in de draft niet klopt of ontbreekt
 
-- **Het voorbeeld heeft geen datum of plaats** (zie Gemeten). De gate heeft een echte iPhone-opname nodig met locatie aan, een HDR-opname en een liggende opname.
+- **Het voorbeeld heeft geen datum of plaats** (zie Gemeten). De gate heeft een echte iPhone-opname nodig met locatie aan, een HDR-opname en een liggende opname; het iPhone-origineel op de server dekt alle drie (zie Gemeten), de gate op het toestel blijft.
 - **Datum en plaats lezen uit het gecomprimeerde bestand kan niet**: dat bestand mag ze juist niet hebben. Ze komen uit het origineel, vóór het comprimeren.
 - **De tijdzone van de datum.** Een foto heeft `takenAt` als de klokwaarde van de camera, gelezen als UTC (WP18 A-keuze 2). Een iPhone-filmpje heeft een tijd mét tijdzone. Zonder afspraak staat een zomerfilmpje twee uur verschoven tussen de foto's van dezelfde middag. A-invariant 14.
 - **Invariant 7 en 2 hangen af van de index vooraan.** Zonder dat kan de backend het bestand niet bekijken zonder het helemaal te lezen. De app moet het zo schrijven (A-invariant 25).
