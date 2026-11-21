@@ -43,6 +43,13 @@ const FLAG_REASON_MAX_LENGTH = 500;
  * rij zonder flaggedAt valt eronder.
  */
 const FLAGGED_AT_MIN = 0;
+/**
+ * De controle na de upload: zoveel later kijkt `retryFormatsIfMissing` of de
+ * formaten er zijn. Ruim binnen het uur van de integriteits-check
+ * (`FORMATS_GRACE_MS` in monitoring.ts), zodat een herkansing die slaagt geen
+ * melding geeft.
+ */
+export const FORMATS_RETRY_DELAY_MS = 15 * 60 * 1000;
 
 // WP23: foto-toegang (definitie in lib/photoAccess). Eén error voor "foto
 // bestaat niet" en "geen toegang" (invariant 4).
@@ -348,6 +355,11 @@ export const createFromUploadInternal = internalMutation({
     // WP25 invariant 2: de formaten (en de stand uit het bestand, A-inv. 12)
     // komen kort na de upload, ongeacht wie uploadt.
     await ctx.scheduler.runAfter(0, internal.photoFormats.makeFormats, {
+      photoId,
+    });
+    // Herkansing: een latere controle, los van de eerste poging, zodat hij
+    // ook loopt als die action halverwege afbrak (geheugen, timeout).
+    await ctx.scheduler.runAfter(FORMATS_RETRY_DELAY_MS, internal.photos.retryFormatsIfMissing, {
       photoId,
     });
 
@@ -786,6 +798,28 @@ export const formatInfo = internalQuery({
     const photo = await ctx.db.get(photoId);
     if (!photo) return null;
     return { storageId: photo.storageId, hasFormats: await hasCompleteFormats(ctx, photo) };
+  },
+});
+
+/**
+ * De herkansing van de formaat-stap, ingepland door `createFromUploadInternal`
+ * (`FORMATS_RETRY_DELAY_MS` na de upload). Een mutation in V8: bij een gewone
+ * upload leest hij alleen en plant niets. Heeft de foto dan nog geen volledige
+ * set (A-invariant 22) en is hij niet afgetekend (A-invariant 25), dan plant
+ * hij `makeFormats` één keer opnieuw. Hij plant zichzelf nooit opnieuw: een
+ * foto die ook de tweede keer mislukt, blijft voor de integriteits-check.
+ */
+export const retryFormatsIfMissing = internalMutation({
+  args: { photoId: v.id("photos") },
+  returns: v.union(v.literal("retried"), v.literal("hasFormats"), v.literal("accepted"), v.literal("gone")),
+  handler: async (ctx, { photoId }) => {
+    const photo = await ctx.db.get(photoId);
+    if (!photo) return "gone";
+    if (await hasCompleteFormats(ctx, photo)) return "hasFormats";
+    if (isAccepted(photo)) return "accepted";
+    console.warn(`[photoFormats] herkansing photoId=${photoId}: na de upload nog geen formaten`);
+    await ctx.scheduler.runAfter(0, internal.photoFormats.makeFormats, { photoId });
+    return "retried";
   },
 });
 
