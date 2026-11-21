@@ -2,9 +2,9 @@
 
 Status-overzicht van de AWS → Convex migratie. WP's updaten dit doc bij elke closeout. Architectuur-detail blijft in [`migratie-plan-convex.md`](./migratie-plan-convex.md); operationele lopende-staat staat hier.
 
-**Huidige stand 2026-11-19**:
+**Huidige stand 2026-11-21**:
 - Fase 1 tot en met 3 ✅ afgerond.
-- Fase 4: de iPhone-app is klaar (WP13 tot en met WP34). De webapp komt na T0.
+- Fase 4 ✅: de iPhone-app is klaar (WP13 tot en met WP34). De webapp (WP35, WP36) staat sinds 2026-11-21 live op `app.clubalmanac.com`.
 - Fase 5 (cutover): T-4 en de generale repetitie op prod zijn klaar, en cutover-build 70 staat in TestFlight, en App Store Connect staat klaar voor 2.0.0. *Cannot Sell App* is verklaard: Apple haalde 1.6.0 uit de winkel, en goedkeuring van 2.0.0 zet hem terug. Versneld (besluit 2026-11-19): geen T-3 en T-1 dag. **T0 was 2026-11-19:** schrijfstop, migratie (`verify` groen), filmlijst, anker-export en demo-groep. **2.0.0 staat sinds 2026-11-20 in de App Store** (goedgekeurd en vrijgegeven, leden ingelicht met bericht 4). Migratie-key ingetrokken, backup aan. Nog open: `blob-videos` dichtzetten (Wouter: later).
 
 Cross-refs: [`work-packages/README.md`](./work-packages/README.md) (WP-overzicht), [`conventions/audit-track-record.md`](./conventions/audit-track-record.md) (bugs + recurring patterns), [`cascade-matrix.md`](./cascade-matrix.md) (cross-flow afhankelijkheden).
@@ -91,7 +91,7 @@ Bouw migratie-tooling die zowel dev (subset) als prod (volledig) kan vullen. Eé
 - [ ] Performance check op foto laden in dev. Als te traag: switch naar R2 component (kan ook later)
 - [ ] S3 prod data laten staan als backup tot ~T+90
 
-## Fase 4: Clients updaten — iPhone-app klaar, webapp na T0
+## Fase 4: Clients updaten ✅ AFGEROND
 
 Twee parallelle tracks. Beide kunnen onafhankelijk doorlopen worden, maar moeten samen klaar zijn voor cutover.
 
@@ -130,13 +130,14 @@ Werk door de app per feature. Elke stap lokaal testbaar in Expo dev build tegen 
 
 Per feature: het gedrag van de oude app is de checklist, data komt via `useQuery` / `useMutation`. Wie de oude app nog heeft, blijft tot cutover op AWS werken.
 
-### Track B: Webapp — na T0
+### Track B: Webapp ✅ live 2026-11-21
 
-Besluit Wouter 2026-11-15: niemand gebruikt de oude webapp. Volgorde: eerst de oude webapp uitzetten (vóór de overstap), dan de iPhone-app overzetten, later een nieuwe webapp toevoegen. **Oude webapp uit sinds 2026-11-15**: clubalmanac.com toont een pagina die naar de app verwijst plus de privacyverklaring ([`site/README.md`](../site/README.md)), dev.clubalmanac.com is uitgeschakeld. Keuzes voor de nieuwe (Expo Web of apart, scope, hosting, kaarten op het web) pas dan.
+Besluit Wouter 2026-11-15: niemand gebruikt de oude webapp. Volgorde: eerst de oude webapp uitzetten (vóór de overstap), dan de iPhone-app overzetten, later een nieuwe webapp toevoegen. **Oude webapp uit sinds 2026-11-15**: clubalmanac.com toont een pagina die naar de app verwijst plus de privacyverklaring ([`site/README.md`](../site/README.md)), dev.clubalmanac.com is uitgeschakeld. 
+[WP35](./work-packages/WP35-webapp-bekijken.md) ✅ 2026-11-20: Expo Web op `app.clubalmanac.com`, alleen bekijken plus uitnodigingen accepteren; beelden met de header in een begrensd geheugen, CORS alleen voor de eigen adressen, kaart via OpenStreetMap, op breed scherm een zijkolom. Audit en red-team verwerkt (deploy-rol via de GitHub-environment `webapp`, CSP).
 
-[WP35](./work-packages/WP35-webapp-bekijken.md) (2026-11-20): code klaar. Expo Web op `app.clubalmanac.com`, alleen bekijken plus uitnodigingen accepteren; beelden met de header in een begrensd geheugen, CORS alleen voor de eigen adressen, kaart via OpenStreetMap, op breed scherm een zijkolom. Audit en red-team verwerkt (deploy-rol via de GitHub-environment `webapp`, CSP). Prod-opzet stap 1–7 gedaan.
+[WP36](./work-packages/WP36-webapp-uploaden.md) ✅ 2026-11-20: Foto's uploaden vanuit de browser (vooral Chrome op Android) en de profielfoto zetten of weghalen, via de bestaande `/upload` met CORS; verkleinen en EXIF lezen in de browser, datum en plaats als headers. Audit en red-team verwerkt. Gate op een Android-emulator (Chrome) tegen dev: uploaden, terug tijdens een ronde, kaart, film, profiel, uitloggen. Niet getest: Safari, een echte HEIC, 50 grote foto's.
 
-[WP36](./work-packages/WP36-webapp-uploaden.md) (2026-11-20): code klaar. Foto's uploaden vanuit de browser (vooral Chrome op Android) en de profielfoto zetten of weghalen, via de bestaande `/upload` met CORS; verkleinen en EXIF lezen in de browser, datum en plaats als headers. Audit en red-team verwerkt. Gate op een Android-emulator (Chrome) tegen dev: uploaden, terug tijdens een ronde, kaart, film, profiel, uitloggen. Niet getest: Safari, een echte HEIC, 50 grote foto's. Open voor WP35 en WP36 samen: runbook [`webapp.md`](./runbooks/webapp.md) stap 8–12 na de merge.
+**Livegang 2026-11-21:** runbook [`webapp.md`](./runbooks/webapp.md) stap 1–12 gedaan (stack met CSP inclusief Clerk Protect, uitrol via de workflow Webapp, `CLUBALMANAC_WEB_URL` op prod). Fixes na de eerste ronde op prod (PR 43–45, 48): vaste terugknop op smal scherm, het foto-detail blijft op de gekozen foto en toont er één, beelden in beeld blijven in het geheugen, en een nieuwe profielfoto is meteen zichtbaar. Foto-acties (uit album, verwijderen, als profielfoto) zitten bewust niet in de webapp; dat kan een nieuwe WP worden.
 
 ## Fase 5: Lancering — hard cutover — open
 
@@ -187,9 +188,9 @@ Per stap wie, wat, verwacht en bij afwijking: [`wp31-cutover-draaiboek.md`](./ru
 ## Monitoring & backup (ongoing) — open
 
 - [ ] **Backup:** maandelijkse export met bestanden via GitHub Action naar S3 (WP31 W9/B4, [`infra/backup.md`](../infra/backup.md)). Geen Convex Pro. Gate: één run met de hand en teruggezet, ongeveer een week na de vrijgave.
-- [ ] **Integriteits-checks:** scheduled function voor data validatie (zie teststrategie punt 3 in migratie-plan-convex.md)
+- [x] **Integriteits-checks:** dagelijkse controle ([WP10]), ook op ontbrekende formaten. Vondst 2026-11-20: een beschadigde JPEG kreeg geen formaten. Fix (PR 46–47): een herkansing een kwartier na de upload, en zo'n JPEG wordt opnieuw gelezen zonder de grens op waarschuwingen. De foto op prod is hersteld.
 - [ ] **Monitoring:** Convex Health & Insights dashboard (gratis), function errors in dashboard
-- [ ] **Alerting:** integriteits-checks sturen email bij inconsistentie
+- [x] **Alerting:** integriteits-checks sturen email bij inconsistentie ([WP10])
 
 ## Cyclus-2 backlog (audit-12 follow-up)
 
