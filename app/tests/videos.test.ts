@@ -16,6 +16,7 @@ import {
   videoRetryable,
   videoRetryRound,
   videoTooLong,
+  videoTooLongToSend,
   type VideoFailReason,
 } from "../src/lib/videos";
 import { listFiles } from "./support/sourceScan";
@@ -68,6 +69,30 @@ describe("videoTooLong (A-keuze: afgerond op seconden, zoals de backend)", () =>
     for (let ms = 179_000; ms <= 181_000; ms += 1) {
       if (formatDuration(ms) === "3:00") expect(videoTooLong(ms)).toBe(false);
     }
+  });
+});
+
+describe("videoTooLongToSend: vóór het versturen al weigeren (fixronde 3)", () => {
+  // De backend telt de langste duur in het bestand, ook de AAC-aanloop van
+  // het geluid (~70 ms langer dan wat de app meet). Wat de app doorlaat, moet
+  // de backend ook doorlaten (tot 180,499 s): de app houdt 100 ms marge.
+  it("tot 180,4 s mag, daarboven niet", () => {
+    expect(videoTooLongToSend(180_000)).toBe(false);
+    expect(videoTooLongToSend(180_400)).toBe(false);
+    expect(videoTooLongToSend(180_401)).toBe(true);
+    expect(videoTooLongToSend(180_499)).toBe(true);
+    expect(videoTooLongToSend(25 * 60_000)).toBe(true);
+  });
+
+  it("wat de app doorlaat, plus de aanloop van 70 ms, laat de backend door", () => {
+    for (let ms = 179_000; ms <= 181_000; ms += 7) {
+      if (!videoTooLongToSend(ms)) expect(videoTooLong(ms + 70), `${ms} ms`).toBe(false);
+    }
+  });
+
+  it("geen getal of negatief: niet te lang (de backend toetst het bestand zelf)", () => {
+    expect(videoTooLongToSend(Number.NaN)).toBe(false);
+    expect(videoTooLongToSend(-1)).toBe(false);
   });
 });
 
@@ -310,6 +335,10 @@ describe("afspelen zonder schijfcache (A-invariant 23)", () => {
 
   it("de albumkop gebruikt mediaCountText (A-invariant 34)", () => {
     expect(read("screens/AlbumScreen.tsx")).toMatch(/\bmediaCountText\(/);
+  });
+
+  it("het toevoeg-scherm weigert vooraf met videoTooLongToSend (fixronde 3)", () => {
+    expect(read("screens/AddPhotosScreen.tsx")).toMatch(/\bvideoTooLongToSend\(/);
   });
 
   it("retryVideos in het toevoeg-scherm gebruikt videoRetryRound (een lege fresh-set kan dan niet)", () => {

@@ -34,6 +34,7 @@ const fake = vi.hoisted(() => ({
   putStatus: 200,
   finish: [] as Array<{ status: number; body: unknown } | "netwerk">,
   posterFails: 0,
+  compressedMs: 2000,
 }));
 
 vi.mock("@clerk/expo", () => ({
@@ -67,7 +68,7 @@ vi.mock("../modules/clubalmanac-video", () => ({
   readMetadata: async () => ({ creationDate: null, location: null, durationMs: 2000 }),
   compress: async () => {
     fake.compress += 1;
-    return { uri: COMPRESSED, bytes: 1000, durationMs: 2000, width: 1080, height: 1920 };
+    return { uri: COMPRESSED, bytes: 1000, durationMs: fake.compressedMs, width: 1080, height: 1920 };
   },
   makePoster: async () => ({ uri: POSTER_URI, width: 1080, height: 1920 }),
   removeFile: async (uri: string) => {
@@ -113,6 +114,7 @@ beforeEach(() => {
   fake.putStatus = 200;
   fake.finish = [];
   fake.posterFails = 0;
+  fake.compressedMs = 2000;
   vi.stubGlobal("fetch", vi.fn(fakeFetch));
 });
 
@@ -187,5 +189,31 @@ describe("verlopen reservering: opnieuw proberen vraagt een nieuwe upload aan (A
     expect(await run(upload)).toEqual({ ok: true, photoId: "p1" });
     expect(fake.starts).toBe(2);
     expect(fake.compress).toBe(1);
+  });
+});
+
+describe("vóór het versturen al weigeren boven 180,4 s (fixronde 3)", () => {
+  it("de kiezer meet 180,45 s: te_lang, zonder verkleinen en zonder aanvraag", async () => {
+    const upload = await mount();
+    const out = await upload({ asset: { ...ASSET, duration: 180_450 }, uploadId, albumId: "album-1" });
+    expect(out).toEqual({ ok: false, reason: "te_lang" });
+    expect(fake.compress).toBe(0);
+    expect(fake.starts).toBe(0);
+  });
+
+  it("het verkleinde bestand duurt 180,45 s: te_lang, zonder aanvraag, en het bestand gaat weg", async () => {
+    const upload = await mount();
+    fake.compressedMs = 180_450;
+    const out = await upload({ asset: { ...ASSET, duration: 179_000 }, uploadId, albumId: "album-1" });
+    expect(out).toEqual({ ok: false, reason: "te_lang" });
+    expect(fake.starts).toBe(0);
+    expect(fake.removed).toContain(COMPRESSED);
+  });
+
+  it("180,4 s gaat gewoon door", async () => {
+    const upload = await mount();
+    fake.compressedMs = 180_400;
+    const out = await upload({ asset: { ...ASSET, duration: 180_400 }, uploadId, albumId: "album-1" });
+    expect(out).toEqual({ ok: true, photoId: "p1" });
   });
 });

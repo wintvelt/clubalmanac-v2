@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it, vi } from "vitest";
 import { internal } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
@@ -721,6 +723,36 @@ describe("startUpload: hooguit 30 per user per 24 uur (A-invariant 36)", () => {
     expect(((await start(as.alice(t), { uploadId: "v9", albumId: w.albums.georgie })) as R).kind).toBe("upload");
   });
 
+  it("aanvragen ouder dan 24 uur worden opgeruimd (fixronde 3)", async () => {
+    const t = newT();
+    const w = await seedWorld(t);
+    for (let i = 0; i < 30; i++) await start(as.alice(t), { uploadId: "v1", albumId: w.albums.georgie });
+    vi.setSystemTime(FIXED_NOW + DAY_MS + HOUR_MS);
+    await start(as.alice(t), { uploadId: "v2", albumId: w.albums.georgie });
+    const rows = (await t.run(async (ctx) => ctx.db.query("videoUploadRequests" as never).collect())) as R[];
+    expect(rows.map((r) => r.at)).toEqual([FIXED_NOW + DAY_MS + HOUR_MS]);
+  });
+
+  it("een afgeronde upload-id geeft het bestaande filmpje terug, ook boven de daggrens (red-team LAAG 1)", async () => {
+    const t = newT();
+    const w = await seedWorld(t);
+    const { res } = await fullUpload(as.alice(t), r2(), { uploadId: "klaar", albumId: w.albums.georgie });
+    const { photoId } = (await res.json()) as R;
+    for (let i = 0; i < 29; i++) await start(as.alice(t), { uploadId: "v2", albumId: w.albums.georgie });
+    // Nu 30 aanvragen: een nieuwe is te_vaak.
+    expectUploadRefusal(await outcome(() => start(as.alice(t), { uploadId: "v3", albumId: w.albums.georgie })), "te_vaak");
+    // De herhaling van de afgeronde id geeft het filmpje, en telt niet mee.
+    expect(await start(as.alice(t), { uploadId: "klaar", albumId: w.albums.georgie })).toEqual({ kind: "done", photoId });
+    expect(await start(as.alice(t), { uploadId: "klaar", albumId: w.albums.georgie })).toEqual({ kind: "done", photoId });
+    expectUploadRefusal(await outcome(() => start(as.alice(t), { uploadId: "v3", albumId: w.albums.georgie })), "te_vaak");
+    // Ook weer in het album gezet (zoals WP18 A-invariant 24), zonder de grens.
+    await t.run(async (ctx) => {
+      for (const ap of await ctx.db.query("albumPhotos").collect()) await ctx.db.delete(ap._id);
+    });
+    expect(await start(as.alice(t), { uploadId: "klaar", albumId: w.albums.georgie })).toEqual({ kind: "done", photoId });
+    expect((await t.run(async (ctx) => ctx.db.query("albumPhotos").collect())).map((a) => a.photoId)).toEqual([photoId]);
+  });
+
   it("geweigerde aanvragen tellen niet mee", async () => {
     const t = newT();
     const w = await seedWorld(t);
@@ -732,23 +764,35 @@ describe("startUpload: hooguit 30 per user per 24 uur (A-invariant 36)", () => {
 });
 
 describe("de poster zonder oriëntatie (fixronde 2: keepOrientation false)", () => {
-  it("een poster met oriëntatie 6 in de EXIF wordt opgeslagen zonder EXIF, dus zonder oriëntatie", async () => {
+  // De EXIF-stand (tag 0x0112 in IFD0), los van de code gelezen. `null`: geen EXIF of geen stand.
+  function exifOrientation(b: Uint8Array): number | null {
+    for (let i = 0; i + 8 <= b.length; i++) {
+      const le = b[i] === 0x49 && b[i + 1] === 0x49 && b[i + 2] === 0x2a && b[i + 3] === 0;
+      const be = b[i] === 0x4d && b[i + 1] === 0x4d && b[i + 2] === 0 && b[i + 3] === 0x2a;
+      if (!le && !be) continue;
+      const dv = new DataView(b.buffer, b.byteOffset, b.byteLength);
+      const ifd = i + dv.getUint32(i + 4, le);
+      if (ifd + 2 > b.length) continue;
+      const n = dv.getUint16(ifd, le);
+      for (let k = 0; k < n && ifd + 2 + k * 12 + 10 <= b.length; k++) {
+        if (dv.getUint16(ifd + 2 + k * 12, le) === 0x0112) return dv.getUint16(ifd + 2 + k * 12 + 8, le);
+      }
+    }
+    return null;
+  }
+
+  it("een poster met oriëntatie 6 in de EXIF wordt opgeslagen zonder oriëntatie", async () => {
     const t = newT();
     const w = await seedWorld(t);
-    // GPS_JPEG draagt oriëntatie 6 (tests/_helpers/jpeg.ts). Het filmpje
-    // heeft zijn eigen stand; een gedraaide poster zou er anders bij staan.
-    const tiffOrientation = (b: Uint8Array) => {
-      for (let i = 0; i + 12 <= b.length; i++) {
-        const le = b[i] === 0x49 && b[i + 1] === 0x49 && b[i + 2] === 0x2a && b[i + 3] === 0;
-        const be = b[i] === 0x4d && b[i + 1] === 0x4d && b[i + 2] === 0 && b[i + 3] === 0x2a;
-        if (le || be) return true;
-      }
-      return false;
-    };
-    expect(tiffOrientation(GPS_JPEG), "sanity: de test-JPEG heeft een TIFF-kop").toBe(true);
+    // tests/fixtures/wp36/staand-6.jpg: stand 6 (sharp, zie de README daar).
+    // Het filmpje heeft zijn eigen stand; een gedraaide poster zou er anders bij staan.
+    const raw = readFileSync(fileURLToPath(new URL("../fixtures/wp36/staand-6.jpg", import.meta.url)));
+    const poster = new Uint8Array(raw.byteLength);
+    poster.set(raw);
+    expect(exifOrientation(poster), "sanity: de test-JPEG heeft stand 6").toBe(6);
     const s = (await start(as.alice(t), { uploadId: "v1", albumId: w.albums.georgie })) as R;
     await putAsApp(r2(), s.url, PLAIN);
-    const res = await finish(as.alice(t), { uploadId: "v1", poster: GPS_JPEG });
+    const res = await finish(as.alice(t), { uploadId: "v1", poster });
     expect(res.status).toBe(200);
     const row = (await rowOf(t, ((await res.json()) as R).photoId))!;
     const stored = await t.run(async (ctx) => {
@@ -757,6 +801,7 @@ describe("de poster zonder oriëntatie (fixronde 2: keepOrientation false)", () 
     });
     const bytes = new Uint8Array(stored!);
     expect(isJpeg(bytes)).toBe(true);
-    expect(tiffOrientation(bytes), "een TIFF-kop (EXIF) in de opgeslagen poster").toBe(false);
+    expect(exifOrientation(bytes), "de opgeslagen poster heeft nog een EXIF-stand").toBeNull();
+    expect(gpsAnywhere(bytes)).toBe(0);
   });
 });

@@ -512,3 +512,35 @@ describe("de duur telt ook elst en stts (A-invariant 30, red-team fixronde 2)", 
     expect(info(movie({ timescale: 600, duration: 600, tracks })).durationMs).toBe(60_000);
   });
 });
+
+// --- fixronde 3: een count die niet past (A-invariant 28) ------------------------
+
+describe("een enorme count in stts of elst: een nette weigering, geen lange lus", () => {
+  /** Een `stts` of `elst` die 2^32-1 regels belooft, met er één echt in. */
+  const hugeStts = box("stts", full(0), u32(0xffffffff), u32(1), u32(1000));
+  const hugeElst = box("edts", box("elst", full(0), u32(0xffffffff), u32(1000), u32(0), u16(1), u16(0)));
+
+  function timed(bytes: Uint8Array): number {
+    const t0 = performance.now();
+    refused(bytes);
+    return performance.now() - t0;
+  }
+
+  it("stts met count 2^32-1: geweigerd, binnen 200 ms", () => {
+    const tracks = [trak("vide", "avc1", [], 108, 192, { stblExtra: hugeStts }), trak("soun", "mp4a")];
+    expect(timed(movie({ tracks }))).toBeLessThan(200);
+  });
+
+  it("elst met count 2^32-1: geweigerd, binnen 200 ms", () => {
+    const inner = trak("vide", "avc1").slice(8);
+    const trakBytes = cat(u32(8 + inner.length + hugeElst.length), ascii("trak"), inner, hugeElst);
+    const moovBody = cat(mvhd(600, 1200), trakBytes, trak("soun", "mp4a"));
+    expect(timed(cat(ftyp("mp42"), u32(8 + moovBody.length), ascii("moov"), moovBody, mdat()))).toBeLessThan(200);
+  });
+
+  it("een count die precies past, mag (sanity)", () => {
+    const fits = box("stts", full(0), u32(2), u32(10), u32(60), u32(10), u32(60));
+    const tracks = [trak("vide", "avc1", [], 108, 192, { mdhd: [600, 1200], stblExtra: fits }), trak("soun", "mp4a")];
+    expect(videoProblem(inspectMp4(movie({ tracks })), 30_000_000)).toBeNull();
+  });
+});

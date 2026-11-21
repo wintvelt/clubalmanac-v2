@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { api, internal } from "../../convex/_generated/api";
 import { deleteAccount } from "../_helpers/deleteAccount";
-import { as, DAY_MS, newT, outcome, seedVideo, seedWorld, useVideosEnv, type T } from "./_videos";
+import { as, DAY_MS, newT, outcome, seedVideo, seedWorld, start, useVideosEnv, type T } from "./_videos";
 
 // WP37 — weg is weg, ook in R2 (invariant 6, A-invariant 21).
 // Elk pad dat de rij wist, haalt ook het object in R2 weg (en, zoals nu, de
@@ -95,6 +95,22 @@ describe("verwijderen haalt het filmpje uit R2", () => {
     await settle(t);
     expect(env.r2.deletes()).toContain("videos/half.mp4");
     expect(env.r2.objects.size).toBe(0);
+  });
+
+  it("account verwijderen wist zijn rijen in videoUploadRequests (de daggrens), niet die van een ander (fixronde 3)", async () => {
+    const t = newT();
+    const w = await seedWorld(t);
+    for (const id of ["a", "b", "c"]) await start(as.alice(t), { uploadId: id, albumId: w.albums.georgie });
+    await start(as.bob(t), { uploadId: "a", albumId: w.albums.georgie });
+    const requestsOf = async (ownerId: unknown) =>
+      (await t.run(async (ctx) => ctx.db.query("videoUploadRequests" as never).collect())).filter(
+        (r) => (r as { ownerId: unknown }).ownerId === ownerId,
+      ).length;
+    expect(await requestsOf(w.users.alice), "sanity: de aanvragen van alice zijn geteld").toBe(3);
+    await deleteAccount(t, as.alice(t));
+    await settle(t);
+    expect(await requestsOf(w.users.alice)).toBe(0);
+    expect(await requestsOf(w.users.bob)).toBe(1);
   });
 
   it("R2 onbereikbaar bij het wissen: de rij is toch weg (de R2-check ziet het wees-object)", async () => {
