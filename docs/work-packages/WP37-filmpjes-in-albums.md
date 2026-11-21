@@ -199,3 +199,7 @@ A rapporteert ook wat hier ontbreekt of niet klopt. Oude code is hier geen bron:
 A paste twee bestaande tests aan: `tests/images/httpRoute.test.ts` (route `POST /upload/video` erbij) en `tests/crons/registration.test.ts` (zes crons). Testfilmpjes en hoe ze gemaakt zijn: `tests/fixtures/wp37/README.md`.
 
 **Stand:** backend 107 rood / 2985 groen / 1 overgeslagen, plus `tests/videos/mp4.test.ts` dat niet laadt (`convex/lib/mp4.ts` ontbreekt). Alle rood omdat `convex/videos.ts`, `convex/lib/mp4.ts`, de schema-velden, de route en de cron ontbreken. App: `app/tests/videos.test.ts` laadt niet (`src/lib/videos.ts` ontbreekt), 1767 groen. Typecheck: alleen de ontbrekende modules en constanten.
+
+## Besluiten Wouter na A (2026-11-21)
+
+Alle dertien aanbevelingen van A (§Besluiten voor Wouter) zijn akkoord: eigen module in Swift voor comprimeren, poster en metadata; datum en plaats uit het bestand zelf; de backend bekijkt elk bestand in R2; grenzen 3:00, 120 MiB en 3 open uploads; afspeellink 1 uur; cover ja, profielfoto nee; telt als één voor de limiet; ook in Mijn foto's; uploaden ook vanaf de iPad-app; R2 in de maandelijkse backup; uploaden op de achtergrond, comprimeren met de app open; clubfilms niet in WP37; Wouter maakt het Cloudflare-account aan (twee EU-buckets, een token per bucket). De RED tests van A gelden ongewijzigd.
