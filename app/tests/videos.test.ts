@@ -8,11 +8,13 @@ import {
   locationFromISO6709,
   mediaCountText,
   showMediaFilter,
+  startRefusalReason,
   takenAtFromQuickTime,
   VIDEO_TARGET,
   videoFailMessage,
   videoPlayerSource,
   videoRetryable,
+  videoRetryRound,
   videoTooLong,
   type VideoFailReason,
 } from "../src/lib/videos";
@@ -148,6 +150,7 @@ describe("meldingen (invariant 5)", () => {
     "geen_album",
     "uitgelogd",
     "verlopen",
+    "te_vaak",
     "server",
   ];
 
@@ -170,7 +173,7 @@ describe("meldingen (invariant 5)", () => {
     for (const r of ["netwerk", "niet_binnen", "server", "bezig", "comprimeren", "uitgelogd", "verlopen"] as const) {
       expect(videoRetryable(r), r).toBe(true);
     }
-    for (const r of ["te_lang", "te_groot", "locatie", "codec", "geen_mp4", "index_achteraan", "limiet", "geen_album"] as const) {
+    for (const r of ["te_lang", "te_groot", "locatie", "codec", "geen_mp4", "index_achteraan", "limiet", "geen_album", "te_vaak"] as const) {
       expect(videoRetryable(r), r).toBe(false);
     }
   });
@@ -180,6 +183,46 @@ describe("meldingen (invariant 5)", () => {
     expect(t).not.toBe(videoFailMessage("geen_album"));
     expect(t).toMatch(/opnieuw/i);
     expect(t).not.toMatch(/album/i);
+  });
+});
+
+describe("te_vaak: hooguit 30 aanvragen per 24 uur (A-invariant 36)", () => {
+  it("de weigering van startUpload geeft te_vaak, niet server", () => {
+    expect(startRefusalReason({ code: "VIDEO_UPLOAD_REFUSED", reason: "te_vaak" })).toBe("te_vaak");
+  });
+
+  it("de melding zegt dat het later weer kan", () => {
+    expect(videoFailMessage("te_vaak")).toMatch(/later|morgen/i);
+  });
+});
+
+describe("videoRetryRound: Filmpjes opnieuw proberen (A-invariant 33)", () => {
+  type Item = { key: string; uploadId: string; state: "wacht" | "bezig" | "klaar" | "mislukt"; reason?: VideoFailReason };
+  const items: Item[] = [
+    { key: "a", uploadId: "ua", state: "mislukt", reason: "uitgelogd" },
+    { key: "b", uploadId: "ub", state: "mislukt", reason: "netwerk" },
+    { key: "c", uploadId: "uc", state: "mislukt", reason: "locatie" },
+    { key: "d", uploadId: "ud", state: "klaar" },
+    { key: "e", uploadId: "ue", state: "mislukt", reason: "uitgelogd" },
+  ];
+
+  it("de herhaalbare filmpjes weer op wacht, met dezelfde upload-id; de rest blijft", () => {
+    const round = videoRetryRound(items);
+    expect(round.items.map((i) => [i.key, i.uploadId, i.state])).toEqual([
+      ["a", "ua", "wacht"],
+      ["b", "ub", "wacht"],
+      ["c", "uc", "mislukt"],
+      ["d", "ud", "klaar"],
+      ["e", "ue", "wacht"],
+    ]);
+  });
+
+  it("fresh: precies de filmpjes die uitgelogd kregen (een vers token)", () => {
+    expect([...videoRetryRound(items).fresh].sort()).toEqual(["a", "e"]);
+  });
+
+  it("niets uitgelogd: fresh is leeg", () => {
+    expect([...videoRetryRound(items.filter((i) => i.reason !== "uitgelogd")).fresh]).toEqual([]);
   });
 });
 
@@ -267,6 +310,13 @@ describe("afspelen zonder schijfcache (A-invariant 23)", () => {
 
   it("de albumkop gebruikt mediaCountText (A-invariant 34)", () => {
     expect(read("screens/AlbumScreen.tsx")).toMatch(/\bmediaCountText\(/);
+  });
+
+  it("retryVideos in het toevoeg-scherm gebruikt videoRetryRound (een lege fresh-set kan dan niet)", () => {
+    const src = read("screens/AddPhotosScreen.tsx");
+    const at = src.indexOf("function retryVideos");
+    expect(at, "geen retryVideos gevonden").toBeGreaterThanOrEqual(0);
+    expect(src.slice(at, at + 500)).toMatch(/\bvideoRetryRound\(/);
   });
 
   it("opnieuw proberen na uitgelogd geeft het filmpje een vers token mee (A-invariant 33)", () => {

@@ -438,3 +438,77 @@ describe("diepte begrensd (A-invariant 28; red-team: 60.000 geneste blokken gaf 
     refused(cat(ftyp("mp42"), u32(8 + moovBody.length), ascii("moov"), moovBody, mdat()));
   });
 });
+
+// --- fixronde 2: elst en stts tellen mee (A-invariant 30) -----------------------
+
+/**
+ * plain.mp4 zoals de red-team hem maakte: de duur in mvhd, tkhd en mdhd
+ * gehalveerd, elst en stts heel. AVFoundation speelt hem 2,0 s; de backend zag
+ * 1033 ms.
+ */
+function plainWithHalvedHeaders(): Uint8Array {
+  const b = fixture("plain.mp4").slice();
+  const dv = new DataView(b.buffer, b.byteOffset, b.byteLength);
+  const containers = new Set(["moov", "trak", "mdia"]);
+  const halve = (at: number) => dv.setUint32(at, Math.floor(dv.getUint32(at) / 2));
+  const walk = (from: number, to: number) => {
+    let off = from;
+    while (off + 8 <= to) {
+      const size = dv.getUint32(off);
+      const type = String.fromCharCode(b[off + 4]!, b[off + 5]!, b[off + 6]!, b[off + 7]!);
+      if (size < 8) return;
+      // Alle drie versie 0 in plain.mp4 (gemeten): mvhd/mdhd duur op +24, tkhd op +28.
+      if (type === "mvhd" || type === "mdhd") halve(off + 24);
+      if (type === "tkhd") halve(off + 28);
+      if (containers.has(type)) walk(off + 8, off + size);
+      off += size;
+    }
+  };
+  walk(0, b.byteLength);
+  return b;
+}
+
+describe("de duur telt ook elst en stts (A-invariant 30, red-team fixronde 2)", () => {
+  // Gemeten in plain.mp4: elst 88200/44100 (beide sporen), stts beeld 1200/600,
+  // stts geluid 91136/44100. Na het halveren blijft dat staan: 2000 en 2067 ms.
+  it("de gehalveerde plain.mp4: de duur blijft die van elst en stts (2067 ms, zoals het geluid in stts)", () => {
+    const i = info(plainWithHalvedHeaders());
+    expect(i.durationMs).toBeGreaterThanOrEqual(2000);
+    expect(i.durationMs).toBe(2067);
+  });
+
+  it("de echte plain.mp4 blijft 2067 ms", () => {
+    expect(info(fixture("plain.mp4")).durationMs).toBe(2067);
+  });
+
+  it("elst van 4 minuten (tijdschaal van de film) bij mvhd, tkhd en mdhd van 1 minuut: te_lang", () => {
+    const tracks = [
+      trak("vide", "avc1", [], 108, 192, { mdhd: [1000, 60_000], tkhdDuration: 60_000, elst: [120_000, 120_000] }),
+      trak("soun", "mp4a"),
+    ];
+    const bytes = movie({ timescale: 1000, duration: 60_000, tracks });
+    expect(info(bytes).durationMs).toBe(240_000);
+    expect(videoProblem(inspectMp4(bytes), 30_000_000)).toBe("te_lang");
+  });
+
+  it("stts van 4 minuten (tijdschaal van het spoor) bij de rest op 1 minuut: te_lang", () => {
+    const tracks = [
+      trak("vide", "avc1", [], 108, 192, { mdhd: [600, 36_000], tkhdDuration: 60_000, stts: [[7200, 20]] }),
+      trak("soun", "mp4a"),
+    ];
+    const bytes = movie({ timescale: 1000, duration: 60_000, tracks });
+    expect(info(bytes).durationMs).toBe(240_000);
+    expect(videoProblem(inspectMp4(bytes), 30_000_000)).toBe("te_lang");
+  });
+
+  it("stts over meerdere regels telt op (aantal × duur)", () => {
+    const tracks = [trak("vide", "avc1", [], 108, 192, { mdhd: [1000, 1], stts: [[100, 1000], [50, 2000]] }), trak("soun", "mp4a")];
+    expect(info(movie({ timescale: 1000, duration: 1000, tracks })).durationMs).toBe(200_000);
+  });
+
+  it("elst in de tijdschaal van de film, niet die van het spoor", () => {
+    // Film 600 per s, spoor 48000 per s: 36000 in elst is 60 s.
+    const tracks = [trak("vide", "avc1", [], 108, 192, { mdhd: [48_000, 48], elst: [36_000] }), trak("soun", "mp4a")];
+    expect(info(movie({ timescale: 600, duration: 600, tracks })).durationMs).toBe(60_000);
+  });
+});

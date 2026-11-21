@@ -8,6 +8,7 @@ import {
   as,
   DAY_MS,
   ENV,
+  HOUR_MS,
   expectUploadRefusal,
   expectValidR2Signature,
   FINAL_PREFIX,
@@ -53,7 +54,7 @@ async function rowOf(t: T, photoId: string): Promise<R | null> {
 // --- aanvragen ------------------------------------------------------------------
 
 describe("startUpload: een link voor precies één nieuwe sleutel (A-invariant 11)", () => {
-  it("geeft een ondertekende PUT op een tijdelijke sleutel onder uploads/, hooguit een uur geldig", async () => {
+  it("geeft een ondertekende PUT op een tijdelijke sleutel onder uploads/, 15 minuten geldig (fixronde 2)", async () => {
     const t = newT();
     const w = await seedWorld(t);
     const res = (await start(as.alice(t), { uploadId: "v1", albumId: w.albums.georgie })) as R;
@@ -63,8 +64,7 @@ describe("startUpload: een link voor precies één nieuwe sleutel (A-invariant 1
     expect(link.bucket).toBe(ENV.R2_BUCKET);
     expect(link.key.startsWith(TMP_PREFIX), link.key).toBe(true);
     await expectValidR2Signature(link, "PUT", PLAIN.byteLength);
-    expect(link.expiresS).toBeGreaterThan(0);
-    expect(link.expiresS).toBeLessThanOrEqual(3600);
+    expect(link.expiresS).toBe(15 * 60);
     expect(link.dateMs).toBe(FIXED_NOW);
     expect(res.expiresAt).toBe(link.dateMs + link.expiresS * 1000);
   });
@@ -617,6 +617,8 @@ describe("foto- en video-uploads met dezelfde upload-id (A-invariant 20)", () =>
     const w = await seedWorld(t);
     const s = (await start(as.alice(t), { uploadId: "v1", albumId: w.albums.georgie })) as R;
     const before = (await t.run(async (ctx) => ctx.db.query("uploadIdempotency").collect())) as R[];
+    // Na 2 uur: een foto-reservering zou dan al oud zijn (30 minuten); een video-upload niet (een dag).
+    vi.setSystemTime(FIXED_NOW + 2 * HOUR_MS);
     const res = await as.alice(t).fetch("/upload", {
       method: "POST",
       headers: { "Content-Type": "image/jpeg", "X-Upload-Id": "v1", "X-Album-Id": w.albums.georgie },
@@ -682,5 +684,79 @@ describe("de poster (A-invariant 15)", () => {
     expect(left.reservations).toBe(1);
     expect(r2().objects.has(key)).toBe(true);
     expect((await finish(as.alice(t), { uploadId: "v1" })).status).toBe(200);
+  });
+});
+
+// --- fixronde 2: hooguit 30 aanvragen per 24 uur (A-invariant 36) --------------
+
+describe("startUpload: hooguit 30 per user per 24 uur (A-invariant 36)", () => {
+  it("30 aanvragen mogen (ook herhalingen met dezelfde id); de 31e is te_vaak, zonder link of nieuwe reservering", async () => {
+    const t = newT();
+    const w = await seedWorld(t);
+    for (let i = 0; i < 30; i++) {
+      vi.setSystemTime(FIXED_NOW + i * 60_000);
+      expect(((await start(as.alice(t), { uploadId: "v1", albumId: w.albums.georgie })) as R).kind, `aanvraag ${i + 1}`).toBe("upload");
+    }
+    vi.setSystemTime(FIXED_NOW + 30 * 60_000);
+    const before = await leftovers(t, r2(), w.users.alice);
+    expectUploadRefusal(await outcome(() => start(as.alice(t), { uploadId: "v1", albumId: w.albums.georgie })), "te_vaak");
+    expectUploadRefusal(await outcome(() => start(as.alice(t), { uploadId: "v2", albumId: w.albums.georgie })), "te_vaak");
+    expect(await leftovers(t, r2(), w.users.alice)).toEqual(before);
+    // Een ander lid heeft zijn eigen 30.
+    expect(((await start(as.bob(t), { uploadId: "v1", albumId: w.albums.georgie })) as R).kind).toBe("upload");
+  });
+
+  it("glijdend venster: 24 uur na de eerste aanvraag mag er weer een", async () => {
+    const t = newT();
+    const w = await seedWorld(t);
+    for (let i = 0; i < 30; i++) {
+      vi.setSystemTime(FIXED_NOW + i * 60_000);
+      await start(as.alice(t), { uploadId: "v1", albumId: w.albums.georgie });
+    }
+    // Net binnen 24 uur na de eerste: nog niet.
+    vi.setSystemTime(FIXED_NOW + DAY_MS - 60_000);
+    expectUploadRefusal(await outcome(() => start(as.alice(t), { uploadId: "v9", albumId: w.albums.georgie })), "te_vaak");
+    // Ruim 24 uur na de eerste: de eerste telt niet meer mee.
+    vi.setSystemTime(FIXED_NOW + DAY_MS + 30_000);
+    expect(((await start(as.alice(t), { uploadId: "v9", albumId: w.albums.georgie })) as R).kind).toBe("upload");
+  });
+
+  it("geweigerde aanvragen tellen niet mee", async () => {
+    const t = newT();
+    const w = await seedWorld(t);
+    for (let i = 0; i < 31; i++) {
+      expectUploadRefusal(await outcome(() => start(as.alice(t), { uploadId: `x${i}`, albumId: w.albums.elders })), "geen_album");
+    }
+    expect(((await start(as.alice(t), { uploadId: "v1", albumId: w.albums.georgie })) as R).kind).toBe("upload");
+  });
+});
+
+describe("de poster zonder oriëntatie (fixronde 2: keepOrientation false)", () => {
+  it("een poster met oriëntatie 6 in de EXIF wordt opgeslagen zonder EXIF, dus zonder oriëntatie", async () => {
+    const t = newT();
+    const w = await seedWorld(t);
+    // GPS_JPEG draagt oriëntatie 6 (tests/_helpers/jpeg.ts). Het filmpje
+    // heeft zijn eigen stand; een gedraaide poster zou er anders bij staan.
+    const tiffOrientation = (b: Uint8Array) => {
+      for (let i = 0; i + 12 <= b.length; i++) {
+        const le = b[i] === 0x49 && b[i + 1] === 0x49 && b[i + 2] === 0x2a && b[i + 3] === 0;
+        const be = b[i] === 0x4d && b[i + 1] === 0x4d && b[i + 2] === 0 && b[i + 3] === 0x2a;
+        if (le || be) return true;
+      }
+      return false;
+    };
+    expect(tiffOrientation(GPS_JPEG), "sanity: de test-JPEG heeft een TIFF-kop").toBe(true);
+    const s = (await start(as.alice(t), { uploadId: "v1", albumId: w.albums.georgie })) as R;
+    await putAsApp(r2(), s.url, PLAIN);
+    const res = await finish(as.alice(t), { uploadId: "v1", poster: GPS_JPEG });
+    expect(res.status).toBe(200);
+    const row = (await rowOf(t, ((await res.json()) as R).photoId))!;
+    const stored = await t.run(async (ctx) => {
+      const blob = await ctx.storage.get(row.storageId);
+      return blob ? Array.from(new Uint8Array(await blob.arrayBuffer())) : null;
+    });
+    const bytes = new Uint8Array(stored!);
+    expect(isJpeg(bytes)).toBe(true);
+    expect(tiffOrientation(bytes), "een TIFF-kop (EXIF) in de opgeslagen poster").toBe(false);
   });
 });

@@ -129,9 +129,18 @@ export type R2Call = {
   /** Bij een CopyObject: de bron (`bucket/sleutel`) en de if-match. */
   copySource?: string;
   copyIfMatch?: string | null;
+  /** Alle headers van het verzoek, met kleine letters. */
+  headers: Record<string, string>;
 };
 
-type StoredObject = { bytes: Uint8Array; lastModified: number; etag: string };
+type StoredObject = { bytes: Uint8Array; lastModified: number; etag: string; contentType: string | null };
+
+/**
+ * Hoe een CopyObject antwoordt. `normal`: 200 met `CopyObjectResult`. `lost`:
+ * R2 kopieert, maar het antwoord komt niet aan (netwerkfout). `noResult`: R2
+ * kopieert en geeft 200 zonder `CopyObjectResult`.
+ */
+export type CopyMode = "normal" | "lost" | "noResult";
 
 export class FakeR2 {
   objects = new Map<string, StoredObject>();
@@ -142,7 +151,12 @@ export class FakeR2 {
   /** Een grootte die HEAD en de lijst melden, zonder 120 MiB in het geheugen. */
   sizes = new Map<string, number>();
   /** Na elke beantwoorde GET op een object (bv. om het object daarna te wisselen). */
-  onGet: ((key: string, range: string | null) => void) | null = null;
+  onGet: ((key: string, range: string | null) => void | Promise<void>) | null = null;
+  /** Vóór elk verzoek naar R2 (na het noteren), bv. om de database te bekijken. */
+  beforeRequest: ((call: R2Call) => void | Promise<void>) | null = null;
+  copyMode: CopyMode = "normal";
+  /** HEAD zonder ETag-header. */
+  headWithoutEtag = false;
   private version = 0;
 
   reset(): void {
@@ -152,13 +166,20 @@ export class FakeR2 {
     this.down = false;
     this.sizes.clear();
     this.onGet = null;
+    this.beforeRequest = null;
+    this.copyMode = "normal";
+    this.headWithoutEtag = false;
     this.version = 0;
   }
 
   /** Een object direct neerzetten (zoals een PUT); elke versie een eigen ETag. */
-  put(key: string, bytes: Uint8Array, lastModified = Date.now()): void {
+  put(key: string, bytes: Uint8Array, lastModified = Date.now(), contentType: string | null = null): void {
     this.version += 1;
-    this.objects.set(key, { bytes, lastModified, etag: `"v${this.version}"` });
+    this.objects.set(key, { bytes, lastModified, etag: `"v${this.version}"`, contentType });
+  }
+
+  contentTypeOf(key: string): string | null | undefined {
+    return this.objects.get(key)?.contentType;
   }
 
   bytesOf(key: string): Uint8Array | undefined {
@@ -244,12 +265,15 @@ export class FakeR2 {
     const signed = authorization.startsWith("AWS4-HMAC-SHA256") || u.searchParams.has("X-Amz-Signature");
     const range = headers.get("range");
     const copySource = headers.get("x-amz-copy-source");
-    const call: R2Call = { method, bucket, key, url: u.href, signed, range };
+    const lowered: Record<string, string> = {};
+    for (const [name, value] of headers) lowered[name] = value;
+    const call: R2Call = { method, bucket, key, url: u.href, signed, range, headers: lowered };
     if (copySource !== null) {
       call.copySource = copySource;
       call.copyIfMatch = headers.get("x-amz-copy-source-if-match");
     }
     this.calls.push(call);
+    await this.beforeRequest?.(call);
     if (this.down) throw new TypeError("fetch failed");
     if (bucket !== ENV.R2_BUCKET) return new Response("<Error><Code>NoSuchBucket</Code></Error>", { status: 404 });
     if (!signed) return new Response("<Error><Code>AccessDenied</Code></Error>", { status: 403 });
@@ -300,9 +324,12 @@ export class FakeR2 {
       if (ifMatch !== null && strip(ifMatch) !== strip(src.etag)) {
         return new Response("<Error><Code>PreconditionFailed</Code></Error>", { status: 412 });
       }
-      this.put(key, src.bytes.slice());
+      const replace = (headers.get("x-amz-metadata-directive") ?? "COPY").toUpperCase() === "REPLACE";
+      this.put(key, src.bytes.slice(), Date.now(), replace ? headers.get("content-type") : src.contentType);
       const copied = this.objects.get(key)!;
       if (this.sizes.has(srcKey)) this.sizes.set(key, this.sizes.get(srcKey)!);
+      if (this.copyMode === "lost") throw new TypeError("fetch failed");
+      if (this.copyMode === "noResult") return new Response("", { status: 200 });
       return new Response(
         `<?xml version="1.0" encoding="UTF-8"?><CopyObjectResult><ETag>${escapeXml(copied.etag)}</ETag><LastModified>${new Date(copied.lastModified).toISOString()}</LastModified></CopyObjectResult>`,
         { status: 200, headers: { "Content-Type": "application/xml" } },
@@ -310,7 +337,7 @@ export class FakeR2 {
     }
     if (method === "PUT") {
       const bytes = new Uint8Array(await new Response(body).arrayBuffer());
-      this.put(key, bytes);
+      this.put(key, bytes, Date.now(), headers.get("content-type"));
       return new Response(null, { status: 200 });
     }
     if (!obj) return new Response(method === "HEAD" ? null : "<Error><Code>NoSuchKey</Code></Error>", { status: 404 });
@@ -318,7 +345,11 @@ export class FakeR2 {
     if (method === "HEAD") {
       return new Response(null, {
         status: 200,
-        headers: { "Content-Length": String(this.sizes.get(key) ?? size), "Content-Type": "video/mp4", ETag: obj.etag },
+        headers: {
+          "Content-Length": String(this.sizes.get(key) ?? size),
+          "Content-Type": obj.contentType ?? "application/octet-stream",
+          ...(this.headWithoutEtag ? {} : { ETag: obj.etag }),
+        },
       });
     }
     if (method === "GET") {
@@ -340,7 +371,7 @@ export class FakeR2 {
       } else {
         res = new Response(obj.bytes.slice(), { status: 200, headers: { "Content-Length": String(size), ETag: obj.etag } });
       }
-      this.onGet?.(key, range);
+      await this.onGet?.(key, range);
       return res;
     }
     return new Response(null, { status: 405 });

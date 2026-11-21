@@ -38,6 +38,10 @@ export type TrakTiming = {
   mdhd?: [number, number];
   /** tkhd-duur in de tijdschaal van de film; standaard 0. */
   tkhdDuration?: number;
+  /** `edts/elst` met deze segmentduren (tijdschaal van de film), versie 0. */
+  elst?: number[];
+  /** `stts` in stbl: [aantal, duur] per regel (tijdschaal van het spoor). */
+  stts?: [number, number][];
   /** Extra blokken in stbl, minf of mdia (ná de gewone kinderen). */
   stblExtra?: number[];
   minfExtra?: number[];
@@ -46,9 +50,13 @@ export type TrakTiming = {
 export function trak(handler: string, entry: string, extra: number[] = [], w = 108, h = 192, timing: TrakTiming = {}): number[] {
   const [ts, dur] = timing.mdhd ?? [1000, 1];
   const mdhd = box("mdhd", full(0), u32(0), u32(0), u32(ts), u32(dur), u16(0x55c4), u16(0));
-  const stbl = box("stbl", stsd(entry), timing.stblExtra ?? []);
+  const stts = timing.stts ? box("stts", full(0), u32(timing.stts.length), timing.stts.flatMap(([n, d]) => [...u32(n), ...u32(d)])) : [];
+  const stbl = box("stbl", stsd(entry), stts, timing.stblExtra ?? []);
   const minf = box("minf", stbl, timing.minfExtra ?? []);
-  return box("trak", tkhd(w, h, timing.tkhdDuration ?? 0), box("mdia", mdhd, hdlr(handler), minf, timing.mdiaExtra ?? []), extra);
+  const edts = timing.elst
+    ? box("edts", box("elst", full(0), u32(timing.elst.length), timing.elst.flatMap((d) => [...u32(d), ...u32(0), ...u16(1), ...u16(0)])))
+    : [];
+  return box("trak", tkhd(w, h, timing.tkhdDuration ?? 0), edts, box("mdia", mdhd, hdlr(handler), minf, timing.mdiaExtra ?? []), extra);
 }
 
 /** Losse bytes: een kop die zegt "4 bytes groot" (kleiner dan een kop kan zijn). */

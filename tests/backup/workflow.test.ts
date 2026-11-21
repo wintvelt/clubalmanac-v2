@@ -121,3 +121,70 @@ describe("backup-workflow: R2 niet eerst op de schijf van de runner (A-invariant
     }
   });
 });
+
+// --- fixronde 2: de rclone-stap (A-invariant 35) -------------------------------
+
+/** De stap die R2 met rclone naar de backup zet. */
+function rcloneStep(): Step {
+  const s = steps().find((x) => /\brclone\s+(sync|copy)\b/.test(x.run) && /r2:/.test(x.run));
+  expect(s, "geen stap met rclone sync|copy vanaf r2:").toBeTruthy();
+  return s!;
+}
+
+/** De rclone sync|copy-regel, met voortzettingen samengevoegd. */
+function rcloneCommand(run: string): string {
+  const line = run
+    .replace(/\\\n/g, " ")
+    .split("\n")
+    .find((l) => /\brclone\s+(sync|copy)\b/.test(l));
+  expect(line, "geen rclone sync|copy-regel").toBeTruthy();
+  return line!;
+}
+
+describe("backup-workflow: de rclone-stap (fixronde 2, A-invariant 35)", () => {
+  it("RCLONE_CONFIG_S3BACKUP_NO_HEAD=true (de rol heeft bewust geen GetObject)", () => {
+    expect(rcloneStep().text).toMatch(/RCLONE_CONFIG_S3BACKUP_NO_HEAD:\s*["']?true["']?/);
+  });
+
+  it("het doel eindigt op /r2-videos/", () => {
+    const words = rcloneCommand(rcloneStep().run)
+      .trim()
+      .split(/\s+/)
+      .map((w) => w.replace(/^["']|["']$/g, ""));
+    const at = words.findIndex((w) => w === "sync" || w === "copy");
+    const positional = words.slice(at + 1).filter((w) => !w.startsWith("-"));
+    expect(positional[1], `doel: ${positional[1]}`).toMatch(/\/r2-videos\/$/);
+  });
+
+  it('--exclude "uploads/**" (tijdelijke uploads horen niet in de backup)', () => {
+    expect(rcloneCommand(rcloneStep().run)).toMatch(/--exclude[ =]["']?uploads\/\*\*["']?/);
+  });
+
+  it("een grens op wissen: --max-delete, of stoppen als de bron leeg of veel kleiner is", () => {
+    const run = rcloneStep().run;
+    const cmd = rcloneCommand(run);
+    if (/--max-delete[ =]\d+/.test(cmd)) return;
+    // Anders: vóór de sync een meting van de bron en een `exit 1` die erop volgt.
+    const syncAt = run.indexOf(cmd.trim().split(/\s+/).slice(0, 2).join(" "));
+    const before = run.slice(0, syncAt);
+    const measured = before.search(/rclone\s+(size|lsf|lsjson|ls)\b[^\n]*r2:/);
+    expect(measured, "geen --max-delete en geen meting van de bron vóór de sync").toBeGreaterThanOrEqual(0);
+    expect(before.slice(measured), "geen exit 1 na de meting van de bron").toMatch(/exit 1/);
+  });
+
+  it("rclone uit een vaste release met checksum, of apt-get update vóór apt-get install; nooit een install-script uit een pipe", () => {
+    const run = rcloneStep().run;
+    expect(run).not.toMatch(/install\.sh|\|\s*(sudo\s+)?(ba)?sh\b/);
+    const apt = run.search(/apt-get\s+install[^\n]*rclone/);
+    const download = run.search(/(curl|wget)\b[^\n]*rclone/);
+    expect(apt >= 0 || download >= 0, "rclone wordt niet geïnstalleerd in deze stap").toBe(true);
+    if (download >= 0) {
+      expect(run, "een download zonder checksum").toMatch(/sha256sum\s+(-c|--check)|sha256sum[^\n]*\|\s*grep|echo\s+["']?[0-9a-f]{64}/);
+    }
+    if (apt >= 0 && download < 0) {
+      const update = run.search(/apt-get\s+update/);
+      expect(update, "apt-get install zonder apt-get update ervoor").toBeGreaterThanOrEqual(0);
+      expect(update).toBeLessThan(apt);
+    }
+  });
+});

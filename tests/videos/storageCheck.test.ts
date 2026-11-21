@@ -164,6 +164,33 @@ describe("videos.checkStorage (A-invariant 22)", () => {
     expect(env.r2.mails).toEqual([]);
   });
 
+  it("een object onder uploads/ zonder open reservering van anderhalve dag: nog geen mail (de opruimregel is er nog niet aan toe) (fixronde 2)", async () => {
+    const t = newT();
+    await seedWorld(t);
+    env.r2.put("uploads/achtergelaten.mp4", PLAIN, FIXED_NOW - DAY_MS - 12 * HOUR_MS);
+    await check(t);
+    expect(env.r2.mails).toEqual([]);
+  });
+
+  it("een object onder uploads/ zonder open reservering van meer dan 2 dagen: mail met het eigen signaal 'opruimregel' (fixronde 2)", async () => {
+    const t = newT();
+    await seedWorld(t);
+    env.r2.put("uploads/achtergelaten.mp4", PLAIN, FIXED_NOW - 2 * DAY_MS - HOUR_MS);
+    await check(t);
+    expect(env.r2.mails).toHaveLength(1);
+    expect(mailText()).toMatch(/opruimregel/i);
+    expect(env.r2.deletes()).toEqual([]);
+  });
+
+  it("een wees onder videos/ is geen opruimregel-signaal", async () => {
+    const t = newT();
+    await seedWorld(t);
+    env.r2.put("videos/wees.mp4", PLAIN, FIXED_NOW - 2 * DAY_MS - HOUR_MS);
+    await check(t);
+    expect(env.r2.mails).toHaveLength(1);
+    expect(mailText()).not.toMatch(/opruimregel/i);
+  });
+
   it("cron 'video storage check': dagelijks 05:15 UTC", () => {
     const job = crons.crons["video storage check"];
     if (!job) throw new Error("cron 'video storage check' niet geregistreerd");

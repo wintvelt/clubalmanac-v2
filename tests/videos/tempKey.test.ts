@@ -129,10 +129,12 @@ describe("een oude PUT-link na afronden (TOCTOU)", () => {
     expect(r2().objects.has(tmp)).toBe(false);
   });
 
-  it("de link verloopt na hooguit een uur", async () => {
+  it("de link verloopt na 15 minuten (fixronde 2)", async () => {
     const t = newT();
     const { url } = await uploaded(t);
-    vi.setSystemTime(FIXED_NOW + HOUR_MS + 1000);
+    vi.setSystemTime(FIXED_NOW + 15 * 60 * 1000 + 1000);
+    expect(await r2().putViaLink(url, PLAIN)).toBe(403);
+    vi.setSystemTime(FIXED_NOW + HOUR_MS);
     expect(await r2().putViaLink(url, PLAIN)).toBe(403);
   });
 });
@@ -207,5 +209,119 @@ describe("opruimen onder uploads/", () => {
     await t.mutation(internal.uploads.cleanupOld, {});
     await t.finishAllScheduledFunctions(vi.runAllTimers);
     expect(r2().objects.has(tmp)).toBe(false);
+  });
+});
+
+// --- fixronde 2: de kopie en het opruimen (A-invariant 12) ---------------------
+
+/** De ondertekende headers van een verzoek: uit de query, of uit de Authorization-header. */
+function signedHeadersOf(c: { url: string; headers: Record<string, string> }): string[] {
+  const fromQuery = new URL(c.url).searchParams.get("X-Amz-SignedHeaders");
+  const fromAuth = /SignedHeaders=([^,\s]+)/.exec(c.headers["authorization"] ?? "")?.[1];
+  return (fromQuery ?? fromAuth ?? "").toLowerCase().split(";").filter(Boolean);
+}
+
+async function startAndPut(t: T) {
+  const w = await seedWorld(t);
+  const s = (await start(as.alice(t), { uploadId: "v1", albumId: w.albums.georgie })) as R;
+  const tmp = await putAsApp(r2(), s.url, PLAIN);
+  return { w, tmp };
+}
+
+async function nothingUnderVideos(t: T) {
+  for (const k of r2().keys()) expect(k.startsWith(FINAL_PREFIX), `wees onder videos/: ${k}`).toBe(false);
+  expect(await t.run(async (ctx) => ctx.db.query("photos").collect())).toHaveLength(0);
+}
+
+describe("de CopyObject zet het type opnieuw (fixronde 2)", () => {
+  it("x-amz-metadata-directive REPLACE en content-type video/mp4, allebei ondertekend; het filmpje is video/mp4", async () => {
+    const t = newT();
+    const { photoId } = await uploaded(t);
+    const c = r2().copies()[0]!;
+    expect(c.headers["x-amz-metadata-directive"]).toBe("REPLACE");
+    expect(c.headers["content-type"]).toBe("video/mp4");
+    const signed = signedHeadersOf(c);
+    expect(signed).toContain("x-amz-metadata-directive");
+    expect(signed).toContain("content-type");
+    expect(signed).toContain("x-amz-copy-source");
+    expect(signed).toContain("x-amz-copy-source-if-match");
+    expect(r2().contentTypeOf(await videoKeyOf(t, photoId))).toBe("video/mp4");
+  });
+});
+
+describe("volgorde: eerst de rij, dan de tijdelijke sleutel wissen (fixronde 2)", () => {
+  it("op het moment dat de tijdelijke sleutel gewist wordt, staat de rij er al", async () => {
+    const t = newT();
+    const { tmp } = await startAndPut(t);
+    const rowsAtDelete: number[] = [];
+    r2().beforeRequest = async (c) => {
+      if (c.method === "DELETE" && c.key === tmp) {
+        rowsAtDelete.push((await t.run(async (ctx) => ctx.db.query("photos").collect())).length);
+      }
+    };
+    expect((await finish(as.alice(t), { uploadId: "v1" })).status).toBe(200);
+    expect(rowsAtDelete, "de tijdelijke sleutel is niet gewist").not.toEqual([]);
+    expect(rowsAtDelete.every((n) => n === 1), `rijen bij het wissen: ${rowsAtDelete.join(",")}`).toBe(true);
+  });
+});
+
+describe("een fout na de CopyObject: de eindsleutel gaat weer weg (fixronde 2)", () => {
+  it.each<["lost" | "noResult", string]>([
+    ["lost", "het antwoord van de kopie komt niet aan"],
+    ["noResult", "het antwoord bevat geen CopyObjectResult"],
+  ])("%s (%s): geen rij en geen object onder videos/", async (mode) => {
+    const t = newT();
+    await startAndPut(t);
+    r2().copyMode = mode;
+    const res = await finish(as.alice(t), { uploadId: "v1" });
+    expect(res.status).not.toBe(200);
+    const copied = r2().copies().map((c) => c.key!);
+    expect(copied).toHaveLength(1);
+    expect(r2().deletes(), "de eindsleutel is niet gewist").toContain(copied[0]);
+    await nothingUnderVideos(t);
+  });
+
+  it.each<["limiet" | "lid", number]>([
+    ["limiet", 403],
+    ["lid", 404],
+  ])("de rij mislukt na de kopie (%s weg tijdens het bekijken): geen sleutel onder videos/ en geen reservering (NS2)", async (what, status) => {
+    const t = newT();
+    const { w, tmp } = await startAndPut(t);
+    let done = false;
+    r2().onGet = async (key) => {
+      if (key !== tmp || done) return;
+      done = true;
+      await t.run(async (ctx) => {
+        if (what === "limiet") {
+          await ctx.db.patch(w.users.alice, { photoCount: 1000, photoLimit: 1000 });
+        } else {
+          const m = await ctx.db
+            .query("memberships")
+            .filter((q) => q.and(q.eq(q.field("userId"), w.users.alice), q.eq(q.field("groupId"), w.groups.reis)))
+            .first();
+          await ctx.db.delete(m!._id);
+        }
+      });
+    };
+    const res = await finish(as.alice(t), { uploadId: "v1" });
+    expect(done, "sanity: de backend las het object").toBe(true);
+    expect(res.status).toBe(status);
+    expect(r2().copies().length, "sanity: de kopie gebeurde (anders test dit niets)").toBe(1);
+    await nothingUnderVideos(t);
+    const left = await leftovers(t, r2(), w.users.alice);
+    expect(left.reservations).toBe(0);
+    expect(left.storage).toBe(0);
+  });
+});
+
+describe("een HEAD zonder ETag laat niets door (fixronde 2)", () => {
+  it("geen 200, geen kopie, geen rij", async () => {
+    const t = newT();
+    await startAndPut(t);
+    r2().headWithoutEtag = true;
+    const res = await finish(as.alice(t), { uploadId: "v1" });
+    expect(res.status).not.toBe(200);
+    expect(r2().copies()).toEqual([]);
+    await nothingUnderVideos(t);
   });
 });
