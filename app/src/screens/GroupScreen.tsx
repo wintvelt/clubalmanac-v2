@@ -121,7 +121,8 @@ function GroupContent({ groupId }: { groupId: Id<"groups"> }) {
 
   if (group === null) return departing ? <Departing /> : <NotMember groupId={groupId} />;
 
-  // WP35 (alleen web, breed venster): links de cover, titel en tabs; rechts de inhoud.
+  // WP35 (breed web-venster, liggende iPad): links de cover, titel, "Bewerk
+  // groep" en tabs; rechts de inhoud.
   if (wide) {
     const tabs = hasFilms ? TABS_WITH_FILMS : TABS;
     return (
@@ -133,12 +134,18 @@ function GroupContent({ groupId }: { groupId: Id<"groups"> }) {
             description={group?.description}
             meta={group ? `Opgericht ${displayYear(group)}` : undefined}
           >
+            {rights?.editGroup && (
+              <View style={styles.sideAction}>
+                <SmallButton title="Bewerk groep" icon="edit" onPress={() => router.push(editGroupPath(groupId))} />
+              </View>
+            )}
             {group !== undefined && <SegmentedTabs tabs={tabs} selected={shownTab} onSelect={setTab} />}
           </WideSide>
         }
       >
         <Stack.Screen options={{ title: group?.name ?? "Groep" }} />
-        <Screen>
+        {/* De statusbalk regelt WideSplit al. */}
+        <Screen underHeader>
           {group === undefined ? (
             <LoadingState label="Groep laden…" />
           ) : (
@@ -567,4 +574,5 @@ const styles = StyleSheet.create({
   },
   text: { flex: 1, gap: space.xs },
   action: { paddingTop: space.s },
+  sideAction: { alignSelf: "flex-start" },
 });

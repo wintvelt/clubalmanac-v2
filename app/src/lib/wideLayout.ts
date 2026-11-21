@@ -1,9 +1,20 @@
-// WP35 (besluit Wouter 2026-11-20): de brede web-layout van Groep en Album.
-// Links een vaste kolom met cover en titel, rechts de inhoud. Alleen op het
-// web vanaf een breed venster (src/components/wideLayout.web.ts); op iOS nooit.
+// WP35 (besluit Wouter 2026-11-20): de brede layout van Groep en Album. Links
+// een vaste kolom met cover en titel, rechts de inhoud. Op het web vanaf een
+// breed venster (src/components/wideLayout.web.ts); op iOS alleen op een iPad
+// die liggend staat (besluit Wouter 2026-11-21, src/components/wideLayout.ts).
 
 /** Vanaf deze vensterbreedte de brede layout. */
 export const WIDE_FROM = 900;
+
+/**
+ * Breed op iOS: een iPad, het venster liggend (breder dan hoog) en minstens
+ * WIDE_FROM breed. Het venster, niet het scherm: draaien, Split View en Stage
+ * Manager schakelen meteen om. Een iPhone blijft smal, ook liggend.
+ */
+export function wideOnIOS({ isPad, width, height }: { isPad: boolean; width: number; height: number }): boolean {
+  return isPad && width > height && width >= WIDE_FROM;
+}
+
 /** Breedte van de vaste kolom links. */
 export const SIDE_WIDTH = 340;
 /** Een fototegel in de brede layout: vast, groeit niet mee met het venster. */
@@ -16,8 +27,8 @@ export function wideGrid(available: number, gap: number): { columns: number; til
 }
 
 /**
- * `windowSize` van het fotoraster in de brede layout: de lijst rendert het
- * scherm plus één scherm erboven en eronder. (Smal: 5, zoals op iOS.)
+ * `windowSize` van het fotoraster in de brede web-layout: de lijst rendert het
+ * scherm plus één scherm erboven en eronder. (Smal en op iOS: 5.)
  */
 export const WIDE_WINDOW_SIZE = 3;
 

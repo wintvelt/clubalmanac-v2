@@ -2,7 +2,7 @@ import { useMutation } from "convex/react";
 import type { FunctionReturnType } from "convex/server";
 import { router, Stack, useIsFocused, useLocalSearchParams } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { StyleSheet, useWindowDimensions, View } from "react-native";
+import { Platform, StyleSheet, useWindowDimensions, View } from "react-native";
 import Animated, { useAnimatedRef, useScrollOffset } from "react-native-reanimated";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import type { Id } from "../../../convex/_generated/dataModel";
@@ -143,8 +143,10 @@ function AlbumContent({ groupId, albumId }: { groupId: Id<"groups">; albumId: Id
       return next;
     });
 
-  // WP35 (alleen web, breed venster): de kop staat links in een vaste kolom;
-  // rechts tegels van vaste maat, zoveel als er passen.
+  // WP35 (breed web-venster, liggende iPad): de kop staat links in een vaste
+  // kolom, zonder bewegende kop (WP33); rechts tegels van vaste maat, zoveel
+  // als er passen. De native kop is hier altijd verborgen: de pil is de enige
+  // terugknop.
   const wide = useWideLayout();
   const grid = wide ? wideGrid(width - SIDE_WIDTH - 2 * size.screenMargin, GAP) : null;
   const columns = grid ? grid.columns : columnsFor(width);
@@ -265,8 +267,9 @@ function AlbumContent({ groupId, albumId }: { groupId: Id<"groups">; albumId: Id
           );
         }}
         initialNumToRender={columns * 6}
-        // WP35: in de brede web-layout minder schermen vooruit (beeldgeheugen).
-        windowSize={grid ? WIDE_WINDOW_SIZE : 5}
+        // WP35: in de brede web-layout minder schermen vooruit (beeldgeheugen
+        // van de browser); op iOS niet nodig.
+        windowSize={grid && Platform.OS === "web" ? WIDE_WINDOW_SIZE : 5}
         removeClippedSubviews
       />
       </ScrollOffsetContext.Provider>
@@ -306,8 +309,8 @@ function AlbumContent({ groupId, albumId }: { groupId: Id<"groups">; albumId: Id
   );
 }
 
-// WP35: in de brede web-layout de lijst rechts naast de vaste kolom; anders
-// alleen de lijst (iOS altijd).
+// WP35: in de brede layout de lijst rechts naast de vaste kolom; anders alleen
+// de lijst.
 function WideOrNot({ wide, side, children }: { wide: boolean; side: ReactNode; children: ReactNode }) {
   if (!wide) return <>{children}</>;
   return <WideSplit side={side}>{children}</WideSplit>;
@@ -597,7 +600,7 @@ function AlbumHeader({
 const styles = StyleSheet.create({
   fill: { flex: 1 },
   list: { paddingBottom: space.xxl },
-  // WP35: de rasterkolom rechts in de brede web-layout.
+  // WP35: de rasterkolom rechts in de brede layout.
   wideList: { padding: size.screenMargin, paddingTop: space.xl },
   column: {
     width: "100%",

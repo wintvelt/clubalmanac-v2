@@ -11,3 +11,10 @@ export const SVG_FILL: { width?: string; height?: string } = { width: "100%", he
 export function useSvgId(base: string): string {
   return `${base}-${useId().replace(/[^A-Za-z0-9_-]/g, "")}`;
 }
+
+// In de browser tekent een <svg> een vorm in procenten bij elke maat goed.
+// Geen onLayout: een <svg> in de pagina kent die niet.
+const NO_LAYOUT = {};
+export function useSvgRedraw(): { redraw: number; layout: Record<string, never> } {
+  return { redraw: 0, layout: NO_LAYOUT };
+}
