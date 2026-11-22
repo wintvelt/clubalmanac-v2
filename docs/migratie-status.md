@@ -147,6 +147,8 @@ Besluit Wouter 2026-11-15: niemand gebruikt de oude webapp. Volgorde: eerst de o
 
 [WP39](./work-packages/WP39-toevoegscherm.md) ✅ 2026-11-22: toevoegscherm voor foto's en filmpjes: raster met omslagen, keuze aanvullen en inkorten, albumkiezer met het laatst gekozen album, "Stoppen" met teller bij het ophalen uit iCloud, grijze uit-knoppen in de hele app. Drie gate-rondes op de iPhone. Live met app 2.0.2.
 
+[WP40](./work-packages/WP40-selectiebalk.md) ✅ 2026-11-22: selectiebalk in album en Mijn foto's: slanke balk op de plek van de tabbalk, Annuleren en het aantal in de kop, omslag ingeklapt, met subtiele animaties (wissel onderin, vinkje met veer, zachte titel). Drie gate-rondes op de iPhone. Live met app 2.0.2.
+
 ## Fase 5: Lancering — hard cutover — open
 
 Geen parallel draaien. Bij 20 users en een 3 jaar oude oude app is parallel draaien absurd veel werk (dual-write, sync layer, Cognito↔Clerk mapping). Hard cut.

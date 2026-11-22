@@ -357,3 +357,9 @@ H15. **Eén plek voor de maten.** Alle maten en duren van deze drie animaties st
 1. Titel: overvloeien, geen rollende cijfers.
 2. "Beperk beweging": een gekozen tegel staat meteen klein (de eindstand).
 3. De rand van 3 pt blijft; de gate kijkt of rand plus krimpen samen goed oogt.
+
+## Gate ronde 3: iPhone (Wouter, 2026-11-22)
+
+Build `wp40-dev4` (commit `7f0c603`). De animaties zijn soepel: wissel onderin, vinkje met veer, zachte titel. Klaar.
+
+Audit na gate ronde 2: geen blockers. S1 (zijkolom op de liggende iPad viel onder de selectiebalk) opgelost in `7a50941`, nog niet op een toestel gezien. Open als nice-to-have: N1 (heel korte tik: kleine dip in het krimpen), N2 (animatie-waarden per tegel ook buiten de selectie), N3 (gedeelde `selectionBarRise`), N5 (tijdvenster van 300 ms bij het meteen terugzetten van de tabbalk), N6 (web: transform-laag om de tabbalk).
