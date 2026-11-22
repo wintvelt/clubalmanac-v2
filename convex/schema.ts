@@ -233,6 +233,10 @@ export default defineSchema({
     endsAt: v.number(),
     openedAt: v.number(),
     closedAt: v.optional(v.number()),
+    // Besluit 15, fix-cyclus 1: `reminderClaimedAt` is een ronde die de mail
+    // gepland heeft (een paar uur geldig, zodat twee rondes vlak na elkaar één
+    // mail geven); `reminderSentAt` pas als de mail weg is.
+    reminderClaimedAt: v.optional(v.number()),
     reminderSentAt: v.optional(v.number()),
   })
     .index("by_group", ["groupId"])
@@ -264,6 +268,14 @@ export default defineSchema({
     .index("by_owner", ["ownerId"])
     .index("by_group_and_owner", ["groupId", "ownerId"])
     .index("by_status_and_completedAt", ["status", "completedAt"]),
+
+  // WP38 fix-cyclus 1: de daggrens van `startOriginal` en `finishOriginal`
+  // samen (glijdend, zoals `videoUploadRequests`). Eén rij per aanroep die
+  // doorging; een weigering en de cron tellen niet.
+  originalRequests: defineTable({
+    ownerId: v.id("users"),
+    at: v.number(),
+  }).index("by_owner_and_at", ["ownerId", "at"]),
 
   // ──────────────────────────────────────────────────────────────────
   // Invites

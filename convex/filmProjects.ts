@@ -18,8 +18,10 @@ import { getWebmasterEmails } from "./lib/auth";
 import {
   FILM_PROJECT_MAX_AHEAD_MS,
   MAX_ORIGINAL_BYTES,
+  MAX_ORIGINAL_CALLS_PER_DAY,
   MAX_PROJECT_ORIGINAL_BYTES,
   MAX_TOTAL_ORIGINAL_BYTES,
+  MIN_ORIGINAL_BYTES,
   ORIGINAL_ARRIVAL_AFTER_CLOSE_MS,
   ORIGINAL_DOWNLOAD_SECONDS,
   ORIGINAL_KEEP_MS,
@@ -93,10 +95,20 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 const ORPHAN_AFTER_MS = DAY_MS;
 /** A-invariant 14: een halve upload zonder inzending na 8 dagen: de lifecycle-regel (7 dagen) werkt niet. */
 const STALE_UPLOAD_AFTER_MS = 8 * DAY_MS;
+/**
+ * Fix-cyclus 1 (red-team S3): de lifecycle-regel van R2 (365 dagen) kan een
+ * origineel rond het einde van zijn jaar wissen voordat de dagelijkse ronde
+ * het doet. Vanaf een dag vóór dat einde meldt de check een inzending zonder
+ * bestand niet meer. Het jaar telt vanaf het aanmelden: R2 dateert een object
+ * uit een multipart-upload hooguit op het begin van de upload, nooit eerder.
+ */
+const MISSING_QUIET_BEFORE_YEAR_END_MS = DAY_MS;
+/** Besluit 15, fix-cyclus 1: zo lang geldt een geplande herinnering als bezig. */
+const REMINDER_CLAIM_MS = 6 * 60 * 60 * 1000;
 
 export const ORIGINAL_NOT_FOUND = { code: "ORIGINAL_NOT_FOUND" } as const;
 
-type RefuseReason = "uitgelogd" | "niet_toegestaan" | "te_groot" | "vol" | "geen_video";
+type RefuseReason = "uitgelogd" | "niet_toegestaan" | "te_groot" | "te_klein" | "te_vaak" | "vol" | "geen_video";
 
 function refuseOriginal(reason: RefuseReason): never {
   throw new ConvexError({ code: "ORIGINAL_REFUSED", reason });
@@ -106,6 +118,8 @@ const REFUSE_REASON = v.union(
   v.literal("uitgelogd"),
   v.literal("niet_toegestaan"),
   v.literal("te_groot"),
+  v.literal("te_klein"),
+  v.literal("te_vaak"),
   v.literal("vol"),
   v.literal("geen_video"),
 );
@@ -457,7 +471,8 @@ async function reservedBytes(ctx: QueryCtx, projectId?: Id<"filmProjects">): Pro
 /**
  * De inzending, in één transactie: dezelfde regels als `startGate`, de
  * grenzen (besluit 11: per bestand, per project, alles samen; wat onderweg
- * is telt mee), en per filmpje hooguit één inzending. Opnieuw aanmelden geeft
+ * is telt mee; fix-cyclus 1: de daggrens, als laatste, zodat een weigering
+ * niet meetelt), en per filmpje hooguit één inzending. Opnieuw aanmelden geeft
  * dezelfde inzending, met dezelfde upload in R2.
  */
 export const reserveOriginal = internalMutation({
@@ -481,6 +496,7 @@ export const reserveOriginal = internalMutation({
     if (state.kind === "existing") {
       // Een andere grootte is een ander bestand: de app trekt eerst terug.
       if (state.original.bytes !== bytes) return { kind: "refused" as const, reason: "niet_toegestaan" as const };
+      if (!(await takeOriginalCall(ctx, state.original.ownerId, now))) return { kind: "refused" as const, reason: "te_vaak" as const };
       return {
         kind: "upload" as const,
         originalId: state.original._id,
@@ -496,6 +512,7 @@ export const reserveOriginal = internalMutation({
     if ((await reservedBytes(ctx)) + bytes > MAX_TOTAL_ORIGINAL_BYTES) {
       return { kind: "refused" as const, reason: "vol" as const };
     }
+    if (!(await takeOriginalCall(ctx, state.userId, now))) return { kind: "refused" as const, reason: "te_vaak" as const };
     const originalId = await ctx.db.insert("filmOriginals", {
       projectId: state.project._id,
       groupId: state.project.groupId,
@@ -512,15 +529,20 @@ export const reserveOriginal = internalMutation({
 
 /**
  * De upload-id van R2 bij een inzending, als er nog geen (of `previous`) is.
- * Heeft een gelijktijdige aanmelding er al een gezet, dan die. `gone`: de
- * inzending is weg of al binnen.
+ * Heeft een gelijktijdige aanmelding er al een gezet, dan die. `done`: de
+ * inzending is intussen binnen (fix-cyclus 1, red-team S2); `gone`: hij is weg.
  */
 export const attachUpload = internalMutation({
   args: { originalId: v.id("filmOriginals"), uploadId: v.string(), previous: v.union(v.string(), v.null()) },
-  returns: v.union(v.object({ kind: v.literal("gone") }), v.object({ kind: v.literal("use"), uploadId: v.string() })),
+  returns: v.union(
+    v.object({ kind: v.literal("gone") }),
+    v.object({ kind: v.literal("done") }),
+    v.object({ kind: v.literal("use"), uploadId: v.string() }),
+  ),
   handler: async (ctx, { originalId, uploadId, previous }) => {
     const row = await ctx.db.get(originalId);
-    if (!row || row.status !== "onderweg") return { kind: "gone" as const };
+    if (!row) return { kind: "gone" as const };
+    if (row.status === "binnen") return { kind: "done" as const };
     if (row.uploadId !== undefined && row.uploadId !== previous) return { kind: "use" as const, uploadId: row.uploadId };
     await ctx.db.patch(originalId, { uploadId });
     return { kind: "use" as const, uploadId };
@@ -531,24 +553,65 @@ type StartOriginalResult =
   | { kind: "upload"; originalId: string; partSize: number; parts: { partNumber: number; url: string }[]; expiresAt: number }
   | { kind: "done"; originalId: string };
 
-/** Een upload die R2 niet meer kent (afgebroken of afgerond) vervangen door een nieuwe. */
+/**
+ * Een upload die R2 niet meer kent (afgebroken of afgerond) vervangen door een
+ * nieuwe. Is de inzending intussen binnen, dan `done` en gaat de nieuwe upload
+ * weer weg; is hij weg, dan `niet_toegestaan`.
+ */
 async function freshUpload(
   ctx: ActionCtx,
   cfg: R2Config,
   originalId: Id<"filmOriginals">,
   key: string,
   previous: string | null,
-): Promise<{ uploadId: string; parts: R2Part[] }> {
+): Promise<{ kind: "done" } | { kind: "upload"; uploadId: string; parts: R2Part[] }> {
   const created = await createMultipartUpload(cfg, key);
   const kept = await ctx.runMutation(internal.filmProjects.attachUpload, { originalId, uploadId: created, previous });
   if (kept.kind === "gone") {
     await abortQuietly(cfg, key, created);
     refuseOriginal("niet_toegestaan");
   }
-  if (kept.uploadId === created) return { uploadId: created, parts: [] };
+  if (kept.kind === "done") {
+    await abortQuietly(cfg, key, created);
+    return { kind: "done" };
+  }
+  if (kept.uploadId === created) return { kind: "upload", uploadId: created, parts: [] };
   await abortQuietly(cfg, key, created);
-  return { uploadId: kept.uploadId, parts: (await listParts(cfg, key, kept.uploadId)) ?? [] };
+  return { kind: "upload", uploadId: kept.uploadId, parts: (await listParts(cfg, key, kept.uploadId)) ?? [] };
 }
+
+/**
+ * Fix-cyclus 1 (kosten): de daggrens van `startOriginal` en `finishOriginal`
+ * samen, per lid, glijdend over 24 uur (zoals WP37 A-invariant 36). Telt deze
+ * aanroep mee en geeft `true`, of `false` boven de grens (dan telt hij niet).
+ * Alleen voor een aanroep die doorgaat naar R2; de cron telt niet mee.
+ */
+async function takeOriginalCall(ctx: MutationCtx, ownerId: Id<"users">, now: number): Promise<boolean> {
+  const dayAgo = now - DAY_MS;
+  const recent = await ctx.db
+    .query("originalRequests")
+    .withIndex("by_owner_and_at", (q) => q.eq("ownerId", ownerId).gt("at", dayAgo))
+    .take(MAX_ORIGINAL_CALLS_PER_DAY);
+  if (recent.length >= MAX_ORIGINAL_CALLS_PER_DAY) return false;
+  const stale = await ctx.db
+    .query("originalRequests")
+    .withIndex("by_owner_and_at", (q) => q.eq("ownerId", ownerId).lte("at", dayAgo))
+    .take(50);
+  for (const r of stale) await ctx.db.delete(r._id);
+  await ctx.db.insert("originalRequests", { ownerId, at: now });
+  return true;
+}
+
+/** De daggrens voor `finishOriginal` (na de toegang, vóór R2). */
+export const countFinishCall = internalMutation({
+  args: { subject: v.string() },
+  returns: v.union(v.literal("ok"), v.literal("te_vaak"), v.literal("uitgelogd")),
+  handler: async (ctx, { subject }) => {
+    const user = await getBySubject(ctx, subject);
+    if (!user) return "uitgelogd" as const;
+    return (await takeOriginalCall(ctx, user._id, Date.now())) ? ("ok" as const) : ("te_vaak" as const);
+  },
+});
 
 async function abortQuietly(cfg: R2Config, key: string, uploadId: string): Promise<void> {
   try {
@@ -570,7 +633,9 @@ function missingParts(bytes: number, present: R2Part[]): number[] {
  * Een origineel aanmelden of verder gaan (A-invariant 3, 4): links voor alleen
  * de delen die R2 nog niet heeft, elk een PUT op precies de sleutel, met het
  * deelnummer, de upload-id en de grootte in de handtekening, 7 dagen geldig.
- * Al binnen: `{ kind: "done" }`. Weigering: `ORIGINAL_REFUSED` met een reden.
+ * Al binnen: `{ kind: "done" }`, ook als R2 de upload net afrondde (het object
+ * is er heel). Weigering: `ORIGINAL_REFUSED` met een reden; fix-cyclus 1 ook
+ * `te_klein` (onder 5 MiB) en `te_vaak` (de daggrens), beide zonder R2.
  */
 export const startOriginal = action({
   args: { photoId: v.id("photos"), bytes: v.number() },
@@ -591,6 +656,8 @@ export const startOriginal = action({
     if (gate.kind === "refused") refuseOriginal(gate.reason);
     if (gate.kind === "done") return { kind: "done", originalId: gate.originalId };
     if (!(Number.isInteger(bytes) && bytes > 0)) refuseOriginal("te_groot");
+    // Fix-cyclus 1 (kosten): een origineel is minstens 5 MiB.
+    if (bytes < MIN_ORIGINAL_BYTES) refuseOriginal("te_klein");
 
     const cfg = r2OriginalsConfig();
     const reserved = await ctx.runMutation(internal.filmProjects.reserveOriginal, {
@@ -606,7 +673,16 @@ export const startOriginal = action({
     let uploadId = reserved.uploadId;
     let present: R2Part[] | null = uploadId === null ? null : await listParts(cfg, reserved.key, uploadId);
     if (uploadId === null || present === null) {
+      if (uploadId !== null) {
+        // Fix-cyclus 1 (red-team S2): R2 kent de upload niet meer. Misschien
+        // rondde een ander hem net af; staat het object er heel, dan afronden
+        // zoals `finishOriginal`, zonder nieuwe upload.
+        const received = await receiveObject(ctx, cfg, reserved);
+        if (received.kind === "done") return { kind: "done", originalId: reserved.originalId };
+        if (received.kind === "refused") refuseOriginal(received.reason);
+      }
       const fresh = await freshUpload(ctx, cfg, reserved.originalId, reserved.key, uploadId);
+      if (fresh.kind === "done") return { kind: "done", originalId: reserved.originalId };
       uploadId = fresh.uploadId;
       present = fresh.parts;
     }
@@ -656,25 +732,38 @@ export const finishGate = internalQuery({
   },
 });
 
-/** Binnen: het object is heel, met dit merk. `false`: de inzending is intussen weg of al binnen. */
+/**
+ * Binnen: het object is heel, met dit merk. Fix-cyclus 1 (audit B1): drie
+ * uitkomsten. `received`: nu binnen. `already`: een gelijktijdige afronding
+ * was eerder (het object hoort erbij en blijft). `gone`: de inzending is weg
+ * (teruggetrokken of verwijderd); alleen dan hoort het object nergens bij.
+ */
 export const markReceived = internalMutation({
   args: { originalId: v.id("filmOriginals"), container: v.union(v.literal("mov"), v.literal("mp4")) },
-  returns: v.boolean(),
+  returns: v.union(v.literal("received"), v.literal("already"), v.literal("gone")),
   handler: async (ctx, { originalId, container }) => {
     const row = await ctx.db.get(originalId);
-    if (!row || row.status !== "onderweg") return false;
+    if (!row) return "gone" as const;
+    if (row.status === "binnen") return "already" as const;
     await ctx.db.patch(originalId, { status: "binnen", completedAt: Date.now(), container, uploadId: undefined });
-    return true;
+    return "received" as const;
   },
 });
 
-/** Het object klopt niet (andere grootte): opnieuw beginnen met een nieuwe upload. */
+/**
+ * Opnieuw beginnen (de upload is weg zonder heel object, of het object heeft
+ * een andere grootte): de upload loskoppelen, maar alleen als de inzending nog
+ * de upload `expected` heeft (fix-cyclus 1, red-team S1: vergelijk-en-wissel).
+ * Een nieuwere upload van een gelijktijdig hervatten blijft staan.
+ */
 export const resetUpload = internalMutation({
-  args: { originalId: v.id("filmOriginals") },
+  args: { originalId: v.id("filmOriginals"), expected: v.union(v.string(), v.null()) },
   returns: v.null(),
-  handler: async (ctx, { originalId }) => {
+  handler: async (ctx, { originalId, expected }) => {
     const row = await ctx.db.get(originalId);
-    if (row && row.status === "onderweg") await ctx.db.patch(originalId, { uploadId: undefined });
+    if (row && row.status === "onderweg" && row.uploadId !== undefined && row.uploadId === expected) {
+      await ctx.db.patch(originalId, { uploadId: undefined });
+    }
     return null;
   },
 });
@@ -690,14 +779,46 @@ export const dropOriginal = internalMutation({
   },
 });
 
-type CompleteResult = { kind: "done" } | { kind: "missing"; parts: number[] } | { kind: "refused"; reason: "geen_video" | "niet_toegestaan" };
+type Refused = { kind: "refused"; reason: "geen_video" | "niet_toegestaan" };
+type CompleteResult = { kind: "done" } | { kind: "missing"; parts: number[] } | Refused;
+type ReceiveResult = { kind: "done" } | { kind: "absent" } | { kind: "wrongSize" } | Refused;
+
+/**
+ * Het object in R2 nakijken en de inzending binnen zetten (A-invariant 5):
+ * precies de aangemelde grootte, en een `ftyp` van QuickTime of mp4. Geen
+ * filmpje: object en inzending weg. Fix-cyclus 1 (audit B1): het object gaat
+ * alleen weg als de inzending weg is; was een gelijktijdige afronding eerder,
+ * dan is het ook `done`. `absent` en `wrongSize` beslist de aanroeper.
+ */
+async function receiveObject(
+  ctx: ActionCtx,
+  cfg: R2Config,
+  original: { originalId: Id<"filmOriginals">; key: string; bytes: number },
+): Promise<ReceiveResult> {
+  const head = await headObject(cfg, original.key);
+  if (!head) return { kind: "absent" };
+  if (head.size !== original.bytes) return { kind: "wrongSize" };
+  const { bytes: first } = await readRange(cfg, original.key, 0, 11);
+  const container = originalContainer(first);
+  if (container === null) {
+    await deleteObject(cfg, original.key);
+    await ctx.runMutation(internal.filmProjects.dropOriginal, { originalId: original.originalId });
+    return { kind: "refused", reason: "geen_video" };
+  }
+  const marked = await ctx.runMutation(internal.filmProjects.markReceived, { originalId: original.originalId, container });
+  if (marked === "gone") {
+    // Teruggetrokken of verwijderd tijdens het afronden: het object hoort nergens bij.
+    await deleteQuietly(cfg, original.key);
+    return { kind: "refused", reason: "niet_toegestaan" };
+  }
+  return { kind: "done" };
+}
 
 /**
  * Afronden (A-invariant 5): pas als R2 elk deel met de geplande grootte
- * heeft. Dan afronden met de lijst van R2, nakijken dat het object precies de
- * aangemelde grootte heeft en met een `ftyp` van QuickTime of mp4 begint. Geen
- * filmpje: object en inzending weg. De bytes blijven zoals de app ze stuurde
- * (A-invariant 6): geen kopie, geen herschrijving.
+ * heeft. Dan afronden met de lijst van R2 en het object nakijken
+ * (`receiveObject`). De bytes blijven zoals de app ze stuurde (A-invariant 6):
+ * geen kopie, geen herschrijving.
  */
 async function completeOriginal(ctx: ActionCtx, cfg: R2Config, original: OpenOriginal): Promise<CompleteResult> {
   const all = planParts(original.bytes).map((p) => p.partNumber);
@@ -716,32 +837,20 @@ async function completeOriginal(ctx: ActionCtx, cfg: R2Config, original: OpenOri
   }
   // De upload is er niet (meer): misschien rondde een gelijktijdige poging
   // hem af. Zonder heel object: alles opnieuw (de volgende aanmelding maakt
-  // een nieuwe upload).
-  const head = await headObject(cfg, original.key);
-  if (!head) {
+  // een nieuwe upload), maar alleen als de inzending nog deze upload heeft.
+  const received = await receiveObject(ctx, cfg, original);
+  if (received.kind === "absent") {
     if (present === null && original.uploadId !== null) {
-      await ctx.runMutation(internal.filmProjects.resetUpload, { originalId: original.originalId });
+      await ctx.runMutation(internal.filmProjects.resetUpload, { originalId: original.originalId, expected: original.uploadId });
     }
     return { kind: "missing", parts: all };
   }
-  if (head.size !== original.bytes) {
+  if (received.kind === "wrongSize") {
     await deleteQuietly(cfg, original.key);
-    await ctx.runMutation(internal.filmProjects.resetUpload, { originalId: original.originalId });
+    await ctx.runMutation(internal.filmProjects.resetUpload, { originalId: original.originalId, expected: original.uploadId });
     return { kind: "missing", parts: all };
   }
-  const { bytes: first } = await readRange(cfg, original.key, 0, 11);
-  const container = originalContainer(first);
-  if (container === null) {
-    await deleteObject(cfg, original.key);
-    await ctx.runMutation(internal.filmProjects.dropOriginal, { originalId: original.originalId });
-    return { kind: "refused", reason: "geen_video" };
-  }
-  if (!(await ctx.runMutation(internal.filmProjects.markReceived, { originalId: original.originalId, container }))) {
-    // Teruggetrokken tijdens het afronden: het object hoort nergens bij.
-    await deleteQuietly(cfg, original.key);
-    return { kind: "refused", reason: "niet_toegestaan" };
-  }
-  return { kind: "done" };
+  return received;
 }
 
 async function deleteQuietly(cfg: R2Config, key: string): Promise<void> {
@@ -755,7 +864,8 @@ async function deleteQuietly(cfg: R2Config, key: string): Promise<void> {
 /**
  * Afronden door de app. `{ kind: "missing", parts }`: deze delen ontbreken
  * nog (er verandert niets). Weigering `ORIGINAL_REFUSED` met `niet_toegestaan`
- * (niet de inzender, of het project neemt hem niet meer aan) of `geen_video`.
+ * (niet de inzender, of het project neemt hem niet meer aan), `te_vaak` (de
+ * daggrens, vóór R2) of `geen_video`.
  */
 export const finishOriginal = action({
   args: { originalId: v.string() },
@@ -770,6 +880,8 @@ export const finishOriginal = action({
     if (gate.kind === "refused") refuseOriginal("niet_toegestaan");
     if (gate.kind === "done") return { kind: "done" };
     const cfg = r2OriginalsConfig();
+    const counted = await ctx.runMutation(internal.filmProjects.countFinishCall, { subject: identity.subject });
+    if (counted !== "ok") refuseOriginal(counted);
     const result = await completeOriginal(ctx, cfg, gate.original);
     if (result.kind === "refused") refuseOriginal(result.reason);
     return result;
@@ -948,9 +1060,17 @@ export const deleteOriginalObjects = internalAction({
       console.warn(`[filmProjects.deleteOriginalObjects] ${e instanceof Error ? e.message : "R2_CONFIG_MISSING"}`);
       return null;
     }
+    // Fix-cyclus 1 (audit N4): afbreken en wissen los van elkaar; mislukt het
+    // een (storing), dan gebeurt het ander toch.
     for (const item of items) {
+      if (item.uploadId !== undefined) {
+        try {
+          await abortMultipartUpload(cfg, item.key, item.uploadId);
+        } catch (e) {
+          console.warn(`[filmProjects.deleteOriginalObjects] afbreken in R2 mislukt (${e instanceof Error ? e.message : "fout"})`);
+        }
+      }
       try {
-        if (item.uploadId !== undefined) await abortMultipartUpload(cfg, item.key, item.uploadId);
         await deleteObject(cfg, item.key);
       } catch (e) {
         console.warn(`[filmProjects.deleteOriginalObjects] wissen in R2 mislukt (${e instanceof Error ? e.message : "fout"})`);
@@ -973,7 +1093,11 @@ export const deleteOriginalObjects = internalAction({
  *     meer in de groep, de rij gaat weg als er een jaar en 14 dagen niets
  *     meer bij kan komen;
  *   - besluit 15: één mail aan de oprichter, 30 dagen voordat de eerste
- *     originelen van een project weggaan.
+ *     originelen van een project weggaan. Fix-cyclus 1 (red-team N7): pas
+ *     verstuurd als de mail weg is (`reminderSentAt`); een ronde die hem
+ *     plant, zet `reminderClaimedAt`, zodat een tweede ronde vlak erna niet
+ *     nog een mail plant. Mislukt de mail, dan probeert de volgende dagelijkse
+ *     ronde het opnieuw.
  */
 export const expireOriginals = internalMutation({
   args: {},
@@ -1015,14 +1139,16 @@ export const expireOriginals = internalMutation({
         continue;
       }
       if (project.reminderSentAt !== undefined) continue;
+      if (project.reminderClaimedAt !== undefined && now - project.reminderClaimedAt < REMINDER_CLAIM_MS) continue;
       const received = rows.filter((r) => r.status === "binnen" && r.completedAt !== undefined);
       if (received.length === 0) continue;
       const goneAt = received.map((r) => r.completedAt! + ORIGINAL_KEEP_MS);
       const firstGoneAt = Math.min(...goneAt);
       if (firstGoneAt - now > ORIGINAL_REMINDER_BEFORE_MS) continue;
-      await ctx.db.patch(project._id, { reminderSentAt: now });
+      await ctx.db.patch(project._id, { reminderClaimedAt: now });
       await ctx.scheduler.runAfter(0, internal.filmProjects.sendReminder, {
         projectId: project._id,
+        claimedAt: now,
         count: received.length,
         firstGoneAt,
         lastGoneAt: Math.max(...goneAt),
@@ -1053,13 +1179,42 @@ export const reminderData = internalQuery({
   },
 });
 
+/**
+ * Fix-cyclus 1 (red-team N7): de mail is weg. Bij een mislukte mail: de claim
+ * los, zodat de volgende ronde het opnieuw probeert.
+ */
+export const settleReminder = internalMutation({
+  args: { projectId: v.id("filmProjects"), claimedAt: v.number(), sent: v.boolean() },
+  returns: v.null(),
+  handler: async (ctx, { projectId, claimedAt, sent }) => {
+    const project = await ctx.db.get(projectId);
+    if (!project) return null;
+    if (sent) {
+      await ctx.db.patch(projectId, { reminderSentAt: Date.now(), reminderClaimedAt: undefined });
+    } else if (project.reminderClaimedAt === claimedAt) {
+      await ctx.db.patch(projectId, { reminderClaimedAt: undefined });
+    }
+    return null;
+  },
+});
+
 /** Besluit 15: de mail aan de oprichter. Geen link en geen namen van inzenders. */
 export const sendReminder = internalAction({
-  args: { projectId: v.id("filmProjects"), count: v.number(), firstGoneAt: v.number(), lastGoneAt: v.number() },
+  args: {
+    projectId: v.id("filmProjects"),
+    claimedAt: v.number(),
+    count: v.number(),
+    firstGoneAt: v.number(),
+    lastGoneAt: v.number(),
+  },
   returns: v.null(),
-  handler: async (ctx, { projectId, count, firstGoneAt, lastGoneAt }) => {
+  handler: async (ctx, { projectId, claimedAt, count, firstGoneAt, lastGoneAt }) => {
     const data = await ctx.runQuery(internal.filmProjects.reminderData, { projectId });
-    if (data === null) return null;
+    if (data === null) {
+      // Geen oprichter om te mailen (nu): de volgende ronde kijkt opnieuw.
+      await ctx.runMutation(internal.filmProjects.settleReminder, { projectId, claimedAt, sent: false });
+      return null;
+    }
     const tpl = filmOriginalsReminderTemplate({
       founderName: data.founderName,
       groupName: data.groupName,
@@ -1078,7 +1233,10 @@ export const sendReminder = internalAction({
       });
     } catch (e) {
       console.warn(`[filmProjects.sendReminder] mail mislukt (${e instanceof Error ? e.message.split(":")[0] : "fout"})`);
+      await ctx.runMutation(internal.filmProjects.settleReminder, { projectId, claimedAt, sent: false });
+      return null;
     }
+    await ctx.runMutation(internal.filmProjects.settleReminder, { projectId, claimedAt, sent: true });
     return null;
   },
 });
@@ -1089,16 +1247,16 @@ export const sendReminder = internalAction({
 export const storageInventory = internalQuery({
   args: {},
   returns: v.object({
-    received: v.array(v.object({ originalId: v.string(), key: v.string(), bytes: v.number() })),
+    received: v.array(v.object({ originalId: v.string(), key: v.string(), bytes: v.number(), submittedAt: v.number() })),
     pendingKeys: v.array(v.string()),
     pendingUploads: v.array(v.string()),
   }),
   handler: async (ctx) => {
-    const received: { originalId: string; key: string; bytes: number }[] = [];
+    const received: { originalId: string; key: string; bytes: number; submittedAt: number }[] = [];
     const pendingKeys: string[] = [];
     const pendingUploads: string[] = [];
     for (const r of await ctx.db.query("filmOriginals").collect()) {
-      if (r.status === "binnen") received.push({ originalId: r._id, key: r.key, bytes: r.bytes });
+      if (r.status === "binnen") received.push({ originalId: r._id, key: r.key, bytes: r.bytes, submittedAt: r.submittedAt });
       else {
         pendingKeys.push(r.key);
         if (r.uploadId !== undefined) pendingUploads.push(r.uploadId);
@@ -1109,7 +1267,7 @@ export const storageInventory = internalQuery({
 });
 
 type OriginalsInventory = {
-  received: { originalId: string; key: string; bytes: number }[];
+  received: { originalId: string; key: string; bytes: number; submittedAt: number }[];
   pendingKeys: string[];
   pendingUploads: string[];
 };
@@ -1117,8 +1275,8 @@ type OriginalsInventory = {
 /**
  * De dagelijkse R2-check van de originelen (A-invariant 14, cron `film
  * originals check`), naast die van WP37. Een object zonder inzending (ouder
- * dan een dag), een inzending die binnen is zonder object of met een andere
- * grootte, en een halve upload zonder inzending (ouder dan 8 dagen) geven één
+ * dan een dag), een inzending die binnen is zonder object (tot een dag vóór
+ * een jaar na het aanmelden) of met een andere grootte, en een halve upload zonder inzending (ouder dan 8 dagen) geven één
  * mail aan de webmaster, net als een check die niet kon draaien. Wist niets.
  */
 export const checkStorage = internalAction({
@@ -1138,7 +1296,11 @@ export const checkStorage = internalAction({
       const orphans = objects
         .filter((o) => !known.has(o.key) && now - o.lastModified > ORPHAN_AFTER_MS)
         .map((o) => ({ key: o.key, lastModified: o.lastModified }));
-      const missing = inventory.received.filter((r) => !sizes.has(r.key)).map((r) => r.originalId);
+      // Rond het einde van het jaar kan de lifecycle-regel het object al
+      // gewist hebben: dan niet melden (fix-cyclus 1, red-team S3).
+      const missing = inventory.received
+        .filter((r) => !sizes.has(r.key) && now < r.submittedAt + ORIGINAL_KEEP_MS - MISSING_QUIET_BEFORE_YEAR_END_MS)
+        .map((r) => r.originalId);
       const wrongSize = inventory.received.filter((r) => sizes.has(r.key) && sizes.get(r.key) !== r.bytes).map((r) => r.originalId);
       const pendingUploads = new Set(inventory.pendingUploads);
       const staleUploads = uploads

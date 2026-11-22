@@ -102,3 +102,12 @@ export const ORIGINAL_REMINDER_BEFORE_MS = 30 * DAY;
  * stuurt.
  */
 export const FILM_PROJECT_MAX_AHEAD_MS = 366 * DAY;
+
+/** WP38 fix-cyclus 1 (regie): een origineel is minstens 5 MiB; kleiner weigert `startOriginal` met `te_klein`. */
+export const MIN_ORIGINAL_BYTES = 5 * 1024 * 1024;
+
+/**
+ * WP38 fix-cyclus 1 (A-keuze): hooguit zoveel aanroepen van `startOriginal`
+ * en `finishOriginal` samen per lid in 24 uur (glijdend), daarboven `te_vaak`.
+ */
+export const MAX_ORIGINAL_CALLS_PER_DAY = 300;

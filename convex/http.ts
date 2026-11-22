@@ -679,7 +679,8 @@ async function inviteImageRoute(ctx: ImageRouteCtx, request: Request): Promise<R
 // WP38 A-invariant 7: de poster van een inzending, op inzending-id, voor de
 // projectpagina (ook in de webapp).
 //   GET /beeld/inzending/<originalId>[?formaat=klein|groot]
-//     400 onbekend formaat (vóór alles, zoals de andere paden)
+//     400 onbekend formaat, ook `origineel` (vóór alles, voor iedereen gelijk,
+//         zoals /beeld/foto/; WP38 fix-cyclus 1)
 //     401 uitgelogd of ongeldige token
 //     404 alle andere gevallen, één antwoord: geen lid van de groep van het
 //         project, onbekend, misvormd, een inzending van een ander die nog
@@ -696,8 +697,7 @@ http.route({
 });
 
 async function originalPosterRoute(ctx: ImageRouteCtx, request: Request): Promise<Response> {
-  const raw = new URL(request.url).searchParams.get("formaat");
-  const format = raw === "origineel" ? "origineel" : parseImageFormat(raw);
+  const format = parseImageFormat(new URL(request.url).searchParams.get("formaat"));
   if (format === "ongeldig") return BAD_FORMAT();
 
   let identity;

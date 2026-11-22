@@ -232,9 +232,18 @@ const reservationsPhase: Phase = async (ctx, user) => {
 /**
  * WP38 A-invariant 12: zijn originelen in filmprojecten, ook in R2 (object en
  * open upload). Die van een filmpje gingen al mee met de foto's (besluit 16);
- * dit vangt de rest. Vóór de lidmaatschappen, zoals de foto's.
+ * dit vangt de rest. Vóór de lidmaatschappen, zoals de foto's. Fix-cyclus 1:
+ * ook zijn rijen voor de daggrens van de originelen.
  */
-const originalsPhase: Phase = async (ctx, user) => await removeOriginalsOfOwner(ctx, user._id, ROWS_PER_STEP);
+const originalsPhase: Phase = async (ctx, user) => {
+  const hadOriginals = await removeOriginalsOfOwner(ctx, user._id, ROWS_PER_STEP);
+  const requests = await ctx.db
+    .query("originalRequests")
+    .withIndex("by_owner_and_at", (q) => q.eq("ownerId", user._id))
+    .take(ROWS_PER_STEP);
+  for (const r of requests) await ctx.db.delete(r._id);
+  return hadOriginals || requests.length > 0;
+};
 
 /** U8: één lidmaatschap per stap, met de M1/M2/M3-cascade (internalRemoveMember). */
 const membershipsPhase: Phase = async (ctx, user) => {

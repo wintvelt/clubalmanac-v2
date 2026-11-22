@@ -343,8 +343,8 @@ Zolang een filmproject open staat, sturen leden bij een nieuw filmpje ook het or
 
 - De app krijgt per deel van 32 MiB een ondertekende PUT van 7 dagen (multipart; grootte, deelnummer en upload-id in de handtekening). De backend rondt af als alles er is, en elk uur zelf (cron `film originals complete`).
 - Downloaden alleen door de oprichter: een GET van 1 uur, als bijlage met datum en inzender in de naam.
-- Grenzen (besluit 11): 2 GiB per origineel, 200 GiB per project, 400 GiB samen. Een origineel blijft hooguit een jaar na binnenkomst; na sluiten mag een aangemeld origineel nog 14 dagen binnenkomen.
-- Kosten: $0,015 per GB per maand; 100 GB een jaar lang is ~$1,50 per maand, het plafond van 400 GiB ~$6. Delen, lijsten en afronden vallen in het gratis deel.
+- Grenzen (besluit 11): 2 GiB per origineel, 200 GiB per project, 400 GiB samen; minstens 5 MiB (`te_klein`; de app stuurt dan alleen het filmpje naar het album). Een origineel blijft hooguit een jaar na binnenkomst; na sluiten mag een aangemeld origineel nog 14 dagen binnenkomen.
+- Kosten: $0,015 per GB per maand; 100 GB een jaar lang is ~$1,50 per maand, het plafond van 400 GiB ~$6. Delen, lijsten en afronden vallen in het gratis deel: per lid hooguit 300 keer aanmelden en afronden samen in 24 uur (`te_vaak`), samen ruim binnen het gratis miljoen verzoeken per maand. De PUT's op de deel-links zelf vallen daarbuiten; daarvoor is de kostenmelding (stap 7).
 
 ### Opzetten (eenmalig, Wouter)
 
@@ -352,9 +352,10 @@ Zolang een filmproject open staat, sturen leden bij een nieuw filmpje ook het or
 2. **Tokens**: breid de tokens `clubalmanac-videos-dev` en `clubalmanac-videos-prod` uit (R2 → *Manage API tokens* → token → *Edit*) met *Object Read & Write* op de originelen-bucket van dezelfde omgeving. De sleutels blijven gelijk. Het backup-token (`clubalmanac-videos-backup`) krijgt de originelen-bucket **niet**.
 3. **Lifecycle-regel op de originelen-bucket** (bucket → *Settings* → *Object lifecycle rules* → *Add rule*): één regel `originelen-na-365-dagen`, zonder prefix, met twee acties aangevinkt: *Delete uploaded objects after* **365 days** (vangnet; normaal wist de backend ze op de dag zelf) en *Abort incomplete multipart uploads after* **7 days**.
    Kijk daarna op de buckets van de albums (`clubalmanac-videos-*`) na dat daar **geen** regel van 365 dagen staat; daar staat alleen `uploads-na-1-dag`.
-4. **Convex env-var** per deployment: `R2_ORIGINALS_BUCKET` (tabel hieronder), in het dashboard (Settings → Environment Variables). De andere R2-vars zijn die van WP37.
+4. **Convex env-var** per deployment: `R2_ORIGINALS_BUCKET` (tabel hieronder), in het dashboard (Settings → Environment Variables), **vóór of samen met de deploy** van 38a. De andere R2-vars zijn die van WP37.
 5. **Controle op dev**: `npx convex run filmProjects:checkStorage`. Verwacht: geen mail. Een mail "kon niet draaien" met `R2_CONFIG_MISSING: R2_ORIGINALS_BUCKET` of `HTTP 403` betekent een env-var of token die niet klopt. Daarna de WP38-gate (multipart, lifecycle, download in Chrome en Safari).
-6. **Prod**, vóór de release van de app (38a mag eerder; zonder open project verandert er niets): bucket, token en regels als hierboven, de env-var op prod, en `npx convex run --prod filmProjects:checkStorage`.
+6. **Prod**: bucket, token en regels als hierboven, de env-var op prod, en `npx convex run --prod filmProjects:checkStorage`. 38a mag eerder live; **open op prod geen filmproject vóór de release van 38b en 38c**: zonder app die insturen kan, gaan nieuwe filmpjes wel naar het filmalbum maar komt er geen origineel.
+7. **Kostenmelding** in Cloudflare (*Notifications* → *Add*, een melding op het gebruik van R2), afgesteld op **$5** per maand. Kijk bij het instellen de exacte naam van het menu na.
 
 | Env-var | Waarde | Wat gebeurt bij ontbreken of leeg |
 |---|---|---|
@@ -368,6 +369,7 @@ Wie geen toegang heeft, krijgt altijd de gewone weigering (`ORIGINAL_REFUSED` of
   - Wees-object: meestal een wis-stap die R2 niet bereikte. Controleer in Convex (tabel `filmOriginals`, veld `key`) dat er geen inzending bij hoort en wis het in het Cloudflare-dashboard.
   - Zonder bestand: er is geen backup. Vraag de inzender het origineel terug te trekken; een nieuw origineel kan alleen bij een nieuw filmpje tijdens een open project.
 - **Opruimen** (cron `film originals expiry`, 05:30 UTC): originelen een jaar na binnenkomst, halve inzendingen 14 dagen na sluiten, en een herinnering aan de oprichter 30 dagen vóór de eerste weggaan. Terugtrekken, verwijderen, groep of account verwijderen, uit de groep gaan en het filmpje in het album verwijderen halen het origineel meteen weg, ook in R2.
+- **Tabellen leegmaken** (migratie-tooling, bv. een herstart van de import) wist de rijen in `filmProjects` en `filmOriginals`, niet de objecten in de originelen-bucket. Maak die bucket dan apart leeg in het Cloudflare-dashboard; anders meldt de check ze de volgende dag als wees.
 - **Downloaden** (oprichter, in de webapp): per origineel een link van een uur; "alles downloaden" haalt ze na elkaar, elk met een verse link. Is een link verlopen, vraag dan een nieuwe. Daarna "alles verwijderen" als de film klaar is.
 
 ## Webapp: app.clubalmanac.com (WP35)
