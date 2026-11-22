@@ -319,3 +319,9 @@ Build `wp39-dev2`. Album onthouden, kiesscherm, "Meer selecteren", teller en sch
 Bevinding: na "Stoppen" tijdens het ophalen van een filmpje (eerste keuze) staat er "Je vorige keuze wordt nog opgehaald. Daarna kun je weer selecteren." en is "Kiezen" uit, minutenlang bij iCloud. Dat voelt als hangen.
 
 **Besluit regie (op Wouters bevinding):** na "Stoppen" kan de user meteen weer kiezen. Een gestopt verzoek telt niet meer mee voor "één kiezer tegelijk" (F8 vervalt in die vorm); de wachtregel verdwijnt. Komt het resultaat van een gestopt verzoek later binnen, dan negeert de app het en ruimt het de kopieën op, zoals in F7. expo-image-picker 58 geeft de kiezer al vrij vóór het kopiëren (A-antwoord 3), dus een nieuwe kiezer kan.
+
+## Gate ronde 3: iPhone (Wouter, 2026-11-22)
+
+Build `wp39-dev3`. Na "Stoppen" meteen weer kiezen: OK. Na een ronde en "Stoppen" staat "Naar album" er meteen (ronde 2, OK). "Naar album" vanuit Selecteer met het nieuwe kiesscherm: OK. WP39 klaar.
+
+Wens uit deze gate, buiten scope: de selectiebalk in album en Mijn foto's neemt te veel ruimte in. Zie WP40.

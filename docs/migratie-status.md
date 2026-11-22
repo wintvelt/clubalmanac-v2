@@ -145,6 +145,8 @@ Besluit Wouter 2026-11-15: niemand gebruikt de oude webapp. Volgorde: eerst de o
 
 [WP37](./work-packages/WP37-filmpjes-in-albums.md) ✅ 2026-11-22: filmpjes in albums (hooguit 3 minuten), op de iPhone verkleind naar 1080p, opslag in Cloudflare R2, met poster, duur en plek op de kaart, ook in de webapp. Audit en red-team verwerkt. Gate op een iPhone 15 Pro tegen dev met echte R2: verkleinen, tonen, afspelen, geluid, kaart, doorgaan na een app-switch, eerste tik op Uploaden. Live met app 2.0.2; daarvoor nog R2 op prod en de backup van R2 (Wouter).
 
+[WP39](./work-packages/WP39-toevoegscherm.md) ✅ 2026-11-22: toevoegscherm voor foto's en filmpjes: raster met omslagen, keuze aanvullen en inkorten, albumkiezer met het laatst gekozen album, "Stoppen" met teller bij het ophalen uit iCloud, grijze uit-knoppen in de hele app. Drie gate-rondes op de iPhone. Live met app 2.0.2.
+
 ## Fase 5: Lancering — hard cutover — open
 
 Geen parallel draaien. Bij 20 users en een 3 jaar oude oude app is parallel draaien absurd veel werk (dual-write, sync layer, Cognito↔Clerk mapping). Hard cut.
