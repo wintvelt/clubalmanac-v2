@@ -188,3 +188,81 @@ Build `wp39-dev`. Bevindingen:
 1. **Album kiezen:** op het scherm één rij "Album" met het gekozen album (of "Kies een album") en een pijltje. Een tik opent een eigen kiesscherm: groepen als kopjes, albums met omslag en naam, een vinkje bij het gekozen album. Geopend via de + in de tabbalk staat het laatst gekozen album alvast ingevuld (per toestel onthouden; bestaat het niet meer of is de user geen lid meer, dan "Kies een album"). Zonder album is de knop onderin grijs en heet hij "Kies eerst een album".
 2. **"Meer selecteren"** in plaats van "Meer toevoegen", vóór en na een ronde.
 3. **"Stoppen" tijdens "Je keuze ophalen…":** de vorige keuze en de uitkomst van een ronde blijven staan; komt het resultaat van de kiezer later toch binnen, dan negeert de app het en ruimt het de kopieën op. Een nieuwe tik op "Meer selecteren" kan pas als de vorige kiezer echt klaar is (iOS staat één kiezer tegelijk toe); tot dan zegt het scherm dat.
+
+## Fixronde gate 1: A-aanvullingen (A vult in)
+
+> A 2026-11-22. Bronnen: de besluiten hierboven, B's code (`751026d`, `7f088e5`), `expo-image-picker` 58.0.10 (`ImagePickerModule.swift`, `MediaHandler.swift`, `VideoUtils.swift`), de bestaande albumqueries en `AlbumChoiceSheet` (WP17c), en het patroon van de thuisgroep (WP32, `src/data/lastGroup.ts`). Geen backend-wijziging nodig.
+
+### Wat de code en de bibliotheken zeggen
+
+- **Waarom het ophalen kan blijven hangen.** `launchImageLibraryAsync` antwoordt pas als elk gekozen item naar de app gekopieerd is, één voor één. Zonder toestemming voor Foto's (die vraagt de app niet) gaat dat via de item-provider van de systeemkiezer. Die downloadt een origineel uit iCloud eerst helemaal, zonder voortgang en zonder manier om te stoppen. De kiezer kan niet op duur filteren: een filmpje van 5 minuten wordt dus ook helemaal gekopieerd voordat de app ziet dat het te lang is. Stoppen kan daarom alleen in de app: het resultaat niet meer afwachten en negeren als het toch komt.
+- **Eén kiezer tegelijk is een keuze van de app, niet van iOS.** `expo-image-picker` geeft zijn kiezer vrij zodra de user kiest, nog vóór het kopiëren. Een tweede kiezer zou dus al kunnen openen terwijl de eerste nog kopieert. Besluit 3 laat de app toch wachten: de eerste kopie loopt door en is niet te stoppen, en twee kopieën tegelijk maken het trager en de volgorde onduidelijk. De tekst op het scherm zegt dus niet dat iOS het verbiedt.
+- **Eén item dat niet lukt, laat de hele keuze mislukken.** Lukt de kopie van één item niet (bv. de download uit iCloud valt weg), dan weigert de kiezer alles. De kopieën van de items daarvoor blijven achter, met paden die de app niet kent. Het scherm toont dan "Toegang tot je foto's nodig", en dat klopt niet. Zie besluit 6.
+- **De albumomslag is er al.** `api.albums.listByGroup` geeft per album `coverPhotoId`. `AlbumCoverTile` (`GroupParts.tsx`, ook op het groepsscherm) toont de omslag via `api.albums.getWithCover`, met de letter van het album als terugval. Er is ook al een kiesscherm: `AlbumChoiceSheet` (WP17c, "naar album kopiëren"), met groepen als kopjes in de volgorde van Mijn groepen (`albumChoices`), maar zonder omslag en zonder vinkje.
+- **Waarom de knop bruin is.** `Button` maakt elke uitgeschakelde hoofdknop half doorzichtig op `cta`. Dat geldt in de hele app (Bewaren bij draaien, plaats, account verwijderen). design.md: een hoofdknop staat alleen "uit" met uitleg waarom.
+- **"Meer toevoegen" staat op drie plekken:** bij het aantal, in de gedeelde `RoundResult` (dus ook op het web) en in `VideoRoundResult` (filmpjes zonder foto's).
+- **Onthouden per toestel** bestaat al voor de thuisgroep: per user in de keychain, met de Clerk-id in de sleutel. Fouten ziet de user niet, de waarde gaat weg bij "account verwijderen", en op het web staat alles alleen in het geheugen (`lastGroup.web.ts`).
+
+### Antwoorden op de punten van regie
+
+1. **Laatst gekozen album.** Bewaard zoals de thuisgroep: per user in de keychain, met album-id en groep-id. Bewaard op het moment dat een ronde start, met het album van die ronde. Wie een album kiest en niets toevoegt, heeft het niet "gebruikt" (A-keuze). Bij het openen controleert de app het met wat er al geladen wordt (Mijn groepen, de albums van die groep). Lidmaatschap gaat voor, zoals bij de thuisgroep: staat de groep niet meer in Mijn groepen, of het album niet meer in die groep, dan "Kies een album". Geen melding, en de onthouden waarde wordt vergeten. De naam komt uit de huidige namen, dus een hernoemd album toont de nieuwe naam. Op het web wordt niets onthouden (besluit 9).
+2. **"Stoppen".** De app negeert het lopende verzoek aan de kiezer. Wat er stond, staat er weer: keuze, uitkomst van de ronde, album. Komt het resultaat later toch, dan gaan alle kopieën erin weg (behalve een bestand dat een item in de keuze al gebruikt) en verandert er niets aan het scherm. Komt er later een weigering, dan ook niets: geen melding. Dat geldt ook als het scherm intussen dicht is.
+3. **Tweede kiezer.** Pas als het vorige verzoek echt klaar is (resultaat of weigering), ook na "Stoppen". Tot dan zijn "Meer selecteren" en "Kiezen" niet te tikken, en zegt een regel waarom. Dat geldt per scherm: wie sluit en opnieuw opent, kan weer kiezen. Dat is de uitweg als iOS nooit klaar komt.
+4. **Omslag in het kiesscherm:** `coverPhotoId` uit `listByGroup` en `AlbumCoverTile`. Geen backend-wijziging.
+5. **De grijze knop "Kies eerst een album".** Zie besluiten 7 en 8: of de knop tikbaar is, en of de grijze uit-stand alleen hier of in de hele app geldt.
+6. **"Meer selecteren" op het web:** ja, na een ronde, via de gedeelde `RoundResult`. Alleen een tekst, geen gedrag. Vóór een ronde blijft "Andere foto's kiezen" op het web (B-besluit 1 na A).
+
+### A-invarianten (fixronde gate 1)
+
+- **F1. Opslag.** Per user op het toestel, met album-id en groep-id. Een ander account op hetzelfde toestel ziet en overschrijft het niet. Lukt lezen of schrijven niet, dan "niets onthouden", zonder melding. Bij "account verwijderen" gaat de waarde weg, bij uitloggen niet (zoals de thuisgroep). Op het web wordt niets bewaard, en de module laadt daar geen keychain.
+- **F2. Moment.** Bewaard bij de start van een ronde, met het album van die ronde. Dat geldt ook als het album vooraf was ingevuld vanuit een album.
+- **F3. Voorrang.** Geopend vanuit een album (de + op een albumroute): dat album, zoals nu. Anders het onthouden album. Anders "Kies een album".
+- **F4. Geldig of niet.** Zie A-antwoord 1. Zolang de groepen of de albums van die groep laden: nog niets ingevuld en geen flits van "Kies een album". De knop doet dan nog niets. Verdwijnt het album terwijl het scherm openstaat (vóór de ronde), dan wordt de rij "Kies een album".
+- **F5. Kiesscherm.** Groepen als kopjes in de volgorde van Mijn groepen, albums in de volgorde van het groepsscherm, met omslag (of letter) en naam, en een vinkje bij het gekozen album. Een groep zonder albums valt weg; zonder groepen de bestaande uitleg. Een album kiezen sluit het kiesscherm en vult de rij. Annuleren laat het album zoals het was. Tijdens en na een ronde is de rij niet te tikken.
+- **F6. Knop onderin.** Met een album: "Toevoegen aan album". Zonder album: grijs, "Kies eerst een album". Nog onbekend (F4): uit, met "Toevoegen aan album".
+- **F7. Stoppen.** Zie A-antwoord 2. "Stoppen" staat bij "Je keuze ophalen…", meteen, met één regel uitleg dat iOS de keuze ophaalt (bv. uit iCloud) en dat dat bij grote filmpjes even kan duren.
+- **F8. Wachten op de vorige kiezer.** Zie A-antwoord 3. De regel: "Je vorige keuze wordt nog opgehaald. Daarna kun je weer selecteren." "Toevoegen aan album" met de keuze die er staat, kan wel.
+- **F9. "Meer selecteren"** op alle drie de plekken (bij het aantal, `RoundResult`, `VideoRoundResult`).
+- **F10. Bestaande regels blijven.** `pickFetching.test.ts` (de ophaal-state rond de kiezer, met een `finally`) en de andere bronscans van A-invariant 13 hierboven.
+
+### Gate-checks (ronde 2)
+
+- Een filmpje uit iCloud van 5 minuten: "Stoppen" werkt meteen, de oude keuze staat er weer, "Meer selecteren" wacht tot het ophalen klaar is, en daarna kun je weer selecteren.
+- Na "Stoppen" de modaal sluiten en opnieuw openen: de kiezer opent.
+- Het kiesscherm over de modaal: openen, kiezen, annuleren; omslagen, vinkje, lange lijsten; licht en donker; VoiceOver (kopjes, gekozen album).
+- Het laatst gekozen album na een herstart van de app; nadat je uit die groep bent gegaan; met het demo-account op hetzelfde toestel.
+- De grijze knop: duidelijk uit, leesbaar in licht en donker.
+
+### A-keuzes
+
+- **Bewaren bij de start van een ronde** (F2), niet al bij het kiezen in het kiesscherm.
+- **Eén kiesscherm.** B mag `AlbumChoiceSheet` uitbreiden (vinkje bij een gekozen album, omslagen). Dan verandert "naar album kopiëren" (WP17c) mee, en hoort dat scherm bij de gate.
+
+### Besluiten voor Wouter (nog open)
+
+6. **Melding als het ophalen mislukt.** Nu staat er "Toegang tot je foto's nodig". Aanbevolen: alleen die melding als de kiezer niet opengaat. Mislukt het ophalen (de foutcode van de kiezer laat het verschil zien), dan: "Je keuze ophalen lukte niet. Staat er iets in iCloud, probeer het dan opnieuw met een goede verbinding." De keuze die er stond, blijft staan.
+7. **"Kies eerst een album" tikbaar?** Aanbevolen: ja, een tik opent het kiesscherm (grijs, maar niet uit). Anders staat er een knop die zegt wat je moet doen, maar die je niet kunt gebruiken.
+8. **De grijze uit-stand** voor elke hoofdknop in de app (aanbevolen, één regel volgens design.md) of alleen voor deze knop.
+9. **Web:** geen kiesscherm en geen onthouden album (aanbevolen, de gate is een iPhone). Wel "Kies eerst een album" op de knop zonder album, en "Meer selecteren" na een ronde.
+
+### Testcontract (fixronde gate 1)
+
+> Volgt de aanbevelingen; wijkt een besluit af, dan past A de tests aan vóór B begint.
+
+- **`app/src/lib/pickSession.ts`** (puur): `PICK_IDLE`; `beginPick(state)` geeft `{ state, token }`, of `null` zolang een vorig verzoek loopt; `stopPick(state)`; `endPick(state, token)` geeft `{ state, accept }` (`accept`: het resultaat telt); `pickView(state)` geeft `{ fetching, waiting, canPick }` ("Je keuze ophalen…" met "Stoppen", de wachtregel van F8, een kiezer mag openen).
+- **`app/src/lib/lastAlbum.ts`** (puur): `lastAlbumChoice({ stored, myGroups, albumsOf })` geeft `{ kind: "album", album: { albumId, groupId, label } }`, `{ kind: "none", forget }` of `{ kind: "unknown" }`. `stored` is `undefined` (nog niet gelezen), `null` of `{ albumId, groupId }`; `albumsOf(groupId)` geeft de albums van die groep, of `undefined` zolang ze laden.
+- **`addButton(album)`** in `app/src/lib/addSelection.ts`, met `album` `"chosen" | "none" | "unknown"`: `{ title, action }`, met `action` `"toevoegen"`, `"kies-album"` (besluit 7) of `null` (uit).
+- **`app/src/data/lastAlbum.ts`** (iOS, keychain) en een web-variant zonder keychain: `loadLastAlbum(userId)`, `saveLastAlbum(userId, { albumId, groupId })`, `forgetLastAlbum(userId, albumId)`, `clearLastAlbum(userId)`. `signOutAndWipe` roept `clearLastAlbum(deletedUserId)` aan, net als `clearLastGroup`.
+- **Teksten** (bronscan): "Meer selecteren" in plaats van "Meer toevoegen" (iOS en `AddPhotosParts`); "Stoppen", "Kies een album" en "Kies eerst een album" op iOS; "Kies eerst een album" ook op het web. De knop met `onPress` naar `startUpload` houdt `icon="upload"`; zijn titel mag een expressie zijn.
+
+### Tests (fixronde gate 1)
+
+| Inv. | Test | Niet getest, omdat … |
+|---|---|---|
+| F1 | `app/tests/lastAlbumStore.test.ts` (per user, eigen sleutel naast de thuisgroep, kapotte waarde, keychain-fout, vergeten, account verwijderen) | |
+| F2, F3, F5 | | schermgedrag: gate en audit |
+| F4 | `app/tests/lastAlbum.test.ts` (`lastAlbumChoice`) | |
+| F6 | `app/tests/addSelection.test.ts` (`addButton`), `addTexts.test.ts` | het grijs: gate |
+| F7, F8 | `app/tests/pickSession.test.ts`, `addTexts.test.ts` ("Stoppen") | de kopieën van een genegeerd resultaat weggooien, ook na sluiten: audit |
+| F9 | `addTexts.test.ts` | |
+| F10 | de bestaande bronscans | |
