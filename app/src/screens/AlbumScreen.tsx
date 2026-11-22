@@ -2,7 +2,7 @@ import { useMutation } from "convex/react";
 import type { FunctionReturnType } from "convex/server";
 import { router, Stack, useIsFocused, useLocalSearchParams, useNavigation } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { Platform, StyleSheet, useWindowDimensions, View, type StyleProp, type ViewStyle } from "react-native";
+import { Platform, StyleSheet, useWindowDimensions, View, type HostInstance, type StyleProp, type ViewStyle } from "react-native";
 import Animated, { useAnimatedRef, useScrollOffset } from "react-native-reanimated";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import type { Id } from "../../../convex/_generated/dataModel";
@@ -39,7 +39,14 @@ import { enterSelectionScroll, leaveSelectionScroll } from "../lib/selectionBar"
 import { photoLayers, radius, size, space, useTheme } from "../theme";
 import { AlbumChoiceSheet } from "./AlbumChoice";
 import { AlbumReadFailed } from "./AlbumParts";
-import { SELECTION_TOP_BAR, SelectionBar, SelectionSideHeader, SelectionTopBar, useSelectionHeader } from "./SelectionBar";
+import {
+  focusLater,
+  SELECTION_TOP_BAR,
+  SelectionBar,
+  SelectionSideHeader,
+  SelectionTopBar,
+  useSelectionHeader,
+} from "./SelectionBar";
 import { WideSide, WideSplit } from "./WideSide";
 import { SIDE_WIDTH, WIDE_WINDOW_SIZE, wideGrid } from "../lib/wideLayout";
 import {
@@ -153,7 +160,20 @@ function AlbumContent({ groupId, albumId }: { groupId: Id<"groups">; albumId: Id
     onBusyChange: setSelectionBusy,
   });
   const listState = useMemo(() => ({ selecting, picked, ctx }), [selecting, picked, ctx]);
-  const header = useSelectionHeader({ count: selected.length, busy: selectionBusy, active: selecting });
+  // De focus gaat bij Selecteer naar de titel in de kop; die leest VoiceOver dan al.
+  const header = useSelectionHeader({
+    count: selected.length,
+    busy: selectionBusy,
+    active: selecting,
+    announceStart: false,
+  });
+  // N2: na Annuleren gaat de focus van VoiceOver terug naar "Selecteer".
+  const selectButton = useRef<HostInstance>(null);
+  const focusSelectNext = useRef(false);
+  const cancelSelecting = useCallback(() => {
+    focusSelectNext.current = true;
+    stopSelecting();
+  }, [stopSelecting]);
   const toggle = (photoId: string) =>
     setPicked((before) => {
       const next = new Set(before);
@@ -191,6 +211,7 @@ function AlbumContent({ groupId, albumId }: { groupId: Id<"groups">; albumId: Id
         ) : null}
         {!READ_ONLY && ctx && shown && shown.length > 0 ? (
           <SmallButton
+            ref={selectButton}
             title="Selecteer"
             icon="check"
             onPress={() => {
@@ -246,11 +267,12 @@ function AlbumContent({ groupId, albumId }: { groupId: Id<"groups">; albumId: Id
   const topBarHeight = useRef<number | null>(null);
   const viewportHeight = useRef(0);
   const contentHeight = useRef(0);
-  const scrollMemo = useRef<{ before: number; entered: number | null } | null>(null);
+  // `dragged`: je hebt de lijst tijdens de selectie zelf bewogen.
+  const scrollMemo = useRef<{ before: number; entered: number | null; dragged: boolean } | null>(null);
   useEffect(() => {
     if (selecting) {
       const before = offset.value;
-      scrollMemo.current = { before, entered: null };
+      scrollMemo.current = { before, entered: null, dragged: false };
       // A8: in de brede layout scrolt het raster niet.
       if (wide) return;
       // Twee frames: de kop en de balk staan dan, met hun maten.
@@ -262,25 +284,34 @@ function AlbumContent({ groupId, albumId }: { groupId: Id<"groups">; albumId: Id
             gridTop: listHeaderHeight.current - bar,
             maxOffset: contentHeight.current - viewportHeight.current,
           });
-          if (target === null || scrollMemo.current === null) return;
-          scrollMemo.current = { before, entered: target };
+          const memo = scrollMemo.current;
+          if (target === null || memo === null || memo.dragged) return;
+          memo.entered = target;
           listRef.current?.scrollToOffset({ offset: target, animated: !reduceMotion });
         });
       });
       return () => cancelAnimationFrame(frame);
     }
+    const focusSelect = focusSelectNext.current;
+    focusSelectNext.current = false;
     const memo = scrollMemo.current;
     scrollMemo.current = null;
     if (memo === null) return;
-    const target = leaveSelectionScroll({ before: memo.before, entered: memo.entered, current: offset.value });
+    // N1: zonder zelf te slepen kan de lijst nog onderweg zijn naar `entered`
+    // (snel Annuleren); dan telt hij als daar.
+    const current = memo.dragged || memo.entered === null ? offset.value : memo.entered;
+    const target = leaveSelectionScroll({ before: memo.before, entered: memo.entered, current });
     if (target !== null) listRef.current?.scrollToOffset({ offset: target, animated: !reduceMotion });
+    // Alleen als "Selecteer" weer in beeld komt: de lijst ging terug, of hij
+    // staat in de zijkolom. Anders zou VoiceOver de lijst erheen scrollen.
+    if (focusSelect && (wide || target !== null)) focusLater(selectButton);
     // Alleen bij aan of uit; de rest lees je op dat moment.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selecting]);
   // A8: wisselt de layout tijdens de selectie (draaien, Split View), dan staat
   // de lijst ergens anders; terug uit de selectie blijft hij dan staan.
   useEffect(() => {
-    if (scrollMemo.current) scrollMemo.current = { ...scrollMemo.current, entered: null };
+    if (scrollMemo.current) scrollMemo.current.entered = null;
   }, [wide, columns]);
   // Verdwijnt de inhoud tijdens de selectie (bv. "reconnecting"), dan mag
   // terugvegen weer: de optie blijft anders op het scherm staan.
@@ -303,7 +334,7 @@ function AlbumContent({ groupId, albumId }: { groupId: Id<"groups">; albumId: Id
       {selecting && !wide ? (
         <SelectionTopBar
           header={header}
-          onCancel={stopSelecting}
+          onCancel={cancelSelecting}
           onHeight={(height) => {
             topBarHeight.current = height;
           }}
@@ -314,7 +345,7 @@ function AlbumContent({ groupId, albumId }: { groupId: Id<"groups">; albumId: Id
         side={
           <WideSide
             back={selecting ? undefined : { title: "Groep", onPress: () => backToGroup(groupId) }}
-            top={selecting ? <SelectionSideHeader header={header} onCancel={stopSelecting} /> : undefined}
+            top={selecting ? <SelectionSideHeader header={header} onCancel={cancelSelecting} /> : undefined}
             name={album?.name}
             cover={album?.cover}
             description={album?.description}
@@ -342,6 +373,9 @@ function AlbumContent({ groupId, albumId }: { groupId: Id<"groups">; albumId: Id
         }}
         onContentSizeChange={(_w, h) => {
           contentHeight.current = h;
+        }}
+        onScrollBeginDrag={() => {
+          if (scrollMemo.current) scrollMemo.current.dragged = true;
         }}
         ListHeaderComponent={
           wide ? undefined : (

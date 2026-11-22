@@ -1,9 +1,17 @@
-import { useEffect } from "react";
-import { AccessibilityInfo, Pressable, StyleSheet, View, type LayoutChangeEvent } from "react-native";
+import { useEffect, useRef, useState, type Ref, type RefObject } from "react";
+import {
+  AccessibilityInfo,
+  Pressable,
+  StyleSheet,
+  View,
+  type HostInstance,
+  type LayoutChangeEvent,
+} from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Icon, type IconName } from "../components/Icon";
 import { AnimatedPressable, FadeIn, usePressMotion } from "../components/Motion";
 import { Text } from "../components/Text";
+import { screenReaderOn } from "../data/accessibility";
 import type { SelectionAction } from "../lib/photoActions";
 import {
   selectionButtons,
@@ -22,20 +30,45 @@ import { size, space, useTheme } from "../theme";
 
 // A7: de titel van de kop. VoiceOver krijgt hem bij elke wijziging te horen
 // (aantal of "Bezig…"); `accessibilityLiveRegion` doet dat op iOS niet.
+// `announceStart: false`: bij het aanzetten niet, omdat de focus dan al naar
+// de titel gaat (het album); anders hoor je hem twee keer.
 export function useSelectionHeader({
   count,
   busy,
   active,
+  announceStart = true,
 }: {
   count: number;
   busy: boolean;
   active: boolean;
+  announceStart?: boolean;
 }): SelectionHeader {
   const header = selectionHeader({ count, busy });
+  const announced = useRef(false);
   useEffect(() => {
-    if (active) AccessibilityInfo.announceForAccessibility(header.title);
-  }, [active, header.title]);
+    if (!active) {
+      announced.current = false;
+      return;
+    }
+    const first = !announced.current;
+    announced.current = true;
+    if (first && !announceStart) return;
+    AccessibilityInfo.announceForAccessibility(header.title);
+  }, [active, header.title, announceStart]);
   return header;
+}
+
+// Wacht even: het element moet er staan (en een scroll terug klaar zijn)
+// voordat VoiceOver erheen kan.
+const FOCUS_DELAY = 400;
+
+// Zet de focus van VoiceOver op een element, als VoiceOver aan staat.
+export function focusLater(ref: RefObject<HostInstance | null>, delay = FOCUS_DELAY) {
+  if (!screenReaderOn()) return;
+  setTimeout(() => {
+    const node = ref.current;
+    if (node) AccessibilityInfo.sendAccessibilityEvent(node, "focus");
+  }, delay);
 }
 
 const ICONS: Record<SelectionAction, IconName> = {
@@ -108,13 +141,20 @@ export function HeaderTextButton({
   title,
   onPress,
   disabled = false,
+  ref,
+  onLayout,
 }: {
   title: string;
   onPress: () => void;
   disabled?: boolean;
+  // Voor de focus van VoiceOver (N2).
+  ref?: Ref<HostInstance>;
+  onLayout?: (e: LayoutChangeEvent) => void;
 }) {
   return (
     <Pressable
+      ref={ref}
+      onLayout={onLayout}
       accessibilityRole="button"
       accessibilityState={{ disabled }}
       disabled={disabled}
@@ -131,6 +171,9 @@ export function HeaderTextButton({
 
 // De titel en Annuleren op één regel, minstens 44 pt hoog. `centered`: de
 // titel in het midden, zoals de iOS-navigatiebalk; anders links (de zijkolom).
+// Geen vaste maten naast tekst die meeschaalt: links staat een lege ruimte zo
+// breed als Annuleren (gemeten), de titel krijgt wat ertussen past en krimpt
+// zo nodig. Bij het verschijnen gaat de focus van VoiceOver naar de titel (N2).
 function HeaderRow({
   header,
   onCancel,
@@ -140,12 +183,24 @@ function HeaderRow({
   onCancel: () => void;
   centered: boolean;
 }) {
+  const [cancelWidth, setCancelWidth] = useState(0);
+  const title = useRef<HostInstance>(null);
+  useEffect(() => {
+    focusLater(title);
+  }, []);
   return (
     <View style={styles.headerRow}>
-      <View style={centered ? styles.titleCentered : styles.titleStart} pointerEvents="none">
+      {centered ? <View style={{ width: cancelWidth }} /> : null}
+      <View
+        ref={title}
+        accessible
+        accessibilityRole="header"
+        accessibilityLabel={header.title}
+        style={styles.title}
+        pointerEvents="none"
+      >
         <Text
           variant="navTitle"
-          accessibilityRole="header"
           numberOfLines={1}
           adjustsFontSizeToFit
           minimumFontScale={0.7}
@@ -154,7 +209,12 @@ function HeaderRow({
           {header.title}
         </Text>
       </View>
-      <HeaderTextButton title="Annuleren" onPress={onCancel} disabled={header.cancelDisabled} />
+      <HeaderTextButton
+        title="Annuleren"
+        onPress={onCancel}
+        disabled={header.cancelDisabled}
+        onLayout={(e) => setCancelWidth(Math.ceil(e.nativeEvent.layout.width))}
+      />
     </View>
   );
 }
@@ -209,9 +269,6 @@ export function SelectionSideHeader({ header, onCancel }: { header: SelectionHea
 // De hoogte van de balk bovenin zonder statusbalk, tot hij gemeten is.
 export const SELECTION_TOP_BAR = size.touchMin;
 
-// Ruimte voor Annuleren naast een titel in het midden.
-const CANCEL_ROOM = 104;
-
 const styles = StyleSheet.create({
   bar: { borderTopWidth: StyleSheet.hairlineWidth },
   row: {
@@ -233,17 +290,9 @@ const styles = StyleSheet.create({
   },
   pressed: { opacity: 0.6 },
   headerButton: { minHeight: size.touchMin, justifyContent: "center", paddingHorizontal: space.xs },
-  headerRow: { minHeight: size.touchMin, flexDirection: "row", alignItems: "center", justifyContent: "flex-end" },
-  titleCentered: {
-    position: "absolute",
-    top: 0,
-    bottom: 0,
-    left: CANCEL_ROOM,
-    right: CANCEL_ROOM,
-    justifyContent: "center",
-  },
+  headerRow: { minHeight: size.touchMin, flexDirection: "row", alignItems: "center" },
+  title: { flex: 1, minWidth: 0, paddingHorizontal: space.xs },
   titleTextCentered: { textAlign: "center" },
-  titleStart: { flex: 1, paddingRight: space.s },
   topBar: {
     position: "absolute",
     top: 0,

@@ -1,7 +1,7 @@
 import type { FunctionReturnType } from "convex/server";
 import { router, Stack, useNavigation } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { FlatList, StyleSheet, useWindowDimensions, View } from "react-native";
+import { FlatList, StyleSheet, useWindowDimensions, View, type HostInstance } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import type { Id } from "../../../convex/_generated/dataModel";
 import { PhotoImage } from "../components/Photo";
@@ -23,7 +23,7 @@ import { size, space, useTheme } from "../theme";
 import { AlbumChoiceSheet } from "./AlbumChoice";
 import { columnsFor, SelectMark } from "./AlbumScreen";
 import { LoadError } from "./GroupParts";
-import { HeaderTextButton, SelectionBar, useSelectionHeader } from "./SelectionBar";
+import { focusLater, HeaderTextButton, SelectionBar, useSelectionHeader } from "./SelectionBar";
 import {
   ActionFeedback,
   SharingProgress,
@@ -163,18 +163,33 @@ function MyPhotosContent() {
     setFeedback(null);
     setSelecting(true);
   }, []);
+  // N2: na Annuleren gaat de focus van VoiceOver terug naar "Selecteer". De
+  // titel in de iOS-kop kan geen focus krijgen; die wordt voorgelezen.
+  const selectButton = useRef<HostInstance>(null);
+  const focusSelectNext = useRef(false);
+  const cancelSelecting = useCallback(() => {
+    focusSelectNext.current = true;
+    stopSelecting();
+  }, [stopSelecting]);
+  useEffect(() => {
+    if (selecting || !focusSelectNext.current) return;
+    focusSelectNext.current = false;
+    focusLater(selectButton);
+  }, [selecting]);
   const headerOptions = useMemo(() => {
     if (selecting) {
       return {
         title,
-        headerRight: () => <HeaderTextButton title="Annuleren" onPress={stopSelecting} disabled={cancelDisabled} />,
+        headerRight: () => <HeaderTextButton title="Annuleren" onPress={cancelSelecting} disabled={cancelDisabled} />,
       };
     }
     return {
       title: MY_PHOTOS_TITLE,
-      headerRight: canSelect ? () => <HeaderTextButton title="Selecteer" onPress={startSelecting} /> : undefined,
+      headerRight: canSelect
+        ? () => <HeaderTextButton ref={selectButton} title="Selecteer" onPress={startSelecting} />
+        : undefined,
     };
-  }, [selecting, title, cancelDisabled, canSelect, stopSelecting, startSelecting]);
+  }, [selecting, title, cancelDisabled, canSelect, cancelSelecting, startSelecting]);
   // Verdwijnt de inhoud (bv. "reconnecting"), dan de kop van gewoon Mijn foto's:
   // de opties blijven anders op het scherm staan.
   const navigation = useNavigation();

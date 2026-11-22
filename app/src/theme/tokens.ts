@@ -167,8 +167,10 @@ export type TypeRole = {
   fontSize: number;
   fontWeight?: Weight;
   fontFamily?: string;
-  // Alleen de tabbalk-labels hebben een grens. Alle andere tekst schaalt vrij
-  // mee met de iOS-tekstgrootte, ook in de AX-standen (design.md §3).
+  // Alleen de tabbalk-labels hebben een grens in hun rol. De labels in de
+  // selectiebalk (`barLabel`, WP40) groeien ook hoogstens 1,2×, via de prop op
+  // de tekst. Alle andere tekst schaalt vrij mee met de iOS-tekstgrootte, ook
+  // in de AX-standen (design.md §3).
   maxFontSizeMultiplier?: number;
 };
 
