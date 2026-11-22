@@ -37,6 +37,7 @@ import {
 import { avatarFieldsOf } from "./lib/profilePhoto";
 import { photoView } from "./lib/formatSet";
 import { afterUnpublish } from "./lib/unpublish";
+import { albumHasOpenProject } from "./lib/filmOriginals";
 
 // WP23: toegang tot een album. Eén weigering voor "album bestaat niet" en
 // "geen lid van de groep" (invariant 4: geen bestaans-orakel). Sinds WP28
@@ -484,6 +485,9 @@ export const remove = mutation({
   handler: async (ctx, { albumId }) => {
     const album = await requireAlbumForWrite(ctx, albumId);
     await requireFounder(ctx, album.groupId);
+    // WP38 besluit 17: niet het filmalbum van een open filmproject ("Sluit
+    // eerst het filmproject"). Na sluiten mag het; het project houdt de naam.
+    if (await albumHasOpenProject(ctx, albumId, Date.now())) refuse("FILM_PROJECT_OPEN");
 
     const albumPhotos = await ctx.db
       .query("albumPhotos")

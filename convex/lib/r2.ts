@@ -29,8 +29,23 @@ const SERVER_LINK_SECONDS = 60;
 
 /** De R2-config uit de env; ontbreekt er één (of is hij leeg), dan `R2_CONFIG_MISSING:` met de namen. */
 export function r2Config(): R2Config {
+  return readR2Config("R2_BUCKET");
+}
+
+/**
+ * WP38 A-keuze: de originelen staan in een eigen bucket (`R2_ORIGINALS_BUCKET`),
+ * met het endpoint en de sleutels van WP37. `R2_BUCKET` is hier niet nodig.
+ */
+export const R2_ORIGINALS_ENV_NAMES = ["R2_ENDPOINT", "R2_ACCESS_KEY_ID", "R2_SECRET_ACCESS_KEY", "R2_ORIGINALS_BUCKET"] as const;
+
+/** De config voor de originelen-bucket (WP38 A-invariant 13): fail-loud zoals `r2Config`. */
+export function r2OriginalsConfig(): R2Config {
+  return readR2Config("R2_ORIGINALS_BUCKET");
+}
+
+function readR2Config(bucketName: "R2_BUCKET" | "R2_ORIGINALS_BUCKET"): R2Config {
   const missing: string[] = [];
-  const read = (name: (typeof R2_ENV_NAMES)[number]): string => {
+  const read = (name: string): string => {
     const value = process.env[name]?.trim() ?? "";
     if (value === "") missing.push(name);
     return value;
@@ -38,7 +53,7 @@ export function r2Config(): R2Config {
   const endpoint = read("R2_ENDPOINT");
   const accessKeyId = read("R2_ACCESS_KEY_ID");
   const secretAccessKey = read("R2_SECRET_ACCESS_KEY");
-  const bucket = read("R2_BUCKET");
+  const bucket = read(bucketName);
   if (missing.length > 0) throw new Error(`R2_CONFIG_MISSING: ${missing.join(", ")} niet gezet`);
   let host: string;
   try {
@@ -62,7 +77,7 @@ function objectPath(cfg: R2Config, key: string): string {
  */
 export async function presignR2(
   cfg: R2Config,
-  method: "GET" | "PUT" | "HEAD" | "DELETE",
+  method: "GET" | "PUT" | "HEAD" | "DELETE" | "POST",
   key: string,
   expiresInSeconds: number,
   nowMs: number,
@@ -243,4 +258,167 @@ export async function listObjects(cfg: R2Config): Promise<R2Object[]> {
     if (token === null) return out;
   }
   return out;
+}
+
+// --- multipart (WP38: originelen in delen) ------------------------------------
+//
+// Zoals S3: aanmaken (`POST ?uploads`), een deel (`PUT ?partNumber&uploadId`,
+// alleen via een link voor de app), de lijst van delen (`GET ?uploadId`),
+// afronden (`POST ?uploadId`), afbreken (`DELETE ?uploadId`) en de halve
+// uploads van de bucket (`GET ?uploads`). Elk verzoek van de server is
+// ondertekend in de query; een fout noemt alleen de soort en de status.
+
+async function serverRequest(
+  cfg: R2Config,
+  label: string,
+  method: "GET" | "PUT" | "HEAD" | "DELETE" | "POST",
+  key: string | null,
+  opts: { query?: Record<string, string>; body?: string; headers?: Record<string, string> } = {},
+): Promise<Response> {
+  const { url } = await presignRequest({
+    method,
+    host: cfg.host,
+    path: key === null ? `/${encodeKey(cfg.bucket)}` : objectPath(cfg, key),
+    region: REGION,
+    accessKeyId: cfg.accessKeyId,
+    secretAccessKey: cfg.secretAccessKey,
+    expiresInSeconds: SERVER_LINK_SECONDS,
+    nowMs: Date.now(),
+    query: opts.query,
+  });
+  try {
+    return await fetch(url, {
+      method,
+      ...(opts.headers ? { headers: opts.headers } : {}),
+      ...(opts.body !== undefined ? { body: opts.body } : {}),
+    });
+  } catch {
+    throw new R2Error(label, null);
+  }
+}
+
+/** Een nieuwe multipart-upload op deze sleutel; geeft de upload-id van R2. */
+export async function createMultipartUpload(cfg: R2Config, key: string): Promise<string> {
+  const res = await serverRequest(cfg, "CREATE", "POST", key, { query: { uploads: "" } });
+  const text = await res.text();
+  const uploadId = res.ok ? tag(text, "UploadId") : null;
+  if (uploadId === null || uploadId === "") throw new R2Error("CREATE", res.status);
+  return uploadId;
+}
+
+export type R2Part = { partNumber: number; size: number; etag: string };
+
+/** De delen die R2 van deze upload heeft, of `null` als de upload er niet (meer) is. */
+export async function listParts(cfg: R2Config, key: string, uploadId: string): Promise<R2Part[] | null> {
+  const out: R2Part[] = [];
+  let marker: string | null = null;
+  for (let page = 0; page < 100; page++) {
+    const query: Record<string, string> = { uploadId, "max-parts": "1000" };
+    if (marker !== null) query["part-number-marker"] = marker;
+    const res = await serverRequest(cfg, "PARTS", "GET", key, { query });
+    const text = await res.text();
+    if (res.status === 404) return null;
+    if (!res.ok) throw new R2Error("PARTS", res.status);
+    for (const m of text.matchAll(/<Part>([\s\S]*?)<\/Part>/g)) {
+      const block = m[1]!;
+      const partNumber = Number(tag(block, "PartNumber"));
+      const size = Number(tag(block, "Size"));
+      const etag = tag(block, "ETag");
+      if (!Number.isInteger(partNumber) || !Number.isFinite(size) || etag === null) continue;
+      out.push({ partNumber, size, etag });
+    }
+    if (tag(text, "IsTruncated") !== "true") return out;
+    marker = tag(text, "NextPartNumberMarker");
+    if (marker === null) return out;
+  }
+  return out;
+}
+
+/**
+ * Rond de upload af met precies deze delen (oplopend). `false`: de upload is
+ * er niet meer (al afgerond of afgebroken). Een andere fout gooit `R2Error`.
+ */
+export async function completeMultipartUpload(
+  cfg: R2Config,
+  key: string,
+  uploadId: string,
+  parts: { partNumber: number; etag: string }[],
+): Promise<boolean> {
+  const body = `<CompleteMultipartUpload>${parts
+    .map((p) => `<Part><PartNumber>${p.partNumber}</PartNumber><ETag>${escapeXml(p.etag)}</ETag></Part>`)
+    .join("")}</CompleteMultipartUpload>`;
+  const res = await serverRequest(cfg, "COMPLETE", "POST", key, {
+    query: { uploadId },
+    body,
+    headers: { "content-type": "application/xml" },
+  });
+  const text = await res.text();
+  if (res.status === 404) return false;
+  // S3 kan een fout ook met 200 geven, met de fout in de body.
+  if (!res.ok || !text.includes("CompleteMultipartUploadResult")) throw new R2Error("COMPLETE", res.status);
+  return true;
+}
+
+/** Breek een upload af (de delen gaan weg). Een upload die er niet is, is ook weg. */
+export async function abortMultipartUpload(cfg: R2Config, key: string, uploadId: string): Promise<void> {
+  const res = await serverRequest(cfg, "ABORT", "DELETE", key, { query: { uploadId } });
+  await res.body?.cancel();
+  if (!res.ok && res.status !== 404) throw new R2Error("ABORT", res.status);
+}
+
+export type R2Upload = { key: string; uploadId: string; initiated: number };
+
+/** Alle halve (nog niet afgeronde of afgebroken) uploads in de bucket. */
+export async function listMultipartUploads(cfg: R2Config): Promise<R2Upload[]> {
+  const out: R2Upload[] = [];
+  let keyMarker: string | null = null;
+  let uploadMarker: string | null = null;
+  for (let page = 0; page < 1000; page++) {
+    const query: Record<string, string> = { uploads: "", "max-uploads": "1000" };
+    if (keyMarker !== null) query["key-marker"] = keyMarker;
+    if (uploadMarker !== null) query["upload-id-marker"] = uploadMarker;
+    const res = await serverRequest(cfg, "UPLOADS", "GET", null, { query });
+    if (!res.ok) {
+      await res.body?.cancel();
+      throw new R2Error("UPLOADS", res.status);
+    }
+    const text = await res.text();
+    for (const m of text.matchAll(/<Upload>([\s\S]*?)<\/Upload>/g)) {
+      const block = m[1]!;
+      const key = tag(block, "Key");
+      const uploadId = tag(block, "UploadId");
+      if (key === null || uploadId === null) continue;
+      const initiated = Date.parse(tag(block, "Initiated") ?? "");
+      out.push({ key, uploadId, initiated: Number.isFinite(initiated) ? initiated : 0 });
+    }
+    if (tag(text, "IsTruncated") !== "true") return out;
+    keyMarker = tag(text, "NextKeyMarker");
+    uploadMarker = tag(text, "NextUploadIdMarker");
+    if (keyMarker === null) return out;
+  }
+  return out;
+}
+
+/**
+ * Een link voor de app: PUT van precies één deel (`partNumber`, `uploadId`
+ * in de query) op precies deze sleutel, met de grootte van dat deel in de
+ * handtekening (`content-length;host`).
+ */
+export async function presignUploadPart(
+  cfg: R2Config,
+  key: string,
+  uploadId: string,
+  partNumber: number,
+  size: number,
+  expiresInSeconds: number,
+  nowMs: number,
+): Promise<PresignedLink> {
+  return await presignR2(cfg, "PUT", key, expiresInSeconds, nowMs, {
+    query: { partNumber: String(partNumber), uploadId },
+    headers: { "content-length": String(size) },
+  });
+}
+
+function escapeXml(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }

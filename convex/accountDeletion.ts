@@ -15,6 +15,7 @@ import { getWebmasterEmails } from "./lib/auth";
 import { INFO_SENDER, sendMailjetMessage } from "./lib/mailjet";
 import { accountDeletionClerkFailedTemplate } from "./lib/emailTemplates";
 import { clerkSubjectHash } from "./lib/accountState";
+import { removeOriginalsOfOwner } from "./lib/filmOriginals";
 
 // WP29 — account verwijderen. Spec: docs/work-packages/WP29-account-verwijderen.md
 // §Advies open vraag 2 en §A-invarianten.
@@ -228,6 +229,13 @@ const reservationsPhase: Phase = async (ctx, user) => {
   return rows.length > 0 || requests.length > 0;
 };
 
+/**
+ * WP38 A-invariant 12: zijn originelen in filmprojecten, ook in R2 (object en
+ * open upload). Die van een filmpje gingen al mee met de foto's (besluit 16);
+ * dit vangt de rest. Vóór de lidmaatschappen, zoals de foto's.
+ */
+const originalsPhase: Phase = async (ctx, user) => await removeOriginalsOfOwner(ctx, user._id, ROWS_PER_STEP);
+
 /** U8: één lidmaatschap per stap, met de M1/M2/M3-cascade (internalRemoveMember). */
 const membershipsPhase: Phase = async (ctx, user) => {
   const m = await ctx.db
@@ -423,6 +431,7 @@ const PHASES: Phase[] = [
   profilePhase,
   photosPhase,
   reservationsPhase,
+  originalsPhase,
   membershipsPhase,
   foundedGroupsPhase,
   albumsPhase,

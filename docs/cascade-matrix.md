@@ -40,17 +40,18 @@ Uitzondering: queries zonder trigger (puur read-tests) leven bij de query-owner.
 
 | Domain | Rules | Status |
 |---|---|---|
-| Users | 17 | ✅ U3-U4, U7-U17; ❌ U1, U2, U5 eliminated, U6 geschrapt |
-| Groups | 4 | ✅ G1-G4 |
-| Albums | 2 | ✅ A1, A2 |
-| Photos | 10 | ✅ P1-P3, P5-P10; ❌ P4 geschrapt |
+| Users | 18 | ✅ U3-U4, U7-U18; ❌ U1, U2, U5 eliminated, U6 geschrapt |
+| Groups | 5 | ✅ G1-G5 |
+| Albums | 3 | ✅ A1-A3 |
+| Photos | 11 | ✅ P1-P3, P5-P11; ❌ P4 geschrapt |
 | Album-photos (publications) | 4 | ✅ AP1, AP2, AP4; ❌ AP3 geschrapt |
 | Ratings | 1 | ❌ R1 (WP19a) |
-| Memberships | 4 | ✅ M1-M4 |
+| Memberships | 5 | ✅ M1-M5 |
 | Flagging | 3 | ✅ FL1, FL2, FL3 |
 | Invites | 2 | ✅ IB1 (WP5 bounce-webhook), IB2 (WP9 natural-expiry cron) |
 | Uploads | 1 | ✅ UI1 (cyclus 1 architectuur rewrite + audit-cyclus-1 reservation-pattern hardening, 7d/30min cleanup; WP37: video-uploads na 1d, met hun object in R2) |
-| Monitoring | 2 | ✅ MON1 (WP10 integrity-check — detect-only, geen cascade), MON2 (WP37 R2-check — detect-only) |
+| Monitoring | 3 | ✅ MON1 (WP10 integrity-check — detect-only, geen cascade), MON2 (WP37 R2-check — detect-only), MON3 (WP38 R2-check originelen — detect-only) |
+| Filmproject | 3 | ✅ FP1-FP3 (WP38: terugtrekken en verwijderen, een jaar, vanzelf afronden) |
 
 ## Cascade rules
 
@@ -75,6 +76,7 @@ Uitzondering: queries zonder trigger (puur read-tests) leven bij de query-owner.
 | U15 | (nieuw, WP29) | US delete | Zijn features met hun upvotes; zijn upvotes op andere features, met hertelde `upvoteCount` | 3 | Fases *features* (`features.by_submittedBy`) en *upvotes* (`featureUpvotes.by_user`) | `tests/users/deleteAccount.test.ts` | ✅ |
 | U16 | (nieuw, WP29) | US delete | De Clerk-user | 3 (extern) | `deleteClerkUser` direct na het afsluiten, los van de Convex-stappen. Alleen met een sleutel die bij de omgeving past; 404 = gelukt; anders herhaald (6 pogingen over 111 min, hooguit één reeks), daarna één mail aan de webmaster. Een hash van de subject (`deletedClerkSubjects`) blijft staan: die Clerk-user krijgt nooit meer een rij (S1). De users-rij gaat als laatste weg, als Convex én Clerk klaar zijn; tot dan houdt hij elke login tegen. Integriteitscheck meldt een rij die langer dan een uur wordt verwijderd | `tests/users/deleteAccount.test.ts` | ✅ |
 | U17 | (nieuw, WP37) | US delete | Zijn filmpjes uit R2, en het tijdelijke object van een open video-upload | 3 (extern) | Fase *foto's* via `internalRemovePhoto` (P10) voor zijn filmpjes; fase *reserveringen* plant `internal.videos.deleteObjects` voor de `videoKey` (onder `uploads/`) van elke open video-upload, en wist zijn rijen in `videoUploadRequests` (de daggrens, A-invariant 36). Mislukt R2, dan meldt de R2-check (MON2) het wees-object | `tests/videos/cascade.test.ts` | ✅ |
+| U18 | (nieuw, WP38) | US delete | Zijn originelen in filmprojecten, met object en open upload in R2 | 3 (extern) | Fase *foto's* via `internalRemovePhoto` (P11) voor de originelen van zijn filmpjes; fase *originelen* (`filmOriginals.by_owner`, vóór de lidmaatschappen) voor de rest. Beide plannen `internal.filmProjects.deleteOriginalObjects`. Originelen van anderen blijven | `tests/filmProject/cascade.test.ts` | ✅ |
 
 ### Trigger: Groups
 
@@ -84,6 +86,7 @@ Uitzondering: queries zonder trigger (puur read-tests) leven bij de query-owner.
 | G2 | `groupChangeToAlbum` | GB modify | Update denormalized group-data op albums | 1+4 | Eliminated. Nieuwe `albums.getWithGroup` joint group | `tests/groups/update.test.ts` met `assertReactive` rond `groups.update` | ✅ |
 | G3 | `groupDelToMembers` | GB delete | Delete memberships, alle uitnodigingen voor de groep, welke status ook (WP28 invariant 4, A-invariant 8), en de films van de groep (WP21; de bestanden in S3 blijven): niets wijst daarna nog naar de groep | 3 | `deleteGroupCascade` in `convex/groups.ts`, gedeeld door `groups.remove` (alleen de oprichter, WP28 besluit 1) en M2-e. Uitnodigingen via `invites.by_group`. Een uitnodiging voor een gewiste groep maakt ook los daarvan geen lidmaatschap (`isGroupInviteStillValid`, zie S1) | `tests/groups/crud.test.ts` (describe `groups.remove`), `tests/invites/exLid.test.ts` (weg c), `tests/groups/fixGoneGroup.test.ts`, `tests/films/cascade.test.ts` | ✅ |
 | G4 | `groupDelToAlbums` | GB delete | Delete albums, met covers en profielfoto's (AP4) | 3 | `deleteGroupCascade` (en transitief `albumPhotos`, zie A1; daarna `afterUnpublish`, zie AP4). Meting WP28 op prod-grootte (18 leden, 14 albums, 1460 publicaties): ±1500 index-reads | `tests/groups/crud.test.ts` (describe `groups.remove`), `tests/groups/beheerCascade.test.ts` | ✅ |
+| G5 | (nieuw, WP38) | GB delete | De filmprojecten van de groep met al hun inzendingen; objecten en open uploads in de originelen-bucket | 3 (extern) | `deleteGroupCascade` via `removeProjectsOfGroup` (lib/filmOriginals), ook bij M2-e. R2 best-effort in `internal.filmProjects.deleteOriginalObjects`; MON3 meldt wat blijft | `tests/filmProject/cascade.test.ts` | ✅ |
 
 ### Trigger: Albums
 
@@ -91,6 +94,7 @@ Uitzondering: queries zonder trigger (puur read-tests) leven bij de query-owner.
 |---|---|---|---|---|---|---|---|
 | A1 | `albumDelToAlbumPhoto` | GA delete | Delete albumPhotos (publicaties), met groepscover (AP4; WP28 invariant 5) | 3 | Cascade in `albums.remove` (alleen de oprichter, WP28 besluit 5), daarna `afterUnpublish` | `tests/albums/crud.test.ts` (describe `albums.remove > cascade albumPhotos`), `tests/groups/beheerCascade.test.ts` | ✅ |
 | A2 | (nieuw, niet uit AWS) | GA delete | Delete `albumLastSeen` records voor deze album | 3 | Cascade in `albums.remove` via `deleteAlbumLastSeenByAlbum` helper (by_album index) | `tests/albums/lastSeenCascade.test.ts` | ✅ |
+| A3 | (nieuw, WP38 besluit 17) | GA delete | Het filmalbum van een open filmproject kan niet weg: `FILM_PROJECT_OPEN` ("Sluit eerst het filmproject"). Na sluiten wel; het project houdt de naam van het album | 3 | Guard in `albums.remove` (`albumHasOpenProject`) | (nog geen test, besluit 17) | ✅ |
 
 ### Trigger: Photos
 
@@ -106,6 +110,7 @@ Uitzondering: queries zonder trigger (puur read-tests) leven bij de query-owner.
 | P8 | `fixPhotoRotation.js` (Jimp) | rotate-request (owner of group-admin) | **EXIF-only**: `photos.exifOrientation` waarde berekend via 8-staat-arithmetiek-tabel op `(rotation, flipY)`; `width`/`height` geswapt in DB bij 90°/270°; bestand zelf onaangeraakt. **Geen downstream cascade** — albumPhotos/group-+album-covers/flagging-state ongemoeid. Delta-semantiek (niet call-idempotent); inverse brengt terug. Per cyclus-2 hardening: clients passen CSS-transform toe gebaseerd op `photos.exifOrientation` uit DB (niet file-EXIF), dus DB-update = canonical rotate. Geen pixel-manipulatie nodig | n.v.t. (single-row mutation, geen cascade) | `photos.rotate` mutation (auth owner OR group-admin via `albumPhotos.by_photo`→publicatie-groups→`memberships` role=admin). Atomair: leest huidige `exifOrientation` (default 1), berekent nieuwe via lookup-tabel, patcht `exifOrientation` + (conditioneel) `width`/`height`-swap. Géén scheduled action, géén sharp, géén storage-swap, géén cleanup | `tests/photos/rotate.test.ts` (auth + EXIF-arithmetiek + dim-swap + delta+inverse + pixel-array-oracle op gespiegelde starts) | ✅ |
 | P9 | (nieuw, niet uit AWS) | PO delete | Verwijder de upload-reservering van deze foto (WP18 A-invariant 22, uit de red-team) | 3 | In `internalRemovePhoto` (`photos.remove`, `users.deleteSelf`, FL1-cron) via `uploadIdempotency.by_photo`, zodat alleen de eigen reservering gelezen wordt (A-invariant 26). `users.deleteSelf` wist daarna alle reserveringen van de user, ook `in_progress` | `tests/http/uploadReservation.test.ts`, `tests/http/uploadReservationReads.test.ts` | ✅ |
 | P10 | (nieuw, WP37) | PO delete | Een filmpje: het object (de eindsleutel onder `videos/`) uit R2 | 3 (extern) | In `internalRemovePhoto` (`photos.remove`, `photos.removeFlagged`, FL1-cron, `users.deleteSelf`): `internal.videos.deleteObjects` gepland na de transactie, best-effort; de poster en zijn formaten gaan zoals elk beeld (U7-stijl `cleanupStorage`). Uit een album halen wist niets. Mislukt R2, dan is de rij toch weg en meldt MON2 het wees-object | `tests/videos/cascade.test.ts` | ✅ |
+| P11 | (nieuw, WP38 besluit 16) | PO delete | Een filmpje met een inzending: het origineel gaat mee (rij, object en open upload in R2). "Uit album" raakt de inzending niet (besluit 4) | 3 (extern) | In `internalRemovePhoto` via `removeOriginalsOfPhoto` (lib/filmOriginals), naast P10 | (nog geen test, besluit 16; account verwijderen: `tests/filmProject/cascade.test.ts`) | ✅ |
 
 ### Trigger: Album-photos (Publications)
 
@@ -130,6 +135,7 @@ Uitzondering: queries zonder trigger (puur read-tests) leven bij de query-owner.
 | M2 | `memberDelToGroup` | UM delete | Admin/founder succession + group cleanup. (a) member vertrekt → niets, (b) admin met andere admin → niets, (c) laatste admin → allen admin, (d) founder → eerste admin wordt founder, (e) laatste lid → group cascade | 2 + 3 | In `internalRemoveMember` na membership-delete. Sinds WP28 vertrekt de oprichter niet (`FOUNDER_MUST_TRANSFER`) en wordt hij niet verwijderd (`FOUNDER_PROTECTED`); hij draagt eerst over (`groups.transferFounder`). (c) en (d) lopen daardoor alleen nog via accountverwijdering (U8). (e) is `deleteGroupCascade`, dezelfde als `groups.remove` | `tests/memberships/delete.test.ts`, `tests/groups/beheerGates.test.ts` | ✅ |
 | M3 | (nieuw, niet uit AWS) | UM delete | Delete `albumLastSeen` records voor die user × albums in die groep | 3 | In `groups.removeMember` via `deleteAlbumLastSeenForUserInGroup` helper: by_user op userId, filter op album.groupId == this group. Andere groepen blijven intact | `tests/memberships/delete.test.ts` (describe `M3`) | ✅ |
 | M4 | (nieuw, WP28 invariant 4, A-invariant 10 en 13) | UM delete, en een admin die lid wordt | Uitnodigingen die vervallen worden verwijderd (WP28 A-keuze 2, zoals intrekken). (a) Open uitnodigingen aan het adres van wie verdwijnt, voor die groep. (b) Open uitnodigingen die hij zelf voor die groep verstuurde; ook als hij alleen zijn admin-rol verliest. Een later herstelde admin-rol laat ze niet herleven. Uitnodigingen voor andere groepen blijven | 3 | In `internalRemoveMember`: (a) `invites.by_email` op het genormaliseerde adres (`normalizeEmail`), filter op groupId en `pending`; (b) `expireInvitesBy` via `invites.by_invitedBy`, ook vanuit `groups.updateMemberRole` bij admin → lid. Daarnaast weigert `isGroupInviteStillValid` (`INVITE_INVALID`) een uitnodiging van wie geen admin is, in `invites.accept` en S1 | `tests/invites/exLid.test.ts`, `tests/invites/createGate.test.ts`, `tests/invites/fixInviterRights.test.ts` | ✅ |
+| M5 | (nieuw, WP38 besluit 12) | UM delete | Zijn originelen in de filmprojecten van die groep, met object en open upload in R2 | 3 (extern) | In `internalRemoveMember`` via `removeOriginalsOfMemberInGroup` (`filmOriginals.by_group_and_owner`) | (nog geen test, besluit 12) | ✅ |
 
 ### Trigger: Flagging (scheduled / appeal flow)
 
@@ -158,6 +164,15 @@ Uitzondering: queries zonder trigger (puur read-tests) leven bij de query-owner.
 |---|---|---|---|---|---|---|---|
 | MON1 | (nieuw, niet uit AWS — oude AWS had geen monitoring-loop) | Daily cron | **Detect-only — geen cascade**. Scant de volledige DB op stille datakorruptie in vijf categorieën: storage-orphans (2a; de formaten van WP25 tellen als verwezen), aggregate-drift (2b: `users.photoCount`, `features.upvoteCount`), FK-integriteit (2c: 18 verplichte + 5 optionele FKs), geen-self-healing (2d), en formaten (WP25: een foto ouder dan een uur zonder formaten, of met een formaat-veld naar een gewist object: "formaten ontbreken" / "formaten dangling"; een met `formaten --accept-no-formats` afgetekende foto niet). Leest álle tabellen, schrijft **alleen** `monitoringRuns` + queue't bij drift één samenvattende alert-action. Fixt nooit iets. Dedup via drift-signature (één mail per persistente drift) + maandelijkse heartbeat | n.v.t. (detect-only, geen downstream-writes buiten `monitoringRuns`) | Convex scheduled cron `"integrity check"` 04:30 UTC → `internal.monitoring.integrityCheck` (WP10), gespreid ná IB2 (04:00). Eén `internalMutation` = één transactie/snapshot ⇒ race-resistentie (inv 11). Mail via `internal.monitoring.sendMonitoringAlert` action, `info@`-sender → `WEBMASTER_EMAILS` | `tests/monitoring/integrity.test.ts` + `tests/crons/registration.test.ts` (statisch pin) | ✅ |
 | MON2 | (nieuw, WP37) | Daily cron | **Detect-only — geen cascade**. Legt de lijst in R2 naast de filmpjes (`photos.video.key`) en de open video-uploads (`uploadIdempotency.videoKey`): een wees-object (geen rij, geen open upload, ouder dan een dag), een ontbrekend bestand (rij zonder object), een object waarvan de grootte afwijkt van `video.bytes`, en elk object boven 120 MiB. Eén mail aan `WEBMASTER_EMAILS` als er iets is of als de check niet kon draaien (config, R2 onbereikbaar). Wist niets | n.v.t. (detect-only) | Convex scheduled cron `"video storage check"` 05:15 UTC → `internal.videos.checkStorage` (action: R2 is extern, de lijst komt uit `internal.videos.storageInventory`) | `tests/videos/storageCheck.test.ts` + `tests/crons/registration.test.ts` (statisch pin) | ✅ |
+| MON3 | (nieuw, WP38 A-invariant 14) | Daily cron | **Detect-only — geen cascade**. Legt de originelen-bucket (`R2_ORIGINALS_BUCKET`) naast de inzendingen: een object zonder inzending (ouder dan een dag), een inzending die binnen is zonder object of met een andere grootte, en een halve upload zonder inzending ouder dan 8 dagen (de lifecycle-regel werkt niet). Eén mail aan `WEBMASTER_EMAILS`, ook als de check niet kon draaien. Wist niets. MON2 ziet de originelen niet (andere bucket) | n.v.t. (detect-only) | Convex scheduled cron `"film originals check"` 05:45 UTC → `internal.filmProjects.checkStorage` | `tests/filmProject/storageCheck.test.ts` + `tests/crons/registration.test.ts` | ✅ |
+
+### Trigger: Filmproject (WP38)
+
+| # | Oude handler | Trigger event | Effect | Cat | Convex aanpak | Test locatie | Status |
+|---|---|---|---|---|---|---|---|
+| FP1 | (nieuw, WP38 besluit 5 en 9) | inzender trekt terug; oprichter verwijdert één of alle | De inzending meteen weg (uit elke lijst), object en open upload in R2 daarna. Het filmpje in het album blijft | 3 (extern) | `filmProjects.withdraw`, `removeOriginal`, `removeAll` via `removeOriginalRows` → `internal.filmProjects.deleteOriginalObjects` (afbreken, dan wissen; best-effort) | `tests/filmProject/cascade.test.ts` | ✅ |
+| FP2 | (nieuw, WP38 A-invariant 11, besluit 13, 15, 18) | Daily cron | Een origineel een jaar na binnenkomst weg (rij en object); een inzending onderweg bij een project dat hem niet meer aanneemt (14 dagen na sluiten) weg met zijn halve upload; een project voorbij de einddatum dicht; een gesloten project zonder originelen weg na een jaar en 14 dagen (uit de groep is hij meteen); één herinnering aan de oprichter 30 dagen vóór de eerste originelen weggaan | 3 (extern) | Cron `"film originals expiry"` 05:30 UTC → `internal.filmProjects.expireOriginals`; daarnaast sluit `closeIfDue` het project op de einddatum zelf. Vangnet in R2: lifecycle-regel (365 dagen, halve uploads na 7 dagen) | `tests/filmProject/cascade.test.ts` (een jaar) | ✅ |
+| FP3 | (nieuw, WP38 A-invariant 9) | Hourly cron | Inzendingen waarvan alle delen in R2 staan, afronden zonder de app | 3 (extern) | Cron `"film originals complete"` elk uur (:20) → `internal.filmProjects.completeUploaded` | `tests/filmProject/originals.test.ts` | ✅ |
 
 ### Trigger: Stats / signup completion
 
