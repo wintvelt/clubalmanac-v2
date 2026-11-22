@@ -10,7 +10,17 @@ import { BackPill } from "../components/BackPill";
 import { Gradient } from "../components/Gradient";
 import { Icon } from "../components/Icon";
 import { LetterTile } from "../components/LetterTile";
-import { AnimatedPressable, CoverFailed, HeaderItem, MotionHeader, PressShade, ScrollOffsetContext, usePressMotion } from "../components/Motion";
+import {
+  AnimatedPressable,
+  CoverFailed,
+  HeaderItem,
+  MotionHeader,
+  PressShade,
+  ScrollOffsetContext,
+  usePressMotion,
+  useSelectMotion,
+  type SelectMotion,
+} from "../components/Motion";
 import { SmallButton } from "../components/SmallButton";
 import { SegmentedTabs } from "../components/SegmentedTabs";
 import { CoverScrim, PhotoImage } from "../components/Photo";
@@ -43,9 +53,11 @@ import {
   focusLater,
   SELECTION_TOP_BAR,
   SelectionBar,
+  SelectionBarSwap,
   SelectionSideHeader,
   SelectionTopBar,
   useHideTabBar,
+  useSelectionBottom,
   useSelectionHeader,
 } from "./SelectionBar";
 import { WideSide, WideSplit } from "./WideSide";
@@ -181,6 +193,8 @@ function AlbumContent({ groupId, albumId }: { groupId: Id<"groups">; albumId: Id
   // bevestiging of het actiemenu halen het scherm niet uit beeld.
   const inView = useIsFocused();
   useHideTabBar(selecting && inView);
+  // Gate ronde 2 (H1–H5): de selectiebalk wisselt met de tabbalk.
+  const bottom = useSelectionBottom(selecting);
   useEffect(() => {
     if (inView || !selecting) return;
     setChoosing(false);
@@ -377,7 +391,13 @@ function AlbumContent({ groupId, albumId }: { groupId: Id<"groups">; albumId: Id
         numColumns={columns}
         keyExtractor={(e) => e.albumPhoto._id}
         columnWrapperStyle={columns > 1 ? { gap: GAP } : undefined}
-        contentContainerStyle={wide ? [styles.list, styles.wideList] : styles.list}
+        contentContainerStyle={[
+          styles.list,
+          wide && styles.wideList,
+          // Gate ronde 2: ruimte voor de selectiebalk, die over de lijst ligt.
+          bottom.barSpace > 0 && { paddingBottom: space.xxl + bottom.barSpace },
+        ]}
+        scrollIndicatorInsets={{ bottom: bottom.barSpace }}
         ItemSeparatorComponent={Separator}
         extraData={listState}
         onLayout={(e) => {
@@ -457,14 +477,8 @@ function AlbumContent({ groupId, albumId }: { groupId: Id<"groups">; albumId: Id
           runSelection("addToAlbum", selected, target);
         }}
       />
-      {selecting ? (
-        <SelectionBar
-          place="album"
-          count={selected.length}
-          busy={selectionBusy}
-          onAction={(a) => (a === "addToAlbum" ? setChoosing(true) : runSelection(a, selected))}
-        />
-      ) : (
+      {/* H4: de melding pas als de tabbalk weer op zijn plek staat. */}
+      {bottom.panelFree ? (
         menu.sharing ? (
           <BottomPanel>
             <SharingProgress />
@@ -476,7 +490,15 @@ function AlbumContent({ groupId, albumId }: { groupId: Id<"groups">; albumId: Id
             </BottomPanel>
           )
         )
-      )}
+      ) : null}
+      <SelectionBarSwap bottom={bottom}>
+        <SelectionBar
+          place="album"
+          count={selected.length}
+          busy={selectionBusy}
+          onAction={(a) => (a === "addToAlbum" ? setChoosing(true) : runSelection(a, selected))}
+        />
+      </SelectionBarSwap>
     </SafeAreaView>
   );
 }
@@ -597,6 +619,8 @@ function Tile({
   // WP33 B2 (besluit 5): de tegel krimpt en wordt iets donkerder, ook tijdens
   // selecteren en bij lang drukken.
   const press = usePressMotion("tile");
+  // WP40 gate ronde 2 (H8–H11): een gekozen tegel krimpt, het vinkje veert.
+  const select = useSelectMotion(selected);
   return (
     <AnimatedPressable
       accessibilityRole="button"
@@ -607,25 +631,30 @@ function Tile({
       onAccessibilityAction={(e) => {
         if (e.nativeEvent.actionName === "menu") onMenu?.();
       }}
-      onPress={press.withRelease(onPress)}
+      onPress={press.withRelease(() => {
+        select.tap();
+        onPress();
+      })}
       onLongPress={onMenu}
       onPressIn={press.onPressIn}
       onPressOut={press.onPressOut}
       style={[{ width: tile, height: tile }, press.style]}
     >
-      <PhotoImage
-        photoId={entry.albumPhoto.photoId}
-        format="klein"
-        exifOrientation={entry.photo.exifOrientation}
-        hasFormats={entry.photo.hasFormats}
-        box={{ width: tile, height: tile }}
-        retryPress={press}
-      />
-      {isNew && <NewLabel />}
-      {video && <VideoBadge durationMs={video.durationMs} />}
-      {isMine && <MineBadge />}
-      {selected !== undefined && <SelectMark selected={selected} />}
-      <PressShade style={press.shadeStyle} />
+      <Animated.View style={[{ width: tile, height: tile }, select.tileStyle]}>
+        <PhotoImage
+          photoId={entry.albumPhoto.photoId}
+          format="klein"
+          exifOrientation={entry.photo.exifOrientation}
+          hasFormats={entry.photo.hasFormats}
+          box={{ width: tile, height: tile }}
+          retryPress={press}
+        />
+        {isNew && <NewLabel />}
+        {video && <VideoBadge durationMs={video.durationMs} />}
+        {isMine && <MineBadge />}
+        {selected !== undefined && <SelectMark motion={select} />}
+        <PressShade style={press.shadeStyle} />
+      </Animated.View>
     </AnimatedPressable>
   );
 }
@@ -647,19 +676,24 @@ function NewLabel() {
   );
 }
 
-// Een vinkje op de foto (design.md §9); niet gekozen: een lege cirkel.
-export function SelectMark({ selected }: { selected: boolean }) {
+// Een vinkje op de foto (design.md §9); niet gekozen: een lege cirkel. Gate
+// ronde 2 (H8): het vinkje en de rand komen en gaan met de tegel mee
+// (useSelectMotion); de lege cirkel komt terug als het vinkje weggaat.
+export function SelectMark({ motion }: { motion: SelectMotion }) {
   const { colors } = useTheme();
   return (
-    <View
-      style={[StyleSheet.absoluteFill, selected && styles.selectedLayer, { borderColor: colors.primary }]}
-      pointerEvents="none"
-      accessible={false}
-      importantForAccessibility="no-hide-descendants"
-    >
+    <View style={StyleSheet.absoluteFill} pointerEvents="none" accessible={false} importantForAccessibility="no-hide-descendants">
+      <Animated.View
+        style={[StyleSheet.absoluteFill, styles.selectedLayer, { borderColor: colors.primary }, motion.borderStyle]}
+      />
       <View style={styles.selectMark}>
         <View style={[StyleSheet.absoluteFill, styles.mineLayer]} />
-        <Icon name={selected ? "check" : "circle"} size={24} color={photoLayers.text} filled={selected} />
+        <Animated.View style={[styles.markIcon, motion.circleStyle]}>
+          <Icon name="circle" size={24} color={photoLayers.text} />
+        </Animated.View>
+        <Animated.View style={[styles.markIcon, motion.checkStyle]}>
+          <Icon name="check" size={24} color={photoLayers.text} filled />
+        </Animated.View>
       </View>
     </View>
   );
@@ -820,5 +854,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
+  markIcon: { position: "absolute", top: 0, right: 0, bottom: 0, left: 0, alignItems: "center", justifyContent: "center" },
   mineLayer: { backgroundColor: photoLayers.pill.color, opacity: photoLayers.pill.opacity },
 });

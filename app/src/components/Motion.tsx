@@ -1,13 +1,17 @@
-import { createContext, useContext, useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
+import { createContext, useContext, useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 import { Pressable, StyleSheet, useWindowDimensions, View, type HostInstance, type StyleProp, type ViewStyle } from "react-native";
 import Animated, {
+  cancelAnimation,
   Easing,
+  makeMutable,
   ReduceMotion,
   useAnimatedReaction,
   useAnimatedScrollHandler,
   useAnimatedStyle,
   useSharedValue,
+  withDelay,
   withSequence,
+  withSpring,
   withTiming,
   type SharedValue,
 } from "react-native-reanimated";
@@ -17,12 +21,15 @@ import { screenReaderOn, useReduceMotion, useScreenReader } from "../data/access
 import { coverFrame } from "./coverFrame";
 import {
   appearFeedback,
+  barSwap,
   headerFade,
   headerMotion,
   infoOpacity,
   newlyArrived,
   pressFeedback,
   pressRelease,
+  selectFeedback,
+  titleChange,
   type HeaderLayout,
 } from "../lib/motion";
 
@@ -371,6 +378,235 @@ export function useSwipeInfo(index: number, count: number, pageWidth: number) {
 export function CoverFailed({ onFail, children }: { onFail: () => void; children: ReactNode }) {
   useEffect(onFail, []); // eslint-disable-line react-hooks/exhaustive-deps
   return <>{children}</>;
+}
+
+// --- WP40 gate ronde 2: de wissel onderin (H1–H7) ------------------------------
+//
+// De tabbalk en de selectiebalk wisselen met dezelfde beweging (H15): de balk
+// die weggaat zakt recht omlaag uit beeld, de balk die komt schuift recht
+// omhoog op zijn plek. `progress`: 1 = op zijn plek, 0 = uit beeld. `rest`:
+// "in" of "out" als hij stilstaat, null onderweg. Keert de wissel halverwege
+// om, dan gaat hij vanaf waar hij is terug, zonder wachten (H5). `instant`:
+// gevraagd bij elke wissel; waar, dan meteen de eindstand (H6).
+export type BarRest = "in" | "out" | null;
+
+export function useBarSwap(shown: boolean, opts: { instant?: () => boolean } = {}) {
+  const reduceMotion = useReduceMotion();
+  const progress = useSharedValue(shown ? 1 : 0);
+  const [rest, setRest] = useState<BarRest>(shown ? "in" : "out");
+  const instant = useRef(opts.instant);
+  instant.current = opts.instant;
+  const settledOn = useRef(shown);
+  useLayoutEffect(() => {
+    if (settledOn.current === shown) return;
+    settledOn.current = shown;
+    const target = shown ? 1 : 0;
+    const end: BarRest = shown ? "in" : "out";
+    const swap = barSwap(reduceMotion);
+    const phase = shown ? swap.arriving : swap.leaving;
+    const from = progress.value;
+    if ((instant.current?.() ?? false) || phase.duration === 0 || from === target) {
+      cancelAnimation(progress);
+      progress.value = target;
+      setRest(end);
+      return;
+    }
+    setRest(null);
+    const timing = withTiming(
+      target,
+      { duration: phase.duration * Math.min(1, Math.abs(target - from)), easing: SWAP_EASE, reduceMotion: OWN },
+      (finished) => {
+        "worklet";
+        if (finished) scheduleOnRN(setRest, end);
+      },
+    );
+    // Vanaf de rust met de wachttijd van de balk die komt; omkeren meteen.
+    const atRest = from === 0 || from === 1;
+    progress.value = atRest && phase.delay > 0 ? withDelay(phase.delay, timing) : timing;
+  }, [shown]); // eslint-disable-line react-hooks/exhaustive-deps
+  return { progress, rest };
+}
+
+const SWAP_EASE = Easing.inOut(Easing.quad);
+
+// Hoe ver de bovenrand van de selectiebalk nu boven de onderrand van het scherm
+// staat (0 = geen balk). De tabbalk tekent zich alleen daarboven: waar de
+// balken elkaar overlappen, ligt de selectiebalk bovenop (H2). Er is hoogstens
+// één selectiebalk tegelijk: uit beeld stopt de selectie (G3).
+export const selectionBarRise = makeMutable(0);
+
+// --- WP40 gate ronde 2: het vinkje en de gekozen tegel (H8–H11, H14) ----------
+//
+// `selected`: undefined buiten de selectiestand. Een tik (`tap`, in de tik
+// zelf, vóór de actie) speelt de animatie: het vinkje groeit met een kleine
+// veer, de hele tegel krimpt (en groeit terug bij uitzetten, zonder veer). Al
+// gekozen bij het tekenen: meteen klein met vinkje (H10). Stopt de selectie of
+// verandert de stand zonder tik, dan groeit een gekozen tegel vloeiend terug
+// (H11). Het krimpen is een transform: de tegel houdt zijn plek (H9).
+export function useSelectMotion(selected: boolean | undefined) {
+  const reduceMotion = useReduceMotion();
+  const f = selectFeedback(reduceMotion);
+  const tile = useSharedValue(selected === true ? f.tileScale : 1);
+  // 1 = het vinkje staat er (en de rand); 0 = de lege cirkel.
+  const mark = useSharedValue(selected === true ? 1 : 0);
+  const markScale = useSharedValue(1);
+  // De stand waar de animatie heen gaat: de laatste tik, of de stand van het scherm.
+  const target = useRef(selected);
+
+  const toTile = (next: boolean) => {
+    const scale = next ? f.tileScale : 1;
+    tile.value = f.tileDuration > 0 ? withTiming(scale, { duration: f.tileDuration, easing: SELECT_EASE, reduceMotion: OWN }) : scale;
+  };
+  const markOut = () => {
+    if (f.markOutDuration > 0) {
+      const config = { duration: f.markOutDuration, easing: EASE, reduceMotion: OWN };
+      mark.value = withTiming(0, config);
+      markScale.value = withTiming(f.markFromScale, config);
+    } else {
+      mark.value = 0;
+      markScale.value = 1;
+    }
+  };
+  const markIn = (spring: boolean) => {
+    // Halverwege het weggaan: veren vanaf waar hij is.
+    const fading = mark.value > 0;
+    mark.value = 1;
+    if (spring && f.markSpring) {
+      const config = { ...f.markSpring, reduceMotion: OWN };
+      markScale.value = fading
+        ? withSpring(1, config)
+        : withSequence(withTiming(f.markFromScale, { duration: 0, reduceMotion: OWN }), withSpring(1, config));
+    } else {
+      cancelAnimation(markScale);
+      markScale.value = 1;
+    }
+  };
+
+  const tap = () => {
+    if (target.current === undefined) return;
+    const next = !target.current;
+    target.current = next;
+    toTile(next);
+    if (next) markIn(true);
+    else markOut();
+  };
+
+  useEffect(() => {
+    const was = target.current;
+    target.current = selected;
+    if (selected === was) return;
+    if (selected === true) {
+      // Zonder tik gekozen: meteen de eindstand.
+      cancelAnimation(tile);
+      tile.value = f.tileScale;
+      markIn(false);
+      return;
+    }
+    if (was === true) {
+      toTile(false);
+      if (selected === false) markOut();
+      else {
+        cancelAnimation(mark);
+        mark.value = 0;
+      }
+    }
+  }, [selected]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const tileStyle = useAnimatedStyle(() => ({ transform: [{ scale: tile.value }] }));
+  const checkStyle = useAnimatedStyle(() => ({ opacity: mark.value, transform: [{ scale: markScale.value }] }));
+  const circleStyle = useAnimatedStyle(() => ({ opacity: 1 - mark.value }));
+  const borderStyle = useAnimatedStyle(() => ({ opacity: mark.value }));
+  return { tap, tileStyle, checkStyle, circleStyle, borderStyle };
+}
+
+export type SelectMotion = ReturnType<typeof useSelectMotion>;
+
+// Sneller dan indrukken terugveert, zodat krimpen na een tik niet eerst
+// terugloopt (H9).
+const SELECT_EASE = Easing.out(Easing.cubic);
+
+// --- WP40 gate ronde 2: een titel die zacht wisselt (H12, H13) ----------------
+//
+// Bij een nieuwe waarde vervaagt de oude en verschijnt de nieuwe, op dezelfde
+// plek, zonder schuiven. Wisselt hij weer voordat de vorige wissel klaar is,
+// dan gaat de oudste meteen weg: er blijft nooit meer dan één oude staan. De
+// nieuwe staat in de layout; de oude ligt eroverheen (`overlayStyle`, standaard
+// over het hele vlak). Voorlezen regelt de aanroeper, met de nieuwe waarde.
+type FadeEntry = { id: number; value: string; fresh: boolean };
+
+export function CrossFade({
+  value,
+  render,
+  style,
+  overlayStyle = StyleSheet.absoluteFill,
+}: {
+  value: string;
+  render: (value: string) => ReactNode;
+  style?: StyleProp<ViewStyle>;
+  overlayStyle?: StyleProp<ViewStyle>;
+}) {
+  const [entries, setEntries] = useState<{ current: FadeEntry; leaving: FadeEntry | null }>(() => ({
+    current: { id: 0, value, fresh: false },
+    leaving: null,
+  }));
+  let shown = entries;
+  if (entries.current.value !== value) {
+    shown = { current: { id: entries.current.id + 1, value, fresh: true }, leaving: entries.current };
+    setEntries(shown);
+  }
+  const { current, leaving } = shown;
+  const gone = (id: number) => setEntries((s) => (s.leaving?.id === id ? { ...s, leaving: null } : s));
+  return (
+    <View style={style}>
+      <FadeEntryView key={current.id} fresh={current.fresh} leaving={false}>
+        {render(current.value)}
+      </FadeEntryView>
+      {leaving ? (
+        <FadeEntryView key={leaving.id} fresh={false} leaving onGone={() => gone(leaving.id)} style={overlayStyle}>
+          {render(leaving.value)}
+        </FadeEntryView>
+      ) : null}
+    </View>
+  );
+}
+
+function FadeEntryView({
+  fresh,
+  leaving,
+  onGone,
+  style,
+  children,
+}: {
+  fresh: boolean;
+  leaving: boolean;
+  onGone?: () => void;
+  style?: StyleProp<ViewStyle>;
+  children: ReactNode;
+}) {
+  const reduceMotion = useReduceMotion();
+  const { duration } = titleChange(reduceMotion);
+  const opacity = useSharedValue(fresh && duration > 0 ? 0 : 1);
+  useLayoutEffect(() => {
+    if (leaving) {
+      if (duration === 0) {
+        onGone?.();
+        return;
+      }
+      opacity.value = withTiming(0, { duration, easing: EASE, reduceMotion: OWN }, (finished) => {
+        "worklet";
+        if (finished && onGone) scheduleOnRN(onGone);
+      });
+      return;
+    }
+    // Nieuw: van onzichtbaar naar zichtbaar. De eerste titel staat er meteen.
+    if (fresh && duration > 0) opacity.value = withTiming(1, { duration, easing: EASE, reduceMotion: OWN });
+  }, [leaving]); // eslint-disable-line react-hooks/exhaustive-deps
+  const animated = useAnimatedStyle(() => ({ opacity: opacity.value }));
+  return (
+    <Animated.View style={[style, animated]} pointerEvents={leaving ? "none" : undefined}>
+      {children}
+    </Animated.View>
+  );
 }
 
 const styles = StyleSheet.create({
