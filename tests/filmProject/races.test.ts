@@ -220,3 +220,64 @@ describe("hervatten tijdens het afronden (red-team S2)", () => {
     await expectReceivedIntact(t, projectId, first.originalId, key);
   });
 });
+
+// Fix-cyclus 2 (regie, heraudit 1): is de inzending weg terwijl afronden
+// loopt, dan is het antwoord `niet_toegestaan`, nooit `missing` (dat zou de
+// app laten denken dat hij delen moet nasturen). En er komt niets terug.
+describe("terugtrekken tijdens het afronden: niet_toegestaan, niet missing (fix-cyclus 2)", () => {
+  it("de upload in R2 is al afgebroken als afronden de delen opvraagt", async () => {
+    const t = newT();
+    const w = await seedFilmWorld(t);
+    const o = await allPartsSent(t, w);
+    const hook = onceBefore(env.orig, isListParts, async () => {
+      await asFilm.bob(t).mutation(filmApi.withdraw, { originalId: o.originalId });
+      // Het afbreken in R2 (de geplande stap) is al gebeurd.
+      env.orig.uploads.clear();
+    });
+    const result = await outcome(() => asFilm.bob(t).action(filmApi.finishOriginal, { originalId: o.originalId }));
+    expect(hook.fired()).toBe(true);
+    expectOriginalRefusal(result, "niet_toegestaan");
+    await flush(t);
+    expect((await asFilm.alice(t).query(filmApi.get, { projectId: o.projectId })).originals).toEqual([]);
+    expect(env.orig.keys()).toEqual([]);
+    expect(env.orig.uploads.size).toBe(0);
+  });
+
+  it("nog niet alle delen binnen", async () => {
+    const t = newT();
+    const w = await seedFilmWorld(t);
+    const projectId = await openProject(t, w);
+    const photoId = await newVideoInX(t, env.r2, w, w.users.bob);
+    const s = await announce(asFilm.bob(t), photoId, 32 * 1024 * 1024 + 1000);
+    const first = new Uint8Array(32 * 1024 * 1024);
+    first.set(ORIGINAL.subarray(0, 64 * 1024));
+    expect(await env.orig.putPart(s.parts[0]!.url, first)).toBe(200);
+    const hook = onceBefore(env.orig, isListParts, async () => {
+      await asFilm.bob(t).mutation(filmApi.withdraw, { originalId: s.originalId });
+    });
+    const result = await outcome(() => asFilm.bob(t).action(filmApi.finishOriginal, { originalId: s.originalId }));
+    expect(hook.fired()).toBe(true);
+    expectOriginalRefusal(result, "niet_toegestaan");
+    await flush(t);
+    expect((await asFilm.alice(t).query(filmApi.get, { projectId })).originals).toEqual([]);
+    expect(env.orig.uploads.size).toBe(0);
+    expect(env.orig.creates()).toHaveLength(1);
+  });
+
+  it("de cron die tijdens het terugtrekken afrondt, maakt niets opnieuw", async () => {
+    const t = newT();
+    const w = await seedFilmWorld(t);
+    const o = await allPartsSent(t, w);
+    const hook = onceBefore(env.orig, isListParts, async () => {
+      await asFilm.bob(t).mutation(filmApi.withdraw, { originalId: o.originalId });
+      env.orig.uploads.clear();
+    });
+    await t.action(filmInternal.completeUploaded, {});
+    expect(hook.fired()).toBe(true);
+    await flush(t);
+    expect((await asFilm.alice(t).query(filmApi.get, { projectId: o.projectId })).originals).toEqual([]);
+    expect(env.orig.keys()).toEqual([]);
+    expect(env.orig.uploads.size).toBe(0);
+    expect(env.orig.creates()).toHaveLength(1);
+  });
+});

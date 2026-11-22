@@ -45,15 +45,18 @@ export const DOWNLOAD_LINK_SECONDS_ORACLE = 3600;
 export const YEAR_MS = 365 * 24 * 60 * 60 * 1000;
 export const MINUTE_MS = 60 * 1000;
 
-/** Fix-cyclus 1 (regie): een origineel is minstens 5 MiB (anders `te_klein`). */
-export const MIN_ORIGINAL_BYTES_ORACLE = 5 * MIB;
-/** Fix-cyclus 1 (A-keuze): hooguit 300 keer `startOriginal` en `finishOriginal` samen per lid in 24 uur. */
-export const ORIGINAL_CALLS_PER_DAY_ORACLE = 300;
+/** Fix-cyclus 2 (regie): een origineel is minstens 1 MiB (anders `te_klein`). */
+export const MIN_ORIGINAL_BYTES_ORACLE = 1 * MIB;
+/** Fix-cyclus 2 (regie): hooguit 600 keer `startOriginal` en `finishOriginal` samen per lid in 24 uur. */
+export const ORIGINAL_CALLS_PER_DAY_ORACLE = 600;
+/** Fix-cyclus 2 (regie): hooguit 30 inzendingen per lid tegelijk onderweg (daarboven `bezig`). */
+export const OPEN_ORIGINALS_PER_MEMBER_ORACLE = 30;
+/** Fix-cyclus 2 (regie): de afrond-cron kijkt alleen inzendingen na met deel-links van de laatste 7 dagen. */
+export const CRON_LINK_WINDOW_MS_ORACLE = 7 * 24 * 60 * 60 * 1000;
 
 /**
  * Een iPhone-achtige QuickTime-opname (`qt  `) met `©xyz` en `location.ISO6709`
- * (WP37-fixture), aangevuld tot 6 MiB: boven de ondergrens van 5 MiB, in één
- * deel. De backend ontleedt het bestand niet, dus de nullen achteraan doen
+ * (WP37-fixture), aangevuld tot 6 MiB: boven de ondergrens, in één deel. De backend ontleedt het bestand niet, dus de nullen achteraan doen
  * niets af aan "een filmpje".
  */
 export const ORIGINAL = padTo(fixture("iphone-like.mov"), 6 * MIB);

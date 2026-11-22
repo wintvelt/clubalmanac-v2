@@ -10,8 +10,10 @@ import {
   filmApi,
   filmInternal,
   MIB,
+  CRON_LINK_WINDOW_MS_ORACLE,
   MIN_ORIGINAL_BYTES_ORACLE,
   MINUTE_MS,
+  OPEN_ORIGINALS_PER_MEMBER_ORACLE,
   ORIGINAL_CALLS_PER_DAY_ORACLE,
   newVideoInX,
   openProject,
@@ -462,12 +464,13 @@ describe("een vreemd merk in ftyp", () => {
   });
 });
 
-// Fix-cyclus 1 (red-team S4, regie): kosten. Een origineel is minstens 5 MiB
-// (`te_klein`). En per lid hooguit 300 aanroepen van `startOriginal` en
-// `finishOriginal` samen in 24 uur, glijdend, zoals de daggrens van WP37
-// (`te_vaak`); een geweigerde aanroep telt niet en doet niets in R2.
-describe("kosten (fix-cyclus 1)", () => {
-  it("kleiner dan 5 MiB: te_klein, niets aangemaakt; precies 5 MiB mag", async () => {
+// Fix-cyclus 1 (red-team S4) en 2 (regie: red-team N1, N2): kosten. Een
+// origineel is minstens 1 MiB (`te_klein`). En per lid hooguit 600 aanroepen
+// van `startOriginal` en `finishOriginal` samen in 24 uur, glijdend, zoals de
+// daggrens van WP37 (`te_vaak`); een geweigerde aanroep telt niet en doet
+// niets in R2.
+describe("kosten (fix-cyclus 1 en 2)", () => {
+  it("kleiner dan 1 MiB: te_klein, niets aangemaakt; precies 1 MiB mag", async () => {
     const t = newT();
     const w = await seedFilmWorld(t);
     await openProject(t, w);
@@ -488,7 +491,7 @@ describe("kosten (fix-cyclus 1)", () => {
     expectOriginalRefusal(await outcome(() => asFilm.alice(t).action(filmApi.startOriginal, { photoId, bytes: 1000 })), "niet_toegestaan");
   });
 
-  it("300 aanroepen per lid in 24 uur (aanmelden en afronden samen); de 301e is te_vaak, zonder R2; een ander lid niet; na 24 uur weer", async () => {
+  it("600 aanroepen per lid in 24 uur (aanmelden en afronden samen); de 601e is te_vaak, zonder R2; een ander lid niet; na 24 uur weer", async () => {
     const t = newT();
     const w = await seedFilmWorld(t);
     const projectId = await openProject(t, w);
@@ -513,4 +516,125 @@ describe("kosten (fix-cyclus 1)", () => {
     await announce(asFilm.bob(t), photoId, bytes);
     expect((await asFilm.bob(t).query(filmApi.get, { projectId })).originals).toHaveLength(1);
   }, 60_000);
+});
+
+// Fix-cyclus 2 (regie, red-team N2): een korte clip gaat mee. Een origineel
+// van één deel mag kleiner zijn dan 5 MiB (R2 eist dat alleen van delen vóór
+// het laatste).
+describe("een kort origineel (fix-cyclus 2)", () => {
+  it("een origineel van precies 1 MiB komt binnen, heel", async () => {
+    const t = newT();
+    const w = await seedFilmWorld(t);
+    const projectId = await openProject(t, w);
+    const photoId = await newVideoInX(t, env.r2, w, w.users.bob);
+    const clip = padTo(ORIGINAL.subarray(0, 64 * 1024), MIN_ORIGINAL_BYTES_ORACLE);
+    expect(clip.byteLength).toBe(MIB);
+    const originalId = await sendOriginal(asFilm.bob(t), env.orig, photoId, clip);
+    expect(await statusOf(t, projectId, originalId)).toBe("binnen");
+    const [key] = env.orig.keys();
+    expect(sameBytes(env.orig.bytesOf(key!), clip)).toBe(true);
+  });
+});
+
+// Fix-cyclus 2 (regie, red-team Z2): hooguit 30 inzendingen per lid tegelijk
+// onderweg, over alle projecten. Een nieuwe aanmelding daarboven is `bezig`
+// (A-keuze, zoals WP37 bij te veel open video-uploads), zonder R2 en zonder
+// mee te tellen voor de daggrens. Hervatten van een inzending die al onderweg
+// is mag altijd.
+describe("inzendingen onderweg per lid (fix-cyclus 2)", () => {
+  async function requestsOf(t: ReturnType<typeof newT>, ownerId: Id<"users">): Promise<number> {
+    return (await t.run(async (ctx) => ctx.db.query("originalRequests" as never).collect())).filter(
+      (r) => (r as { ownerId: unknown }).ownerId === ownerId,
+    ).length;
+  }
+
+  it("de 31e nieuwe is bezig, zonder R2 en zonder te tellen; hervatten mag; na binnen of terugtrekken weer een nieuwe; een ander lid niet", async () => {
+    const t = newT();
+    const w = await seedFilmWorld(t);
+    const projectId = await openProject(t, w);
+    const bytes = PART_BYTES_ORACLE + MIB;
+    const open: { photoId: Id<"photos">; originalId: string }[] = [];
+    for (let i = 0; i < OPEN_ORIGINALS_PER_MEMBER_ORACLE; i++) {
+      const photoId = await newVideoInX(t, env.r2, w, w.users.bob);
+      open.push({ photoId, originalId: (await announce(asFilm.bob(t), photoId, bytes)).originalId });
+    }
+    const extra = await newVideoInX(t, env.r2, w, w.users.bob);
+    const creates = env.orig.creates().length;
+    const counted = await requestsOf(t, w.users.bob);
+    const refused = await outcome(() => asFilm.bob(t).action(filmApi.startOriginal, { photoId: extra, bytes }));
+    expectOriginalRefusal(refused, "bezig");
+    expect(env.orig.creates()).toHaveLength(creates);
+    expect(await requestsOf(t, w.users.bob)).toBe(counted);
+    expect((await asFilm.bob(t).query(filmApi.get, { projectId })).originals).toHaveLength(OPEN_ORIGINALS_PER_MEMBER_ORACLE);
+
+    // Hervatten van een die al onderweg is: gewoon links.
+    const resumed = await announce(asFilm.bob(t), open[0]!.photoId, bytes);
+    expect(resumed.originalId).toBe(open[0]!.originalId);
+
+    // Een ander lid heeft zijn eigen grens.
+    const alices = await newVideoInX(t, env.r2, w, w.users.alice);
+    await announce(asFilm.alice(t), alices, MIN_ORIGINAL_BYTES_ORACLE);
+
+    // Een teruggetrokken inzending maakt plaats.
+    await asFilm.bob(t).mutation(filmApi.withdraw, { originalId: open[1]!.originalId });
+    await announce(asFilm.bob(t), extra, bytes);
+    const another = await newVideoInX(t, env.r2, w, w.users.bob);
+    expectOriginalRefusal(await outcome(() => asFilm.bob(t).action(filmApi.startOriginal, { photoId: another, bytes })), "bezig");
+  }, 60_000);
+
+  it("een inzending die binnen komt, maakt plaats", async () => {
+    const t = newT();
+    const w = await seedFilmWorld(t);
+    await openProject(t, w);
+    const first = await newVideoInX(t, env.r2, w, w.users.bob);
+    const s = await announce(asFilm.bob(t), first, ORIGINAL.byteLength);
+    for (let i = 1; i < OPEN_ORIGINALS_PER_MEMBER_ORACLE; i++) {
+      await announce(asFilm.bob(t), await newVideoInX(t, env.r2, w, w.users.bob), ORIGINAL.byteLength);
+    }
+    const extra = await newVideoInX(t, env.r2, w, w.users.bob);
+    expectOriginalRefusal(await outcome(() => asFilm.bob(t).action(filmApi.startOriginal, { photoId: extra, bytes: ORIGINAL.byteLength })), "bezig");
+    expect(await env.orig.putPart(s.parts[0]!.url, ORIGINAL)).toBe(200);
+    expect(await asFilm.bob(t).action(filmApi.finishOriginal, { originalId: s.originalId })).toEqual({ kind: "done" });
+    await announce(asFilm.bob(t), extra, ORIGINAL.byteLength);
+  }, 60_000);
+});
+
+// Fix-cyclus 2 (regie, red-team Z2): de uurlijkse afrond-cron kijkt alleen
+// inzendingen na waarvoor `startOriginal` in de laatste 7 dagen deel-links gaf.
+// Daarna kan er zonder nieuwe aanmelding niets meer binnenkomen (een link
+// geldt 7 dagen). De app rondt zelf altijd af.
+describe("de afrond-cron en oude links (fix-cyclus 2)", () => {
+  const DAY = 24 * 60 * MINUTE_MS;
+
+  it("8 dagen na de laatste links: de cron doet niets in R2 voor die inzending; de app rondt wel af", async () => {
+    const t = newT();
+    const w = await seedFilmWorld(t);
+    const projectId = await openProject(t, w, 30 * DAY);
+    const photoId = await newVideoInX(t, env.r2, w, w.users.bob);
+    const s = await announce(asFilm.bob(t), photoId, ORIGINAL.byteLength);
+    const key = parseR2Link(s.parts[0]!.url).key;
+    expect(await env.orig.putPart(s.parts[0]!.url, ORIGINAL)).toBe(200);
+    advance(CRON_LINK_WINDOW_MS_ORACLE + DAY);
+    const before = env.orig.calls.length;
+    await t.action(filmInternal.completeUploaded, {});
+    expect(env.orig.calls.slice(before).filter((c) => c.key === key)).toEqual([]);
+    expect(await statusOf(t, projectId, s.originalId)).toBe("onderweg");
+
+    expect(await asFilm.bob(t).action(filmApi.finishOriginal, { originalId: s.originalId })).toEqual({ kind: "done" });
+    expect(await statusOf(t, projectId, s.originalId)).toBe("binnen");
+  });
+
+  it("de laatste links tellen: na een nieuwe aanmelding op dag 6 rondt de cron op dag 12 nog af", async () => {
+    const t = newT();
+    const w = await seedFilmWorld(t);
+    const projectId = await openProject(t, w, 30 * DAY);
+    const photoId = await newVideoInX(t, env.r2, w, w.users.bob);
+    await announce(asFilm.bob(t), photoId, ORIGINAL.byteLength);
+    advance(6 * DAY);
+    const again = await announce(asFilm.bob(t), photoId, ORIGINAL.byteLength);
+    expect(await env.orig.putPart(again.parts[0]!.url, ORIGINAL)).toBe(200);
+    advance(6 * DAY + 22 * 60 * MINUTE_MS);
+    await t.action(filmInternal.completeUploaded, {});
+    expect(await statusOf(t, projectId, again.originalId)).toBe("binnen");
+  });
 });

@@ -364,3 +364,7 @@ Aangepast: `ORIGINAL` in `_film.ts` is de fixture aangevuld tot 6 MiB (boven de 
 | 4 | `originals.test.ts` (1 MiB, een origineel van 1 MiB komt binnen) |
 | 5 | `storageCheck.test.ts` (nieuwe upload 100 dagen na aanmelden) |
 | 6 | `cascade.test.ts` |
+
+Aangepast: in `_film.ts` de ondergrens (1 MiB) en de daggrens (600), plus de grens van 30 onderweg en het venster van 7 dagen als oracle; de tests van fix-cyclus 1 voor `te_klein` en de daggrens volgen de nieuwe getallen.
+
+**Stand na A (fix-cyclus 2):** 13 rood voor B: punt 1 (4 in `blocked.test.ts`, 2 in `races.test.ts`), punt 2 (2 in `originals.test.ts` voor `bezig`, 1 voor de cron na 8 dagen), punt 3 (1), punt 4 (2), punt 5 (1 in `storageCheck.test.ts`). Groen als vangnet: `finishOriginal` na terugtrekken, een ander filmpje wel, de markering gaat mee met filmpje en account, de cron tijdens terugtrekken, de cron na nieuwe links, MON3 een halve dag vóór een jaar na de laatste upload, en punt 6. De rest van de suite groen; typecheck schoon.

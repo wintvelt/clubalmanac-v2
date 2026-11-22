@@ -160,3 +160,45 @@ describe("filmProjects.checkStorage: rond het einde van het jaar (fix-cyclus 1)"
     expect(env.r2.mails).toEqual([]);
   });
 });
+
+// Fix-cyclus 2 (regie, red-team N3): het jaar van MON3 begint bij het moment
+// waarop de laatste upload in R2 is aangemaakt (ook bij hervatten met een
+// nieuwe upload), niet alleen bij het aanmelden. Anders blijft echt verlies van
+// een origineel dat maanden na het aanmelden binnenkwam maanden onopgemerkt.
+describe("filmProjects.checkStorage: het jaar begint bij de laatste upload (fix-cyclus 2)", () => {
+  async function lateUpload(t: T): Promise<number> {
+    const w = await seedFilmWorld(t);
+    await openProject(t, w, 200 * DAY_MS);
+    const photoId = await newVideoInX(t, env.r2, w, w.users.bob);
+    const first = await announce(asFilm.bob(t), photoId, ORIGINAL.byteLength);
+    const submittedAt = Date.now();
+    // De lifecycle-regel brak de eerste upload af; 100 dagen later hervat de
+    // app en krijgt een nieuwe upload.
+    env.orig.uploads.delete(parseR2Link(first.parts[0]!.url).params.uploadId!);
+    vi.setSystemTime(submittedAt + 100 * DAY_MS);
+    const fresh = await announce(asFilm.bob(t), photoId, ORIGINAL.byteLength);
+    expect(fresh.originalId).toBe(first.originalId);
+    expect(env.orig.creates()).toHaveLength(2);
+    expect(await env.orig.putPart(fresh.parts[0]!.url, ORIGINAL)).toBe(200);
+    expect(await asFilm.bob(t).action(filmApi.finishOriginal, { originalId: first.originalId })).toEqual({ kind: "done" });
+    return submittedAt;
+  }
+
+  it("een halve dag vóór een jaar na het aanmelden, maar 100 dagen na de laatste upload, zonder bestand: wel een mail", async () => {
+    const t = newT();
+    const submittedAt = await lateUpload(t);
+    vi.setSystemTime(submittedAt + YEAR_MS - 12 * HOUR_MS);
+    env.orig.objects.clear();
+    await check(t);
+    expect(env.r2.mails).toHaveLength(1);
+  });
+
+  it("een halve dag vóór een jaar na de laatste upload, zonder bestand: geen mail", async () => {
+    const t = newT();
+    const submittedAt = await lateUpload(t);
+    vi.setSystemTime(submittedAt + 100 * DAY_MS + YEAR_MS - 12 * HOUR_MS);
+    env.orig.objects.clear();
+    await check(t);
+    expect(env.r2.mails).toEqual([]);
+  });
+});

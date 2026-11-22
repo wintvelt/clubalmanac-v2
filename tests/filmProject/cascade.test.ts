@@ -197,6 +197,30 @@ describe("cascades (A-invariant 12)", () => {
   });
 });
 
+// Fix-cyclus 2 (heraudit 2): account verwijderen wist ook zijn rijen voor de
+// daggrens van de originelen (`originalRequests`); die van een ander blijven.
+describe("account verwijderen en de daggrens (fix-cyclus 2)", () => {
+  it("zijn rijen in originalRequests gaan weg, die van een ander blijven", async () => {
+    const t = newT();
+    const w = await seedFilmWorld(t);
+    await openProject(t, w);
+    const bobs = await newVideoInX(t, env.r2, w, w.users.bob);
+    for (let i = 0; i < 3; i++) await announce(asFilm.bob(t), bobs, ORIGINAL.byteLength);
+    const alices = await newVideoInX(t, env.r2, w, w.users.alice);
+    await announce(asFilm.alice(t), alices, ORIGINAL.byteLength);
+    const requestsOf = async (ownerId: unknown) =>
+      (await t.run(async (ctx) => ctx.db.query("originalRequests" as never).collect())).filter(
+        (r) => (r as { ownerId: unknown }).ownerId === ownerId,
+      ).length;
+    expect(await requestsOf(w.users.bob), "sanity: de aanroepen van bob zijn geteld").toBe(3);
+    expect(await requestsOf(w.users.alice)).toBe(1);
+    await deleteAccount(t, asFilm.bob(t));
+    await settle(t);
+    expect(await requestsOf(w.users.bob)).toBe(0);
+    expect(await requestsOf(w.users.alice)).toBe(1);
+  });
+});
+
 // Besluit 12 (Wouter: ja): vertrekt een lid of wordt hij uit de groep gezet,
 // dan gaan zijn originelen in de projecten van die groep weg, ook in R2
 // (object en open upload), zoals zijn filmpjes uit de albums van die groep.
