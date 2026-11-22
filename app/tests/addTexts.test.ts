@@ -114,6 +114,10 @@ describe("het scherm op iOS zegt foto's én filmpjes (besluit 1 en 3)", () => {
     },
   );
 
+  it("geen wachtregel na Stoppen meer (gate ronde 2)", () => {
+    expect(both.some((t) => t.includes("Je vorige keuze wordt nog opgehaald"))).toBe(false);
+  });
+
   it.each(["Kies foto's of filmpjes", "Meer selecteren", "Toevoegen aan album", "Kies eerst een album", "Kies een album", "Stoppen", "Langere filmpjes en/of hogere kwaliteit kan een paar minuten duren."])("wel '%s'", (text) => {
     expect(both).toContain(text);
   });

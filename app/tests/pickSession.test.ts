@@ -6,8 +6,9 @@ import { PICK_IDLE, beginPick, endPick, fetchStarted, pickView, stopPick } from 
 //   De kiezer antwoordt pas als iOS elk gekozen item naar de app heeft
 //   gekopieerd (uit iCloud: eerst downloaden). Dat is niet te stoppen. Stoppen
 //   betekent: het scherm wacht niet meer, en een resultaat dat later toch komt,
-//   telt niet (het scherm gooit de kopieën weg). Een nieuwe kiezer kan pas als
-//   het vorige verzoek echt klaar is; tot dan zegt het scherm waarom.
+//   telt niet (het scherm gooit de kopieën weg). Gate ronde 2 (besluit regie):
+//   na stoppen kan meteen een nieuwe kiezer; een gestopt verzoek blokkeert
+//   niets meer, en er is geen wachtregel.
 // F11 (aanvulling, besluit Wouter): een teller m:ss vanaf het moment dat het
 //   ophalen begint (de kiezer is dicht; het scherm meldt dat met
 //   fetchStarted). Weg bij stoppen of klaar.
@@ -20,15 +21,15 @@ function started(state = PICK_IDLE) {
 }
 
 describe("vóór een kiezer", () => {
-  it("in rust: geen ophalen, geen wachten, een kiezer mag", () => {
-    expect(pickView(PICK_IDLE)).toMatchObject({ fetching: false, waiting: false, canPick: true });
+  it("in rust: geen ophalen, een kiezer mag", () => {
+    expect(pickView(PICK_IDLE)).toMatchObject({ fetching: false, canPick: true });
   });
 });
 
 describe("kiezen zonder stoppen", () => {
   it("tijdens het verzoek: 'Je keuze ophalen…', geen nieuwe kiezer", () => {
     const { state } = started();
-    expect(pickView(state)).toMatchObject({ fetching: true, waiting: false, canPick: false });
+    expect(pickView(state)).toMatchObject({ fetching: true, canPick: false });
   });
 
   it("een tweede kiezer zolang het eerste verzoek loopt: geweigerd", () => {
@@ -40,7 +41,7 @@ describe("kiezen zonder stoppen", () => {
     const { state, token } = started();
     const end = endPick(state, token);
     expect(end.accept).toBe(true);
-    expect(pickView(end.state)).toMatchObject({ fetching: false, waiting: false, canPick: true });
+    expect(pickView(end.state)).toMatchObject({ fetching: false, canPick: true });
   });
 
   it("daarna kan een nieuwe kiezer, met een eigen token", () => {
@@ -51,12 +52,17 @@ describe("kiezen zonder stoppen", () => {
   });
 });
 
-describe("Stoppen (besluit 3, F7)", () => {
-  it("na stoppen: geen 'Je keuze ophalen…' meer, wel de wachtregel, en nog geen nieuwe kiezer (F8)", () => {
+describe("Stoppen (besluit 3, F7; gate ronde 2)", () => {
+  it("na stoppen: geen 'Je keuze ophalen…' meer, en meteen weer een kiezer", () => {
     const { state } = started();
     const stopped = stopPick(state);
-    expect(pickView(stopped)).toMatchObject({ fetching: false, waiting: true, canPick: false });
-    expect(beginPick(stopped)).toBeNull();
+    expect(pickView(stopped)).toMatchObject({ fetching: false, canPick: true });
+    expect(beginPick(stopped)).not.toBeNull();
+  });
+
+  it("geen wachtregel na stoppen (gate ronde 2)", () => {
+    const { state } = started();
+    expect(pickView(stopPick(state)).waiting).toBeFalsy();
   });
 
   it("een resultaat dat na stoppen toch komt, telt niet", () => {
@@ -65,11 +71,38 @@ describe("Stoppen (besluit 3, F7)", () => {
     expect(end.accept).toBe(false);
   });
 
-  it("pas als het gestopte verzoek klaar is, kan een nieuwe kiezer", () => {
-    const { state, token } = started();
-    const done = endPick(stopPick(state), token).state;
-    expect(pickView(done)).toMatchObject({ fetching: false, waiting: false, canPick: true });
-    expect(beginPick(done)).not.toBeNull();
+  it("gestopt, nieuwe kiezer, en dan komt het oude resultaat: telt niet, en de nieuwe loopt door", () => {
+    const first = started();
+    const second = started(stopPick(first.state));
+    expect(second.token).not.toBe(first.token);
+    const late = endPick(second.state, first.token);
+    expect(late.accept).toBe(false);
+    expect(pickView(late.state)).toMatchObject({ fetching: true, canPick: false });
+    expect(endPick(late.state, second.token).accept).toBe(true);
+  });
+
+  it("het nieuwe resultaat eerst, het oude daarna: alleen het nieuwe telt", () => {
+    const first = started();
+    const second = started(stopPick(first.state));
+    const fresh = endPick(second.state, second.token);
+    expect(fresh.accept).toBe(true);
+    const late = endPick(fresh.state, first.token);
+    expect(late.accept).toBe(false);
+    expect(pickView(late.state)).toMatchObject({ fetching: false, canPick: true });
+  });
+
+  it("twee keer gestopt en twee late resultaten: geen van beide telt, de derde wel", () => {
+    const first = started();
+    const second = started(stopPick(first.state));
+    const third = started(stopPick(second.state));
+    let state = third.state;
+    for (const token of [first.token, second.token]) {
+      const late = endPick(state, token);
+      expect(late.accept).toBe(false);
+      state = late.state;
+    }
+    expect(pickView(state)).toMatchObject({ fetching: true, canPick: false });
+    expect(endPick(state, third.token).accept).toBe(true);
   });
 
   it("twee keer stoppen is hetzelfde als één keer", () => {
@@ -92,7 +125,7 @@ describe("een oud antwoord", () => {
     const second = started(idle);
     const stale = endPick(second.state, first.token);
     expect(stale.accept).toBe(false);
-    expect(pickView(stale.state)).toMatchObject({ fetching: true, waiting: false, canPick: false });
+    expect(pickView(stale.state)).toMatchObject({ fetching: true, canPick: false });
     expect(endPick(stale.state, second.token).accept).toBe(true);
   });
 
@@ -165,7 +198,6 @@ describe("de teller bij het ophalen (F11)", () => {
     const stopped = stopPick(second.state);
     expect(pickView(fetchStarted(stopped, second.token, T0), T0 + 5_000)).toMatchObject({
       fetching: false,
-      waiting: true,
       elapsed: null,
     });
   });
