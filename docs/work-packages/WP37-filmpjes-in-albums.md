@@ -262,3 +262,7 @@ Met een tijdelijke action op dev (daarna weggehaald) tegen `clubalmanac-videos-d
 - `videos:checkStorage` op dev: draait zonder melding. Opgeruimd: alle proefobjecten weg.
 
 Nog op de iPhone: achtergrond-upload (Content-Length, start na 15 min), datum en plaats uit de kiezer, duur van het verkleinen, afspelen op alle schermen.
+
+## Gate deel 2: iPhone (Wouter, 2026-11-22)
+
+iPhone 15 Pro, TestFlight dev-build tegen dev met echte R2. Ronde 1: verkleinen (~10 s voor 35 s film), tonen, afspelen, geluid, kaart en doorgaan na een app-switch OK; twee bevindingen (eerste tik op Uploaden faalde, scherm bevroren na de kiezer), gefixt in `72b614d`. Ronde 2 (`wp37-dev2`): alles OK. De wensen voor het toevoegscherm gaan naar WP39.

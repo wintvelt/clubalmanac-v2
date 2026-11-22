@@ -2,7 +2,7 @@
 
 Status-overzicht van de AWS → Convex migratie. WP's updaten dit doc bij elke closeout. Architectuur-detail blijft in [`migratie-plan-convex.md`](./migratie-plan-convex.md); operationele lopende-staat staat hier.
 
-**Huidige stand 2026-11-21**:
+**Huidige stand 2026-11-22**:
 - Fase 1 tot en met 3 ✅ afgerond.
 - Fase 4 ✅: de iPhone-app is klaar (WP13 tot en met WP34). De webapp (WP35, WP36) staat sinds 2026-11-21 live op `app.clubalmanac.com`.
 - Fase 5 (cutover): T-4 en de generale repetitie op prod zijn klaar, en cutover-build 70 staat in TestFlight, en App Store Connect staat klaar voor 2.0.0. *Cannot Sell App* is verklaard: Apple haalde 1.6.0 uit de winkel, en goedkeuring van 2.0.0 zet hem terug. Versneld (besluit 2026-11-19): geen T-3 en T-1 dag. **T0 was 2026-11-19:** schrijfstop, migratie (`verify` groen), filmlijst, anker-export en demo-groep. **2.0.0 staat sinds 2026-11-20 in de App Store** (goedgekeurd en vrijgegeven, leden ingelicht met bericht 4). Migratie-key ingetrokken, backup aan. Nog open: `blob-videos` dichtzetten (Wouter: later).
@@ -138,6 +138,10 @@ Besluit Wouter 2026-11-15: niemand gebruikt de oude webapp. Volgorde: eerst de o
 [WP36](./work-packages/WP36-webapp-uploaden.md) ✅ 2026-11-20: Foto's uploaden vanuit de browser (vooral Chrome op Android) en de profielfoto zetten of weghalen, via de bestaande `/upload` met CORS; verkleinen en EXIF lezen in de browser, datum en plaats als headers. Audit en red-team verwerkt. Gate op een Android-emulator (Chrome) tegen dev: uploaden, terug tijdens een ronde, kaart, film, profiel, uitloggen. Niet getest: Safari, een echte HEIC, 50 grote foto's.
 
 **Livegang 2026-11-21:** runbook [`webapp.md`](./runbooks/webapp.md) stap 1–12 gedaan (stack met CSP inclusief Clerk Protect, uitrol via de workflow Webapp, `CLUBALMANAC_WEB_URL` op prod). Fixes na de eerste ronde op prod (PR 43–45, 48): vaste terugknop op smal scherm, het foto-detail blijft op de gekozen foto en toont er één, beelden in beeld blijven in het geheugen, en een nieuwe profielfoto is meteen zichtbaar. Foto-acties (uit album, verwijderen, als profielfoto) zitten bewust niet in de webapp; dat kan een nieuwe WP worden.
+
+## Na de livegang
+
+[WP37](./work-packages/WP37-filmpjes-in-albums.md) ✅ 2026-11-22: filmpjes in albums (hooguit 3 minuten), op de iPhone verkleind naar 1080p, opslag in Cloudflare R2, met poster, duur en plek op de kaart, ook in de webapp. Audit en red-team verwerkt. Gate op een iPhone 15 Pro tegen dev met echte R2: verkleinen, tonen, afspelen, geluid, kaart, doorgaan na een app-switch, eerste tik op Uploaden. Live met app 2.0.2; daarvoor nog R2 op prod en de backup van R2 (Wouter).
 
 ## Fase 5: Lancering — hard cutover — open
 
