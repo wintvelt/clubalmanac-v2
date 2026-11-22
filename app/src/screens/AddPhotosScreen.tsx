@@ -97,8 +97,8 @@ import { AlbumChoiceSheet } from "./AlbumChoice";
 // het kiesscherm (besluiten 7 en 8). "Meer selecteren" (besluit 2). Tijdens
 // "Je keuze ophalen…" een teller vanaf het sluiten van de kiezer (besluit 10,
 // `pickerOnScreen` uit de eigen module), een uitleg en "Stoppen"; een gestopt
-// verzoek telt niet meer, zijn kopieën gaan weg, en een nieuwe kiezer kan pas
-// als het klaar is (src/lib/pickSession.ts; F7, F8, F11). Mislukt het ophalen
+// verzoek telt niet meer en zijn kopieën gaan weg; na "Stoppen" kan meteen een
+// nieuwe kiezer (src/lib/pickSession.ts; F7, F8 na gate ronde 2, F11). Mislukt het ophalen
 // zelf, dan een eigen melding (besluit 6).
 
 const KEEP_AWAKE_TAG = "wp18-upload";
@@ -198,7 +198,6 @@ export function AddPhotosScreen({ albumId }: { albumId?: string }) {
   const running = useRef(false);
   const [busy, setBusy] = useState(false);
   const opened = useRef(false);
-  // Eén kiezer tegelijk, ook terwijl iOS de vorige keuze nog ophaalt.
   const [videoBusy, setVideoBusy] = useState(false);
   // Geen nieuwe omslagen naast het verkleinen en versturen van een filmpje.
   const posters = usePosters(selection, videoBusy);
@@ -229,7 +228,8 @@ export function AddPhotosScreen({ albumId }: { albumId?: string }) {
 
   async function pick(mode: PickMode = "aanvullen") {
     // Invariant 2: tijdens een ronde ligt de keuze vast. F8: één kiezer
-    // tegelijk, ook na "Stoppen" zolang het vorige verzoek loopt.
+    // tegelijk zolang het scherm op een verzoek wacht; een gestopt verzoek
+    // blokkeert niets (gate ronde 2).
     if (running.current || videoRunning.current) return;
     const begun = beginPick(sessionRef.current);
     if (!begun) return;
@@ -266,7 +266,9 @@ export function AddPhotosScreen({ albumId }: { albumId?: string }) {
       const end = endPick(sessionRef.current, token);
       accept = end.accept;
       updateSession(end.state);
-      setFetching(false);
+      // Een laat antwoord van een gestopt verzoek laat een nieuwer verzoek
+      // staan (gate ronde 2): alleen weg als het scherm nergens meer op wacht.
+      if (end.state.current === null) setFetching(false);
     }
     if (!accept) {
       // Gestopt (of het scherm is dicht): niets aan het scherm, de kopieën weg.
@@ -305,7 +307,7 @@ export function AddPhotosScreen({ albumId }: { albumId?: string }) {
     for (;;) {
       await wait(PICKER_POLL_MS);
       const c = sessionRef.current.current;
-      if (!c || c.token !== token || c.stopped || c.fetchStartedAt !== null) return;
+      if (!c || c.token !== token || c.fetchStartedAt !== null) return;
       const open = await pickerOnScreen();
       if (open === null) {
         updateSession(fetchStarted(sessionRef.current, token, openedAt));
@@ -647,11 +649,9 @@ export function AddPhotosScreen({ albumId }: { albumId?: string }) {
           items={videoItems}
           busy={videoBusy}
           albumLabel={album?.label ?? ""}
-          // Zonder foto's in de ronde staan "Naar album" en "Meer" hier. F7:
-          // na "Stoppen" staan ze er weer; "Meer selecteren" uit zolang het
-          // oude ophalen loopt (F8).
+          // Zonder foto's in de ronde staan "Naar album" en "Meer" hier. F7, F8:
+          // na "Stoppen" staan ze er meteen weer.
           standalone={(!items || items.length === 0) && !fetching}
-          canMore={view.canPick}
           onRetry={retryVideos}
           onToAlbum={toAlbum}
           onMore={() => void pick("nieuw")}
@@ -667,9 +667,8 @@ export function AddPhotosScreen({ albumId }: { albumId?: string }) {
           onToAlbum={toAlbum}
           onMore={() => void pick("nieuw")}
           // Invariant 2: niet weg en geen nieuwe keuze zolang een filmpje loopt.
-          // F7, F8: na "Stoppen" wel weer, met "Meer selecteren" uit.
+          // F7, F8: na "Stoppen" meteen weer.
           idle={!videoBusy && !fetching}
-          canMore={view.canPick}
         />
       )}
 
@@ -688,11 +687,6 @@ export function AddPhotosScreen({ albumId }: { albumId?: string }) {
         </View>
       ) : null}
 
-      {view.waiting ? (
-        <Text variant="meta" color="muted">
-          Je vorige keuze wordt nog opgehaald. Daarna kun je weer selecteren.
-        </Text>
-      ) : null}
 
       {!fetching && !anyPicked && !pickerFailed ? (
         <EmptyState
@@ -1122,7 +1116,6 @@ function VideoRoundResult({
   busy,
   albumLabel,
   standalone,
-  canMore,
   onRetry,
   onToAlbum,
   onMore,
@@ -1131,7 +1124,6 @@ function VideoRoundResult({
   busy: boolean;
   albumLabel: string;
   standalone: boolean;
-  canMore: boolean;
   onRetry: () => void;
   onToAlbum: () => void;
   onMore: () => void;
@@ -1161,7 +1153,7 @@ function VideoRoundResult({
       {done && standalone && (
         <View style={local.buttons}>
           {klaar > 0 && <SmallButton title="Naar album" onPress={onToAlbum} />}
-          <SmallButton title="Meer selecteren" icon="plus" disabled={!canMore} onPress={onMore} />
+          <SmallButton title="Meer selecteren" icon="plus" onPress={onMore} />
         </View>
       )}
     </View>
