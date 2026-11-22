@@ -165,3 +165,16 @@ export function addGrid(width: number): { columns: number; tile: number } {
   const tile = Math.max(0, Math.floor((w - ADD_GRID_GAP * (columns - 1)) / columns));
   return { columns, tile };
 }
+
+export type AddButtonAction = "toevoegen" | "kies-album";
+
+/**
+ * Fixronde gate 1, besluit 1, F6, besluit 7: de knop onderin. Met een album
+ * "Toevoegen aan album"; zonder album grijs "Kies eerst een album", en een tik
+ * opent het kiesscherm; zolang het album nog gecontroleerd wordt, uit.
+ */
+export function addButton(album: "chosen" | "none" | "unknown"): { title: string; action: AddButtonAction | null } {
+  if (album === "chosen") return { title: "Toevoegen aan album", action: "toevoegen" };
+  if (album === "none") return { title: "Kies eerst een album", action: "kies-album" };
+  return { title: "Toevoegen aan album", action: null };
+}

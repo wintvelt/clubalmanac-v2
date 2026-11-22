@@ -18,9 +18,9 @@ import { radius, space, useTheme } from "../theme";
 // AddPhotosScreen.web.tsx) delen: de uitkomst van een ronde en de keuze van
 // het album. Ongewijzigd verplaatst uit AddPhotosScreen.tsx.
 //
-// WP39: "Meer toevoegen" na een ronde (was "Meer foto's"): een nieuwe keuze.
+// WP39: "Meer selecteren" na een ronde (was "Meer foto's"): een nieuwe keuze.
 // `idle`: niets anders loopt nog (op iOS de filmpjes); pas dan "Naar album"
-// en "Meer toevoegen" (invariant 2: de modaal sluit niet tijdens een ronde).
+// en "Meer selecteren" (invariant 2: de modaal sluit niet tijdens een ronde).
 
 export type ChosenAlbum = { albumId: string; groupId: string; label: string } | null;
 type Chosen = { album: ChosenAlbum };
@@ -66,7 +66,7 @@ export function RoundResult({
       {s.done && idle && (
         <View style={styles.row}>
           {s.klaar > 0 && <SmallButton title="Naar album" onPress={onToAlbum} />}
-          <SmallButton title="Meer toevoegen" icon="plus" onPress={onMore} />
+          <SmallButton title="Meer selecteren" icon="plus" onPress={onMore} />
         </View>
       )}
     </View>
