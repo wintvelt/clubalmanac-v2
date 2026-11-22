@@ -90,6 +90,12 @@ export const MONITORED_FKS: Array<{
   { table: "filmOriginals", field: "groupId", required: true },
   { table: "filmOriginals", field: "ownerId", required: true },
   { table: "filmOriginals", field: "photoId", required: true },
+  // Bewust niet hier (WP38 fix-cyclus 2, cascade-matrix U17 en U18):
+  // `videoUploadRequests` en `originalRequests`, dus ook niet in de reset van
+  // de migratie-tooling. Het zijn tellers voor een daggrens: een tijdstip per
+  // aanroep, zonder inhoud, alleen geteld voor hun eigen user. Account
+  // verwijderen wist ze, en een rij van een user die niet meer bestaat doet
+  // niets. `photos.originalBlockedAt` is een tijdstip, geen verwijzing.
 ];
 
 // Tabellen waarvan de scan een aggregate of een storage-referentie herrekent

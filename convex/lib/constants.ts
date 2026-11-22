@@ -103,11 +103,24 @@ export const ORIGINAL_REMINDER_BEFORE_MS = 30 * DAY;
  */
 export const FILM_PROJECT_MAX_AHEAD_MS = 366 * DAY;
 
-/** WP38 fix-cyclus 1 (regie): een origineel is minstens 5 MiB; kleiner weigert `startOriginal` met `te_klein`. */
-export const MIN_ORIGINAL_BYTES = 5 * 1024 * 1024;
+/**
+ * WP38 fix-cyclus 2 (regie): een origineel is minstens 1 MiB; kleiner weigert
+ * `startOriginal` met `te_klein`. Een origineel van één deel mag onder 5 MiB
+ * (R2 eist die grootte alleen van delen vóór het laatste).
+ */
+export const MIN_ORIGINAL_BYTES = 1024 * 1024;
 
 /**
- * WP38 fix-cyclus 1 (A-keuze): hooguit zoveel aanroepen van `startOriginal`
- * en `finishOriginal` samen per lid in 24 uur (glijdend), daarboven `te_vaak`.
+ * WP38 fix-cyclus 2 (regie): hooguit zoveel aanroepen van `startOriginal` en
+ * `finishOriginal` samen per lid in 24 uur (glijdend), daarboven `te_vaak`.
+ * 30 filmpjes per dag (WP37) maal zo'n 20 aanroepen per origineel op een
+ * wisselend netwerk.
  */
-export const MAX_ORIGINAL_CALLS_PER_DAY = 300;
+export const MAX_ORIGINAL_CALLS_PER_DAY = 600;
+
+/**
+ * WP38 fix-cyclus 2 (regie): hooguit zoveel inzendingen per lid tegelijk
+ * onderweg, over alle projecten. Een nieuwe aanmelding daarboven weigert
+ * `startOriginal` met `bezig`; hervatten mag altijd.
+ */
+export const MAX_OPEN_ORIGINALS_PER_MEMBER = 30;

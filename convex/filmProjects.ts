@@ -18,6 +18,7 @@ import { getWebmasterEmails } from "./lib/auth";
 import {
   FILM_PROJECT_MAX_AHEAD_MS,
   MAX_ORIGINAL_BYTES,
+  MAX_OPEN_ORIGINALS_PER_MEMBER,
   MAX_ORIGINAL_CALLS_PER_DAY,
   MAX_PROJECT_ORIGINAL_BYTES,
   MAX_TOTAL_ORIGINAL_BYTES,
@@ -99,16 +100,26 @@ const STALE_UPLOAD_AFTER_MS = 8 * DAY_MS;
  * Fix-cyclus 1 (red-team S3): de lifecycle-regel van R2 (365 dagen) kan een
  * origineel rond het einde van zijn jaar wissen voordat de dagelijkse ronde
  * het doet. Vanaf een dag vóór dat einde meldt de check een inzending zonder
- * bestand niet meer. Het jaar telt vanaf het aanmelden: R2 dateert een object
- * uit een multipart-upload hooguit op het begin van de upload, nooit eerder.
+ * bestand niet meer. Fix-cyclus 2 (red-team N3): het jaar telt vanaf het
+ * moment waarop de laatste upload is gekoppeld (`uploadCreatedAt`), zonder
+ * dat moment vanaf het aanmelden. R2 breekt een halve upload na 7 dagen af,
+ * dus het verschil met het einde van de upload is hooguit een week.
  */
 const MISSING_QUIET_BEFORE_YEAR_END_MS = DAY_MS;
 /** Besluit 15, fix-cyclus 1: zo lang geldt een geplande herinnering als bezig. */
 const REMINDER_CLAIM_MS = 6 * 60 * 60 * 1000;
+/**
+ * Fix-cyclus 2 (red-team Z2): de afrond-cron kijkt alleen inzendingen na
+ * waarvoor `startOriginal` deel-links gaf die nog gelden (7 dagen), plus één
+ * ronde van de cron (een uur), zodat een PUT vlak voor het verlopen van de
+ * link nog afgerond wordt. Daarna kan er zonder nieuwe aanmelding niets meer
+ * binnenkomen; de app rondt zelf af (`finishOriginal`).
+ */
+const CRON_LINK_WINDOW_MS = ORIGINAL_PART_LINK_SECONDS * 1000 + 60 * 60 * 1000;
 
 export const ORIGINAL_NOT_FOUND = { code: "ORIGINAL_NOT_FOUND" } as const;
 
-type RefuseReason = "uitgelogd" | "niet_toegestaan" | "te_groot" | "te_klein" | "te_vaak" | "vol" | "geen_video";
+type RefuseReason = "uitgelogd" | "niet_toegestaan" | "te_groot" | "te_klein" | "te_vaak" | "bezig" | "vol" | "geen_video";
 
 function refuseOriginal(reason: RefuseReason): never {
   throw new ConvexError({ code: "ORIGINAL_REFUSED", reason });
@@ -120,6 +131,7 @@ const REFUSE_REASON = v.union(
   v.literal("te_groot"),
   v.literal("te_klein"),
   v.literal("te_vaak"),
+  v.literal("bezig"),
   v.literal("vol"),
   v.literal("geen_video"),
 );
@@ -395,13 +407,17 @@ type StartState =
  * project hem nog aanneemt (besluit 18). Een nieuwe kan alleen bij een eigen
  * filmpje dat in het filmalbum staat van een open project in een groep waar
  * hij lid van is, en gemaakt is terwijl dat project open stond. Al het andere
- * is één weigering (`niet_toegestaan`).
+ * is één weigering (`niet_toegestaan`). Fix-cyclus 2 (heraudit 1): een
+ * filmpje waarvan het origineel is teruggetrokken of door de oprichter
+ * verwijderd (`originalBlockedAt`), neemt geen inzending meer aan.
  */
 async function startState(ctx: QueryCtx, subject: string, photoId: Id<"photos">, now: number): Promise<StartState> {
   const user = await getBySubject(ctx, subject);
   if (!user) return { kind: "refused", reason: "uitgelogd" };
   const photo = await ctx.db.get(photoId);
   if (!photo || photo.ownerId !== user._id || !photo.video) return { kind: "refused", reason: "niet_toegestaan" };
+  // Fix-cyclus 2 (heraudit 1): teruggetrokken of verwijderd blijft weg.
+  if (photo.originalBlockedAt !== undefined) return { kind: "refused", reason: "niet_toegestaan" };
 
   const existing = await ctx.db
     .query("filmOriginals")
@@ -458,6 +474,15 @@ export const startGate = internalQuery({
   },
 });
 
+/** Fix-cyclus 2 (red-team Z2): hoeveel inzendingen van dit lid onderweg zijn, over alle projecten. */
+async function openOriginalsOf(ctx: QueryCtx, ownerId: Id<"users">): Promise<number> {
+  const rows = await ctx.db
+    .query("filmOriginals")
+    .withIndex("by_owner", (q) => q.eq("ownerId", ownerId))
+    .collect();
+  return rows.filter((r) => r.status === "onderweg").length;
+}
+
 async function reservedBytes(ctx: QueryCtx, projectId?: Id<"filmProjects">): Promise<number> {
   const rows = projectId
     ? await ctx.db
@@ -471,9 +496,11 @@ async function reservedBytes(ctx: QueryCtx, projectId?: Id<"filmProjects">): Pro
 /**
  * De inzending, in één transactie: dezelfde regels als `startGate`, de
  * grenzen (besluit 11: per bestand, per project, alles samen; wat onderweg
- * is telt mee; fix-cyclus 1: de daggrens, als laatste, zodat een weigering
- * niet meetelt), en per filmpje hooguit één inzending. Opnieuw aanmelden geeft
- * dezelfde inzending, met dezelfde upload in R2.
+ * is telt mee; fix-cyclus 2: hooguit 30 onderweg per lid, `bezig`; de
+ * daggrens als laatste, zodat een weigering niet meetelt), en per filmpje
+ * hooguit één inzending. Opnieuw aanmelden geeft dezelfde inzending, met
+ * dezelfde upload in R2; hervatten valt niet onder de 30. `linksAt` legt vast
+ * dat er links komen (de afrond-cron kijkt daarnaar).
  */
 export const reserveOriginal = internalMutation({
   args: { subject: v.string(), photoId: v.id("photos"), bytes: v.number(), newKey: v.string() },
@@ -497,6 +524,7 @@ export const reserveOriginal = internalMutation({
       // Een andere grootte is een ander bestand: de app trekt eerst terug.
       if (state.original.bytes !== bytes) return { kind: "refused" as const, reason: "niet_toegestaan" as const };
       if (!(await takeOriginalCall(ctx, state.original.ownerId, now))) return { kind: "refused" as const, reason: "te_vaak" as const };
+      await ctx.db.patch(state.original._id, { linksAt: now });
       return {
         kind: "upload" as const,
         originalId: state.original._id,
@@ -512,6 +540,9 @@ export const reserveOriginal = internalMutation({
     if ((await reservedBytes(ctx)) + bytes > MAX_TOTAL_ORIGINAL_BYTES) {
       return { kind: "refused" as const, reason: "vol" as const };
     }
+    if ((await openOriginalsOf(ctx, state.userId)) >= MAX_OPEN_ORIGINALS_PER_MEMBER) {
+      return { kind: "refused" as const, reason: "bezig" as const };
+    }
     if (!(await takeOriginalCall(ctx, state.userId, now))) return { kind: "refused" as const, reason: "te_vaak" as const };
     const originalId = await ctx.db.insert("filmOriginals", {
       projectId: state.project._id,
@@ -522,6 +553,7 @@ export const reserveOriginal = internalMutation({
       bytes,
       status: "onderweg",
       submittedAt: now,
+      linksAt: now,
     });
     return { kind: "upload" as const, originalId, key: newKey, uploadId: null, bytes };
   },
@@ -531,6 +563,8 @@ export const reserveOriginal = internalMutation({
  * De upload-id van R2 bij een inzending, als er nog geen (of `previous`) is.
  * Heeft een gelijktijdige aanmelding er al een gezet, dan die. `done`: de
  * inzending is intussen binnen (fix-cyclus 1, red-team S2); `gone`: hij is weg.
+ * Fix-cyclus 2 (red-team N3): het moment van koppelen is `uploadCreatedAt`,
+ * het begin van het jaar voor MON3.
  */
 export const attachUpload = internalMutation({
   args: { originalId: v.id("filmOriginals"), uploadId: v.string(), previous: v.union(v.string(), v.null()) },
@@ -544,7 +578,7 @@ export const attachUpload = internalMutation({
     if (!row) return { kind: "gone" as const };
     if (row.status === "binnen") return { kind: "done" as const };
     if (row.uploadId !== undefined && row.uploadId !== previous) return { kind: "use" as const, uploadId: row.uploadId };
-    await ctx.db.patch(originalId, { uploadId });
+    await ctx.db.patch(originalId, { uploadId, uploadCreatedAt: Date.now() });
     return { kind: "use" as const, uploadId };
   },
 });
@@ -634,8 +668,9 @@ function missingParts(bytes: number, present: R2Part[]): number[] {
  * de delen die R2 nog niet heeft, elk een PUT op precies de sleutel, met het
  * deelnummer, de upload-id en de grootte in de handtekening, 7 dagen geldig.
  * Al binnen: `{ kind: "done" }`, ook als R2 de upload net afrondde (het object
- * is er heel). Weigering: `ORIGINAL_REFUSED` met een reden; fix-cyclus 1 ook
- * `te_klein` (onder 5 MiB) en `te_vaak` (de daggrens), beide zonder R2.
+ * is er heel). Weigering: `ORIGINAL_REFUSED` met een reden; ook `te_klein`
+ * (onder 1 MiB), `te_vaak` (de daggrens) en `bezig` (30 onderweg), alle drie
+ * zonder R2.
  */
 export const startOriginal = action({
   args: { photoId: v.id("photos"), bytes: v.number() },
@@ -656,7 +691,7 @@ export const startOriginal = action({
     if (gate.kind === "refused") refuseOriginal(gate.reason);
     if (gate.kind === "done") return { kind: "done", originalId: gate.originalId };
     if (!(Number.isInteger(bytes) && bytes > 0)) refuseOriginal("te_groot");
-    // Fix-cyclus 1 (kosten): een origineel is minstens 5 MiB.
+    // Kosten (fix-cyclus 1 en 2): een origineel is minstens 1 MiB.
     if (bytes < MIN_ORIGINAL_BYTES) refuseOriginal("te_klein");
 
     const cfg = r2OriginalsConfig();
@@ -821,6 +856,24 @@ async function receiveObject(
  * geen kopie, geen herschrijving.
  */
 async function completeOriginal(ctx: ActionCtx, cfg: R2Config, original: OpenOriginal): Promise<CompleteResult> {
+  const result = await tryComplete(ctx, cfg, original);
+  // Fix-cyclus 2 (heraudit 1): is de inzending weg (teruggetrokken of
+  // verwijderd terwijl afronden liep), dan nooit `missing`: de app zou delen
+  // gaan nasturen.
+  if (result.kind === "missing" && !(await ctx.runQuery(internal.filmProjects.originalExists, { originalId: original.originalId }))) {
+    return { kind: "refused", reason: "niet_toegestaan" };
+  }
+  return result;
+}
+
+/** Bestaat de inzending nog (onderweg of binnen)? */
+export const originalExists = internalQuery({
+  args: { originalId: v.id("filmOriginals") },
+  returns: v.boolean(),
+  handler: async (ctx, { originalId }) => (await ctx.db.get(originalId)) !== null,
+});
+
+async function tryComplete(ctx: ActionCtx, cfg: R2Config, original: OpenOriginal): Promise<CompleteResult> {
   const all = planParts(original.bytes).map((p) => p.partNumber);
   let present: R2Part[] | null = original.uploadId === null ? null : await listParts(cfg, original.key, original.uploadId);
   if (present !== null && original.uploadId !== null) {
@@ -864,8 +917,9 @@ async function deleteQuietly(cfg: R2Config, key: string): Promise<void> {
 /**
  * Afronden door de app. `{ kind: "missing", parts }`: deze delen ontbreken
  * nog (er verandert niets). Weigering `ORIGINAL_REFUSED` met `niet_toegestaan`
- * (niet de inzender, of het project neemt hem niet meer aan), `te_vaak` (de
- * daggrens, vóór R2) of `geen_video`.
+ * (niet de inzender, het project neemt hem niet meer aan, of de inzending is
+ * weg, ook als dat gebeurt terwijl afronden loopt), `te_vaak` (de daggrens,
+ * vóór R2) of `geen_video`.
  */
 export const finishOriginal = action({
   args: { originalId: v.string() },
@@ -888,7 +942,10 @@ export const finishOriginal = action({
   },
 });
 
-/** De inzendingen die onderweg zijn met een upload, van projecten die ze nog aannemen. */
+/**
+ * De inzendingen die onderweg zijn met een upload, van projecten die ze nog
+ * aannemen, met deel-links die nog gelden (fix-cyclus 2, `CRON_LINK_WINDOW_MS`).
+ */
 export const pendingUploads = internalQuery({
   args: {},
   returns: v.array(openOriginal),
@@ -901,6 +958,7 @@ export const pendingUploads = internalQuery({
     const out: OpenOriginal[] = [];
     for (const r of rows) {
       if (r.uploadId === undefined) continue;
+      if (now - (r.linksAt ?? r.submittedAt) > CRON_LINK_WINDOW_MS) continue;
       const project = await ctx.db.get(r.projectId);
       if (!project || !projectAcceptsArrivals(project, now)) continue;
       out.push({ originalId: r._id, key: r.key, uploadId: r.uploadId, bytes: r.bytes });
@@ -998,6 +1056,7 @@ export const withdraw = mutation({
     const user = await requireOrNotFound(ctx);
     const row = await originalById(ctx, originalId);
     if (!row || row.ownerId !== user._id) throw new ConvexError(ORIGINAL_NOT_FOUND);
+    await blockOriginalsOf(ctx, [row]);
     await removeOriginalRows(ctx, [row]);
     return null;
   },
@@ -1014,6 +1073,7 @@ export const removeOriginal = mutation({
     if (!row || !group || group.createdBy !== user._id || !(await getMembership(ctx, user._id, row.groupId))) {
       throw new ConvexError(ORIGINAL_NOT_FOUND);
     }
+    await blockOriginalsOf(ctx, [row]);
     await removeOriginalRows(ctx, [row]);
     return null;
   },
@@ -1032,10 +1092,24 @@ export const removeAll = mutation({
       .query("filmOriginals")
       .withIndex("by_project", (q) => q.eq("projectId", project._id))
       .collect();
+    await blockOriginalsOf(ctx, rows);
     await removeOriginalRows(ctx, rows);
     return null;
   },
 });
+
+/**
+ * Fix-cyclus 2 (heraudit 1): na terugtrekken of verwijderen door de oprichter
+ * neemt het filmpje geen inzending meer aan (`startState`). Weg om een andere
+ * reden (geen filmpje, 14 dagen na sluiten, een jaar, vertrek) markeert niet.
+ */
+async function blockOriginalsOf(ctx: MutationCtx, rows: Doc<"filmOriginals">[]): Promise<void> {
+  const now = Date.now();
+  for (const r of rows) {
+    const photo = await ctx.db.get(r.photoId);
+    if (photo && photo.originalBlockedAt === undefined) await ctx.db.patch(r.photoId, { originalBlockedAt: now });
+  }
+}
 
 async function requireOrNotFound(ctx: MutationCtx): Promise<Doc<"users">> {
   const identity = await ctx.auth.getUserIdentity();
@@ -1247,17 +1321,19 @@ export const sendReminder = internalAction({
 export const storageInventory = internalQuery({
   args: {},
   returns: v.object({
-    received: v.array(v.object({ originalId: v.string(), key: v.string(), bytes: v.number(), submittedAt: v.number() })),
+    received: v.array(v.object({ originalId: v.string(), key: v.string(), bytes: v.number(), yearFrom: v.number() })),
     pendingKeys: v.array(v.string()),
     pendingUploads: v.array(v.string()),
   }),
   handler: async (ctx) => {
-    const received: { originalId: string; key: string; bytes: number; submittedAt: number }[] = [];
+    const received: { originalId: string; key: string; bytes: number; yearFrom: number }[] = [];
     const pendingKeys: string[] = [];
     const pendingUploads: string[] = [];
     for (const r of await ctx.db.query("filmOriginals").collect()) {
-      if (r.status === "binnen") received.push({ originalId: r._id, key: r.key, bytes: r.bytes, submittedAt: r.submittedAt });
-      else {
+      // Fix-cyclus 2 (red-team N3): het jaar telt vanaf de laatste upload; zonder dat moment het aanmelden.
+      if (r.status === "binnen") {
+        received.push({ originalId: r._id, key: r.key, bytes: r.bytes, yearFrom: r.uploadCreatedAt ?? r.submittedAt });
+      } else {
         pendingKeys.push(r.key);
         if (r.uploadId !== undefined) pendingUploads.push(r.uploadId);
       }
@@ -1267,7 +1343,7 @@ export const storageInventory = internalQuery({
 });
 
 type OriginalsInventory = {
-  received: { originalId: string; key: string; bytes: number; submittedAt: number }[];
+  received: { originalId: string; key: string; bytes: number; yearFrom: number }[];
   pendingKeys: string[];
   pendingUploads: string[];
 };
@@ -1276,7 +1352,7 @@ type OriginalsInventory = {
  * De dagelijkse R2-check van de originelen (A-invariant 14, cron `film
  * originals check`), naast die van WP37. Een object zonder inzending (ouder
  * dan een dag), een inzending die binnen is zonder object (tot een dag vóór
- * een jaar na het aanmelden) of met een andere grootte, en een halve upload zonder inzending (ouder dan 8 dagen) geven één
+ * een jaar na de laatste upload) of met een andere grootte, en een halve upload zonder inzending (ouder dan 8 dagen) geven één
  * mail aan de webmaster, net als een check die niet kon draaien. Wist niets.
  */
 export const checkStorage = internalAction({
@@ -1299,7 +1375,7 @@ export const checkStorage = internalAction({
       // Rond het einde van het jaar kan de lifecycle-regel het object al
       // gewist hebben: dan niet melden (fix-cyclus 1, red-team S3).
       const missing = inventory.received
-        .filter((r) => !sizes.has(r.key) && now < r.submittedAt + ORIGINAL_KEEP_MS - MISSING_QUIET_BEFORE_YEAR_END_MS)
+        .filter((r) => !sizes.has(r.key) && now < r.yearFrom + ORIGINAL_KEEP_MS - MISSING_QUIET_BEFORE_YEAR_END_MS)
         .map((r) => r.originalId);
       const wrongSize = inventory.received.filter((r) => sizes.has(r.key) && sizes.get(r.key) !== r.bytes).map((r) => r.originalId);
       const pendingUploads = new Set(inventory.pendingUploads);

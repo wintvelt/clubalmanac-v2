@@ -165,6 +165,13 @@ export default defineSchema({
     video: v.optional(
       v.object({ key: v.string(), durationMs: v.number(), bytes: v.number() }),
     ),
+    // WP38 fix-cyclus 2 (heraudit 1): het origineel van dit filmpje is
+    // teruggetrokken (`withdraw`) of door de oprichter verwijderd
+    // (`removeOriginal`, `removeAll`), met de tijd. Dan neemt `startOriginal`
+    // voor dit filmpje geen inzending meer aan. Op het filmpje zelf, zodat de
+    // markering meegaat als het filmpje of het account weg is; geen verwijzing,
+    // en geen publiek pad toont het veld.
+    originalBlockedAt: v.optional(v.number()),
     createdAt: v.number(),
   })
     .index("by_owner", ["ownerId"])
@@ -262,6 +269,14 @@ export default defineSchema({
     container: v.optional(v.union(v.literal("mov"), v.literal("mp4"))),
     submittedAt: v.number(),
     completedAt: v.optional(v.number()),
+    // Fix-cyclus 2 (red-team Z2): wanneer `startOriginal` voor het laatst
+    // deel-links gaf. De afrond-cron kijkt alleen inzendingen na met links die
+    // nog gelden.
+    linksAt: v.optional(v.number()),
+    // Fix-cyclus 2 (red-team N3): wanneer de laatste upload in R2 aan deze
+    // inzending is gekoppeld (ook bij hervatten met een nieuwe upload). Blijft
+    // staan na binnen; daar telt MON3 het jaar vanaf.
+    uploadCreatedAt: v.optional(v.number()),
   })
     .index("by_project", ["projectId"])
     .index("by_photo", ["photoId"])
