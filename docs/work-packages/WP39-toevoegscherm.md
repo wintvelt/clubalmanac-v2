@@ -175,3 +175,10 @@ Het oude scherm "Foto's delen" had alleen foto's, 7 tegels van 32 pt en "+ n", �
 Alle vijf aanbevelingen van A (§Besluiten voor Wouter) zijn akkoord: op het web alleen de teksten, de lege stand daar blijft "Kies foto's", de kopie van de kiezer meteen weg bij dubbel kiezen en bij een ×, albumkeuze boven het raster met "Toevoegen aan album" vast onderin, `makePoster` ongewijzigd. De RED tests van A gelden ongewijzigd.
 
 Ook bevestigd: de backend van WP37 is achterwaarts verenigbaar. 2.0.0/2.0.1 tonen een filmpje als poster (geen afspelen; draaien en profielfoto weigert de backend). Geen test in de simulator nodig.
+
+## Gate ronde 1: iPhone (Wouter, 2026-11-22)
+
+Build `wp39-dev`. Bevindingen:
+1. **Albumkiezer oogt rommelig** (lange lijst klapt open in het scherm; de uitgeschakelde knop onderin is bruin).
+2. **"Meer toevoegen" moet "Meer selecteren" heten.**
+3. **Vast in "Je keuze ophalen…"** bij een filmpje van 5 minuten en bij een drone-filmpje van 5 s (4K H.264, 69 MB, geen geluid). Het filmpje zelf is in orde: de module verkleint het op macOS in 2 s, de backend accepteert een filmpje zonder geluid. Oorzaak is vrijwel zeker de download uit iCloud door de kiezer. Er is geen manier om te stoppen behalve de modaal sluiten, en dan is de hele keuze weg.
