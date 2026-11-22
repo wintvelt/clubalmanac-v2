@@ -3,7 +3,7 @@ import * as ImagePicker from "expo-image-picker";
 import { activateKeepAwakeAsync, deactivateKeepAwake } from "expo-keep-awake";
 import { router, Stack, useNavigation } from "expo-router";
 import { memo, useCallback, useEffect, useRef, useState } from "react";
-import { Linking, Pressable, StyleSheet, View } from "react-native";
+import { Linking, Pressable, StyleSheet, useWindowDimensions, View } from "react-native";
 import { makePoster, removeFile } from "../../modules/clubalmanac-video";
 import { Button } from "../components/Button";
 import { Icon } from "../components/Icon";
@@ -72,7 +72,8 @@ import { AlbumChoice, RoundResult, addPhotosStyles as styles, type ChosenAlbum }
 // `assetId`), een × haalt een item weg; beide alleen vóór de ronde. Na een
 // ronde begint "Meer toevoegen" een nieuwe keuze; annuleren in de kiezer
 // verandert nooit iets (A4). Een filmpje krijgt een omslag uit het origineel
-// (`makePoster`, één voor één, tijdelijk; A10, A11). Te lang staat al vóór de
+// (`makePoster`, één voor één, tijdelijk, niet terwijl een filmpje verkleind of
+// verstuurd wordt; A10, A11). Te lang staat al vóór de
 // ronde op de tegel (besluit 5). De kopie van de kiezer van een dubbel gekozen
 // of weggehaald item gaat meteen weg (B-besluit 3). "Toevoegen aan album" staat
 // vast onderin (B-besluit 4).
@@ -121,7 +122,6 @@ export function AddPhotosScreen({ albumId }: { albumId?: string }) {
   const [videoItems, setVideoItems] = useState<VideoItem[] | null>(null);
   const videoItemsRef = useRef<VideoItem[] | null>(null);
   const videoRunning = useRef(false);
-  const [videoBusy, setVideoBusy] = useState(false);
   const [pickerFailed, setPickerFailed] = useState(false);
   // WP37 A-invariant 38: de kiezer is dicht, maar iOS kopieert de gekozen
   // originelen nog naar de app; zolang "Je keuze ophalen…".
@@ -135,7 +135,9 @@ export function AddPhotosScreen({ albumId }: { albumId?: string }) {
   const opened = useRef(false);
   // Eén kiezer tegelijk, ook terwijl iOS de vorige keuze nog ophaalt.
   const picking = useRef(false);
-  const posters = usePosters(selection);
+  const [videoBusy, setVideoBusy] = useState(false);
+  // Geen nieuwe omslagen naast het verkleinen en versturen van een filmpje.
+  const posters = usePosters(selection, videoBusy);
 
   function updateSelection(next: Item[]) {
     selectionRef.current = next;
@@ -185,6 +187,12 @@ export function AddPhotosScreen({ albumId }: { albumId?: string }) {
     // A4: annuleren verandert niets, ook niet na een ronde.
     if (result.canceled) return;
     const { items: next, skipped } = addToSelection(mode === "nieuw" ? [] : selectionRef.current, result.assets);
+    if (mode === "nieuw" && next.length === 0) {
+      // Niets bruikbaars gekozen (bv. alleen een pairedVideo): net als
+      // annuleren, de uitkomst van de ronde blijft staan.
+      dropCopies(skipped, selectionRef.current);
+      return;
+    }
     dropCopies(skipped, next);
     if (mode === "nieuw") {
       // Een nieuwe keuze is een nieuwe ronde; het album blijft gekozen.
@@ -382,7 +390,11 @@ export function AddPhotosScreen({ albumId }: { albumId?: string }) {
   const anyTooLong = tiles.some((t) => t.tooLong);
   const photoStates = new Map((items ?? []).map((i) => [i.key, i.state]));
   const videoStates = new Map((videoItems ?? []).map((i) => [i.key, i]));
-  const [gridWidth, setGridWidth] = useState(0);
+  // A9: nooit een tegel van 0 × 0 (dan decodeert expo-image op volle grootte).
+  // Tot de meting een schatting uit het venster, begrensd op de tekstkolom;
+  // `onLayout` corrigeert (A8).
+  const win = useWindowDimensions();
+  const [gridWidth, setGridWidth] = useState(() => Math.min(win.width, size.maxTextColumn));
   const grid = addGrid(gridWidth);
 
   return (
@@ -484,8 +496,14 @@ export function AddPhotosScreen({ albumId }: { albumId?: string }) {
             </Text>
           )}
           {/* Besluit 4, A8: over de volle breedte van het vel, met de eigen breedte gemeten. */}
-          <View style={local.grid} onLayout={(e) => setGridWidth(e.nativeEvent.layout.width)}>
-            {tiles.map((t, n) => {
+          <View
+            style={local.grid}
+            onLayout={(e) => {
+              const w = e.nativeEvent.layout.width;
+              if (w > 0) setGridWidth(w);
+            }}
+          >
+            {grid.tile > 0 && tiles.map((t, n) => {
               const item = selection[n]!;
               const video = videoStates.get(t.key);
               return (
@@ -520,19 +538,21 @@ export function AddPhotosScreen({ albumId }: { albumId?: string }) {
  * tegel, niet opnieuw), `undefined` zolang hij nog niet klaar is. Een omslag
  * van een item dat uit de keuze ging, gaat weg; bij sluiten alle.
  */
-function usePosters(selection: readonly Item[]): ReadonlyMap<string, string | null> {
+function usePosters(selection: readonly Item[], paused: boolean): ReadonlyMap<string, string | null> {
   const [posters, setPosters] = useState<ReadonlyMap<string, string | null>>(new Map());
   const made = useRef(new Map<string, string | null>());
   const order = useRef<readonly Item[]>([]);
   const running = useRef(false);
   const alive = useRef(true);
+  const pausedRef = useRef(paused);
 
   const run = useCallback(async () => {
     if (running.current) return;
     running.current = true;
     try {
       for (;;) {
-        if (!alive.current) return;
+        // Gepauzeerd: stoppen vóór een nieuwe omslag; na de pauze verder.
+        if (!alive.current || pausedRef.current) return;
         const next = order.current.find((i) => i.kind === "filmpje" && !made.current.has(i.key));
         if (!next) return;
         let uri: string | null;
@@ -569,6 +589,7 @@ function usePosters(selection: readonly Item[]): ReadonlyMap<string, string | nu
   }, []);
 
   useEffect(() => {
+    pausedRef.current = paused;
     order.current = selection;
     const keep = new Set(selection.map((i) => i.key));
     let changed = false;
@@ -580,7 +601,7 @@ function usePosters(selection: readonly Item[]): ReadonlyMap<string, string | nu
     }
     if (changed) setPosters(new Map(made.current));
     void run();
-  }, [selection, run]);
+  }, [selection, paused, run]);
 
   return posters;
 }
