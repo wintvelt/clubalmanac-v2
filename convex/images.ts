@@ -38,9 +38,10 @@ async function storedImage(
  * het beeld van een foto die nu gemeld is (`flaggedAt` gezet), zodat hij in de
  * wachtrij kan beslissen. Na goedkeuren zijn de flag-velden weg en vervalt de
  * uitzondering. `isWebmaster` eist de users-rij (WP24 invariant 5). Alleen het
- * beeldpad; geen andere read krijgt deze uitzondering.
+ * beeldpad en (WP37 A-invariant 17) de afspeellink van een filmpje
+ * (`videos.playUrl`); geen andere read krijgt deze uitzondering.
  */
-async function canSeePhotoImage(
+export async function canSeePhotoImage(
   ctx: QueryCtx,
   userId: Id<"users">,
   photo: Doc<"photos">,

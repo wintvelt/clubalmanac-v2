@@ -12,7 +12,9 @@ import { Icon } from "../components/Icon";
 import { LetterTile } from "../components/LetterTile";
 import { AnimatedPressable, CoverFailed, HeaderItem, MotionHeader, PressShade, ScrollOffsetContext, usePressMotion } from "../components/Motion";
 import { SmallButton } from "../components/SmallButton";
+import { SegmentedTabs } from "../components/SegmentedTabs";
 import { CoverScrim, PhotoImage } from "../components/Photo";
+import { VideoBadge } from "../components/VideoPlayer";
 import { QueryBoundary } from "../components/QueryBoundary";
 import { Screen } from "../components/Screen";
 import { EmptyState, LoadingState } from "../components/States";
@@ -31,6 +33,7 @@ import { groupRights } from "../lib/groupAdmin";
 import { albumMapPath, editAlbumPath, groupPath, photoPath } from "../lib/groupRoutes";
 import { displayYear } from "../lib/groups";
 import { formatPhotoDate, keepNewMarkers, shouldMarkSeen, sortAlbumPhotos } from "../lib/photos";
+import { filterEntries, MEDIA_FILTER_LABELS, mediaCountText, showMediaFilter, videoLabel, type MediaFilter } from "../lib/videos";
 import { photoLayers, radius, size, space, useTheme } from "../theme";
 import { AlbumChoiceSheet } from "./AlbumChoice";
 import { AlbumReadFailed } from "./AlbumParts";
@@ -68,12 +71,12 @@ export function AlbumScreen() {
   const departing = useDeparting(aid);
   // In "reconnecting" toont Screen laden of een fout met "Opnieuw" en
   // "Uitloggen" (WP15a F1); de kop blijft staan.
-  if (reconnecting) return <Screen header={<AlbumHeader groupId={gid} album={undefined} count={undefined} />}>{null}</Screen>;
+  if (reconnecting) return <Screen header={<AlbumHeader groupId={gid} album={undefined} counts={undefined} />}>{null}</Screen>;
   return (
     <QueryBoundary
       key={aid}
       fallback={(error, reset) => (
-        <Screen header={<AlbumHeader groupId={gid} album={undefined} count={undefined} />}>
+        <Screen header={<AlbumHeader groupId={gid} album={undefined} counts={undefined} />}>
           {departing ? (
             <LoadingState label="Bezig…" />
           ) : (
@@ -106,6 +109,12 @@ function AlbumContent({ groupId, albumId }: { groupId: Id<"groups">; albumId: Id
   const shown = useMemo(() => (entries ? sortAlbumPhotos(entries) : undefined), [entries]);
   const newIds = useNewMarkers(entries);
   useMarkSeen(albumId, shown);
+  // WP37 besluit 1: Alle, Foto's, Video's; alleen in een album met een filmpje
+  // (invariant 10). Het detail swipet door alles, zoals Foto's op de iPhone.
+  const [mediaFilter, setMediaFilter] = useState<MediaFilter>("alle");
+  const hasVideos = shown !== undefined && showMediaFilter(shown);
+  const activeFilter: MediaFilter = hasVideos ? mediaFilter : "alle";
+  const visible = useMemo(() => (shown ? filterEntries(shown, activeFilter) : undefined), [shown, activeFilter]);
 
   const ctx = useMenuContext(groupId, me?._id);
   // WP28b: "Bewerk album" voor een admin (A-invariant 18).
@@ -201,6 +210,20 @@ function AlbumContent({ groupId, albumId }: { groupId: Id<"groups">; albumId: Id
         ) : null}
       </View>
     ) : null;
+  const filterBar = hasVideos ? (
+    <SegmentedTabs
+      tabs={(["alle", "fotos", "videos"] as const).map((key) => ({ key, title: MEDIA_FILTER_LABELS[key] }))}
+      selected={activeFilter}
+      onSelect={setMediaFilter}
+    />
+  ) : null;
+  const headerAction =
+    action || filterBar ? (
+      <View style={styles.headerStack}>
+        {action}
+        {filterBar}
+      </View>
+    ) : null;
   const loading = shown === undefined || me === undefined;
   // WP33: de scrollpositie op de UI-thread, voor de bewegende kop.
   const listRef = useAnimatedRef<Animated.FlatList<Entry>>();
@@ -218,9 +241,9 @@ function AlbumContent({ groupId, albumId }: { groupId: Id<"groups">; albumId: Id
             name={album?.name}
             cover={album?.cover}
             description={album?.description}
-            meta={album ? albumMeta(album, shown?.length) : undefined}
+            meta={album ? albumMeta(album, mediaCounts(shown)) : undefined}
           >
-            {action}
+            {headerAction}
           </WideSide>
         }
       >
@@ -230,7 +253,7 @@ function AlbumContent({ groupId, albumId }: { groupId: Id<"groups">; albumId: Id
         key={columns}
         // WP33 F3: elk frame, voor de kop.
         scrollEventThrottle={16}
-        data={loading ? [] : shown}
+        data={loading ? [] : visible}
         numColumns={columns}
         keyExtractor={(e) => e.albumPhoto._id}
         columnWrapperStyle={columns > 1 ? { gap: GAP } : undefined}
@@ -238,7 +261,7 @@ function AlbumContent({ groupId, albumId }: { groupId: Id<"groups">; albumId: Id
         ItemSeparatorComponent={Separator}
         extraData={listState}
         ListHeaderComponent={
-          wide ? undefined : <AlbumHeader groupId={groupId} album={album} count={shown?.length} action={action} />
+          wide ? undefined : <AlbumHeader groupId={groupId} album={album} counts={mediaCounts(shown)} action={headerAction} />
         }
         ListEmptyComponent={
           <View style={styles.column}>
@@ -321,11 +344,17 @@ function backToGroup(groupId: Id<"groups">) {
   else router.replace(groupPath(groupId));
 }
 
-// Jaar en aantal foto's onder de titel.
-function albumMeta(album: Album, count: number | undefined): string {
-  return [displayYear(album), count === undefined ? null : count === 1 ? "1 foto" : `${count} foto's`]
+// Jaar en aantal foto's onder de titel; WP37 A-invariant 34: filmpjes apart.
+function albumMeta(album: Album, counts: { photos: number; videos: number } | undefined): string {
+  return [displayYear(album), counts === undefined ? null : mediaCountText(counts.photos, counts.videos)]
     .filter(Boolean)
     .join(" · ");
+}
+
+function mediaCounts(entries: readonly { photo: { video?: unknown } | null }[] | undefined) {
+  if (entries === undefined) return undefined;
+  const videos = entries.filter((e) => e.photo?.video !== undefined).length;
+  return { photos: entries.length - videos, videos };
 }
 
 function menuPhotoOf(entry: Entry & { photo: NonNullable<Entry["photo"]> }): MenuPhoto {
@@ -336,6 +365,7 @@ function menuPhotoOf(entry: Entry & { photo: NonNullable<Entry["photo"]> }): Men
     ownerName: entry.owner?.name,
     hasFormats: entry.photo.hasFormats,
     exifOrientation: entry.photo.exifOrientation,
+    isVideo: entry.photo.video !== undefined,
   };
 }
 
@@ -434,7 +464,12 @@ function Tile({
   // Het foto-menu (lang drukken; voor VoiceOver een actie "Acties").
   onMenu?: () => void;
 }) {
-  const label = [`Foto van ${formatPhotoDate(entry.photo)}`, isNew && "nieuw", isMine && "jouw foto"]
+  const video = entry.photo.video;
+  const label = [
+    video ? videoLabel(formatPhotoDate(entry.photo), video.durationMs) : `Foto van ${formatPhotoDate(entry.photo)}`,
+    isNew && "nieuw",
+    isMine && (video ? "jouw filmpje" : "jouw foto"),
+  ]
     .filter(Boolean)
     .join(", ");
   // WP33 B2 (besluit 5): de tegel krimpt en wordt iets donkerder, ook tijdens
@@ -465,6 +500,7 @@ function Tile({
         retryPress={press}
       />
       {isNew && <NewLabel />}
+      {video && <VideoBadge durationMs={video.durationMs} />}
       {isMine && <MineBadge />}
       {selected !== undefined && <SelectMark selected={selected} />}
       <PressShade style={press.shadeStyle} />
@@ -521,12 +557,12 @@ function MineBadge() {
 function AlbumHeader({
   groupId,
   album,
-  count,
+  counts,
   action,
 }: {
   groupId: Id<"groups">;
   album: Album | undefined;
-  count: number | undefined;
+  counts: { photos: number; videos: number } | undefined;
   // WP17b: "Selecteer", op een eigen regel (design.md §3).
   action?: ReactNode;
 }) {
@@ -588,7 +624,7 @@ function AlbumHeader({
           </Text>
           {album.description ? <Text>{album.description}</Text> : null}
           <Text variant="meta" color="muted">
-            {albumMeta(album, count)}
+            {albumMeta(album, counts)}
           </Text>
           {action ? <View style={styles.headerAction}>{action}</View> : null}
         </View>
@@ -642,6 +678,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   headerAction: { paddingTop: space.s },
+  headerStack: { gap: space.m },
   barRow: { flexDirection: "row", flexWrap: "wrap", gap: space.s },
   selectedLayer: { borderWidth: 3 },
   selectMark: {

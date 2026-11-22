@@ -5,6 +5,8 @@ import { FlatList, StyleSheet, useWindowDimensions, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import type { Id } from "../../../convex/_generated/dataModel";
 import { PhotoImage } from "../components/Photo";
+import { VideoBadge } from "../components/VideoPlayer";
+import { videoLabel } from "../lib/videos";
 import { AnimatedPressable, PressShade, usePressMotion } from "../components/Motion";
 import { QueryBoundary } from "../components/QueryBoundary";
 import { Screen } from "../components/Screen";
@@ -266,6 +268,7 @@ export function menuPhotoOf(photo: MyPhoto): MenuPhoto {
     addedBy: photo.ownerId,
     hasFormats: photo.hasFormats,
     exifOrientation: photo.exifOrientation,
+    isVideo: photo.video !== undefined,
   };
 }
 
@@ -327,7 +330,9 @@ function MyTile({
   return (
     <AnimatedPressable
       accessibilityRole="button"
-      accessibilityLabel={`Foto van ${formatPhotoDate(photo)}`}
+      accessibilityLabel={
+        photo.video ? videoLabel(formatPhotoDate(photo), photo.video.durationMs) : `Foto van ${formatPhotoDate(photo)}`
+      }
       accessibilityState={selected === undefined ? undefined : { selected }}
       accessibilityHint={onMenu ? "Lang drukken voor acties" : undefined}
       accessibilityActions={onMenu ? [{ name: "menu", label: "Acties" }] : undefined}
@@ -348,6 +353,8 @@ function MyTile({
         box={{ width: tile, height: tile }}
         retryPress={press}
       />
+      {/* WP37 besluit B8: filmpjes ook in Mijn foto's, met dezelfde tegel. */}
+      {photo.video && <VideoBadge durationMs={photo.video.durationMs} />}
       {selected !== undefined && <SelectMark selected={selected} />}
       <PressShade style={press.shadeStyle} />
     </AnimatedPressable>

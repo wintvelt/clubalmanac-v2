@@ -26,7 +26,7 @@ import {
   publicProfile,
   publicProfileFields,
 } from "./lib/shapes";
-import { avatarFieldsOf, isFlaggedImage } from "./lib/profilePhoto";
+import { avatarFieldsOf, isFlaggedImage, isVideoPoster } from "./lib/profilePhoto";
 
 // Default upload-limiet voor nieuwe users. Mocht een admin een hogere limiet
 // willen geven, dan kan dat via directe DB patch (geen public mutation in
@@ -289,9 +289,11 @@ export const updateProfile = mutation({
       // eigen foto, of de eigen huidige profielfoto). Check vóór de patch,
       // zodat een geweigerd beeld ook de naam laat staan.
       // WP27 besluit 8: ook geen beeld van een gemelde foto.
+      // WP37 A-invariant 16: ook niet de poster van een filmpje.
       if (
         !(await canUseStorage(ctx, user, args.profilePhotoStorageId)) ||
-        (await isFlaggedImage(ctx, args.profilePhotoStorageId))
+        (await isFlaggedImage(ctx, args.profilePhotoStorageId)) ||
+        (await isVideoPoster(ctx, args.profilePhotoStorageId))
       ) {
         throw new Error("Geen toegang tot dit beeld");
       }
@@ -319,9 +321,12 @@ export const setProfilePhoto = mutation({
   handler: async (ctx, { photoId }) => {
     const user = await requireCurrentUser(ctx);
     const photo = await ctx.db.get(photoId);
+    // WP37 A-invariant 16: een filmpje wordt geen profielfoto (dezelfde
+    // weigering, geen orakel).
     if (
       !photo ||
       !(await canAccessPhoto(ctx, user._id, photo)) ||
+      photo.video !== undefined ||
       (await isFlaggedImage(ctx, photo.storageId))
     ) {
       throw new Error(NO_PHOTO_ACCESS);

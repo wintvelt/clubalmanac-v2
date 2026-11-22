@@ -30,10 +30,12 @@ import type * as lib_jpegMeta from "../lib/jpegMeta.js";
 import type * as lib_mailCover from "../lib/mailCover.js";
 import type * as lib_mailjet from "../lib/mailjet.js";
 import type * as lib_mailjetSmtp from "../lib/mailjetSmtp.js";
+import type * as lib_mp4 from "../lib/mp4.js";
 import type * as lib_names from "../lib/names.js";
 import type * as lib_photoAccess from "../lib/photoAccess.js";
 import type * as lib_photoFormats from "../lib/photoFormats.js";
 import type * as lib_profilePhoto from "../lib/profilePhoto.js";
+import type * as lib_r2 from "../lib/r2.js";
 import type * as lib_s3Presign from "../lib/s3Presign.js";
 import type * as lib_selfTestImages from "../lib/selfTestImages.js";
 import type * as lib_shapes from "../lib/shapes.js";
@@ -49,6 +51,7 @@ import type * as photos from "../photos.js";
 import type * as smoke from "../smoke.js";
 import type * as uploads from "../uploads.js";
 import type * as users from "../users.js";
+import type * as videos from "../videos.js";
 
 import type {
   ApiFromModules,
@@ -79,10 +82,12 @@ declare const fullApi: ApiFromModules<{
   "lib/mailCover": typeof lib_mailCover;
   "lib/mailjet": typeof lib_mailjet;
   "lib/mailjetSmtp": typeof lib_mailjetSmtp;
+  "lib/mp4": typeof lib_mp4;
   "lib/names": typeof lib_names;
   "lib/photoAccess": typeof lib_photoAccess;
   "lib/photoFormats": typeof lib_photoFormats;
   "lib/profilePhoto": typeof lib_profilePhoto;
+  "lib/r2": typeof lib_r2;
   "lib/s3Presign": typeof lib_s3Presign;
   "lib/selfTestImages": typeof lib_selfTestImages;
   "lib/shapes": typeof lib_shapes;
@@ -98,6 +103,7 @@ declare const fullApi: ApiFromModules<{
   smoke: typeof smoke;
   uploads: typeof uploads;
   users: typeof users;
+  videos: typeof videos;
 }>;
 
 /**

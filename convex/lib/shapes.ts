@@ -156,7 +156,14 @@ export const photoFields = {
  * lib/formatSet zet hem erbij. Altijd aanwezig, en geen id.
  */
 export const hasFormatsField = { hasFormats: v.boolean() };
-export const photo = v.object({ ...photoFields, ...hasFormatsField });
+/**
+ * WP37 A-invariant 19 en 27: een filmpje heeft `video` met alleen de duur;
+ * geen sleutel, grootte of bucket. Een foto heeft het veld niet, ook niet
+ * leeg. Geen kolom-kopie (de kolom heeft ook de sleutel), dus niet in
+ * `photoFields`; `videoView` in lib/formatSet zet het erbij.
+ */
+export const videoField = { video: v.optional(v.object({ durationMs: v.number() })) };
+export const photo = v.object({ ...photoFields, ...hasFormatsField, ...videoField });
 
 /** Flag-velden voor de eigenaar: datums, geen melder en geen reden (A-keuze 4). */
 export const ownFlagFields = {

@@ -6,6 +6,7 @@ import { Button } from "../components/Button";
 import { FadeIn, useArrivals } from "../components/Motion";
 import { Notice } from "../components/Notice";
 import { PhotoImage } from "../components/Photo";
+import { VideoBadge, VideoPage } from "../components/VideoPlayer";
 import { QueryBoundary } from "../components/QueryBoundary";
 import { Screen } from "../components/Screen";
 import { EmptyState, LoadingState } from "../components/States";
@@ -187,8 +188,9 @@ function MyFlaggedContent() {
                   hasFormats={p.hasFormats}
                   box={{ width: THUMB, height: THUMB }}
                   radius={radius.albumTile}
-                  accessibilityLabel="Gemelde foto"
+                  accessibilityLabel={p.video ? "Gemeld filmpje" : "Gemelde foto"}
                 />
+                {p.video && <VideoBadge durationMs={p.video.durationMs} />}
                 <View style={styles.flex}>
                   <Text variant="albumName">{flagStageLabel(view.stage)}</Text>
                   <FlagDatesText photo={p} deleteAt={view.deleteAt} />
@@ -370,6 +372,10 @@ function FlagQueueContent() {
                   <FlagDatesText photo={p} deleteAt={deleteAt} />
                 </View>
               </View>
+              {/* WP37 A-invariant 17: de webmaster kan een gemeld filmpje afspelen om te beslissen. */}
+              {p.video && (
+                <VideoPage photoId={p._id} photo={p} box={VIDEO_BOX} active label="Gemeld filmpje" memoryOnly />
+              )}
               <Button
                 title="Foto laten staan"
                 variant={stage === "appealed" ? "cta" : "secondary"}
@@ -403,6 +409,8 @@ function FlagQueueContent() {
     </Screen>
   );
 }
+
+const VIDEO_BOX = { width: 240, height: 240 };
 
 const styles = StyleSheet.create({
   card: { borderRadius: radius.listBlock, padding: space.l, gap: space.m },

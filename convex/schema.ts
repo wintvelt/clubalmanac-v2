@@ -156,6 +156,15 @@ export default defineSchema({
     flaggedDeleteDate: v.optional(v.number()),
     flaggedAppealDate: v.optional(v.number()),
     flaggedAppealDenyDate: v.optional(v.number()),
+    // WP37: een filmpje. Dan is `storageId` de poster (het beeld van de rij,
+    // met *klein* en *groot*), en staat het bestand in R2 onder `key`: de
+    // eindsleutel (`videos/…`), door de backend gekozen, waarvoor nooit een PUT
+    // is getekend (A-invariant 11). `durationMs` en `bytes` komen uit
+    // het bestand zelf, zoals de backend het bekeek (A-invariant 12). Alleen
+    // `durationMs` verlaat de backend (A-invariant 19).
+    video: v.optional(
+      v.object({ key: v.string(), durationMs: v.number(), bytes: v.number() }),
+    ),
     createdAt: v.number(),
   })
     .index("by_owner", ["ownerId"])
@@ -176,7 +185,8 @@ export default defineSchema({
   // key levert per-user scope structureel. State machine:
   //   in_progress = reservation gemaakt, photo nog niet gecreëerd
   //   completed   = photo gecreëerd, photoId gevuld, completedAt gezet
-  // Cascade matrix UI1: daily cron ruimt completed >7d en in_progress >5min op.
+  // Cascade matrix UI1: daily cron ruimt completed >7d en in_progress >30min op
+  // (een video-upload: >1d, met zijn object in R2).
   uploadIdempotency: defineTable({
     ownerId: v.id("users"),
     clientUploadId: v.string(),
@@ -184,11 +194,27 @@ export default defineSchema({
     photoId: v.optional(v.id("photos")),
     createdAt: v.number(),
     completedAt: v.optional(v.number()),
+    // WP37: een video-upload (`videos.startUpload`). De tijdelijke sleutel in
+    // R2 (`uploads/…`) die de backend koos en waarheen de app PUT, en het album
+    // waar het filmpje in komt. Het filmpje zelf krijgt bij het afronden een
+    // eindsleutel (`photos.video.key`, A-invariant 11, 12). Open blijft hij
+    // VIDEO_UPLOAD_OPEN_MS (een dag), niet 30 minuten (A-invariant 20).
+    videoKey: v.optional(v.string()),
+    albumId: v.optional(v.id("albums")),
   })
     .index("by_owner_and_clientUploadId", ["ownerId", "clientUploadId"])
     .index("by_status_and_createdAt", ["status", "createdAt"])
     // WP18 A-invariant 26: een foto wissen leest alleen zijn eigen reservering.
     .index("by_photo", ["photoId"]),
+
+  // WP37 A-invariant 36: elke geslaagde `videos.startUpload` (een link of een
+  // filmpje terug), voor de grens van 30 per user per 24 uur (glijdend). Een
+  // rij ouder dan 24 uur ruimt `reserveVideo` zelf op; account verwijderen
+  // wist ze (WP29, fase reserveringen). Geen publieke query leest deze tabel.
+  videoUploadRequests: defineTable({
+    ownerId: v.id("users"),
+    at: v.number(),
+  }).index("by_owner_and_at", ["ownerId", "at"]),
 
   // ──────────────────────────────────────────────────────────────────
   // Invites

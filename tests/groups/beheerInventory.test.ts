@@ -48,6 +48,9 @@ const EXPECTED = [
   "invites:create",
   "invites:decline",
   "invites:remove",
+  // WP37 A-invariant 26: een filmpje aanvragen neemt een album-id; gate = lid
+  // van de groep van dat album, anders `geen_album` (tests/videos/upload.test.ts).
+  "videos:startUpload",
 ].sort();
 
 function publicPathsTakingProtectedIds(): string[] {

@@ -19,6 +19,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import type { Id } from "../../../convex/_generated/dataModel";
 import { useSwipeInfo } from "../components/Motion";
 import { PhotoImage, ProfileAvatar } from "../components/Photo";
+import { VideoPage } from "../components/VideoPlayer";
 import { QueryBoundary } from "../components/QueryBoundary";
 import { Screen } from "../components/Screen";
 import { LoadingState } from "../components/States";
@@ -133,6 +134,7 @@ function DetailContent({
     ownerName: entry.owner?.name,
     hasFormats: entry.photo.hasFormats,
     exifOrientation: entry.photo.exifOrientation,
+    isVideo: entry.photo.video !== undefined,
   };
   const hasActions = menu.hasActions(menuPhoto);
   // WP33 invariant 7: het informatieblok vervaagt mee met de swipe en toont
@@ -206,7 +208,16 @@ function DetailContent({
                   windowSize={3}
                   maxToRenderPerBatch={2}
                   onMomentumScrollEnd={onMomentumEnd}
-                  renderItem={({ item }) => <ZoomablePhoto photoId={item.albumPhoto.photoId} photo={item.photo} box={page} />}
+                  // WP37: weg-vegen stopt een filmpje (alleen de pagina in beeld speelt).
+                  extraData={current}
+                  renderItem={({ item }) => (
+                    <ZoomablePhoto
+                      photoId={item.albumPhoto.photoId}
+                      photo={item.photo}
+                      box={page}
+                      active={item.albumPhoto.photoId === current}
+                    />
+                  )}
                 />
             ))
           }
@@ -307,7 +318,29 @@ type ZoomPhoto = Shown["photo"];
 
 // Knijpen zoomt (iOS-ScrollView), dubbeltikken wisselt tussen 1× en 2,5×.
 // WP17c: ook voor het detail in Mijn foto's.
-export function ZoomablePhoto({
+export function ZoomablePhoto(props: {
+  photoId: Id<"photos">;
+  photo: ZoomPhoto;
+  box: { width: number; height: number };
+  // WP37: staat deze pagina in beeld? Een filmpje erbuiten pauzeert.
+  active?: boolean;
+}) {
+  // WP37: een filmpje speelt af in plaats van te zoomen (geen autoplay).
+  if (props.photo.video) {
+    return (
+      <VideoPage
+        photoId={props.photoId}
+        photo={props.photo}
+        box={props.box}
+        active={props.active ?? true}
+        label={`Filmpje van ${formatPhotoDate(props.photo)}`}
+      />
+    );
+  }
+  return <ZoomableImage {...props} />;
+}
+
+function ZoomableImage({
   photoId,
   photo,
   box,
@@ -371,7 +404,7 @@ function PhotoInfo({ entry }: { entry: Shown }) {
     <View
       style={styles.info}
       accessible
-      accessibilityLabel={[name ? `Foto van ${name}` : null, date, entry.photo.locationLabel].filter(Boolean).join(", ")}
+      accessibilityLabel={[name ? `${entry.photo.video ? "Filmpje" : "Foto"} van ${name}` : null, date, entry.photo.locationLabel].filter(Boolean).join(", ")}
     >
       <ProfileAvatar
         userId={entry.owner?._id}

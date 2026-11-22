@@ -24,5 +24,10 @@ export async function hasCompleteFormats(ctx: QueryCtx, photo: Doc<"photos">): P
  * tegelijk wisselt.
  */
 export async function photoView(ctx: QueryCtx, photo: Doc<"photos">): Promise<Infer<typeof photoShape>> {
-  return { ...pick(photo, photoFields), hasFormats: await hasCompleteFormats(ctx, photo) };
+  return { ...pick(photo, photoFields), hasFormats: await hasCompleteFormats(ctx, photo), ...videoView(photo) };
+}
+
+/** WP37 A-invariant 19 en 27: `{ video: { durationMs } }` bij een filmpje, anders niets. */
+export function videoView(photo: Doc<"photos">): { video?: { durationMs: number } } {
+  return photo.video ? { video: { durationMs: photo.video.durationMs } } : {};
 }

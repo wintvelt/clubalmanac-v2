@@ -3,7 +3,7 @@
     "name": "Clubalmanac",
     "slug": "clubalmanac-app",
     "owner": "wintvelt",
-    "version": "2.0.1",
+    "version": "2.0.2",
     "scheme": "clubalmanac",
     "orientation": "default",
     "userInterfaceStyle": "automatic",
@@ -39,7 +39,7 @@
       [
         "expo-image-picker",
         {
-          "photosPermission": "Clubalmanac gebruikt je foto's alleen om de foto's die jij kiest aan een album toe te voegen of als profielfoto te gebruiken.",
+          "photosPermission": "Clubalmanac gebruikt je foto's en filmpjes alleen om wat jij kiest aan een album toe te voegen, of een foto als profielfoto te gebruiken.",
           "cameraPermission": false,
           "microphonePermission": false
         }

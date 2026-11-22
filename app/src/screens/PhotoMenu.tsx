@@ -44,6 +44,8 @@ export type MenuPhoto = {
   ownerName?: string;
   hasFormats?: boolean;
   exifOrientation?: number;
+  // WP37: een filmpje (de rij heeft `video`).
+  isVideo?: boolean;
 };
 
 // WP17d: "Delen" en "Locatie wijzigen" bij de acties van WP17b.
@@ -115,9 +117,23 @@ export function menuActions(
   if (READ_ONLY || !ctx || !photo) return [];
   // WP17d A-invariant 6: delen bij elke foto met formaten, locatie bij een
   // eigen foto. Bovenaan; verwijderen (rood) blijft onderaan.
-  const placeShare = placeShareActions({ me: ctx.me, ownerId: photo.ownerId, hasFormats: photo.hasFormats === true });
-  if (place === null) return photo.ownerId === ctx.me ? [...placeShare, ...myPhotoActions()] : [];
-  return [...placeShare, ...photoActions({ ...ctx, ownerId: photo.ownerId, addedBy: photo.addedBy })];
+  // WP37 invariant 9: een filmpje deelt het bestand zelf (zonder GPS), ook
+  // zonder formaten van de poster.
+  const placeShare = placeShareActions({
+    me: ctx.me,
+    ownerId: photo.ownerId,
+    hasFormats: photo.hasFormats === true || photo.isVideo === true,
+  });
+  const actions =
+    place === null
+      ? photo.ownerId === ctx.me
+        ? [...placeShare, ...myPhotoActions()]
+        : []
+      : [...placeShare, ...photoActions({ ...ctx, ownerId: photo.ownerId, addedBy: photo.addedBy })];
+  // WP37 invariant 9, A-invariant 16: niet draaien en geen profielfoto bij een
+  // filmpje (de backend weigert ze ook). Cover, melden, uit album, verwijderen
+  // en delen wel.
+  return photo.isVideo ? actions.filter((a) => a !== "rotate" && a !== "profilePhoto") : actions;
 }
 
 function confirm(title: string, message: string, verb: string, onConfirm: () => void) {
@@ -198,12 +214,13 @@ export function usePhotoMenu({
       };
       // Tijdens het delen doet een nieuwe tik op "Delen" niets, ook niet bij een andere foto.
       if (shareBusy.current) return;
-      const notice = ctx ? shareNotice({ me: ctx.me, ownerId: photo.ownerId, ownerName: photo.ownerName }) : null;
+      const base = ctx ? shareNotice({ me: ctx.me, ownerId: photo.ownerId, ownerName: photo.ownerName }) : null;
+      const notice = base && photo.isVideo ? base.replace(/^Deze foto/, "Dit filmpje") : base;
       if (notice === null) {
         void run();
         return;
       }
-      Alert.alert("Foto delen?", notice, [
+      Alert.alert(photo.isVideo ? "Filmpje delen?" : "Foto delen?", notice, [
         { text: "Annuleren", style: "cancel" },
         { text: "Delen", onPress: () => void run() },
       ]);
@@ -273,7 +290,7 @@ export function usePhotoMenu({
         }
         case "delete":
           // Invariant 2: altijd eerst vragen, en zeggen wat er weggaat.
-          confirm("Foto overal verwijderen?", deleteWhat(1), "Verwijderen", () =>
+          confirm(photo.isVideo ? "Filmpje overal verwijderen?" : "Foto overal verwijderen?", deleteWhat(1), "Verwijderen", () =>
             void attempt(() => removePhoto({ photoId }), SUCCESS.delete, FAILED, true),
           );
           return;

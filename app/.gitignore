@@ -3,8 +3,10 @@
 expo-env.d.ts
 
 # Native mappen: expo prebuild / expo run:ios maakt ze uit app.json.
-ios/
-android/
+# Alleen die in de wortel van app/: de eigen module (modules/*/ios, WP37)
+# hoort wel in de repo (en in de EAS-upload).
+/ios/
+/android/
 
 # Typecheck-output (npm run typecheck = tsc -b)
 .tsbuild/

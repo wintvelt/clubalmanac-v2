@@ -71,6 +71,11 @@ export async function isFlaggedImage(ctx: QueryCtx, storageId: Id<"_storage">): 
   return (await rowsOf(ctx, storageId)).some(isFlagged);
 }
 
+/** WP37 A-invariant 16: is dit beeld de poster van een filmpje? Dan geen profielfoto. */
+export async function isVideoPoster(ctx: QueryCtx, storageId: Id<"_storage">): Promise<boolean> {
+  return (await rowsOf(ctx, storageId)).some((p) => p.video !== undefined);
+}
+
 /**
  * Besluit 7 (A-invariant 11 en 14): wist de koppeling van `userId` als hij
  * geen toegang meer heeft tot een rij met dat beeld. Een los beeld (knor)

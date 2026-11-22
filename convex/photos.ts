@@ -24,9 +24,10 @@ import {
   pick,
   publicProfile,
   publicProfileFields,
+  videoField,
 } from "./lib/shapes";
 import { avatarFieldsOf } from "./lib/profilePhoto";
-import { hasCompleteFormats, photoView } from "./lib/formatSet";
+import { hasCompleteFormats, photoView, videoView } from "./lib/formatSet";
 import {
   applyOrientation,
   rotationSwapsDimensions,
@@ -88,7 +89,7 @@ async function requirePhotoAccessForRead(
 // WP23: owner als publiek profiel (geen email/subject).
 export const getWithOwner = query({
   args: { photoId: v.id("photos") },
-  returns: v.object({ ...photoFields, ...hasFormatsField, owner: v.union(publicProfile, v.null()) }),
+  returns: v.object({ ...photoFields, ...hasFormatsField, ...videoField, owner: v.union(publicProfile, v.null()) }),
   handler: async (ctx, { photoId }) => {
     const { photo } = await requirePhotoAccessForRead(ctx, photoId);
     const owner = await ctx.db.get(photo.ownerId);
@@ -569,6 +570,13 @@ export async function internalRemovePhoto(
   await ctx.scheduler.runAfter(0, internal.photos.cleanupStorage, {
     storageIds: [photo.storageId, ...formatStorageIds(photo)],
   });
+  // WP37 invariant 6, A-invariant 21: een filmpje gaat ook uit R2. Elk wis-pad
+  // (remove, removeFlagged, de ronde na 14 dagen, account verwijderen) komt
+  // hier langs. Mislukt R2, dan is de rij toch weg; de dagelijkse R2-check
+  // ziet het wees-object.
+  if (photo.video) {
+    await ctx.scheduler.runAfter(0, internal.videos.deleteObjects, { keys: [photo.video.key] });
+  }
 
   await ctx.db.delete(photoId);
 }
@@ -641,6 +649,9 @@ export const rotate = mutation({
         throw new Error("Alleen eigenaar of group-admin kan foto roteren");
       }
     }
+    // WP37 A-invariant 16: een filmpje draait niet (de poster zou anders anders
+    // staan dan het filmpje). Na de rechten-check, zodat het geen orakel is.
+    if (photo.video) throw new Error("Een filmpje kan niet gedraaid worden");
 
     const patch: Partial<Doc<"photos">> = {
       exifOrientation: applyOrientation(photo.exifOrientation, rotation, flipY),
@@ -1216,7 +1227,7 @@ export const removeFlagged = mutation({
 const MY_FLAGGED_FIELDS = { ...photoFields, ...ownFlagFields };
 export const listMyFlagged = query({
   args: {},
-  returns: v.array(v.object({ ...MY_FLAGGED_FIELDS, ...hasFormatsField })),
+  returns: v.array(v.object({ ...MY_FLAGGED_FIELDS, ...hasFormatsField, ...videoField })),
   handler: async (ctx) => {
     const user = await requireCurrentUser(ctx);
     // WP20 besluit 6, S2: alleen de gemelde foto's lezen. Een ontbrekende
@@ -1231,7 +1242,7 @@ export const listMyFlagged = query({
     return await Promise.all(
       owned
         .filter((p) => p.flaggedAt !== undefined)
-        .map(async (p) => ({ ...pick(p, MY_FLAGGED_FIELDS), hasFormats: await hasCompleteFormats(ctx, p) })),
+        .map(async (p) => ({ ...pick(p, MY_FLAGGED_FIELDS), hasFormats: await hasCompleteFormats(ctx, p), ...videoView(p) })),
     );
   },
 });
@@ -1243,7 +1254,7 @@ export const listMyFlagged = query({
 const ALL_FLAGGED_FIELDS = { ...photoFields, ...allFlagFields };
 export const listAllFlagged = query({
   args: {},
-  returns: v.array(v.object({ ...ALL_FLAGGED_FIELDS, ...hasFormatsField })),
+  returns: v.array(v.object({ ...ALL_FLAGGED_FIELDS, ...hasFormatsField, ...videoField })),
   handler: async (ctx) => {
     await requireWebmaster(ctx);
     // WP20 besluit 6, S2: `by_flagged` is niet sparse (WP17a vraag 9); de
@@ -1255,7 +1266,7 @@ export const listAllFlagged = query({
     return await Promise.all(
       all
         .filter((p) => p.flaggedAt !== undefined)
-        .map(async (p) => ({ ...pick(p, ALL_FLAGGED_FIELDS), hasFormats: await hasCompleteFormats(ctx, p) })),
+        .map(async (p) => ({ ...pick(p, ALL_FLAGGED_FIELDS), hasFormats: await hasCompleteFormats(ctx, p), ...videoView(p) })),
     );
   },
 });

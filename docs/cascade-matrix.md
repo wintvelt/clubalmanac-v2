@@ -40,17 +40,17 @@ Uitzondering: queries zonder trigger (puur read-tests) leven bij de query-owner.
 
 | Domain | Rules | Status |
 |---|---|---|
-| Users | 16 | ✅ U3-U4, U7-U16; ❌ U1, U2, U5 eliminated, U6 geschrapt |
+| Users | 17 | ✅ U3-U4, U7-U17; ❌ U1, U2, U5 eliminated, U6 geschrapt |
 | Groups | 4 | ✅ G1-G4 |
 | Albums | 2 | ✅ A1, A2 |
-| Photos | 9 | ✅ P1-P3, P5-P9; ❌ P4 geschrapt |
+| Photos | 10 | ✅ P1-P3, P5-P10; ❌ P4 geschrapt |
 | Album-photos (publications) | 4 | ✅ AP1, AP2, AP4; ❌ AP3 geschrapt |
 | Ratings | 1 | ❌ R1 (WP19a) |
 | Memberships | 4 | ✅ M1-M4 |
 | Flagging | 3 | ✅ FL1, FL2, FL3 |
 | Invites | 2 | ✅ IB1 (WP5 bounce-webhook), IB2 (WP9 natural-expiry cron) |
-| Uploads | 1 | ✅ UI1 (cyclus 1 architectuur rewrite + audit-cyclus-1 reservation-pattern hardening, 7d/30min cleanup) |
-| Monitoring | 1 | ✅ MON1 (WP10 integrity-check — detect-only, geen cascade) |
+| Uploads | 1 | ✅ UI1 (cyclus 1 architectuur rewrite + audit-cyclus-1 reservation-pattern hardening, 7d/30min cleanup; WP37: video-uploads na 1d, met hun object in R2) |
+| Monitoring | 2 | ✅ MON1 (WP10 integrity-check — detect-only, geen cascade), MON2 (WP37 R2-check — detect-only) |
 
 ## Cascade rules
 
@@ -74,6 +74,7 @@ Uitzondering: queries zonder trigger (puur read-tests) leven bij de query-owner.
 | U14 | (nieuw, WP29) | US delete | Uitnodigingen die hij verstuurde en die aan zijn adres (genormaliseerd en zoals in de rij), welke status ook | 3 | Fases *uitnodigingen* (`invites.by_invitedBy`, `invites.by_email`) | `tests/users/deleteAccount.test.ts` | ✅ |
 | U15 | (nieuw, WP29) | US delete | Zijn features met hun upvotes; zijn upvotes op andere features, met hertelde `upvoteCount` | 3 | Fases *features* (`features.by_submittedBy`) en *upvotes* (`featureUpvotes.by_user`) | `tests/users/deleteAccount.test.ts` | ✅ |
 | U16 | (nieuw, WP29) | US delete | De Clerk-user | 3 (extern) | `deleteClerkUser` direct na het afsluiten, los van de Convex-stappen. Alleen met een sleutel die bij de omgeving past; 404 = gelukt; anders herhaald (6 pogingen over 111 min, hooguit één reeks), daarna één mail aan de webmaster. Een hash van de subject (`deletedClerkSubjects`) blijft staan: die Clerk-user krijgt nooit meer een rij (S1). De users-rij gaat als laatste weg, als Convex én Clerk klaar zijn; tot dan houdt hij elke login tegen. Integriteitscheck meldt een rij die langer dan een uur wordt verwijderd | `tests/users/deleteAccount.test.ts` | ✅ |
+| U17 | (nieuw, WP37) | US delete | Zijn filmpjes uit R2, en het tijdelijke object van een open video-upload | 3 (extern) | Fase *foto's* via `internalRemovePhoto` (P10) voor zijn filmpjes; fase *reserveringen* plant `internal.videos.deleteObjects` voor de `videoKey` (onder `uploads/`) van elke open video-upload, en wist zijn rijen in `videoUploadRequests` (de daggrens, A-invariant 36). Mislukt R2, dan meldt de R2-check (MON2) het wees-object | `tests/videos/cascade.test.ts` | ✅ |
 
 ### Trigger: Groups
 
@@ -104,6 +105,7 @@ Uitzondering: queries zonder trigger (puur read-tests) leven bij de query-owner.
 | P7 | `photoDelToStats` | PO delete | Decrement `users.photoCount` | 2 | In `photos.remove` mutation | `tests/photos/delete.test.ts` | ✅ |
 | P8 | `fixPhotoRotation.js` (Jimp) | rotate-request (owner of group-admin) | **EXIF-only**: `photos.exifOrientation` waarde berekend via 8-staat-arithmetiek-tabel op `(rotation, flipY)`; `width`/`height` geswapt in DB bij 90°/270°; bestand zelf onaangeraakt. **Geen downstream cascade** — albumPhotos/group-+album-covers/flagging-state ongemoeid. Delta-semantiek (niet call-idempotent); inverse brengt terug. Per cyclus-2 hardening: clients passen CSS-transform toe gebaseerd op `photos.exifOrientation` uit DB (niet file-EXIF), dus DB-update = canonical rotate. Geen pixel-manipulatie nodig | n.v.t. (single-row mutation, geen cascade) | `photos.rotate` mutation (auth owner OR group-admin via `albumPhotos.by_photo`→publicatie-groups→`memberships` role=admin). Atomair: leest huidige `exifOrientation` (default 1), berekent nieuwe via lookup-tabel, patcht `exifOrientation` + (conditioneel) `width`/`height`-swap. Géén scheduled action, géén sharp, géén storage-swap, géén cleanup | `tests/photos/rotate.test.ts` (auth + EXIF-arithmetiek + dim-swap + delta+inverse + pixel-array-oracle op gespiegelde starts) | ✅ |
 | P9 | (nieuw, niet uit AWS) | PO delete | Verwijder de upload-reservering van deze foto (WP18 A-invariant 22, uit de red-team) | 3 | In `internalRemovePhoto` (`photos.remove`, `users.deleteSelf`, FL1-cron) via `uploadIdempotency.by_photo`, zodat alleen de eigen reservering gelezen wordt (A-invariant 26). `users.deleteSelf` wist daarna alle reserveringen van de user, ook `in_progress` | `tests/http/uploadReservation.test.ts`, `tests/http/uploadReservationReads.test.ts` | ✅ |
+| P10 | (nieuw, WP37) | PO delete | Een filmpje: het object (de eindsleutel onder `videos/`) uit R2 | 3 (extern) | In `internalRemovePhoto` (`photos.remove`, `photos.removeFlagged`, FL1-cron, `users.deleteSelf`): `internal.videos.deleteObjects` gepland na de transactie, best-effort; de poster en zijn formaten gaan zoals elk beeld (U7-stijl `cleanupStorage`). Uit een album halen wist niets. Mislukt R2, dan is de rij toch weg en meldt MON2 het wees-object | `tests/videos/cascade.test.ts` | ✅ |
 
 ### Trigger: Album-photos (Publications)
 
@@ -148,13 +150,14 @@ Uitzondering: queries zonder trigger (puur read-tests) leven bij de query-owner.
 
 | # | Oude handler | Trigger event | Effect | Cat | Convex aanpak | Test locatie | Status |
 |---|---|---|---|---|---|---|---|
-| UI1 | (nieuw, niet uit AWS) | Daily cron | Verwijder `uploadIdempotency` records met **twee thresholds** (audit-cyclus-1, reservation pattern): `status="completed"` ouder dan 7d (retry-safety horizon) én `status="in_progress"` ouder dan 30min (stale-reservation cleanup van gecrashte handlers tussen `reserve` en de atomic completion-patch in `createFromUploadInternal`). Sinds WP18 verloopt zo'n `in_progress` al bij een herhaling met dezelfde upload-id zodra hij 30 minuten oud is; een reservering van een gewiste foto verdwijnt met de foto (P9). Boundary `<=`, consistent met FL1 + invites accept. Photos en storage-blobs blijven onaangetast — UI1 ruimt alleen reservation-state op (storage-orphans → integrity-check, cyclus-2 backlog) | 3 | Convex scheduled cron `cleanupOldUploadIdempotency` (in `convex/crons.ts`) roept `internal.uploads.cleanupOld` aan. Scant `uploadIdempotency.by_status_and_createdAt` voor beide paden: status="completed" + createdAt<=now-7d, en status="in_progress" + createdAt<=now-30min, per match `ctx.db.delete`. Eén cron-run dekt beide thresholds | `tests/uploads/cleanupOld.test.ts` + `tests/crons/registration.test.ts` (statisch pin op cron-registratie zelf — WP4 audit-13 follow-up) | ✅ |
+| UI1 | (nieuw, niet uit AWS) | Daily cron | Verwijder `uploadIdempotency` records met **twee thresholds** (audit-cyclus-1, reservation pattern): `status="completed"` ouder dan 7d (retry-safety horizon) én `status="in_progress"` ouder dan 30min (stale-reservation cleanup van gecrashte handlers tussen `reserve` en de atomic completion-patch in `createFromUploadInternal`). Sinds WP18 verloopt zo'n `in_progress` al bij een herhaling met dezelfde upload-id zodra hij 30 minuten oud is; een reservering van een gewiste foto verdwijnt met de foto (P9). Boundary `<=`, consistent met FL1 + invites accept. Photos en storage-blobs blijven onaangetast — UI1 ruimt alleen reservation-state op (storage-orphans → integrity-check, cyclus-2 backlog). **WP37:** een open video-upload (`videoKey` gezet) blijft 1 dag (niet 30 min); daarna gaan reservering én het tijdelijke object in R2 (`uploads/…`) weg via `internal.videos.deleteObjects`. Daarnaast wist een lifecycle-regel in R2 alles onder `uploads/` na 1 dag (runbook) | 3 (+ extern R2) | Convex scheduled cron `cleanupOldUploadIdempotency` (in `convex/crons.ts`) roept `internal.uploads.cleanupOld` aan. Scant `uploadIdempotency.by_status_and_createdAt` voor beide paden: status="completed" + createdAt<=now-7d, en status="in_progress" + createdAt<=now-30min, per match `ctx.db.delete`. Eén cron-run dekt beide thresholds | `tests/uploads/cleanupOld.test.ts` + `tests/crons/registration.test.ts` (statisch pin op cron-registratie zelf — WP4 audit-13 follow-up) | ✅ |
 
 ### Trigger: Monitoring (system events)
 
 | # | Oude handler | Trigger event | Effect | Cat | Convex aanpak | Test locatie | Status |
 |---|---|---|---|---|---|---|---|
 | MON1 | (nieuw, niet uit AWS — oude AWS had geen monitoring-loop) | Daily cron | **Detect-only — geen cascade**. Scant de volledige DB op stille datakorruptie in vijf categorieën: storage-orphans (2a; de formaten van WP25 tellen als verwezen), aggregate-drift (2b: `users.photoCount`, `features.upvoteCount`), FK-integriteit (2c: 18 verplichte + 5 optionele FKs), geen-self-healing (2d), en formaten (WP25: een foto ouder dan een uur zonder formaten, of met een formaat-veld naar een gewist object: "formaten ontbreken" / "formaten dangling"; een met `formaten --accept-no-formats` afgetekende foto niet). Leest álle tabellen, schrijft **alleen** `monitoringRuns` + queue't bij drift één samenvattende alert-action. Fixt nooit iets. Dedup via drift-signature (één mail per persistente drift) + maandelijkse heartbeat | n.v.t. (detect-only, geen downstream-writes buiten `monitoringRuns`) | Convex scheduled cron `"integrity check"` 04:30 UTC → `internal.monitoring.integrityCheck` (WP10), gespreid ná IB2 (04:00). Eén `internalMutation` = één transactie/snapshot ⇒ race-resistentie (inv 11). Mail via `internal.monitoring.sendMonitoringAlert` action, `info@`-sender → `WEBMASTER_EMAILS` | `tests/monitoring/integrity.test.ts` + `tests/crons/registration.test.ts` (statisch pin) | ✅ |
+| MON2 | (nieuw, WP37) | Daily cron | **Detect-only — geen cascade**. Legt de lijst in R2 naast de filmpjes (`photos.video.key`) en de open video-uploads (`uploadIdempotency.videoKey`): een wees-object (geen rij, geen open upload, ouder dan een dag), een ontbrekend bestand (rij zonder object), een object waarvan de grootte afwijkt van `video.bytes`, en elk object boven 120 MiB. Eén mail aan `WEBMASTER_EMAILS` als er iets is of als de check niet kon draaien (config, R2 onbereikbaar). Wist niets | n.v.t. (detect-only) | Convex scheduled cron `"video storage check"` 05:15 UTC → `internal.videos.checkStorage` (action: R2 is extern, de lijst komt uit `internal.videos.storageInventory`) | `tests/videos/storageCheck.test.ts` + `tests/crons/registration.test.ts` (statisch pin) | ✅ |
 
 ### Trigger: Stats / signup completion
 

@@ -3,6 +3,8 @@ name: Backup
 # Maandelijkse volledige export van Convex-prod, met bestanden, naar de
 # backup-bucket in eu-west-1 (WP31 B4). Opzet, controle en terugzetten:
 # infra/backup.md. Bucket en rol: infra/backup.yml.
+# WP37: daarna de filmpjes uit Cloudflare R2 (prod-bucket, alleen-lezen
+# token) naar het prefix r2-videos/ van dezelfde bucket.
 #
 # De deploy-key van prod kan prod ook wijzigen. Deze workflow doet daarom
 # niets anders dan exporteren en de namen (geen waarden) van de env-vars
@@ -39,6 +41,9 @@ jobs:
     env:
       BACKUP_BUCKET: ${{ vars.BACKUP_BUCKET }}
       BACKUP_ROLE_ARN: ${{ vars.BACKUP_ROLE_ARN }}
+      # WP37: leeg tot R2 op prod draait (infra/backup.md, Filmpjes in R2).
+      R2_BACKUP_ENDPOINT: ${{ vars.R2_BACKUP_ENDPOINT }}
+      R2_BACKUP_BUCKET: ${{ vars.R2_BACKUP_BUCKET }}
     steps:
       - name: Variabelen aanwezig
         env:
@@ -110,3 +115,45 @@ jobs:
           aws s3 cp env-names.txt "s3://$BACKUP_BUCKET/convex-prod/env-names.txt" \
             --storage-class GLACIER_IR --metadata "exported-at=$stamp,run=$GITHUB_RUN_ID" --no-progress
           echo "klaar: export van $stamp in s3://$BACKUP_BUCKET/convex-prod/"
+
+      # WP37 (A-invariant 35): pas ná de Convex-upload, zodat een probleem met
+      # R2 de Convex-backup niet raakt. rclone kopieert van bucket naar bucket
+      # (streamend, niets op de schijf van de runner). Dezelfde sleutels als in
+      # R2 onder r2-videos/; alleen nieuwe objecten (de sleutels veranderen
+      # nooit, dus de grootte volstaat); een filmpje dat uit R2 weg is, krijgt
+      # een delete-marker (de vorige versie blijft een half jaar, zoals de
+      # export). Niet: de tijdelijke uploads (uploads/). Hooguit 25 wissingen
+      # per run: een lege of verkeerde bron maakt de backup niet leeg (dan rood,
+      # zie infra/backup.md). NO_HEAD: de rol mag bewust niet lezen
+      # (GetObject/HeadObject). Zonder R2_BACKUP_BUCKET: een gele waarschuwing,
+      # geen rode run, zolang R2 op prod nog niet draait.
+      - name: Filmpjes uit R2 naar de backup
+        env:
+          RCLONE_CONFIG_R2_TYPE: s3
+          RCLONE_CONFIG_R2_PROVIDER: Cloudflare
+          RCLONE_CONFIG_R2_ACCESS_KEY_ID: ${{ secrets.R2_BACKUP_ACCESS_KEY_ID }}
+          RCLONE_CONFIG_R2_SECRET_ACCESS_KEY: ${{ secrets.R2_BACKUP_SECRET_ACCESS_KEY }}
+          RCLONE_CONFIG_R2_ENDPOINT: ${{ vars.R2_BACKUP_ENDPOINT }}
+          RCLONE_CONFIG_R2_NO_CHECK_BUCKET: "true"
+          # De backup-bucket met de rol van de stap hierboven (AWS-env-vars).
+          RCLONE_CONFIG_S3BACKUP_TYPE: s3
+          RCLONE_CONFIG_S3BACKUP_PROVIDER: AWS
+          RCLONE_CONFIG_S3BACKUP_ENV_AUTH: "true"
+          RCLONE_CONFIG_S3BACKUP_REGION: eu-west-1
+          RCLONE_CONFIG_S3BACKUP_STORAGE_CLASS: GLACIER_IR
+          RCLONE_CONFIG_S3BACKUP_NO_CHECK_BUCKET: "true"
+          RCLONE_CONFIG_S3BACKUP_NO_HEAD: "true"
+        run: |
+          if [ -z "$R2_BACKUP_BUCKET" ]; then
+            echo "::warning::R2_BACKUP_BUCKET niet gezet: de filmpjes in R2 zitten niet in deze backup"
+            exit 0
+          fi
+          test -n "$R2_BACKUP_ENDPOINT" || { echo "repo-variabele R2_BACKUP_ENDPOINT ontbreekt"; exit 1; }
+          test -n "$RCLONE_CONFIG_R2_ACCESS_KEY_ID" || { echo "geheim R2_BACKUP_ACCESS_KEY_ID ontbreekt in environment prod-backup"; exit 1; }
+          test -n "$RCLONE_CONFIG_R2_SECRET_ACCESS_KEY" || { echo "geheim R2_BACKUP_SECRET_ACCESS_KEY ontbreekt in environment prod-backup"; exit 1; }
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq rclone > /dev/null
+          rclone version | head -1
+          rclone size "r2:$R2_BACKUP_BUCKET" "--exclude=uploads/**"
+          rclone sync "r2:$R2_BACKUP_BUCKET" "s3backup:$BACKUP_BUCKET/r2-videos/" "--exclude=uploads/**" --max-delete=25 --size-only --stats-one-line --stats=0
+          echo "klaar: filmpjes in s3://$BACKUP_BUCKET/r2-videos/"

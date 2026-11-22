@@ -60,4 +60,14 @@ crons.daily(
   {},
 );
 
+// WP37 A-invariant 22: dagelijks de filmpjes in R2 naast de rijen leggen
+// (wees-objecten, ontbrekende bestanden); één mail aan de webmaster als er
+// iets is. 05:15 UTC, na de film link check. Wist niets.
+crons.daily(
+  "video storage check",
+  { hourUTC: 5, minuteUTC: 15 },
+  internal.videos.checkStorage,
+  {},
+);
+
 export default crons;
