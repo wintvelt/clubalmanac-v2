@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  addButton,
   addGrid,
   addToSelection,
   removeFromSelection,
@@ -341,5 +342,19 @@ describe("addGrid: het raster zoals in het album (besluit 4, A-antwoord 3, A8)",
     const { columns, tile } = addGrid(0);
     expect(columns).toBeGreaterThanOrEqual(1);
     expect(tile).toBeGreaterThanOrEqual(0);
+  });
+});
+
+describe("addButton: de knop onderin (fixronde gate 1, besluit 1, F6, besluit 7)", () => {
+  it("met een album: Toevoegen aan album", () => {
+    expect(addButton("chosen")).toEqual({ title: "Toevoegen aan album", action: "toevoegen" });
+  });
+
+  it("zonder album: grijs 'Kies eerst een album', een tik opent het kiesscherm", () => {
+    expect(addButton("none")).toEqual({ title: "Kies eerst een album", action: "kies-album" });
+  });
+
+  it("nog onbekend (het onthouden album wordt gecontroleerd): uit, zonder flits van 'Kies eerst een album'", () => {
+    expect(addButton("unknown")).toEqual({ title: "Toevoegen aan album", action: null });
   });
 });

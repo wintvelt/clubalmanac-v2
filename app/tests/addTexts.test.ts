@@ -12,6 +12,11 @@ import { parse } from "./support/sourceScan";
 //   plaats van de +. "Andere foto's kiezen" is weg op iOS (besluit 3).
 //   Web (A-antwoord 5, B-besluiten 1 en 2): kop en knoptitel gelijk; de lege
 //   stand en "Andere foto's kiezen" blijven daar, dat legt deze test niet vast.
+// Fixronde gate 1 (besluiten Wouter na gate ronde 1): "Meer toevoegen" heet
+//   "Meer selecteren" (besluit 2, F9, ook op het web via RoundResult);
+//   "Stoppen" bij "Je keuze ophalen…" (besluit 3, F7); de albumrij "Kies een
+//   album" en zonder album de knop "Kies eerst een album" (besluit 1, F6). De
+//   titel van de uploadknop mag daarom een expressie zijn.
 // Een bronscan (de TypeScript-parser): alleen strings in de code, geen
 // commentaar. De teksten staan letterlijk in deze bestanden.
 // Spec: docs/work-packages/WP39-toevoegscherm.md §Testcontract.
@@ -93,9 +98,15 @@ describe("de kop en de ingangen heten Toevoegen (besluit 1)", () => {
 });
 
 describe("het scherm op iOS zegt foto's én filmpjes (besluit 1 en 3)", () => {
-  const both = [...strings(IOS), ...strings(PARTS)];
+  // De teksten mogen ook in de pure logica (addButton) of het kiesscherm staan.
+  const both = [
+    ...strings(IOS),
+    ...strings(PARTS),
+    ...strings(source("lib/addSelection.ts")),
+    ...strings(source("screens/AlbumChoice.tsx")),
+  ];
 
-  it.each(["Andere foto's kiezen", "Foto's uploaden", "Filmpjes uploaden", "Uploaden", "Meer foto's", "Meer kiezen", "Kies foto's", "Foto's kiezen"])(
+  it.each(["Andere foto's kiezen", "Foto's uploaden", "Filmpjes uploaden", "Uploaden", "Meer foto's", "Meer kiezen", "Meer toevoegen", "Kies foto's", "Foto's kiezen"])(
     "geen '%s' meer",
     (old) => {
       expect(strings(IOS), `AddPhotosScreen.tsx`).not.toContain(old);
@@ -103,7 +114,7 @@ describe("het scherm op iOS zegt foto's én filmpjes (besluit 1 en 3)", () => {
     },
   );
 
-  it.each(["Kies foto's of filmpjes", "Meer toevoegen", "Toevoegen aan album"])("wel '%s'", (text) => {
+  it.each(["Kies foto's of filmpjes", "Meer selecteren", "Toevoegen aan album", "Kies eerst een album", "Kies een album", "Stoppen"])("wel '%s'", (text) => {
     expect(both).toContain(text);
   });
 });
@@ -116,13 +127,34 @@ describe("de uploadknop: 'Toevoegen aan album' met een upload-icoon (besluit 1)"
     const buttons = jsx(sf, "Button").filter((el) => (attrText(sf, el, "onPress") ?? "").includes("startUpload"));
     expect(buttons.length, "sanity: een <Button onPress={startUpload}>").toBeGreaterThan(0);
     for (const el of buttons) {
-      expect(attrText(sf, el, "title")).toBe("Toevoegen aan album");
+      // De titel wisselt met het album (F6); een letterlijke titel moet de goede zijn.
+      const title = attrText(sf, el, "title");
+      const literal = el.attributes.properties.some(
+        (p) => ts.isJsxAttribute(p) && p.name.getText(sf) === "title" && p.initializer !== undefined && (ts.isStringLiteral(p.initializer) || (ts.isJsxExpression(p.initializer) && p.initializer.expression !== undefined && ts.isStringLiteral(p.initializer.expression))),
+      );
+      if (literal) expect(title).toBe("Toevoegen aan album");
       expect(attrText(sf, el, "icon")).toBe("upload");
     }
   });
 
+  it.each([
+    ["iOS", IOS],
+    ["web", WEB],
+  ] as const)("%s: de knop kent 'Toevoegen aan album' en, zonder album, 'Kies eerst een album' (F6, besluit 9)", (_name, sf) => {
+    // Letterlijk in het scherm, of via addButton (die de titels geeft).
+    const viaAddButton = sf.getFullText().match(/\baddButton\(/) !== null;
+    const s = viaAddButton ? [...strings(sf), ...strings(source("lib/addSelection.ts"))] : strings(sf);
+    expect(s).toContain("Toevoegen aan album");
+    expect(s).toContain("Kies eerst een album");
+  });
+
   it("web: geen 'Foto's uploaden' meer", () => {
     expect(strings(WEB)).not.toContain("Foto's uploaden");
+  });
+
+  it("web: na een ronde 'Meer selecteren' via de gedeelde RoundResult (F9)", () => {
+    expect(strings(WEB)).not.toContain("Meer toevoegen");
+    expect(strings(PARTS)).toContain("Meer selecteren");
   });
 
   it("Icon kent een icoon 'upload'", () => {
