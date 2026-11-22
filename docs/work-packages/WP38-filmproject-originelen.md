@@ -88,3 +88,171 @@ Na een reis wil Wouter een nieuwe clubfilm monteren uit de filmpjes van de leden
 - WP37 (R2, verkleinen), WP39 (toevoegscherm), WP40 (selectiebalk), WP28 (rollen, oprichter), WP21 (tab Films), WP17d (GPS-regel), WP29 (account verwijderen).
 
 ## Spec-criticus aanvullingen (A vult in)
+
+> A 2026-11-22. Bronnen: deze spec, de oude repos (`~/Code/v1`), de huidige code (`convex/videos.ts`, `lib/r2.ts`, `uploads.ts`, `groups.ts`, `albums.ts`, `photos.ts`, `accountDeletion.ts`, `crons.ts`, `.github/workflows/backup.yml`; in de app `videoUpload.ts`, `AddPhotosScreen.tsx`, de module `clubalmanac-video`, `expo-file-system` 58.0.14 en `expo-image-picker` 58 in `node_modules`), WP37, WP39, WP40 en WP28. Niets op een iPhone of tegen echte R2 getest: dat staat bij de gate-checks.
+
+### Pariteit met de oude app
+
+Bestond niet in v1. De oude backend en de oude app kennen geen filmpjes van leden, geen originelen en geen inzendingen (gezocht op video, film, multipart, original: alleen EXIF-datum van foto's en een mailstijl). Oude code is hier dus geen bron; dit WP is nieuw gedrag.
+
+### Wat de huidige v2-code doet (en wat WP38 raakt)
+
+- **Filmpje toevoegen (WP37)**: `videos.startUpload` (album, duur, grootte) reserveert per upload-id, met het album in de reservering; `POST /upload/video` maakt de rij en zet hem in dat album. Het album wordt bij `startUpload` gekozen en ligt daarna vast. De albumregel van WP38 hoort dus in `startUpload` (en in wat daar het album bepaalt), niet in de app. De tests van WP37 pinnen het antwoord van `startUpload` exact (`{ kind: "done", photoId }`); een extra veld in dat antwoord breekt ze. De app weet het filmalbum zelf al (uit de projectlijst), dus dat is ook niet nodig.
+- **Upload naar R2 (WP37)**: één PUT, met `expo-file-system/legacy` in een achtergrond-sessie. Die sessie krijgt per taak een willekeurige naam (`NetworkingHelpers.swift`: `background(withIdentifier: UUID().uuidString)`), heeft geen instelling voor mobiel internet en uploadt alleen een heel bestand. Na een herstart of een geforceerd sluiten vindt de app de taak dus niet terug, en "Alleen via wifi" kan er niet mee. Voor originelen is een eigen uploader in de module `clubalmanac-video` nodig (antwoord 1).
+- **Kiezer (WP39)**: `preferredAssetRepresentationMode: Current` en `videoExportPreset: Passthrough` staan expliciet in `AddPhotosScreen.tsx`. De kiezer kopieert het origineel naar de cache van de app; het scherm wist die kopieën (`dropCopies`, en bij sluiten). Een origineel dat nog moet, mag daar niet onder vallen (A-invariant 20).
+- **Selectiebalk (WP40)**: "Naar album" is `albums.addPhoto` (eigenaar), "Uit album" `albums.removePhoto` (toevoeger of admin). Beide raken alleen `albumPhotos`. Besluit 4 vraagt daar geen wijziging: "Naar album" naar Y blijft mogen en is geen inzending.
+- **Rollen (WP28)**: de oprichter is `groups.createdBy`, met `requireFounder`. Hij kan overdragen (`transferFounder`); verwijdert hij zijn account, dan wordt de eerste admin oprichter (M2-d). Albums verwijderen mag alleen de oprichter. Een lid dat vertrekt of verwijderd wordt, verliest zijn foto's in de albums van die groep (M1).
+- **Opruimen en bewaken (WP37)**: elk wis-pad van een rij gaat via `internalRemovePhoto`, dat ook R2 wist. De dagelijkse R2-check (`videos.checkStorage`) lijst de hele bucket en meldt wat geen rij heeft. De maandelijkse backup kopieert de bucket `R2_BACKUP_BUCKET` met `rclone sync` naar S3, behalve `uploads/**`, en de backup-bucket bewaart versies een half jaar.
+
+### Antwoorden op de open vragen
+
+1. **Uploaden van grote bestanden.**
+   - *In delen.* R2 kent multipart zoals S3 (aanmaken, delen, afronden, afbreken, lijst van delen). Delen zijn 5 MiB tot 5 GiB, hooguit 10.000, en bij R2 moeten **alle delen even groot zijn behalve het laatste**. Voorstel: delen van 32 MiB (een origineel van 1,5 GB is 45 delen). De backend maakt de upload aan, kiest de sleutel en tekent per deel een PUT met het deelnummer, de upload-id en de grootte van dat deel in de handtekening (zoals WP37 A-invariant 11).
+   - *Hervatten.* De backend is de bron van wat er al is: hij vraagt R2 welke delen binnen zijn (ListParts) en geeft alleen links voor de rest. De app hoeft geen ETags te bewaren of door te geven, en een client kan geen deel van een ander aanwijzen. Afronden doet de backend met de lijst van R2.
+   - *Op de achtergrond.* Ja, met een eigen uploader in `clubalmanac-video`: een achtergrond-URLSession met een **vaste naam** (zodat iOS de app na een herstart of op de achtergrond weer koppelt), één taak per deel uit een eigen deelbestand (een achtergrond-taak uploadt alleen een heel bestand). Om niet het dubbele aan schijf te gebruiken, snijdt de module een paar delen tegelijk en het volgende pas als er een klaar is; dat gaat ook op de achtergrond, in de terugroep van de sessie. Een taak die iOS op de achtergrond krijgt, plant het zelf (vaak op wifi en aan de lader): dat is in orde voor een nacht in het hotel. Met de app open gaat het meteen. Een user die de app wegveegt, stopt de taken (iOS-regel); bij de volgende start gaat het verder met de delen die nog niet binnen zijn.
+   - *Links.* Een deel-link geldt 7 dagen (het maximum van SigV4 en R2): een taak die iOS pas uren later start, moet nog een geldige link hebben. Het risico is klein: de link schrijft alleen precies dat deel, met precies die grootte, van een upload die na afronden of afbreken niet meer bestaat. Bij een verlopen link (403) haalt de app bij de volgende start verse.
+   - *Afronden zonder de app.* De backend rondt elk uur zelf af wat helemaal binnen is (A-invariant 9). Anders staat een origineel dat 's nachts op de achtergrond binnenkwam op "onderweg" tot het lid de app weer opent.
+   - *"Alleen via wifi".* Een sessie met `allowsCellularAccess = false` en `allowsExpensiveNetworkAccess = false` (dan telt ook een persoonlijke hotspot niet als wifi), en een tweede sessie zonder die grenzen. Zet het lid de schakelaar om, dan gaan de wachtende delen naar de andere sessie. De schakelaar geldt per toestel, voor alle originelen, en staat in het toevoegscherm en op de projectpagina. Op de achtergrond wacht iOS zelf tot er wifi is.
+   - *Project sluit terwijl er originelen onderweg zijn.* Nieuwe inzendingen kunnen dan niet meer; wat al aangemeld is, mag nog binnenkomen (besluit 18 voor Wouter: hoe lang).
+2. **Het origineel uit de kiezer.** Met Current en Passthrough geeft `expo-image-picker` 58 de bestandsvorm van het item zoals het in Foto's staat, zonder omzetten: bij een iPhone-opname de `.MOV` in HEVC, 4K, met datum en plaats. WP37 zag dat al (gate: datum en plaats kwamen binnen, en het origineel op de server had `location.ISO6709` en `creationdate`). Een item in iCloud haalt de kiezer eerst helemaal op ("Je keuze ophalen…", WP39). Open voor de gate: of het bestand bit voor bit gelijk is aan het origineel (SHA-256 naast een AirDrop met "Alle fotogegevens"), en wat de kiezer geeft bij een filmpje dat in Foto's is bewerkt of ingekort (vermoedelijk de bewerkte versie), bij slow-motion en bij Cinematic. *Bewaren tot het verstuurd is*: de app verplaatst de kopie van de kiezer meteen na "Toevoegen" naar een eigen map (Application Support, buiten de iCloud-backup van het toestel). Verplaatsen is hernoemen op dezelfde schijf: direct en zonder extra ruimte. Het verkleinen voor het album leest daarna die verplaatste kopie. Het bestand gaat pas weg als het origineel binnen is, teruggetrokken of geweigerd, of als het project het niet meer aanneemt.
+3. **Grenzen en kosten.**
+   - *3 minuten*: ja, vanzelf. Een origineel gaat alleen mee met een nieuw filmpje in het album (invariant 1), en dat filmpje mag hooguit 3 minuten zijn (WP37). Een eigen duurgrens voor het origineel is dus niet nodig, en de backend hoeft het origineel niet te ontleden.
+   - *Grootte*: 3 minuten 4K 60 fps HEVC is ~1,2 GB, met HDR iets meer. Gemeten in WP37: 4K 24 fps HDR is ~235 MB per minuut. ProRes is ~6 GB per minuut, dus 3 minuten ~18 GB. Voorstel: **hooguit 2 GiB per origineel** (dekt elke HEVC-opname van 3 minuten; ProRes niet: dan komt het filmpje wel in het album, maar het origineel niet, met een melding), **hooguit 200 GiB per project** en **400 GiB voor alle projecten samen**.
+   - *R2-tarieven* (Standard, november 2026, nog te bevestigen in het dashboard): opslag $0,015 per GB per maand, schrijven (klasse A) $4,50 per miljoen, lezen (klasse B) $0,36 per miljoen, uitgaand verkeer gratis. Gratis per maand: 10 GB opslag, 1 miljoen klasse A, 10 miljoen klasse B. Elk deel, aanmaken, afronden en een lijst van delen is klasse A. Downloaden kost alleen een paar klasse B.
+   - *Kosten*: 100 GB een jaar lang is ~$1,35–1,50 per maand. Twee reizen per jaar die elkaar overlappen: ~$3. Het plafond van 400 GiB kost hooguit ~$6 per maand, ruim binnen €15. Operaties vallen in het gratis deel: 100 GB in delen van 32 MiB is ~3.200 schrijfacties, plus een lijst van delen per open inzending per uur. *Infrequent Access* (opslag $0,01, ophalen $0,01 per GB, minimaal 30 dagen) scheelt een derde, maar valt buiten het gratis deel en maakt de opzet ingewikkelder. Niet doen.
+4. **Oude apps.** App 2.0.0 en 2.0.1 kunnen geen filmpjes toevoegen. App 2.0.2 (WP37, WP39) vraagt `startUpload` met album Y. **Voorstel: omleiden, niet weigeren** (A-invariant 2). Het filmpje komt dan in X. De oude app meldt "toegevoegd aan Y", maar het filmpje staat voor iedereen zichtbaar in X. Het origineel stuurt de oude app niet mee: dat filmpje heeft geen inzending. Weigeren zou in 2.0.2 een onbegrijpelijke fout geven ("Album niet gevonden" of "Er ging iets mis") en het filmpje helemaal tegenhouden. De What's New van de nieuwe versie en een bericht aan de leden vragen om bij te werken.
+5. **Vertrek en account verwijderen.** *Account verwijderen*: zijn originelen gaan weg, ook in R2 (invariant 6, WP29: weg is weg). *Vertrekken of verwijderd worden uit de groep*: voorstel ook weg, net zoals zijn filmpjes uit de albums van die groep gaan (M1) en omdat er GPS in staat. Besluit 12 voor Wouter.
+6. **Einddatum.** Voorstel: het project **sluit vanzelf** aan het eind van de einddatum (23:59 in Nederland). De oprichter kan eerder sluiten en zolang het open staat de einddatum verschuiven. De einddatum ligt in de toekomst en hooguit een jaar vooruit. Besluit 13.
+7. **Backup.** Voorstel: **niet in de backup**. Ze staan ook nog op de telefoons. De backup-bucket bewaart versies een half jaar, dus een teruggetrokken of verlopen origineel (met GPS) bleef daar anders nog maanden staan, en dat botst met invariant 6. Dat lukt het eenvoudigst met een **eigen bucket** voor originelen (A-keuze), die de backup-stap niet kent. Besluit 14.
+8. **Herinnering.** Voorstel: één mail aan de oprichter, 30 dagen voordat de eerste originelen van een project weggaan, met het project, het aantal en de datum. Geen mail aan de leden. Besluit 15.
+
+### Wat in de draft niet klopt of ontbreekt
+
+- **"Alleen via de webapp" is geen regel die de backend kan afdwingen.** De app en de webapp gebruiken dezelfde login; een Origin-header kan elke client zelf zetten. De dreiging is ook niet de oprichter zelf. Voorstel: invariant 1 wordt "downloaden: alleen de oprichter (backend)"; "alleen in de webapp" is een UI-regel (de app heeft geen downloadknop).
+- **Het filmpje in het album verwijderen** (de eigenaar, de webmaster na een melding, de opruimronde na 14 dagen). Besluit 4 regelt "Uit album", niet "Verwijderen". Voorstel: verwijderen haalt ook het origineel weg (weg is weg; een gemeld en verwijderd filmpje hoort ook niet in de clubfilm). De bevestiging zegt dat als er een origineel is. Besluit 16.
+- **Het filmalbum verwijderen tijdens een open project.** Dat kan nu (`albums.remove`, de oprichter). Daarna komen nieuwe filmpjes nergens terecht. Voorstel: weigeren zolang het project open staat ("Sluit eerst het filmproject"). Besluit 17.
+- **Andere oprichter.** De rechten volgen `groups.createdBy` op het moment van het verzoek. Na overdragen (of na M2-d bij account verwijderen) downloadt de nieuwe oprichter de originelen van de leden, met GPS. Dat is consequent; Wouter moet het wel weten.
+- **"Elk nieuw filmpje stuurt mee in" geldt per app, niet in de backend.** De backend kan een origineel niet zelf ophalen. Hij dwingt af dat een inzending alleen kan bij een nieuw filmpje in het filmalbum (invariant 1) en dat het filmpje in het filmalbum komt (invariant 2). Of het origineel ook komt, hangt af van de app (en de oude app stuurt het niet, antwoord 4).
+- **De poster op de projectpagina.** Leden zien een inzending ook als het filmpje uit het filmalbum is gehaald (besluit 4). Het beeldpad van foto's laat dan geen lid meer toe. Een inzending heeft dus een eigen beeldpad, met als regel "lid van de groep van het project". Hetzelfde beeld als de poster van het filmpje, zonder GPS (WP37 A-invariant 15). Geen afspeellink.
+- **Wat de projectpagina toont van anderen.** Voorstel: de inzendingen van anderen pas als ze binnen zijn. Eigen inzendingen altijd, met hun stand. De oprichter ziet daarnaast hoeveel er nog onderweg zijn.
+- **Hooguit een jaar vanaf wanneer?** Per origineel, een jaar na binnenkomst (zoals een lifecycle-regel in R2 telt). De downloadpagina toont per origineel de datum waarop het weggaat.
+- **Daggrenzen.** Een inzending hoort bij een nieuw filmpje, en filmpjes hebben al een grens van 30 per dag (WP37 A-invariant 36). Een eigen daggrens voor originelen is dus niet nodig. Originelen tellen niet mee voor de limiet van 1000 foto's: ze zijn geen foto.
+- **Schijf van de telefoon.** Wachtende originelen staan op het toestel tot ze binnen zijn; met "Alleen via wifi" kan dat dagen gelden. De projectpagina toont per eigen inzending de grootte. Bij te weinig vrije ruimte meldt het toevoegscherm dat het origineel niet mee kan (het filmpje voor het album gaat gewoon).
+- **De ronde in het toevoegscherm** is klaar als het filmpje in het album staat. Het origineel loopt daarna door, ook als het scherm dicht is; de stand staat op de projectpagina.
+- **WP10.** De nieuwe tabellen wijzen naar groepen, albums, foto's en users. De integriteits-check krijgt dezelfde controle op losse verwijzingen als de andere tabellen.
+
+### A-invarianten
+
+1. **Project openen en sluiten: alleen de oprichter**, op het moment van het verzoek (`groups.createdBy`). Een admin of lid krijgt `NOT_ALLOWED`; geen lid of een onbekende groep `NOT_MEMBER`, net als bij de beheerpaden van WP28. Het filmalbum hoort bij de groep (anders `NOT_MEMBER`). De einddatum ligt in de toekomst (anders `DATE_INVALID`). Staat er al een open project in de groep, dan `PROJECT_ALREADY_OPEN`. Sluiten van een gesloten project verandert niets. Na sluiten kan een nieuw project open.
+2. **De albumregel zit in `startUpload`.** Staat er in de groep van het gevraagde album een open project, dan reserveert `startUpload` voor het filmalbum X, welk album van die groep ook gevraagd werd. Het filmpje komt na afronden alleen in X. Beslist wordt bij `startUpload`: een project dat daarna sluit of opent, verandert die upload niet. Foto's (`POST /upload`), "Naar album" (`albums.addPhoto`) en albums van andere groepen vallen er niet onder.
+3. **Een inzending hoort bij precies één nieuw filmpje.** Insturen kan alleen de eigenaar van een filmpje (een rij met `video`) dat (a) in het filmalbum staat van een project van een groep waar hij lid van is, en (b) gemaakt is terwijl dat project open stond. Eén weigering voor alles wat niet mag: geen filmpje, een foto, van een ander, van vóór het project, gemaakt na het sluiten, niet in het filmalbum, geen lid. Per filmpje hooguit één inzending: opnieuw aanmelden geeft dezelfde inzending terug, met dezelfde upload in R2, en nooit een tweede.
+4. **De backend kiest sleutel en bucket.** Een origineel staat in een eigen bucket (`R2_ORIGINALS_BUCKET`), onder een willekeurige sleutel die niets uit het verzoek bevat. De app krijgt alleen deel-links: een PUT op precies die sleutel, met het deelnummer en de upload-id in de query en de grootte van dat deel in de handtekening (`content-length;host`), 7 dagen geldig. Alle delen zijn 32 MiB, behalve het laatste. De sleutel en de upload-id van R2 staan nooit los in een antwoord.
+5. **Pas binnen als het heel is.** Een inzending is "onderweg" tot de backend alle delen in R2 ziet, elk met de goede grootte, de upload afrondt en het object precies de aangemelde grootte heeft. Ontbreekt er een deel, dan zegt afronden welke, en verandert er niets. Begint het bestand niet met een `ftyp` van QuickTime of mp4, dan gaat het object weg en de inzending ook (weigering `geen_video`).
+6. **Het origineel blijft onaangetast.** De backend kopieert, herschrijft of ontleedt het niet. Na afronden zijn de bytes in R2 precies wat de app stuurde, met de GPS erin (besluit 10). Er is geen GPS-controle zoals in WP37.
+7. **Nergens anders zichtbaar.** Een origineel maakt geen rij in `photos` en staat dus niet in albums, Mijn foto's of op de kaart. Er is geen afspeellink. Leden zien de lijst en de poster via een eigen beeldpad (`/beeld/inzending/<id>`); wie geen lid is van de groep van het project krijgt daar hetzelfde 404 als bij een onbekend id. Het antwoord van de lijst bevat geen sleutel, geen upload-id en geen link.
+8. **Downloaden: alleen de oprichter**, alleen een origineel dat binnen is. De link is een GET van 1 uur op precies die sleutel in de originelen-bucket, met `response-content-disposition: attachment` en een bestandsnaam met datum en inzender (zonder plaats). Iedereen anders, de inzender zelf en de webmaster inbegrepen, krijgt één weigering (`ORIGINAL_NOT_FOUND`), ook voor een onbekend id.
+9. **De backend rondt zelf af.** Elk uur rondt hij de inzendingen af die helemaal binnen zijn, ook als de app niet meer langskomt (cron `film originals complete`).
+10. **Terugtrekken en verwijderen.** De inzender trekt zijn eigen inzending terug, onderweg of binnen; de oprichter verwijdert er één of alle van een project. Het filmpje in het album blijft. De inzending is meteen weg uit elke lijst; het object in R2 gaat weg en een open upload wordt afgebroken. Een ander krijgt `ORIGINAL_NOT_FOUND`.
+11. **Weg na een jaar.** Een origineel dat een jaar binnen is, haalt de dagelijkse ronde weg, rij en object (cron `film originals expiry`). Een lifecycle-regel op de originelen-bucket (verwijderen na 365 dagen, halve uploads afbreken na 7 dagen) is het vangnet. Een gesloten project zonder originelen verdwijnt uit de groep.
+12. **Elk wis-pad haalt R2 mee.** Groep verwijderen (ook als het laatste lid weggaat) en account verwijderen halen de projecten en inzendingen weg, met hun objecten en open uploads in R2. "Uit album" op een filmpje in X raakt de inzending niet.
+13. **Toegang vóór config.** Wie niet mag, krijgt de gewone weigering, ook als een R2-env-var ontbreekt. Mag hij wel, dan een fout die begint met `R2_CONFIG_MISSING:` en de namen noemt (ook `R2_ORIGINALS_BUCKET`). Geen geheim, link of sleutel in een fout of log.
+14. **Een eigen R2-check voor de originelen** (cron `film originals check`, dagelijks), naast die van WP37, die onveranderd blijft. Hij legt de originelen-bucket naast de inzendingen: een object zonder inzending (ouder dan een dag), een inzending die binnen is zonder object, en een halve upload zonder inzending (ouder dan 8 dagen: de lifecycle-regel werkt niet) geven één mail aan de webmaster, net als een ontbrekende `R2_ORIGINALS_BUCKET` ("kon niet draaien"). Een origineel dat klopt, meldt hij niet. De check wist niets.
+15. **Grenzen in de backend** (getallen: besluit 11). Een origineel boven de grens per bestand, of een aanmelding die het project of het totaal over de grens brengt, weigert de backend al bij het aanmelden (`te_groot`, `vol`). De aangemelde grootte telt mee zolang de inzending onderweg is.
+16. **Toegangsdefinitie.** Nieuwe publieke paden die een project-id, inzending-id, foto-id of groep-id aannemen: `filmProjects.open`, `close`, `listForGroup`, `listOpenForMe`, `get`, `startOriginal`, `finishOriginal`, `withdraw`, `downloadUrl`, `removeOriginal`, `removeAll`, en `GET /beeld/inzending/<id>`. Elk heeft een gate; de inventaristest legt ze vast. Een inzending-id is zichtbaar in `get` (alleen voor leden) en in de routes van de app.
+
+*In de app (deelpakket 38b en 38c):*
+
+17. **Kiezen volgens besluit 3**, met één pure functie die uit de keuze (aantal foto's en filmpjes, het gekozen album) en de open projecten bepaalt waar foto's en filmpjes heen gaan, of Y te kiezen is, en welke tekst er boven de knop staat. Ook de + in album Y.
+18. **Het filmpje voor het album hangt niet op het origineel.** Verkleinen en toevoegen gaan zoals in WP37. Het aanmelden van het origineel gebeurt na afronden, op elk netwerk. Alleen de delen wachten op wifi.
+19. **Een wachtrij die een herstart overleeft.** Per origineel de inzending, het bestand en de stand. Na een herstart vraagt de app de backend welke delen nog moeten. Geen tweede inzending, geen dubbel deel.
+20. **De kopie van de kiezer blijft staan zolang het origineel moet.** De opruimregels van WP39 wissen een verplaatst origineel niet. Pas na binnen, terugtrekken, weigeren of verlopen gaat het weg.
+21. **"Alleen via wifi", standaard aan**, per toestel onthouden. Aan: geen mobiel internet en geen persoonlijke hotspot. Omzetten geldt meteen, ook voor wachtende delen.
+
+### Gate-checks (alleen te zien op echte R2, iOS of in de browser)
+
+De nep-R2 in de tests doet multipart zoals S3. Of R2 en iOS het ook zo doen, toetst de gate op dev:
+
+- R2 neemt een ondertekende UploadPart aan (PUT met `partNumber` en `uploadId` in de query, `content-length` ondertekend), weigert een andere grootte (403) en neemt een geldigheid van 7 dagen aan.
+- ListParts geeft nummer, grootte en ETag; afronden met die lijst lukt; delen van ongelijke grootte (behalve het laatste) weigert R2 bij afronden.
+- Afbreken (DELETE met `uploadId`) haalt de delen weg; ListMultipartUploads toont halve uploads.
+- Lifecycle op de originelen-bucket: verwijderen na 365 dagen, halve uploads afbreken na 7 dagen. Runbook: nakijken dat er op de bucket van de albums géén regel van 365 dagen staat.
+- Een ondertekende GET met `response-content-disposition`: Chrome en Safari bewaren het bestand onder de naam uit de link; een download van ~1,5 GB komt heel aan.
+- iPhone, met een origineel van ≥ 1 GB in 4K: de upload loopt door met de app op de achtergrond en het scherm uit; "Alleen via wifi" wacht op mobiel internet en op een hotspot, en gaat door op wifi; omzetten tijdens het wachten; app wegvegen en opnieuw openen gaat verder; na een herstart van de telefoon ook.
+- De kiezer geeft het origineel bit voor bit (SHA-256 naast een AirDrop met "Alle fotogegevens"), ook bij een item uit iCloud. Wat hij geeft bij een bewerkt filmpje, slow-motion, Cinematic en ProRes.
+- De vrije ruimte op de telefoon komt terug na binnen of terugtrekken.
+
+### A-keuzes
+
+- **Eigen bucket** per omgeving (`clubalmanac-originals-dev`, `-prod`, jurisdictie EU), met het bestaande token uitgebreid naar die bucket. Env-var `R2_ORIGINALS_BUCKET`; endpoint en sleutels zijn die van WP37. Redenen: de lifecycle-regel van 365 dagen kan nooit de albumfilmpjes raken; de backup-stap ziet hem niet (antwoord 7); de check van WP37 ziet geen originelen als wees.
+- **Delen van 32 MiB**, deel-links 7 dagen, downloadlink 1 uur.
+- **Container**: het bestand begint met `ftyp` met merk `qt  ` of een mp4-merk (`isom`, `iso2`–`iso6`, `mp41`, `mp42`, `avc1`, `M4V `). Meer controleert de backend niet (antwoord 3).
+- **Bestandsnaam** bij downloaden: `<jjjj-mm-dd uu.mm> <naam inzender>.mov` (of `.mp4`), met de opnamedatum van het filmpje, of zonder die de datum van inzenden. Geen plaats in de naam.
+- **Eén module** `convex/filmProjects.ts` voor projecten en inzendingen; twee tabellen (project en inzending). De inzending verwijst naar het filmpje in het album; de poster en de opnamedatum komen daarvandaan.
+- **"Alles downloaden"** in de webapp: de originelen na elkaar, elk met een eigen verse link. Geen zip (dat kan Convex niet voor gigabytes).
+
+### Voorstel: drie deelpakketten
+
+Het risico zit op drie plekken: de toegang en het opruimen (backend), de achtergrond-upload van gigabytes (native iOS, het meest onbekend), en de schermen. Voorstel om ze los te bouwen en te toetsen:
+
+- **WP38a, backend**: projecten, albumregel, inzendingen met multipart, eigen beeldpad, downloadlink, terugtrekken en verwijderen, een jaar, cascades, R2-check, crons, inventaris, runbook (bucket, lifecycle, env-var). De RED tests hieronder zijn voor 38a. Kan naar prod vóór de app: zonder open project verandert er niets.
+- **WP38b, uploader op de iPhone**: de eigen achtergrond-uploader in `clubalmanac-video`, de wachtrij, de wifi-schakelaar, het verplaatsen van de kopie. **Eerst een spike op het toestel** (een origineel van 1,5 GB tegen dev-R2: achtergrond, wifi en hotspot, wegvegen, herstart), daarna pas bouwen. Tests voor de pure delen (delen plannen, de stand van de wachtrij).
+- **WP38c, schermen**: starten en sluiten, banner, projectpagina, toevoegscherm volgens besluit 3, downloadpagina in de webapp. Tests voor de pure delen (besluit 3, teksten, bestandsnaam). A schrijft die tests als 38c begint, na de besluiten.
+
+38b en 38c komen samen in één app-release. A schrijft de tests van 38b en 38c pas na de spike en de besluiten, zodat ze niet op een aanname over iOS rusten.
+
+### Besluiten voor Wouter
+
+11. **Grenzen**: hooguit 2 GiB per origineel, 200 GiB per project, 400 GiB voor alles samen (hooguit ~$6 per maand). Aanbevolen: **ja**.
+12. **Vertrekt een lid of wordt hij uit de groep gezet**: gaan zijn originelen weg? Aanbevolen: **ja** (zoals zijn filmpjes uit de albums; er zit GPS in).
+13. **Einddatum**: sluit het project vanzelf aan het eind van die dag, en mag de oprichter hem verschuiven zolang het open staat? Aanbevolen: **ja en ja**.
+14. **Backup**: originelen niet in de backup, in een eigen bucket. Aanbevolen: **ja**.
+15. **Herinnering**: één mail aan de oprichter 30 dagen voordat originelen weggaan. Aanbevolen: **ja**.
+16. **Verwijdert iemand het filmpje in het album** (zelf, of de webmaster na een melding), gaat het origineel dan ook weg? Aanbevolen: **ja**. ("Uit album" blijft zonder gevolg, besluit 4.)
+17. **Het filmalbum verwijderen** terwijl het project open staat: weigeren met "Sluit eerst het filmproject"? Aanbevolen: **ja**.
+18. **Na sluiten nog binnenkomen**: hoe lang mag een origineel dat al aangemeld was nog binnenkomen? Aanbevolen: **14 dagen na sluiten**. Daarna ruimt de backend de halve upload op, en de app het bestand.
+19. **Omleiden voor de oude app 2.0.2** (filmpje naar Y komt in X, zonder origineel), met een bericht aan de leden om bij te werken. Aanbevolen: **ja**.
+20. **Drie deelpakketten** (38a backend, 38b uploader met eerst een spike, 38c schermen). Aanbevolen: **ja**.
+
+### Testcontract (A, voor WP38a, vóór de besluiten)
+
+> Namen en vormen zijn A-keuzes; het hoe is aan B. Wijkt een besluit af, dan past A de tests aan vóór B begint. Besluiten 11–18 hebben nog geen test (zie onderaan).
+
+- **Env**: `R2_ORIGINALS_BUCKET` naast de vier van WP37.
+- **`api.filmProjects.open({ groupId, albumId, endsAt })`** (mutation) → project-id. Weigeringen `ConvexError({ code })`: `NOT_MEMBER`, `NOT_ALLOWED`, `DATE_INVALID`, `PROJECT_ALREADY_OPEN`.
+- **`api.filmProjects.close({ projectId })`** (mutation) → `null`; alleen de oprichter.
+- **`api.filmProjects.listForGroup({ groupId })`** (query, leden; anders `NOT_MEMBER`) → `[{ projectId, albumId, albumName, endsAt, open }]`: het open project, en gesloten projecten zolang er originelen zijn.
+- **`api.filmProjects.listOpenForMe({})`** (query) → `[{ groupId, projectId, albumId, albumName, endsAt }]` voor de groepen van de caller.
+- **`api.filmProjects.get({ projectId })`** (query, leden; anders `NOT_MEMBER`) → `{ project: { projectId, groupId, albumId, albumName, endsAt, open }, isFounder, originals: [{ originalId, ownerName, mine, status: "onderweg" | "binnen", durationMs, submittedAt, takenAt }] }`. Van anderen alleen `binnen`; de oprichter ziet alles.
+- **`api.filmProjects.startOriginal({ photoId, bytes })`** (action) → `{ kind: "upload", originalId, partSize, parts: [{ partNumber, url }], expiresAt }` (alleen de delen die nog niet in R2 staan) of `{ kind: "done", originalId }`. Weigering `ConvexError({ code: "ORIGINAL_REFUSED", reason })` met `uitgelogd | niet_toegestaan | te_groot | vol`.
+- **`api.filmProjects.finishOriginal({ originalId })`** (action) → `{ kind: "done" }` of `{ kind: "missing", parts: number[] }`. Weigering `ORIGINAL_REFUSED` met `niet_toegestaan` of `geen_video`.
+- **`api.filmProjects.withdraw({ originalId })`**, **`removeOriginal({ originalId })`**, **`removeAll({ projectId })`** (mutations); weigering `ConvexError({ code: "ORIGINAL_NOT_FOUND" })` (bij `removeAll`: `NOT_MEMBER` of `NOT_ALLOWED`).
+- **`api.filmProjects.downloadUrl({ originalId })`** (action) → `{ url, expiresAt }`; weigering `ORIGINAL_NOT_FOUND`.
+- **`GET /beeld/inzending/<originalId>[?formaat=klein|groot]`**: 401 uitgelogd, 404 geen toegang of onbekend, 200 de poster (zoals `/beeld/foto/`); `OPTIONS` voor de webapp.
+- **`internal.filmProjects.completeUploaded({})`** (action, cron `film originals complete`, elk uur) en **`internal.filmProjects.expireOriginals({})`** (mutation, cron `film originals expiry`, dagelijks).
+- **`internal.filmProjects.checkStorage({})`** (cron `film originals check`, dagelijks): de R2-check van de originelen. `videos.checkStorage` (WP37) blijft zoals hij is.
+
+### Tests per invariant (stand na A)
+
+| Inv. | Test (`tests/filmProject/`) | Niet getest, omdat … |
+|---|---|---|
+| A1 | `projects.test.ts` | einddatum hooguit een jaar vooruit, vanzelf sluiten: besluit 13 |
+| A2 | `albumRule.test.ts` (Y wordt X, foto blijft in Y, andere groep, na sluiten, "Naar album" naar Y) | wat 2.0.2 dan toont: gate |
+| A3 | `originals.test.ts` (eigenaar, nieuw, in X, foto, van vóór het project, na sluiten in X gezet, ander, opnieuw = dezelfde) | |
+| A4 | `originals.test.ts` (bucket, sleutel, deel-links, grootte, 7 dagen, delen van 32 MiB) | |
+| A5 | `originals.test.ts` (ontbrekend deel, geen half bestand binnen, `geen_video`) | |
+| A6 | `originals.test.ts` (bytes met GPS gelijk, geen kopie) | |
+| A7 | `access.test.ts` (lijst, beeldpad, geen sleutel), `originals.test.ts` (geen rij in `photos`) | |
+| A8 | `access.test.ts` (oprichter, admin, inzender, webmaster, link) | |
+| A9 | `originals.test.ts` (afronden zonder app) | |
+| A10 | `cascade.test.ts` | |
+| A11 | `cascade.test.ts` (een jaar) | lifecycle-regel: runbook; herinnering: besluit 15 |
+| A12 | `cascade.test.ts` (groep, account, "Uit album") | vertrek uit de groep: besluit 12; album-filmpje verwijderen: besluit 16 |
+| A13 | `originals.test.ts` (config ontbreekt) | |
+| A14 | `storageCheck.test.ts` (klopt, wees, ontbrekend object, config ontbreekt) | halve upload ouder dan 8 dagen: na de gate (wat ListMultipartUploads van R2 geeft) |
+| A15 | | getallen: besluit 11 |
+| A16 | `inventory.test.ts` (publieke functies met soort en argumenten, routes, crons) | |
+| A17–21 | | app: 38b en 38c |
+
+A paste een bestaande test aan: `tests/crons/registration.test.ts` (negen crons). De nep-R2 voor de originelen (multipart zoals S3, alle delen even groot behalve het laatste, minstens 5 MiB) staat in `tests/filmProject/_film.ts`.
+
+**Stand na A (vóór de besluiten):** backend 66 rood / 3245 groen / 1 overgeslagen. Rood: alles in `tests/filmProject/` (`convex/filmProjects.ts`, de crons en de route `/beeld/inzending/` ontbreken) en de cronlijst in `tests/crons/registration.test.ts`. De rest van de suite is ongewijzigd groen. Typecheck schoon. Geen app-tests (38b, 38c).
