@@ -311,3 +311,11 @@ Build `wp39-dev`. Bevindingen:
 ### Besluit 10 (Wouter, 2026-11-22)
 
 **(a)**: de teller loopt vanaf het sluiten van de kiezer. De eigen module `clubalmanac-video` krijgt daarvoor een kleine functie die zegt of er nog een kiezer over het scherm staat; de app vraagt dat zolang ze op de kiezer wacht. Dit is de enige wijziging in de native module in WP39.
+
+## Gate ronde 2: iPhone (Wouter, 2026-11-22)
+
+Build `wp39-dev2`. Album onthouden, kiesscherm, "Meer selecteren", teller en scherm aan tijdens ophalen: OK. Grijze knoppen in licht en donker: OK (simulator, regie).
+
+Bevinding: na "Stoppen" tijdens het ophalen van een filmpje (eerste keuze) staat er "Je vorige keuze wordt nog opgehaald. Daarna kun je weer selecteren." en is "Kiezen" uit, minutenlang bij iCloud. Dat voelt als hangen.
+
+**Besluit regie (op Wouters bevinding):** na "Stoppen" kan de user meteen weer kiezen. Een gestopt verzoek telt niet meer mee voor "één kiezer tegelijk" (F8 vervalt in die vorm); de wachtregel verdwijnt. Komt het resultaat van een gestopt verzoek later binnen, dan negeert de app het en ruimt het de kopieën op, zoals in F7. expo-image-picker 58 geeft de kiezer al vrij vóór het kopiëren (A-antwoord 3), dus een nieuwe kiezer kan.
