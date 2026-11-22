@@ -220,7 +220,7 @@ Build `wp39-dev`. Bevindingen:
 - **F4. Geldig of niet.** Zie A-antwoord 1. Zolang de groepen of de albums van die groep laden: nog niets ingevuld en geen flits van "Kies een album". De knop doet dan nog niets. Verdwijnt het album terwijl het scherm openstaat (vóór de ronde), dan wordt de rij "Kies een album".
 - **F5. Kiesscherm.** Groepen als kopjes in de volgorde van Mijn groepen, albums in de volgorde van het groepsscherm, met omslag (of letter) en naam, en een vinkje bij het gekozen album. Een groep zonder albums valt weg; zonder groepen de bestaande uitleg. Een album kiezen sluit het kiesscherm en vult de rij. Annuleren laat het album zoals het was. Tijdens en na een ronde is de rij niet te tikken.
 - **F6. Knop onderin.** Met een album: "Toevoegen aan album". Zonder album: grijs, "Kies eerst een album". Nog onbekend (F4): uit, met "Toevoegen aan album".
-- **F7. Stoppen.** Zie A-antwoord 2. "Stoppen" staat bij "Je keuze ophalen…", meteen, met één regel uitleg dat iOS de keuze ophaalt (bv. uit iCloud) en dat dat bij grote filmpjes even kan duren.
+- **F7. Stoppen.** Zie A-antwoord 2. "Stoppen" staat meteen bij "Je keuze ophalen…". De uitleg en de teller staan in F11.
 - **F8. Wachten op de vorige kiezer.** Zie A-antwoord 3. De regel: "Je vorige keuze wordt nog opgehaald. Daarna kun je weer selecteren." "Toevoegen aan album" met de keuze die er staat, kan wel.
 - **F9. "Meer selecteren"** op alle drie de plekken (bij het aantal, `RoundResult`, `VideoRoundResult`).
 - **F10. Bestaande regels blijven.** `pickFetching.test.ts` (de ophaal-state rond de kiezer, met een `finally`) en de andere bronscans van A-invariant 13 hierboven.
@@ -266,3 +266,42 @@ Build `wp39-dev`. Bevindingen:
 | F7, F8 | `app/tests/pickSession.test.ts`, `addTexts.test.ts` ("Stoppen") | de kopieën van een genegeerd resultaat weggooien, ook na sluiten: audit |
 | F9 | `addTexts.test.ts` | |
 | F10 | de bestaande bronscans | |
+
+## Aanvulling fixronde gate 1: teller en kiezer-instelling (A vult in)
+
+> A 2026-11-22, na het besluit van Wouter (via regie): bij "Je keuze ophalen…" komen een uitleg en een tijdteller. Daarnaast onderzocht: `preferredAssetRepresentationMode`. Bron: `expo-image-picker` 58.0.10 (`ImagePickerOptions.swift`, `MediaHandler.swift`, `build/ImagePicker.types.d.ts`).
+
+### F11. Uitleg en teller bij het ophalen
+
+- Naast de spinner en "Stoppen" staat letterlijk: "Langere filmpjes en/of hogere kwaliteit kan een paar minuten duren."
+- De teller toont de verstreken tijd als m:ss, afgerond naar beneden op hele seconden: "0:00" in de eerste seconde, dan "0:42", "1:01", "10:00". Geen percentage en geen grootte; die geeft de kiezer niet.
+- Hij verdwijnt bij "Stoppen" en als het ophalen klaar is (resultaat of weigering). Een volgend ophalen begint weer bij 0:00.
+- **De start: "vanaf het moment dat de kiezer sluit".** Dat moment ziet de app nu niet. `launchImageLibraryAsync` geeft één antwoord, na het kiezen én het kopiëren. Er komt geen signaal als de kiezer dichtgaat: de kiezer staat over de modaal, `AppState` en de navigatie merken er niets van, en `expo-image-picker` stuurt geen event. Een teller vanaf het openen van de kiezer telt ook de tijd van het kiezen mee: wie 40 s kiest, ziet meteen "0:40". Zie besluit 10.
+
+### `preferredAssetRepresentationMode`: wat er nu gebeurt
+
+- **De app zet hem niet.** De documentatie van `expo-image-picker` noemt `Automatic` als standaard, maar de native standaard in 58.0.10 is `current` (`ImagePickerOptions.swift`), en de JS-laag vult niets in. In de praktijk krijgt de app dus nu al **Current**. Hetzelfde geldt voor `videoExportPreset`: niet gezet, native standaard `passthrough`, en daar rekent WP37 op (besluit B2: het origineel, met datum en plaats).
+- **Wat Automatic zou doen.** Apple laat het systeem dan kiezen, en dat mag een filmpje of foto omzetten naar een vorm die beter past (bv. HEVC naar H.264, HEIC naar JPEG). Hoe vaak iOS dat doet, staat nergens precies; omzetten kost tijd tijdens "Je keuze ophalen…". Bij foto's zou het ook de snelle weg uitzetten: `expo-image-picker` kopieert een foto alleen meteen als `current` en `quality` 1 is. Anders decodeert hij elke foto en schrijft hem opnieuw weg, en voor 50 foto's van 24 MP is dat traag.
+- **Current sneller maken? Kan niet, want het is al Current.** De wachttijd van de gate komt uit het kopiëren en downloaden uit iCloud, niet uit omzetten. `shouldDownloadFromNetwork` helpt hier ook niet: die gaat alleen over de snelle weg met toestemming voor Foto's, en die toestemming heeft de app niet.
+- **Breekt Current iets?** Nee. Het is wat WP37 op de iPhone getest heeft: het HEVC-HDR-origineel met datum en plaats, dat de module verkleint en naar SDR omzet.
+- **Aanbeveling (A-keuze, geen gedragswijziging):** zet `preferredAssetRepresentationMode: Current` en `videoExportPreset: Passthrough` expliciet in de aanroep in `AddPhotosScreen.tsx`. Dan verandert er niets ongemerkt als een volgende versie van `expo-image-picker` de native standaard gelijk trekt met de documentatie (`Automatic`). Vastgelegd in een bronscan. `ProfileScreen.tsx` (één foto) mag hetzelfde krijgen, maar valt buiten WP39.
+
+### Besluit voor Wouter (nog open)
+
+10. **Hoe weet de app dat de kiezer dicht is?** Opties:
+    - (a) een kleine functie in de eigen module `clubalmanac-video` die zegt of er nog een kiezer over het scherm staat. De app vraagt dat elke halve seconde zolang ze wacht, en de eerste keer "nee" start de teller. Ongeveer 15 regels Swift en een nieuwe build (die 2.0.2 toch nodig heeft). Aanbevolen.
+    - (b) `expo-image-picker` lokaal aanpassen (patch) zodat hij een event stuurt bij het sluiten. Breekbaar bij elke upgrade.
+    - (c) De teller laten lopen vanaf het openen van de kiezer. Dan klopt hij niet met het besluit.
+
+    De tests leggen de teller vast vanaf het moment dat het scherm het ophalen als begonnen markeert. Dat geldt voor alle drie de opties.
+
+### Testcontract (aanvulling)
+
+- **`app/src/lib/pickSession.ts`:** `fetchStarted(state, token, now)` markeert dat het ophalen van dat verzoek begon (de kiezer is dicht). `pickView(state, now)` geeft er `elapsed` bij: de teller als m:ss, of `null` (niets aan het ophalen, nog niet begonnen, gestopt, klaar). Een `fetchStarted` met een oud token of na "Stoppen" verandert niets.
+- **Teksten** (bronscan, iOS): de uitleg van F11 letterlijk.
+- **Kiezer** (bronscan): de aanroep van `launchImageLibraryAsync` in `AddPhotosScreen.tsx` zet `preferredAssetRepresentationMode` op Current en `videoExportPreset` op Passthrough.
+
+| Inv. | Test | Niet getest, omdat … |
+|---|---|---|
+| F11 | `pickSession.test.ts` (`elapsed`), `addTexts.test.ts` (uitleg) | het moment dat de kiezer dicht is: besluit 10, gate |
+| kiezer | `addTexts.test.ts` (Current, Passthrough) | |
