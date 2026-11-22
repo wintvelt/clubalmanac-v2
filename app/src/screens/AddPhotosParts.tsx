@@ -14,9 +14,13 @@ import { useLiveQuery } from "../data/useLiveQuery";
 import { batchSummary, photoCountText, reasonText, type UploadItem } from "../lib/upload";
 import { radius, space, useTheme } from "../theme";
 
-// WP18: de delen van "Foto's toevoegen" die iOS en het web (WP36,
+// WP18: de delen van "Toevoegen" die iOS en het web (WP36,
 // AddPhotosScreen.web.tsx) delen: de uitkomst van een ronde en de keuze van
 // het album. Ongewijzigd verplaatst uit AddPhotosScreen.tsx.
+//
+// WP39: "Meer toevoegen" na een ronde (was "Meer foto's"): een nieuwe keuze.
+// `idle`: niets anders loopt nog (op iOS de filmpjes); pas dan "Naar album"
+// en "Meer toevoegen" (invariant 2: de modaal sluit niet tijdens een ronde).
 
 export type ChosenAlbum = { albumId: string; groupId: string; label: string } | null;
 type Chosen = { album: ChosenAlbum };
@@ -28,6 +32,7 @@ export function RoundResult({
   onRetry,
   onToAlbum,
   onMore,
+  idle = true,
 }: {
   items: UploadItem[];
   albumLabel: string;
@@ -35,6 +40,7 @@ export function RoundResult({
   onRetry: () => void;
   onToAlbum: () => void;
   onMore: () => void;
+  idle?: boolean;
 }) {
   const s = batchSummary(items);
   return (
@@ -57,10 +63,10 @@ export function RoundResult({
       {s.done && s.retryable > 0 && (
         <Button title="Opnieuw proberen" icon="refresh" onPress={onRetry} disabled={busy} />
       )}
-      {s.done && (
+      {s.done && idle && (
         <View style={styles.row}>
           {s.klaar > 0 && <SmallButton title="Naar album" onPress={onToAlbum} />}
-          <SmallButton title="Meer foto's" icon="plus" onPress={onMore} />
+          <SmallButton title="Meer toevoegen" icon="plus" onPress={onMore} />
         </View>
       )}
     </View>
@@ -82,7 +88,9 @@ export function AlbumChoice({
   onSelect: (album: Chosen["album"]) => void;
   locked: boolean;
 }) {
-  const [open, setOpen] = useState(initialAlbumId === null);
+  // WP39: na het weghalen van alles komt de albumkeuze terug met het gekozen
+  // album; dan niet opengeklapt.
+  const [open, setOpen] = useState(initialAlbumId === null && selected === null);
   return (
     <View style={styles.section}>
       <Text variant="fieldLabel">Album</Text>

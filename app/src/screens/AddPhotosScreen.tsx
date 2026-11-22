@@ -2,8 +2,9 @@ import { Image } from "expo-image";
 import * as ImagePicker from "expo-image-picker";
 import { activateKeepAwakeAsync, deactivateKeepAwake } from "expo-keep-awake";
 import { router, Stack, useNavigation } from "expo-router";
-import { useEffect, useRef, useState } from "react";
-import { Linking, View } from "react-native";
+import { memo, useCallback, useEffect, useRef, useState } from "react";
+import { Linking, Pressable, StyleSheet, View } from "react-native";
+import { makePoster, removeFile } from "../../modules/clubalmanac-video";
 import { Button } from "../components/Button";
 import { Icon } from "../components/Icon";
 import { Notice } from "../components/Notice";
@@ -14,6 +15,16 @@ import { Text } from "../components/Text";
 import { useUploader } from "../data/upload";
 import { useVideoUploader, type VideoProgress } from "../data/videoUpload";
 import { successTap } from "../data/haptics";
+import {
+  ADD_GRID_GAP,
+  addGrid,
+  addToSelection,
+  removeFromSelection,
+  selectionTiles,
+  videoStatusText,
+  type SelectionItem,
+  type SelectionKind,
+} from "../lib/addSelection";
 import { albumPath } from "../lib/groupRoutes";
 import {
   UPLOAD_PARALLEL,
@@ -25,9 +36,9 @@ import {
   startItem,
   type UploadItem,
   type UploadOutcome,
+  type UploadState,
 } from "../lib/upload";
 import {
-  formatDuration,
   videoFailMessage,
   videoRetryable,
   videoRetryRound,
@@ -35,11 +46,11 @@ import {
   type VideoFailReason,
 } from "../lib/videos";
 import { CloseButton } from "../navigation/stackOptions";
-import { useTheme } from "../theme";
+import { photoLayers, radius, size, space, useTheme } from "../theme";
 import { AlbumChoice, RoundResult, addPhotosStyles as styles, type ChosenAlbum } from "./AddPhotosParts";
 
-// WP18: de modaal "Foto's toevoegen". De kiezer opent meteen; de user kiest
-// het album (vooraf ingevuld vanuit het album waar de "+" werd ingedrukt) en
+// WP18: de modaal "Toevoegen". De kiezer opent meteen; de user kiest het
+// album (vooraf ingevuld vanuit het album waar de "+" werd ingedrukt) en
 // uploadt. Per foto één upload-id, gelijk bij opnieuw proberen (invariant 1).
 // Na de ronde per reden met aantal wat niet lukte, en "Opnieuw proberen"
 // voor wat kan lukken (invariant 2). Tijdens een ronde blijft het scherm
@@ -55,12 +66,25 @@ import { AlbumChoice, RoundResult, addPhotosStyles as styles, type ChosenAlbum }
 // fout de NL-reden met "Opnieuw proberen" waar dat zin heeft (invariant 5).
 // Dezelfde upload-id bij opnieuw proberen: geen tweede filmpje (invariant 4).
 // Verkleinen kan alleen met de app open (besluit B11): het scherm blijft aan.
+//
+// WP39: foto's en filmpjes gelijk, als tegels in een raster zoals het album
+// (src/lib/addSelection.ts). "Meer toevoegen" vult de keuze aan (ontdubbeld op
+// `assetId`), een × haalt een item weg; beide alleen vóór de ronde. Na een
+// ronde begint "Meer toevoegen" een nieuwe keuze; annuleren in de kiezer
+// verandert nooit iets (A4). Een filmpje krijgt een omslag uit het origineel
+// (`makePoster`, één voor één, tijdelijk; A10, A11). Te lang staat al vóór de
+// ronde op de tegel (besluit 5). De kopie van de kiezer van een dubbel gekozen
+// of weggehaald item gaat meteen weg (B-besluit 3). "Toevoegen aan album" staat
+// vast onderin (B-besluit 4).
 
 const KEEP_AWAKE_TAG = "wp18-upload";
-const THUMBS = 7;
 
+type Asset = ImagePicker.ImagePickerAsset;
+type Item = SelectionItem<Asset>;
 type Chosen = { album: ChosenAlbum };
-type Picked = { key: string; asset: ImagePicker.ImagePickerAsset };
+
+// Vóór een ronde vult de kiezer aan; na een ronde begint hij een nieuwe keuze (A4).
+type PickMode = "aanvullen" | "nieuw";
 
 // WP37: een filmpje in een ronde.
 type VideoItem = {
@@ -80,13 +104,20 @@ function videoCountText(n: number): string {
   return n === 1 ? "1 filmpje" : `${n} filmpjes`;
 }
 
-let pickRound = 0;
+/**
+ * B-besluit 3: de kopie die de kiezer van een asset maakte, weg. Niet als een
+ * item dat blijft hetzelfde bestand gebruikt.
+ */
+function dropCopies(assets: readonly Asset[], keep: readonly Item[]): void {
+  const used = new Set(keep.map((i) => i.asset.uri));
+  for (const a of assets) if (!used.has(a.uri)) void removeFile(a.uri);
+}
 
 export function AddPhotosScreen({ albumId }: { albumId?: string }) {
   const upload = useUploader();
   const uploadVideo = useVideoUploader();
-  const [picked, setPicked] = useState<Picked[]>([]);
-  const [videos, setVideos] = useState<Picked[]>([]);
+  const [selection, setSelection] = useState<Item[]>([]);
+  const selectionRef = useRef<Item[]>([]);
   const [videoItems, setVideoItems] = useState<VideoItem[] | null>(null);
   const videoItemsRef = useRef<VideoItem[] | null>(null);
   const videoRunning = useRef(false);
@@ -102,8 +133,16 @@ export function AddPhotosScreen({ albumId }: { albumId?: string }) {
   const running = useRef(false);
   const [busy, setBusy] = useState(false);
   const opened = useRef(false);
+  // Eén kiezer tegelijk, ook terwijl iOS de vorige keuze nog ophaalt.
+  const picking = useRef(false);
+  const posters = usePosters(selection);
 
-  function update(next: UploadItem[]) {
+  function updateSelection(next: Item[]) {
+    selectionRef.current = next;
+    setSelection(next);
+  }
+
+  function update(next: UploadItem[] | null) {
     itemsRef.current = next;
     setItems(next);
   }
@@ -117,7 +156,10 @@ export function AddPhotosScreen({ albumId }: { albumId?: string }) {
     updateVideos((videoItemsRef.current ?? []).map((i) => (i.key === key ? { ...i, ...patch } : i)));
   }
 
-  async function pick() {
+  async function pick(mode: PickMode = "aanvullen") {
+    // Invariant 2: tijdens een ronde ligt de keuze vast.
+    if (running.current || videoRunning.current || picking.current) return;
+    picking.current = true;
     setPickerFailed(false);
     setFetching(true);
     let result: ImagePicker.ImagePickerResult;
@@ -138,18 +180,31 @@ export function AddPhotosScreen({ albumId }: { albumId?: string }) {
     } finally {
       // Gekozen, geannuleerd of mislukt: de ophaal-toestand weer weg.
       setFetching(false);
+      picking.current = false;
     }
+    // A4: annuleren verandert niets, ook niet na een ronde.
     if (result.canceled) return;
-    // Opnieuw kiezen vervangt de keuze; een nieuwe keuze is een nieuwe ronde.
-    pickRound += 1;
-    const assets = result.assets.filter((a) => a.type !== "video" && a.type !== "pairedVideo");
-    setPicked(assets.map((asset, i) => ({ key: `${pickRound}-${i}`, asset })));
-    const clips = result.assets.filter((a) => a.type === "video");
-    setVideos(clips.map((asset, i) => ({ key: `${pickRound}-v${i}`, asset })));
-    itemsRef.current = null;
-    setItems(null);
-    updateVideos(null);
+    const { items: next, skipped } = addToSelection(mode === "nieuw" ? [] : selectionRef.current, result.assets);
+    dropCopies(skipped, next);
+    if (mode === "nieuw") {
+      // Een nieuwe keuze is een nieuwe ronde; het album blijft gekozen.
+      update(null);
+      updateVideos(null);
+    }
+    updateSelection(next);
   }
+
+  // Besluit 3: de × op een tegel. Alleen vóór de ronde (A5).
+  const removeItem = useCallback((key: string) => {
+    if (itemsRef.current !== null || videoItemsRef.current !== null) return;
+    const current = selectionRef.current;
+    const gone = current.find((i) => i.key === key);
+    if (!gone) return;
+    const next = removeFromSelection(current, key);
+    dropCopies([gone.asset], next);
+    selectionRef.current = next;
+    setSelection(next);
+  }, []);
 
   // De kiezer opent meteen, maar pas als de modaal staat: tijdens het openen
   // weigert iOS een tweede scherm te tonen, en dan komt de kiezer nooit terug
@@ -193,7 +248,7 @@ export function AddPhotosScreen({ albumId }: { albumId?: string }) {
     setBusy(true);
     update(start);
     const target = album.albumId;
-    const assets = new Map(picked.map((p) => [p.key, p.asset]));
+    const assets = new Map(selectionRef.current.map((p) => [p.key, p.asset]));
     const worker = async () => {
       for (;;) {
         const current = itemsRef.current ?? [];
@@ -238,7 +293,7 @@ export function AddPhotosScreen({ albumId }: { albumId?: string }) {
     setVideoBusy(true);
     updateVideos(start);
     const target = album.albumId;
-    const assets = new Map(videos.map((v) => [v.key, v.asset]));
+    const assets = new Map(selectionRef.current.map((v) => [v.key, v.asset]));
     try {
       for (;;) {
         const next = (videoItemsRef.current ?? []).find((i) => i.state === "wacht");
@@ -274,17 +329,21 @@ export function AddPhotosScreen({ albumId }: { albumId?: string }) {
   }
 
   // A-invariant 25: dezelfde foto voor hetzelfde album houdt zijn upload-id,
-  // ook in een nieuwe ronde ("Meer foto's", de modaal opnieuw openen). WP37:
-  // een filmpje ook (invariant 4).
+  // ook in een nieuwe ronde ("Meer toevoegen", de modaal opnieuw openen). WP37:
+  // een filmpje ook (invariant 4). WP39 invariant 1: ook na weghalen en
+  // opnieuw kiezen.
   function startUpload() {
-    if (!album) return;
-    const picks = picked.map((p) => ({ key: p.key, assetId: p.asset.assetId }));
+    if (!album || itemsRef.current !== null || videoItemsRef.current !== null) return;
+    const current = selectionRef.current;
+    const photos = current.filter((p) => p.kind === "foto");
+    const videos = current.filter((v) => v.kind === "filmpje");
+    const picks = photos.map((p) => ({ key: p.key, assetId: p.asset.assetId }));
     const clips = albumBatch(
       videos.map((v) => ({ key: v.key, assetId: v.asset.assetId })),
       album.albumId,
     ).map((i): VideoItem => {
       const duration = videos.find((v) => v.key === i.key)?.asset.duration;
-      // Te lang: meteen zeggen, niet eerst verkleinen.
+      // Te lang: meteen zeggen, niet eerst verkleinen (A12).
       return typeof duration === "number" && videoTooLongToSend(duration)
         ? { key: i.key, uploadId: i.uploadId, state: "mislukt", reason: "te_lang" }
         : { key: i.key, uploadId: i.uploadId, state: "wacht" };
@@ -315,21 +374,32 @@ export function AddPhotosScreen({ albumId }: { albumId?: string }) {
     router.push(path);
   }
 
-  function morePhotos() {
-    setPicked([]);
-    setVideos([]);
-    setItems(null);
-    itemsRef.current = null;
-    updateVideos(null);
-    void pick();
-  }
-
   const inRound = (items !== null && items.length > 0) || (videoItems !== null && videoItems.length > 0);
-  const anyPicked = picked.length > 0 || videos.length > 0;
-  const uploadTitle = videos.length === 0 ? "Foto's uploaden" : picked.length === 0 ? "Filmpjes uploaden" : "Uploaden";
+  const anyPicked = selection.length > 0;
+  const photoCount = selection.filter((i) => i.kind === "foto").length;
+  const videoCount = selection.length - photoCount;
+  const tiles = selectionTiles(selection);
+  const anyTooLong = tiles.some((t) => t.tooLong);
+  const photoStates = new Map((items ?? []).map((i) => [i.key, i.state]));
+  const videoStates = new Map((videoItems ?? []).map((i) => [i.key, i]));
+  const [gridWidth, setGridWidth] = useState(0);
+  const grid = addGrid(gridWidth);
 
   return (
-    <Screen underHeader>
+    <Screen
+      underHeader
+      footer={
+        !fetching && !inRound && anyPicked ? (
+          <Button
+            title="Toevoegen aan album"
+            icon="upload"
+            variant="cta"
+            disabled={!album}
+            onPress={startUpload}
+          />
+        ) : null
+      }
+    >
       {/* Tijdens een ronde sluit de modaal niet: geen "Sluiten", geen veeggebaar. */}
       <Stack.Screen
         options={{
@@ -348,30 +418,45 @@ export function AddPhotosScreen({ albumId }: { albumId?: string }) {
         </Notice>
       )}
 
+      {/* B-besluit 4: de uitkomst van de ronde bovenaan, met haar knoppen. */}
+      {inRound && videoItems && videoItems.length > 0 && (
+        <VideoRoundResult
+          items={videoItems}
+          busy={videoBusy}
+          albumLabel={album?.label ?? ""}
+          // Zonder foto's in de ronde staan "Naar album" en "Meer" hier.
+          standalone={(!items || items.length === 0) && !fetching}
+          onRetry={retryVideos}
+          onToAlbum={toAlbum}
+          onMore={() => void pick("nieuw")}
+        />
+      )}
+
+      {inRound && items && items.length > 0 && (
+        <RoundResult
+          items={items}
+          albumLabel={album?.label ?? ""}
+          busy={busy}
+          onRetry={retry}
+          onToAlbum={toAlbum}
+          onMore={() => void pick("nieuw")}
+          // Invariant 2: niet weg en geen nieuwe keuze zolang een filmpje loopt.
+          idle={!videoBusy && !fetching}
+        />
+      )}
+
       {fetching ? <LoadingState label="Je keuze ophalen…" /> : null}
 
       {!fetching && !anyPicked && !pickerFailed ? (
         <EmptyState
           icon="photos"
-          title="Kies foto's"
+          title="Kies foto's of filmpjes"
           text="Kies een of meer foto's of filmpjes (hooguit 3 minuten) om aan een album toe te voegen."
         />
       ) : null}
 
-      {!fetching && anyPicked && (
-        <View style={styles.section}>
-          <Text variant="bodyStrong">{selectionText(picked.length, videos.length)}</Text>
-          {picked.length > 0 && <Thumbs picked={picked} items={items} />}
-          {videos.length > 0 && <VideoList videos={videos} items={videoItems} />}
-        </View>
-      )}
-
-      {!fetching && !inRound && (
-        <SmallButton
-          title={anyPicked ? "Andere foto's kiezen" : "Foto's kiezen"}
-          icon="photos"
-          onPress={() => void pick()}
-        />
+      {!fetching && !anyPicked && !inRound && (
+        <SmallButton title="Kiezen" icon="photos" onPress={() => void pick()} />
       )}
 
       {anyPicked && (
@@ -383,124 +468,257 @@ export function AddPhotosScreen({ albumId }: { albumId?: string }) {
         />
       )}
 
-      {!fetching && !inRound && anyPicked && (
-        <Button
-          title={uploadTitle}
-          icon="plus"
-          variant="cta"
-          disabled={!album}
-          onPress={startUpload}
-        />
-      )}
-
-      {inRound && videoItems && videoItems.length > 0 && (
-        <VideoRoundResult
-          items={videoItems}
-          busy={videoBusy}
-          albumLabel={album?.label ?? ""}
-          // Zonder foto's in de ronde staan "Naar album" en "Meer" hier.
-          standalone={!items || items.length === 0}
-          onRetry={retryVideos}
-          onToAlbum={toAlbum}
-          onMore={morePhotos}
-        />
-      )}
-
-      {inRound && items && items.length > 0 && (
-        <RoundResult
-          items={items}
-          albumLabel={album?.label ?? ""}
-          busy={busy}
-          onRetry={retry}
-          onToAlbum={toAlbum}
-          onMore={morePhotos}
-        />
+      {anyPicked && (
+        <View style={styles.section}>
+          <View style={local.countRow}>
+            <Text variant="bodyStrong" style={styles.grow}>
+              {selectionText(photoCount, videoCount)}
+            </Text>
+            {!fetching && !inRound && (
+              <SmallButton title="Meer toevoegen" icon="plus" onPress={() => void pick()} />
+            )}
+          </View>
+          {anyTooLong && !inRound && (
+            <Text variant="meta" color="danger">
+              {videoFailMessage("te_lang")}
+            </Text>
+          )}
+          {/* Besluit 4, A8: over de volle breedte van het vel, met de eigen breedte gemeten. */}
+          <View style={local.grid} onLayout={(e) => setGridWidth(e.nativeEvent.layout.width)}>
+            {tiles.map((t, n) => {
+              const item = selection[n]!;
+              const video = videoStates.get(t.key);
+              return (
+                <Tile
+                  key={t.key}
+                  itemKey={t.key}
+                  kind={t.kind}
+                  uri={item.asset.uri}
+                  side={grid.tile}
+                  label={t.label}
+                  removeLabel={t.removeLabel}
+                  durationText={t.durationText}
+                  tooLong={t.tooLong}
+                  poster={posters.get(t.key)}
+                  photoState={photoStates.get(t.key)}
+                  videoStatus={video ? videoStatusText(video) : null}
+                  videoFailed={video?.state === "mislukt"}
+                  onRemove={!inRound && !fetching ? removeItem : undefined}
+                />
+              );
+            })}
+          </View>
+        </View>
       )}
     </Screen>
   );
 }
 
-function Thumbs({ picked, items }: { picked: Picked[]; items: UploadItem[] | null }) {
-  const { colors } = useTheme();
-  const state = new Map((items ?? []).map((i) => [i.key, i.state]));
-  // In een ronde alle foto's met hun stand; daarvoor de eerste 7 en "+ n".
-  const shown = items && items.length > 0 ? picked : picked.slice(0, THUMBS);
-  const rest = picked.length - shown.length;
-  return (
-    <View style={styles.thumbs}>
-      {shown.map((p) => {
-        const s = state.get(p.key);
-        return (
-          <View key={p.key} style={styles.thumb}>
-            <Image source={{ uri: p.asset.uri }} style={styles.thumbImage} contentFit="cover" />
-            {s && s !== "wacht" && (
-              <View style={[styles.badge, { backgroundColor: colors.surface }]}>
-                {s === "bezig" ? (
-                  <Icon name="refresh" size={18} color={colors.muted} />
-                ) : (
-                  <Icon
-                    name={s === "klaar" ? "check" : "alert"}
-                    size={18}
-                    color={s === "klaar" ? colors.success : colors.danger}
-                  />
-                )}
-              </View>
-            )}
-          </View>
-        );
-      })}
-      {rest > 0 && (
-        <View style={[styles.thumb, styles.more, { backgroundColor: colors.line }]}>
-          <Text variant="bodyStrong">{`+ ${rest}`}</Text>
-        </View>
-      )}
-    </View>
-  );
+/**
+ * A10: de omslagen van de filmpjes in de keuze, één voor één in de volgorde van
+ * de keuze. Per sleutel de uri, `null` als het niet lukte (dan een neutrale
+ * tegel, niet opnieuw), `undefined` zolang hij nog niet klaar is. Een omslag
+ * van een item dat uit de keuze ging, gaat weg; bij sluiten alle.
+ */
+function usePosters(selection: readonly Item[]): ReadonlyMap<string, string | null> {
+  const [posters, setPosters] = useState<ReadonlyMap<string, string | null>>(new Map());
+  const made = useRef(new Map<string, string | null>());
+  const order = useRef<readonly Item[]>([]);
+  const running = useRef(false);
+  const alive = useRef(true);
+
+  const run = useCallback(async () => {
+    if (running.current) return;
+    running.current = true;
+    try {
+      for (;;) {
+        if (!alive.current) return;
+        const next = order.current.find((i) => i.kind === "filmpje" && !made.current.has(i.key));
+        if (!next) return;
+        let uri: string | null;
+        try {
+          uri = (await makePoster(next.asset.uri)).uri;
+        } catch {
+          // Invariant 4: geen fout, een neutrale tegel.
+          uri = null;
+        }
+        const still = alive.current && order.current.some((i) => i.key === next.key);
+        if (!still) {
+          if (uri) void removeFile(uri);
+          // Niet opnieuw voor dit item; het is uit de keuze (of het scherm is dicht).
+          if (!alive.current) return;
+          continue;
+        }
+        made.current.set(next.key, uri);
+        setPosters(new Map(made.current));
+      }
+    } finally {
+      running.current = false;
+    }
+  }, []);
+
+  // Vóór het effect hieronder: bij (opnieuw) mounten eerst weer "levend".
+  useEffect(() => {
+    alive.current = true;
+    const current = made.current;
+    return () => {
+      alive.current = false;
+      for (const uri of current.values()) if (uri) void removeFile(uri);
+      current.clear();
+    };
+  }, []);
+
+  useEffect(() => {
+    order.current = selection;
+    const keep = new Set(selection.map((i) => i.key));
+    let changed = false;
+    for (const [key, uri] of made.current) {
+      if (keep.has(key)) continue;
+      made.current.delete(key);
+      if (uri) void removeFile(uri);
+      changed = true;
+    }
+    if (changed) setPosters(new Map(made.current));
+    void run();
+  }, [selection, run]);
+
+  return posters;
 }
 
-// WP37: de gekozen filmpjes, met hun stap tijdens een ronde.
-function VideoList({ videos, items }: { videos: Picked[]; items: VideoItem[] | null }) {
-  const { colors } = useTheme();
-  const byKey = new Map((items ?? []).map((i) => [i.key, i]));
-  return (
-    <View style={videoStyles.list}>
-      {videos.map((v, n) => {
-        const item = byKey.get(v.key);
-        const duration = typeof v.asset.duration === "number" ? formatDuration(v.asset.duration) : null;
-        return (
-          <View key={v.key} style={videoStyles.row} accessible accessibilityLabel={videoRowLabel(n, duration, item)}>
-            <Icon name="film" size={22} color={colors.muted} />
-            <Text style={videoStyles.grow}>{[`Filmpje ${n + 1}`, duration].filter(Boolean).join(" · ")}</Text>
-            {item && <Text variant="meta" color={item.state === "mislukt" ? "danger" : "muted"}>{videoStateText(item)}</Text>}
-          </View>
-        );
-      })}
-    </View>
-  );
-}
-
-function videoStateText(item: VideoItem): string {
-  switch (item.state) {
+function photoStatusText(state: UploadState): string {
+  switch (state) {
     case "wacht":
       return "Wacht";
+    case "bezig":
+      return "Bezig";
     case "klaar":
       return "In het album";
     case "mislukt":
       return "Niet gelukt";
-    case "bezig": {
-      const p = item.progress;
-      if (!p || p.phase === "voorbereiden") return "Voorbereiden…";
-      const pct = `${Math.round(Math.min(1, Math.max(0, p.progress)) * 100)}%`;
-      if (p.phase === "verkleinen") return `Verkleinen… ${pct}`;
-      if (p.phase === "versturen") return `Versturen… ${pct}`;
-      return "Afronden…";
-    }
   }
 }
 
-function videoRowLabel(n: number, duration: string | null, item: VideoItem | undefined): string {
-  return [`Filmpje ${n + 1}`, duration, item ? videoStateText(item) : null].filter(Boolean).join(", ");
-}
+type TileProps = {
+  itemKey: string;
+  kind: SelectionKind;
+  uri: string;
+  side: number;
+  label: string;
+  removeLabel: string;
+  durationText: string | null;
+  tooLong: boolean;
+  /** Omslag van een filmpje: uri, `null` (mislukt) of `undefined` (nog niet). */
+  poster: string | null | undefined;
+  photoState: UploadState | undefined;
+  videoStatus: string | null;
+  videoFailed: boolean;
+  /** Zonder: geen × (tijdens en na een ronde, A5). */
+  onRemove?: (key: string) => void;
+};
+
+// Eén tegel: een foto, of een filmpje met omslag en duur rechtsonder. Tijdens
+// een ronde de stand op de tegel (besluit 2, A13). De × staat naast de tegel
+// voor VoiceOver, met een eigen naam en een tikvlak van 44 pt (invariant 6).
+const Tile = memo(function Tile({
+  itemKey,
+  kind,
+  uri,
+  side,
+  label,
+  removeLabel,
+  durationText,
+  tooLong,
+  poster,
+  photoState,
+  videoStatus,
+  videoFailed,
+  onRemove,
+}: TileProps) {
+  const { colors } = useTheme();
+  const status = kind === "foto" ? (photoState ? photoStatusText(photoState) : null) : videoStatus;
+  const name = status ? `${label}, ${status}` : label;
+  const source = kind === "foto" ? uri : poster;
+  return (
+    <View style={[local.tile, { width: side, height: side, backgroundColor: colors.line }]}>
+      <View style={StyleSheet.absoluteFill} accessible accessibilityRole="image" accessibilityLabel={name}>
+        {source ? (
+          // A9: decoderen op tegelmaat, niet in de schijfcache.
+          <Image
+            source={{ uri: source }}
+            style={StyleSheet.absoluteFill}
+            contentFit="cover"
+            enforceEarlyResizing
+            cachePolicy="memory"
+            recyclingKey={itemKey}
+            transition={0}
+          />
+        ) : kind === "filmpje" ? (
+          <View style={local.center}>
+            <Icon name="film" size={28} color={colors.muted} />
+          </View>
+        ) : null}
+
+        {kind === "filmpje" && durationText && (
+          <View style={[local.pill, local.duration]}>
+            <View style={[StyleSheet.absoluteFill, local.layer]} />
+            <Icon name="play" size={14} color={photoLayers.text} filled />
+            <Text variant="albumMeta" style={local.pillText} maxFontSizeMultiplier={1.3}>
+              {durationText}
+            </Text>
+          </View>
+        )}
+
+        {tooLong && !videoStatus && (
+          <View style={[local.pill, local.topLeft]}>
+            <View style={[StyleSheet.absoluteFill, { backgroundColor: colors.danger }]} />
+            <Icon name="alert" size={14} color={photoLayers.text} filled />
+            <Text variant="albumMeta" style={local.pillText} maxFontSizeMultiplier={1.3}>
+              Te lang
+            </Text>
+          </View>
+        )}
+
+        {kind === "filmpje" && videoStatus && (
+          <View style={local.status}>
+            <View style={[StyleSheet.absoluteFill, local.layer]} />
+            {videoFailed && <Icon name="alert" size={14} color={photoLayers.text} filled />}
+            <Text variant="albumMeta" style={[local.pillText, local.grow]} numberOfLines={2} maxFontSizeMultiplier={1.3}>
+              {videoStatus}
+            </Text>
+          </View>
+        )}
+
+        {kind === "foto" && photoState && photoState !== "wacht" && (
+          <View style={[styles.badge, { backgroundColor: colors.surface }]}>
+            {photoState === "bezig" ? (
+              <Icon name="refresh" size={18} color={colors.muted} />
+            ) : (
+              <Icon
+                name={photoState === "klaar" ? "check" : "alert"}
+                size={18}
+                color={photoState === "klaar" ? colors.success : colors.danger}
+              />
+            )}
+          </View>
+        )}
+      </View>
+
+      {onRemove && (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={removeLabel}
+          onPress={() => onRemove(itemKey)}
+          style={({ pressed }) => [local.remove, pressed && local.pressed]}
+        >
+          <View style={local.removeDot}>
+            <View style={[StyleSheet.absoluteFill, local.layer]} />
+            <Icon name="close" size={22} color={photoLayers.text} filled />
+          </View>
+        </Pressable>
+      )}
+    </View>
+  );
+});
 
 function VideoRoundResult({
   items,
@@ -542,18 +760,73 @@ function VideoRoundResult({
         <Button title="Filmpjes opnieuw proberen" icon="refresh" onPress={onRetry} disabled={busy} />
       )}
       {done && standalone && (
-        <View style={videoStyles.buttons}>
+        <View style={local.buttons}>
           {klaar > 0 && <SmallButton title="Naar album" onPress={onToAlbum} />}
-          <SmallButton title="Meer kiezen" icon="plus" onPress={onMore} />
+          <SmallButton title="Meer toevoegen" icon="plus" onPress={onMore} />
         </View>
       )}
     </View>
   );
 }
 
-const videoStyles = {
-  list: { gap: 6 },
-  row: { flexDirection: "row" as const, alignItems: "center" as const, gap: 8, minHeight: 32 },
-  grow: { flex: 1 },
-  buttons: { flexDirection: "row" as const, alignItems: "center" as const, gap: 8, flexWrap: "wrap" as const },
-};
+// Invariant 6: het tikvlak van de ×.
+const REMOVE_HIT = size.touchMin;
+
+const local = StyleSheet.create({
+  countRow: { flexDirection: "row", alignItems: "center", gap: space.s, flexWrap: "wrap" },
+  grid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: ADD_GRID_GAP,
+    // Over de volle breedte, zoals het raster van het album.
+    marginHorizontal: -size.screenMargin,
+  },
+  tile: { overflow: "hidden" },
+  center: { flex: 1, alignItems: "center", justifyContent: "center" },
+  layer: { backgroundColor: photoLayers.pill.color, opacity: photoLayers.pill.opacity },
+  pill: {
+    position: "absolute",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 2,
+    paddingHorizontal: space.xs,
+    paddingVertical: 1,
+    borderRadius: radius.pill,
+    overflow: "hidden",
+  },
+  duration: { right: space.xs, bottom: space.xs },
+  topLeft: { left: space.xs, top: space.xs },
+  pillText: { color: photoLayers.text, fontWeight: "700" },
+  grow: { flexShrink: 1 },
+  status: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    top: 0,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 2,
+    paddingHorizontal: space.xs,
+    paddingVertical: 2,
+    overflow: "hidden",
+  },
+  remove: {
+    position: "absolute",
+    top: 0,
+    right: 0,
+    width: REMOVE_HIT,
+    height: REMOVE_HIT,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  removeDot: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    overflow: "hidden",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  pressed: { opacity: 0.6 },
+  buttons: { flexDirection: "row", alignItems: "center", gap: space.s, flexWrap: "wrap" },
+});

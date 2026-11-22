@@ -18,7 +18,7 @@ import { border, plusButton, radius, size, space, useTheme } from "../theme";
 
 // De ingelogde tabbalk (design.md §5, §7; WP15a invarianten 2, 9, 16): Home ·
 // Mijn foto's · + · Profiel · Instellingen, elk met icoon en label. De + is
-// een actie, geen tab: hij opent de modaal "Foto's toevoegen". Uitgelogd
+// een actie, geen tab: hij opent de modaal "Toevoegen". Uitgelogd
 // (WP15b): Inloggen · Info, zonder +.
 
 type TabMeta = { label: string; icon: IconName; weight: number };
@@ -207,7 +207,7 @@ function PlusButton() {
   return (
     <AnimatedPressable
       accessibilityRole="button"
-      accessibilityLabel="Foto's toevoegen"
+      accessibilityLabel="Toevoegen"
       onPress={press.withRelease(() => {
         const albumId = albumIdFromPath(pathname);
         // WP36 U9: op het web opent de kiezer in de tik; op iOS niets.

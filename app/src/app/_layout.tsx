@@ -41,7 +41,7 @@ function RootStack() {
             options={{
               presentation: "modal",
               headerShown: true,
-              title: "Foto's toevoegen",
+              title: "Toevoegen",
               headerRight: () => <CloseButton />,
             }}
           />
