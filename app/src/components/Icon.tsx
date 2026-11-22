@@ -31,6 +31,9 @@ const IONICONS = {
   map: "map",
   pin: "location",
   share: "share",
+  // WP39: "Toevoegen aan album" en de × op een tegel in het toevoegscherm.
+  upload: "cloud-upload",
+  close: "close-circle",
   idea: "bulb",
   problem: "bug",
   vote: "thumbs-up",

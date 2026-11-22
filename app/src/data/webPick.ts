@@ -10,7 +10,7 @@ export type AddPick = Promise<File[] | null>;
 /** De gekozen profielfoto, al gecontroleerd en omgezet; of waarom die niet kan. */
 export type ProfilePick = { photo: WebPhoto } | { reason: FailReason };
 
-/** In de tik op "+" of "Foto's toevoegen": de kiezer openen voor `toevoegen`. */
+/** In de tik op "+" of "Toevoegen": de kiezer openen voor `toevoegen`. */
 export function startAddPick(): void {}
 
 /** Het toevoeg-scherm neemt de keuze uit de tik over, nu en zolang het open staat. */

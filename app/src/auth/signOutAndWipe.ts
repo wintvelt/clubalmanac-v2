@@ -1,4 +1,5 @@
 import { restartClerk } from "../data/clerkRestart";
+import { clearLastAlbum } from "../data/lastAlbum";
 import { clearLastGroup } from "../data/lastGroup";
 import { wipeClerkStorage } from "./deviceClerkStorage";
 
@@ -11,12 +12,15 @@ import { wipeClerkStorage } from "./deviceClerkStorage";
 //
 // WP32 A6: `deletedUserId` alleen na een gelukt "Account verwijderen": dan gaat
 // ook de thuisgroep van die user van het toestel. Gewoon uitloggen wist hem
-// niet.
+// niet. WP39 (F1): het laatst gekozen album van die user ook.
 export async function signOutAndWipe(
   signOut: () => Promise<unknown>,
   deletedUserId?: string | null,
 ): Promise<boolean> {
-  if (deletedUserId) await clearLastGroup(deletedUserId);
+  if (deletedUserId) {
+    await clearLastGroup(deletedUserId);
+    await clearLastAlbum(deletedUserId);
+  }
   let failed = false;
   try {
     await signOut();

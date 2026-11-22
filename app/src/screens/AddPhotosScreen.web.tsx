@@ -24,13 +24,17 @@ import {
   type UploadItem,
   type UploadOutcome,
 } from "../lib/upload";
+import { addButton } from "../lib/addSelection";
 import { CloseButton } from "../navigation/stackOptions";
 import { space, useTheme } from "../theme";
 import { AlbumChoice, RoundResult, THUMB, addPhotosStyles, type ChosenAlbum } from "./AddPhotosParts";
 
-// WP36: "Foto's toevoegen" in de browser. Hetzelfde verloop als op iOS
+// WP36: "Toevoegen" in de browser. Hetzelfde verloop als op iOS
 // (AddPhotosScreen.tsx): kiezen, album, uploaden met per foto één upload-id,
-// per reden wat niet lukte, "Opnieuw proberen", "Meer foto's". Anders:
+// per reden wat niet lukte, "Opnieuw proberen", "Meer selecteren". Anders:
+//
+// - WP39 (A-antwoord 5, B-besluiten 1 en 2): alleen foto's, dus de lege stand
+//   blijft "Kies foto's"; geen raster en geen ×, wel "Andere foto's kiezen".
 //
 // - U9: de kiezer opent in de tik (de "+", de knop in het album, of hier
 //   "Foto's kiezen"), niet vanzelf na het openen van het scherm.
@@ -104,7 +108,7 @@ export function AddPhotosScreen({ albumId }: { albumId?: string }) {
     accept(openFilePicker(true));
   }
 
-  // De keuze uit de tik op "+" of "Foto's toevoegen".
+  // De keuze uit de tik op "+" of "Toevoegen".
   useEffect(() => listenAddPick(accept), []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // U10: het scherm blijft aan zolang een ronde loopt. De browser laat de lock
@@ -190,7 +194,7 @@ export function AddPhotosScreen({ albumId }: { albumId?: string }) {
   }
 
   // U7: dezelfde foto voor hetzelfde album houdt zijn upload-id, ook in een
-  // nieuwe ronde ("Meer foto's", het scherm opnieuw openen).
+  // nieuwe ronde ("Meer selecteren", het scherm opnieuw openen).
   function startUpload() {
     if (!album) return;
     void runRound(albumBatch(picked.map((p) => ({ key: p.key, assetId: p.assetId })), album.albumId));
@@ -267,7 +271,15 @@ export function AddPhotosScreen({ albumId }: { albumId?: string }) {
       )}
 
       {!inRound && picked.length > 0 && (
-        <Button title="Foto's uploaden" icon="plus" variant="cta" disabled={!album} onPress={startUpload} />
+        // WP39 besluit 9: zonder album grijs "Kies eerst een album"; op het web
+        // geen kiesscherm, dus uit (de albumkeuze staat erboven).
+        <Button
+          title={addButton(album ? "chosen" : "none").title}
+          icon="upload"
+          variant="cta"
+          disabled={!album}
+          onPress={startUpload}
+        />
       )}
 
       {inRound && items && (

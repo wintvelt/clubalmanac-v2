@@ -26,6 +26,9 @@ type Props = {
   // Houdt het einde van de inhoud in beeld, ook als het toetsenbord opengaat
   // (bv. de knop onder het laatste veld van een formulier).
   keepEndInView?: boolean;
+  // WP39: vast onderin, buiten het scrollen en boven de thuisbalk (bv. de
+  // hoofdknop van "Toevoegen"). Niet in "reconnecting".
+  footer?: ReactNode;
 };
 
 // Scrolt altijd, zodat bij de grootste tekststand en met het toetsenbord open
@@ -41,6 +44,7 @@ export function Screen({
   centered = false,
   underHeader = false,
   keepEndInView = false,
+  footer,
 }: Props) {
   const { colors } = useTheme();
   const reconnecting = useAuthState() === "reconnecting";
@@ -96,6 +100,7 @@ export function Screen({
             <View style={styles.column}>{reconnecting ? <ReconnectingState /> : children}</View>
           </KeyboardRevealContext.Provider>
         </Animated.ScrollView>
+        {footer && !reconnecting ? <View style={styles.footer}>{footer}</View> : null}
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
@@ -135,5 +140,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: size.screenMargin,
     paddingTop: space.xl,
     gap: space.l,
+  },
+  footer: {
+    width: "100%",
+    maxWidth: size.maxTextColumn,
+    alignSelf: "center",
+    paddingHorizontal: size.screenMargin,
+    paddingTop: space.m,
+    paddingBottom: space.s,
   },
 });

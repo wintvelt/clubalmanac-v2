@@ -15,9 +15,14 @@
 //   van het gecomprimeerde bestand, zodat poster en filmpje gelijk staan.
 // - Comprimeren kan alleen met de app open (besluit B11); de app houdt het
 //   scherm aan. `cancel` stopt een lopende compressie.
+// - WP39 besluit 10: `pickerOnScreen` zegt of er nog een fotokiezer over het
+//   scherm staat. De app vraagt dat zolang ze op de kiezer wacht; de teller van
+//   "Je keuze ophalen…" loopt vanaf het moment dat hij dicht is.
 
 import ExpoModulesCore
 import Foundation
+import PhotosUI
+import UIKit
 
 struct CompressOptions: Record {
   @Field var id: String = ""
@@ -85,5 +90,31 @@ public class ClubalmanacVideoModule: Module {
     AsyncFunction("remove") { (uri: String) in
       if let url = try? fileURL(uri) { try? FileManager.default.removeItem(at: url) }
     }
+
+    AsyncFunction("pickerOnScreen") { () async -> Bool in
+      return await MainActor.run { pickerOnScreen() }
+    }
   }
+}
+
+/// WP39 besluit 10: staat er een fotokiezer (PHPicker of UIImagePicker) over
+/// het scherm die niet aan het sluiten is?
+@MainActor
+func pickerOnScreen() -> Bool {
+  func isPicker(_ controller: UIViewController) -> Bool {
+    controller is PHPickerViewController || controller is UIImagePickerController
+  }
+  for scene in UIApplication.shared.connectedScenes {
+    guard let windowScene = scene as? UIWindowScene else { continue }
+    for window in windowScene.windows {
+      var controller = window.rootViewController
+      while let current = controller {
+        if (isPicker(current) || current.children.contains(where: isPicker)) && !current.isBeingDismissed {
+          return true
+        }
+        controller = current.presentedViewController
+      }
+    }
+  }
+  return false
 }

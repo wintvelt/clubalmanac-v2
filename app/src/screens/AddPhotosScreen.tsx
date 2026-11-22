@@ -1,33 +1,55 @@
+import { useAuth } from "@clerk/expo";
 import { Image } from "expo-image";
 import * as ImagePicker from "expo-image-picker";
 import { activateKeepAwakeAsync, deactivateKeepAwake } from "expo-keep-awake";
 import { router, Stack, useNavigation } from "expo-router";
-import { useEffect, useRef, useState } from "react";
-import { Linking, View } from "react-native";
+import { memo, useCallback, useEffect, useRef, useState } from "react";
+import { ActivityIndicator, Linking, Pressable, StyleSheet, useWindowDimensions, View } from "react-native";
+import type { Id } from "../../../convex/_generated/dataModel";
+import { makePoster, pickerOnScreen, removeFile } from "../../modules/clubalmanac-video";
 import { Button } from "../components/Button";
 import { Icon } from "../components/Icon";
 import { Notice } from "../components/Notice";
+import { QueryBoundary } from "../components/QueryBoundary";
 import { Screen } from "../components/Screen";
 import { SmallButton } from "../components/SmallButton";
 import { EmptyState, LoadingState } from "../components/States";
 import { Text } from "../components/Text";
+import { api } from "../convexApi";
+import { useMyGroups } from "../data/homeGroupState";
+import { forgetLastAlbum, loadLastAlbum, saveLastAlbum } from "../data/lastAlbum";
 import { useUploader } from "../data/upload";
+import { useLiveQuery } from "../data/useLiveQuery";
 import { useVideoUploader, type VideoProgress } from "../data/videoUpload";
 import { successTap } from "../data/haptics";
+import {
+  ADD_GRID_GAP,
+  addButton,
+  addGrid,
+  addToSelection,
+  removeFromSelection,
+  selectionTiles,
+  videoStatusText,
+  type SelectionItem,
+  type SelectionKind,
+} from "../lib/addSelection";
 import { albumPath } from "../lib/groupRoutes";
+import { lastAlbumChoice, type LastAlbumChoice, type StoredAlbum } from "../lib/lastAlbum";
+import { PICK_IDLE, beginPick, endPick, fetchStarted, pickView, stopPick, type PickSession } from "../lib/pickSession";
 import {
   UPLOAD_PARALLEL,
   albumBatch,
   applyOutcome,
   batchSummary,
   photoCountText,
+  reasonText,
   retryBatch,
   startItem,
   type UploadItem,
   type UploadOutcome,
+  type UploadState,
 } from "../lib/upload";
 import {
-  formatDuration,
   videoFailMessage,
   videoRetryable,
   videoRetryRound,
@@ -35,11 +57,12 @@ import {
   type VideoFailReason,
 } from "../lib/videos";
 import { CloseButton } from "../navigation/stackOptions";
-import { useTheme } from "../theme";
-import { AlbumChoice, RoundResult, addPhotosStyles as styles, type ChosenAlbum } from "./AddPhotosParts";
+import { photoLayers, radius, size, space, useTheme } from "../theme";
+import { RoundResult, addPhotosStyles as styles, type ChosenAlbum } from "./AddPhotosParts";
+import { AlbumChoiceSheet } from "./AlbumChoice";
 
-// WP18: de modaal "Foto's toevoegen". De kiezer opent meteen; de user kiest
-// het album (vooraf ingevuld vanuit het album waar de "+" werd ingedrukt) en
+// WP18: de modaal "Toevoegen". De kiezer opent meteen; de user kiest het
+// album (vooraf ingevuld vanuit het album waar de "+" werd ingedrukt) en
 // uploadt. Per foto één upload-id, gelijk bij opnieuw proberen (invariant 1).
 // Na de ronde per reden met aantal wat niet lukte, en "Opnieuw proberen"
 // voor wat kan lukken (invariant 2). Tijdens een ronde blijft het scherm
@@ -55,12 +78,37 @@ import { AlbumChoice, RoundResult, addPhotosStyles as styles, type ChosenAlbum }
 // fout de NL-reden met "Opnieuw proberen" waar dat zin heeft (invariant 5).
 // Dezelfde upload-id bij opnieuw proberen: geen tweede filmpje (invariant 4).
 // Verkleinen kan alleen met de app open (besluit B11): het scherm blijft aan.
+//
+// WP39: foto's en filmpjes gelijk, als tegels in een raster zoals het album
+// (src/lib/addSelection.ts). "Meer selecteren" vult de keuze aan (ontdubbeld op
+// `assetId`), een × haalt een item weg; beide alleen vóór de ronde. Na een
+// ronde begint "Meer selecteren" een nieuwe keuze; annuleren in de kiezer
+// verandert nooit iets (A4). Een filmpje krijgt een omslag uit het origineel
+// (`makePoster`, één voor één, tijdelijk, niet terwijl een filmpje verkleind of
+// verstuurd wordt; A10, A11). Te lang staat al vóór de
+// ronde op de tegel (besluit 5). De kopie van de kiezer van een dubbel gekozen
+// of weggehaald item gaat meteen weg (B-besluit 3). "Toevoegen aan album" staat
+// vast onderin (B-besluit 4).
+//
+// Fixronde gate 1: het album via één rij en een eigen kiesscherm
+// (AlbumChoiceSheet), vooraf ingevuld met het laatst gekozen album (per user op
+// het toestel, src/data/lastAlbum.ts, bewaard bij de start van een ronde; F1–F5).
+// Zonder album is de knop onderin grijs, "Kies eerst een album", en opent hij
+// het kiesscherm (besluiten 7 en 8). "Meer selecteren" (besluit 2). Tijdens
+// "Je keuze ophalen…" een teller vanaf het sluiten van de kiezer (besluit 10,
+// `pickerOnScreen` uit de eigen module), een uitleg en "Stoppen"; een gestopt
+// verzoek telt niet meer en zijn kopieën gaan weg; na "Stoppen" kan meteen een
+// nieuwe kiezer (src/lib/pickSession.ts; F7, F8 na gate ronde 2, F11). Mislukt het ophalen
+// zelf, dan een eigen melding (besluit 6).
 
 const KEEP_AWAKE_TAG = "wp18-upload";
-const THUMBS = 7;
 
+type Asset = ImagePicker.ImagePickerAsset;
+type Item = SelectionItem<Asset>;
 type Chosen = { album: ChosenAlbum };
-type Picked = { key: string; asset: ImagePicker.ImagePickerAsset };
+
+// Vóór een ronde vult de kiezer aan; na een ronde begint hij een nieuwe keuze (A4).
+type PickMode = "aanvullen" | "nieuw";
 
 // WP37: een filmpje in een ronde.
 type VideoItem = {
@@ -71,6 +119,29 @@ type VideoItem = {
   progress?: VideoProgress;
 };
 
+/** Hoe vaak de app vraagt of de kiezer nog over het scherm staat. */
+const PICKER_POLL_MS = 500;
+/** Nooit open gezien (de kiezer was er al af, of kwam er niet): na zo lang toch "dicht". */
+const PICKER_NEVER_SEEN_MS = 1500;
+
+// De kiezer ging niet open (geen toegang, geen scherm om hem op te tonen). Elke
+// andere fout van de kiezer is een mislukt ophalen (besluit 6).
+const OPEN_FAILURES = [
+  "MISSING_CURRENT_VIEW_CONTROLLER",
+  "PERMISSIONS_MODULE_NOT_FOUND",
+  "FILE_SYSTEM_MODULE_NOT_FOUND",
+  "INVALID_MEDIA_TYPE",
+  "UNSUPPORTED_VIDEO_EXPORT_PRESET",
+];
+
+function isOpenFailure(error: unknown): boolean {
+  const code = typeof error === "object" && error !== null ? (error as { code?: unknown }).code : undefined;
+  if (typeof code !== "string") return true;
+  return OPEN_FAILURES.some((c) => code.includes(c));
+}
+
+const wait = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
 function selectionText(photos: number, videos: number): string {
   const parts = [photos > 0 ? photoCountText(photos) : null, videos > 0 ? videoCountText(videos) : null];
   return `${parts.filter(Boolean).join(" en ")} geselecteerd`;
@@ -80,30 +151,68 @@ function videoCountText(n: number): string {
   return n === 1 ? "1 filmpje" : `${n} filmpjes`;
 }
 
-let pickRound = 0;
+/**
+ * B-besluit 3: de kopie die de kiezer van een asset maakte, weg. Niet als een
+ * item dat blijft hetzelfde bestand gebruikt.
+ */
+function dropCopies(assets: readonly Asset[], keep: readonly Item[]): void {
+  const used = new Set(keep.map((i) => i.asset.uri));
+  for (const a of assets) if (!used.has(a.uri)) void removeFile(a.uri);
+}
 
 export function AddPhotosScreen({ albumId }: { albumId?: string }) {
   const upload = useUploader();
   const uploadVideo = useVideoUploader();
-  const [picked, setPicked] = useState<Picked[]>([]);
-  const [videos, setVideos] = useState<Picked[]>([]);
+  const [selection, setSelection] = useState<Item[]>([]);
+  const selectionRef = useRef<Item[]>([]);
   const [videoItems, setVideoItems] = useState<VideoItem[] | null>(null);
   const videoItemsRef = useRef<VideoItem[] | null>(null);
   const videoRunning = useRef(false);
-  const [videoBusy, setVideoBusy] = useState(false);
   const [pickerFailed, setPickerFailed] = useState(false);
   // WP37 A-invariant 38: de kiezer is dicht, maar iOS kopieert de gekozen
   // originelen nog naar de app; zolang "Je keuze ophalen…".
   const [fetching, setFetching] = useState(false);
+  // Fixronde gate 1: het verzoek aan de kiezer (stoppen, één tegelijk, teller).
+  const [session, setSession] = useState<PickSession>(PICK_IDLE);
+  const sessionRef = useRef<PickSession>(PICK_IDLE);
+  // Het token waarvan de module zag dat de kiezer dicht ging (besluit 6).
+  const closedSeen = useRef(0);
+  const [fetchFailed, setFetchFailed] = useState(false);
+  const [now, setNow] = useState(() => Date.now());
   const [album, setAlbum] = useState<Chosen["album"]>(null);
+  // F4: false zolang het vooraf ingevulde album nog gecontroleerd wordt.
+  const [albumKnown, setAlbumKnown] = useState(false);
+  const [choosing, setChoosing] = useState(false);
   const [initialAlbumId] = useState(albumId ?? null);
+  const { userId } = useAuth();
+  // Het onthouden album (undefined: nog niet gelezen), of dat uit de route.
+  const [candidate, setCandidate] = useState<StoredAlbum | null | undefined>(undefined);
+  // Het album uit de route bestaat niet (meer), of de user mag er niet in.
+  const [routeGone, setRouteGone] = useState(false);
+  const routeAlbumFound = useCallback((target: StoredAlbum | null) => {
+    setCandidate(target);
+    if (target === null) setRouteGone(true);
+  }, []);
   const [items, setItems] = useState<UploadItem[] | null>(null);
   const itemsRef = useRef<UploadItem[] | null>(null);
   const running = useRef(false);
   const [busy, setBusy] = useState(false);
   const opened = useRef(false);
+  const [videoBusy, setVideoBusy] = useState(false);
+  // Geen nieuwe omslagen naast het verkleinen en versturen van een filmpje.
+  const posters = usePosters(selection, videoBusy);
 
-  function update(next: UploadItem[]) {
+  function updateSession(next: PickSession) {
+    sessionRef.current = next;
+    setSession(next);
+  }
+
+  function updateSelection(next: Item[]) {
+    selectionRef.current = next;
+    setSelection(next);
+  }
+
+  function update(next: UploadItem[] | null) {
     itemsRef.current = next;
     setItems(next);
   }
@@ -117,39 +226,187 @@ export function AddPhotosScreen({ albumId }: { albumId?: string }) {
     updateVideos((videoItemsRef.current ?? []).map((i) => (i.key === key ? { ...i, ...patch } : i)));
   }
 
-  async function pick() {
+  async function pick(mode: PickMode = "aanvullen") {
+    // Invariant 2: tijdens een ronde ligt de keuze vast. F8: één kiezer
+    // tegelijk zolang het scherm op een verzoek wacht; een gestopt verzoek
+    // blokkeert niets (gate ronde 2).
+    if (running.current || videoRunning.current) return;
+    const begun = beginPick(sessionRef.current);
+    if (!begun) return;
+    const { token } = begun;
+    updateSession(begun.state);
     setPickerFailed(false);
+    setFetchFailed(false);
     setFetching(true);
-    let result: ImagePicker.ImagePickerResult;
+    void watchPicker(token, Date.now());
+    let result: ImagePicker.ImagePickerResult | null = null;
+    let failure: unknown = null;
+    let failed = false;
+    let accept = false;
     try {
       result = await ImagePicker.launchImageLibraryAsync({
-        // WP37: ook filmpjes. De standaard export (Passthrough) geeft het
-        // origineel, met zijn datum en plaats (besluit B2).
+        // WP37: ook filmpjes. Het origineel, met zijn datum en plaats (besluit
+        // B2). Fixronde gate 1: Current en Passthrough expliciet (de native
+        // standaard), zodat een upgrade niet ongemerkt gaat omzetten.
         mediaTypes: ["images", "videos"],
         allowsMultipleSelection: true,
         selectionLimit: 0,
         orderedSelection: true,
         exif: true,
         quality: 1,
+        preferredAssetRepresentationMode: ImagePicker.UIImagePickerPreferredAssetRepresentationMode.Current,
+        videoExportPreset: ImagePicker.VideoExportPreset.Passthrough,
       });
-    } catch {
-      setPickerFailed(true);
-      return;
+    } catch (e) {
+      failure = e;
+      failed = true;
     } finally {
-      // Gekozen, geannuleerd of mislukt: de ophaal-toestand weer weg.
-      setFetching(false);
+      // Gekozen, geannuleerd of mislukt: de ophaal-toestand weer weg. Na
+      // "Stoppen" telt het antwoord niet (F7).
+      const end = endPick(sessionRef.current, token);
+      accept = end.accept;
+      updateSession(end.state);
+      // Een laat antwoord van een gestopt verzoek laat een nieuwer verzoek
+      // staan (gate ronde 2): alleen weg als het scherm nergens meer op wacht.
+      if (end.state.current === null) setFetching(false);
     }
-    if (result.canceled) return;
-    // Opnieuw kiezen vervangt de keuze; een nieuwe keuze is een nieuwe ronde.
-    pickRound += 1;
-    const assets = result.assets.filter((a) => a.type !== "video" && a.type !== "pairedVideo");
-    setPicked(assets.map((asset, i) => ({ key: `${pickRound}-${i}`, asset })));
-    const clips = result.assets.filter((a) => a.type === "video");
-    setVideos(clips.map((asset, i) => ({ key: `${pickRound}-v${i}`, asset })));
-    itemsRef.current = null;
-    setItems(null);
-    updateVideos(null);
+    if (!accept) {
+      // Gestopt (of het scherm is dicht): niets aan het scherm, de kopieën weg.
+      if (result && !result.canceled) dropCopies(result.assets, selectionRef.current);
+      return;
+    }
+    if (failed) {
+      // Besluit 6: de keuze die er stond, blijft staan.
+      if (closedSeen.current !== token && isOpenFailure(failure)) setPickerFailed(true);
+      else setFetchFailed(true);
+      return;
+    }
+    // A4: annuleren verandert niets, ook niet na een ronde.
+    if (!result || result.canceled) return;
+    const { items: next, skipped } = addToSelection(mode === "nieuw" ? [] : selectionRef.current, result.assets);
+    if (mode === "nieuw" && next.length === 0) {
+      // Niets bruikbaars gekozen (bv. alleen een pairedVideo): net als
+      // annuleren, de uitkomst van de ronde blijft staan.
+      dropCopies(skipped, selectionRef.current);
+      return;
+    }
+    dropCopies(skipped, next);
+    if (mode === "nieuw") {
+      // Een nieuwe keuze is een nieuwe ronde; het album blijft gekozen.
+      update(null);
+      updateVideos(null);
+    }
+    updateSelection(next);
   }
+
+  // Besluit 10: de teller begint als de kiezer dicht is. De eigen module zegt
+  // of hij nog over het scherm staat; eerst moet hij open gezien zijn. Kan de
+  // build dat niet zeggen (een oude build), dan vanaf het openen.
+  async function watchPicker(token: number, openedAt: number) {
+    let seenOpen = false;
+    for (;;) {
+      await wait(PICKER_POLL_MS);
+      const c = sessionRef.current.current;
+      if (!c || c.token !== token || c.fetchStartedAt !== null) return;
+      const open = await pickerOnScreen();
+      if (open === null) {
+        updateSession(fetchStarted(sessionRef.current, token, openedAt));
+        return;
+      }
+      if (open) {
+        seenOpen = true;
+        continue;
+      }
+      if (seenOpen || Date.now() - openedAt > PICKER_NEVER_SEEN_MS) {
+        closedSeen.current = token;
+        updateSession(fetchStarted(sessionRef.current, token, Date.now()));
+        return;
+      }
+    }
+  }
+
+  // F7: niet meer wachten; wat er stond, staat er weer.
+  function stopFetching() {
+    updateSession(stopPick(sessionRef.current));
+    setFetching(false);
+  }
+
+  // Dicht: een antwoord dat nog komt, telt niet (zijn kopieën gaan weg).
+  useEffect(
+    () => () => {
+      sessionRef.current = stopPick(sessionRef.current);
+    },
+    [],
+  );
+
+  const view = pickView(session, now);
+  const counting = view.fetching && session.current?.fetchStartedAt != null;
+  useEffect(() => {
+    if (!counting) return;
+    setNow(Date.now());
+    const timer = setInterval(() => setNow(Date.now()), PICKER_POLL_MS);
+    return () => clearInterval(timer);
+  }, [counting]);
+
+  // --- het album (fixronde gate 1, F1–F5) ---------------------------------
+
+  // F3: uit de route (het album van de +), anders het onthouden album.
+  useEffect(() => {
+    if (initialAlbumId) return;
+    if (!userId) {
+      setCandidate(null);
+      return;
+    }
+    let live = true;
+    void loadLastAlbum(userId).then((stored) => {
+      if (live) setCandidate(stored);
+    });
+    return () => {
+      live = false;
+    };
+  }, [userId, initialAlbumId]);
+
+  const inRoundRef = useRef(false);
+  const userIdRef = useRef(userId);
+  userIdRef.current = userId;
+
+  // F4: het album dat er staat (of het vooraf ingevulde) blijft gecontroleerd
+  // tot de ronde; verdwijnt het, dan "Kies een album".
+  const onAlbumCheck = useCallback((result: LastAlbumChoice, target: StoredAlbum) => {
+    if (inRoundRef.current || result.kind === "unknown") return;
+    if (result.kind === "album") {
+      setAlbum((prev) => (prev && prev.albumId !== result.album.albumId ? prev : result.album));
+      setAlbumKnown(true);
+      return;
+    }
+    setAlbum((prev) => (prev && prev.albumId !== target.albumId ? prev : null));
+    setAlbumKnown(true);
+    // F3: het album uit de route is er niet (meer): de melding van vóór WP39.
+    if (target.albumId === initialAlbumId) setRouteGone(true);
+    if (result.forget && userIdRef.current) void forgetLastAlbum(userIdRef.current, target.albumId);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const checkTarget: StoredAlbum | null | undefined = album
+    ? { albumId: album.albumId, groupId: album.groupId }
+    : albumKnown
+      ? null
+      : candidate;
+
+  useEffect(() => {
+    if (!album && !albumKnown && candidate === null) setAlbumKnown(true);
+  }, [album, albumKnown, candidate]);
+
+  // Besluit 3: de × op een tegel. Alleen vóór de ronde (A5).
+  const removeItem = useCallback((key: string) => {
+    if (itemsRef.current !== null || videoItemsRef.current !== null) return;
+    const current = selectionRef.current;
+    const gone = current.find((i) => i.key === key);
+    if (!gone) return;
+    const next = removeFromSelection(current, key);
+    dropCopies([gone.asset], next);
+    selectionRef.current = next;
+    setSelection(next);
+  }, []);
 
   // De kiezer opent meteen, maar pas als de modaal staat: tijdens het openen
   // weigert iOS een tweede scherm te tonen, en dan komt de kiezer nooit terug
@@ -175,15 +432,17 @@ export function AddPhotosScreen({ albumId }: { albumId?: string }) {
   }, [navigation]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Zolang een ronde loopt, blijft het scherm aan (besluit 3; WP37 B11: ook
-  // tijdens het verkleinen van een filmpje).
+  // tijdens het verkleinen van een filmpje). WP39: ook tijdens "Je keuze
+  // ophalen…" (een download uit iCloud kan minuten duren).
   const anyBusy = busy || videoBusy;
+  const keepAwake = anyBusy || fetching;
   useEffect(() => {
-    if (!anyBusy) return;
+    if (!keepAwake) return;
     void activateKeepAwakeAsync(KEEP_AWAKE_TAG).catch(() => {});
     return () => {
       void deactivateKeepAwake(KEEP_AWAKE_TAG).catch(() => {});
     };
-  }, [anyBusy]);
+  }, [keepAwake]);
 
   // `fresh`: de foto's die eerder "uitgelogd" kregen; die halen een vers token.
   async function runRound(start: UploadItem[], fresh: ReadonlySet<string> = new Set()) {
@@ -193,7 +452,7 @@ export function AddPhotosScreen({ albumId }: { albumId?: string }) {
     setBusy(true);
     update(start);
     const target = album.albumId;
-    const assets = new Map(picked.map((p) => [p.key, p.asset]));
+    const assets = new Map(selectionRef.current.map((p) => [p.key, p.asset]));
     const worker = async () => {
       for (;;) {
         const current = itemsRef.current ?? [];
@@ -238,7 +497,7 @@ export function AddPhotosScreen({ albumId }: { albumId?: string }) {
     setVideoBusy(true);
     updateVideos(start);
     const target = album.albumId;
-    const assets = new Map(videos.map((v) => [v.key, v.asset]));
+    const assets = new Map(selectionRef.current.map((v) => [v.key, v.asset]));
     try {
       for (;;) {
         const next = (videoItemsRef.current ?? []).find((i) => i.state === "wacht");
@@ -274,17 +533,28 @@ export function AddPhotosScreen({ albumId }: { albumId?: string }) {
   }
 
   // A-invariant 25: dezelfde foto voor hetzelfde album houdt zijn upload-id,
-  // ook in een nieuwe ronde ("Meer foto's", de modaal opnieuw openen). WP37:
-  // een filmpje ook (invariant 4).
+  // ook in een nieuwe ronde ("Meer selecteren", de modaal opnieuw openen). WP37:
+  // een filmpje ook (invariant 4). WP39 invariant 1: ook na weghalen en
+  // opnieuw kiezen.
   function startUpload() {
-    if (!album) return;
-    const picks = picked.map((p) => ({ key: p.key, assetId: p.asset.assetId }));
+    if (itemsRef.current !== null || videoItemsRef.current !== null) return;
+    if (!album) {
+      // Besluit 7: "Kies eerst een album" opent het kiesscherm.
+      if (albumKnown) setChoosing(true);
+      return;
+    }
+    // F2: het album van deze ronde is het laatst gekozen album.
+    if (userId) void saveLastAlbum(userId, { albumId: album.albumId, groupId: album.groupId });
+    const current = selectionRef.current;
+    const photos = current.filter((p) => p.kind === "foto");
+    const videos = current.filter((v) => v.kind === "filmpje");
+    const picks = photos.map((p) => ({ key: p.key, assetId: p.asset.assetId }));
     const clips = albumBatch(
       videos.map((v) => ({ key: v.key, assetId: v.asset.assetId })),
       album.albumId,
     ).map((i): VideoItem => {
       const duration = videos.find((v) => v.key === i.key)?.asset.duration;
-      // Te lang: meteen zeggen, niet eerst verkleinen.
+      // Te lang: meteen zeggen, niet eerst verkleinen (A12).
       return typeof duration === "number" && videoTooLongToSend(duration)
         ? { key: i.key, uploadId: i.uploadId, state: "mislukt", reason: "te_lang" }
         : { key: i.key, uploadId: i.uploadId, state: "wacht" };
@@ -315,21 +585,39 @@ export function AddPhotosScreen({ albumId }: { albumId?: string }) {
     router.push(path);
   }
 
-  function morePhotos() {
-    setPicked([]);
-    setVideos([]);
-    setItems(null);
-    itemsRef.current = null;
-    updateVideos(null);
-    void pick();
-  }
-
   const inRound = (items !== null && items.length > 0) || (videoItems !== null && videoItems.length > 0);
-  const anyPicked = picked.length > 0 || videos.length > 0;
-  const uploadTitle = videos.length === 0 ? "Foto's uploaden" : picked.length === 0 ? "Filmpjes uploaden" : "Uploaden";
+  inRoundRef.current = inRound;
+  const button = addButton(album ? "chosen" : albumKnown ? "none" : "unknown");
+  const anyPicked = selection.length > 0;
+  const photoCount = selection.filter((i) => i.kind === "foto").length;
+  const videoCount = selection.length - photoCount;
+  const tiles = selectionTiles(selection);
+  const anyTooLong = tiles.some((t) => t.tooLong);
+  const photoStates = new Map((items ?? []).map((i) => [i.key, i.state]));
+  const videoStates = new Map((videoItems ?? []).map((i) => [i.key, i]));
+  // A9: nooit een tegel van 0 × 0 (dan decodeert expo-image op volle grootte).
+  // Tot de meting een schatting uit het venster, begrensd op de tekstkolom;
+  // `onLayout` corrigeert (A8).
+  const win = useWindowDimensions();
+  const [gridWidth, setGridWidth] = useState(() => Math.min(win.width, size.maxTextColumn));
+  const grid = addGrid(gridWidth);
 
   return (
-    <Screen underHeader>
+    <Screen
+      underHeader
+      footer={
+        !fetching && !inRound && anyPicked ? (
+          <Button
+            title={button.title}
+            icon="upload"
+            variant="cta"
+            disabled={button.action === null}
+            muted={button.action === "kies-album"}
+            onPress={startUpload}
+          />
+        ) : null
+      }
+    >
       {/* Tijdens een ronde sluit de modaal niet: geen "Sluiten", geen veeggebaar. */}
       <Stack.Screen
         options={{
@@ -348,61 +636,25 @@ export function AddPhotosScreen({ albumId }: { albumId?: string }) {
         </Notice>
       )}
 
-      {fetching ? <LoadingState label="Je keuze ophalen…" /> : null}
-
-      {!fetching && !anyPicked && !pickerFailed ? (
-        <EmptyState
-          icon="photos"
-          title="Kies foto's"
-          text="Kies een of meer foto's of filmpjes (hooguit 3 minuten) om aan een album toe te voegen."
-        />
-      ) : null}
-
-      {!fetching && anyPicked && (
-        <View style={styles.section}>
-          <Text variant="bodyStrong">{selectionText(picked.length, videos.length)}</Text>
-          {picked.length > 0 && <Thumbs picked={picked} items={items} />}
-          {videos.length > 0 && <VideoList videos={videos} items={videoItems} />}
-        </View>
-      )}
-
-      {!fetching && !inRound && (
-        <SmallButton
-          title={anyPicked ? "Andere foto's kiezen" : "Foto's kiezen"}
-          icon="photos"
-          onPress={() => void pick()}
+      {fetchFailed && (
+        <Notice
+          kind="error"
+          message="Je keuze ophalen lukte niet. Staat er iets in iCloud, probeer het dan opnieuw met een goede verbinding."
         />
       )}
 
-      {anyPicked && (
-        <AlbumChoice
-          initialAlbumId={initialAlbumId}
-          selected={album}
-          onSelect={setAlbum}
-          locked={inRound}
-        />
-      )}
-
-      {!fetching && !inRound && anyPicked && (
-        <Button
-          title={uploadTitle}
-          icon="plus"
-          variant="cta"
-          disabled={!album}
-          onPress={startUpload}
-        />
-      )}
-
+      {/* B-besluit 4: de uitkomst van de ronde bovenaan, met haar knoppen. */}
       {inRound && videoItems && videoItems.length > 0 && (
         <VideoRoundResult
           items={videoItems}
           busy={videoBusy}
           albumLabel={album?.label ?? ""}
-          // Zonder foto's in de ronde staan "Naar album" en "Meer" hier.
-          standalone={!items || items.length === 0}
+          // Zonder foto's in de ronde staan "Naar album" en "Meer" hier. F7, F8:
+          // na "Stoppen" staan ze er meteen weer.
+          standalone={(!items || items.length === 0) && !fetching}
           onRetry={retryVideos}
           onToAlbum={toAlbum}
-          onMore={morePhotos}
+          onMore={() => void pick("nieuw")}
         />
       )}
 
@@ -413,94 +665,451 @@ export function AddPhotosScreen({ albumId }: { albumId?: string }) {
           busy={busy}
           onRetry={retry}
           onToAlbum={toAlbum}
-          onMore={morePhotos}
+          onMore={() => void pick("nieuw")}
+          // Invariant 2: niet weg en geen nieuwe keuze zolang een filmpje loopt.
+          // F7, F8: na "Stoppen" meteen weer.
+          idle={!videoBusy && !fetching}
         />
+      )}
+
+      {fetching ? (
+        <View style={styles.section}>
+          <LoadingState label="Je keuze ophalen…" />
+          {view.elapsed !== null && (
+            <Text variant="bodyStrong" style={local.timer} accessibilityLabel={`${view.elapsed} bezig`}>
+              {view.elapsed}
+            </Text>
+          )}
+          <Text variant="meta" color="muted">
+            Langere filmpjes en/of hogere kwaliteit kan een paar minuten duren.
+          </Text>
+          <SmallButton title="Stoppen" onPress={stopFetching} />
+        </View>
+      ) : null}
+
+
+      {!fetching && !anyPicked && !pickerFailed ? (
+        <EmptyState
+          icon="photos"
+          title="Kies foto's of filmpjes"
+          text="Kies een of meer foto's of filmpjes (hooguit 3 minuten) om aan een album toe te voegen."
+        />
+      ) : null}
+
+      {!fetching && !anyPicked && !inRound && (
+        <SmallButton title="Kiezen" icon="photos" disabled={!view.canPick} onPress={() => void pick()} />
+      )}
+
+      {initialAlbumId && candidate === undefined && (
+        <QueryBoundary fallback={() => <Found onFound={routeAlbumFound} target={null} />}>
+          <RouteAlbum albumId={initialAlbumId} onFound={routeAlbumFound} />
+        </QueryBoundary>
+      )}
+
+      {checkTarget ? (
+        <QueryBoundary
+          key={checkTarget.albumId}
+          fallback={() => <Report target={checkTarget} result={{ kind: "none", forget: false }} onResult={onAlbumCheck} />}
+        >
+          <AlbumCheck target={checkTarget} onResult={onAlbumCheck} />
+        </QueryBoundary>
+      ) : null}
+
+      {/* F3 "zoals nu": het album uit de route bestaat niet meer. */}
+      {anyPicked && routeGone && !album && !inRound && <Notice kind="error" message={reasonText("geen_album")} />}
+
+      {anyPicked && (
+        <AlbumRow album={album} known={albumKnown} locked={inRound} onPress={() => setChoosing(true)} />
+      )}
+
+      <AlbumChoiceSheet
+        visible={choosing}
+        selectedAlbumId={album?.albumId ?? null}
+        onClose={() => setChoosing(false)}
+        onChoose={(id, info) => {
+          setChoosing(false);
+          if (inRoundRef.current) return;
+          setAlbum({ albumId: id, groupId: info.groupId, label: info.label });
+          setAlbumKnown(true);
+        }}
+      />
+
+      {anyPicked && (
+        <View style={styles.section}>
+          <View style={local.countRow}>
+            <Text variant="bodyStrong" style={styles.grow}>
+              {selectionText(photoCount, videoCount)}
+            </Text>
+            {!fetching && !inRound && (
+              <SmallButton
+                title="Meer selecteren"
+                icon="plus"
+                disabled={!view.canPick}
+                onPress={() => void pick()}
+              />
+            )}
+          </View>
+          {anyTooLong && !inRound && (
+            <Text variant="meta" color="danger">
+              {videoFailMessage("te_lang")}
+            </Text>
+          )}
+          {/* Besluit 4, A8: over de volle breedte van het vel, met de eigen breedte gemeten. */}
+          <View
+            style={local.grid}
+            onLayout={(e) => {
+              const w = e.nativeEvent.layout.width;
+              if (w > 0) setGridWidth(w);
+            }}
+          >
+            {grid.tile > 0 && tiles.map((t, n) => {
+              const item = selection[n]!;
+              const video = videoStates.get(t.key);
+              return (
+                <Tile
+                  key={t.key}
+                  itemKey={t.key}
+                  kind={t.kind}
+                  uri={item.asset.uri}
+                  side={grid.tile}
+                  label={t.label}
+                  removeLabel={t.removeLabel}
+                  durationText={t.durationText}
+                  tooLong={t.tooLong}
+                  poster={posters.get(t.key)}
+                  photoState={photoStates.get(t.key)}
+                  videoStatus={video ? videoStatusText(video) : null}
+                  videoFailed={video?.state === "mislukt"}
+                  onRemove={!inRound && !fetching ? removeItem : undefined}
+                />
+              );
+            })}
+          </View>
+        </View>
       )}
     </Screen>
   );
 }
 
-function Thumbs({ picked, items }: { picked: Picked[]; items: UploadItem[] | null }) {
+// F5: één rij "Album" met het gekozen album, of "Kies een album"; een tik
+// opent het kiesscherm. Zolang het vooraf ingevulde album gecontroleerd wordt:
+// nog niets (F4). Tijdens en na een ronde niet te tikken.
+function AlbumRow({
+  album,
+  known,
+  locked,
+  onPress,
+}: {
+  album: ChosenAlbum;
+  known: boolean;
+  locked: boolean;
+  onPress: () => void;
+}) {
   const { colors } = useTheme();
-  const state = new Map((items ?? []).map((i) => [i.key, i.state]));
-  // In een ronde alle foto's met hun stand; daarvoor de eerste 7 en "+ n".
-  const shown = items && items.length > 0 ? picked : picked.slice(0, THUMBS);
-  const rest = picked.length - shown.length;
+  const value = album ? album.label : known ? "Kies een album" : null;
   return (
-    <View style={styles.thumbs}>
-      {shown.map((p) => {
-        const s = state.get(p.key);
-        return (
-          <View key={p.key} style={styles.thumb}>
-            <Image source={{ uri: p.asset.uri }} style={styles.thumbImage} contentFit="cover" />
-            {s && s !== "wacht" && (
-              <View style={[styles.badge, { backgroundColor: colors.surface }]}>
-                {s === "bezig" ? (
-                  <Icon name="refresh" size={18} color={colors.muted} />
-                ) : (
-                  <Icon
-                    name={s === "klaar" ? "check" : "alert"}
-                    size={18}
-                    color={s === "klaar" ? colors.success : colors.danger}
-                  />
-                )}
-              </View>
-            )}
-          </View>
-        );
-      })}
-      {rest > 0 && (
-        <View style={[styles.thumb, styles.more, { backgroundColor: colors.line }]}>
-          <Text variant="bodyStrong">{`+ ${rest}`}</Text>
-        </View>
-      )}
-    </View>
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={`Album, ${value ?? "laden"}`}
+      accessibilityState={{ disabled: locked }}
+      disabled={locked}
+      onPress={onPress}
+      style={({ pressed }) => [local.albumRow, { backgroundColor: colors.surface }, pressed && local.pressed]}
+    >
+      <Text variant="fieldLabel">Album</Text>
+      <View style={local.albumValue}>
+        {value === null ? (
+          <ActivityIndicator color={colors.muted} />
+        ) : (
+          <Text color={album ? "text" : "muted"} numberOfLines={2} style={local.albumText}>
+            {value}
+          </Text>
+        )}
+      </View>
+      {!locked && <Icon name="chevron" size={20} color={colors.muted} />}
+    </Pressable>
   );
 }
 
-// WP37: de gekozen filmpjes, met hun stap tijdens een ronde.
-function VideoList({ videos, items }: { videos: Picked[]; items: VideoItem[] | null }) {
-  const { colors } = useTheme();
-  const byKey = new Map((items ?? []).map((i) => [i.key, i]));
+// F3: het album uit de route, met zijn groep. Weg of geen toegang: geen.
+function RouteAlbum({ albumId, onFound }: { albumId: string; onFound: (t: StoredAlbum | null) => void }) {
+  const row = useLiveQuery(api.albums.getWithGroup, { albumId: albumId as Id<"albums"> });
+  const target = row === undefined ? undefined : row ? { albumId: row._id, groupId: row.groupId } : null;
+  if (target === undefined) return null;
+  return <Found target={target} onFound={onFound} />;
+}
+
+function Found({ target, onFound }: { target: StoredAlbum | null; onFound: (t: StoredAlbum | null) => void }) {
+  const sig = JSON.stringify(target);
+  useEffect(() => {
+    onFound(target);
+  }, [sig]); // eslint-disable-line react-hooks/exhaustive-deps
+  return null;
+}
+
+// F4: is dit album te gebruiken (lid van de groep, het album in die groep)?
+function AlbumCheck({
+  target,
+  onResult,
+}: {
+  target: StoredAlbum;
+  onResult: (result: LastAlbumChoice, target: StoredAlbum) => void;
+}) {
+  const groups = useMyGroups();
+  const member = groups !== undefined && groups.some((g) => g._id === target.groupId);
+  if (member) return <AlbumCheckInGroup target={target} groups={groups} onResult={onResult} />;
   return (
-    <View style={videoStyles.list}>
-      {videos.map((v, n) => {
-        const item = byKey.get(v.key);
-        const duration = typeof v.asset.duration === "number" ? formatDuration(v.asset.duration) : null;
-        return (
-          <View key={v.key} style={videoStyles.row} accessible accessibilityLabel={videoRowLabel(n, duration, item)}>
-            <Icon name="film" size={22} color={colors.muted} />
-            <Text style={videoStyles.grow}>{[`Filmpje ${n + 1}`, duration].filter(Boolean).join(" · ")}</Text>
-            {item && <Text variant="meta" color={item.state === "mislukt" ? "danger" : "muted"}>{videoStateText(item)}</Text>}
-          </View>
-        );
-      })}
-    </View>
+    <Report
+      target={target}
+      result={lastAlbumChoice({ stored: target, myGroups: groups, albumsOf: () => undefined })}
+      onResult={onResult}
+    />
   );
 }
 
-function videoStateText(item: VideoItem): string {
-  switch (item.state) {
+function AlbumCheckInGroup({
+  target,
+  groups,
+  onResult,
+}: {
+  target: StoredAlbum;
+  groups: readonly { _id: string; name: string }[];
+  onResult: (result: LastAlbumChoice, target: StoredAlbum) => void;
+}) {
+  const albums = useLiveQuery(api.albums.listByGroup, { groupId: target.groupId as Id<"groups"> });
+  return (
+    <Report
+      target={target}
+      result={lastAlbumChoice({ stored: target, myGroups: groups, albumsOf: () => albums })}
+      onResult={onResult}
+    />
+  );
+}
+
+function Report({
+  target,
+  result,
+  onResult,
+}: {
+  target: StoredAlbum;
+  result: LastAlbumChoice;
+  onResult: (result: LastAlbumChoice, target: StoredAlbum) => void;
+}) {
+  const sig = JSON.stringify([target, result]);
+  useEffect(() => {
+    onResult(result, target);
+  }, [sig]); // eslint-disable-line react-hooks/exhaustive-deps
+  return null;
+}
+
+/**
+ * A10: de omslagen van de filmpjes in de keuze, één voor één in de volgorde van
+ * de keuze. Per sleutel de uri, `null` als het niet lukte (dan een neutrale
+ * tegel, niet opnieuw), `undefined` zolang hij nog niet klaar is. Een omslag
+ * van een item dat uit de keuze ging, gaat weg; bij sluiten alle.
+ */
+function usePosters(selection: readonly Item[], paused: boolean): ReadonlyMap<string, string | null> {
+  const [posters, setPosters] = useState<ReadonlyMap<string, string | null>>(new Map());
+  const made = useRef(new Map<string, string | null>());
+  const order = useRef<readonly Item[]>([]);
+  const running = useRef(false);
+  const alive = useRef(true);
+  const pausedRef = useRef(paused);
+
+  const run = useCallback(async () => {
+    if (running.current) return;
+    running.current = true;
+    try {
+      for (;;) {
+        // Gepauzeerd: stoppen vóór een nieuwe omslag; na de pauze verder.
+        if (!alive.current || pausedRef.current) return;
+        const next = order.current.find((i) => i.kind === "filmpje" && !made.current.has(i.key));
+        if (!next) return;
+        let uri: string | null;
+        try {
+          uri = (await makePoster(next.asset.uri)).uri;
+        } catch {
+          // Invariant 4: geen fout, een neutrale tegel.
+          uri = null;
+        }
+        const still = alive.current && order.current.some((i) => i.key === next.key);
+        if (!still) {
+          if (uri) void removeFile(uri);
+          // Niet opnieuw voor dit item; het is uit de keuze (of het scherm is dicht).
+          if (!alive.current) return;
+          continue;
+        }
+        made.current.set(next.key, uri);
+        setPosters(new Map(made.current));
+      }
+    } finally {
+      running.current = false;
+    }
+  }, []);
+
+  // Vóór het effect hieronder: bij (opnieuw) mounten eerst weer "levend".
+  useEffect(() => {
+    alive.current = true;
+    const current = made.current;
+    return () => {
+      alive.current = false;
+      for (const uri of current.values()) if (uri) void removeFile(uri);
+      current.clear();
+    };
+  }, []);
+
+  useEffect(() => {
+    pausedRef.current = paused;
+    order.current = selection;
+    const keep = new Set(selection.map((i) => i.key));
+    let changed = false;
+    for (const [key, uri] of made.current) {
+      if (keep.has(key)) continue;
+      made.current.delete(key);
+      if (uri) void removeFile(uri);
+      changed = true;
+    }
+    if (changed) setPosters(new Map(made.current));
+    void run();
+  }, [selection, paused, run]);
+
+  return posters;
+}
+
+function photoStatusText(state: UploadState): string {
+  switch (state) {
     case "wacht":
       return "Wacht";
+    case "bezig":
+      return "Bezig";
     case "klaar":
       return "In het album";
     case "mislukt":
       return "Niet gelukt";
-    case "bezig": {
-      const p = item.progress;
-      if (!p || p.phase === "voorbereiden") return "Voorbereiden…";
-      const pct = `${Math.round(Math.min(1, Math.max(0, p.progress)) * 100)}%`;
-      if (p.phase === "verkleinen") return `Verkleinen… ${pct}`;
-      if (p.phase === "versturen") return `Versturen… ${pct}`;
-      return "Afronden…";
-    }
   }
 }
 
-function videoRowLabel(n: number, duration: string | null, item: VideoItem | undefined): string {
-  return [`Filmpje ${n + 1}`, duration, item ? videoStateText(item) : null].filter(Boolean).join(", ");
-}
+type TileProps = {
+  itemKey: string;
+  kind: SelectionKind;
+  uri: string;
+  side: number;
+  label: string;
+  removeLabel: string;
+  durationText: string | null;
+  tooLong: boolean;
+  /** Omslag van een filmpje: uri, `null` (mislukt) of `undefined` (nog niet). */
+  poster: string | null | undefined;
+  photoState: UploadState | undefined;
+  videoStatus: string | null;
+  videoFailed: boolean;
+  /** Zonder: geen × (tijdens en na een ronde, A5). */
+  onRemove?: (key: string) => void;
+};
+
+// Eén tegel: een foto, of een filmpje met omslag en duur rechtsonder. Tijdens
+// een ronde de stand op de tegel (besluit 2, A13). De × staat naast de tegel
+// voor VoiceOver, met een eigen naam en een tikvlak van 44 pt (invariant 6).
+const Tile = memo(function Tile({
+  itemKey,
+  kind,
+  uri,
+  side,
+  label,
+  removeLabel,
+  durationText,
+  tooLong,
+  poster,
+  photoState,
+  videoStatus,
+  videoFailed,
+  onRemove,
+}: TileProps) {
+  const { colors } = useTheme();
+  const status = kind === "foto" ? (photoState ? photoStatusText(photoState) : null) : videoStatus;
+  const name = status ? `${label}, ${status}` : label;
+  const source = kind === "foto" ? uri : poster;
+  return (
+    <View style={[local.tile, { width: side, height: side, backgroundColor: colors.line }]}>
+      <View style={StyleSheet.absoluteFill} accessible accessibilityRole="image" accessibilityLabel={name}>
+        {source ? (
+          // A9: decoderen op tegelmaat, niet in de schijfcache.
+          <Image
+            source={{ uri: source }}
+            style={StyleSheet.absoluteFill}
+            contentFit="cover"
+            enforceEarlyResizing
+            cachePolicy="memory"
+            recyclingKey={itemKey}
+            transition={0}
+          />
+        ) : kind === "filmpje" ? (
+          <View style={local.center}>
+            <Icon name="film" size={28} color={colors.muted} />
+          </View>
+        ) : null}
+
+        {kind === "filmpje" && durationText && (
+          <View style={[local.pill, local.duration]}>
+            <View style={[StyleSheet.absoluteFill, local.layer]} />
+            <Icon name="play" size={14} color={photoLayers.text} filled />
+            <Text variant="albumMeta" style={local.pillText} maxFontSizeMultiplier={1.3}>
+              {durationText}
+            </Text>
+          </View>
+        )}
+
+        {tooLong && !videoStatus && (
+          <View style={[local.pill, local.topLeft]}>
+            <View style={[StyleSheet.absoluteFill, { backgroundColor: colors.danger }]} />
+            <Icon name="alert" size={14} color={photoLayers.text} filled />
+            <Text variant="albumMeta" style={local.pillText} maxFontSizeMultiplier={1.3}>
+              Te lang
+            </Text>
+          </View>
+        )}
+
+        {kind === "filmpje" && videoStatus && (
+          <View style={local.status}>
+            <View style={[StyleSheet.absoluteFill, local.layer]} />
+            {videoFailed && <Icon name="alert" size={14} color={photoLayers.text} filled />}
+            <Text variant="albumMeta" style={[local.pillText, local.grow]} numberOfLines={2} maxFontSizeMultiplier={1.3}>
+              {videoStatus}
+            </Text>
+          </View>
+        )}
+
+        {kind === "foto" && photoState && photoState !== "wacht" && (
+          <View style={[styles.badge, { backgroundColor: colors.surface }]}>
+            {photoState === "bezig" ? (
+              <Icon name="refresh" size={18} color={colors.muted} />
+            ) : (
+              <Icon
+                name={photoState === "klaar" ? "check" : "alert"}
+                size={18}
+                color={photoState === "klaar" ? colors.success : colors.danger}
+              />
+            )}
+          </View>
+        )}
+      </View>
+
+      {onRemove && (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={removeLabel}
+          onPress={() => onRemove(itemKey)}
+          style={({ pressed }) => [local.remove, pressed && local.pressed]}
+        >
+          <View style={local.removeDot}>
+            <View style={[StyleSheet.absoluteFill, local.layer]} />
+            <Icon name="close" size={22} color={photoLayers.text} filled />
+          </View>
+        </Pressable>
+      )}
+    </View>
+  );
+});
 
 function VideoRoundResult({
   items,
@@ -542,18 +1151,85 @@ function VideoRoundResult({
         <Button title="Filmpjes opnieuw proberen" icon="refresh" onPress={onRetry} disabled={busy} />
       )}
       {done && standalone && (
-        <View style={videoStyles.buttons}>
+        <View style={local.buttons}>
           {klaar > 0 && <SmallButton title="Naar album" onPress={onToAlbum} />}
-          <SmallButton title="Meer kiezen" icon="plus" onPress={onMore} />
+          <SmallButton title="Meer selecteren" icon="plus" onPress={onMore} />
         </View>
       )}
     </View>
   );
 }
 
-const videoStyles = {
-  list: { gap: 6 },
-  row: { flexDirection: "row" as const, alignItems: "center" as const, gap: 8, minHeight: 32 },
-  grow: { flex: 1 },
-  buttons: { flexDirection: "row" as const, alignItems: "center" as const, gap: 8, flexWrap: "wrap" as const },
-};
+// Invariant 6: het tikvlak van de ×.
+const REMOVE_HIT = size.touchMin;
+
+const local = StyleSheet.create({
+  countRow: { flexDirection: "row", alignItems: "center", gap: space.s, flexWrap: "wrap" },
+  albumRow: {
+    minHeight: size.row,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: space.m,
+    paddingHorizontal: space.l,
+    paddingVertical: space.s,
+    borderRadius: radius.listBlock,
+  },
+  albumValue: { flex: 1, alignItems: "flex-end" },
+  timer: { textAlign: "center", fontVariant: ["tabular-nums"] },
+  albumText: { textAlign: "right" },
+  grid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: ADD_GRID_GAP,
+    // Over de volle breedte, zoals het raster van het album.
+    marginHorizontal: -size.screenMargin,
+  },
+  tile: { overflow: "hidden" },
+  center: { flex: 1, alignItems: "center", justifyContent: "center" },
+  layer: { backgroundColor: photoLayers.pill.color, opacity: photoLayers.pill.opacity },
+  pill: {
+    position: "absolute",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 2,
+    paddingHorizontal: space.xs,
+    paddingVertical: 1,
+    borderRadius: radius.pill,
+    overflow: "hidden",
+  },
+  duration: { right: space.xs, bottom: space.xs },
+  topLeft: { left: space.xs, top: space.xs },
+  pillText: { color: photoLayers.text, fontWeight: "700" },
+  grow: { flexShrink: 1 },
+  status: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    top: 0,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 2,
+    paddingHorizontal: space.xs,
+    paddingVertical: 2,
+    overflow: "hidden",
+  },
+  remove: {
+    position: "absolute",
+    top: 0,
+    right: 0,
+    width: REMOVE_HIT,
+    height: REMOVE_HIT,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  removeDot: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    overflow: "hidden",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  pressed: { opacity: 0.6 },
+  buttons: { flexDirection: "row", alignItems: "center", gap: space.s, flexWrap: "wrap" },
+});

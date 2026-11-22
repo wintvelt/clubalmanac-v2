@@ -161,7 +161,7 @@ function AlbumContent({ groupId, albumId }: { groupId: Id<"groups">; albumId: Id
   const columns = grid ? grid.columns : columnsFor(width);
   const tile = grid ? grid.tile : Math.floor((width - GAP * (columns - 1)) / columns);
   // "Selecteer", "Kaart" en "Bewerk album": onder de titel, in de kop of de kolom.
-  // WP36 (besluit 3, U11): op het web ook "Foto's toevoegen", voor elk lid
+  // WP36 (besluit 3, U11): op het web ook "Toevoegen", voor elk lid
   // van de groep (zoals de + op iOS); de kiezer opent in de tik (U9).
   const webAdd = WEB_UPLOAD && ctx !== undefined;
   const action =
@@ -169,7 +169,7 @@ function AlbumContent({ groupId, albumId }: { groupId: Id<"groups">; albumId: Id
       <View style={styles.barRow}>
         {webAdd ? (
           <SmallButton
-            title="Foto's toevoegen"
+            title="Toevoegen"
             icon="plus"
             onPress={() => {
               setFeedback(null);

@@ -32,6 +32,8 @@ declare class ClubalmanacVideoNative extends NativeModule<Events> {
   cancel(id: string): Promise<void>;
   makePoster(uri: string): Promise<Poster>;
   remove(uri: string): Promise<void>;
+  /** WP39 besluit 10; ontbreekt in een build van vóór WP39. */
+  pickerOnScreen?: () => Promise<boolean>;
 }
 
 const native = requireOptionalNativeModule<ClubalmanacVideoNative>("ClubalmanacVideo");
@@ -77,4 +79,17 @@ export function makePoster(uri: string): Promise<Poster> {
 /** Een tijdelijk bestand weg; een bestand dat er niet is, is ook weg. */
 export function removeFile(uri: string): Promise<void> {
   return native ? native.remove(uri).catch(() => {}) : Promise.resolve();
+}
+
+/**
+ * WP39 besluit 10: staat er nog een fotokiezer over het scherm? `null` als de
+ * build het niet kan zeggen (geen module, een build van vóór WP39, of een fout).
+ */
+export async function pickerOnScreen(): Promise<boolean | null> {
+  if (!native || typeof native.pickerOnScreen !== "function") return null;
+  try {
+    return (await native.pickerOnScreen()) === true;
+  } catch {
+    return null;
+  }
 }

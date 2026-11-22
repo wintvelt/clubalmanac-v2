@@ -15,6 +15,9 @@ type Props = {
   busyTitle?: string;
   // Uit: alleen met uitleg erboven waarom (design.md §5).
   disabled?: boolean;
+  // WP39 besluit 7: grijs zoals uit, maar wel te tikken (bv. "Kies eerst een
+  // album", dat het kiesscherm opent). Alleen voor een hoofdknop.
+  muted?: boolean;
 };
 
 export function Button({
@@ -25,11 +28,15 @@ export function Button({
   busy = false,
   busyTitle,
   disabled = false,
+  muted = false,
 }: Props) {
   const { colors } = useTheme();
   const inactive = busy || disabled;
   const cta = variant === "cta";
-  const fg = cta ? colors.onCta : colors.primary;
+  // WP39 besluit 8: een hoofdknop die uit staat, is grijs (niet een
+  // doorzichtige oranje knop); `muted` ziet er hetzelfde uit.
+  const grey = cta && (disabled || muted);
+  const fg = grey ? colors.muted : cta ? colors.onCta : colors.primary;
   // WP33 invariant 6: krimpt bij indrukken; uit of bezig krimpt hij niet (B4).
   const press = usePressMotion("button");
   return (
@@ -43,11 +50,13 @@ export function Button({
       onPressOut={press.onPressOut}
       style={[
         styles.button,
-        cta
-          ? { backgroundColor: colors.cta }
-          : { borderWidth: border.secondaryButton, borderColor: colors.primary },
+        grey
+          ? { backgroundColor: colors.line }
+          : cta
+            ? { backgroundColor: colors.cta }
+            : { borderWidth: border.secondaryButton, borderColor: colors.primary },
         press.dim && styles.pressed,
-        disabled && styles.disabled,
+        disabled && !cta && styles.disabled,
         press.style,
       ]}
     >

@@ -3,7 +3,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Modal, Pressable, ScrollView, StyleSheet, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import type { Id } from "../../../convex/_generated/dataModel";
-import { ListRow, ListSection } from "../components/ListRow";
+import { Icon } from "../components/Icon";
+import { ListSection } from "../components/ListRow";
 import { QueryBoundary } from "../components/QueryBoundary";
 import { EmptyState, LoadingState } from "../components/States";
 import { Text } from "../components/Text";
@@ -11,8 +12,8 @@ import { api } from "../convexApi";
 import { useMyGroups } from "../data/homeGroupState";
 import { useLiveQuery } from "../data/useLiveQuery";
 import { albumChoices } from "../lib/myPhotos";
-import { size, space, useTheme } from "../theme";
-import { LoadError } from "./GroupParts";
+import { radius, size, space, useTheme } from "../theme";
+import { AlbumCoverTile, LoadError } from "./GroupParts";
 
 type Group = FunctionReturnType<typeof api.groups.listMine>[number];
 type Album = FunctionReturnType<typeof api.albums.listByGroup>[number];
@@ -21,15 +22,23 @@ type Album = FunctionReturnType<typeof api.albums.listByGroup>[number];
 // groep in de volgorde van Mijn groepen, binnen een groep die van het
 // groepsscherm; lege groepen weg, en het album waar je vandaan komt, staat er
 // niet in. Een sheet over het scherm, zodat de selectie eronder blijft staan.
+//
+// WP39 fixronde gate 1 (besluit 1, F5): ook het kiesscherm van "Toevoegen".
+// Elk album met omslag (of letter) en naam; `selectedAlbumId` krijgt een
+// vinkje. `onChoose` geeft er groep en naam ("Groep · Album") bij.
+export type AlbumChoiceInfo = { groupId: Id<"groups">; label: string };
+
 export function AlbumChoiceSheet({
   visible,
   fromAlbumId,
+  selectedAlbumId,
   onChoose,
   onClose,
 }: {
   visible: boolean;
   fromAlbumId?: Id<"albums">;
-  onChoose: (albumId: Id<"albums">) => void;
+  selectedAlbumId?: string | null;
+  onChoose: (albumId: Id<"albums">, info: AlbumChoiceInfo) => void;
   onClose: () => void;
 }) {
   const { colors } = useTheme();
@@ -54,7 +63,7 @@ export function AlbumChoiceSheet({
               </View>
             )}
           >
-            <Choices fromAlbumId={fromAlbumId} onChoose={onChoose} />
+            <Choices fromAlbumId={fromAlbumId} selectedAlbumId={selectedAlbumId ?? null} onChoose={onChoose} />
           </QueryBoundary>
         ) : null}
       </SafeAreaView>
@@ -64,10 +73,12 @@ export function AlbumChoiceSheet({
 
 function Choices({
   fromAlbumId,
+  selectedAlbumId,
   onChoose,
 }: {
   fromAlbumId?: Id<"albums">;
-  onChoose: (albumId: Id<"albums">) => void;
+  selectedAlbumId: string | null;
+  onChoose: (albumId: Id<"albums">, info: AlbumChoiceInfo) => void;
 }) {
   const groups = useMyGroups();
   // Per groep een eigen live query (het aantal groepen wisselt); elke groep
@@ -94,8 +105,18 @@ function Choices({
       {groups?.map((g) => <GroupAlbums key={g._id} groupId={g._id} onLoad={report} />)}
       {!loaded ? (
         <LoadingState label="Albums laden…" />
+      ) : groups.length === 0 ? (
+        <EmptyState
+          icon="photos"
+          title="Geen album om te kiezen"
+          text="Je bent nog geen lid van een groep, dus er is geen album om te kiezen."
+        />
       ) : sections.length === 0 ? (
-        <EmptyState icon="photos" title="Geen album om te kiezen" text="In je groepen staat nog geen ander album." />
+        <EmptyState
+          icon="photos"
+          title="Geen album om te kiezen"
+          text={fromAlbumId ? "In je groepen staat nog geen ander album." : "In je groepen staat nog geen album."}
+        />
       ) : (
         sections.map(({ group, albums }) => (
           <View key={group._id} style={styles.section}>
@@ -104,7 +125,13 @@ function Choices({
             </Text>
             <ListSection>
               {albums.map((a) => (
-                <ListRow key={a._id} title={a.name} onPress={() => onChoose(a._id)} />
+                <AlbumRow
+                  key={a._id}
+                  album={a}
+                  groupName={group.name}
+                  chosen={a._id === selectedAlbumId}
+                  onPress={() => onChoose(a._id, { groupId: a.groupId, label: `${group.name} · ${a.name}` })}
+                />
               ))}
             </ListSection>
           </View>
@@ -113,6 +140,46 @@ function Choices({
     </ScrollView>
   );
 }
+
+// Een album: omslag (of letter), naam, en een vinkje als het gekozen is.
+function AlbumRow({
+  album,
+  groupName,
+  chosen,
+  onPress,
+}: {
+  album: Album;
+  groupName: string;
+  chosen: boolean;
+  onPress: () => void;
+}) {
+  const { colors } = useTheme();
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={`${album.name}, ${groupName}`}
+      accessibilityState={{ selected: chosen }}
+      onPress={onPress}
+      style={({ pressed }) => [styles.row, pressed && { backgroundColor: colors.line }]}
+    >
+      <View accessible={false} importantForAccessibility="no-hide-descendants">
+        <AlbumCoverTile
+          albumId={album._id}
+          coverPhotoId={album.coverPhotoId}
+          name={album.name}
+          size={ROW_TILE}
+          radius={radius.albumTile / 2}
+        />
+      </View>
+      <Text variant="listRow" style={styles.title}>
+        {album.name}
+      </Text>
+      {chosen && <Icon name="check" color={colors.primary} filled />}
+    </Pressable>
+  );
+}
+
+const ROW_TILE = 44;
 
 // Laadt de albums van één groep en meldt ze; toont zelf niets.
 function GroupAlbums({
@@ -148,4 +215,12 @@ const styles = StyleSheet.create({
   },
   list: { paddingVertical: space.l, gap: space.l },
   section: { gap: space.s },
+  row: {
+    minHeight: size.row,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: space.m,
+    paddingHorizontal: space.l,
+    paddingVertical: space.s,
+  },
 });
