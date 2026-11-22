@@ -59,3 +59,113 @@ Gezien op de iPhone (gate WP37) en akkoord op alle vijf de voorstellen van regie
 ## Cross-refs
 
 - WP18 (toevoegscherm, upload-ids), WP33 (melding na een ronde), WP36 (web), WP37 (filmpjes, poster, gate).
+
+## Spec-criticus aanvullingen (A vult in)
+
+> A 2026-11-22. Bronnen: deze spec, de huidige app-code (`AddPhotosScreen*`, `AddPhotosParts`, `upload.ts`, `videos.ts`, `videoUpload.ts`, de module `clubalmanac-video`), de broncode van `expo-image` 58.0.18, `expo-image-picker` 58.0.10 en `expo-video` 58.0.14 in `app/node_modules`, en het oude toevoegscherm (`clubalmanac-app/screens/Add.jsx`). Gemeten op de server (M1) met het iPhone-origineel uit WP37. Niets op een echte iPhone gezien: dat staat bij de gate.
+
+### Pariteit met de oude app
+
+Het oude scherm "Foto's delen" had alleen foto's, 7 tegels van 32 pt en "+ n", één knop "(selecteer foto's)" die de keuze verving, en na de ronde "ga naar album" en "Meer foto's". Geen weghalen, geen aanvullen. Annuleren in de kiezer wiste daar de keuze; nu blijft hij staan, en dat moet zo blijven (A4). Niets uit de oude app dat WP39 mist.
+
+### Gemeten
+
+`VideoPoster` uit de module, los gedraaid op het iPhone 15 Pro-origineel (4K HEVC HDR, 18,8 s, 73,7 MB): de eerste keer 418 ms, daarna 64 ms, een JPEG van 1920 × 1080 en 1,3 MB. Met een grens van 400 px: 36 ms en 61 kB. Zonder tolerantie rond het tijdstip (zoals `expo-video` het doet) ook 36 ms. De M1 is geen iPhone; de orde van grootte (een paar honderd ms voor de eerste, daarna onder de 100 ms) meet de gate na.
+
+### Antwoorden op de open vragen
+
+1. **Omslag maken: `makePoster` op het bestand van de kiezer, één voor één.** Wat de bibliotheken kunnen:
+   - `expo-image` met `ph://<assetId>` toont via Foto's ook een beeld van een filmpje, maar alleen met toestemming voor de fotobibliotheek (volledig of beperkt; `PhotoLibraryAssetLoader` weigert anders). De app vraagt die toestemming niet: de systeemkiezer heeft hem niet nodig (WP18 A-kernvondst 7). Erom vragen voor een tegel is een nieuwe iOS-vraag aan elk lid. Niet doen.
+   - `expo-image` met de bestands-uri van een `.MOV`: werkt niet. `expo-image` decodeert beelden (SDWebImage, met extra coders voor WebP, SVG en PSD), geen video.
+   - `expo-video` kan het: `createVideoPlayer(uri)` en `generateThumbnailsAsync` geven een beeld in het geheugen dat `expo-image` direct toont, zonder tijdelijk bestand. Maar elke omslag kost een speler die je weer moet vrijgeven, en het levert niets op ten opzichte van de module.
+   - `makePoster(asset.uri)` uit de eigen module werkt op het bestand dat de kiezer al naar de app kopieerde, zonder toestemming, en is gemeten snel genoeg. Het schrijft een JPEG tot 1920 px (1,3 MB) naar de tijdelijke map; die moet weg als het item uit de keuze gaat of het scherm sluit (invariant 4). Een grens per aanroep (400 px) zou de module veranderen en een nieuwe build vragen; de winst is klein (zie B-besluit 5).
+   - **De upload hergebruikt deze omslag niet.** De poster die mee naar de backend gaat, komt uit het verkleinde filmpje (WP37 A-antwoord 4: hetzelfde beeld en dezelfde SDR-kleuren als het filmpje), en dat bestaat pas na het verkleinen. De omslag van de tegel komt uit het origineel. Twee bestanden, twee doelen.
+2. **Ontdubbelen op `assetId`.** De kiezer is ingesteld met de fotobibliotheek (`PHPickerConfiguration(photoLibrary: .shared())`); dan heeft elk gekozen item een `assetId`, ook een item dat nog in iCloud staat (het is de lokale id in Foto's, geen bestand). Ontbreekt hij toch, dan is er geen betrouwbare andere sleutel: bestandsnaam en grootte kunnen bij twee verschillende items gelijk zijn. Zo'n item komt er dan altijd bij, net als `albumBatch` hem een nieuwe upload-id geeft (A1). Een item dat in deze app-sessie al in hetzelfde album kwam, krijgt via `albumBatch` dezelfde upload-id: de backend geeft de bestaande foto of het bestaande filmpje terug, geen tweede. Na een herstart van de app weet de app dat niet meer (WP18 besluit 3); dat blijft zo. Een filmpje wordt dan wel eerst opnieuw verkleind voordat blijkt dat het er al is (A14).
+3. **Raster: dezelfde regel als het album.** Het album heeft vierkante tegels met 2 pt ertussen, zonder ronde hoeken, 3 kolommen onder 600 pt breedte en 4 vanaf 600 (`columnsFor` in `AlbumScreen`). `radius.albumTile` (12) hoort bij de albumcovers op het groepsscherm en de uitnodigingen, niet bij de fototegels in een album; de huidige 64 px-tegels gebruiken er de helft van. Voor de iPhone: 3 kolommen, staand en liggend; liggend is de modaal ~850 pt breed, dus 4. Op de iPad is "Toevoegen" een paginavel (`presentation: "modal"`), smaller dan het venster, zonder zijkolom: de brede layout van WP35 geldt hier niet. De breedte die telt is die van het vel zelf, niet van het venster (A8). Naar verwachting 4 kolommen; de gate kijkt staand en liggend.
+4. **De hoofdknop vast onderin, buiten het scrollen.** Met 50 tegels staat een knop aan het eind van de inhoud ver weg. Aanbevolen indeling, van boven naar beneden: de uitkomst van de ronde (als die er is), de albumkeuze, het aantal met "Meer toevoegen", het raster. Onderin, boven de thuisbalk, "Toevoegen aan album". Klapt de albumkeuze open, dan groeit de inhoud en blijft de knop staan; hij werkt pas als er een album gekozen is. Tijdens en na een ronde staat er onderin niets: de knoppen van de uitkomst ("Opnieuw proberen", "Naar album", "Meer toevoegen") blijven bovenaan bij hun melding, zoals in `RoundResult` (gedeeld met het web). Zie B-besluit 4.
+5. **Web: in WP39 alleen de teksten.** × vraagt dat elke tegel zichtbaar is; het web toont nu 7 tegels en "+ n", dus × op het web betekent ook daar het raster. Dat is niet goedkoop, en de gate van WP39 is een iPhone, geen browser. Wel goedkoop en zonder gedragswijziging: kop, knoptitel en "Meer toevoegen" na een ronde (via `RoundResult`). "Andere foto's kiezen" blijft op het web, anders kun je daar een verkeerde keuze niet meer kwijt. De lege stand op het web blijft "Kies foto's": filmpjes kiezen kan op het web niet (WP37-besluit). Zie B-besluiten 1 en 2.
+
+### Wat in de draft niet klopt of ontbreekt
+
+- **"De knop in het album" bestaat alleen op het web** (`WEB_UPLOAD`). Op iOS is de + in de tabbalk de enige ingang.
+- **De iconen ontbreken.** Er is geen upload-icoon en geen kruisje in `Icon`. `share` lijkt op een upload-pijl maar betekent delen; niet gebruiken.
+- **"Meer toevoegen" heeft twee betekenissen.** Vóór een ronde: aanvullen. Na een ronde: wat er nu "Meer foto's" heet, een nieuwe keuze. Na een ronde aanvullen zou de klare items opnieuw sturen; voor een filmpje betekent dat opnieuw verkleinen (het verkleinde bestand wordt na "klaar" weggegooid) voordat de backend zegt dat het er al is. Zie A4.
+- **Annuleren mag de keuze niet wissen.** `morePhotos` wist nu alles vóór de kiezer opengaat; annuleren laat dan een leeg scherm achter. Met aanvullen moet annuleren niets veranderen, ook niet na een ronde (A4).
+- **50 tegels is een ander scherm dan 7.** `expo-image` decodeert een lokaal beeld op volle grootte en verkleint pas daarna, tenzij `enforceEarlyResizing` aan staat. Een 24 MP-foto van een iPhone 15 Pro is ~100 MB aan pixels. En `Screen` is een gewone `ScrollView`: alle tegels tegelijk. Met 7 tegels viel dat niet op. Zie A9 en invariant 5.
+- **De kiezer kopieert elk gekozen origineel naar de app** (`Caches/ImagePicker`), ook een item dat al in de keuze stond, en niemand ruimt die kopieën op. Bij filmpjes zijn dat honderden MB, en het opnieuw kopiëren verlengt "Je keuze ophalen…". De kiezer kan niet vooraf aanvinken, dus dubbel kiezen gebeurt. Zie B-besluit 3.
+- **De breedte van de modaal is niet de breedte van het venster.** Op de iPad geeft `useWindowDimensions` het venster, niet het paginavel (A8).
+- **De grens van "te lang" en de getoonde duur.** Een filmpje van 180,45 s toont als "3:00" en is toch te lang (grens 180,4 s). Een tegel met "3:00, te lang" spreekt zichzelf tegen (A7).
+- **Bestaande bronscans leggen dingen vast** die B moet laten staan: `pickFetching.test.ts` (in `AddPhotosScreen.tsx` een `pick()` met de ophaal-state om `launchImageLibraryAsync`, en een `Button` met `onPress` naar `startUpload` die niet verschijnt zolang die state waar is), `videos.test.ts` (`videoTooLongToSend(`, `retryVideos` met `videoRetryRound`, `uploadVideo({ … freshToken`), `upload.test.ts` (`albumBatch` met de `assetId`).
+
+### A-invarianten
+
+1. **Sleutel = `assetId`.** Twee items met dezelfde `assetId` staan één keer in de keuze. Zonder `assetId` komt een item er altijd bij (uitzondering op invariant 1, gelijk aan `albumBatch`).
+2. **Dubbel gekozen = blijft waar het stond.** Een item dat er al in stond, houdt zijn plek, zijn sleutel en zijn omslag; nieuwe items komen achteraan in de volgorde van de kiezer, foto's en filmpjes door elkaar.
+3. **Soort.** Een item met `type: "video"` is een filmpje; een `pairedVideo` komt niet in de keuze; al het andere (`image`, `livePhoto`, geen type) is een foto. Zoals nu.
+4. **"Meer toevoegen" en annuleren.** Vóór de eerste tik op "Toevoegen aan album" vult hij de keuze aan. Na een afgeronde ronde begint hij een nieuwe keuze met alleen wat je nu kiest; het album blijft gekozen. Annuleren in de kiezer verandert niets: de keuze, of de uitkomst van de ronde, blijft staan. Zolang iOS de nieuwe items kopieert, staat "Je keuze ophalen…" in beeld; de tegels die er al waren mogen blijven, de knop "Toevoegen aan album" niet.
+5. **× alleen vóór de ronde.** Na de tik op "Toevoegen aan album" hoort de keuze bij de ronde: geen ×, ook niet als de ronde klaar is. De tegels tonen dan hun stand.
+6. **Leeg na weghalen.** Haal je het laatste item weg, dan staat de lege stand er weer ("Kies foto's of filmpjes", met de knop om te kiezen). Het gekozen album blijft onthouden.
+7. **Namen.** Per soort genummerd, in de huidige volgorde: "Foto 3", "Filmpje 1, 0:36". Een filmpje dat te lang is om te versturen: "Filmpje 1, 3:01, te lang"; de duur van zo'n tegel wordt naar boven afgerond, zodat hij nooit "3:00" toont. Zonder duur: alleen "Filmpje 2". De × heet "Haal foto 3 uit je keuze" of "Haal filmpje 1 uit je keuze". Tijdens een ronde komt de stand achter de naam.
+8. **Kolommen uit de eigen breedte.** Het raster rekent met de breedte die het zelf krijgt (gemeten), met de kolomregel van het album (A-antwoord 3); bij draaien of een ander formaat van het vel rekent het opnieuw.
+9. **Tegels op tegelmaat.** Een foto- of omslagtegel decodeert het beeld op de maat van de tegel, niet op volle grootte, en zet het niet in de schijfcache van `expo-image`. Wat buiten beeld is, hoeft niet gedecodeerd te zijn.
+10. **Omslagen.** Na elkaar, in de volgorde van de keuze, alleen voor filmpjes die er nog in staan. Gaat een item uit de keuze terwijl zijn omslag gemaakt wordt, dan gaat die omslag weg zodra hij klaar is. Bij sluiten gaan alle omslagen weg. Een mislukte omslag wordt niet opnieuw geprobeerd: een neutrale tegel met film-icoon en duur.
+11. **De omslag is geen poster.** De upload maakt zijn eigen poster uit het verkleinde filmpje, zoals nu.
+12. **Te lang telt mee in de ronde.** Een filmpje dat te lang is, staat vóór de ronde gemarkeerd en komt in de ronde direct op "niet gelukt" met de reden, zoals nu. Ook als alleen zulke filmpjes in de keuze staan.
+13. **De stand van een filmpje op de tegel.** Wacht, voorbereiden, verkleinen en versturen met percentage (afgerond, tussen 0 en 100 %), afronden, in het album, niet gelukt. Dezelfde stappen als de rijen nu.
+14. **Al eerder verstuurd.** Een item dat in deze sessie al in dit album kwam en opnieuw gekozen wordt: geen tweede in het album (dezelfde upload-id). Een filmpje wordt daarvoor eerst opnieuw verkleind; dat lost WP39 niet op.
+
+### Gate-checks (alleen te zien op een echte iPhone of iPad)
+
+- Omslag: hoe lang tot de eerste en de volgende omslag op een 4K HDR-origineel van 1–3 minuten; de kleuren van een HDR-omslag; scrollen terwijl omslagen binnenkomen.
+- 50 foto's (24 MP) en 3 filmpjes: openen, scrollen zonder haperen, geen crash door geheugen; hoe lang "Je keuze ophalen…" duurt.
+- iCloud: een foto en een filmpje die nog niet op het toestel staan. Heeft de kiezer een `assetId` gegeven (ontdubbelen werkt), en ook bij een item uit een gedeeld album?
+- "Meer toevoegen": de kiezer opent boven de modaal; annuleren laat alles staan; twee al gekozen items opnieuw kiezen geeft geen extra tegels.
+- iPad staand en liggend, iPhone liggend: aantal kolommen, het vel, × bereikbaar; draaien met een keuze.
+- De knop onderin: boven de thuisbalk, bij de grootste tekstgrootte, met de albumkeuze open.
+- VoiceOver: de namen van tegels en ×, de volgorde (inhoud, dan de knop onderin), de stand tijdens een ronde.
+- De stand van een filmpje leesbaar op een tegel van ~130 pt; × en markering "te lang" leesbaar op een lichte en een donkere foto, in licht en donker.
+- "Toevoegen" als kop, als naam van de + (VoiceOver) en het upload-icoon op de knop.
+
+### A-keuzes
+
+- **Geen melding bij dubbel kiezen.** De tegels laten zien wat er is; een extra regel "2 stonden er al in" is niet nodig.
+- **Te lang: duur naar boven afgerond** op de tegel (A7). Het album toont de duur van een filmpje dat binnen is ongewijzigd.
+- **De bestaande teksten voor de stand** ("Verkleinen… 42%" enz.) blijven; of ze op de tegel passen, ziet de gate.
+
+### Besluiten voor Wouter
+
+1. **Web in WP39: alleen de teksten** (aanbevolen), of ook raster, × en "Meer toevoegen" (dan ook een browser-gate).
+2. **Lege stand op het web blijft "Kies foto's"** (aanbevolen: filmpjes kiezen kan daar niet), in plaats van "Kies foto's of filmpjes".
+3. **Kopieën van de kiezer opruimen:** de kopie van een dubbel gekozen item en van een item dat je met × weghaalt meteen weggooien (aanbevolen, vooral voor filmpjes), en eventueel alle kopieën bij het sluiten van het scherm (niet tijdens een ronde).
+4. **Indeling:** de albumkeuze boven het raster, "Toevoegen aan album" vast onderin, de knoppen na de ronde bovenaan bij de melding (aanbevolen, A-antwoord 4).
+5. **`makePoster` een kleinere maat geven** (61 kB in plaats van 1,3 MB per omslag): een wijziging in de module en een nieuwe build. Aanbevolen: niet doen.
+
+### Testcontract (A, vóór de besluiten)
+
+> Namen en vormen zijn A-keuzes; het hoe is aan B. Wijkt een besluit af, dan past A de tests aan vóór B begint.
+
+- **`app/src/lib/addSelection.ts`** (puur, zonder React of native modules):
+  - `addToSelection(current, picked)` geeft `{ items, skipped }`. `items`: de nieuwe keuze (`{ key, kind: "foto" | "filmpje", asset }`), volgens A1–A3, met een unieke `key` per item die blijft zolang het item in de keuze staat. `skipped`: de gekozen assets die er niet bij kwamen (dubbel of `pairedVideo`), voor het opruimen van hun kopie.
+  - `removeFromSelection(current, key)`: de keuze zonder dat item, de rest in dezelfde volgorde.
+  - `selectionTiles(items)`: per item `{ key, kind, number, durationText, tooLong, label, removeLabel }` volgens A7.
+  - `videoStatusText(item)`: de tekst van A13 voor `{ state, progress? }` (de vorm van `VideoItem` en `VideoProgress`).
+  - `addGrid(width)`: `{ columns, tile }` volgens A-antwoord 3, met 2 pt tussenruimte.
+- **Teksten** (bronscan, letterlijke strings in de bestanden): kop "Toevoegen" in `src/app/_layout.tsx`; de + in `TabBar.tsx` en de albumknop in `AlbumScreen.tsx` heten "Toevoegen"; in `AddPhotosScreen.tsx` en `AddPhotosParts.tsx` geen "Andere foto's kiezen", "Foto's kiezen", "Kies foto's", "Foto's uploaden", "Filmpjes uploaden", "Uploaden", "Meer foto's" of "Meer kiezen" (ook de knop om te kiezen zegt niet alleen foto's), wel "Kies foto's of filmpjes", "Meer toevoegen" en "Toevoegen aan album"; de knop met `onPress` naar `startUpload` (iOS en web) heet "Toevoegen aan album" met `icon="upload"`, en `Icon` kent `upload`.
+
+### Tests per invariant (stand na A)
+
+| Inv. | Test | Niet getest, omdat … |
+|---|---|---|
+| 1, A1, A14 | `app/tests/addSelection.test.ts` (dubbel, zonder `assetId`, weghalen en opnieuw kiezen geeft dezelfde upload-id via `albumBatch`) | |
+| 2, A5 | | UI-stand tijdens en na een ronde: gate en audit |
+| 3, A2, A3 | `addSelection.test.ts` (volgorde door elkaar, achteraan, plek bij dubbel, na weghalen, `pairedVideo`) | |
+| 4, A10, A11 | | omslagen maken en opruimen is native en scherm-werk: gate en audit |
+| 5, A9 | `addSelection.test.ts` (`addGrid`) | haperen en geheugen: gate |
+| 6, A7 | `addSelection.test.ts` (`selectionTiles`) | tikvlak van 44 pt en VoiceOver: gate |
+| 7 | de bestaande bronscans (zie boven) | |
+| A4, A6 | | schermstand: gate en audit |
+| A8 | `addSelection.test.ts` (`addGrid` per breedte) | dat het raster zijn eigen breedte meet: gate (iPad) |
+| A12 | de bestaande bronscan op `videoTooLongToSend(` | |
+| A13 | `addSelection.test.ts` (`videoStatusText`) | |
+| besluit 1 | `app/tests/addTexts.test.ts` | |
+| besluit 5 | `addSelection.test.ts` (`selectionTiles`, `tooLong`) | de markering op de tegel: gate |
