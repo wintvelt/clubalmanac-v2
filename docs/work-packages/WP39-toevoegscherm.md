@@ -307,3 +307,7 @@ Build `wp39-dev`. Bevindingen:
 |---|---|---|
 | F11 | `pickSession.test.ts` (`elapsed`), `addTexts.test.ts` (uitleg) | het moment dat de kiezer dicht is: besluit 10, gate |
 | kiezer | `addTexts.test.ts` (Current, Passthrough) | |
+
+### Besluit 10 (Wouter, 2026-11-22)
+
+**(a)**: de teller loopt vanaf het sluiten van de kiezer. De eigen module `clubalmanac-video` krijgt daarvoor een kleine functie die zegt of er nog een kiezer over het scherm staat; de app vraagt dat zolang ze op de kiezer wacht. Dit is de enige wijziging in de native module in WP39.
