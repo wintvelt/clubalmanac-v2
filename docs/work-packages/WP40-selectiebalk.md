@@ -351,3 +351,9 @@ H15. **Eén plek voor de maten.** Alle maten en duren van deze drie animaties st
 | H12, H13 | `selectionMotion.test.ts` (`titleChange`) | voorlezen en de iOS-titel: gate |
 | H14 | `selectionMotion.test.ts` (alle drie) | live wisselen: gate |
 | H15 | `selectionMotion.test.ts` (bronscan) | web en uitgelogd: G8-test in `selectionTabBar.test.ts` |
+
+### Regie op de open vragen van A (2026-11-22)
+
+1. Titel: overvloeien, geen rollende cijfers.
+2. "Beperk beweging": een gekozen tegel staat meteen klein (de eindstand).
+3. De rand van 3 pt blijft; de gate kijkt of rand plus krimpen samen goed oogt.
