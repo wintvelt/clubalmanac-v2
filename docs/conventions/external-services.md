@@ -343,8 +343,8 @@ Zolang een filmproject open staat, sturen leden bij een nieuw filmpje ook het or
 
 - De app krijgt per deel van 32 MiB een ondertekende PUT van 7 dagen (multipart; grootte, deelnummer en upload-id in de handtekening). De backend rondt af als alles er is, en elk uur zelf (cron `film originals complete`).
 - Downloaden alleen door de oprichter: een GET van 1 uur, als bijlage met datum en inzender in de naam.
-- Grenzen (besluit 11): 2 GiB per origineel, 200 GiB per project, 400 GiB samen; minstens 5 MiB (`te_klein`; de app stuurt dan alleen het filmpje naar het album). Een origineel blijft hooguit een jaar na binnenkomst; na sluiten mag een aangemeld origineel nog 14 dagen binnenkomen.
-- Kosten: $0,015 per GB per maand; 100 GB een jaar lang is ~$1,50 per maand, het plafond van 400 GiB ~$6. Delen, lijsten en afronden vallen in het gratis deel: per lid hooguit 300 keer aanmelden en afronden samen in 24 uur (`te_vaak`), samen ruim binnen het gratis miljoen verzoeken per maand. De PUT's op de deel-links zelf vallen daarbuiten; daarvoor is de kostenmelding (stap 7).
+- Grenzen (besluit 11): 2 GiB per origineel, 200 GiB per project, 400 GiB samen; minstens 1 MiB (`te_klein`; de app stuurt dan alleen het filmpje naar het album); hooguit 30 originelen per lid tegelijk onderweg (`bezig`). Een origineel blijft hooguit een jaar na binnenkomst; na sluiten mag een aangemeld origineel nog 14 dagen binnenkomen.
+- Kosten: $0,015 per GB per maand; 100 GB een jaar lang is ~$1,50 per maand, het plafond van 400 GiB ~$6. Bij gewoon gebruik vallen delen, lijsten en afronden in het gratis miljoen verzoeken per maand. Per lid hooguit 600 keer aanmelden en afronden samen in 24 uur (`te_vaak`); de afrond-cron kijkt elk uur alleen originelen na die in de laatste 7 dagen links kregen. Alle leden een maand op die grenzen is ~1,2 miljoen verzoeken, ~$1 boven het gratis deel. De PUT's op de deel-links zelf vallen daarbuiten; daarvoor is de kostenmelding (stap 7).
 
 ### Opzetten (eenmalig, Wouter)
 
