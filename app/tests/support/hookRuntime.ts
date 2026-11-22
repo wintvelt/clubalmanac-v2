@@ -87,6 +87,17 @@ export function createHookRuntime() {
     useSyncExternalStore<T>(_subscribe: (l: () => void) => () => void, getSnapshot: () => T) {
       return getSnapshot();
     },
+    // WP40 gate ronde 2: genoeg voor componenten met een layout-effect of
+    // `use(context)`. Een layout-effect draait hier als een gewoon effect.
+    useLayoutEffect(fn: () => Cleanup, deps?: Deps) {
+      react.useEffect(fn, deps);
+    },
+    use(ctx: Ctx) {
+      return react.useContext(ctx);
+    },
+    useEffectEvent<T>(fn: T) {
+      return fn;
+    },
   };
   // `import React from "react"` en `import { x } from "react"` allebei.
   const module = { ...react, default: react };
