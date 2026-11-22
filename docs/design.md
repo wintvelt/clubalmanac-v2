@@ -81,8 +81,10 @@ Groottes in pt bij de standaard-tekststand. De basistekst is 18 in plaats van iO
 | Veldlabel | 16 | 600 |
 | "Nieuw"-label, badge | 14 | 700 |
 | Tabbalk-label | 13 | 600 (actief 700) |
+| Titel in een kop (selectie: aantal) | 17 | 600 |
+| Label in de selectiebalk | 15 | 600 |
 
-**Schalen.** Alle tekst schaalt mee met de iOS-tekstgrootte. Er is één uitzondering: tabbalk-labels groeien hoogstens 1,2×, tot 15,6 pt (bevinding 3). Bij de grootste standaardstand (xxxLarge, ongeveer ×1,35) gelden deze regels:
+**Schalen.** Alle tekst schaalt mee met de iOS-tekstgrootte. Er zijn twee uitzonderingen: tabbalk-labels groeien hoogstens 1,2×, tot 15,6 pt (bevinding 3), en de labels in de selectiebalk onderin (WP40) hoogstens 1,2×, tot 18 pt. Bij de grootste standaardstand (xxxLarge, ongeveer ×1,35) gelden deze regels:
 
 - Geen vaste hoogte rond tekst, alleen minimumhoogtes. Rijen groeien mee.
 - Groepstabs gaan van één rij van vier naar twee rijen van twee zodra `fontScale ≥ 1,2`.
