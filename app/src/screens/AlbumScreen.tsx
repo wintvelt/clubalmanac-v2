@@ -45,6 +45,7 @@ import {
   SelectionBar,
   SelectionSideHeader,
   SelectionTopBar,
+  useHideTabBar,
   useSelectionHeader,
 } from "./SelectionBar";
 import { WideSide, WideSplit } from "./WideSide";
@@ -174,6 +175,17 @@ function AlbumContent({ groupId, albumId }: { groupId: Id<"groups">; albumId: Id
     focusSelectNext.current = true;
     stopSelecting();
   }, [stopSelecting]);
+  // WP40 gate ronde 1: geen tabbalk tijdens de selectie (G1, G5). Uit beeld
+  // stopt de selectie (G3): het nieuwe scherm heeft dan gewoon een tabbalk, en
+  // een lopende actie maakt haar ronde af. Een Modal (het kiesscherm), een
+  // bevestiging of het actiemenu halen het scherm niet uit beeld.
+  const inView = useIsFocused();
+  useHideTabBar(selecting && inView);
+  useEffect(() => {
+    if (inView || !selecting) return;
+    setChoosing(false);
+    stopSelecting();
+  }, [inView, selecting, stopSelecting]);
   const toggle = (photoId: string) =>
     setPicked((before) => {
       const next = new Set(before);
@@ -370,6 +382,14 @@ function AlbumContent({ groupId, albumId }: { groupId: Id<"groups">; albumId: Id
         extraData={listState}
         onLayout={(e) => {
           viewportHeight.current = e.nativeEvent.layout.height;
+          // Gate ronde 1 (G2): wordt de lijst hoger nadat Selecteer al
+          // scrolde (de tabbalk ging weg), dan niet voorbij het einde blijven.
+          const memo = scrollMemo.current;
+          const max = Math.max(0, contentHeight.current - viewportHeight.current);
+          if (memo?.entered != null && !memo.dragged && memo.entered > max + 0.5) {
+            memo.entered = max;
+            listRef.current?.scrollToOffset({ offset: max, animated: !reduceMotion });
+          }
         }}
         onContentSizeChange={(_w, h) => {
           contentHeight.current = h;

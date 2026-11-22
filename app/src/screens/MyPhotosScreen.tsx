@@ -1,5 +1,5 @@
 import type { FunctionReturnType } from "convex/server";
-import { router, Stack, useNavigation } from "expo-router";
+import { router, Stack, useIsFocused, useNavigation } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { FlatList, StyleSheet, useWindowDimensions, View, type HostInstance } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -23,7 +23,7 @@ import { size, space, useTheme } from "../theme";
 import { AlbumChoiceSheet } from "./AlbumChoice";
 import { columnsFor, SelectMark } from "./AlbumScreen";
 import { LoadError } from "./GroupParts";
-import { focusLater, HeaderTextButton, SelectionBar, useSelectionHeader } from "./SelectionBar";
+import { focusLater, HeaderTextButton, SelectionBar, useHideTabBar, useSelectionHeader } from "./SelectionBar";
 import {
   ActionFeedback,
   SharingProgress,
@@ -171,6 +171,17 @@ function MyPhotosContent() {
     focusSelectNext.current = true;
     stopSelecting();
   }, [stopSelecting]);
+  // WP40 gate ronde 1: geen tabbalk tijdens de selectie (G1, G5). Uit beeld
+  // stopt de selectie (G3): het nieuwe scherm heeft dan gewoon een tabbalk, en
+  // een lopende actie maakt haar ronde af. Een Modal (het kiesscherm), een
+  // bevestiging of het actiemenu halen het scherm niet uit beeld.
+  const inView = useIsFocused();
+  useHideTabBar(selecting && inView);
+  useEffect(() => {
+    if (inView || !selecting) return;
+    setChoosing(false);
+    stopSelecting();
+  }, [inView, selecting, stopSelecting]);
   useEffect(() => {
     if (selecting || !focusSelectNext.current) return;
     focusSelectNext.current = false;

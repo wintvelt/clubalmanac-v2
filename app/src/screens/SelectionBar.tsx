@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState, type Ref, type RefObject } from "react";
+import { useNavigation } from "expo-router";
+import { useEffect, useLayoutEffect, useRef, useState, type Ref, type RefObject } from "react";
 import {
   AccessibilityInfo,
   Pressable,
@@ -58,6 +59,25 @@ export function useSelectionHeader({
   return header;
 }
 
+// WP40 gate ronde 1 (G1, G4, G5): tijdens de selectie geen tabbalk; de
+// selectiebalk staat op zijn plek. De optie hoort bij de tab (de navigator
+// boven de stack van het scherm), en de eigen TabBar volgt hem. Uit bij het
+// einde van de selectie en als het scherm verdwijnt (de cleanup), zodat je
+// altijd weg kunt. Een layout-effect: de wissel komt zo dicht mogelijk bij die
+// van de balken.
+const HIDDEN_TAB_BAR = { display: "none" } as const;
+
+export function useHideTabBar(hidden: boolean) {
+  const navigation = useNavigation();
+  useLayoutEffect(() => {
+    if (!hidden) return;
+    const tabs = navigation.getParent();
+    if (!tabs) return;
+    tabs.setOptions({ tabBarStyle: HIDDEN_TAB_BAR });
+    return () => tabs.setOptions({ tabBarStyle: undefined });
+  }, [hidden, navigation]);
+}
+
 // Wacht even: het element moet er staan (en een scroll terug klaar zijn)
 // voordat VoiceOver erheen kan.
 const FOCUS_DELAY = 400;
@@ -77,7 +97,7 @@ const ICONS: Record<SelectionAction, IconName> = {
   delete: "trash",
 };
 
-// A6: één rij, alle knoppen even breed, boven de tabbalk. Geen uitlegregel en
+// A6: één rij, alle knoppen even breed, op de plek van de tabbalk. Geen uitlegregel en
 // geen Annuleren (die staat in de kop). Grijs bij nul en tijdens een actie.
 export function SelectionBar({
   place,
@@ -92,15 +112,24 @@ export function SelectionBar({
   onAction: (action: SelectionAction) => void;
 }) {
   const { colors } = useTheme();
+  const insets = useSafeAreaInsets();
   const buttons = selectionButtons({ place, count, busy });
+  // Gate ronde 1 (G1, G2): op de plek van de tabbalk, dus de knoppen boven de
+  // thuisbalk en de achtergrond tot de onderrand. Geen infaden: tabbalk en
+  // balk wisselen in één keer, zonder moment met geen van beide.
   return (
-    <FadeIn style={[styles.bar, { backgroundColor: colors.surface, borderTopColor: colors.line }]}>
+    <View
+      style={[
+        styles.bar,
+        { backgroundColor: colors.surface, borderTopColor: colors.line, paddingBottom: insets.bottom },
+      ]}
+    >
       <View style={styles.row}>
         {buttons.map((button) => (
           <BarButton key={button.action} button={button} onPress={() => onAction(button.action)} />
         ))}
       </View>
-    </FadeIn>
+    </View>
   );
 }
 

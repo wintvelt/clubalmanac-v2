@@ -2,7 +2,7 @@ import { useAuth } from "@clerk/expo";
 import { router, useNavigationContainerRef, usePathname } from "expo-router";
 import type { BottomTabBarProps } from "expo-router/js-tabs";
 import { useRef } from "react";
-import { Pressable, StyleSheet, View } from "react-native";
+import { Pressable, StyleSheet, View, type StyleProp, type ViewStyle } from "react-native";
 import { Gradient } from "../components/Gradient";
 import { Icon, type IconName } from "../components/Icon";
 import { AnimatedPressable, usePressMotion } from "../components/Motion";
@@ -37,6 +37,7 @@ const PLUS_WEIGHT = 1.15;
 
 export function TabBar({
   state,
+  descriptors,
   emitter,
   navigateToTab,
   insets,
@@ -44,6 +45,13 @@ export function TabBar({
 }: BottomTabBarProps & { plus?: boolean }) {
   const { colors } = useTheme();
   const home = useHomeButton(plus, state, navigateToTab);
+  // WP40 gate ronde 1 (G1): de gewone optie van de navigator om de tabbalk te
+  // verbergen, `tabBarStyle: { display: "none" }`, op de tab in beeld. Het
+  // album en Mijn foto's zetten hem in de selectiestand. Na de hooks, zodat
+  // hun volgorde gelijk blijft.
+  const focusedKey = state.routes[state.index]?.key;
+  const focusedOptions = focusedKey ? descriptors?.[focusedKey]?.options : undefined;
+  if (StyleSheet.flatten(focusedOptions?.tabBarStyle as StyleProp<ViewStyle>)?.display === "none") return null;
 
   const tabs = state.routes.map((route, index) => {
     const meta = TABS[route.name] ?? { label: route.name, icon: "info", weight: 1 };
