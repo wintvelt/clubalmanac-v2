@@ -42,6 +42,7 @@ import {
   applyOutcome,
   batchSummary,
   photoCountText,
+  reasonText,
   retryBatch,
   startItem,
   type UploadItem,
@@ -186,6 +187,12 @@ export function AddPhotosScreen({ albumId }: { albumId?: string }) {
   const { userId } = useAuth();
   // Het onthouden album (undefined: nog niet gelezen), of dat uit de route.
   const [candidate, setCandidate] = useState<StoredAlbum | null | undefined>(undefined);
+  // Het album uit de route bestaat niet (meer), of de user mag er niet in.
+  const [routeGone, setRouteGone] = useState(false);
+  const routeAlbumFound = useCallback((target: StoredAlbum | null) => {
+    setCandidate(target);
+    if (target === null) setRouteGone(true);
+  }, []);
   const [items, setItems] = useState<UploadItem[] | null>(null);
   const itemsRef = useRef<UploadItem[] | null>(null);
   const running = useRef(false);
@@ -372,8 +379,10 @@ export function AddPhotosScreen({ albumId }: { albumId?: string }) {
     }
     setAlbum((prev) => (prev && prev.albumId !== target.albumId ? prev : null));
     setAlbumKnown(true);
+    // F3: het album uit de route is er niet (meer): de melding van vóór WP39.
+    if (target.albumId === initialAlbumId) setRouteGone(true);
     if (result.forget && userIdRef.current) void forgetLastAlbum(userIdRef.current, target.albumId);
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const checkTarget: StoredAlbum | null | undefined = album
     ? { albumId: album.albumId, groupId: album.groupId }
@@ -421,15 +430,17 @@ export function AddPhotosScreen({ albumId }: { albumId?: string }) {
   }, [navigation]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Zolang een ronde loopt, blijft het scherm aan (besluit 3; WP37 B11: ook
-  // tijdens het verkleinen van een filmpje).
+  // tijdens het verkleinen van een filmpje). WP39: ook tijdens "Je keuze
+  // ophalen…" (een download uit iCloud kan minuten duren).
   const anyBusy = busy || videoBusy;
+  const keepAwake = anyBusy || fetching;
   useEffect(() => {
-    if (!anyBusy) return;
+    if (!keepAwake) return;
     void activateKeepAwakeAsync(KEEP_AWAKE_TAG).catch(() => {});
     return () => {
       void deactivateKeepAwake(KEEP_AWAKE_TAG).catch(() => {});
     };
-  }, [anyBusy]);
+  }, [keepAwake]);
 
   // `fresh`: de foto's die eerder "uitgelogd" kregen; die halen een vers token.
   async function runRound(start: UploadItem[], fresh: ReadonlySet<string> = new Set()) {
@@ -636,8 +647,11 @@ export function AddPhotosScreen({ albumId }: { albumId?: string }) {
           items={videoItems}
           busy={videoBusy}
           albumLabel={album?.label ?? ""}
-          // Zonder foto's in de ronde staan "Naar album" en "Meer" hier.
-          standalone={(!items || items.length === 0) && view.canPick}
+          // Zonder foto's in de ronde staan "Naar album" en "Meer" hier. F7:
+          // na "Stoppen" staan ze er weer; "Meer selecteren" uit zolang het
+          // oude ophalen loopt (F8).
+          standalone={(!items || items.length === 0) && !fetching}
+          canMore={view.canPick}
           onRetry={retryVideos}
           onToAlbum={toAlbum}
           onMore={() => void pick("nieuw")}
@@ -653,7 +667,9 @@ export function AddPhotosScreen({ albumId }: { albumId?: string }) {
           onToAlbum={toAlbum}
           onMore={() => void pick("nieuw")}
           // Invariant 2: niet weg en geen nieuwe keuze zolang een filmpje loopt.
-          idle={!videoBusy && view.canPick}
+          // F7, F8: na "Stoppen" wel weer, met "Meer selecteren" uit.
+          idle={!videoBusy && !fetching}
+          canMore={view.canPick}
         />
       )}
 
@@ -691,8 +707,8 @@ export function AddPhotosScreen({ albumId }: { albumId?: string }) {
       )}
 
       {initialAlbumId && candidate === undefined && (
-        <QueryBoundary fallback={() => <Found onFound={setCandidate} target={null} />}>
-          <RouteAlbum albumId={initialAlbumId} onFound={setCandidate} />
+        <QueryBoundary fallback={() => <Found onFound={routeAlbumFound} target={null} />}>
+          <RouteAlbum albumId={initialAlbumId} onFound={routeAlbumFound} />
         </QueryBoundary>
       )}
 
@@ -704,6 +720,9 @@ export function AddPhotosScreen({ albumId }: { albumId?: string }) {
           <AlbumCheck target={checkTarget} onResult={onAlbumCheck} />
         </QueryBoundary>
       ) : null}
+
+      {/* F3 "zoals nu": het album uit de route bestaat niet meer. */}
+      {anyPicked && routeGone && !album && !inRound && <Notice kind="error" message={reasonText("geen_album")} />}
 
       {anyPicked && (
         <AlbumRow album={album} known={albumKnown} locked={inRound} onPress={() => setChoosing(true)} />
@@ -1103,6 +1122,7 @@ function VideoRoundResult({
   busy,
   albumLabel,
   standalone,
+  canMore,
   onRetry,
   onToAlbum,
   onMore,
@@ -1111,6 +1131,7 @@ function VideoRoundResult({
   busy: boolean;
   albumLabel: string;
   standalone: boolean;
+  canMore: boolean;
   onRetry: () => void;
   onToAlbum: () => void;
   onMore: () => void;
@@ -1140,7 +1161,7 @@ function VideoRoundResult({
       {done && standalone && (
         <View style={local.buttons}>
           {klaar > 0 && <SmallButton title="Naar album" onPress={onToAlbum} />}
-          <SmallButton title="Meer selecteren" icon="plus" onPress={onMore} />
+          <SmallButton title="Meer selecteren" icon="plus" disabled={!canMore} onPress={onMore} />
         </View>
       )}
     </View>

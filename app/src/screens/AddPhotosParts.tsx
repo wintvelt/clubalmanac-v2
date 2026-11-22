@@ -21,6 +21,8 @@ import { radius, space, useTheme } from "../theme";
 // WP39: "Meer selecteren" na een ronde (was "Meer foto's"): een nieuwe keuze.
 // `idle`: niets anders loopt nog (op iOS de filmpjes); pas dan "Naar album"
 // en "Meer selecteren" (invariant 2: de modaal sluit niet tijdens een ronde).
+// `canMore`: een nieuwe kiezer kan; anders staat "Meer selecteren" uit (op iOS
+// zolang een gestopt ophalen nog loopt, F8).
 
 export type ChosenAlbum = { albumId: string; groupId: string; label: string } | null;
 type Chosen = { album: ChosenAlbum };
@@ -33,6 +35,7 @@ export function RoundResult({
   onToAlbum,
   onMore,
   idle = true,
+  canMore = true,
 }: {
   items: UploadItem[];
   albumLabel: string;
@@ -41,6 +44,7 @@ export function RoundResult({
   onToAlbum: () => void;
   onMore: () => void;
   idle?: boolean;
+  canMore?: boolean;
 }) {
   const s = batchSummary(items);
   return (
@@ -66,7 +70,7 @@ export function RoundResult({
       {s.done && idle && (
         <View style={styles.row}>
           {s.klaar > 0 && <SmallButton title="Naar album" onPress={onToAlbum} />}
-          <SmallButton title="Meer selecteren" icon="plus" onPress={onMore} />
+          <SmallButton title="Meer selecteren" icon="plus" disabled={!canMore} onPress={onMore} />
         </View>
       )}
     </View>
