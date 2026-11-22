@@ -238,7 +238,9 @@ Build `wp39-dev`. Bevindingen:
 - **Bewaren bij de start van een ronde** (F2), niet al bij het kiezen in het kiesscherm.
 - **Eén kiesscherm.** B mag `AlbumChoiceSheet` uitbreiden (vinkje bij een gekozen album, omslagen). Dan verandert "naar album kopiëren" (WP17c) mee, en hoort dat scherm bij de gate.
 
-### Besluiten voor Wouter (nog open)
+### Besluiten voor Wouter
+
+> Wouter 2026-11-22 (via regie): akkoord met de aanbevelingen 6 t/m 9. De tests van de fixronde gaan daar al van uit.
 
 6. **Melding als het ophalen mislukt.** Nu staat er "Toegang tot je foto's nodig". Aanbevolen: alleen die melding als de kiezer niet opengaat. Mislukt het ophalen (de foutcode van de kiezer laat het verschil zien), dan: "Je keuze ophalen lukte niet. Staat er iets in iCloud, probeer het dan opnieuw met een goede verbinding." De keuze die er stond, blijft staan.
 7. **"Kies eerst een album" tikbaar?** Aanbevolen: ja, een tik opent het kiesscherm (grijs, maar niet uit). Anders staat er een knop die zegt wat je moet doen, maar die je niet kunt gebruiken.
