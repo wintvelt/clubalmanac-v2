@@ -171,3 +171,9 @@ Het smalste toestel in gebruik is 375 pt breed (iPhone SE, mini). Min de schermm
 ## Besluiten Wouter na A (2026-11-22)
 
 Alle vier aanbevelingen van A (§Besluiten voor Wouter) zijn akkoord: de tabbalk blijft staan; bij weinig foto's zo ver scrollen als kan (omslag mag deels zichtbaar blijven); "Selecteer" in Mijn foto's rechtsboven in de kop; het filter in het album blijft zoals nu. De RED tests van A gelden ongewijzigd.
+
+## Gate ronde 1: iPhone (Wouter, 2026-11-22)
+
+Build `wp40-dev2`. Kop met aantal en Annuleren, inklappen van de omslag en de slanke balk: beter. Bevinding: de verhoogde + van de tabbalk steekt in de middelste knop van de balk ("Uit album").
+
+**Besluit Wouter (herziet besluit 1 na A):** tijdens de selectie is de tabbalk weg, zoals in de Foto's-app; de selectiebalk staat op die plek, boven de thuisbalk. Na Annuleren (of na een actie die de selectie beëindigt) komt de tabbalk terug. Geldt in het album en in Mijn foto's, ook op de iPad.
