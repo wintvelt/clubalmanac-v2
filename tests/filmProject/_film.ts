@@ -45,8 +45,32 @@ export const DOWNLOAD_LINK_SECONDS_ORACLE = 3600;
 export const YEAR_MS = 365 * 24 * 60 * 60 * 1000;
 export const MINUTE_MS = 60 * 1000;
 
-/** Een iPhone-achtige QuickTime-opname (`qt  `) met `©xyz` en `location.ISO6709` (WP37-fixture). */
-export const ORIGINAL = fixture("iphone-like.mov");
+/** Fix-cyclus 1 (regie): een origineel is minstens 5 MiB (anders `te_klein`). */
+export const MIN_ORIGINAL_BYTES_ORACLE = 5 * MIB;
+/** Fix-cyclus 1 (A-keuze): hooguit 300 keer `startOriginal` en `finishOriginal` samen per lid in 24 uur. */
+export const ORIGINAL_CALLS_PER_DAY_ORACLE = 300;
+
+/**
+ * Een iPhone-achtige QuickTime-opname (`qt  `) met `©xyz` en `location.ISO6709`
+ * (WP37-fixture), aangevuld tot 6 MiB: boven de ondergrens van 5 MiB, in één
+ * deel. De backend ontleedt het bestand niet, dus de nullen achteraan doen
+ * niets af aan "een filmpje".
+ */
+export const ORIGINAL = padTo(fixture("iphone-like.mov"), 6 * MIB);
+
+/** Precies dezelfde bytes (zonder de trage diff van `toEqual` op megabytes). */
+export function sameBytes(a: Uint8Array | undefined, b: Uint8Array): boolean {
+  if (!a || a.byteLength !== b.byteLength) return false;
+  for (let i = 0; i < a.byteLength; i++) if (a[i] !== b[i]) return false;
+  return true;
+}
+
+/** Bytes aangevuld met nullen tot `size`. */
+export function padTo(bytes: Uint8Array, size: number): Uint8Array<ArrayBuffer> {
+  const out = new Uint8Array(new ArrayBuffer(Math.max(size, bytes.byteLength)));
+  out.set(bytes);
+  return out;
+}
 
 // --- forward-declared refs (convex/filmProjects.ts bestaat nog niet) -------
 
@@ -161,12 +185,23 @@ export class OriginalsR2 {
   objects = new Map<string, StoredObject>();
   uploads = new Map<string, Multipart>();
   calls: OrigCall[] = [];
+  /**
+   * Vóór elk verzoek van de backend (na het noteren). Geeft hij een antwoord,
+   * dan krijgt de backend dat (bv. een storing); anders gaat het verzoek
+   * gewoon door. Voor gelijktijdigheid: hier kan een test een tweede aanroep
+   * helemaal laten lopen voordat dit verzoek wordt afgehandeld (`onceBefore`).
+   */
+  beforeRequest: ((call: OrigCall) => Response | void | Promise<Response | void>) | null = null;
+  /** Zet op true om elke mail naar Mailjet te laten mislukken (500). */
+  mailDown = false;
   private version = 0;
 
   reset(): void {
     this.objects.clear();
     this.uploads.clear();
     this.calls = [];
+    this.beforeRequest = null;
+    this.mailDown = false;
     this.version = 0;
   }
 
@@ -236,6 +271,9 @@ export class OriginalsR2 {
       const req = input instanceof Request ? input : null;
       const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
       const u = new URL(url);
+      if (this.mailDown && /mailjet/.test(u.host)) {
+        return new Response(JSON.stringify({ ErrorMessage: "storing" }), { status: 500 });
+      }
       if (u.host === R2_HOST || u.host.endsWith(`.${R2_HOST}`)) {
         const bucket =
           u.host === R2_HOST ? decodeURIComponent(u.pathname.slice(1).split("/")[0] ?? "") : u.host.slice(0, -(R2_HOST.length + 1));
@@ -267,7 +305,12 @@ export class OriginalsR2 {
     const signed = authorization.startsWith("AWS4-HMAC-SHA256") || u.searchParams.has("X-Amz-Signature");
     const lowered: Record<string, string> = {};
     for (const [name, value] of headers) lowered[name] = value;
-    this.calls.push({ method, bucket: ORIGINALS_BUCKET, key, query, signed, headers: lowered });
+    const call: OrigCall = { method, bucket: ORIGINALS_BUCKET, key, query, signed, headers: lowered };
+    this.calls.push(call);
+    if (this.beforeRequest) {
+      const override = await this.beforeRequest(call);
+      if (override) return override;
+    }
     if (!signed) return xml("<Error><Code>AccessDenied</Code></Error>", 403);
     const signedHeaders = (u.searchParams.get("X-Amz-SignedHeaders") ?? /SignedHeaders=([^,\s]+)/.exec(authorization)?.[1] ?? "")
       .toLowerCase()
@@ -412,6 +455,32 @@ export class OriginalsR2 {
     }
     return new Response(null, { status: 405 });
   }
+}
+
+/**
+ * Eén keer, bij het eerste verzoek dat aan `match` voldoet: eerst `run` helemaal
+ * laten lopen (bv. een tweede afronding, terugtrekken), dan pas dat verzoek
+ * afhandelen. Zo ligt een gelijktijdigheid vast, zonder op de planning van
+ * `Promise.all` te rekenen. `fired()` zegt of het gebeurd is.
+ */
+export function onceBefore(
+  orig: OriginalsR2,
+  match: (call: OrigCall) => boolean,
+  run: () => Promise<unknown>,
+): { fired: () => boolean } {
+  let done = false;
+  orig.beforeRequest = async (call) => {
+    if (done || !match(call)) return;
+    done = true;
+    orig.beforeRequest = null;
+    await run();
+  };
+  return { fired: () => done };
+}
+
+/** Een storing van R2 (500) op elk verzoek dat aan `match` voldoet. */
+export function failWhen(orig: OriginalsR2, match: (call: OrigCall) => boolean): void {
+  orig.beforeRequest = (call) => (match(call) ? xml("<Error><Code>InternalError</Code></Error>", 500) : undefined);
 }
 
 function xml(s: string, status: number): Response {

@@ -199,3 +199,31 @@ describe("downloaden (besluit 8, A-invariant 8)", () => {
     expect("err" in o && o.err.message.includes("R2_CONFIG_MISSING")).toBe(true);
   });
 });
+
+// Fix-cyclus 1 (audit S1, N6).
+describe("de poster: fix-cyclus 1", () => {
+  it("de inzending van een ander die nog onderweg is: 404 voor een lid (ook een admin); de inzender en de oprichter zien hem", async () => {
+    const t = newT();
+    const w = await seedFilmWorld(t);
+    await openProject(t, w);
+    const photoId = await newVideoInX(t, env.r2, w, w.users.bob);
+    const s = await announce(asFilm.bob(t), photoId, ORIGINAL.byteLength);
+    const path = `/beeld/inzending/${s.originalId}?formaat=klein`;
+    expect((await asFilm.erik(t).fetch(path)).status).toBe(404);
+    expect((await asFilm.bob(t).fetch(path)).status).toBe(200);
+    expect((await asFilm.alice(t).fetch(path)).status).toBe(200);
+  });
+
+  it("?formaat=origineel: 400, zoals /beeld/foto/ (vóór alles, voor iedereen gelijk)", async () => {
+    const t = newT();
+    const w = await seedFilmWorld(t);
+    await openProject(t, w);
+    const photoId = await newVideoInX(t, env.r2, w, w.users.bob);
+    const originalId = await sendOriginal(asFilm.bob(t), env.orig, photoId);
+    const path = `/beeld/inzending/${originalId}?formaat=origineel`;
+    expect((await asFilm.erik(t).fetch(path)).status).toBe(400);
+    expect((await asFilm.carol(t).fetch(path)).status).toBe(400);
+    expect((await t.fetch(path)).status).toBe(400);
+    expect((await asFilm.erik(t).fetch(`/beeld/foto/${photoId}?formaat=origineel`)).status).toBe(400);
+  });
+});

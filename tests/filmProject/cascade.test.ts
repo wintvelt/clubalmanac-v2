@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { api } from "../../convex/_generated/api";
 import { deleteAccount } from "../_helpers/deleteAccount";
-import { newT } from "../videos/_videos";
+import { newT, parseR2Link } from "../videos/_videos";
 import {
   advance,
   albumsOf,
@@ -9,6 +9,7 @@ import {
   asFilm,
   expectCode,
   expectOriginalRefusal,
+  failWhen,
   filmApi,
   filmInternal,
   flush,
@@ -429,6 +430,110 @@ describe("herinnering aan de oprichter (besluit 15)", () => {
     expect(mailsTo(env.r2, "erik@x.com")).toHaveLength(1);
     expect(mailsTo(env.r2, "alice@x.com")).toEqual([]);
     expect(mailsTo(env.r2, "dave@x.com")).toEqual([]);
+    expect(env.r2.mails).toHaveLength(1);
+  });
+});
+
+// Fix-cyclus 1 (audit S2): besluit 18 geldt ook als de opruimronde nog niet
+// liep. Op dag 14 na sluiten plus een uur weigeren hervatten en afronden, en
+// de backend rondt ook zelf niet meer af.
+describe("na 14 dagen, zonder de opruimronde (besluit 18)", () => {
+  it("startOriginal en finishOriginal: niet_toegestaan; niets aangemaakt, niets afgerond", async () => {
+    const t = newT();
+    const w = await seedFilmWorld(t);
+    const projectId = await openProject(t, w);
+    const photoId = await newVideoInX(t, env.r2, w, w.users.bob);
+    const s = await announce(asFilm.bob(t), photoId, ORIGINAL.byteLength);
+    expect(await env.orig.putPart(s.parts[0]!.url, ORIGINAL)).toBe(200);
+    await asFilm.alice(t).mutation(filmApi.close, { projectId });
+    advance(14 * DAY + HOUR);
+    expectOriginalRefusal(
+      await outcome(() => asFilm.bob(t).action(filmApi.startOriginal, { photoId, bytes: ORIGINAL.byteLength })),
+      "niet_toegestaan",
+    );
+    expectOriginalRefusal(await outcome(() => asFilm.bob(t).action(filmApi.finishOriginal, { originalId: s.originalId })), "niet_toegestaan");
+    await t.action(filmInternal.completeUploaded, {});
+    expect(env.orig.creates()).toHaveLength(1);
+    expect(env.orig.keys()).toEqual([]);
+    expect((await asFilm.alice(t).query(filmApi.get, { projectId })).originals.map((o) => o.status)).not.toContain("binnen");
+  });
+});
+
+// Fix-cyclus 1 (audit N4): bij het wissen in R2 worden afbreken en wissen
+// los van elkaar geprobeerd. Mislukt het een, dan gebeurt het ander toch.
+// De toestand "upload én object" ontstaat bij een afronding die R2 al deed
+// terwijl de inzending nog onderweg stond (zie races.test.ts).
+describe("wissen in R2: afbreken en wissen los van elkaar (audit N4)", () => {
+  async function uploadAndObject(t: ReturnType<typeof newT>, w: FilmWorld) {
+    const projectId = await openProject(t, w);
+    const photoId = await newVideoInX(t, env.r2, w, w.users.bob);
+    const s = await announce(asFilm.bob(t), photoId, ORIGINAL.byteLength);
+    const link = parseR2Link(s.parts[0]!.url);
+    env.orig.put(link.key, ORIGINAL);
+    expect(env.orig.uploads.size).toBe(1);
+    return { projectId, originalId: s.originalId };
+  }
+
+  it("afbreken mislukt (storing): het object gaat toch weg", async () => {
+    const t = newT();
+    const w = await seedFilmWorld(t);
+    const o = await uploadAndObject(t, w);
+    failWhen(env.orig, (c) => c.method === "DELETE" && c.query.uploadId !== undefined);
+    await asFilm.bob(t).mutation(filmApi.withdraw, { originalId: o.originalId });
+    await flush(t);
+    expect(env.orig.keys()).toEqual([]);
+  });
+
+  it("wissen mislukt (storing): de upload wordt toch afgebroken", async () => {
+    const t = newT();
+    const w = await seedFilmWorld(t);
+    const o = await uploadAndObject(t, w);
+    failWhen(env.orig, (c) => c.method === "DELETE" && c.query.uploadId === undefined);
+    await asFilm.bob(t).mutation(filmApi.withdraw, { originalId: o.originalId });
+    await flush(t);
+    expect(env.orig.uploads.size).toBe(0);
+  });
+});
+
+// Fix-cyclus 1 (red-team N7): de herinnering geldt pas als verstuurd als de
+// mail weg is. Mislukt hij, dan probeert de volgende dagelijkse ronde het
+// opnieuw. Nog steeds hooguit één mail per project.
+describe("herinnering opnieuw proberen (red-team N7)", () => {
+  it("de mail mislukt: de volgende dag gaat hij alsnog, daarna niet meer", async () => {
+    const t = newT();
+    const w = await seedFilmWorld(t);
+    const projectId = await openProject(t, w);
+    await binnen(t, w, "bob");
+    await asFilm.alice(t).mutation(filmApi.close, { projectId });
+
+    advance(YEAR_MS - 29 * DAY);
+    env.orig.mailDown = true;
+    await t.mutation(filmInternal.expireOriginals, {});
+    await flush(t);
+    expect(env.r2.mails).toEqual([]);
+
+    env.orig.mailDown = false;
+    advance(DAY);
+    await t.mutation(filmInternal.expireOriginals, {});
+    await flush(t);
+    expect(mailsTo(env.r2, "alice@x.com")).toHaveLength(1);
+
+    advance(DAY);
+    await t.mutation(filmInternal.expireOriginals, {});
+    await flush(t);
+    expect(env.r2.mails).toHaveLength(1);
+  });
+
+  it("twee rondes vlak na elkaar, vóór de mail weg is: één mail", async () => {
+    const t = newT();
+    const w = await seedFilmWorld(t);
+    const projectId = await openProject(t, w);
+    await binnen(t, w, "bob");
+    await asFilm.alice(t).mutation(filmApi.close, { projectId });
+    advance(YEAR_MS - 29 * DAY);
+    await t.mutation(filmInternal.expireOriginals, {});
+    await t.mutation(filmInternal.expireOriginals, {});
+    await flush(t);
     expect(env.r2.mails).toHaveLength(1);
   });
 });

@@ -10,13 +10,17 @@ import {
   filmApi,
   filmInternal,
   MIB,
+  MIN_ORIGINAL_BYTES_ORACLE,
   MINUTE_MS,
+  ORIGINAL_CALLS_PER_DAY_ORACLE,
   newVideoInX,
   openProject,
   ORIGINAL,
   ORIGINALS_BUCKET,
   outcome,
+  padTo,
   PART_BYTES_ORACLE,
+  sameBytes,
   PART_LINK_SECONDS_ORACLE,
   seedFilmWorld,
   sendOriginal,
@@ -247,8 +251,10 @@ describe("binnen pas als het heel is (invariant 5, A-invariant 5)", () => {
     const w = await seedFilmWorld(t);
     const projectId = await openProject(t, w);
     const photoId = await newVideoInX(t, env.r2, w, w.users.bob);
-    const s = await announce(asFilm.bob(t), photoId, POSTER.byteLength);
-    expect(await env.orig.putPart(s.parts[0]!.url, POSTER)).toBe(200);
+    // Aangevuld tot boven de ondergrens van 5 MiB: het merk is de reden, niet de grootte.
+    const jpeg = padTo(POSTER, 6 * MIB);
+    const s = await announce(asFilm.bob(t), photoId, jpeg.byteLength);
+    expect(await env.orig.putPart(s.parts[0]!.url, jpeg)).toBe(200);
     expectOriginalRefusal(await outcome(() => asFilm.bob(t).action(filmApi.finishOriginal, { originalId: s.originalId })), "geen_video");
     expect(env.orig.keys()).toEqual([]);
     expect((await asFilm.alice(t).query(filmApi.get, { projectId })).originals).toEqual([]);
@@ -282,8 +288,8 @@ describe("het origineel blijft onaangetast en nergens anders zichtbaar (invarian
     const photoId = await newVideoInX(t, env.r2, w, w.users.bob);
     await sendOriginal(asFilm.bob(t), env.orig, photoId);
     const [key] = env.orig.keys();
-    expect(env.orig.bytesOf(key!)).toEqual(ORIGINAL);
-    expect(new TextDecoder("latin1").decode(env.orig.bytesOf(key!))).toContain("ISO6709");
+    expect(sameBytes(env.orig.bytesOf(key!), ORIGINAL)).toBe(true);
+    expect(new TextDecoder("latin1").decode(env.orig.bytesOf(key!)!.subarray(0, 64 * 1024))).toContain("ISO6709");
     // De server schreef niets zelf: geen gewone PUT en geen CopyObject op de originelen-bucket.
     const writes = env.orig.calls.filter((c) => c.method === "PUT" && c.query.uploadId === undefined);
     expect(writes).toEqual([]);
@@ -315,7 +321,7 @@ describe("config fail-loud, toegang eerst (A-invariant 13)", () => {
     const photoId = await newVideoInX(t, env.r2, w, w.users.bob);
     delete process.env.R2_ORIGINALS_BUCKET;
     expectOriginalRefusal(await outcome(() => asFilm.alice(t).action(filmApi.startOriginal, { photoId, bytes: 1000 })), "niet_toegestaan");
-    const o = await outcome(() => asFilm.bob(t).action(filmApi.startOriginal, { photoId, bytes: 1000 }));
+    const o = await outcome(() => asFilm.bob(t).action(filmApi.startOriginal, { photoId, bytes: ORIGINAL.byteLength }));
     expect("err" in o).toBe(true);
     if ("err" in o) {
       expect(o.err.message).toContain("R2_CONFIG_MISSING");
@@ -435,4 +441,76 @@ describe("opnieuw aanmelden met een andere grootte", () => {
     expect(again.originalId).toBe(first.originalId);
     expect(again.parts.map((p) => p.partNumber)).toEqual([2, 3]);
   });
+});
+
+// Fix-cyclus 1 (audit N2): een `ftyp` met een merk dat geen QuickTime of mp4
+// is (bv. een HEIC-foto, die ook met `ftyp` begint) is geen filmpje.
+describe("een vreemd merk in ftyp", () => {
+  it("ftyp heic: geen_video, object en inzending weg", async () => {
+    const t = newT();
+    const w = await seedFilmWorld(t);
+    const projectId = await openProject(t, w);
+    const photoId = await newVideoInX(t, env.r2, w, w.users.bob);
+    const heic = padTo(ORIGINAL, ORIGINAL.byteLength);
+    heic.set(new TextEncoder().encode("heic"), 8);
+    expect(new TextDecoder("latin1").decode(heic.subarray(4, 12))).toBe("ftypheic");
+    const s = await announce(asFilm.bob(t), photoId, heic.byteLength);
+    expect(await env.orig.putPart(s.parts[0]!.url, heic)).toBe(200);
+    expectOriginalRefusal(await outcome(() => asFilm.bob(t).action(filmApi.finishOriginal, { originalId: s.originalId })), "geen_video");
+    expect(env.orig.keys()).toEqual([]);
+    expect((await asFilm.alice(t).query(filmApi.get, { projectId })).originals).toEqual([]);
+  });
+});
+
+// Fix-cyclus 1 (red-team S4, regie): kosten. Een origineel is minstens 5 MiB
+// (`te_klein`). En per lid hooguit 300 aanroepen van `startOriginal` en
+// `finishOriginal` samen in 24 uur, glijdend, zoals de daggrens van WP37
+// (`te_vaak`); een geweigerde aanroep telt niet en doet niets in R2.
+describe("kosten (fix-cyclus 1)", () => {
+  it("kleiner dan 5 MiB: te_klein, niets aangemaakt; precies 5 MiB mag", async () => {
+    const t = newT();
+    const w = await seedFilmWorld(t);
+    await openProject(t, w);
+    const photoId = await newVideoInX(t, env.r2, w, w.users.bob);
+    for (const bytes of [1, 1000, MIN_ORIGINAL_BYTES_ORACLE - 1]) {
+      expectOriginalRefusal(await outcome(() => asFilm.bob(t).action(filmApi.startOriginal, { photoId, bytes })), "te_klein");
+    }
+    expect(env.orig.creates()).toHaveLength(0);
+    const s = await announce(asFilm.bob(t), photoId, MIN_ORIGINAL_BYTES_ORACLE);
+    expect(s.parts).toHaveLength(1);
+  });
+
+  it("wie niet mag, krijgt bij een te klein bestand nog steeds niet_toegestaan (toegang eerst)", async () => {
+    const t = newT();
+    const w = await seedFilmWorld(t);
+    await openProject(t, w);
+    const photoId = await newVideoInX(t, env.r2, w, w.users.bob);
+    expectOriginalRefusal(await outcome(() => asFilm.alice(t).action(filmApi.startOriginal, { photoId, bytes: 1000 })), "niet_toegestaan");
+  });
+
+  it("300 aanroepen per lid in 24 uur (aanmelden en afronden samen); de 301e is te_vaak, zonder R2; een ander lid niet; na 24 uur weer", async () => {
+    const t = newT();
+    const w = await seedFilmWorld(t);
+    const projectId = await openProject(t, w);
+    const photoId = await newVideoInX(t, env.r2, w, w.users.bob);
+    const bytes = PART_BYTES_ORACLE + MIN_ORIGINAL_BYTES_ORACLE;
+    const s = await announce(asFilm.bob(t), photoId, bytes);
+    for (let i = 1; i < ORIGINAL_CALLS_PER_DAY_ORACLE; i++) {
+      if (i % 2 === 0) await announce(asFilm.bob(t), photoId, bytes);
+      else expect(await asFilm.bob(t).action(filmApi.finishOriginal, { originalId: s.originalId })).toEqual({ kind: "missing", parts: [1, 2] });
+    }
+    const callsBefore = env.orig.calls.length;
+    expectOriginalRefusal(await outcome(() => asFilm.bob(t).action(filmApi.startOriginal, { photoId, bytes })), "te_vaak");
+    expectOriginalRefusal(await outcome(() => asFilm.bob(t).action(filmApi.finishOriginal, { originalId: s.originalId })), "te_vaak");
+    expect(env.orig.calls.length).toBe(callsBefore);
+
+    // Een ander lid heeft zijn eigen grens.
+    const other = await newVideoInX(t, env.r2, w, w.users.alice);
+    await announce(asFilm.alice(t), other, MIN_ORIGINAL_BYTES_ORACLE);
+
+    // Glijdend: 24 uur na de eerste aanroepen mag bob weer.
+    advance(24 * 60 * MINUTE_MS + MINUTE_MS);
+    await announce(asFilm.bob(t), photoId, bytes);
+    expect((await asFilm.bob(t).query(filmApi.get, { projectId })).originals).toHaveLength(1);
+  }, 60_000);
 });
