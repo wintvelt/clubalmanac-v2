@@ -1,8 +1,8 @@
 import { useMutation } from "convex/react";
 import type { FunctionReturnType } from "convex/server";
-import { router, Stack, useIsFocused, useLocalSearchParams } from "expo-router";
+import { router, Stack, useIsFocused, useLocalSearchParams, useNavigation } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { Platform, StyleSheet, useWindowDimensions, View } from "react-native";
+import { Platform, StyleSheet, useWindowDimensions, View, type StyleProp, type ViewStyle } from "react-native";
 import Animated, { useAnimatedRef, useScrollOffset } from "react-native-reanimated";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import type { Id } from "../../../convex/_generated/dataModel";
@@ -21,6 +21,7 @@ import { EmptyState, LoadingState } from "../components/States";
 import { Text } from "../components/Text";
 import { api } from "../convexApi";
 import { useWideLayout } from "../components/wideLayout";
+import { useReduceMotion } from "../data/accessibility";
 import { useDeparting } from "../data/adminState";
 import { READ_ONLY, WEB_UPLOAD } from "../data/readOnly";
 import { startAddPick } from "../data/webPick";
@@ -34,9 +35,11 @@ import { albumMapPath, editAlbumPath, groupPath, photoPath } from "../lib/groupR
 import { displayYear } from "../lib/groups";
 import { formatPhotoDate, keepNewMarkers, shouldMarkSeen, sortAlbumPhotos } from "../lib/photos";
 import { filterEntries, MEDIA_FILTER_LABELS, mediaCountText, showMediaFilter, videoLabel, type MediaFilter } from "../lib/videos";
+import { enterSelectionScroll, leaveSelectionScroll } from "../lib/selectionBar";
 import { photoLayers, radius, size, space, useTheme } from "../theme";
 import { AlbumChoiceSheet } from "./AlbumChoice";
 import { AlbumReadFailed } from "./AlbumParts";
+import { SELECTION_TOP_BAR, SelectionBar, SelectionSideHeader, SelectionTopBar, useSelectionHeader } from "./SelectionBar";
 import { WideSide, WideSplit } from "./WideSide";
 import { SIDE_WIDTH, WIDE_WINDOW_SIZE, wideGrid } from "../lib/wideLayout";
 import {
@@ -62,6 +65,11 @@ type Album = FunctionReturnType<typeof api.albums.getWithCover>;
 // WP17b: lang drukken op een foto opent het foto-menu; "Selecteer" zet vinkjes
 // en een balk onderaan met "Uit album" en "Verwijderen", per foto (invariant 7).
 // De melding na een actie staat onderaan en blijft tot de volgende actie.
+//
+// WP40: in de selectiestand een eigen kop met het aantal en Annuleren (geen
+// terugknop, geen terugvegen), en onderin een slanke balk. Selecteer scrolt
+// naar het raster; terug uit de selectie gaat de lijst terug, als je zelf niet
+// gescrold hebt (A3, A4).
 export function AlbumScreen() {
   const { groupId, albumId } = useLocalSearchParams<{ groupId: string; albumId: string }>();
   const gid = String(groupId) as Id<"groups">;
@@ -145,6 +153,7 @@ function AlbumContent({ groupId, albumId }: { groupId: Id<"groups">; albumId: Id
     onBusyChange: setSelectionBusy,
   });
   const listState = useMemo(() => ({ selecting, picked, ctx }), [selecting, picked, ctx]);
+  const header = useSelectionHeader({ count: selected.length, busy: selectionBusy, active: selecting });
   const toggle = (photoId: string) =>
     setPicked((before) => {
       const next = new Set(before);
@@ -164,9 +173,11 @@ function AlbumContent({ groupId, albumId }: { groupId: Id<"groups">; albumId: Id
   // WP36 (besluit 3, U11): op het web ook "Toevoegen", voor elk lid
   // van de groep (zoals de + op iOS); de kiezer opent in de tik (U9).
   const webAdd = WEB_UPLOAD && ctx !== undefined;
+  // WP40 A5: tijdens de selectie onzichtbaar, maar de rij houdt haar plek; zo
+  // verspringen de foto's niet als hij weggaat en terugkomt.
   const action =
-    !selecting && (canEdit || webAdd || (ctx && shown && shown.length > 0)) ? (
-      <View style={styles.barRow}>
+    canEdit || webAdd || (ctx && shown && shown.length > 0) ? (
+      <Hide hidden={selecting} style={styles.barRow}>
         {webAdd ? (
           <SmallButton
             title="Toevoegen"
@@ -208,7 +219,7 @@ function AlbumContent({ groupId, albumId }: { groupId: Id<"groups">; albumId: Id
             }}
           />
         ) : null}
-      </View>
+      </Hide>
     ) : null;
   const filterBar = hasVideos ? (
     <SegmentedTabs
@@ -228,16 +239,82 @@ function AlbumContent({ groupId, albumId }: { groupId: Id<"groups">; albumId: Id
   // WP33: de scrollpositie op de UI-thread, voor de bewegende kop.
   const listRef = useAnimatedRef<Animated.FlatList<Entry>>();
   const offset = useScrollOffset(listRef);
+  const reduceMotion = useReduceMotion();
+  const insets = useSafeAreaInsets();
+  // WP40 A3, A4: wat nodig is om naar het raster te scrollen, en terug.
+  const listHeaderHeight = useRef(0);
+  const topBarHeight = useRef<number | null>(null);
+  const viewportHeight = useRef(0);
+  const contentHeight = useRef(0);
+  const scrollMemo = useRef<{ before: number; entered: number | null } | null>(null);
+  useEffect(() => {
+    if (selecting) {
+      const before = offset.value;
+      scrollMemo.current = { before, entered: null };
+      // A8: in de brede layout scrolt het raster niet.
+      if (wide) return;
+      // Twee frames: de kop en de balk staan dan, met hun maten.
+      let frame = requestAnimationFrame(() => {
+        frame = requestAnimationFrame(() => {
+          const bar = topBarHeight.current ?? insets.top + SELECTION_TOP_BAR;
+          const target = enterSelectionScroll({
+            offset: offset.value,
+            gridTop: listHeaderHeight.current - bar,
+            maxOffset: contentHeight.current - viewportHeight.current,
+          });
+          if (target === null || scrollMemo.current === null) return;
+          scrollMemo.current = { before, entered: target };
+          listRef.current?.scrollToOffset({ offset: target, animated: !reduceMotion });
+        });
+      });
+      return () => cancelAnimationFrame(frame);
+    }
+    const memo = scrollMemo.current;
+    scrollMemo.current = null;
+    if (memo === null) return;
+    const target = leaveSelectionScroll({ before: memo.before, entered: memo.entered, current: offset.value });
+    if (target !== null) listRef.current?.scrollToOffset({ offset: target, animated: !reduceMotion });
+    // Alleen bij aan of uit; de rest lees je op dat moment.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selecting]);
+  // A8: wisselt de layout tijdens de selectie (draaien, Split View), dan staat
+  // de lijst ergens anders; terug uit de selectie blijft hij dan staan.
+  useEffect(() => {
+    if (scrollMemo.current) scrollMemo.current = { ...scrollMemo.current, entered: null };
+  }, [wide, columns]);
+  // Verdwijnt de inhoud tijdens de selectie (bv. "reconnecting"), dan mag
+  // terugvegen weer: de optie blijft anders op het scherm staan.
+  const navigation = useNavigation();
+  const selectingNow = useRef(selecting);
+  selectingNow.current = selecting;
+  useEffect(
+    () => () => {
+      if (selectingNow.current) navigation.setOptions({ gestureEnabled: true });
+    },
+    [navigation],
+  );
 
   return (
     <SafeAreaView edges={["left", "right"]} style={[styles.fill, { backgroundColor: colors.bg }]}>
-      {/* De titel is de terugknop-tekst op het foto-detail. */}
-      <Stack.Screen options={{ title: album?.name ?? "Album" }} />
+      {/* De titel is de terugknop-tekst op het foto-detail. WP40: tijdens de
+          selectie geen terugvegen; Annuleren is de weg terug. */}
+      <Stack.Screen options={{ title: album?.name ?? "Album", gestureEnabled: !selecting }} />
+      {/* Vóór de lijst, zodat VoiceOver hem eerst leest (kop, raster, balk). */}
+      {selecting && !wide ? (
+        <SelectionTopBar
+          header={header}
+          onCancel={stopSelecting}
+          onHeight={(height) => {
+            topBarHeight.current = height;
+          }}
+        />
+      ) : null}
       <WideOrNot
         wide={wide}
         side={
           <WideSide
-            back={{ title: "Groep", onPress: () => backToGroup(groupId) }}
+            back={selecting ? undefined : { title: "Groep", onPress: () => backToGroup(groupId) }}
+            top={selecting ? <SelectionSideHeader header={header} onCancel={stopSelecting} /> : undefined}
             name={album?.name}
             cover={album?.cover}
             description={album?.description}
@@ -260,8 +337,28 @@ function AlbumContent({ groupId, albumId }: { groupId: Id<"groups">; albumId: Id
         contentContainerStyle={wide ? [styles.list, styles.wideList] : styles.list}
         ItemSeparatorComponent={Separator}
         extraData={listState}
+        onLayout={(e) => {
+          viewportHeight.current = e.nativeEvent.layout.height;
+        }}
+        onContentSizeChange={(_w, h) => {
+          contentHeight.current = h;
+        }}
         ListHeaderComponent={
-          wide ? undefined : <AlbumHeader groupId={groupId} album={album} counts={mediaCounts(shown)} action={headerAction} />
+          wide ? undefined : (
+            <View
+              onLayout={(e) => {
+                listHeaderHeight.current = e.nativeEvent.layout.height;
+              }}
+            >
+              <AlbumHeader
+                groupId={groupId}
+                album={album}
+                counts={mediaCounts(shown)}
+                action={headerAction}
+                selecting={selecting}
+              />
+            </View>
+          )
         }
         ListEmptyComponent={
           <View style={styles.column}>
@@ -308,12 +405,10 @@ function AlbumContent({ groupId, albumId }: { groupId: Id<"groups">; albumId: Id
       />
       {selecting ? (
         <SelectionBar
+          place="album"
           count={selected.length}
           busy={selectionBusy}
-          onAddToAlbum={() => setChoosing(true)}
-          onRemoveFromAlbum={() => runSelection("removeFromAlbum", selected)}
-          onDelete={() => runSelection("delete", selected)}
-          onCancel={stopSelecting}
+          onAction={(a) => (a === "addToAlbum" ? setChoosing(true) : runSelection(a, selected))}
         />
       ) : (
         menu.sharing ? (
@@ -369,44 +464,17 @@ function menuPhotoOf(entry: Entry & { photo: NonNullable<Entry["photo"]> }): Men
   };
 }
 
-// design.md §9: de teller en de acties in een balk onderaan, met tekst. Elke
-// actie geldt per foto; wat niet mag, meldt de app daarna (A-keuze 2).
-function SelectionBar({
-  count,
-  busy,
-  onAddToAlbum,
-  onRemoveFromAlbum,
-  onDelete,
-  onCancel,
-}: {
-  count: number;
-  busy: boolean;
-  onAddToAlbum: () => void;
-  onRemoveFromAlbum: () => void;
-  onDelete: () => void;
-  onCancel: () => void;
-}) {
-  const none = count === 0;
-  // Fix-cyclus 1, invariant 15: tijdens een ronde zegt de balk dat hij bezig is.
-  const status = busy ? "Bezig…" : none ? "Tik op foto's om ze te kiezen" : `${count} geselecteerd`;
+// WP40: onzichtbaar en niet aan te tikken, maar met zijn plek in de layout.
+function Hide({ hidden, style, children }: { hidden: boolean; style?: StyleProp<ViewStyle>; children: ReactNode }) {
   return (
-    <BottomPanel>
-      <Text variant="bodyStrong" accessibilityLiveRegion="polite">
-        {status}
-      </Text>
-      <View style={styles.barRow}>
-        <SmallButton
-          title="Naar album"
-          icon="plus"
-          accessibilityLabel="Toevoegen aan een ander album"
-          onPress={onAddToAlbum}
-          disabled={none || busy}
-        />
-        <SmallButton title="Uit album" onPress={onRemoveFromAlbum} disabled={none || busy} />
-        <SmallButton title="Verwijderen" icon="trash" tone="danger" onPress={onDelete} disabled={none || busy} />
-        <SmallButton title="Annuleren" onPress={onCancel} disabled={busy} />
-      </View>
-    </BottomPanel>
+    <View
+      style={[style, hidden && styles.hidden]}
+      pointerEvents={hidden ? "none" : undefined}
+      accessibilityElementsHidden={hidden || undefined}
+      importantForAccessibility={hidden ? "no-hide-descendants" : undefined}
+    >
+      {children}
+    </View>
   );
 }
 
@@ -559,12 +627,15 @@ function AlbumHeader({
   album,
   counts,
   action,
+  selecting = false,
 }: {
   groupId: Id<"groups">;
   album: Album | undefined;
   counts: { photos: number; videos: number } | undefined;
   // WP17b: "Selecteer", op een eigen regel (design.md §3).
   action?: ReactNode;
+  // WP40: in de selectiestand geen terugknop (Annuleren is de weg terug).
+  selecting?: boolean;
 }) {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
@@ -608,7 +679,9 @@ function AlbumHeader({
       >
         <View style={styles.headerColumn}>
           <HeaderItem style={styles.pillItem}>
-            <BackPill title="Groep" onPress={back} />
+            <Hide hidden={selecting}>
+              <BackPill title="Groep" onPress={back} />
+            </Hide>
           </HeaderItem>
           {!photo && tile && (
             <View style={styles.headerTile}>
@@ -680,6 +753,7 @@ const styles = StyleSheet.create({
   headerAction: { paddingTop: space.s },
   headerStack: { gap: space.m },
   barRow: { flexDirection: "row", flexWrap: "wrap", gap: space.s },
+  hidden: { opacity: 0 },
   selectedLayer: { borderWidth: 3 },
   selectMark: {
     position: "absolute",

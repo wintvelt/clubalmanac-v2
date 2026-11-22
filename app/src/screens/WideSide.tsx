@@ -38,6 +38,7 @@ export function WideSplit({ side, children }: { side: ReactNode; children: React
 
 export function WideSide({
   back,
+  top,
   name,
   cover,
   description,
@@ -45,6 +46,8 @@ export function WideSide({
   children,
 }: {
   back?: { title: string; onPress: () => void };
+  // WP40 (A8): bovenin, op de plek van de pil (de kop van de selectiestand).
+  top?: ReactNode;
   name: string | undefined;
   cover: CoverPhoto | null | undefined;
   description?: string;
@@ -54,11 +57,12 @@ export function WideSide({
 }) {
   return (
     <>
-      {back && (
-        <View style={styles.pill}>
-          <BackPill title={back.title} onPress={back.onPress} />
-        </View>
-      )}
+      {top ??
+        (back && (
+          <View style={styles.pill}>
+            <BackPill title={back.title} onPress={back.onPress} />
+          </View>
+        ))}
       <SideCover name={name} cover={cover} />
       {name !== undefined && (
         <View style={styles.intro}>

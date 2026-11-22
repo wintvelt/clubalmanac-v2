@@ -1,5 +1,5 @@
 import type { FunctionReturnType } from "convex/server";
-import { router } from "expo-router";
+import { router, Stack, useNavigation } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { FlatList, StyleSheet, useWindowDimensions, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -11,9 +11,7 @@ import { AnimatedPressable, PressShade, usePressMotion } from "../components/Mot
 import { QueryBoundary } from "../components/QueryBoundary";
 import { Screen } from "../components/Screen";
 import { SegmentedTabs } from "../components/SegmentedTabs";
-import { SmallButton } from "../components/SmallButton";
 import { EmptyState, LoadingState } from "../components/States";
-import { Text } from "../components/Text";
 import { api } from "../convexApi";
 import { useAuthState } from "../data/authStateContext";
 import { READ_ONLY } from "../data/readOnly";
@@ -25,6 +23,7 @@ import { size, space, useTheme } from "../theme";
 import { AlbumChoiceSheet } from "./AlbumChoice";
 import { columnsFor, SelectMark } from "./AlbumScreen";
 import { LoadError } from "./GroupParts";
+import { HeaderTextButton, SelectionBar, useSelectionHeader } from "./SelectionBar";
 import {
   ActionFeedback,
   SharingProgress,
@@ -88,6 +87,8 @@ export function useMyPhotos(withoutAlbum: boolean, initial = MY_PHOTOS_STEP) {
 // schakelaar "Alle / Niet in een album". Tik: het detail, swipen door je
 // foto's. Lang drukken: het menu (profielfoto, draaien, verwijderen).
 // "Selecteer": toevoegen aan album en verwijderen, per foto (invariant 3).
+// WP40 (besluit 3): "Selecteer" rechtsboven in de kop, waar daarna
+// "Annuleren" staat; het aantal is dan de titel. Onderin de slanke balk.
 export function MyPhotosScreen() {
   if (useAuthState() === "reconnecting") return <Screen>{null}</Screen>;
   return (
@@ -102,6 +103,9 @@ export function MyPhotosScreen() {
     </QueryBoundary>
   );
 }
+
+// De titel in de layout (src/app/(tabs)/mijn-fotos/_layout.tsx), ook na de selectie.
+const MY_PHOTOS_TITLE = "Mijn foto's";
 
 type Filter = "all" | "loose";
 const FILTERS = [
@@ -147,14 +151,43 @@ function MyPhotosContent() {
       return next;
     });
   const listState = useMemo(() => ({ selecting, picked, ctx }), [selecting, picked, ctx]);
+  const { title, cancelDisabled } = useSelectionHeader({ count: selected.length, busy: selectionBusy, active: selecting });
 
   const columns = columnsFor(width);
   const tile = Math.floor((width - GAP * (columns - 1)) / columns);
   const loading = photos === undefined || me === undefined;
   const hasPhotos = !!photos && photos.length > 0;
+  // WP35 W5: op het web geen selectie (alleen bekijken), en dus geen andere kop.
+  const canSelect = !READ_ONLY && ctx !== undefined && hasPhotos;
+  const startSelecting = useCallback(() => {
+    setFeedback(null);
+    setSelecting(true);
+  }, []);
+  const headerOptions = useMemo(() => {
+    if (selecting) {
+      return {
+        title,
+        headerRight: () => <HeaderTextButton title="Annuleren" onPress={stopSelecting} disabled={cancelDisabled} />,
+      };
+    }
+    return {
+      title: MY_PHOTOS_TITLE,
+      headerRight: canSelect ? () => <HeaderTextButton title="Selecteer" onPress={startSelecting} /> : undefined,
+    };
+  }, [selecting, title, cancelDisabled, canSelect, stopSelecting, startSelecting]);
+  // Verdwijnt de inhoud (bv. "reconnecting"), dan de kop van gewoon Mijn foto's:
+  // de opties blijven anders op het scherm staan.
+  const navigation = useNavigation();
+  useEffect(
+    () => () => {
+      if (!READ_ONLY) navigation.setOptions({ title: MY_PHOTOS_TITLE, headerRight: undefined });
+    },
+    [navigation],
+  );
 
   return (
     <SafeAreaView edges={["left", "right"]} style={[styles.fill, { backgroundColor: colors.bg }]}>
+      {READ_ONLY ? null : <Stack.Screen options={headerOptions} />}
       <FlatList
         key={columns}
         data={loading ? [] : photos}
@@ -179,19 +212,6 @@ function MyPhotosContent() {
                 setFilter(key);
               }}
             />
-            {/* WP35 W5: op het web geen selectie (alleen bekijken). */}
-            {!READ_ONLY && !selecting && ctx && hasPhotos ? (
-              <View style={styles.barRow}>
-                <SmallButton
-                  title="Selecteer"
-                  icon="check"
-                  onPress={() => {
-                    setFeedback(null);
-                    setSelecting(true);
-                  }}
-                />
-              </View>
-            ) : null}
           </View>
         }
         ListEmptyComponent={
@@ -237,11 +257,10 @@ function MyPhotosContent() {
       />
       {selecting ? (
         <SelectionBar
+          place="mine"
           count={selected.length}
           busy={selectionBusy}
-          onAddToAlbum={() => setChoosing(true)}
-          onDelete={() => runSelection("delete", selected)}
-          onCancel={stopSelecting}
+          onAction={(a) => (a === "addToAlbum" ? setChoosing(true) : runSelection(a, selected))}
         />
       ) : (
         menu.sharing ? (
@@ -270,41 +289,6 @@ export function menuPhotoOf(photo: MyPhoto): MenuPhoto {
     exifOrientation: photo.exifOrientation,
     isVideo: photo.video !== undefined,
   };
-}
-
-function SelectionBar({
-  count,
-  busy,
-  onAddToAlbum,
-  onDelete,
-  onCancel,
-}: {
-  count: number;
-  busy: boolean;
-  onAddToAlbum: () => void;
-  onDelete: () => void;
-  onCancel: () => void;
-}) {
-  const none = count === 0;
-  const status = busy ? "Bezig…" : none ? "Tik op foto's om ze te kiezen" : `${count} geselecteerd`;
-  return (
-    <BottomPanel>
-      <Text variant="bodyStrong" accessibilityLiveRegion="polite">
-        {status}
-      </Text>
-      <View style={styles.barRow}>
-        <SmallButton
-          title="Naar album"
-          icon="plus"
-          accessibilityLabel="Toevoegen aan album"
-          onPress={onAddToAlbum}
-          disabled={none || busy}
-        />
-        <SmallButton title="Verwijderen" icon="trash" tone="danger" onPress={onDelete} disabled={none || busy} />
-        <SmallButton title="Annuleren" onPress={onCancel} disabled={busy} />
-      </View>
-    </BottomPanel>
-  );
 }
 
 function Separator() {
@@ -371,5 +355,4 @@ const styles = StyleSheet.create({
     paddingHorizontal: size.screenMargin,
   },
   header: { paddingVertical: space.l, gap: space.m },
-  barRow: { flexDirection: "row", flexWrap: "wrap", gap: space.s },
 });
