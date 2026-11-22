@@ -169,3 +169,9 @@ Het oude scherm "Foto's delen" had alleen foto's, 7 tegels van 32 pt en "+ n", �
 | A13 | `addSelection.test.ts` (`videoStatusText`) | |
 | besluit 1 | `app/tests/addTexts.test.ts` | |
 | besluit 5 | `addSelection.test.ts` (`selectionTiles`, `tooLong`) | de markering op de tegel: gate |
+
+## Besluiten Wouter na A (2026-11-22)
+
+Alle vijf aanbevelingen van A (§Besluiten voor Wouter) zijn akkoord: op het web alleen de teksten, de lege stand daar blijft "Kies foto's", de kopie van de kiezer meteen weg bij dubbel kiezen en bij een ×, albumkeuze boven het raster met "Toevoegen aan album" vast onderin, `makePoster` ongewijzigd. De RED tests van A gelden ongewijzigd.
+
+Ook bevestigd: de backend van WP37 is achterwaarts verenigbaar. 2.0.0/2.0.1 tonen een filmpje als poster (geen afspelen; draaien en profielfoto weigert de backend). Geen test in de simulator nodig.
