@@ -167,3 +167,7 @@ Het smalste toestel in gebruik is 375 pt breed (iPhone SE, mini). Min de schermm
 | A9, invariant 1 | `app/tests/selectionActions.test.ts`, `selectionBusy.test.ts`, `photoActions.test.ts`, `myPhotos.test.ts` | dat de knoppen de juiste actie aanroepen: audit |
 | invariant 3 | `selectionBusy.test.ts`, `selectionBar.test.ts` (bezig) | |
 | bronscan | `app/tests/selectionTexts.test.ts` | |
+
+## Besluiten Wouter na A (2026-11-22)
+
+Alle vier aanbevelingen van A (§Besluiten voor Wouter) zijn akkoord: de tabbalk blijft staan; bij weinig foto's zo ver scrollen als kan (omslag mag deels zichtbaar blijven); "Selecteer" in Mijn foto's rechtsboven in de kop; het filter in het album blijft zoals nu. De RED tests van A gelden ongewijzigd.
