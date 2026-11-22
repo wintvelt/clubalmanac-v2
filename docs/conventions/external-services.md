@@ -350,9 +350,7 @@ Zolang een filmproject open staat, sturen leden bij een nieuw filmpje ook het or
 
 1. **Buckets** (*Create bucket*): `clubalmanac-originals-dev` en `clubalmanac-originals-prod`, *Location*: **Specify jurisdiction → European Union (EU)**, *Standard*, *Public access* uit. Geen CORS-regel: de iPhone uploadt zonder browser en downloaden is een gewone link.
 2. **Tokens**: breid de tokens `clubalmanac-videos-dev` en `clubalmanac-videos-prod` uit (R2 → *Manage API tokens* → token → *Edit*) met *Object Read & Write* op de originelen-bucket van dezelfde omgeving. De sleutels blijven gelijk. Het backup-token (`clubalmanac-videos-backup`) krijgt de originelen-bucket **niet**.
-3. **Lifecycle-regels op de originelen-bucket** (bucket → *Settings* → *Object lifecycle rules* → *Add rule*), twee regels zonder prefix:
-   - `originelen-na-365-dagen`: *Delete uploaded objects after* **365 days**. Vangnet; normaal wist de backend ze op de dag zelf.
-   - `halve-uploads-na-7-dagen`: *Abort incomplete multipart uploads after* **7 days**.
+3. **Lifecycle-regel op de originelen-bucket** (bucket → *Settings* → *Object lifecycle rules* → *Add rule*): één regel `originelen-na-365-dagen`, zonder prefix, met twee acties aangevinkt: *Delete uploaded objects after* **365 days** (vangnet; normaal wist de backend ze op de dag zelf) en *Abort incomplete multipart uploads after* **7 days**.
    Kijk daarna op de buckets van de albums (`clubalmanac-videos-*`) na dat daar **geen** regel van 365 dagen staat; daar staat alleen `uploads-na-1-dag`.
 4. **Convex env-var** per deployment: `R2_ORIGINALS_BUCKET` (tabel hieronder), in het dashboard (Settings → Environment Variables). De andere R2-vars zijn die van WP37.
 5. **Controle op dev**: `npx convex run filmProjects:checkStorage`. Verwacht: geen mail. Een mail "kon niet draaien" met `R2_CONFIG_MISSING: R2_ORIGINALS_BUCKET` of `HTTP 403` betekent een env-var of token die niet klopt. Daarna de WP38-gate (multipart, lifecycle, download in Chrome en Safari).
@@ -366,7 +364,7 @@ Wie geen toegang heeft, krijgt altijd de gewone weigering (`ORIGINAL_REFUSED` of
 
 ### Bewaking, opruimen en downloaden
 
-- **Dagelijkse check** (cron `film originals check`, 05:45 UTC): één mail aan `WEBMASTER_EMAILS` bij een *wees-object* (geen inzending, ouder dan een dag), een inzending die binnen is *zonder bestand* of met *een andere grootte*, een *halve upload* zonder inzending ouder dan 8 dagen (dan werkt de regel `halve-uploads-na-7-dagen` niet), of als de check niet kon draaien. De check wist niets.
+- **Dagelijkse check** (cron `film originals check`, 05:45 UTC): één mail aan `WEBMASTER_EMAILS` bij een *wees-object* (geen inzending, ouder dan een dag), een inzending die binnen is *zonder bestand* of met *een andere grootte*, een *halve upload* zonder inzending ouder dan 8 dagen (dan werkt de lifecycle-regel voor halve uploads niet), of als de check niet kon draaien. De check wist niets.
   - Wees-object: meestal een wis-stap die R2 niet bereikte. Controleer in Convex (tabel `filmOriginals`, veld `key`) dat er geen inzending bij hoort en wis het in het Cloudflare-dashboard.
   - Zonder bestand: er is geen backup. Vraag de inzender het origineel terug te trekken; een nieuw origineel kan alleen bij een nieuw filmpje tijdens een open project.
 - **Opruimen** (cron `film originals expiry`, 05:30 UTC): originelen een jaar na binnenkomst, halve inzendingen 14 dagen na sluiten, en een herinnering aan de oprichter 30 dagen vóór de eerste weggaan. Terugtrekken, verwijderen, groep of account verwijderen, uit de groep gaan en het filmpje in het album verwijderen halen het origineel meteen weg, ook in R2.
