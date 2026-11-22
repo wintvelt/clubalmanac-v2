@@ -194,7 +194,7 @@ Build `wp40-dev2`. Kop met aantal en Annuleren, inklappen van de omslag en de sl
 
 G1. **Tabbalk weg tijdens de selectie.** Zolang het album of Mijn foto's in de selectiestand in beeld is, is er geen tabbalk en ook geen +. De selectiebalk staat op die plek, onderaan het scherm. Zijn knoppen staan boven de thuisbalk, en zijn achtergrond loopt door tot de onderrand. Op een iPhone met thuisknop (geen thuisbalk) staat hij gewoon onderaan. Op elk ander scherm, en zodra de selectie stopt, is de tabbalk er weer. Dat geldt na Annuleren, na een actie, of als de inhoud wegvalt (G4).
 
-G2. **Niets verspringt.** De bovenkant van de lijst en van het raster blijft staan als de tabbalk weggaat of terugkomt. Alleen het zichtbare deel onderaan wordt groter of kleiner. Tabbalk en selectiebalk wisselen in één keer, zonder moment met allebei of met geen van beide. Bij terug uit de selectie komt een melding (na een actie) meteen boven de tabbalk, niet eerst op de plek van de selectiebalk. Het scrollen naar het raster bij Selecteer (A3) rekent met de hoogte zonder tabbalk. In een album met weinig foto's schiet de lijst dus niet voorbij zijn einde.
+G2. **Niets verspringt.** De bovenkant van de lijst en van het raster blijft staan als de tabbalk weggaat of terugkomt. Alleen het zichtbare deel onderaan wordt groter of kleiner. Tabbalk en selectiebalk wisselen zonder moment met allebei naast elkaar of met geen van beide (sinds gate ronde 2 met een korte beweging, H1–H5). Bij terug uit de selectie staat een melding (na een actie) boven de tabbalk, nooit eerst op de plek van de selectiebalk (H4). Het scrollen naar het raster bij Selecteer (A3) rekent met de hoogte zonder tabbalk. In een album met weinig foto's schiet de lijst dus niet voorbij zijn einde.
 
 G3. **Uit beeld = selectie gestopt** (A-keuze). Zonder tabbalk kun je niet van tab wisselen. Opent een link toch een ander scherm (een uitnodiging, een foto, een andere tab), dan stopt de selectie, en het nieuwe scherm heeft gewoon een tabbalk. Kom je terug, dan is er geen selectie meer en is de tabbalk er. Loopt er nog een actie, dan maakt die zijn ronde af en staat de melding er als je terugkomt (zoals nu). Het kiesscherm, een bevestiging, het actiemenu en de app op de achtergrond halen het scherm niet uit beeld: daar blijven de selectie en de verborgen tabbalk staan.
 
@@ -227,7 +227,7 @@ G8. **Uitgelogd en web.** De uitgelogde tabbalk (Inloggen, Info) en het web vera
 ### Testcontract (gate ronde 1)
 
 - **`app/tests/selectionTabBar.test.ts`** (nieuw):
-  - G1: de eigen `TabBar` geeft niets terug (of een bovenste element met `display: "none"`) als de tab in beeld `tabBarStyle: { display: "none" }` heeft. Met die optie op een andere tab, met een andere stijl, of zonder optie staat hij er wel.
+  - G1: als de tab in beeld `tabBarStyle: { display: "none" }` heeft, is geen tab en geen + van de eigen `TabBar` aan te tikken of voor VoiceOver te vinden (sinds gate ronde 2 mag hij dan nog wegzakken, H6). Met die optie op een andere tab, met een andere stijl, of zonder optie werkt hij.
   - G2-bronscan: `AlbumScreen.tsx` en `MyPhotosScreen.tsx` zetten `tabBarStyle`, zelf of via een module die ze importeren.
 - De bestaande tests van WP40 blijven gelden. Geen enkele test zei dat de tabbalk blijft.
 
@@ -253,3 +253,101 @@ Build `wp40-dev3`. De tabbalk is weg tijdens de selectie en de balk staat goed b
 Scope: album en Mijn foto's, iPhone en iPad. Web en de uitgelogde tabbalk veranderen niet. Geen haptics erbij.
 
 ## Gate ronde 2: A-aanvullingen (A vult in)
+
+> A 2026-11-22. Bronnen: het besluit hierboven, WP33 (`lib/motion.ts`, `components/Motion.tsx`), de code van B (`f7c9f7a`: `SelectionBar.tsx`, `AlbumScreen.tsx`, `MyPhotosScreen.tsx`, `TabBar.tsx`) en de standaard-tabbalk van React Navigation (verbergen bij het toetsenbord).
+
+### Wat de code nu doet
+
+- De eigen `TabBar` geeft niets terug zodra de tab in beeld `display: "none"` heeft. Er is dan niets om weg te laten zakken. Om te zakken moet hij nog even blijven staan, zonder ruimte in te nemen, zodat het raster er meteen onder doorloopt. Zo doet React Navigation het bij het toetsenbord. De test van G1 vroeg "niets of `display: none`"; die is versoepeld (H6).
+- De selectiebalk staat in het scherm en is weg zodra de selectie stopt. Om weg te zakken moet hij nog even blijven staan.
+- Het vinkje (`SelectMark`) is een vast icoon: een lege cirkel of een vinkje, met een rand van 3 pt om de gekozen tegel. De tegel krimpt al bij indrukken (WP33 B2).
+- In Mijn foto's is de titel de gewone iOS-titel. Die wisselt zonder animatie. Voor een zachte wissel is een eigen titel in de iOS-kop nodig. In het album en de zijkolom tekent de app de titel al zelf.
+
+### A-invarianten (gate ronde 2)
+
+**Wissel onderin**
+
+H1. **De beweging.** Bij Selecteer zakt de tabbalk, met de +, helemaal uit beeld, en schuift de selectiebalk vanaf de onderrand omhoog naar zijn plek. Bij terug uit de selectie (Annuleren, of na een actie) gaat het andersom. Beide balken bewegen alleen recht omhoog of omlaag, in de strook onderaan (de plek van de tabbalk). Samen duurt het 200 tot 300 ms. De balk die weggaat, begint meteen bij de tik.
+
+H2. **Geen gat, niet naast elkaar.** De nieuwe balk begint te komen voordat de oude weg is. De oude is weg uiterlijk als de nieuwe staat. De selectiebalk staat nooit boven de tabbalk. Waar de balken elkaar overlappen, ligt de selectiebalk bovenop: de + of een tab staat nooit over een knop van de selectiebalk. Wat onder een balk vandaan komt, is het scherm zelf: het raster, of de achtergrond waar het raster ophoudt. Je ziet nooit een lege strook waar de foto's afgesneden zijn. De bovenkant van het raster verspringt niet (G2).
+
+H3. **Wat weggaat, doet niets meer.** Een balk die wegzakt, reageert niet op tikken: geen tab en geen + bij Selecteer, geen knop van de selectiebalk bij terug. VoiceOver slaat hem over. De balk die komt, werkt meteen, ook terwijl hij nog schuift (WP33 invariant 12).
+
+H4. **De melding na een actie** staat, zodra hij te zien is, op zijn plek boven de tabbalk. Hij schuift niet mee en verspringt niet. Hij verschijnt uiterlijk als de wissel klaar is en fadet in zoals elke melding (WP33 D1). VoiceOver leest hem zoals nu.
+
+H5. **Snel na elkaar.** Tik je Annuleren terwijl de balken nog wisselen (of Selecteer terwijl ze terugwisselen), dan keren ze om vanaf waar ze zijn. Er is geen sprong, en ze eindigen in de stand die bij de selectie hoort. Een tabbalk blijft nooit half hangen. Hij blijft nooit weg na de selectie en komt nooit terug tijdens de selectie. Tijdens een actie blijft hij weg tot de ronde klaar is (G5).
+
+H6. **Weg zonder wissel.** Valt de inhoud weg (G4) of gaat het scherm uit beeld (G3), ook midden in een wissel? Dan staat de tabbalk er meteen en helemaal, op elk scherm. Er is nooit een halve of onzichtbare tabbalk. Voor de eigen `TabBar` betekent dat het volgende. Met de verberg-optie op de tab in beeld mag hij nog wegzakken, maar is hij niet aan te tikken en niet voor VoiceOver. Gaat de optie weg, ook in hetzelfde scherm, dan werkt hij weer helemaal.
+
+H7. **iPad, liggend, draaien.** Op de iPad en liggend gaat de wissel net zo, en in de brede layout over de volle breedte (G6). Draai je tijdens de wissel, dan eindigt hij goed.
+
+**Vinkje**
+
+H8. **Aantikken.** Het vinkje groeit vanuit klein, schiet een klein beetje voorbij en staat binnen een halve seconde stil (een kleine veer). De hele tegel krimpt een beetje, met alles erop: het vinkje, "nieuw", het filmteken, het teken voor je eigen foto en de rand. Hij blijft klein zolang hij gekozen is. Zet je hem uit, dan gaat het vinkje weg, komt de lege cirkel terug en groeit de tegel terug naar zijn maat. Dat gaat vloeiend, zonder veer.
+
+H9. **Het raster blijft staan.** Het krimpen is alleen te zien: de tegel houdt zijn plek, en buren en rijen schuiven niet. Een tik op het zichtbare deel van een gekozen tegel zet hem uit. Indrukken (WP33 B2) blijft. De tegel krimpt bij indrukken en gaat dan naar zijn stand, gekozen of niet, zonder dubbele sprong of zichtbaar heen en weer.
+
+H10. **Alleen een tik speelt de animatie.** Een gekozen tegel die opnieuw getekend wordt, staat meteen klein met vinkje, zonder veer. Dat geldt als hij in beeld scrolt, als de lijst hem hergebruikt, bij een live update, bij een wissel van filter en bij een ander aantal kolommen. Bij Selecteer krijgen alle tegels meteen de lege cirkel, zoals nu.
+
+H11. **Einde van de selectie en snel tikken.** Na Annuleren, na Naar album of na een mislukte actie groeien gekozen tegels die blijven staan vloeiend terug, zoals bij uitzetten. Geen tegel blijft klein. Wat weg is, gaat weg zoals nu. Elke tik telt meteen, ook midden in de veer (WP33 B5). De animatie volgt de laatste stand en loopt niet achter.
+
+**Kop**
+
+H12. **Het aantal wisselt zacht.** Bij elke nieuwe titel ("Kies foto's", "3 geselecteerd", "Bezig…") vervaagt de oude en verschijnt de nieuwe: kort overvloeien, zonder schuiven of rollen. Dat geldt in het album, in de zijkolom en in Mijn foto's. Annuleren staat stil.
+
+H13. **Niet achter, niet anders.** Na de laatste tik staat binnen de duur het goede aantal er. Bij snel tikken blijft er geen oude titel half staan. VoiceOver hoort de nieuwe titel meteen (A7), niet pas na de animatie. In Mijn foto's ziet de titel eruit als de gewone iOS-titel (letter, grootte, plaats, licht en donker), en VoiceOver leest hem als kop.
+
+**Overal**
+
+H14. **Beperk beweging.** Niets schuift, veert, krimpt of vloeit over: alles staat meteen in de eindstand, en de instelling geldt live (WP33 F1). De balken wisselen in één keer, zoals in gate ronde 1, en de titel wisselt meteen. Een gekozen tegel staat meteen klein met vinkje (A-keuze, vraag 2).
+
+H15. **Eén plek voor de maten.** Alle maten en duren van deze drie animaties staan in `src/lib/motion.ts`, als pure functies die "Beperk beweging" meekrijgen (dan duur 0). De tabbalk en de selectiebalk gebruiken dezelfde wissel. Het album en Mijn foto's gebruiken hetzelfde vinkje en dezelfde titel. Op het web en bij de uitgelogde tabbalk verandert niets. Er komen geen haptics bij.
+
+### Gate-checks (ronde 3)
+
+- Selecteer en Annuleren in het album en in Mijn foto's, iPhone met thuisbalk: zakt de tabbalk (met de +) netjes weg en schuift de balk omhoog? Is er geen gat, en steekt de + nergens in een knop? Blijft het raster staan? Na Verwijderen: komt de melding rustig, zonder te verspringen?
+- Annuleren snel na Selecteer, en Selecteer snel na Annuleren: keert het soepel om, en blijft er geen tabbalk hangen?
+- Een tab of de + aantikken terwijl hij wegzakt: gebeurt er niets?
+- Vinkje: is de veer klein genoeg, en is het krimpen duidelijk maar rustig, ook met de rand van 3 pt? Gaat uitzetten vloeiend? Snel achter elkaar tikken, en een gekozen tegel die in en uit beeld scrolt: geen herhaalde veer?
+- Titel: wisselt het aantal zacht bij snel tikken, zonder achter te lopen? Zien de koppen van Mijn foto's en het album er nog hetzelfde uit?
+- Beperk beweging aan: alles meteen, geen beweging.
+- iPad staand en liggend, en draaien tijdens de wissel.
+- VoiceOver: geen tabs tijdens de selectie, de titel wordt meteen voorgelezen, en de melding na een actie ook.
+
+### A-keuzes
+
+- **De balken wisselen tegelijk** (of de nieuwe iets later), en de selectiebalk ligt bovenop. Na elkaar zou een moment zonder balk geven.
+- **Een veer alleen voor het vinkje.** De tegel krimpt en groeit zonder veer: een tegel die op en neer veert, oogt onrustig in een raster.
+- **Bij Beperk beweging staat een gekozen tegel klein.** Klein is de eindstand en geen beweging (vraag 2).
+- **De titel vloeit over** en rolt geen cijfers. Overvloeien is het rustigst (vraag 1).
+- **De kop van het album** fadet in bij Selecteer en is meteen weg bij Annuleren, zoals nu. Dat valt buiten het besluit.
+
+### Open vragen voor regie
+
+1. **Titel:** overvloeien (A) of rollende cijfers, zoals iOS die soms gebruikt? Rollen is drukker en alleen voor de cijfers lastig te bouwen. Advies: overvloeien.
+2. **Beperk beweging en het vinkje:** de gekozen tegel klein (eindstand, A) of op ware grootte? Advies: klein. Zo zie je ook zonder animatie wat gekozen is.
+3. **De rand van 3 pt** om een gekozen tegel blijft, ook nu de tegel krimpt. Weghalen is een vormkeuze buiten het besluit. De gate kijkt of het samen goed oogt.
+
+### Testcontract (gate ronde 2)
+
+> Namen en vormen zijn A-keuzes, het hoe is aan B. Tijden in ms.
+
+- **`app/src/lib/motion.ts`**, drie nieuwe pure functies. Met `reduceMotion` aan is elke duur 0.
+  - `barSwap(reduceMotion)` geeft `{ leaving: { delay, duration }, arriving: { delay, duration } }`: de balk die weggaat en de balk die komt, in beide richtingen hetzelfde (H1, H2, H14).
+  - `selectFeedback(reduceMotion)` geeft `{ tileScale, tileDuration, markFromScale, markSpring, markOutDuration }`. Dat zijn de schaal van een gekozen tegel en de duur van krimpen en terug, de beginschaal van het vinkje, de veer van het vinkje als `{ damping, stiffness, mass }` (zoals `withSpring` van Reanimated, of `null` voor meteen), en de duur van het vinkje bij uitzetten (H8, H14).
+  - `titleChange(reduceMotion)` geeft `{ duration }`, het overvloeien van de titel (H12, H14).
+- **Bronscan:** `barSwap(` wordt gebruikt vanuit de tabbalk en vanuit beide schermen. `selectFeedback(` en `titleChange(` worden gebruikt vanuit beide schermen (H15).
+- **`selectionTabBar.test.ts`** (versoepeld, H6): met de optie is geen tab en geen + aan te tikken of voor VoiceOver te vinden. Zonder de optie werkt alles, ook nadat de optie in hetzelfde scherm weer weg is, of na snel aan en uit. De test heeft nep-versies van Reanimated, worklets en safe-area, zodat de tabbalk een animatie mag krijgen. Breekt een nieuwe import van B de test toch, dan meldt B dat en past A de nep-modules aan.
+
+### Tests (gate ronde 2)
+
+| Inv. | Test | Niet getest, omdat … |
+|---|---|---|
+| H1, H2 | `app/tests/selectionMotion.test.ts` (`barSwap`) | richting, strook, bovenop en geen afgesneden raster: gate en audit |
+| H3, H6 | `selectionTabBar.test.ts` | de selectiebalk die wegzakt: audit en gate |
+| H4, H5, H7 | | timing en layout: gate en audit |
+| H8 | `selectionMotion.test.ts` (`selectFeedback`, de veer doorgerekend) | hoe het oogt: gate |
+| H9–H11 | | hergebruik, filter, indrukken samen: audit en gate |
+| H12, H13 | `selectionMotion.test.ts` (`titleChange`) | voorlezen en de iOS-titel: gate |
+| H14 | `selectionMotion.test.ts` (alle drie) | live wisselen: gate |
+| H15 | `selectionMotion.test.ts` (bronscan) | web en uitgelogd: G8-test in `selectionTabBar.test.ts` |
