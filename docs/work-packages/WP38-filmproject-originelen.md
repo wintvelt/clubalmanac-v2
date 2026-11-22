@@ -264,7 +264,7 @@ Bestaande tests die A aanpaste: `tests/crons/registration.test.ts` (negen crons)
 
 ### Ronde na B (A, 2026-11-22)
 
-- **Inventarissen.** De nieuwe paden voldoen aan de regels: `get`, `listForGroup` en `listOpenForMe` hebben een return-validator zonder `any` of `record`; `open` heeft de gate van de beheerpaden; `GET` en `OPTIONS /beeld/inzending/*` volgen de regel van WP35 (preflight alleen op paden met een token). Geen probleem met een gate gevonden. Kleine afwijking, geen gate: het beeldpad van een inzending neemt `?formaat=origineel` aan (geeft dan *groot*), waar `/beeld/foto/` dat met 400 weigert.
+- **Inventarissen.** De nieuwe paden voldoen aan de regels: `get`, `listForGroup` en `listOpenForMe` hebben een return-validator zonder `any` of `record`; `open` heeft de gate van de beheerpaden; `GET` en `OPTIONS /beeld/inzending/*` volgen de regel van WP35 (preflight alleen op paden met een token). Geen probleem met een gate gevonden.
 - **Test "een ontbrekend deel".** Deel 1 bestond uit nullen, dus de `ftyp`-controle weigerde terecht. Deel 1 begint nu met de echte bytes van een filmpje.
 - **B-keuzes, door A bevestigd:**
   - *Opnieuw aanmelden met een andere grootte* weigert met `niet_toegestaan`, en de inzending blijft zoals hij is. Een andere grootte is een ander bestand; zo komen delen van twee bestanden nooit in één origineel. De app trekt eerst terug (38b).
@@ -273,3 +273,54 @@ Bestaande tests die A aanpaste: `tests/crons/registration.test.ts` (negen crons)
   - *Bestandsnaam zonder opnamedatum*: datum en tijd van inzenden in Nederlandse tijd (CET en CEST).
 
 **Stand na A (na B):** 16 rood voor B: `setEndsAt` (6 tests in `projects.test.ts`, 1 in `inventory.test.ts`), `albumId` leeg na het verwijderen van het filmalbum (1 in `cascade.test.ts`), WP10 (3 in `integrity.test.ts`, 3 in `tests/migration/sharedLists.test.ts`, 2 in `tests/migration/migrationFunctions.test.ts`). De rest is groen, ook de nieuwe tests voor besluiten 11, 12, 15, 16, 17 en 18 en de vier B-keuzes. Typecheck schoon.
+
+### Fix-cyclus 1 (audit en red-team)
+
+> A 2026-11-22, op `02eda77`, met de besluiten van regie. Tests: `tests/filmProject/races.test.ts` (nieuw) en aanvullingen in `originals`, `access`, `cascade` en `storageCheck`.
+
+**Moet**
+
+1. **Afronden wist alleen wat weg is** (audit B1 = red-team B1). Afronden (door de app of de cron) kent voor de inzending drie uitkomsten: nu binnen, al binnen, of weg. Alleen bij *weg* (teruggetrokken of verwijderd tijdens het afronden) gaat het object uit R2; de app krijgt dan `niet_toegestaan`. Bij *al binnen* (twee keer tegelijk afronden, de app en de cron, de cron met een oude stand) is het antwoord `done` en blijft het object heel. Na elke volgorde: binnen, het object precies zoals verstuurd, geen open upload, en de oprichter kan downloaden.
+2. **Loskoppelen alleen bij de verwachte upload** (red-team S1). Wie ziet dat een upload niet meer bestaat en opnieuw wil beginnen, koppelt alleen los als de inzending nog die upload heeft. Heeft een gelijktijdig hervatten intussen een nieuwe gekoppeld, dan blijft die staan en kan de app daarop versturen en afronden.
+3. **Hervatten tijdens het afronden** (red-team S2). Kent R2 de upload niet meer, dan kijkt hervatten eerst of het object er is met de aangemelde grootte. Zo ja, dan rondt hervatten af zoals in punt 1 en geeft `done`, zonder nieuwe upload. Is de inzending binnen gekomen terwijl hervatten een nieuwe upload maakte, dan ook `done` (geen weigering), en die nieuwe upload wordt afgebroken.
+
+**Zou (deze ronde)**
+
+4. **Testgaten** (audit S1, S2, N1, N2), nu vastgelegd: de poster van andermans inzending die nog onderweg is geeft een lid (ook een admin) 404; op dag 14 na sluiten plus een uur weigeren `startOriginal` en `finishOriginal` met `niet_toegestaan` en rondt de cron niets af, ook als de opruimronde nog niet liep; MON3 noemt een inzending met een andere grootte (inzending-id) en een halve upload zonder inzending ouder dan 8 dagen (sleutel) in de mail, en niet de upload van een inzending onderweg of een halve upload van 7 dagen; een `ftyp` met een ander merk (`heic`) is `geen_video`.
+5. **MON3 rond het einde van het jaar** (red-team S3). Regie: de R2-regel blijft 365 dagen. MON3 meldt een inzending die binnen is niet als "zonder bestand" vanaf een dag vóór het einde van zijn jaar, en ook niet erna (de opruimronde liep dan nog niet). Twee dagen ervoor wel. *A-keuze*: het jaar telt hier vanaf het aanmelden. S3 dateert een object uit een multipart-upload op het begin van de upload, en dat ligt nooit vóór het aanmelden; zo geeft de check ook geen vals alarm als R2 dat doet en de upload dagen duurde.
+6. **Kosten** (red-team S4). Regie: een origineel is minstens 5 MiB; kleiner weigert `startOriginal` met `te_klein`, zonder iets in R2. *A-keuze*: **hooguit 300 aanroepen van `startOriginal` en `finishOriginal` samen per lid in 24 uur** (glijdend, zoals `videoUploadRequests` van WP37), daarboven `te_vaak` zonder verzoek aan R2. Een geweigerde aanroep telt niet; de cron telt niet mee; toegang gaat vóór (wie niet mag, krijgt `niet_toegestaan`). Motivatie: een lid stuurt hooguit 30 filmpjes per dag in (WP37), elk met ruim tien aanroepen (aanmelden, hervatten na een herstart, een verlopen link of de wifi-schakelaar, afronden). Alle 16 leden een maand op de grens is 144.000 aanroepen, elk hooguit drie klasse-A-verzoeken: ~430.000, binnen het gratis miljoen per maand. Wat de grens niet dekt: de PUT's op de deel-links zelf (een link geldt 7 dagen en kan vaker gebruikt worden). Daarvoor is de kostenmelding van $5 in Cloudflare (runbook). In de app (38c): bij een bestand onder 5 MiB gaat het filmpje naar het album, zonder origineel.
+7. **Wissen in R2 robuuster** (audit N4). Afbreken van de upload en wissen van het object worden los van elkaar geprobeerd: mislukt het een (storing), dan gebeurt het ander toch.
+8. **Herinnering opnieuw proberen** (red-team N7). De herinnering geldt pas als verstuurd als de mail weg is. Mislukt hij, dan probeert de volgende dagelijkse ronde het opnieuw. Nog steeds hooguit één mail per project, ook als twee rondes vlak na elkaar lopen.
+9. **`/beeld/inzending/<id>?formaat=origineel` → 400** (audit N6), zoals `/beeld/foto/`: vóór alles, voor iedereen gelijk.
+
+**Testcontract erbij**: `startOriginal` weigert ook met `te_klein` en `te_vaak`; `finishOriginal` ook met `te_vaak`.
+
+**Opdrachten voor B (alleen doc)**
+
+- *Cascade-matrix* (audit S3): A3, P11 en M5 bijwerken voor WP38, de aantallen bij MON1, en de dubbele backtick.
+- *Runbook*: `R2_ORIGINALS_BUCKET` vóór of samen met de deploy zetten (audit N7); geen filmproject openen op prod vóór de release van 38b/38c (red-team N8); de tabellen leegmaken (migratie-tooling) laat de objecten in de originelen-bucket staan, dus die apart leegmaken (red-team N9); een kostenmelding in Cloudflare op $5.
+
+**Gate-checks erbij**
+
+- *Als eerste stap* op echte R2 (audit S4): aanmaken en afronden van een multipart-upload met de ondertekening in de query werkt. Zo niet, dan terugvallen op de `Authorization`-header.
+- Welke datum R2 een object uit een multipart-upload geeft (begin of einde van de upload). Bij het begin: zie het open punt hieronder.
+
+**Voor 38b en 38c** (red-team N2, audit N8): een PUT die `NoSuchUpload` krijgt, betekent opnieuw `startOriginal` (dat geeft links op een nieuwe upload, of `done`). Overweeg de multipart pas te maken bij de eerste vraag om links, zodat een upload niet ongebruikt op wifi wacht tot de lifecycle-regel hem na 7 dagen afbreekt; dat moet passen bij A-invariant 18 (aanmelden op elk netwerk). De downloadpagina navigeert met een gewone link (`<a href>`) naar de downloadlink, geen fetch: zo gaat een bestand van gigabytes niet door het geheugen van de browser.
+
+**Open punt voor regie.** Dateert R2 een multipart-object op het begin van de upload, dan wist de lifecycle-regel een origineel eerder dan de datum die de downloadpagina en de herinnering noemen (een jaar na binnenkomst), met de tijd tussen aanmelden en binnen: meestal minuten tot dagen, hooguit de looptijd van het project plus 14 dagen. Advies A: na de gate beslissen; blijkt het zo, dan het jaar overal laten tellen vanaf het aanmelden.
+
+| Punt | Test (`tests/filmProject/`) |
+|---|---|
+| 1 | `races.test.ts` (twee keer tegelijk, een tweede afronding ertussen, de cron met een oude stand, de cron ertussen, terugtrekken op twee momenten) |
+| 2 | `races.test.ts` (de cron met U1, de app met U2) |
+| 3 | `races.test.ts` (object al heel, binnen gekomen tijdens hervatten) |
+| 4 | `access.test.ts`, `cascade.test.ts`, `storageCheck.test.ts`, `originals.test.ts` |
+| 5 | `storageCheck.test.ts` (halve dag ervoor, erna, twee dagen ervoor, tien dagen na aanmelden binnen) |
+| 6 | `originals.test.ts` (5 MiB, toegang eerst, 300 per dag) |
+| 7 | `cascade.test.ts` (afbreken mislukt, wissen mislukt) |
+| 8 | `cascade.test.ts` (mail mislukt, twee rondes) |
+| 9 | `access.test.ts` |
+
+Aangepast: `ORIGINAL` in `_film.ts` is de fixture aangevuld tot 6 MiB (boven de ondergrens); de JPEG-test en de config-test gebruiken een grootte boven 5 MiB. De nep-R2 kan een verzoek laten wachten op een tweede aanroep (`onceBefore`), een storing geven (`failWhen`) en Mailjet laten falen (`mailDown`).
+
+**Stand na A (fix-cyclus 1):** 15 rood voor B: punt 1 (4 in `races.test.ts`), punt 2 (1), punt 3 (2), punt 5 (3 in `storageCheck.test.ts`), punt 6 (2 in `originals.test.ts`), punt 7 (1 in `cascade.test.ts`, afbreken mislukt), punt 8 (1, mail mislukt), punt 9 (1 in `access.test.ts`). Groen als vangnet: terugtrekken tijdens het afronden, de testgaten van punt 4, twee dagen ervoor wel een mail, toegang vóór `te_klein`, wissen mislukt, twee rondes één mail. De rest van de suite groen; typecheck schoon.
