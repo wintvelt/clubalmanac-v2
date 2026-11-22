@@ -51,9 +51,14 @@ export const ORIGINAL = fixture("iphone-like.mov");
 // --- forward-declared refs (convex/filmProjects.ts bestaat nog niet) -------
 
 type Ref<K extends "query" | "mutation" | "action", A extends DefaultFunctionArgs, R> = FunctionReference<K, "public", A, R>;
+/**
+ * `albumId` is `null` als het filmalbum na sluiten verwijderd is (besluit 17);
+ * `albumName` is dan de naam bij het openen. Een open project heeft altijd zijn
+ * album (`albums.remove` weigert zolang het open staat).
+ */
 export type ProjectRow = {
   projectId: string;
-  albumId: string;
+  albumId: string | null;
   albumName: string;
   endsAt: number;
   open: boolean;
@@ -69,7 +74,7 @@ export type OriginalRow = {
   takenAt: number | null;
 };
 export type ProjectView = {
-  project: { projectId: string; groupId: string; albumId: string; albumName: string; endsAt: number; open: boolean };
+  project: { projectId: string; groupId: string; albumId: string | null; albumName: string; endsAt: number; open: boolean };
   isFounder: boolean;
   originals: OriginalRow[];
 };
@@ -83,6 +88,7 @@ export const filmApi = (
     filmProjects: {
       open: Ref<"mutation", { groupId: Id<"groups">; albumId: Id<"albums">; endsAt: number }, string>;
       close: Ref<"mutation", { projectId: string }, null>;
+      setEndsAt: Ref<"mutation", { projectId: string; endsAt: number }, null>;
       listForGroup: Ref<"query", { groupId: Id<"groups"> }, ProjectRow[]>;
       listOpenForMe: Ref<"query", Record<string, never>, OpenRow[]>;
       get: Ref<"query", { projectId: string }, ProjectView>;
@@ -530,8 +536,40 @@ export function expectOriginalRefusal(o: Outcome, reason?: string): void {
   if (reason !== undefined) expect(data?.reason).toBe(reason);
 }
 
+/**
+ * Alle geplande stappen, tot de laatste. Let op: `runAllTimers` zet de klok
+ * door tot de laatste geplande stap, en dat is ook de geplande sluiting van een
+ * open project. Na `settle` kan een project dus dicht zijn.
+ */
 export async function settle(t: T): Promise<void> {
   await t.finishAllScheduledFunctions(vi.runAllTimers);
+}
+
+/**
+ * Alleen wat nu klaarstaat (bv. `runAfter(0)`: een mail, R2 wissen), zonder de
+ * klok naar de geplande sluiting te zetten. Een paar rondes, voor een stap die
+ * zelf weer een stap plant.
+ */
+export async function flush(t: T): Promise<void> {
+  for (let i = 0; i < 3; i++) {
+    vi.advanceTimersByTime(1);
+    await t.finishInProgressScheduledFunctions();
+  }
+}
+
+/**
+ * De klok `ms` vooruit en de geplande stappen die in die tijd vallen laten
+ * lopen (zoals de geplande sluiting), in volgorde.
+ */
+export async function runUntil(t: T, ms: number): Promise<void> {
+  vi.advanceTimersByTime(ms);
+  await t.finishInProgressScheduledFunctions();
+  await flush(t);
+}
+
+/** De mails die de nep-Mailjet kreeg, aan dit adres. */
+export function mailsTo(r2: FakeR2, email: string): Array<Record<string, unknown>> {
+  return r2.mails.filter((m) => JSON.stringify(m.To ?? m.to ?? "").includes(email));
 }
 
 /** In welke albums staat deze rij? */

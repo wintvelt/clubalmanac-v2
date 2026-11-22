@@ -40,6 +40,8 @@ function argNames(fn: Registered): string[] {
 const EXPECTED: Record<string, { kind: string; args: string[] }> = {
   open: { kind: "mutation", args: ["albumId", "endsAt", "groupId"] },
   close: { kind: "mutation", args: ["projectId"] },
+  // Besluit 13: de einddatum verschuiven (oprichter, alleen open project).
+  setEndsAt: { kind: "mutation", args: ["endsAt", "projectId"] },
   listForGroup: { kind: "query", args: ["groupId"] },
   listOpenForMe: { kind: "query", args: [] },
   get: { kind: "query", args: ["projectId"] },

@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { api } from "../../convex/_generated/api";
 import { newT, parseR2Link, r2SignatureProblem } from "../videos/_videos";
 import {
@@ -122,6 +122,36 @@ describe("downloaden (besluit 8, A-invariant 8)", () => {
     expect(disposition).toContain("2026-11-03");
     expect(disposition).toContain("Bob");
     expect(disposition.toLowerCase()).toContain(".mov");
+  });
+
+  // A-keuze bestandsnaam: `<jjjj-mm-dd uu.mm> <naam inzender>.mov`, met de
+  // opnamedatum (kloktijd van de opname). B-keuze, door A bevestigd: zonder
+  // opnamedatum de datum en tijd van inzenden in Nederlandse tijd (CET/CEST).
+  it("bestandsnaam: de opnamedatum als die er is, anders het inzenden in Nederlandse tijd (winter en zomer)", async () => {
+    const t = newT();
+    const w = await seedFilmWorld(t);
+    await openProject(t, w);
+    const taken = await newVideoInX(t, env.r2, w, w.users.bob, { takenAt: Date.UTC(2026, 10, 3, 14, 22) });
+    const takenId = await sendOriginal(asFilm.bob(t), env.orig, taken);
+    const nameOf = async (originalId: string) =>
+      parseR2Link((await asFilm.alice(t).action(filmApi.downloadUrl, { originalId })).url).params["response-content-disposition"] ?? "";
+    expect(await nameOf(takenId)).toContain("2026-11-03 14.22 Bob.mov");
+
+    // Winter: FIXED_NOW is 21-11-2026 12:00 UTC, dus 13:0x in Nederland.
+    const winter = await newVideoInX(t, env.r2, w, w.users.bob);
+    const winterId = await sendOriginal(asFilm.bob(t), env.orig, winter);
+    expect(await nameOf(winterId)).toMatch(/2026-11-21 13\.0\d Bob\.mov/);
+  });
+
+  it("bestandsnaam zonder opnamedatum in de zomer: UTC plus twee uur", async () => {
+    vi.setSystemTime(Date.UTC(2027, 6, 10, 10, 0));
+    const t = newT();
+    const w = await seedFilmWorld(t);
+    await openProject(t, w);
+    const summer = await newVideoInX(t, env.r2, w, w.users.bob);
+    const originalId = await sendOriginal(asFilm.bob(t), env.orig, summer);
+    const disposition = parseR2Link((await asFilm.alice(t).action(filmApi.downloadUrl, { originalId })).url).params["response-content-disposition"] ?? "";
+    expect(disposition).toMatch(/2027-07-10 12\.0\d Bob\.mov/);
   });
 
   it("de inzender zelf, een admin, een lid, de webmaster en wie geen lid is: ORIGINAL_NOT_FOUND", async () => {
