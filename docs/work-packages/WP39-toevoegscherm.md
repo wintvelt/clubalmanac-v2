@@ -182,3 +182,9 @@ Build `wp39-dev`. Bevindingen:
 1. **Albumkiezer oogt rommelig** (lange lijst klapt open in het scherm; de uitgeschakelde knop onderin is bruin).
 2. **"Meer toevoegen" moet "Meer selecteren" heten.**
 3. **Vast in "Je keuze ophalen…"** bij een filmpje van 5 minuten en bij een drone-filmpje van 5 s (4K H.264, 69 MB, geen geluid). Het filmpje zelf is in orde: de module verkleint het op macOS in 2 s, de backend accepteert een filmpje zonder geluid. Oorzaak is vrijwel zeker de download uit iCloud door de kiezer. Er is geen manier om te stoppen behalve de modaal sluiten, en dan is de hele keuze weg.
+
+### Besluiten Wouter na gate ronde 1 (2026-11-22)
+
+1. **Album kiezen:** op het scherm één rij "Album" met het gekozen album (of "Kies een album") en een pijltje. Een tik opent een eigen kiesscherm: groepen als kopjes, albums met omslag en naam, een vinkje bij het gekozen album. Geopend via de + in de tabbalk staat het laatst gekozen album alvast ingevuld (per toestel onthouden; bestaat het niet meer of is de user geen lid meer, dan "Kies een album"). Zonder album is de knop onderin grijs en heet hij "Kies eerst een album".
+2. **"Meer selecteren"** in plaats van "Meer toevoegen", vóór en na een ronde.
+3. **"Stoppen" tijdens "Je keuze ophalen…":** de vorige keuze en de uitkomst van een ronde blijven staan; komt het resultaat van de kiezer later toch binnen, dan negeert de app het en ruimt het de kopieën op. Een nieuwe tik op "Meer selecteren" kan pas als de vorige kiezer echt klaar is (iOS staat één kiezer tegelijk toe); tot dan zegt het scherm dat.
