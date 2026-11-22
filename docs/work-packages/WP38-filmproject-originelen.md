@@ -139,11 +139,11 @@ Bestond niet in v1. De oude backend en de oude app kennen geen filmpjes van lede
 - **Daggrenzen.** Een inzending hoort bij een nieuw filmpje, en filmpjes hebben al een grens van 30 per dag (WP37 A-invariant 36). Een eigen daggrens voor originelen is dus niet nodig. Originelen tellen niet mee voor de limiet van 1000 foto's: ze zijn geen foto.
 - **Schijf van de telefoon.** Wachtende originelen staan op het toestel tot ze binnen zijn; met "Alleen via wifi" kan dat dagen gelden. De projectpagina toont per eigen inzending de grootte. Bij te weinig vrije ruimte meldt het toevoegscherm dat het origineel niet mee kan (het filmpje voor het album gaat gewoon).
 - **De ronde in het toevoegscherm** is klaar als het filmpje in het album staat. Het origineel loopt daarna door, ook als het scherm dicht is; de stand staat op de projectpagina.
-- **WP10.** De nieuwe tabellen wijzen naar groepen, albums, foto's en users. De integriteits-check krijgt dezelfde controle op losse verwijzingen als de andere tabellen.
+- **WP10.** De nieuwe tabellen wijzen naar groepen, albums, foto's en users. De integriteits-check krijgt dezelfde controle op losse verwijzingen als de andere tabellen (regie: ja, in `MONITORED_FKS`). Het filmalbum mag na sluiten weg (besluit 17); dan wijst het project nergens meer naar (`albumId` leeg) en houdt het de naam. De migratie-tooling vult deze tabellen niet, maar telt en leegt ze wel (zoals `uploadIdempotency`).
 
 ### A-invarianten
 
-1. **Project openen en sluiten: alleen de oprichter**, op het moment van het verzoek (`groups.createdBy`). Een admin of lid krijgt `NOT_ALLOWED`; geen lid of een onbekende groep `NOT_MEMBER`, net als bij de beheerpaden van WP28. Het filmalbum hoort bij de groep (anders `NOT_MEMBER`). De einddatum ligt in de toekomst (anders `DATE_INVALID`). Staat er al een open project in de groep, dan `PROJECT_ALREADY_OPEN`. Sluiten van een gesloten project verandert niets. Na sluiten kan een nieuw project open.
+1. **Project openen, sluiten en de einddatum verschuiven: alleen de oprichter**, op het moment van het verzoek (`groups.createdBy`). Een admin of lid krijgt `NOT_ALLOWED`; geen lid, een onbekende groep of een onbekend project `NOT_MEMBER`, net als bij de beheerpaden van WP28. Het filmalbum hoort bij de groep (anders `NOT_MEMBER`). De einddatum ligt in de toekomst en hooguit een jaar vooruit (anders `DATE_INVALID`). Staat er al een open project in de groep, dan `PROJECT_ALREADY_OPEN`. Sluiten van een gesloten project verandert niets. Na sluiten kan een nieuw project open. Het project **sluit vanzelf** op de einddatum (besluit 13): daarna is het dicht, ook als de geplande stap nog niet liep. **Verschuiven** (besluit 13) kan alleen zolang het project open staat (anders `PROJECT_CLOSED`), met dezelfde grenzen als bij openen, eerder of later; de sluiting gaat mee naar de nieuwe einddatum.
 2. **De albumregel zit in `startUpload`.** Staat er in de groep van het gevraagde album een open project, dan reserveert `startUpload` voor het filmalbum X, welk album van die groep ook gevraagd werd. Het filmpje komt na afronden alleen in X. Beslist wordt bij `startUpload`: een project dat daarna sluit of opent, verandert die upload niet. Foto's (`POST /upload`), "Naar album" (`albums.addPhoto`) en albums van andere groepen vallen er niet onder.
 3. **Een inzending hoort bij precies één nieuw filmpje.** Insturen kan alleen de eigenaar van een filmpje (een rij met `video`) dat (a) in het filmalbum staat van een project van een groep waar hij lid van is, en (b) gemaakt is terwijl dat project open stond. Eén weigering voor alles wat niet mag: geen filmpje, een foto, van een ander, van vóór het project, gemaakt na het sluiten, niet in het filmalbum, geen lid. Per filmpje hooguit één inzending: opnieuw aanmelden geeft dezelfde inzending terug, met dezelfde upload in R2, en nooit een tweede.
 4. **De backend kiest sleutel en bucket.** Een origineel staat in een eigen bucket (`R2_ORIGINALS_BUCKET`), onder een willekeurige sleutel die niets uit het verzoek bevat. De app krijgt alleen deel-links: een PUT op precies die sleutel, met het deelnummer en de upload-id in de query en de grootte van dat deel in de handtekening (`content-length;host`), 7 dagen geldig. Alle delen zijn 32 MiB, behalve het laatste. De sleutel en de upload-id van R2 staan nooit los in een antwoord.
@@ -158,7 +158,7 @@ Bestond niet in v1. De oude backend en de oude app kennen geen filmpjes van lede
 13. **Toegang vóór config.** Wie niet mag, krijgt de gewone weigering, ook als een R2-env-var ontbreekt. Mag hij wel, dan een fout die begint met `R2_CONFIG_MISSING:` en de namen noemt (ook `R2_ORIGINALS_BUCKET`). Geen geheim, link of sleutel in een fout of log.
 14. **Een eigen R2-check voor de originelen** (cron `film originals check`, dagelijks), naast die van WP37, die onveranderd blijft. Hij legt de originelen-bucket naast de inzendingen: een object zonder inzending (ouder dan een dag), een inzending die binnen is zonder object, en een halve upload zonder inzending (ouder dan 8 dagen: de lifecycle-regel werkt niet) geven één mail aan de webmaster, net als een ontbrekende `R2_ORIGINALS_BUCKET` ("kon niet draaien"). Een origineel dat klopt, meldt hij niet. De check wist niets.
 15. **Grenzen in de backend** (getallen: besluit 11). Een origineel boven de grens per bestand, of een aanmelding die het project of het totaal over de grens brengt, weigert de backend al bij het aanmelden (`te_groot`, `vol`). De aangemelde grootte telt mee zolang de inzending onderweg is.
-16. **Toegangsdefinitie.** Nieuwe publieke paden die een project-id, inzending-id, foto-id of groep-id aannemen: `filmProjects.open`, `close`, `listForGroup`, `listOpenForMe`, `get`, `startOriginal`, `finishOriginal`, `withdraw`, `downloadUrl`, `removeOriginal`, `removeAll`, en `GET /beeld/inzending/<id>`. Elk heeft een gate; de inventaristest legt ze vast. Een inzending-id is zichtbaar in `get` (alleen voor leden) en in de routes van de app.
+16. **Toegangsdefinitie.** Nieuwe publieke paden die een project-id, inzending-id, foto-id of groep-id aannemen: `filmProjects.open`, `close`, `setEndsAt`, `listForGroup`, `listOpenForMe`, `get`, `startOriginal`, `finishOriginal`, `withdraw`, `downloadUrl`, `removeOriginal`, `removeAll`, en `GET /beeld/inzending/<id>`. Elk heeft een gate; de inventaristest legt ze vast. Een inzending-id is zichtbaar in `get` (alleen voor leden) en in de routes van de app.
 
 *In de app (deelpakket 38b en 38c):*
 
@@ -217,16 +217,17 @@ Het risico zit op drie plekken: de toegang en het opruimen (backend), de achterg
 
 Besluiten 11–20: alle tien volgens het advies van A. WP38 gaat in drie deelpakketten: 38a (backend, mag vóór de app naar prod), 38b (uploader, eerst een proef op de iPhone), 38c (schermen). 38b en 38c komen samen in één app-release.
 
-### Testcontract (A, voor WP38a, vóór de besluiten)
+### Testcontract (A, voor WP38a)
 
-> Namen en vormen zijn A-keuzes; het hoe is aan B. Wijkt een besluit af, dan past A de tests aan vóór B begint. Besluiten 11–18 hebben nog geen test (zie onderaan).
+> Namen en vormen zijn A-keuzes; het hoe is aan B.
 
 - **Env**: `R2_ORIGINALS_BUCKET` naast de vier van WP37.
 - **`api.filmProjects.open({ groupId, albumId, endsAt })`** (mutation) → project-id. Weigeringen `ConvexError({ code })`: `NOT_MEMBER`, `NOT_ALLOWED`, `DATE_INVALID`, `PROJECT_ALREADY_OPEN`.
 - **`api.filmProjects.close({ projectId })`** (mutation) → `null`; alleen de oprichter.
-- **`api.filmProjects.listForGroup({ groupId })`** (query, leden; anders `NOT_MEMBER`) → `[{ projectId, albumId, albumName, endsAt, open }]`: het open project, en gesloten projecten zolang er originelen zijn.
+- **`api.filmProjects.setEndsAt({ projectId, endsAt })`** (mutation) → `null`; alleen de oprichter, alleen een open project. Weigeringen `NOT_MEMBER`, `NOT_ALLOWED`, `DATE_INVALID`, `PROJECT_CLOSED`.
+- **`api.filmProjects.listForGroup({ groupId })`** (query, leden; anders `NOT_MEMBER`) → `[{ projectId, albumId, albumName, endsAt, open }]`: het open project, en gesloten projecten zolang er originelen zijn. `albumId` is `null` als het filmalbum na sluiten verwijderd is; `albumName` is dan de naam bij het openen.
 - **`api.filmProjects.listOpenForMe({})`** (query) → `[{ groupId, projectId, albumId, albumName, endsAt }]` voor de groepen van de caller.
-- **`api.filmProjects.get({ projectId })`** (query, leden; anders `NOT_MEMBER`) → `{ project: { projectId, groupId, albumId, albumName, endsAt, open }, isFounder, originals: [{ originalId, ownerName, mine, status: "onderweg" | "binnen", durationMs, submittedAt, takenAt }] }`. Van anderen alleen `binnen`; de oprichter ziet alles.
+- **`api.filmProjects.get({ projectId })`** (query, leden; anders `NOT_MEMBER`) → `{ project: { projectId, groupId, albumId (of null, zoals hierboven), albumName, endsAt, open }, isFounder, originals: [{ originalId, ownerName, mine, status: "onderweg" | "binnen", durationMs, submittedAt, takenAt }] }`. Van anderen alleen `binnen`; de oprichter ziet alles.
 - **`api.filmProjects.startOriginal({ photoId, bytes })`** (action) → `{ kind: "upload", originalId, partSize, parts: [{ partNumber, url }], expiresAt }` (alleen de delen die nog niet in R2 staan) of `{ kind: "done", originalId }`. Weigering `ConvexError({ code: "ORIGINAL_REFUSED", reason })` met `uitgelogd | niet_toegestaan | te_groot | vol`.
 - **`api.filmProjects.finishOriginal({ originalId })`** (action) → `{ kind: "done" }` of `{ kind: "missing", parts: number[] }`. Weigering `ORIGINAL_REFUSED` met `niet_toegestaan` of `geen_video`.
 - **`api.filmProjects.withdraw({ originalId })`**, **`removeOriginal({ originalId })`**, **`removeAll({ projectId })`** (mutations); weigering `ConvexError({ code: "ORIGINAL_NOT_FOUND" })` (bij `removeAll`: `NOT_MEMBER` of `NOT_ALLOWED`).
@@ -234,12 +235,14 @@ Besluiten 11–20: alle tien volgens het advies van A. WP38 gaat in drie deelpak
 - **`GET /beeld/inzending/<originalId>[?formaat=klein|groot]`**: 401 uitgelogd, 404 geen toegang of onbekend, 200 de poster (zoals `/beeld/foto/`); `OPTIONS` voor de webapp.
 - **`internal.filmProjects.completeUploaded({})`** (action, cron `film originals complete`, elk uur) en **`internal.filmProjects.expireOriginals({})`** (mutation, cron `film originals expiry`, dagelijks).
 - **`internal.filmProjects.checkStorage({})`** (cron `film originals check`, dagelijks): de R2-check van de originelen. `videos.checkStorage` (WP37) blijft zoals hij is.
+- **`albums.remove`** van het filmalbum van een open project: `ConvexError({ code: "FILM_PROJECT_OPEN" })` (besluit 17).
+- **WP10**: `MONITORED_FKS` krijgt `filmProjects.groupId`, `filmProjects.albumId` (optioneel), `filmOriginals.projectId`, `groupId`, `ownerId` en `photoId`; beide tabellen vallen onder "niet door de import gevuld" (`tests/migration/fkOracle.ts`).
 
 ### Tests per invariant (stand na A)
 
 | Inv. | Test (`tests/filmProject/`) | Niet getest, omdat … |
 |---|---|---|
-| A1 | `projects.test.ts` | einddatum hooguit een jaar vooruit, vanzelf sluiten: besluit 13 |
+| A1 | `projects.test.ts` (ook besluit 13: een jaar, vanzelf sluiten, `setEndsAt`) | |
 | A2 | `albumRule.test.ts` (Y wordt X, foto blijft in Y, andere groep, na sluiten, "Naar album" naar Y) | wat 2.0.2 dan toont: gate |
 | A3 | `originals.test.ts` (eigenaar, nieuw, in X, foto, van vóór het project, na sluiten in X gezet, ander, opnieuw = dezelfde) | |
 | A4 | `originals.test.ts` (bucket, sleutel, deel-links, grootte, 7 dagen, delen van 32 MiB) | |
@@ -249,14 +252,24 @@ Besluiten 11–20: alle tien volgens het advies van A. WP38 gaat in drie deelpak
 | A8 | `access.test.ts` (oprichter, admin, inzender, webmaster, link) | |
 | A9 | `originals.test.ts` (afronden zonder app) | |
 | A10 | `cascade.test.ts` | |
-| A11 | `cascade.test.ts` (een jaar) | lifecycle-regel: runbook; herinnering: besluit 15 |
-| A12 | `cascade.test.ts` (groep, account, "Uit album") | vertrek uit de groep: besluit 12; album-filmpje verwijderen: besluit 16 |
+| A11 | `cascade.test.ts` (een jaar, herinnering, gesloten project zonder originelen, 14 dagen na sluiten) | lifecycle-regel: runbook |
+| A12 | `cascade.test.ts` (groep, account, "Uit album", vertrek, filmpje verwijderen, filmalbum verwijderen), `integrity.test.ts` (WP10) | |
 | A13 | `originals.test.ts` (config ontbreekt) | |
 | A14 | `storageCheck.test.ts` (klopt, wees, ontbrekend object, config ontbreekt) | halve upload ouder dan 8 dagen: na de gate (wat ListMultipartUploads van R2 geeft) |
-| A15 | | getallen: besluit 11 |
-| A16 | `inventory.test.ts` (publieke functies met soort en argumenten, routes, crons) | |
+| A15 | `originals.test.ts` (2 GiB, 200 GiB, 400 GiB, terugtrekken maakt vrij) | |
+| A16 | `inventory.test.ts` (publieke functies met soort en argumenten, routes, crons); de inventarissen van WP23 (`readWhitelist`), WP28 (`beheerInventory`) en de beeldpaden (`images/httpRoute`) | |
 | A17–21 | | app: 38b en 38c |
 
-A paste een bestaande test aan: `tests/crons/registration.test.ts` (negen crons). De nep-R2 voor de originelen (multipart zoals S3, alle delen even groot behalve het laatste, minstens 5 MiB) staat in `tests/filmProject/_film.ts`.
+Bestaande tests die A aanpaste: `tests/crons/registration.test.ts` (negen crons), `tests/readWhitelist/inventory.test.ts`, `tests/groups/beheerInventory.test.ts`, `tests/images/httpRoute.test.ts` en `tests/migration/fkOracle.ts`. De nep-R2 voor de originelen (multipart zoals S3, alle delen even groot behalve het laatste, minstens 5 MiB) staat in `tests/filmProject/_film.ts`. Let op: `settle()` laat de klok doorlopen tot de laatste geplande stap, ook de geplande sluiting van een open project; `flush()` en `runUntil()` laten alleen lopen wat nu (of binnen de gegeven tijd) klaarstaat.
 
-**Stand na A (vóór de besluiten):** backend 66 rood / 3245 groen / 1 overgeslagen. Rood: alles in `tests/filmProject/` (`convex/filmProjects.ts`, de crons en de route `/beeld/inzending/` ontbreken) en de cronlijst in `tests/crons/registration.test.ts`. De rest van de suite is ongewijzigd groen. Typecheck schoon. Geen app-tests (38b, 38c).
+### Ronde na B (A, 2026-11-22)
+
+- **Inventarissen.** De nieuwe paden voldoen aan de regels: `get`, `listForGroup` en `listOpenForMe` hebben een return-validator zonder `any` of `record`; `open` heeft de gate van de beheerpaden; `GET` en `OPTIONS /beeld/inzending/*` volgen de regel van WP35 (preflight alleen op paden met een token). Geen probleem met een gate gevonden. Kleine afwijking, geen gate: het beeldpad van een inzending neemt `?formaat=origineel` aan (geeft dan *groot*), waar `/beeld/foto/` dat met 400 weigert.
+- **Test "een ontbrekend deel".** Deel 1 bestond uit nullen, dus de `ftyp`-controle weigerde terecht. Deel 1 begint nu met de echte bytes van een filmpje.
+- **B-keuzes, door A bevestigd:**
+  - *Opnieuw aanmelden met een andere grootte* weigert met `niet_toegestaan`, en de inzending blijft zoals hij is. Een andere grootte is een ander bestand; zo komen delen van twee bestanden nooit in één origineel. De app trekt eerst terug (38b).
+  - *Een gesloten project zonder originelen* is meteen uit de groep; de rij mag nog even blijven (geen originelen, geen GPS). De test legt alleen de bovengrens vast: na een jaar en 14 dagen is hij weg.
+  - *Herinnering*: één mail per project aan de oprichter van nu, met het aantal en de eerste en laatste datum. Geen tweede mail. Wat na de mail nog binnenkomt (alleen bij een project dat bijna een jaar open staat), krijgt geen eigen herinnering: dat is aanvaardbaar.
+  - *Bestandsnaam zonder opnamedatum*: datum en tijd van inzenden in Nederlandse tijd (CET en CEST).
+
+**Stand na A (na B):** 16 rood voor B: `setEndsAt` (6 tests in `projects.test.ts`, 1 in `inventory.test.ts`), `albumId` leeg na het verwijderen van het filmalbum (1 in `cascade.test.ts`), WP10 (3 in `integrity.test.ts`, 3 in `tests/migration/sharedLists.test.ts`, 2 in `tests/migration/migrationFunctions.test.ts`). De rest is groen, ook de nieuwe tests voor besluiten 11, 12, 15, 16, 17 en 18 en de vier B-keuzes. Typecheck schoon.
