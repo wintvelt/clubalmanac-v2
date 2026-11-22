@@ -167,8 +167,10 @@ export type TypeRole = {
   fontSize: number;
   fontWeight?: Weight;
   fontFamily?: string;
-  // Alleen de tabbalk-labels hebben een grens. Alle andere tekst schaalt vrij
-  // mee met de iOS-tekstgrootte, ook in de AX-standen (design.md §3).
+  // Alleen de tabbalk-labels hebben een grens in hun rol. De labels in de
+  // selectiebalk (`barLabel`, WP40) groeien ook hoogstens 1,2×, via de prop op
+  // de tekst. Alle andere tekst schaalt vrij mee met de iOS-tekstgrootte, ook
+  // in de AX-standen (design.md §3).
   maxFontSizeMultiplier?: number;
 };
 
@@ -191,6 +193,11 @@ export const typography = {
   fieldLabel: { fontSize: 16, fontWeight: "600" },
   smallButton: { fontSize: 16, fontWeight: "700" },
   badge: { fontSize: 14, fontWeight: "700" },
+  // WP40: de titel in de kop van de selectiestand (zoals de iOS-navigatiebalk)
+  // en de labels in de selectiebalk onderin (die groeien hoogstens 1,2× mee,
+  // via de prop, zoals de tabbalk; A6).
+  navTitle: { fontSize: 17, fontWeight: "600" },
+  barLabel: { fontSize: 15, fontWeight: "600" },
   tabLabel: { fontSize: 13, fontWeight: "600", maxFontSizeMultiplier: 1.2 },
   tabLabelActive: { fontSize: 13, fontWeight: "700", maxFontSizeMultiplier: 1.2 },
 } as const satisfies Record<string, TypeRole>;

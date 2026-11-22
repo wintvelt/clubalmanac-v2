@@ -160,3 +160,62 @@ export function newlyArrived(previous: readonly string[] | undefined, next: read
   const seen = new Set(previous);
   return next.filter((id) => !seen.has(id));
 }
+
+// --- WP40 gate ronde 2: de selectiestand -------------------------------------
+
+// De wissel onderin (H1, H2): de balk die weggaat (bij Selecteer de tabbalk,
+// bij terug de selectiebalk) begint meteen; de balk die komt, iets later, zodat
+// er geen gat valt. De oude is weg voordat de nieuwe staat. Samen 250 ms.
+const BAR_SWAP = { leaving: { delay: 0, duration: 200 }, arriving: { delay: 50, duration: 200 } } as const;
+
+export type BarPhase = { delay: number; duration: number };
+
+export function barSwap(reduceMotion: boolean): { leaving: BarPhase; arriving: BarPhase } {
+  "worklet";
+  if (reduceMotion) return { leaving: { delay: 0, duration: 0 }, arriving: { delay: 0, duration: 0 } };
+  return { leaving: { ...BAR_SWAP.leaving }, arriving: { ...BAR_SWAP.arriving } };
+}
+
+// Een gekozen foto (H8): de tegel krimpt een beetje en blijft zo; het vinkje
+// groeit vanuit klein met een kleine veer (top ±1,05, stil binnen 0,3 s).
+// Uitzetten gaat zonder veer. Met "Beperk beweging" (H14, regie vraag 2):
+// meteen de eindstand, en die is klein.
+const SELECT = {
+  tileScale: 0.92,
+  tileDuration: 150,
+  markFromScale: 0.6,
+  markSpring: { damping: 24, stiffness: 500, mass: 1 },
+  markOutDuration: 120,
+} as const;
+
+export type SpringConfig = { damping: number; stiffness: number; mass: number };
+
+export type SelectFeedback = {
+  tileScale: number;
+  tileDuration: number;
+  markFromScale: number;
+  markSpring: SpringConfig | null;
+  markOutDuration: number;
+};
+
+export function selectFeedback(reduceMotion: boolean): SelectFeedback {
+  "worklet";
+  if (reduceMotion) {
+    return { tileScale: SELECT.tileScale, tileDuration: 0, markFromScale: 1, markSpring: null, markOutDuration: 0 };
+  }
+  return {
+    tileScale: SELECT.tileScale,
+    tileDuration: SELECT.tileDuration,
+    markFromScale: SELECT.markFromScale,
+    markSpring: { ...SELECT.markSpring },
+    markOutDuration: SELECT.markOutDuration,
+  };
+}
+
+// De titel in de selectiestand (H12): de oude vervaagt, de nieuwe verschijnt.
+const TITLE_CHANGE = 180;
+
+export function titleChange(reduceMotion: boolean): { duration: number } {
+  "worklet";
+  return { duration: reduceMotion ? 0 : TITLE_CHANGE };
+}

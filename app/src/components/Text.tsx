@@ -4,7 +4,8 @@ import { typography, useTheme, type ColorTokens, type TypeRoleName } from "../th
 type Props = TextProps & { variant?: TypeRoleName; color?: keyof ColorTokens };
 
 // Alle tekst loopt hierdoor: rol en kleur komen uit de tokens. De grens op de
-// tekstgrootte zit alleen in de rollen die hem hebben (tabbalk-labels).
+// tekstgrootte zit in de rollen die hem hebben (tabbalk-labels), of komt als
+// prop mee (`maxFontSizeMultiplier`, bv. de selectiebalk, design.md §3).
 //
 // De key op fontScale is nodig (WP15b F2): React Native bewaart per tekst de
 // opgemaakte tekst met de vergroting van de eerste opmaak. Wisselt de user de

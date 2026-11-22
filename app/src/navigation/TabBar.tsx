@@ -1,11 +1,12 @@
 import { useAuth } from "@clerk/expo";
 import { router, useNavigationContainerRef, usePathname } from "expo-router";
 import type { BottomTabBarProps } from "expo-router/js-tabs";
-import { useRef } from "react";
-import { Pressable, StyleSheet, View } from "react-native";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { Pressable, StyleSheet, View, type StyleProp, type ViewStyle } from "react-native";
+import Animated, { useAnimatedStyle } from "react-native-reanimated";
 import { Gradient } from "../components/Gradient";
 import { Icon, type IconName } from "../components/Icon";
-import { AnimatedPressable, usePressMotion } from "../components/Motion";
+import { AnimatedPressable, selectionBarRise, useBarSwap, usePressMotion } from "../components/Motion";
 import { Text } from "../components/Text";
 import { successTap } from "../data/haptics";
 import { useGroupVisit, useHomeGroup } from "../data/homeGroupState";
@@ -15,6 +16,7 @@ import { homeButton, trackTabOrigin, type HomeButtonTarget, type TabOrigin } fro
 import { startAddPick } from "../data/webPick";
 import { albumIdFromPath } from "../lib/upload";
 import { border, plusButton, radius, size, space, useTheme } from "../theme";
+import { setTabBarDocked, takeTabBarSnap } from "./tabBarState";
 
 // De ingelogde tabbalk (design.md §5, §7; WP15a invarianten 2, 9, 16): Home ·
 // Mijn foto's · + · Profiel · Instellingen, elk met icoon en label. De + is
@@ -37,6 +39,7 @@ const PLUS_WEIGHT = 1.15;
 
 export function TabBar({
   state,
+  descriptors,
   emitter,
   navigateToTab,
   insets,
@@ -44,6 +47,43 @@ export function TabBar({
 }: BottomTabBarProps & { plus?: boolean }) {
   const { colors } = useTheme();
   const home = useHomeButton(plus, state, navigateToTab);
+  // WP40 gate ronde 1 (G1): de gewone optie van de navigator om de tabbalk te
+  // verbergen, `tabBarStyle: { display: "none" }`, op de tab in beeld. Het
+  // album en Mijn foto's zetten hem in de selectiestand.
+  const focusedKey = state.routes[state.index]?.key;
+  const focusedOptions = focusedKey ? descriptors?.[focusedKey]?.options : undefined;
+  const hidden = StyleSheet.flatten(focusedOptions?.tabBarStyle as StyleProp<ViewStyle>)?.display === "none";
+  // Gate ronde 2 (H1–H6): verborgen zakt hij weg, en terug schuift hij omhoog,
+  // met dezelfde wissel als de selectiebalk. Zolang hij niet op zijn plek
+  // staat, neemt hij geen ruimte in (zoals de tabbalk van React Navigation bij
+  // het toetsenbord): het scherm loopt er meteen onderdoor en de bovenkant
+  // blijft staan. Verborgen is hij niet aan te tikken en niet voor VoiceOver
+  // (H3). Een andere tab in beeld, of een scherm dat zonder wissel stopt (G3,
+  // G4): meteen helemaal terug (H6).
+  const shownKey = useRef(focusedKey);
+  const swap = useBarSwap(!hidden, { instant: () => takeTabBarSnap() || shownKey.current !== focusedKey });
+  useLayoutEffect(() => {
+    shownKey.current = focusedKey;
+  });
+  const docked = !hidden && swap.rest === "in";
+  useLayoutEffect(() => setTabBarDocked(docked), [docked]);
+  useEffect(() => () => setTabBarDocked(true), []);
+  const [barHeight, setBarHeight] = useState(size.tabbar + insets.bottom);
+  // Tot helemaal uit beeld: de balk, de + erboven en zijn schaduw.
+  const travel = barHeight + size.plusRise + PLUS_SHADOW_ROOM;
+  const { progress } = swap;
+  // Onderweg tekent hij zich alleen boven de selectiebalk (H2): de houder
+  // schuift mee omhoog met de bovenrand daarvan en knipt eronder af.
+  const clipStyle = useAnimatedStyle(
+    () => ({ transform: [{ translateY: docked ? 0 : -selectionBarRise.value }] }),
+    [docked],
+  );
+  const slideStyle = useAnimatedStyle(
+    () => ({
+      transform: [{ translateY: docked ? 0 : selectionBarRise.value + (1 - progress.value) * travel }],
+    }),
+    [docked, travel],
+  );
 
   const tabs = state.routes.map((route, index) => {
     const meta = TABS[route.name] ?? { label: route.name, icon: "info", weight: 1 };
@@ -72,33 +112,49 @@ export function TabBar({
   const half = Math.ceil(tabs.length / 2);
 
   return (
-    <View
-      style={[
-        styles.bar,
-        {
-          backgroundColor: colors.tabbar,
-          borderTopColor: colors.line,
-          paddingBottom: insets.bottom,
-          paddingLeft: insets.left,
-          paddingRight: insets.right,
-        },
-      ]}
+    <Animated.View
+      pointerEvents={hidden ? "none" : "box-none"}
+      accessibilityElementsHidden={hidden}
+      importantForAccessibility={hidden ? "no-hide-descendants" : "auto"}
+      style={[docked ? null : [styles.floating, { height: travel }], clipStyle]}
     >
-      <View accessibilityRole="tablist" style={styles.row}>
-        {/* WP36 (besluit 3): de + ook op het web. */}
-        {plus ? (
-          <>
-            {tabs.slice(0, half)}
-            <PlusButton />
-            {tabs.slice(half)}
-          </>
-        ) : (
-          tabs
-        )}
-      </View>
-    </View>
+      <Animated.View style={[docked ? null : styles.floatingBar, slideStyle]}>
+        <View
+          onLayout={(e) => {
+            const height = Math.ceil(e.nativeEvent.layout.height);
+            if (height > 0) setBarHeight((before) => (before === height ? before : height));
+          }}
+          style={[
+            styles.bar,
+            {
+              backgroundColor: colors.tabbar,
+              borderTopColor: colors.line,
+              paddingBottom: insets.bottom,
+              paddingLeft: insets.left,
+              paddingRight: insets.right,
+            },
+          ]}
+        >
+          <View accessibilityRole="tablist" style={styles.row}>
+            {/* WP36 (besluit 3): de + ook op het web. */}
+            {plus ? (
+              <>
+                {tabs.slice(0, half)}
+                <PlusButton />
+                {tabs.slice(half)}
+              </>
+            ) : (
+              tabs
+            )}
+          </View>
+        </View>
+      </Animated.View>
+    </Animated.View>
   );
 }
+
+// Ruimte boven de + voor zijn schaduw, zodat die niet wordt afgeknipt.
+const PLUS_SHADOW_ROOM = 24;
 
 function TabItem({
   meta,
@@ -250,6 +306,9 @@ function Label({ text, focused, color }: { text: string; focused: boolean; color
 
 const styles = StyleSheet.create({
   bar: { borderTopWidth: StyleSheet.hairlineWidth },
+  // WP40 gate ronde 2: onderweg of verborgen, zonder ruimte in te nemen.
+  floating: { position: "absolute", left: 0, right: 0, bottom: 0, overflow: "hidden" },
+  floatingBar: { position: "absolute", left: 0, right: 0, bottom: 0 },
   // Op iPad en liggend blijft de balk, met de knoppen in het midden.
   row: {
     flexDirection: "row",

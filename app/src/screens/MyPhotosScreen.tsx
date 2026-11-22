@@ -1,19 +1,18 @@
 import type { FunctionReturnType } from "convex/server";
-import { router } from "expo-router";
+import { router, Stack, useIsFocused, useNavigation } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { FlatList, StyleSheet, useWindowDimensions, View } from "react-native";
+import { FlatList, StyleSheet, useWindowDimensions, View, type HostInstance } from "react-native";
+import Animated from "react-native-reanimated";
 import { SafeAreaView } from "react-native-safe-area-context";
 import type { Id } from "../../../convex/_generated/dataModel";
 import { PhotoImage } from "../components/Photo";
 import { VideoBadge } from "../components/VideoPlayer";
 import { videoLabel } from "../lib/videos";
-import { AnimatedPressable, PressShade, usePressMotion } from "../components/Motion";
+import { AnimatedPressable, PressShade, usePressMotion, useSelectMotion } from "../components/Motion";
 import { QueryBoundary } from "../components/QueryBoundary";
 import { Screen } from "../components/Screen";
 import { SegmentedTabs } from "../components/SegmentedTabs";
-import { SmallButton } from "../components/SmallButton";
 import { EmptyState, LoadingState } from "../components/States";
-import { Text } from "../components/Text";
 import { api } from "../convexApi";
 import { useAuthState } from "../data/authStateContext";
 import { READ_ONLY } from "../data/readOnly";
@@ -25,6 +24,16 @@ import { size, space, useTheme } from "../theme";
 import { AlbumChoiceSheet } from "./AlbumChoice";
 import { columnsFor, SelectMark } from "./AlbumScreen";
 import { LoadError } from "./GroupParts";
+import {
+  focusLater,
+  HeaderTextButton,
+  SelectionBar,
+  SelectionBarSwap,
+  SelectionNavTitle,
+  useHideTabBar,
+  useSelectionBottom,
+  useSelectionHeader,
+} from "./SelectionBar";
 import {
   ActionFeedback,
   SharingProgress,
@@ -88,6 +97,8 @@ export function useMyPhotos(withoutAlbum: boolean, initial = MY_PHOTOS_STEP) {
 // schakelaar "Alle / Niet in een album". Tik: het detail, swipen door je
 // foto's. Lang drukken: het menu (profielfoto, draaien, verwijderen).
 // "Selecteer": toevoegen aan album en verwijderen, per foto (invariant 3).
+// WP40 (besluit 3): "Selecteer" rechtsboven in de kop, waar daarna
+// "Annuleren" staat; het aantal is dan de titel. Onderin de slanke balk.
 export function MyPhotosScreen() {
   if (useAuthState() === "reconnecting") return <Screen>{null}</Screen>;
   return (
@@ -102,6 +113,9 @@ export function MyPhotosScreen() {
     </QueryBoundary>
   );
 }
+
+// De titel in de layout (src/app/(tabs)/mijn-fotos/_layout.tsx), ook na de selectie.
+const MY_PHOTOS_TITLE = "Mijn foto's";
 
 type Filter = "all" | "loose";
 const FILTERS = [
@@ -147,21 +161,85 @@ function MyPhotosContent() {
       return next;
     });
   const listState = useMemo(() => ({ selecting, picked, ctx }), [selecting, picked, ctx]);
+  const { title, cancelDisabled } = useSelectionHeader({ count: selected.length, busy: selectionBusy, active: selecting });
 
   const columns = columnsFor(width);
   const tile = Math.floor((width - GAP * (columns - 1)) / columns);
   const loading = photos === undefined || me === undefined;
   const hasPhotos = !!photos && photos.length > 0;
+  // WP35 W5: op het web geen selectie (alleen bekijken), en dus geen andere kop.
+  const canSelect = !READ_ONLY && ctx !== undefined && hasPhotos;
+  const startSelecting = useCallback(() => {
+    setFeedback(null);
+    setSelecting(true);
+  }, []);
+  // N2: na Annuleren gaat de focus van VoiceOver terug naar "Selecteer". De
+  // titel in de iOS-kop kan geen focus krijgen; die wordt voorgelezen.
+  const selectButton = useRef<HostInstance>(null);
+  const focusSelectNext = useRef(false);
+  const cancelSelecting = useCallback(() => {
+    focusSelectNext.current = true;
+    stopSelecting();
+  }, [stopSelecting]);
+  // WP40 gate ronde 1: geen tabbalk tijdens de selectie (G1, G5). Uit beeld
+  // stopt de selectie (G3): het nieuwe scherm heeft dan gewoon een tabbalk, en
+  // een lopende actie maakt haar ronde af. Een Modal (het kiesscherm), een
+  // bevestiging of het actiemenu halen het scherm niet uit beeld.
+  const inView = useIsFocused();
+  useHideTabBar(selecting && inView);
+  // Gate ronde 2 (H1–H5): de selectiebalk wisselt met de tabbalk.
+  const bottom = useSelectionBottom(selecting);
+  useEffect(() => {
+    if (inView || !selecting) return;
+    setChoosing(false);
+    stopSelecting();
+  }, [inView, selecting, stopSelecting]);
+  useEffect(() => {
+    if (selecting || !focusSelectNext.current) return;
+    focusSelectNext.current = false;
+    focusLater(selectButton);
+  }, [selecting]);
+  // Gate ronde 2 (H12, H13): een eigen titel in de iOS-kop, die zacht wisselt,
+  // ook van "Mijn foto's" naar "Kies foto's". `title` blijft voor de terugknop
+  // op het foto-detail.
+  const headerOptions = useMemo(() => {
+    if (selecting) {
+      return {
+        title,
+        headerTitle: () => <SelectionNavTitle title={title} />,
+        headerRight: () => <HeaderTextButton title="Annuleren" onPress={cancelSelecting} disabled={cancelDisabled} />,
+      };
+    }
+    return {
+      title: MY_PHOTOS_TITLE,
+      headerTitle: () => <SelectionNavTitle title={MY_PHOTOS_TITLE} />,
+      headerRight: canSelect
+        ? () => <HeaderTextButton ref={selectButton} title="Selecteer" onPress={startSelecting} />
+        : undefined,
+    };
+  }, [selecting, title, cancelDisabled, canSelect, cancelSelecting, startSelecting]);
+  // Verdwijnt de inhoud (bv. "reconnecting"), dan de kop van gewoon Mijn foto's:
+  // de opties blijven anders op het scherm staan.
+  const navigation = useNavigation();
+  useEffect(
+    () => () => {
+      if (!READ_ONLY) navigation.setOptions({ title: MY_PHOTOS_TITLE, headerTitle: undefined, headerRight: undefined });
+    },
+    [navigation],
+  );
 
   return (
     <SafeAreaView edges={["left", "right"]} style={[styles.fill, { backgroundColor: colors.bg }]}>
+      {READ_ONLY ? null : <Stack.Screen options={headerOptions} />}
       <FlatList
         key={columns}
         data={loading ? [] : photos}
         numColumns={columns}
         keyExtractor={(p) => p._id}
         columnWrapperStyle={columns > 1 ? { gap: GAP } : undefined}
-        contentContainerStyle={styles.list}
+        // Gate ronde 2: ruimte voor de selectiebalk, die over de lijst ligt.
+        contentContainerStyle={[styles.list, bottom.barSpace > 0 && { paddingBottom: space.xxl + bottom.barSpace }]}
+        scrollIndicatorInsets={{ bottom: bottom.barSpace }}
         ItemSeparatorComponent={Separator}
         extraData={listState}
         onEndReached={list.loadMore}
@@ -179,19 +257,6 @@ function MyPhotosContent() {
                 setFilter(key);
               }}
             />
-            {/* WP35 W5: op het web geen selectie (alleen bekijken). */}
-            {!READ_ONLY && !selecting && ctx && hasPhotos ? (
-              <View style={styles.barRow}>
-                <SmallButton
-                  title="Selecteer"
-                  icon="check"
-                  onPress={() => {
-                    setFeedback(null);
-                    setSelecting(true);
-                  }}
-                />
-              </View>
-            ) : null}
           </View>
         }
         ListEmptyComponent={
@@ -235,15 +300,8 @@ function MyPhotosContent() {
           runSelection("addToAlbum", selected, target);
         }}
       />
-      {selecting ? (
-        <SelectionBar
-          count={selected.length}
-          busy={selectionBusy}
-          onAddToAlbum={() => setChoosing(true)}
-          onDelete={() => runSelection("delete", selected)}
-          onCancel={stopSelecting}
-        />
-      ) : (
+      {/* H4: de melding pas als de tabbalk weer op zijn plek staat. */}
+      {bottom.panelFree ? (
         menu.sharing ? (
           <BottomPanel>
             <SharingProgress />
@@ -255,7 +313,15 @@ function MyPhotosContent() {
             </BottomPanel>
           )
         )
-      )}
+      ) : null}
+      <SelectionBarSwap bottom={bottom}>
+        <SelectionBar
+          place="mine"
+          count={selected.length}
+          busy={selectionBusy}
+          onAction={(a) => (a === "addToAlbum" ? setChoosing(true) : runSelection(a, selected))}
+        />
+      </SelectionBarSwap>
     </SafeAreaView>
   );
 }
@@ -270,41 +336,6 @@ export function menuPhotoOf(photo: MyPhoto): MenuPhoto {
     exifOrientation: photo.exifOrientation,
     isVideo: photo.video !== undefined,
   };
-}
-
-function SelectionBar({
-  count,
-  busy,
-  onAddToAlbum,
-  onDelete,
-  onCancel,
-}: {
-  count: number;
-  busy: boolean;
-  onAddToAlbum: () => void;
-  onDelete: () => void;
-  onCancel: () => void;
-}) {
-  const none = count === 0;
-  const status = busy ? "Bezig…" : none ? "Tik op foto's om ze te kiezen" : `${count} geselecteerd`;
-  return (
-    <BottomPanel>
-      <Text variant="bodyStrong" accessibilityLiveRegion="polite">
-        {status}
-      </Text>
-      <View style={styles.barRow}>
-        <SmallButton
-          title="Naar album"
-          icon="plus"
-          accessibilityLabel="Toevoegen aan album"
-          onPress={onAddToAlbum}
-          disabled={none || busy}
-        />
-        <SmallButton title="Verwijderen" icon="trash" tone="danger" onPress={onDelete} disabled={none || busy} />
-        <SmallButton title="Annuleren" onPress={onCancel} disabled={busy} />
-      </View>
-    </BottomPanel>
-  );
 }
 
 function Separator() {
@@ -327,6 +358,8 @@ function MyTile({
   // WP33 B2 (besluit 5): de tegel krimpt en wordt iets donkerder, ook tijdens
   // selecteren en bij lang drukken.
   const press = usePressMotion("tile");
+  // WP40 gate ronde 2 (H8–H11): hetzelfde vinkje en krimpen als in het album.
+  const select = useSelectMotion(selected);
   return (
     <AnimatedPressable
       accessibilityRole="button"
@@ -339,24 +372,29 @@ function MyTile({
       onAccessibilityAction={(e) => {
         if (e.nativeEvent.actionName === "menu") onMenu?.();
       }}
-      onPress={press.withRelease(onPress)}
+      onPress={press.withRelease(() => {
+        select.tap();
+        onPress();
+      })}
       onLongPress={onMenu}
       onPressIn={press.onPressIn}
       onPressOut={press.onPressOut}
       style={[{ width: tile, height: tile }, press.style]}
     >
-      <PhotoImage
-        photoId={photo._id as Id<"photos">}
-        format="klein"
-        exifOrientation={photo.exifOrientation}
-        hasFormats={photo.hasFormats}
-        box={{ width: tile, height: tile }}
-        retryPress={press}
-      />
-      {/* WP37 besluit B8: filmpjes ook in Mijn foto's, met dezelfde tegel. */}
-      {photo.video && <VideoBadge durationMs={photo.video.durationMs} />}
-      {selected !== undefined && <SelectMark selected={selected} />}
-      <PressShade style={press.shadeStyle} />
+      <Animated.View style={[{ width: tile, height: tile }, select.tileStyle]}>
+        <PhotoImage
+          photoId={photo._id as Id<"photos">}
+          format="klein"
+          exifOrientation={photo.exifOrientation}
+          hasFormats={photo.hasFormats}
+          box={{ width: tile, height: tile }}
+          retryPress={press}
+        />
+        {/* WP37 besluit B8: filmpjes ook in Mijn foto's, met dezelfde tegel. */}
+        {photo.video && <VideoBadge durationMs={photo.video.durationMs} />}
+        {selected !== undefined && <SelectMark motion={select} />}
+        <PressShade style={press.shadeStyle} />
+      </Animated.View>
     </AnimatedPressable>
   );
 }
@@ -371,5 +409,4 @@ const styles = StyleSheet.create({
     paddingHorizontal: size.screenMargin,
   },
   header: { paddingVertical: space.l, gap: space.m },
-  barRow: { flexDirection: "row", flexWrap: "wrap", gap: space.s },
 });
