@@ -221,7 +221,7 @@ Build `wp39-dev`. Bevindingen:
 - **F5. Kiesscherm.** Groepen als kopjes in de volgorde van Mijn groepen, albums in de volgorde van het groepsscherm, met omslag (of letter) en naam, en een vinkje bij het gekozen album. Een groep zonder albums valt weg; zonder groepen de bestaande uitleg. Een album kiezen sluit het kiesscherm en vult de rij. Annuleren laat het album zoals het was. Tijdens en na een ronde is de rij niet te tikken.
 - **F6. Knop onderin.** Met een album: "Toevoegen aan album". Zonder album: grijs, "Kies eerst een album". Nog onbekend (F4): uit, met "Toevoegen aan album".
 - **F7. Stoppen.** Zie A-antwoord 2. "Stoppen" staat meteen bij "Je keuze ophalen…". De uitleg en de teller staan in F11.
-- **F8. Wachten op de vorige kiezer.** Zie A-antwoord 3. De regel: "Je vorige keuze wordt nog opgehaald. Daarna kun je weer selecteren." "Toevoegen aan album" met de keuze die er staat, kan wel.
+- **F8. Na "Stoppen" meteen weer kiezen** (gate ronde 2, vervangt het wachten). Een gestopt verzoek blokkeert geen nieuwe kiezer: "Kiezen" en "Meer selecteren" (ook na een ronde) werken meteen weer, zonder wachtregel. "Eén kiezer tegelijk" geldt alleen voor een verzoek waar het scherm nog op wacht. Een laat resultaat van een gestopt verzoek telt niet, ook niet als er intussen een nieuwer verzoek loopt of al klaar is; het verstoort dat nieuwere niet, en de kopieën gaan weg (F7). Meerdere gestopte verzoeken kunnen tegelijk nog kopiëren; dat is de prijs.
 - **F9. "Meer selecteren"** op alle drie de plekken (bij het aantal, `RoundResult`, `VideoRoundResult`).
 - **F10. Bestaande regels blijven.** `pickFetching.test.ts` (de ophaal-state rond de kiezer, met een `finally`) en de andere bronscans van A-invariant 13 hierboven.
 
@@ -251,7 +251,7 @@ Build `wp39-dev`. Bevindingen:
 
 > Volgt de aanbevelingen; wijkt een besluit af, dan past A de tests aan vóór B begint.
 
-- **`app/src/lib/pickSession.ts`** (puur): `PICK_IDLE`; `beginPick(state)` geeft `{ state, token }`, of `null` zolang een vorig verzoek loopt; `stopPick(state)`; `endPick(state, token)` geeft `{ state, accept }` (`accept`: het resultaat telt); `pickView(state)` geeft `{ fetching, waiting, canPick }` ("Je keuze ophalen…" met "Stoppen", de wachtregel van F8, een kiezer mag openen).
+- **`app/src/lib/pickSession.ts`** (puur): `PICK_IDLE`; `beginPick(state)` geeft `{ state, token }`, of `null` zolang het scherm op een vorig verzoek wacht (niet na "Stoppen", F8); `stopPick(state)`; `endPick(state, token)` geeft `{ state, accept }` (`accept`: het resultaat telt); `pickView(state)` geeft `{ fetching, canPick }` ("Je keuze ophalen…" met "Stoppen", een kiezer mag openen); geen wachtregel meer (F8).
 - **`app/src/lib/lastAlbum.ts`** (puur): `lastAlbumChoice({ stored, myGroups, albumsOf })` geeft `{ kind: "album", album: { albumId, groupId, label } }`, `{ kind: "none", forget }` of `{ kind: "unknown" }`. `stored` is `undefined` (nog niet gelezen), `null` of `{ albumId, groupId }`; `albumsOf(groupId)` geeft de albums van die groep, of `undefined` zolang ze laden.
 - **`addButton(album)`** in `app/src/lib/addSelection.ts`, met `album` `"chosen" | "none" | "unknown"`: `{ title, action }`, met `action` `"toevoegen"`, `"kies-album"` (besluit 7) of `null` (uit).
 - **`app/src/data/lastAlbum.ts`** (iOS, keychain) en een web-variant zonder keychain: `loadLastAlbum(userId)`, `saveLastAlbum(userId, { albumId, groupId })`, `forgetLastAlbum(userId, albumId)`, `clearLastAlbum(userId)`. `signOutAndWipe` roept `clearLastAlbum(deletedUserId)` aan, net als `clearLastGroup`.
