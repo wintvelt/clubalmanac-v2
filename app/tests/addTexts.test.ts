@@ -114,7 +114,7 @@ describe("het scherm op iOS zegt foto's én filmpjes (besluit 1 en 3)", () => {
     },
   );
 
-  it.each(["Kies foto's of filmpjes", "Meer selecteren", "Toevoegen aan album", "Kies eerst een album", "Kies een album", "Stoppen"])("wel '%s'", (text) => {
+  it.each(["Kies foto's of filmpjes", "Meer selecteren", "Toevoegen aan album", "Kies eerst een album", "Kies een album", "Stoppen", "Langere filmpjes en/of hogere kwaliteit kan een paar minuten duren."])("wel '%s'", (text) => {
     expect(both).toContain(text);
   });
 });
@@ -173,5 +173,52 @@ describe("de uploadknop: 'Toevoegen aan album' met een upload-icoon (besluit 1)"
     });
     expect(keys.length, "sanity: IONICONS in Icon.tsx").toBeGreaterThan(0);
     expect(keys).toContain("upload");
+  });
+});
+
+describe("de kiezer: Current en Passthrough expliciet (aanvulling fixronde gate 1)", () => {
+  // De native standaard van expo-image-picker 58 is al `current` en
+  // `passthrough`; de documentatie noemt `Automatic`. Expliciet, zodat een
+  // upgrade het niet ongemerkt verandert: geen omzetten tijdens het ophalen,
+  // de snelle kopie van foto's, en het origineel met datum en plaats (WP37).
+  function launchOptions(): ts.ObjectLiteralExpression | undefined {
+    let found: ts.ObjectLiteralExpression | undefined;
+    walk(IOS, (n) => {
+      if (
+        ts.isCallExpression(n) &&
+        ts.isPropertyAccessExpression(n.expression) &&
+        n.expression.name.text === "launchImageLibraryAsync" &&
+        n.arguments[0] !== undefined &&
+        ts.isObjectLiteralExpression(n.arguments[0])
+      ) {
+        found = n.arguments[0];
+      }
+    });
+    return found;
+  }
+
+  function option(name: string): string | undefined {
+    const obj = launchOptions();
+    const prop = obj?.properties.find(
+      (p): p is ts.PropertyAssignment => ts.isPropertyAssignment(p) && p.name.getText(IOS) === name,
+    );
+    return prop?.initializer.getText(IOS);
+  }
+
+  it("sanity: launchImageLibraryAsync met een object", () => {
+    expect(launchOptions()).toBeDefined();
+  });
+
+  it("preferredAssetRepresentationMode: Current", () => {
+    expect(option("preferredAssetRepresentationMode") ?? "").toMatch(/UIImagePickerPreferredAssetRepresentationMode\.Current\b|^["']current["']$/);
+  });
+
+  it("videoExportPreset: Passthrough", () => {
+    expect(option("videoExportPreset") ?? "").toMatch(/VideoExportPreset\.Passthrough\b|^0$/);
+  });
+
+  it("de rest blijft: quality 1 (de snelle kopie van foto's) en exif", () => {
+    expect(option("quality")).toBe("1");
+    expect(option("exif")).toBe("true");
   });
 });
