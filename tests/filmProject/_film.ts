@@ -51,8 +51,12 @@ export const MIN_ORIGINAL_BYTES_ORACLE = 1 * MIB;
 export const ORIGINAL_CALLS_PER_DAY_ORACLE = 600;
 /** Fix-cyclus 2 (regie): hooguit 30 inzendingen per lid tegelijk onderweg (daarboven `bezig`). */
 export const OPEN_ORIGINALS_PER_MEMBER_ORACLE = 30;
-/** Fix-cyclus 2 (regie): de afrond-cron kijkt alleen inzendingen na met deel-links van de laatste 7 dagen. */
-export const CRON_LINK_WINDOW_MS_ORACLE = 7 * 24 * 60 * 60 * 1000;
+/**
+ * Fix-cyclus 2 (regie): de afrond-cron kijkt alleen inzendingen na met
+ * deel-links van de laatste 7 dagen plus 1 dag (een deel dat op het laatste
+ * moment van zijn link binnenkomt, rondt de cron nog af).
+ */
+export const CRON_LINK_WINDOW_MS_ORACLE = (7 + 1) * 24 * 60 * 60 * 1000;
 
 /**
  * Een iPhone-achtige QuickTime-opname (`qt  `) met `©xyz` en `location.ISO6709`

@@ -253,7 +253,8 @@ describe("binnen pas als het heel is (invariant 5, A-invariant 5)", () => {
     const w = await seedFilmWorld(t);
     const projectId = await openProject(t, w);
     const photoId = await newVideoInX(t, env.r2, w, w.users.bob);
-    // Aangevuld tot boven de ondergrens van 5 MiB: het merk is de reden, niet de grootte.
+    // Aangevuld tot ruim boven de ondergrens van 1 MiB en tot meer dan één
+    // deel van R2 (5 MiB): het merk is de reden, niet de grootte.
     const jpeg = padTo(POSTER, 6 * MIB);
     const s = await announce(asFilm.bob(t), photoId, jpeg.byteLength);
     expect(await env.orig.putPart(s.parts[0]!.url, jpeg)).toBe(200);
@@ -262,6 +263,25 @@ describe("binnen pas als het heel is (invariant 5, A-invariant 5)", () => {
     expect((await asFilm.alice(t).query(filmApi.get, { projectId })).originals).toEqual([]);
     // Het filmpje in het album blijft (het hangt niet op het origineel).
     expect(await t.run(async (ctx) => ctx.db.get(photoId))).not.toBeNull();
+  });
+
+  // Fix-cyclus 2, punt 1: weg om een andere reden markeert niet. Na
+  // `geen_video` kan hetzelfde filmpje opnieuw, nu met het echte bestand.
+  it("na geen_video kan hetzelfde filmpje opnieuw worden aangemeld, en komt dan binnen", async () => {
+    const t = newT();
+    const w = await seedFilmWorld(t);
+    const projectId = await openProject(t, w);
+    const photoId = await newVideoInX(t, env.r2, w, w.users.bob);
+    const jpeg = padTo(POSTER, 6 * MIB);
+    const s = await announce(asFilm.bob(t), photoId, jpeg.byteLength);
+    expect(await env.orig.putPart(s.parts[0]!.url, jpeg)).toBe(200);
+    expectOriginalRefusal(await outcome(() => asFilm.bob(t).action(filmApi.finishOriginal, { originalId: s.originalId })), "geen_video");
+
+    const again = await announce(asFilm.bob(t), photoId, ORIGINAL.byteLength);
+    expect(again.parts.map((p) => p.partNumber)).toEqual([1]);
+    expect(await env.orig.putPart(again.parts[0]!.url, ORIGINAL)).toBe(200);
+    expect(await asFilm.bob(t).action(filmApi.finishOriginal, { originalId: again.originalId })).toEqual({ kind: "done" });
+    expect(await statusOf(t, projectId, again.originalId)).toBe("binnen");
   });
 
   it("de backend rondt zelf af wat helemaal binnen is, zonder de app (A-invariant 9)", async () => {
@@ -421,8 +441,10 @@ describe("grenzen (besluit 11, A-invariant 15)", () => {
 
 // B-keuze, door A bevestigd: opnieuw aanmelden met een andere grootte is een
 // ander bestand. De backend weigert (`niet_toegestaan`) en laat de inzending
-// zoals hij is; de app trekt eerst terug als hij echt iets anders wil sturen.
-// Zo kunnen delen van twee bestanden nooit in één origineel belanden.
+// zoals hij is. Zo kunnen delen van twee bestanden nooit in één origineel
+// belanden. Terugtrekken en opnieuw insturen kan niet: na terugtrekken neemt
+// de backend voor dat filmpje geen origineel meer aan (fix-cyclus 2, punt 1).
+// De app stuurt dus precies het bestand dat hij aanmeldde (38b).
 describe("opnieuw aanmelden met een andere grootte", () => {
   it("niet_toegestaan; de inzending, de upload en de delen blijven; met de oude grootte gaat het verder", async () => {
     const t = newT();
@@ -600,13 +622,15 @@ describe("inzendingen onderweg per lid (fix-cyclus 2)", () => {
 });
 
 // Fix-cyclus 2 (regie, red-team Z2): de uurlijkse afrond-cron kijkt alleen
-// inzendingen na waarvoor `startOriginal` in de laatste 7 dagen deel-links gaf.
-// Daarna kan er zonder nieuwe aanmelding niets meer binnenkomen (een link
-// geldt 7 dagen). De app rondt zelf altijd af.
+// inzendingen na waarvoor `startOriginal` in de laatste 7 dagen plus 1 dag
+// deel-links gaf. Een link geldt 7 dagen; de dag erbij vangt een deel dat op
+// het laatste moment binnenkwam. Daarna kan er zonder nieuwe aanmelding niets
+// meer binnenkomen. De app rondt zelf altijd af. De grens precies op 8 dagen
+// ligt bij B; de tests liggen op 7 dagen en 22 uur (wel) en 9 dagen (niet).
 describe("de afrond-cron en oude links (fix-cyclus 2)", () => {
   const DAY = 24 * 60 * MINUTE_MS;
 
-  it("8 dagen na de laatste links: de cron doet niets in R2 voor die inzending; de app rondt wel af", async () => {
+  it("9 dagen na de laatste links: de cron doet niets in R2 voor die inzending; de app rondt wel af", async () => {
     const t = newT();
     const w = await seedFilmWorld(t);
     const projectId = await openProject(t, w, 30 * DAY);
@@ -621,6 +645,19 @@ describe("de afrond-cron en oude links (fix-cyclus 2)", () => {
     expect(await statusOf(t, projectId, s.originalId)).toBe("onderweg");
 
     expect(await asFilm.bob(t).action(filmApi.finishOriginal, { originalId: s.originalId })).toEqual({ kind: "done" });
+    expect(await statusOf(t, projectId, s.originalId)).toBe("binnen");
+  });
+
+  it("7 dagen en 22 uur na de links, een deel op het laatste moment van zijn link: de cron rondt nog af", async () => {
+    const t = newT();
+    const w = await seedFilmWorld(t);
+    const projectId = await openProject(t, w, 30 * DAY);
+    const photoId = await newVideoInX(t, env.r2, w, w.users.bob);
+    const s = await announce(asFilm.bob(t), photoId, ORIGINAL.byteLength);
+    advance(7 * DAY - MINUTE_MS);
+    expect(await env.orig.putPart(s.parts[0]!.url, ORIGINAL)).toBe(200);
+    advance(22 * 60 * MINUTE_MS + MINUTE_MS);
+    await t.action(filmInternal.completeUploaded, {});
     expect(await statusOf(t, projectId, s.originalId)).toBe("binnen");
   });
 
