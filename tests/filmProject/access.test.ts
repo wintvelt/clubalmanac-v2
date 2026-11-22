@@ -1,0 +1,171 @@
+import { describe, expect, it } from "vitest";
+import { api } from "../../convex/_generated/api";
+import { newT, parseR2Link, r2SignatureProblem } from "../videos/_videos";
+import {
+  announce,
+  asFilm,
+  DOWNLOAD_LINK_SECONDS_ORACLE,
+  expectCode,
+  filmApi,
+  newVideoInX,
+  openProject,
+  ORIGINAL,
+  ORIGINALS_BUCKET,
+  outcome,
+  seedFilmWorld,
+  sendOriginal,
+  useFilmEnv,
+} from "./_film";
+
+// WP38a — wie ziet wat (invariant 1, 3; besluit 7, 8; A-invariant 7, 8).
+//   - De lijst en de poster: alleen leden van de groep van het project. Van
+//     anderen alleen wat binnen is; eigen inzendingen altijd; de oprichter
+//     ziet alles. Geen sleutel, upload-id of link in het antwoord.
+//   - De poster via een eigen beeldpad (`/beeld/inzending/<id>`), ook als het
+//     filmpje uit het filmalbum is gehaald. Geen afspeellink.
+//   - Downloaden: alleen de oprichter (op het moment van het verzoek), alleen
+//     wat binnen is; een GET van 1 uur met `attachment` en een bestandsnaam
+//     met datum en inzender. Iedereen anders: ORIGINAL_NOT_FOUND.
+// Spec: docs/work-packages/WP38-filmproject-originelen.md §A-invarianten.
+
+const env = useFilmEnv();
+
+describe("de projectpagina (get)", () => {
+  it("van een ander alleen wat binnen is; eigen inzendingen altijd; de oprichter ziet alles", async () => {
+    const t = newT();
+    const w = await seedFilmWorld(t);
+    const projectId = await openProject(t, w);
+    const photoId = await newVideoInX(t, env.r2, w, w.users.bob, { takenAt: Date.UTC(2026, 10, 3, 14, 22), durationMs: 4200 });
+    const s = await announce(asFilm.bob(t), photoId, ORIGINAL.byteLength);
+
+    expect((await asFilm.erik(t).query(filmApi.get, { projectId })).originals).toEqual([]);
+    const own = (await asFilm.bob(t).query(filmApi.get, { projectId })).originals;
+    expect(own).toHaveLength(1);
+    expect(own[0]).toMatchObject({ originalId: s.originalId, mine: true, status: "onderweg", ownerName: "Bob" });
+    const founder = (await asFilm.alice(t).query(filmApi.get, { projectId })).originals;
+    expect(founder.map((o) => o.status)).toEqual(["onderweg"]);
+    expect(founder[0]!.mine).toBe(false);
+
+    expect(await env.orig.putPart(s.parts[0]!.url, ORIGINAL)).toBe(200);
+    expect(await asFilm.bob(t).action(filmApi.finishOriginal, { originalId: s.originalId })).toEqual({ kind: "done" });
+    const seen = (await asFilm.erik(t).query(filmApi.get, { projectId })).originals;
+    expect(seen).toHaveLength(1);
+    expect(seen[0]).toMatchObject({
+      originalId: s.originalId,
+      ownerName: "Bob",
+      mine: false,
+      status: "binnen",
+      durationMs: 4200,
+      takenAt: Date.UTC(2026, 10, 3, 14, 22),
+    });
+    expect(typeof seen[0]!.submittedAt).toBe("number");
+  });
+
+  it("het antwoord bevat geen sleutel, upload-id, bucket of link", async () => {
+    const t = newT();
+    const w = await seedFilmWorld(t);
+    const projectId = await openProject(t, w);
+    const photoId = await newVideoInX(t, env.r2, w, w.users.bob);
+    const s = await announce(asFilm.bob(t), photoId, ORIGINAL.byteLength);
+    const link = parseR2Link(s.parts[0]!.url);
+    for (const who of [asFilm.alice, asFilm.bob]) {
+      const text = JSON.stringify(await who(t).query(filmApi.get, { projectId }));
+      expect(text).not.toContain(link.key);
+      expect(text).not.toContain(link.params.uploadId!);
+      expect(text).not.toContain(ORIGINALS_BUCKET);
+      expect(text).not.toContain("X-Amz");
+    }
+  });
+});
+
+describe("de poster (GET /beeld/inzending/<id>)", () => {
+  it("een lid krijgt de poster, ook als het filmpje uit X is gehaald; wie geen lid is 404, uitgelogd 401", async () => {
+    const t = newT();
+    const w = await seedFilmWorld(t);
+    await openProject(t, w);
+    const photoId = await newVideoInX(t, env.r2, w, w.users.bob);
+    const originalId = await sendOriginal(asFilm.bob(t), env.orig, photoId);
+    const path = `/beeld/inzending/${originalId}?formaat=klein`;
+
+    const ok = await asFilm.erik(t).fetch(path);
+    expect(ok.status).toBe(200);
+    expect(ok.headers.get("Content-Type")).toBe("image/jpeg");
+    expect((await asFilm.carol(t).fetch(path)).status).toBe(404);
+    expect((await asFilm.dave(t).fetch(path)).status).toBe(404);
+    expect((await asFilm.wm(t).fetch(path)).status).toBe(404);
+    expect((await t.fetch(path)).status).toBe(401);
+    expect((await asFilm.erik(t).fetch(`/beeld/inzending/onbekend?formaat=klein`)).status).toBe(404);
+
+    // "Uit album" (besluit 4): het beeldpad van de foto laat erik niet meer toe, dat van de inzending wel.
+    await asFilm.bob(t).mutation(api.albums.removePhoto, { albumId: w.albums.georgie, photoId });
+    expect((await asFilm.erik(t).fetch(`/beeld/foto/${photoId}?formaat=klein`)).status).toBe(404);
+    expect((await asFilm.erik(t).fetch(path)).status).toBe(200);
+  });
+});
+
+describe("downloaden (besluit 8, A-invariant 8)", () => {
+  it("de oprichter krijgt een GET van 1 uur op precies het origineel, als bijlage met datum en naam", async () => {
+    const t = newT();
+    const w = await seedFilmWorld(t);
+    await openProject(t, w);
+    const photoId = await newVideoInX(t, env.r2, w, w.users.bob, { takenAt: Date.UTC(2026, 10, 3, 14, 22) });
+    const originalId = await sendOriginal(asFilm.bob(t), env.orig, photoId);
+    const { url, expiresAt } = await asFilm.alice(t).action(filmApi.downloadUrl, { originalId });
+    const link = parseR2Link(url);
+    expect(link.bucket).toBe(ORIGINALS_BUCKET);
+    expect(env.orig.keys()).toEqual([link.key]);
+    expect(await r2SignatureProblem(link, "GET")).toBeNull();
+    expect(link.expiresS).toBe(DOWNLOAD_LINK_SECONDS_ORACLE);
+    expect(expiresAt).toBe(link.dateMs + DOWNLOAD_LINK_SECONDS_ORACLE * 1000);
+    const disposition = link.params["response-content-disposition"] ?? "";
+    expect(disposition).toMatch(/^attachment/);
+    expect(disposition).toContain("2026-11-03");
+    expect(disposition).toContain("Bob");
+    expect(disposition.toLowerCase()).toContain(".mov");
+  });
+
+  it("de inzender zelf, een admin, een lid, de webmaster en wie geen lid is: ORIGINAL_NOT_FOUND", async () => {
+    const t = newT();
+    const w = await seedFilmWorld(t);
+    await openProject(t, w);
+    const photoId = await newVideoInX(t, env.r2, w, w.users.bob);
+    const originalId = await sendOriginal(asFilm.bob(t), env.orig, photoId);
+    for (const who of [asFilm.bob, asFilm.erik, asFilm.wm, asFilm.carol, asFilm.dave]) {
+      expectCode(await outcome(() => who(t).action(filmApi.downloadUrl, { originalId })), "ORIGINAL_NOT_FOUND");
+    }
+    expectCode(await outcome(() => t.action(filmApi.downloadUrl, { originalId })), "ORIGINAL_NOT_FOUND");
+  });
+
+  it("een origineel dat nog onderweg is: ook voor de oprichter ORIGINAL_NOT_FOUND", async () => {
+    const t = newT();
+    const w = await seedFilmWorld(t);
+    await openProject(t, w);
+    const photoId = await newVideoInX(t, env.r2, w, w.users.bob);
+    const s = await announce(asFilm.bob(t), photoId, ORIGINAL.byteLength);
+    expectCode(await outcome(() => asFilm.alice(t).action(filmApi.downloadUrl, { originalId: s.originalId })), "ORIGINAL_NOT_FOUND");
+  });
+
+  it("na overdragen downloadt de nieuwe oprichter; de oude niet meer", async () => {
+    const t = newT();
+    const w = await seedFilmWorld(t);
+    await openProject(t, w);
+    const photoId = await newVideoInX(t, env.r2, w, w.users.bob);
+    const originalId = await sendOriginal(asFilm.bob(t), env.orig, photoId);
+    await asFilm.alice(t).mutation(api.groups.transferFounder, { groupId: w.groups.reis, userId: w.users.erik });
+    expectCode(await outcome(() => asFilm.alice(t).action(filmApi.downloadUrl, { originalId })), "ORIGINAL_NOT_FOUND");
+    const { url } = await asFilm.erik(t).action(filmApi.downloadUrl, { originalId });
+    expect(parseR2Link(url).bucket).toBe(ORIGINALS_BUCKET);
+  });
+
+  it("toegang vóór config: zonder R2_ORIGINALS_BUCKET krijgt een lid toch ORIGINAL_NOT_FOUND", async () => {
+    const t = newT();
+    const w = await seedFilmWorld(t);
+    await openProject(t, w);
+    const photoId = await newVideoInX(t, env.r2, w, w.users.bob);
+    const originalId = await sendOriginal(asFilm.bob(t), env.orig, photoId);
+    delete process.env.R2_ORIGINALS_BUCKET;
+    expectCode(await outcome(() => asFilm.bob(t).action(filmApi.downloadUrl, { originalId })), "ORIGINAL_NOT_FOUND");
+    const o = await outcome(() => asFilm.alice(t).action(filmApi.downloadUrl, { originalId }));
+    expect("err" in o && o.err.message.includes("R2_CONFIG_MISSING")).toBe(true);
+  });
+});
