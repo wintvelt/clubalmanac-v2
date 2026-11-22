@@ -96,7 +96,7 @@ Het smalste toestel in gebruik is 375 pt breed (iPhone SE, mini). Min de schermm
 - **Brede layout (liggende iPad).** Daar staat de omslag in de zijkolom, niet in de lijst. Er valt dus niets in te klappen en het raster blijft staan. Een kop over het raster zou de eerste rij bedekken, want het raster heeft daar maar 22 pt ruimte boven. Aanbeveling: aantal en Annuleren bovenin de zijkolom, op de plek van de pil "Groep" (A8).
 - **Er is geen icoon voor "Uit album".** `Icon` heeft er geen. `logout` ("exit") betekent uitloggen, dus niet hergebruiken. "Naar album" gebruikt nu de +, het teken van "Toevoegen" in de tabbalk. Een eigen icoon is duidelijker. Dat is aan B, de gate kijkt mee.
 - **Het filter in het album (Alle, Foto's, Video's) houdt de selectie vast.** Kies je 3 foto's en schakel je naar "Video's", dan blijven ze gekozen en werkt "Verwijderen" op foto's die je niet ziet. In Mijn foto's stopt de selectie wel bij een wissel van "Alle" naar "Niet in een album". Zo werkt het sinds WP37 en WP17c, en WP40 verandert het niet (invariant 1). Het filter scrolt in de selectiestand wel uit beeld, dus de kans wordt kleiner. Zie besluit 4.
-- **Liggende iPhone:** geen statusbalk, maar een kop van 44 pt, de balk van 50 pt en de tabbalk samen laten op een hoogte van 390 pt ongeveer 200 pt over voor het raster. Dat is een gate-check en hangt samen met besluit 1.
+- **Liggende iPhone:** geen statusbalk, maar een kop van 44 pt, de balk van 50 pt en de tabbalk samen laten op een hoogte van 390 pt ongeveer 200 pt over voor het raster. Dat is een gate-check. Sinds gate ronde 1 is de tabbalk weg tijdens de selectie, dus er blijft meer over (G2).
 - **Bestaande bronscans** die B moet laten staan: `photoMenuPlace.test.ts` en `shareBusy.test.ts` (welke schermen `usePhotoMenu(` en `.hasActions(` gebruiken), `addTexts.test.ts` ("Toevoegen" in `AlbumScreen.tsx`; "Kies foto's" mag niet voorkomen in `AddPhotosScreen*`, `AddPhotosParts`, `lib/addSelection.ts` en `AlbumChoice.tsx`, dus de titel "Kies foto's" hoort daar niet) en `videos.test.ts` (`mediaCountText(` in `AlbumScreen.tsx`).
 
 ### A-invarianten
@@ -106,11 +106,11 @@ Het smalste toestel in gebruik is 375 pt breed (iPhone SE, mini). Min de schermm
 3. **Selecteer in het album.** Het raster scrolt tot het direct onder de kop begint, of zo ver als de lijst kan. Wie al zo ver of verder stond, ziet niets bewegen.
 4. **Terug uit de selectie** (Annuleren, of het einde van een actie). Heb je tijdens de selectie niet zelf gescrold, dan gaat de lijst terug naar waar hij stond vóór Selecteer, en is de omslag weer in beeld. Heb je wel gescrold, dan blijft het raster staan.
 5. **Geen sprong door de knoppenrij.** Dat de rij met Selecteer, Kaart en Bewerk album verdwijnt en terugkomt, verplaatst de foto's in beeld niet. In het album geldt dat ook na terug uit de selectie, als je naar beneden had gescrold.
-6. **De balk.** Eén rij met per knop een icoon en een label, alle knoppen even breed, ongeveer 50 pt hoog, boven de tabbalk (die blijft, zie besluit 1). Op een iPhone van 375 pt passen drie knoppen bij elke tekstgrootte tot en met xxxLarge: het label groeit hoogstens 1,2× mee, wordt niet afgekapt en breekt niet af. Elk tikvlak is minstens 44 × 44 pt. Geen uitlegregel en geen Annuleren in de balk.
+6. **De balk.** Eén rij met per knop een icoon en een label, alle knoppen even breed, ongeveer 50 pt hoog. Sinds gate ronde 1 staat hij op de plek van de tabbalk, boven de thuisbalk (G1). Op een iPhone van 375 pt passen drie knoppen bij elke tekstgrootte tot en met xxxLarge: het label groeit hoogstens 1,2× mee, wordt niet afgekapt en breekt niet af. Elk tikvlak is minstens 44 × 44 pt. Geen uitlegregel en geen Annuleren in de balk.
 7. **VoiceOver.** Knopnamen met het aantal: "Naar album, 3 foto's", "Uit album, 1 foto", "Verwijderen, 3 foto's". Bij nul alleen "Naar album", en VoiceOver zegt "gedimd". Bij elke verandering van de titel (aantal of "Bezig…") meldt de app de nieuwe titel. Filmpjes tellen als foto's, net als in de bevestigingen en meldingen van nu.
 8. **Brede layout (liggende iPad, album).** Het raster scrolt niet en verschuift niet. Aantal en Annuleren staan bovenin de zijkolom, op de plek van "Groep". Tijdens de selectie is er ook daar geen terugknop. Gaat het venster tijdens de selectie van smal naar breed of andersom (draaien, Split View), dan blijven de selectie en het aantal staan.
 9. **Wat blijft.** Wat de acties doen, de album-keuze (`AlbumChoiceSheet` met `fromAlbumId` in het album), de bevestigingen, de meldingen, de tik op het toestel, het einde van de selectie na een actie, één actie tegelijk, het foto-menu uit tijdens de selectie, de wissel van filter in Mijn foto's die de selectie stopt, en de titel van `Stack.Screen` in het album (de albumnaam, de terugknop-tekst op het foto-detail). Pinnen in `selectionActions.test.ts` en `selectionBusy.test.ts`.
-10. **Tijdens een actie** geen tweede actie en geen Annuleren (invariant 3). In het album kun je ook niet terugvegen of terugtikken. De tabbalk blijft werken, zoals nu.
+10. **Tijdens een actie** geen tweede actie en geen Annuleren (invariant 3). In het album kun je ook niet terugvegen of terugtikken. De tabbalk is er niet, dus je kunt ook geen tab wisselen (gate ronde 1).
 11. **De melding na een actie** komt onderin, op de plek van de balk, zoals nu. Bij "Selecteer" gaat hij weg, zoals nu.
 12. **Web.** Geen verandering: geen kop, geen balk, geen extra ruimte.
 
@@ -136,7 +136,7 @@ Het smalste toestel in gebruik is 375 pt breed (iPhone SE, mini). Min de schermm
 
 ### Besluiten voor Wouter
 
-1. **Tabbalk tijdens de selectie.** Foto's verbergt de tabbalk en zet de actiebalk op zijn plek. Dat scheelt ongeveer 66 pt, een halve rij tegels. Aanbeveling: niet in WP40. Het is een grotere ingreep in de navigatie (de eigen tabbalk), en wisselen van tab tijdens de selectie werkt nu al goed. Kan later.
+1. **Tabbalk tijdens de selectie.** Foto's verbergt de tabbalk en zet de actiebalk op zijn plek. Dat scheelt ongeveer 66 pt, een halve rij tegels. Herzien in gate ronde 1: de tabbalk is weg tijdens de selectie.
 2. **Album met weinig foto's.** Moet de omslag ook dan uit beeld, met lege ruimte onder de laatste rij? Of scrolt de lijst zo ver als hij kan, en blijft de omslag deels zichtbaar? Aanbeveling: zo ver als hij kan. De foto's staan dan toch allemaal in beeld. De tests gaan hiervan uit.
 3. **"Selecteer" in Mijn foto's rechtsboven in de kop**, waar daarna "Annuleren" staat, zoals in Foto's. Dat scheelt een rij en het raster verschuift niet meer bij aan en uit (A5). Aanbeveling: ja. In het album blijft "Selecteer" onder de titel, naast Kaart en Bewerk album.
 4. **Filter in het album tijdens de selectie.** Blijft de selectie staan als je van filter wisselt (zoals nu), of stopt hij, zoals in Mijn foto's? Aanbeveling: zoals nu. Het valt buiten "alleen de plek en vorm", en de bevestiging bij Verwijderen noemt het aantal.
@@ -177,3 +177,65 @@ Alle vier aanbevelingen van A (§Besluiten voor Wouter) zijn akkoord: de tabbalk
 Build `wp40-dev2`. Kop met aantal en Annuleren, inklappen van de omslag en de slanke balk: beter. Bevinding: de verhoogde + van de tabbalk steekt in de middelste knop van de balk ("Uit album").
 
 **Besluit Wouter (herziet besluit 1 na A):** tijdens de selectie is de tabbalk weg, zoals in de Foto's-app; de selectiebalk staat op die plek, boven de thuisbalk. Na Annuleren (of na een actie die de selectie beëindigt) komt de tabbalk terug. Geldt in het album en in Mijn foto's, ook op de iPad.
+
+## Gate ronde 1: A-aanvullingen (A vult in)
+
+> A 2026-11-22. Bronnen: het besluit hierboven, de code van B (`da0c81f`, `eba2a03`: `SelectionBar.tsx`, `AlbumScreen.tsx`, `MyPhotosScreen.tsx`), `navigation/TabBar.tsx`, de tabs-layout en `AlbumChoice.tsx`.
+
+### Wat de code nu doet
+
+- De tabbalk is een eigen component op de JS-tabs (`TabBar.tsx`). Hij leest alleen `state`, `emitter`, `navigateToTab` en `insets`. Op de opties van de schermen let hij niet: een tab-optie om hem te verbergen werkt dus nog niet.
+- De tabs-layout zet de tabbalk onder de schermen. Valt hij weg, dan worden de schermen onderaan langer. De bovenkant blijft waar hij is.
+- De `SelectionBar` van B houdt geen rekening met de thuisbalk, want hij stond tot nu toe boven de tabbalk. Op de plek van de tabbalk zouden de knoppen dan over de thuisbalk vallen.
+- Het kiesscherm "Naar album" is een `Modal` (pageSheet). Het scherm eronder blijft dan in beeld voor de navigatie, net als bij een bevestiging en het actiemenu.
+- Het album en Mijn foto's halen hun inhoud weg bij "reconnecting" en bij een leesfout (een `Screen` met de melding). Gebeurt dat tijdens de selectie, dan is de selectie weg. B zet in dat geval het terugvegen al terug; voor de tabbalk is dezelfde zorg nodig.
+
+### A-invarianten (gate ronde 1)
+
+G1. **Tabbalk weg tijdens de selectie.** Zolang het album of Mijn foto's in de selectiestand in beeld is, is er geen tabbalk en ook geen +. De selectiebalk staat op die plek, onderaan het scherm. Zijn knoppen staan boven de thuisbalk, en zijn achtergrond loopt door tot de onderrand. Op een iPhone met thuisknop (geen thuisbalk) staat hij gewoon onderaan. Op elk ander scherm, en zodra de selectie stopt, is de tabbalk er weer. Dat geldt na Annuleren, na een actie, of als de inhoud wegvalt (G4).
+
+G2. **Niets verspringt.** De bovenkant van de lijst en van het raster blijft staan als de tabbalk weggaat of terugkomt. Alleen het zichtbare deel onderaan wordt groter of kleiner. Tabbalk en selectiebalk wisselen in één keer, zonder moment met allebei of met geen van beide. Bij terug uit de selectie komt een melding (na een actie) meteen boven de tabbalk, niet eerst op de plek van de selectiebalk. Het scrollen naar het raster bij Selecteer (A3) rekent met de hoogte zonder tabbalk. In een album met weinig foto's schiet de lijst dus niet voorbij zijn einde.
+
+G3. **Uit beeld = selectie gestopt** (A-keuze). Zonder tabbalk kun je niet van tab wisselen. Opent een link toch een ander scherm (een uitnodiging, een foto, een andere tab), dan stopt de selectie, en het nieuwe scherm heeft gewoon een tabbalk. Kom je terug, dan is er geen selectie meer en is de tabbalk er. Loopt er nog een actie, dan maakt die zijn ronde af en staat de melding er als je terugkomt (zoals nu). Het kiesscherm, een bevestiging, het actiemenu en de app op de achtergrond halen het scherm niet uit beeld: daar blijven de selectie en de verborgen tabbalk staan.
+
+G4. **De inhoud valt weg.** Gaat de app naar "reconnecting", komt er een leesfout, of verdwijnt het album (verwijderd, geen lid meer), dan is de selectie weg en is de tabbalk er meteen. Je moet altijd weg kunnen.
+
+G5. **Tijdens een actie** blijft de tabbalk weg tot de ronde klaar is. Pas dan komt hij terug, samen met de melding. Zo kun je midden in een ronde ook geen tab wisselen.
+
+G6. **iPad.** Op de iPad geldt hetzelfde, staand en liggend. In de brede layout loopt de selectiebalk over de volle breedte, met de knoppen in het midden zoals de tabbalk (hoogstens 640 pt breed). Draaien en Split View tijdens de selectie: de tabbalk blijft weg en de selectie blijft staan (A8).
+
+G7. **VoiceOver.** In de selectiestand zijn de tabs er niet. Vegen gaat langs de kop, het raster en de balk, en komt nooit op een tab of op de +. Na Annuleren zijn de tabs er weer, in de gewone volgorde, en gaat de focus naar "Selecteer" (zoals B al doet). Na een actie leest VoiceOver de melding, zoals nu.
+
+G8. **Uitgelogd en web.** De uitgelogde tabbalk (Inloggen, Info) en het web veranderen niet. Op het web komt er geen selectiestand.
+
+### Gate-checks (ronde 2)
+
+- Album en Mijn foto's, iPhone met thuisbalk: na Selecteer geen tabbalk en geen +, de balk netjes boven de thuisbalk, en het raster springt niet. Na Annuleren en na Verwijderen komt de tabbalk terug, eventueel met de melding erboven, zonder flits.
+- Selecteer in een album dat helemaal naar beneden gescrold is, en in een album met één rij: schiet er iets voorbij of verspringt er iets?
+- Tijdens "Bezig…" blijft de tabbalk weg; daarna komt hij terug met de melding.
+- iPad staand en liggend (zijkolom): tabbalk weg, de balk over de volle breedte, knoppen in het midden; draaien tijdens de selectie.
+- VoiceOver: geen tabs tijdens de selectie, na Annuleren weer wel.
+- Vliegtuigmodus aan tijdens de selectie (reconnecting): de tabbalk komt terug.
+- Een link (bijvoorbeeld een uitnodiging) openen tijdens de selectie: het andere scherm heeft een tabbalk; terug in het album is de selectie weg.
+- Annuleren snel na Selecteer, en Selecteer snel na Annuleren: geen tabbalk die blijft hangen of wegblijft.
+
+### A-keuzes
+
+- **De eigen tabbalk volgt de gewone optie van de navigator** (`tabBarStyle` met `display: "none"` op de tab in beeld), zoals de standaard-tabbalk van React Navigation. Alleen de tab in beeld telt. Wie die optie zet en weer weghaalt, is aan B.
+- **Uit beeld stopt de selectie** (G3). Dat is eenvoudiger en veiliger dan de selectie bewaren met een tabbalk die per scherm moet wisselen. In de praktijk gebeurt het alleen via een link.
+
+### Testcontract (gate ronde 1)
+
+- **`app/tests/selectionTabBar.test.ts`** (nieuw):
+  - G1: de eigen `TabBar` geeft niets terug (of een bovenste element met `display: "none"`) als de tab in beeld `tabBarStyle: { display: "none" }` heeft. Met die optie op een andere tab, met een andere stijl, of zonder optie staat hij er wel.
+  - G2-bronscan: `AlbumScreen.tsx` en `MyPhotosScreen.tsx` zetten `tabBarStyle`, zelf of via een module die ze importeren.
+- De bestaande tests van WP40 blijven gelden. Geen enkele test zei dat de tabbalk blijft.
+
+### Tests (gate ronde 1)
+
+| Inv. | Test | Niet getest, omdat … |
+|---|---|---|
+| G1 | `selectionTabBar.test.ts` (TabBar volgt de optie; de schermen zetten hem) | de thuisbalk onder de knoppen: gate |
+| G2, G5, G6, G7 | | layout, timing en VoiceOver: gate en audit |
+| G3, G4 | | navigatie en unmount: audit en gate |
+| G8 | `selectionTabBar.test.ts` (zonder optie staat hij er) | |
