@@ -24,11 +24,29 @@ const COVER_HEIGHT = Math.round((COVER_WIDTH * 3) / 4);
 // Beide kolommen beginnen onder de statusbalk (op iOS; in de browser is die
 // marge 0). Links en rechts heeft een iPad geen veilige marge; onderaan staat
 // de tabbalk.
-export function WideSplit({ side, children }: { side: ReactNode; children: ReactNode }) {
+// WP40 (gate ronde 2): de selectiebalk ligt over het scherm; `bottomSpace` is
+// zijn hoogte, zodat ook de onderkant van deze kolom boven de balk uit te
+// scrollen is (zoals de lijst rechts).
+export function WideSplit({
+  side,
+  bottomSpace = 0,
+  children,
+}: {
+  side: ReactNode;
+  bottomSpace?: number;
+  children: ReactNode;
+}) {
   const insets = useSafeAreaInsets();
   return (
     <View style={[styles.split, { paddingTop: insets.top }]}>
-      <ScrollView style={styles.side} contentContainerStyle={styles.sideContent}>
+      <ScrollView
+        style={styles.side}
+        contentContainerStyle={[
+          styles.sideContent,
+          bottomSpace > 0 && { paddingBottom: size.screenMargin + bottomSpace },
+        ]}
+        scrollIndicatorInsets={{ bottom: bottomSpace }}
+      >
         {side}
       </ScrollView>
       <View style={styles.main}>{children}</View>

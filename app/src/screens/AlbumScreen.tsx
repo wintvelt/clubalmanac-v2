@@ -368,6 +368,7 @@ function AlbumContent({ groupId, albumId }: { groupId: Id<"groups">; albumId: Id
       ) : null}
       <WideOrNot
         wide={wide}
+        bottomSpace={bottom.barSpace}
         side={
           <WideSide
             back={selecting ? undefined : { title: "Groep", onPress: () => backToGroup(groupId) }}
@@ -505,9 +506,23 @@ function AlbumContent({ groupId, albumId }: { groupId: Id<"groups">; albumId: Id
 
 // WP35: in de brede layout de lijst rechts naast de vaste kolom; anders alleen
 // de lijst.
-function WideOrNot({ wide, side, children }: { wide: boolean; side: ReactNode; children: ReactNode }) {
+function WideOrNot({
+  wide,
+  side,
+  bottomSpace,
+  children,
+}: {
+  wide: boolean;
+  side: ReactNode;
+  bottomSpace: number;
+  children: ReactNode;
+}) {
   if (!wide) return <>{children}</>;
-  return <WideSplit side={side}>{children}</WideSplit>;
+  return (
+    <WideSplit side={side} bottomSpace={bottomSpace}>
+      {children}
+    </WideSplit>
+  );
 }
 
 function backToGroup(groupId: Id<"groups">) {
