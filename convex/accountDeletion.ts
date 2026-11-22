@@ -15,7 +15,7 @@ import { getWebmasterEmails } from "./lib/auth";
 import { INFO_SENDER, sendMailjetMessage } from "./lib/mailjet";
 import { accountDeletionClerkFailedTemplate } from "./lib/emailTemplates";
 import { clerkSubjectHash } from "./lib/accountState";
-import { removeOriginalsOfOwner } from "./lib/filmOriginals";
+import { detachProjectsFromAlbum, removeOriginalsOfOwner } from "./lib/filmOriginals";
 
 // WP29 — account verwijderen. Spec: docs/work-packages/WP29-account-verwijderen.md
 // §Advies open vraag 2 en §A-invarianten.
@@ -306,6 +306,7 @@ async function deleteAlbumRows(ctx: MutationCtx, albumId: Id<"albums">): Promise
     .withIndex("by_album", (q) => q.eq("albumId", albumId))
     .collect();
   for (const s of seen) await ctx.db.delete(s._id);
+  await detachProjectsFromAlbum(ctx, albumId); // WP38, WP10: geen losse albumId
   await ctx.db.delete(albumId);
 }
 

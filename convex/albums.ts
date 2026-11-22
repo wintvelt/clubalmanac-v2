@@ -37,7 +37,7 @@ import {
 import { avatarFieldsOf } from "./lib/profilePhoto";
 import { photoView } from "./lib/formatSet";
 import { afterUnpublish } from "./lib/unpublish";
-import { albumHasOpenProject } from "./lib/filmOriginals";
+import { albumHasOpenProject, detachProjectsFromAlbum } from "./lib/filmOriginals";
 
 // WP23: toegang tot een album. Eén weigering voor "album bestaat niet" en
 // "geen lid van de groep" (invariant 4: geen bestaans-orakel). Sinds WP28
@@ -497,6 +497,10 @@ export const remove = mutation({
 
     // A2: cascade albumLastSeen voor dit album.
     await deleteAlbumLastSeenByAlbum(ctx, albumId);
+
+    // WP38 besluit 17, WP10: een gesloten project op dit album houdt de naam,
+    // maar wijst niet meer naar het album.
+    await detachProjectsFromAlbum(ctx, albumId);
 
     await ctx.db.delete(albumId);
 

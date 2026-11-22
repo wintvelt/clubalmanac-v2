@@ -80,6 +80,16 @@ export const MONITORED_FKS: Array<{
   { table: "userVisits", field: "userId", required: true },
   { table: "uploadIdempotency", field: "ownerId", required: true },
   { table: "uploadIdempotency", field: "photoId", required: false },
+  // WP38: filmprojecten en hun inzendingen. Elk wis-pad haalt ze mee, dus een
+  // losse verwijzing is drift. `albumId` is optioneel: na sluiten mag het
+  // filmalbum weg (besluit 17), en dan gaat de verwijzing eruit. De import
+  // vult deze tabellen niet; de tooling telt en leegt ze wel.
+  { table: "filmProjects", field: "groupId", required: true },
+  { table: "filmProjects", field: "albumId", required: false },
+  { table: "filmOriginals", field: "projectId", required: true },
+  { table: "filmOriginals", field: "groupId", required: true },
+  { table: "filmOriginals", field: "ownerId", required: true },
+  { table: "filmOriginals", field: "photoId", required: true },
 ];
 
 // Tabellen waarvan de scan een aggregate of een storage-referentie herrekent

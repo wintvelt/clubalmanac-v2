@@ -192,6 +192,18 @@ export async function removeProjectsOfGroup(ctx: MutationCtx, groupId: Id<"group
   }
 }
 
+/**
+ * Besluit 17, WP10: het filmalbum is weg (na sluiten). Het project houdt de
+ * naam en zijn originelen, maar wijst niet meer naar het album.
+ */
+export async function detachProjectsFromAlbum(ctx: MutationCtx, albumId: Id<"albums">): Promise<void> {
+  const projects = await ctx.db
+    .query("filmProjects")
+    .withIndex("by_album", (q) => q.eq("albumId", albumId))
+    .collect();
+  for (const p of projects) await ctx.db.patch(p._id, { albumId: undefined });
+}
+
 /** Besluit 17: staat er een open project op dit album? */
 export async function albumHasOpenProject(ctx: QueryCtx, albumId: Id<"albums">, now: number): Promise<boolean> {
   const projects = await ctx.db

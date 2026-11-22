@@ -222,12 +222,13 @@ export default defineSchema({
   // Per groep hooguit één open project, door de oprichter geopend met een
   // filmalbum en een einddatum. Open = `closedAt` niet gezet en `endsAt` nog
   // niet voorbij. `albumName` is de naam bij het openen: na sluiten mag het
-  // album weg (besluit 17 weigert dat alleen zolang het project open staat).
+  // album weg (besluit 17 weigert dat alleen zolang het project open staat);
+  // dan gaat `albumId` eruit (WP10: geen losse verwijzing) en blijft de naam.
   // `reminderSentAt`: de herinnering aan de oprichter (besluit 15) is weg.
   // Een gesloten project zonder originelen ruimt de dagelijkse ronde op.
   filmProjects: defineTable({
     groupId: v.id("groups"),
-    albumId: v.id("albums"),
+    albumId: v.optional(v.id("albums")),
     albumName: v.string(),
     endsAt: v.number(),
     openedAt: v.number(),

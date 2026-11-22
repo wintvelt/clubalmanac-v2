@@ -185,7 +185,7 @@ export const reserveVideo = internalMutation({
     // weigeren). Hier beslist, in de reservering: wat het project daarna doet,
     // verandert deze upload niet. Het antwoord van startUpload blijft gelijk.
     const project = await openProjectOfGroup(ctx, requested.groupId, now);
-    const filmAlbum = project ? await ctx.db.get(project.albumId) : null;
+    const filmAlbum = project?.albumId ? await ctx.db.get(project.albumId) : null;
     const albumId = filmAlbum && filmAlbum.groupId === requested.groupId ? filmAlbum._id : requestedAlbumId;
 
     const existing = await ctx.db

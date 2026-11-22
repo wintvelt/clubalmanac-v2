@@ -132,7 +132,7 @@ async function originalById(ctx: QueryCtx, originalId: string): Promise<Doc<"fil
 
 /** De naam van het filmalbum: zoals hij nu is, of de naam bij het openen als het album weg is. */
 async function albumNameOf(ctx: QueryCtx, project: Doc<"filmProjects">): Promise<string> {
-  const album = await ctx.db.get(project.albumId);
+  const album = project.albumId ? await ctx.db.get(project.albumId) : null;
   return album?.name ?? project.albumName;
 }
 
@@ -146,6 +146,11 @@ async function hasOriginals(ctx: QueryCtx, projectId: Id<"filmProjects">): Promi
 }
 
 // --- projecten ----------------------------------------------------------------
+
+/** Besluit 13: de einddatum ligt in de toekomst en hooguit een jaar vooruit. */
+function endsAtAllowed(endsAt: number, now: number): boolean {
+  return Number.isFinite(endsAt) && endsAt > now && endsAt <= now + FILM_PROJECT_MAX_AHEAD_MS;
+}
 
 /**
  * Besluit 1, A-invariant 1: alleen de oprichter (op het moment van het
@@ -161,9 +166,7 @@ export const open = mutation({
     const album = await ctx.db.get(albumId);
     if (!album || album.groupId !== groupId) refuseCode("NOT_MEMBER");
     const now = Date.now();
-    if (!(Number.isFinite(endsAt) && endsAt > now && endsAt <= now + FILM_PROJECT_MAX_AHEAD_MS)) {
-      refuseCode("DATE_INVALID");
-    }
+    if (!endsAtAllowed(endsAt, now)) refuseCode("DATE_INVALID");
     if (await openProjectOfGroup(ctx, groupId, now)) throw new ConvexError({ code: "PROJECT_ALREADY_OPEN" });
     const projectId = await ctx.db.insert("filmProjects", {
       groupId,
@@ -191,6 +194,30 @@ export const close = mutation({
   },
 });
 
+/**
+ * Besluit 13, A-invariant 1: de einddatum verschuiven, eerder of later. Alleen
+ * de oprichter (op het moment van het verzoek), alleen een open project
+ * (anders PROJECT_CLOSED), met de grenzen van openen. De sluiting gaat mee:
+ * een nieuwe geplande stap op de nieuwe einddatum; de oude doet niets meer,
+ * want `closeIfDue` kijkt naar de einddatum van nu.
+ */
+export const setEndsAt = mutation({
+  args: { projectId: v.string(), endsAt: v.number() },
+  returns: v.null(),
+  handler: async (ctx, { projectId, endsAt }) => {
+    await requireCurrentUser(ctx);
+    const project = await projectById(ctx, projectId);
+    if (!project) refuseCode("NOT_MEMBER");
+    await requireFounder(ctx, project.groupId);
+    const now = Date.now();
+    if (!projectIsOpen(project, now)) throw new ConvexError({ code: "PROJECT_CLOSED" });
+    if (!endsAtAllowed(endsAt, now)) refuseCode("DATE_INVALID");
+    await ctx.db.patch(project._id, { endsAt });
+    await ctx.scheduler.runAt(endsAt, internal.filmProjects.closeIfDue, { projectId: project._id });
+    return null;
+  },
+});
+
 /** Besluit 13: op de einddatum gaat het project vanzelf dicht. */
 export const closeIfDue = internalMutation({
   args: { projectId: v.id("filmProjects") },
@@ -206,7 +233,8 @@ export const closeIfDue = internalMutation({
 
 const projectRow = v.object({
   projectId: v.string(),
-  albumId: v.id("albums"),
+  // `null` als het filmalbum na sluiten verwijderd is (besluit 17).
+  albumId: v.union(v.id("albums"), v.null()),
   albumName: v.string(),
   endsAt: v.number(),
   open: v.boolean(),
@@ -226,11 +254,11 @@ export const listForGroup = query({
       .query("filmProjects")
       .withIndex("by_group", (q) => q.eq("groupId", groupId))
       .collect();
-    const rows: { projectId: string; albumId: Id<"albums">; albumName: string; endsAt: number; open: boolean; openedAt: number }[] = [];
+    const rows: { projectId: string; albumId: Id<"albums"> | null; albumName: string; endsAt: number; open: boolean; openedAt: number }[] = [];
     for (const p of projects) {
       const isOpen = projectIsOpen(p, now);
       if (!isOpen && !(await hasOriginals(ctx, p._id))) continue;
-      rows.push({ projectId: p._id, albumId: p.albumId, albumName: await albumNameOf(ctx, p), endsAt: p.endsAt, open: isOpen, openedAt: p.openedAt });
+      rows.push({ projectId: p._id, albumId: p.albumId ?? null, albumName: await albumNameOf(ctx, p), endsAt: p.endsAt, open: isOpen, openedAt: p.openedAt });
     }
     rows.sort((a, b) => (a.open === b.open ? b.openedAt - a.openedAt : a.open ? -1 : 1));
     return rows.map(({ openedAt: _openedAt, ...row }) => row);
@@ -262,7 +290,8 @@ export const listOpenForMe = query({
     const out: { groupId: Id<"groups">; projectId: string; albumId: Id<"albums">; albumName: string; endsAt: number }[] = [];
     for (const m of memberships) {
       const p = await openProjectOfGroup(ctx, m.groupId, now);
-      if (!p) continue;
+      // Een open project heeft altijd zijn filmalbum (besluit 17).
+      if (!p || p.albumId === undefined) continue;
       out.push({ groupId: p.groupId, projectId: p._id, albumId: p.albumId, albumName: await albumNameOf(ctx, p), endsAt: p.endsAt });
     }
     return out;
@@ -280,7 +309,7 @@ export const get = query({
     project: v.object({
       projectId: v.string(),
       groupId: v.id("groups"),
-      albumId: v.id("albums"),
+      albumId: v.union(v.id("albums"), v.null()),
       albumName: v.string(),
       endsAt: v.number(),
       open: v.boolean(),
@@ -327,7 +356,7 @@ export const get = query({
       project: {
         projectId: project._id as string,
         groupId: project.groupId,
-        albumId: project.albumId,
+        albumId: project.albumId ?? null,
         albumName: await albumNameOf(ctx, project),
         endsAt: project.endsAt,
         open: projectIsOpen(project, Date.now()),
