@@ -110,12 +110,13 @@ const MISSING_QUIET_BEFORE_YEAR_END_MS = DAY_MS;
 const REMINDER_CLAIM_MS = 6 * 60 * 60 * 1000;
 /**
  * Fix-cyclus 2 (red-team Z2): de afrond-cron kijkt alleen inzendingen na
- * waarvoor `startOriginal` deel-links gaf die nog gelden (7 dagen), plus één
- * ronde van de cron (een uur), zodat een PUT vlak voor het verlopen van de
- * link nog afgerond wordt. Daarna kan er zonder nieuwe aanmelding niets meer
- * binnenkomen; de app rondt zelf af (`finishOriginal`).
+ * waarvoor `startOriginal` deel-links gaf die nog gelden (7 dagen), plus een
+ * dag speling (regie), zodat een PUT vlak voor het verlopen van de link nog
+ * afgerond wordt, ook als een ronde van de cron mislukt. Daarna kan er zonder
+ * nieuwe aanmelding niets meer binnenkomen; de app rondt zelf af
+ * (`finishOriginal`). Precies op de grens telt niet meer.
  */
-const CRON_LINK_WINDOW_MS = ORIGINAL_PART_LINK_SECONDS * 1000 + 60 * 60 * 1000;
+const CRON_LINK_WINDOW_MS = ORIGINAL_PART_LINK_SECONDS * 1000 + DAY_MS;
 
 export const ORIGINAL_NOT_FOUND = { code: "ORIGINAL_NOT_FOUND" } as const;
 
@@ -521,7 +522,7 @@ export const reserveOriginal = internalMutation({
     if (state.kind === "refused") return { kind: "refused" as const, reason: state.reason };
     if (state.kind === "done") return { kind: "done" as const, originalId: state.originalId };
     if (state.kind === "existing") {
-      // Een andere grootte is een ander bestand: de app trekt eerst terug.
+      // Een andere grootte weigert; vervangen kan niet (fix-cyclus 2).
       if (state.original.bytes !== bytes) return { kind: "refused" as const, reason: "niet_toegestaan" as const };
       if (!(await takeOriginalCall(ctx, state.original.ownerId, now))) return { kind: "refused" as const, reason: "te_vaak" as const };
       await ctx.db.patch(state.original._id, { linksAt: now });
@@ -958,7 +959,7 @@ export const pendingUploads = internalQuery({
     const out: OpenOriginal[] = [];
     for (const r of rows) {
       if (r.uploadId === undefined) continue;
-      if (now - (r.linksAt ?? r.submittedAt) > CRON_LINK_WINDOW_MS) continue;
+      if (now - (r.linksAt ?? r.submittedAt) >= CRON_LINK_WINDOW_MS) continue;
       const project = await ctx.db.get(r.projectId);
       if (!project || !projectAcceptsArrivals(project, now)) continue;
       out.push({ originalId: r._id, key: r.key, uploadId: r.uploadId, bytes: r.bytes });
