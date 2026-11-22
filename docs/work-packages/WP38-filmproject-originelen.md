@@ -213,6 +213,10 @@ Het risico zit op drie plekken: de toegang en het opruimen (backend), de achterg
 19. **Omleiden voor de oude app 2.0.2** (filmpje naar Y komt in X, zonder origineel), met een bericht aan de leden om bij te werken. Aanbevolen: **ja**.
 20. **Drie deelpakketten** (38a backend, 38b uploader met eerst een spike, 38c schermen). Aanbevolen: **ja**.
 
+### Besluiten Wouter na A (2026-11-22)
+
+Besluiten 11–20: alle tien volgens het advies van A. WP38 gaat in drie deelpakketten: 38a (backend, mag vóór de app naar prod), 38b (uploader, eerst een proef op de iPhone), 38c (schermen). 38b en 38c komen samen in één app-release.
+
 ### Testcontract (A, voor WP38a, vóór de besluiten)
 
 > Namen en vormen zijn A-keuzes; het hoe is aan B. Wijkt een besluit af, dan past A de tests aan vóór B begint. Besluiten 11–18 hebben nog geen test (zie onderaan).
