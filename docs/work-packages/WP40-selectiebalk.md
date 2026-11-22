@@ -239,3 +239,17 @@ G8. **Uitgelogd en web.** De uitgelogde tabbalk (Inloggen, Info) en het web vera
 | G2, G5, G6, G7 | | layout, timing en VoiceOver: gate en audit |
 | G3, G4 | | navigatie en unmount: audit en gate |
 | G8 | `selectionTabBar.test.ts` (zonder optie staat hij er) | |
+
+## Gate ronde 2: iPhone (Wouter, 2026-11-22)
+
+Build `wp40-dev3`. De tabbalk is weg tijdens de selectie en de balk staat goed boven de thuisbalk: werkt. Wens: een beetje animatie.
+
+**Besluit Wouter:** drie animaties, alle drie subtiel en in de stijl van WP33 (maten in `src/lib/motion.ts`, "Beperk beweging" aan = meteen de eindstand, zonder beweging).
+
+1. **Wissel onderin.** Bij Selecteer zakt de tabbalk weg en schuift de selectiebalk omhoog op zijn plek. Bij Annuleren of na een actie gaat het andersom. Samen ongeveer een kwart seconde. Dit herziet in G2 alleen "in één keer": er blijft geen moment met allebei de balken naast elkaar of met een leeg gat, en de bovenkant van het raster verspringt nog steeds niet.
+2. **Vinkje op de foto.** Bij aantikken verschijnt het vinkje met een kleine veer, en de geselecteerde foto krimpt een beetje (zoals de Foto's-app). Uitzetten gaat terug, ook vloeiend.
+3. **Kop bovenin.** Het aantal ("3 geselecteerd") wisselt soepel bij elke tik in plaats van te springen.
+
+Scope: album en Mijn foto's, iPhone en iPad. Web en de uitgelogde tabbalk veranderen niet. Geen haptics erbij.
+
+## Gate ronde 2: A-aanvullingen (A vult in)
