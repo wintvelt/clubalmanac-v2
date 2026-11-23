@@ -965,3 +965,5 @@ Gepind in `originals.test.ts`:
 1. **Uitloggen zonder dat een ander inlogt.** Dan gaat er niets weg tot iemand inlogt. Logt dezelfde user weer in, dan blijven zijn originelen. Aanbevolen: zo laten.
 2. **Geen eigen wekker voor de 30 dagen.** Blijft een ander ingelogd en draait de app dagen door zonder herstart of login, dan wacht het wissen tot de volgende start of login. iOS start de app vaak opnieuw. Aanbevolen: aanvaarden.
 3. **Een klok die voorliep** toen de app de user zag, maakt het wissen later, nooit eerder. Aanbevolen: aanvaarden.
+
+**Regie op de open vragen van A (30 dagen):** alle drie volgens het advies (zonder login gaat niets weg; geen eigen wekker; een voorlopende klok wist later, nooit eerder).
