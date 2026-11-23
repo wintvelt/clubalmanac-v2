@@ -1027,3 +1027,5 @@ Bestaande tests niet aangepast. Geen test eiste dat een "aan" bij twijfel ook be
 
 1. **Gate 6 op slot als iOS de delen niet laat lopen.** Delen die op de achtergrond aan iOS gegeven zijn, stelt iOS uit (spike 3). Lopen ze in het uur op slot niet, dan is de gate niet getoetst. Aanbevolen: dan één keer langer wachten; lukt het niet, dan dekt de audit punt 1 en 2.
 2. **`te_vaak` voor de andere originelen.** A pint alleen dat het afronden niet wacht. Aanbevolen: aan B laten.
+
+**Regie op A (fix-cyclus 3):** de aanvulling van A (ook een eigen leesfout bewaart geen "aan") blijft. Open vragen: 1 één keer langer wachten, anders dekt de audit het; 2 aan B.
