@@ -910,3 +910,5 @@ De zes punten staan nu in de invarianten 38b-4, 38b-7, 38b-8, 38b-13, 38b-17 tot
 3. **Punt 5 op het toestel.** Zonder een dev-schakelaar is "de wachtrij neemt het niet aan" niet na te bootsen; gate 13 vervalt dan en de audit toetst de aansluiting. Aanbevolen: B beslist of de schakelaar goedkoop is.
 
 **Regie op de open vragen van A (fix-cyclus 2):** 1 zo laten (ook bij terug naar U telt het antwoord als `fout`); 2 aanvaarden; 3 geen dev-schakelaar voor "de wachtrij weigert": gate 13 vervalt, de audit toetst de aansluiting van het scherm.
+
+**Wouter op red-team N6 (2026-11-23): ja.** Wachtende originelen van een user die niet is ingelogd, gaan na 30 dagen van het toestel (bestand, deelbestanden, iOS-taken). Na fix-cyclus 2: A tests, dan B.
