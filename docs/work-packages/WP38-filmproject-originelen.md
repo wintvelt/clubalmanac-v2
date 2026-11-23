@@ -744,3 +744,22 @@ Geen backend-wijziging nodig: 38b gebruikt `startOriginal`, `finishOriginal`, `w
 ### Besluiten Wouter na A van 38b (2026-11-23)
 
 De vijf open vragen van A: alle vijf volgens het advies (bij `vol` wachten; na uitloggen blijven wachtende originelen staan; herstart vóór het album aanvaarden; kapot bestand aanvaarden; langer dan 7 dagen geen wifi aanvaarden). Daarna B voor 38b.
+
+### 38b fix-cyclus 1 (audit en red-team, regie 2026-11-23)
+
+Audit en red-team op `497f113`: geen blocker. Tests en typecheck groen. Te fixen (A eerst tests, dan B):
+
+1. **Koude start (audit S1).** Geeft de app de delen op de achtergrond aan iOS en ruimt iOS het proces op, dan geeft de app ze bij de volgende start niet opnieuw: `becameActive` komt vóór het einde van `reconcile`. Na `reconcile` doet de app dezelfde controle als bij voorgrond. Gate 4 en 6 krijgen een koude variant.
+2. **Offline geen stapel aanroepen (red-team Z1).** De Convex-client houdt een action vast tot hij weer verbinding heeft. De eigen time-out van 60 s laat dan steeds een nieuwe aanroep starten, die bij herverbinden allemaal tegelijk gaan. Eén aanroep tegelijk (38b-7) geldt ook als een aanroep "verloren" lijkt: geen nieuwe aanroep zolang de vorige niet echt is afgehandeld, of pas pompen met verbinding. B kiest; de test pint "nooit twee tegelijk, ook na een time-out".
+3. **Toevoegen terwijl de wachtrij nog niet geladen is (audit N1, red-team N2).** `atLaunch` mag geen bestand of item wissen dat in dit proces is aangemaakt. De wachtrij is geladen vóór de kopie wordt verplaatst. Een `false` van `addOriginalToQueue` ruimt het verplaatste bestand op zodra het verkleinen klaar is.
+4. **Account verwijderen met een wachtrij die niet laadt (audit N2).** De te wissen user wordt onthouden en gewist zodra het laden lukt.
+5. **Events van oude links (audit N3, red-team N3).** Elke ronde links krijgt een generatie; events van een oudere generatie tellen niet.
+6. **"Alleen via wifi" bij twijfel aan (red-team N1).** Verschillen JS en de uploader, dan telt aan. Lukt het bewaren niet, dan blijft de stand aan.
+7. **Klok van het toestel (red-team N4).** De geldigheid van links rekent de app ten opzichte van de servertijd (`expiresAt` min de tijd van het antwoord), niet met de klok van het toestel.
+8. **Oplopend wachten na `fout` (red-team N5):** 1 minuut, oplopend tot 1 uur.
+9. **Kapotte opslag (audit N4, red-team N7c):** een regel in het log; de wachtrij en de opslag van de uploader krijgen een versie, en velden komen er alleen bij (runbook voor 38c).
+10. **De wifi-schakelaar wacht niet op het snijden (red-team N7a):** omzetten geldt meteen voor delen die al bij iOS zijn.
+
+**Regie, zonder fix:** de terugroep van iOS gaat meteen en de app houdt zelf 25 s wakker (audit N5, red-team N7b). Dat werkte in de spike; 38b-15 volgt dat gedrag, en de cron rondt af wat de app niet haalt (gate 8 laat zien wie afrondt). Vrije ruimte tijdens het snijden (audit N6) volgt uit besluit 21. Audit N7: aanvaard.
+
+**Voor Wouter:** red-team N6. Verwijdert een lid zijn account op een ander toestel terwijl hier iemand anders is ingelogd, dan blijven zijn wachtende originelen (met GPS) hier staan. Voorstel: wachtende originelen van een user die niet is ingelogd, gaan na 30 dagen weg.
