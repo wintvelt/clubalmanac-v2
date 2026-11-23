@@ -27,6 +27,14 @@ import { queueFromStore } from "../src/lib/originalQueue";
 //     slot na een herstart), dan geeft hij een fout en geen lege stand. De
 //     runner wist dan niets en laadt later opnieuw. Dat de uploader zelf niet
 //     start vóór de eerste ontgrendeling, toetst de gate.
+// Besluit red-team N6 (Wouter, 2026-11-23):
+//   - Originelen van een user die niet is ingelogd, gaan na 30 dagen van het
+//     toestel: bestand, deelbestanden en iOS-taken. De 30 dagen tellen vanaf
+//     het laatste moment dat de app die user ingelogd zag (inloggen, het
+//     laden, terugkomst in de app, toevoegen, en uitloggen of een wissel naar
+//     een ander). De app controleert bij het laden en bij elke login. De user
+//     die nu is ingelogd verliest niets, zonder login gaat niets weg, en een
+//     klok die terug springt maakt het moment niet vroeger.
 //
 // Het nep-toestel houdt zijn bestanden en opslag over een "herstart" heen
 // (een verse import van de runner). De namen van de bestanden in de opslag
@@ -603,5 +611,189 @@ describe("de uploader kan zijn opslag niet lezen (fix-cyclus 2, punt 4)", () => 
     await settle(2 * MINUTE);
     expect(keys()).toEqual(["k1"]);
     expect(dev.removed).toEqual([]);
+  });
+});
+
+describe("originelen van een user die niet is ingelogd: na 30 dagen weg (besluit red-team N6)", () => {
+  /**
+   * U voegt k1 toe en logt uit; U2 logt in en voegt x1 toe, alles op T0. Beide
+   * staan na de aanmelding op afronden en wachten (`vol`), dus ze blijven.
+   */
+  async function uThenU2(): Promise<Actions> {
+    await bootAt(T0);
+    const c = client({ start: "upload_leeg", finish: "vol" });
+    R.setOriginalsSession(c.actions, U);
+    await addVideo("k1", U);
+    R.setOriginalsSession(null, null);
+    R.setOriginalsSession(c.actions, U2);
+    await addVideo("x1", U2);
+    await settle();
+    expect(keys()).toEqual(["k1", "x1"]);
+    expect(R.originalsSnapshot().queue.every((e) => e.originalId !== null)).toBe(true);
+    return c.actions;
+  }
+
+  /**
+   * Een verse start van de app op `t`, zoals startApp. `vi.clearAllTimers()`
+   * zet de nagebootste klok terug naar het moment van `useFakeTimers`, dus
+   * de klok gaat pas daarna op `t`.
+   */
+  async function bootAt(t: number): Promise<void> {
+    vi.clearAllTimers();
+    vi.setSystemTime(t);
+    vi.resetModules();
+    R = await import("../src/data/originals");
+    R.startOriginals();
+    await settle();
+  }
+
+  /** Een verse start op `t`; daarna logt `userId` in (de wortel geeft de sessie na het starten). */
+  async function startAt(t: number, userId: string | null, actions: Actions): Promise<void> {
+    await bootAt(t);
+    R.setOriginalsSession(userId === null ? null : actions, userId);
+    await settle();
+  }
+
+  /** Uitloggen en weer inloggen zonder herstart, op `t`. */
+  async function loginAt(t: number, userId: string, actions: Actions): Promise<void> {
+    vi.setSystemTime(t);
+    R.setOriginalsSession(null, null);
+    R.setOriginalsSession(actions, userId);
+    await settle();
+  }
+
+  function kStays(): void {
+    expect(keys()).toEqual(["k1", "x1"]);
+    expect(dev.files.has("k1.mov")).toBe(true);
+    expect(dev.removed).not.toContain("k1.mov");
+    expect(dev.forgotten).not.toContain("o-photo-k1");
+  }
+
+  function kGone(): void {
+    expect(keys()).toEqual(["x1"]);
+    expect(dev.removed).toContain("k1.mov");
+    expect(dev.files.has("k1.mov")).toBe(false);
+    expect(dev.forgotten).toContain("o-photo-k1");
+    expect(dev.removed).not.toContain("x1.mov");
+    expect(dev.forgotten).not.toContain("o-photo-x1");
+    // Ook op schijf: na de volgende start komt k1 niet terug.
+    expect([...dev.state.values()].some((raw) => queueFromStore(raw).queue.some((e) => e.key === "k1"))).toBe(false);
+  }
+
+  it("bij de start met U2 ingelogd: na 29 dagen nog niet, na 30 dagen alles van U weg", async () => {
+    const actions = await uThenU2();
+    await startAt(T0 + 29 * DAY, U2, actions);
+    kStays();
+    await startAt(T0 + 30 * DAY, U2, actions);
+    kGone();
+    await startAt(T0 + 31 * DAY, U2, actions);
+    expect(keys()).toEqual(["x1"]);
+  });
+
+  it("bij een login zonder herstart: na 29 dagen nog niet, na 30 dagen wel", async () => {
+    const actions = await uThenU2();
+    await loginAt(T0 + 29 * DAY, U2, actions);
+    kStays();
+    await loginAt(T0 + 30 * DAY, U2, actions);
+    kGone();
+  });
+
+  it("zonder login gaat niets weg, ook na 400 dagen; pas bij een login van een ander", async () => {
+    const actions = await uThenU2();
+    await startAt(T0 + 400 * DAY, null, actions);
+    R.nudgeOriginals();
+    await settle();
+    kStays();
+    R.setOriginalsSession(actions, U2);
+    await settle();
+    kGone();
+  });
+
+  it("de user die nu is ingelogd: nooit, hoe lang ook", async () => {
+    const actions = await uThenU2();
+    await startAt(T0 + 400 * DAY, U, actions);
+    expect(keys()).toEqual(["k1"]); // x1 van U2 wel: die is niet ingelogd
+    expect(dev.files.has("k1.mov")).toBe(true);
+    expect(dev.removed).not.toContain("k1.mov");
+    expect(dev.forgotten).not.toContain("o-photo-k1");
+    await loginAt(T0 + 800 * DAY, U, actions);
+    expect(keys()).toEqual(["k1"]);
+  });
+
+  it("telt vanaf het moment dat U uitlogde, niet vanaf zijn login: 60 dagen ingelogd, dan U2", async () => {
+    await bootAt(T0);
+    const c = client({ start: "upload_leeg", finish: "vol" });
+    R.setOriginalsSession(c.actions, U);
+    await addVideo("k1", U);
+
+    // U blijft 60 dagen ingelogd; dan logt hij uit en logt U2 in.
+    vi.setSystemTime(T0 + 60 * DAY);
+    R.setOriginalsSession(null, null);
+    R.setOriginalsSession(c.actions, U2);
+    await addVideo("x1", U2);
+    kStays();
+
+    await startAt(T0 + 89 * DAY, U2, c.actions);
+    kStays();
+    await startAt(T0 + 90 * DAY, U2, c.actions);
+    kGone();
+  });
+
+  it("ook een wissel zonder uitloggen ertussen telt als het laatste moment van U", async () => {
+    await bootAt(T0);
+    const c = client({ start: "upload_leeg", finish: "vol" });
+    R.setOriginalsSession(c.actions, U);
+    await addVideo("k1", U);
+
+    vi.setSystemTime(T0 + 60 * DAY);
+    R.setOriginalsSession(c.actions, U2);
+    await addVideo("x1", U2);
+    kStays();
+
+    await startAt(T0 + 89 * DAY, U2, c.actions);
+    kStays();
+    await startAt(T0 + 90 * DAY, U2, c.actions);
+    kGone();
+  });
+
+  it("terugkomst in de app telt als gezien: U ingelogd, de app komt na 40 dagen terug, dan een herstart en U2", async () => {
+    await bootAt(T0);
+    const c = client({ start: "upload_leeg", finish: "vol" });
+    R.setOriginalsSession(c.actions, U);
+    await addVideo("k1", U);
+
+    // Het proces leeft door; de app komt na 40 dagen weer voor, met U ingelogd.
+    vi.setSystemTime(T0 + 40 * DAY);
+    R.nudgeOriginals();
+    await settle();
+
+    // iOS ruimt de app op. Na de herstart is U er niet meer, en logt U2 in.
+    await startAt(T0 + 41 * DAY, U2, c.actions);
+    await addVideo("x1", U2);
+    kStays();
+    await startAt(T0 + 70 * DAY - MINUTE, U2, c.actions);
+    kStays();
+    await startAt(T0 + 70 * DAY, U2, c.actions);
+    kGone();
+  });
+
+  it("een klok die terug springt: niets weg te vroeg", async () => {
+    const actions = await uThenU2();
+
+    // De klok staat 40 dagen achter; U logt nog eens in en weer uit.
+    vi.setSystemTime(T0 - 40 * DAY);
+    R.setOriginalsSession(null, null);
+    R.setOriginalsSession(actions, U);
+    await settle();
+    R.setOriginalsSession(null, null);
+    R.setOriginalsSession(actions, U2);
+    await settle();
+    kStays();
+
+    // De klok klopt weer. U is sinds T0 niet meer gezien: pas na 30 dagen weg.
+    await startAt(T0 + 29 * DAY, U2, actions);
+    kStays();
+    await startAt(T0 + 30 * DAY, U2, actions);
+    kGone();
   });
 });

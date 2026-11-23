@@ -490,6 +490,12 @@ Tot 38c er is, gaat in 38b een nieuw filmpje mee als origineel zodra zijn groep 
    - Elk origineel hoort bij een user. Er gaan alleen aanroepen voor de user die nu is ingelogd.
    - Uitloggen pauzeert de wachtrij en wist niets. Account verwijderen (WP29, `signOutAndWipe` met user) wist alles van die user: iOS-taken, deelbestanden en bewaarde bestanden.
    - Laadt de wachtrij nog niet (bijvoorbeeld op slot), dan wacht Account verwijderen daar niet op. De runner onthoudt de user en wist alles van hem zodra het laden lukt (fix-cyclus 1, punt 4).
+   - **Een user die niet meer inlogt** (besluit red-team N6). Originelen van een user die niet is ingelogd, gaan na 30 dagen van het toestel: bestand, deelbestanden en iOS-taken, zoals bij Account verwijderen. Geen aanroep naar de backend; de inzending blijft "onderweg", zoals bij een kapot bestand (open vraag 4).
+     - De 30 dagen tellen vanaf het laatste moment dat de app die user ingelogd zag: bij inloggen, bij het laden, bij terugkomst in de app, bij toevoegen, en op het moment dat hij uitlogt of een ander inlogt.
+     - Dat moment wordt nooit vroeger. Springt de klok terug, dan blijft het laatste moment staan. Staat de klok bij de controle vóór dat moment, dan gaat er niets weg.
+     - De app controleert bij het laden en bij elke login (een andere user, of dezelfde opnieuw).
+     - Wie nu is ingelogd, verliest op grond van deze regel nooit iets. Is niemand ingelogd, dan gaat er niets weg: een ontbrekende login wist nooit iets (38b-8).
+     - Het moment staat in de wachtrij op schijf. In een wachtrij van vóór deze regel telt het moment van toevoegen.
    - De wachtrij staat op schijf en overleeft een herstart. Hij bewaart geen links; die staan alleen in de opslag van de uploader.
    - De wachtrij en de opslag van de uploader hebben elk een versie. Een nieuwe versie zet er alleen velden bij; een oudere app leest wat hij kent (punt 9, runbook voor 38c). Een onleesbare wachtrij geeft een regel in het log met "onleesbaar".
    - Het laden wist niets wat in dit proces is aangemaakt: geen origineel en geen bestand dat het toevoegscherm net heeft verplaatst (punt 3). Het toevoegscherm wacht tot de wachtrij geladen is voordat het de kopie verplaatst.
@@ -707,6 +713,9 @@ export type NativeJobView = {
 };
 export function atLaunch(queue: QueueEntry[], native: { jobs: readonly NativeJobView[]; files: readonly string[] }, now: number): QueueStep;
 export function forgetUser(queue: QueueEntry[], userId: string): QueueStep;
+export const ABSENT_USER_MS: number;  // 30 dagen (besluit red-team N6)
+export function seenUser(queue: QueueEntry[], userId: string, now: number): QueueEntry[];
+export function dropAbsent(queue: QueueEntry[], ctx: { now: number; userId: string | null }): QueueStep;
 export type OwnStand = "binnen" | "wordt_verstuurd" | "wacht_op_wifi" | "wacht" | "elders";
 export function ownOriginalStand(input: {
   status: "onderweg" | "binnen"; originalId: string; queue: readonly QueueEntry[];
@@ -721,8 +730,9 @@ export function queueFromStore(raw: string | null): { queue: QueueEntry[]; broke
 - Een event voor een onbekende sleutel of inzending verandert niets.
 - Fix-cyclus 1: `generation` is een getal dat `applyEvent` bij elke ronde links kiest en in `aan_ios` meegeeft; de uploader geeft hem terug. De geldigheid van de links in de wachtrij is die van het toestel (punt 7); de wachtrij bewaart nog steeds geen links.
 - `queueToStore` schrijft JSON met bovenaan een geheel getal `version` (vanaf 1). `queueFromStore`: `null` is leeg en niet kapot; wat geen wachtrij van een bekende vorm is, is leeg en kapot; een hogere versie met extra velden leest wat deze app kent.
+- Besluit red-team N6: elk origineel onthoudt wanneer de app zijn user voor het laatst ingelogd zag (het veld is aan B). `addOriginal` zet het op `now`. `seenUser` zet het voor die user op `now`, maar nooit vroeger dan het was. `dropAbsent` haalt de originelen weg van elke user behalve `ctx.userId` die `ABSENT_USER_MS` of langer niet gezien is, met `ios_vergeten` en `bestand_weg`; met `userId` `null` niets. `queueFromStore` leest een origineel zonder dat moment als niet kapot, met het moment van toevoegen.
 
-**De runner (`src/data/originals.ts`)**, getest met een nagebootste uploader en Convex-client (`tests/originals.test.ts`). De tests gebruiken alleen wat er al is: `startOriginals`, `setOriginalsSession`, `nudgeOriginals`, `addOriginalToQueue`, `originalEvent`, `forgetOriginalsOf`, `setOriginalsWifiOnly`, `originalsSnapshot`. Van de uploader-module verwachten ze daarnaast `uploaderWifiOnly` bij het laden. De namen van de bestanden in de opslag zijn aan B. Fix-cyclus 2: de user van een aanroep is de user van `setOriginalsSession` toen hij begon. Elke `setOriginalsSession` met een andere user dan die (niet `null`) tijdens de aanroep maakt de uitkomst een `fout` (punt 2).
+**De runner (`src/data/originals.ts`)**, getest met een nagebootste uploader en Convex-client (`tests/originals.test.ts`). De tests gebruiken alleen wat er al is: `startOriginals`, `setOriginalsSession`, `nudgeOriginals`, `addOriginalToQueue`, `originalEvent`, `forgetOriginalsOf`, `setOriginalsWifiOnly`, `originalsSnapshot`. Van de uploader-module verwachten ze daarnaast `uploaderWifiOnly` bij het laden. De namen van de bestanden in de opslag zijn aan B. Fix-cyclus 2: de user van een aanroep is de user van `setOriginalsSession` toen hij begon. Elke `setOriginalsSession` met een andere user dan die (niet `null`) tijdens de aanroep maakt de uitkomst een `fout` (punt 2). Besluit red-team N6: de runner geeft de user door aan `seenUser` bij `setOriginalsSession` (de nieuwe en de vorige), bij het laden, bij `nudgeOriginals` en bij toevoegen. Hij roept `dropAbsent` aan na het laden en bij elke `setOriginalsSession` met een user.
 
 **`compressResume.ts`**
 
@@ -739,7 +749,7 @@ export function afterCompressFailure(input: { leftForeground: boolean; autoRetri
 | 38b-1 | `originalUpload.test.ts` (`originalPlan`, grenzen gelijk aan de backend) | de vrije ruimte van iOS: gate |
 | 38b-2 | `originalQueue.test.ts` (dezelfde grootte bij elke aanmelding) | verplaatsen, map en bescherming: gate |
 | 38b-3 | `originalQueue.test.ts` (album klaar of mislukt) | de aansluiting in het toevoegscherm: gate |
-| 38b-4 | `originalQueue.test.ts` (één per sleutel, alleen de ingelogde user, `forgetUser`, `queueToStore`/`queueFromStore`), `originals.test.ts` (toevoegen tijdens het laden, Account verwijderen als het laden niet lukt, versie op schijf, log bij een onleesbare wachtrij, de uploader kan niet lezen), `originalUpload.test.ts` (`originalAfterVideo`, `originalAtRoundEnd`) | vanuit de wortel; het toevoegscherm wacht op het laden en volgt de twee functies: audit en gate |
+| 38b-4 | `originalQueue.test.ts` (één per sleutel, alleen de ingelogde user, `forgetUser`, `queueToStore`/`queueFromStore`, 30 dagen: `dropAbsent`, `seenUser`), `originals.test.ts` (toevoegen tijdens het laden, Account verwijderen als het laden niet lukt, versie op schijf, log bij een onleesbare wachtrij, de uploader kan niet lezen, 30 dagen bij het laden en bij een login), `originalUpload.test.ts` (`originalAfterVideo`, `originalAtRoundEnd`) | vanuit de wortel; het toevoegscherm wacht op het laden en volgt de twee functies: audit en gate |
 | 38b-5 | `originalQueue.test.ts` (`atLaunch`, links bijna verlopen, oudere generatie bij de uploader, klok van het toestel) | |
 | 38b-6 | `originalUpload.test.ts` (`partFailure`), `originalQueue.test.ts` (rondes, veel 403 tegelijk, generaties) | |
 | 38b-7 | `originalQueue.test.ts` (volgorde, `te_vaak`, `bezig`, wachttijden, oplopend na `fout`), `originals.test.ts` (één aanroep tegelijk, ook als hij hangt of wegvalt; een andere user tussendoor) | |
@@ -912,3 +922,46 @@ De zes punten staan nu in de invarianten 38b-4, 38b-7, 38b-8, 38b-13, 38b-17 tot
 **Regie op de open vragen van A (fix-cyclus 2):** 1 zo laten (ook bij terug naar U telt het antwoord als `fout`); 2 aanvaarden; 3 geen dev-schakelaar voor "de wachtrij weigert": gate 13 vervalt, de audit toetst de aansluiting van het scherm.
 
 **Wouter op red-team N6 (2026-11-23): ja.** Wachtende originelen van een user die niet is ingelogd, gaan na 30 dagen van het toestel (bestand, deelbestanden, iOS-taken). Na fix-cyclus 2: A tests, dan B.
+
+### 30 dagen voor originelen van een andere user (A)
+
+Het besluit staat in 38b-4 en in het testcontract (`ABSENT_USER_MS`, `seenUser`, `dropAbsent`).
+
+| Keuze | Waarom |
+|---|---|
+| De 30 dagen tellen vanaf het laatste moment dat de app de user ingelogd zag, ook bij uitloggen, een wissel en terugkomst in de app | Het gaat om een user die weg is, bijvoorbeeld omdat hij zijn account elders verwijderde. Een origineel kan weken stilstaan (`vol`) terwijl zijn user gewoon inlogt; de laatste stap in de wachtrij zegt dus niets. Wie 60 dagen ingelogd bleef, telt vanaf zijn uitloggen, niet vanaf zijn login. |
+| Controle bij het laden en bij elke login | Op die momenten is bekend wie er is ingelogd. In het geval van red-team N6 logt er hier een ander in. |
+| Zonder login nooit | Op de achtergrond kan de sessie nog ontbreken terwijl de user wel is ingelogd. Zo blijft 38b-8 gelden: een ontbrekende login wist nooit iets. |
+| Het moment wordt nooit vroeger | Een klok die terug springt, mag het moment niet naar het verleden halen: anders gaat er te vroeg iets weg zodra de klok weer klopt. |
+
+Gepind in `originalQueue.test.ts`:
+- 29 dagen blijft, 30 dagen min een minuut blijft, 30 dagen weg;
+- de user die nu is ingelogd, en niemand ingelogd: niets weg;
+- `seenUser` alleen voor die user, en nooit vroeger;
+- elke user apart;
+- over `queueToStore`/`queueFromStore` heen, ook een wachtrij van vóór deze regel.
+
+Gepind in `originals.test.ts`:
+- bij de start en bij een login: 29 dagen blijft, 30 dagen weg, ook op schijf;
+- 400 dagen zonder login: niets weg, pas bij de login van een ander;
+- de ingelogde user na 400 en 800 dagen: niets weg;
+- de 30 dagen tellen vanaf uitloggen of een wissel na 60 dagen ingelogd;
+- terugkomst in de app na 40 dagen telt als gezien;
+- de klok 40 dagen terug: niets weg vóór 30 dagen na het echte laatste moment.
+
+`vi.clearAllTimers()` zet de nagebootste klok terug naar het moment van `useFakeTimers`. Daarom start dit blok de app met een eigen `bootAt`, die de klok pas daarna zet.
+
+**Stand na A (30 dagen):**
+
+- 20 nieuwe tests, alle rood om de goede reden:
+  - 12 in `originalQueue.test.ts`: `ABSENT_USER_MS`, `seenUser` en `dropAbsent` bestaan niet;
+  - 8 in `originals.test.ts`: het origineel van de user die niet is ingelogd, blijft staan.
+- Bestaande tests niet aangepast. De andere 2323 app-tests blijven groen.
+- De app-typecheck faalt alleen op de drie ontbrekende exports (en twee parameters zonder type die daaruit volgen).
+- A draaide alle app-tests tegen een wegwerp-uitwerking buiten de repo: alle 2343 groen, typecheck schoon. Zonder "nooit vroeger", zonder het moment van uitloggen of wissel, of zonder het moment van terugkomst wordt telkens een test rood. Die uitwerking is weggegooid.
+
+**Open vragen (30 dagen):**
+
+1. **Uitloggen zonder dat een ander inlogt.** Dan gaat er niets weg tot iemand inlogt. Logt dezelfde user weer in, dan blijven zijn originelen. Aanbevolen: zo laten.
+2. **Geen eigen wekker voor de 30 dagen.** Blijft een ander ingelogd en draait de app dagen door zonder herstart of login, dan wacht het wissen tot de volgende start of login. iOS start de app vaak opnieuw. Aanbevolen: aanvaarden.
+3. **Een klok die voorliep** toen de app de user zag, maakt het wissen later, nooit eerder. Aanbevolen: aanvaarden.

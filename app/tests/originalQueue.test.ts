@@ -1,17 +1,20 @@
 import { describe, expect, it } from "vitest";
 import {
+  ABSENT_USER_MS,
   LINK_MARGIN_MS,
   RESUME_ROUNDS,
   WAIT_MS,
   addOriginal,
   applyEvent,
   atLaunch,
+  dropAbsent,
   forgetUser,
   nextCall,
   nextWake,
   ownOriginalStand,
   queueFromStore,
   queueToStore,
+  seenUser,
   type Effect,
   type NativeJobView,
   type QueueEntry,
@@ -48,6 +51,12 @@ import { ORIGINAL_PART_LINK_SECONDS } from "../../convex/lib/constants";
 //   - Komen nieuwe links binnen terwijl alle delen al verstuurd zijn (stap
 //     afronden), dan blijven ze liggen: eerst `finishOriginal`; `missing` zegt
 //     wat er nog moet (punt 3).
+//   Besluit red-team N6 (Wouter, 2026-11-23):
+//   - Originelen van een user die niet is ingelogd, gaan na 30 dagen van het
+//     toestel (bestand, deelbestanden, iOS-taken). De 30 dagen tellen vanaf
+//     het laatste moment dat de app die user ingelogd zag; dat moment wordt
+//     nooit vroeger, ook niet als de klok terug springt. De user die nu is
+//     ingelogd verliest niets, en zonder login gaat niets weg.
 // Spec: docs/work-packages/WP38-filmproject-originelen.md §Spec-criticus 38b.
 
 const MiB = 1024 * 1024;
@@ -945,5 +954,140 @@ describe("nieuwe links terwijl alle delen al verstuurd zijn (fix-cyclus 2, punt 
     const { queue, effects } = run(lying, [{ kind: "afgerond", key: "k1", result: { kind: "done" } }], later);
     expect(queue).toEqual([]);
     expect(effects).toContainEqual({ kind: "bestand_weg", fileName: "k1.mov" });
+  });
+});
+
+describe("originelen van een user die niet is ingelogd: na 30 dagen weg (besluit red-team N6)", () => {
+  const U2 = "user-2";
+  const U3 = "user-3";
+
+  /** k1 van U verstuurt (iOS heeft de delen); x1 van U2 wacht op aanmelden. Beide toegevoegd op `now`. */
+  function twoUsers(now = T0): QueueEntry[] {
+    const q = sending("k1", "o1", now);
+    return run(add(q, "x1", now, U2), [{ kind: "album_klaar", key: "x1", photoId: "photo-x1" }], now).queue;
+  }
+  const keysOf = (q: readonly QueueEntry[]) => q.map((e) => e.key).sort();
+
+  /** k1 van U is weg, met zijn bestand en zijn iOS-taken; niets van een ander. */
+  function kGone(step: { queue: QueueEntry[]; effects: Effect[] }): void {
+    expect(keysOf(step.queue)).toEqual(["x1"]);
+    expect(step.effects).toContainEqual({ kind: "ios_vergeten", originalId: "o1" });
+    expect(step.effects).toContainEqual({ kind: "bestand_weg", fileName: "k1.mov" });
+    expect(step.effects.some((e) => e.kind === "bestand_weg" && e.fileName !== "k1.mov")).toBe(false);
+  }
+
+  it("30 dagen", () => {
+    expect(ABSENT_USER_MS).toBe(30 * DAY);
+  });
+
+  it("U2 is ingelogd: na 29 dagen nog niets weg, na 30 dagen alles van U, met bestand en iOS-taken", () => {
+    const q = twoUsers();
+    for (const t of [T0, T0 + DAY, T0 + 29 * DAY, T0 + 30 * DAY - MINUTE]) {
+      const step = dropAbsent(q, ctx(t, U2));
+      expect(keysOf(step.queue)).toEqual(["k1", "x1"]);
+      expect(step.effects).toEqual([]);
+    }
+    kGone(dropAbsent(q, ctx(T0 + 30 * DAY, U2)));
+    kGone(dropAbsent(q, ctx(T0 + 400 * DAY, U2)));
+  });
+
+  it("een origineel dat nog op zijn album wacht, of dat wacht op aanmelden, gaat ook (alleen het bestand)", () => {
+    let q = add([], "a1", T0);
+    q = run(add(q, "w1", T0), [{ kind: "album_klaar", key: "w1", photoId: "photo-w1" }]).queue;
+    const { queue, effects } = dropAbsent(q, ctx(T0 + 30 * DAY, U2));
+    expect(queue).toEqual([]);
+    expect(effects).toContainEqual({ kind: "bestand_weg", fileName: "a1.mov" });
+    expect(effects).toContainEqual({ kind: "bestand_weg", fileName: "w1.mov" });
+    expect(effects.some((e) => e.kind === "ios_vergeten")).toBe(false);
+  });
+
+  it("de user die nu is ingelogd: nooit op grond van deze regel, hoe lang ook", () => {
+    const q = twoUsers();
+    for (const t of [T0 + 30 * DAY, T0 + 400 * DAY]) {
+      const step = dropAbsent(q, ctx(t, U));
+      // k1 van U blijft; x1 van U2 (niet ingelogd, 30 dagen niet gezien) gaat.
+      expect(keysOf(step.queue)).toEqual(["k1"]);
+      expect(step.effects).not.toContainEqual({ kind: "ios_vergeten", originalId: "o1" });
+      expect(step.effects).not.toContainEqual({ kind: "bestand_weg", fileName: "k1.mov" });
+      expect(step.effects).toContainEqual({ kind: "bestand_weg", fileName: "x1.mov" });
+    }
+  });
+
+  it("niemand ingelogd: niets weg (een ontbrekende login wist nooit iets, 38b-8)", () => {
+    const q = twoUsers();
+    const { queue, effects } = dropAbsent(q, ctx(T0 + 400 * DAY, null));
+    expect(queue).toEqual(q);
+    expect(effects).toEqual([]);
+  });
+
+  it("de 30 dagen tellen vanaf het laatste moment dat de app de user ingelogd zag (seenUser)", () => {
+    const q = seenUser(twoUsers(), U, T0 + 20 * DAY);
+    const before = dropAbsent(q, ctx(T0 + 50 * DAY - MINUTE, U2));
+    expect(keysOf(before.queue)).toEqual(["k1", "x1"]);
+    expect(before.effects).toEqual([]);
+    kGone(dropAbsent(q, ctx(T0 + 50 * DAY, U2)));
+  });
+
+  it("seenUser geldt alleen voor die user: x1 van U2 telt nog vanaf zijn toevoegen", () => {
+    const q = seenUser(twoUsers(), U, T0 + 20 * DAY);
+    const step = dropAbsent(q, ctx(T0 + 30 * DAY, U3));
+    expect(keysOf(step.queue)).toEqual(["k1"]);
+    expect(step.effects).toContainEqual({ kind: "bestand_weg", fileName: "x1.mov" });
+  });
+
+  it("elke user die niet is ingelogd, telt apart", () => {
+    let q = sending("k1", "o1", T0);
+    q = add(q, "z1", T0 + 5 * DAY, U3);
+    const first = dropAbsent(q, ctx(T0 + 30 * DAY, U2));
+    expect(keysOf(first.queue)).toEqual(["z1"]);
+    expect(first.effects.some((e) => e.kind === "bestand_weg" && e.fileName === "z1.mov")).toBe(false);
+    expect(keysOf(dropAbsent(first.queue, ctx(T0 + 35 * DAY - MINUTE, U2)).queue)).toEqual(["z1"]);
+    expect(dropAbsent(first.queue, ctx(T0 + 35 * DAY, U2)).queue).toEqual([]);
+  });
+
+  it("een klok die terug springt: het moment wordt nooit vroeger, dus niets gaat te vroeg", () => {
+    // U gezien op T0. Daarna staat de klok 40 dagen achter en ziet de app U
+    // nog eens: dat mag het moment niet naar T0 - 40 dagen halen.
+    const q = seenUser(twoUsers(), U, T0 - 40 * DAY);
+    const step = dropAbsent(q, ctx(T0 + 29 * DAY, U2));
+    expect(keysOf(step.queue)).toEqual(["k1", "x1"]);
+    expect(step.effects).toEqual([]);
+    kGone(dropAbsent(q, ctx(T0 + 30 * DAY, U2)));
+  });
+
+  it("een klok die achter staat bij de controle: niets weg", () => {
+    const q = twoUsers();
+    for (const t of [T0 - 10 * DAY, T0 - 400 * DAY]) {
+      const step = dropAbsent(q, ctx(t, U2));
+      expect(keysOf(step.queue)).toEqual(["k1", "x1"]);
+      expect(step.effects).toEqual([]);
+    }
+  });
+
+  it("het moment blijft over een herstart (queueToStore, queueFromStore)", () => {
+    const q = seenUser(twoUsers(), U, T0 + 20 * DAY);
+    const back = queueFromStore(queueToStore(q));
+    expect(back.broken).toBe(false);
+    expect(keysOf(dropAbsent(back.queue, ctx(T0 + 50 * DAY - MINUTE, U2)).queue)).toEqual(["k1", "x1"]);
+    kGone(dropAbsent(back.queue, ctx(T0 + 50 * DAY, U2)));
+  });
+
+  it("een wachtrij van vóór deze regel (zonder dat moment): leesbaar, en de 30 dagen tellen vanaf het toevoegen", () => {
+    // De velden van een origineel in versie 1, zoals de app ze schreef vóór dit besluit.
+    const V1 = [
+      "key", "userId", "projectId", "fileName", "bytes", "photoId", "originalId", "step", "addedAt",
+      "waitUntil", "busyUntil", "linksValidUntil", "generation", "errors", "rounds", "lastMissing",
+    ];
+    const stored = JSON.parse(queueToStore(twoUsers())) as { version: number; queue: Record<string, unknown>[] };
+    const old = {
+      version: 1,
+      queue: stored.queue.map((e) => Object.fromEntries(V1.map((k) => [k, e[k]]))),
+    };
+    const back = queueFromStore(JSON.stringify(old));
+    expect(back.broken).toBe(false);
+    expect(keysOf(back.queue)).toEqual(["k1", "x1"]);
+    const before = dropAbsent(back.queue, ctx(T0 + 30 * DAY - MINUTE, U2));
+    expect(keysOf(before.queue)).toEqual(["k1", "x1"]);
+    kGone(dropAbsent(back.queue, ctx(T0 + 30 * DAY, U2)));
   });
 });
