@@ -190,7 +190,7 @@ public class ClubalmanacVideoModule: Module {
       try OriginalUploader.shared.forget(originalId)
     }
 
-    // 38b-18: niet gestart (toestel op slot, opslag niet te lezen): een fout, geen lege lijst.
+    // 38b-18: niet gestart (de opslag was nog niet te lezen): een fout, geen lege lijst.
     AsyncFunction("uploaderJobs") { () throws -> String in
       return try OriginalUploader.shared.jobsJSON()
     }

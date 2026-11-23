@@ -41,6 +41,9 @@ import {
 // Fix-cyclus 2:
 // - Komen er links binnen terwijl de stap al afronden is, dan blijven ze
 //   liggen en volgt `finishOriginal` (punt 3).
+// Fix-cyclus 3:
+// - Geeft die hervatting iets anders dan links, dan ook geen wachttijd op het
+//   afronden; alleen binnen of een definitieve weigering geldt (punt 4).
 // Besluit red-team N6:
 // - Elk origineel onthoudt wanneer de app zijn user voor het laatst ingelogd
 //   zag (`seenAt`, nooit vroeger). Van een user die niet is ingelogd, gaan de
@@ -278,6 +281,21 @@ function onFinish(queue: QueueEntry[], entry: QueueEntry, result: FinishResult, 
   return unchanged(applyWait(queue, entry, result, now));
 }
 
+/**
+ * De uitkomst van een hervatting die liep terwijl de stap al afronden werd.
+ * Fix-cyclus 2, punt 3: nieuwe links blijven liggen. Fix-cyclus 3, punt 4: ook
+ * een wachttijd of een fout raakt het afronden niet (en telt niet mee voor het
+ * oplopen); alleen wat het origineel voorgoed weg doet, geldt. `te_vaak` zet
+ * hier ook geen wachttijd op de andere originelen van die user: een geweigerde
+ * aanroep kost in de backend niets, en geeft het afronden zelf `te_vaak`, dan
+ * wacht alles van die user alsnog een uur.
+ */
+function duringFinish(queue: QueueEntry[], entry: QueueEntry, result: StartResult): QueueStep {
+  if (result.kind === "done") return removeEntry(queue, { ...entry, originalId: result.originalId });
+  if (result.kind === "geweigerd" && FINAL.has(result.reason)) return removeEntry(queue, entry);
+  return unchanged(queue);
+}
+
 export function applyEvent(queue: QueueEntry[], event: QueueEvent, now: number): QueueStep {
   switch (event.kind) {
     case "album_klaar": {
@@ -296,7 +314,7 @@ export function applyEvent(queue: QueueEntry[], event: QueueEvent, now: number):
       // Fix-cyclus 2, punt 3: alle delen zijn al verstuurd terwijl de
       // hervatting liep. De nieuwe links blijven liggen: eerst afronden;
       // `missing` zegt wat er nog moet.
-      if (entry.step === "afronden" && event.result.kind === "upload") return unchanged(queue);
+      if (entry.step === "afronden") return duringFinish(queue, entry, event.result);
       return onStart(queue, entry, event.result, now);
     }
     case "afgerond": {

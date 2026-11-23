@@ -73,6 +73,9 @@ import { originalRefusal, wifiOnlyAtStart, wifiOnlyToStore, type NetworkView } f
 //   naast die van de uploader; uitzetten geldt pas als bewaren en omzetten
 //   allebei lukken. Het omzetten loopt los van de rij, zodat het niet wacht op
 //   het snijden of een aanroep (punt 10).
+//   Fix-cyclus 3, punt 3: bij het laden eerst `uploaderJobs`, dan de stand.
+//   Een leesfout (van de app of de uploader) geeft aan voor nu, zonder iets te
+//   bewaren, zodat een wekking op slot hem niet blijvend aanzet.
 // - De wachtrij op schijf heeft een versie (queueToStore); een onleesbare
 //   wachtrij geeft een regel in het log (punt 9).
 // - Besluit red-team N6: de runner ziet een user bij inloggen, bij het
@@ -379,25 +382,33 @@ class OriginalRunner {
 
   /**
    * Punt 6: bij de start de eigen waarde naast die van de uploader; alleen als
-   * beide uit zeggen, is het uit. Anders aan, ook bij de uploader en op schijf.
+   * beide uit zeggen, is het uit. Zeggen ze allebei iets en is het aan, dan
+   * ook aan bij de uploader en op schijf.
+   * Fix-cyclus 3, punt 3: kan de app zijn eigen waarde niet lezen (een
+   * leesfout, geen onleesbare waarde) of de uploader zijn stand niet geven,
+   * dan aan voor nu, maar niets bewaard: niet in de app, niet bij de uploader.
+   * Bij het volgende laden telt weer wat er bewaard is.
    */
   private loadWifi(): Promise<boolean> {
     return this.wifiRun(async () => {
       let stored: string | null = null;
+      let doubt = false;
       try {
         stored = await readOriginalState(WIFI_FILE);
       } catch {
-        // Onleesbaar telt als aan.
+        doubt = true;
+        this.note("alleen via wifi: de eigen waarde was niet te lezen, aan voor nu");
       }
       let native: boolean | null = null;
       try {
         native = await uploaderWifiOnly();
       } catch {
-        this.note("alleen via wifi: de uploader kon zijn stand niet geven, de stand is aan");
+        doubt = true;
+        this.note("alleen via wifi: de uploader kon zijn stand niet geven, aan voor nu");
       }
-      const on = wifiOnlyAtStart(stored, native);
+      const on = doubt || wifiOnlyAtStart(stored, native);
       this.setWifiState(on);
-      if (!on) return true;
+      if (!on || doubt) return true;
       if (stored !== wifiOnlyToStore(true)) {
         try {
           await writeOriginalState(WIFI_FILE, wifiOnlyToStore(true));
@@ -492,16 +503,19 @@ class OriginalRunner {
     }
     const stored = queueFromStore(raw);
     if (stored.broken) this.note("wachtrij onleesbaar: wat te lezen was blijft, de rest gaat weg");
-    await this.loadWifi();
     let jobs: Awaited<ReturnType<typeof uploaderJobs>>;
     let files: string[];
     try {
       jobs = await uploaderJobs();
       files = await listOriginals();
     } catch {
+      // De uploader kon zijn opslag nog niet lezen: niets aan de stand
+      // veranderen, later opnieuw (fix-cyclus 3, punt 3).
       this.schedule(Date.now() + LOAD_RETRY_MS);
       return false;
     }
+    // Pas als de uploader zijn taken gaf, zijn stand (fix-cyclus 3, punt 3).
+    await this.loadWifi();
     this.loaded = true;
     // Punt 3: wat dit proces al in de map zette (het toevoegscherm, terwijl
     // het laden liep), is geen wees.

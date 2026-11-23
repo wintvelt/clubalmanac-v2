@@ -48,14 +48,21 @@
 // Fix-cyclus 2:
 // - Punt 1 (38b-19): die schakelaar staat alleen in het geheugen, niet in
 //   `UserDefaults`; bij elke start van de app is hij uit.
-// - Punt 4 (38b-18): de uploader start pas als het toestel open is
-//   (`isProtectedDataAvailable`). Daarvoor legt hij niets naast elkaar, start,
-//   stopt, wist en bewaart hij niets, en geeft hij JS een fout in plaats van een
-//   lege stand. Een leesfout van zijn opslag is geen onleesbare opslag: geen
-//   lege start, later opnieuw lezen. Gewekt vóór de eerste ontgrendeling: een
-//   regel "op slot" in het log zodra dat kan.
+// - Punt 4 (38b-18): tot het lezen van zijn opslag lukt, legt de uploader
+//   niets naast elkaar, start, stopt, wist en bewaart hij niets, en geeft hij JS
+//   een fout in plaats van een lege stand. Een leesfout is geen onleesbare
+//   opslag: geen lege start, later opnieuw lezen.
 // - Punt 6 (38b-13): is een deel al klaar als zijn snijden afloopt, dan gaat
 //   het deelbestand meteen weg.
+//
+// Fix-cyclus 3:
+// - Punt 1 (38b-18): geen poort op `isProtectedDataAvailable` (die is ook
+//   `false` met het scherm gewoon op slot). Of het lezen lukt, beslist; lukt
+//   het niet, dan opnieuw na een korte tijd en zodra het toestel open gaat.
+//   Alleen als het lezen eerst mislukte, komt er een regel "op slot".
+// - Punt 2 (38b-20): `init` leest de opslag synchroon, vóór de sessies er
+//   zijn. Een afloop die iOS meldt vóór het laden lukt, bewaart de uploader in
+//   volgorde en verwerkt hij na het laden, vóór het naast elkaar leggen.
 
 import ExpoModulesCore
 import Foundation
@@ -135,7 +142,7 @@ enum UploaderError: Error, LocalizedError {
     case .badJob: return "Ongeldige upload"
     case .noSource: return "Het origineel staat niet meer op het toestel"
     case .short: return "Het origineel is korter dan aangemeld"
-    case .notStarted: return "De uploader is nog niet gestart (toestel op slot of opslag niet te lezen)"
+    case .notStarted: return "De uploader is nog niet gestart (de opslag was nog niet te lezen)"
     }
   }
 }
@@ -262,10 +269,11 @@ final class OriginalUploader: NSObject, URLSessionDataDelegate, @unchecked Senda
   /// De opslag is gelezen (of er was er geen, of hij was onleesbaar). Daarvoor
   /// bewaart de uploader niets en geeft hij JS een fout (38b-18).
   private var loaded = false
-  /// Het toestel is sinds deze start open geweest (de bestanden zijn dan leesbaar).
-  private var deviceOpen = false
-  /// Gewekt vóór de eerste ontgrendeling: de regel "op slot" volgt zodra het log kan.
-  private var sawLocked = false
+  /// Het lezen van de opslag mislukte minstens één keer (op slot na een
+  /// herstart): de regel "op slot" volgt zodra het lukt.
+  private var readFailed = false
+  /// 38b-20: afloop van taken die iOS meldde vóór het laden lukte, in volgorde.
+  private var pendingCompletions: [(session: URLSession, task: URLSessionTask, error: Error?)] = []
   /// Er staat al een nieuwe poging om de opslag te lezen.
   private var retryPending = false
   private var startReason = ""
@@ -294,8 +302,10 @@ final class OriginalUploader: NSObject, URLSessionDataDelegate, @unchecked Senda
     super.init()
     // 38b-19: een eerdere dev-build bewaarde de schakelaar van gate 6; die telt niet meer.
     UserDefaults.standard.removeObject(forKey: Self.legacyExitKey)
-    // De opslag leest `tryStart`, pas als het toestel open is (38b-18). Een
-    // terugroep van een sessie vóór die tijd vindt geen deel en telt niet.
+    // 38b-20: eerst de opslag, dan de sessies; zo vindt een terugroep van iOS
+    // zijn deel. Lukt het lezen niet, dan bewaart de uploader wat iOS meldt tot
+    // het laden lukt.
+    q.sync { _ = self.load() }
     let oq = OperationQueue()
     oq.maxConcurrentOperationCount = 1
     oq.underlyingQueue = q
@@ -308,18 +318,12 @@ final class OriginalUploader: NSObject, URLSessionDataDelegate, @unchecked Senda
     }
     let center = NotificationCenter.default
     center.addObserver(forName: UIApplication.didBecomeActiveNotification, object: nil, queue: nil) { [weak self] _ in
-      let open = UIApplication.shared.isProtectedDataAvailable
-      self?.q.async {
-        if open { self?.deviceOpen = true }
-        self?.becameActive()
-      }
+      self?.q.async { self?.becameActive() }
     }
+    // Het toestel gaat open: lukte het lezen nog niet, dan nu opnieuw (38b-18).
     center.addObserver(forName: UIApplication.protectedDataDidBecomeAvailableNotification, object: nil, queue: nil) {
       [weak self] _ in
-      self?.q.async {
-        self?.deviceOpen = true
-        self?.tryStart()
-      }
+      self?.q.async { self?.tryStart() }
     }
     center.addObserver(forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: nil) { [weak self] _ in
       self?.q.async {
@@ -367,43 +371,56 @@ final class OriginalUploader: NSObject, URLSessionDataDelegate, @unchecked Senda
   // MARK: start en herstel
 
   /// Bij het starten van de app (ook als iOS hem op de achtergrond wekt): de
-  /// sessies zijn er (init); de lopende taken ophalen en naast de opslag leggen.
-  /// Pas als het toestel open is (38b-18).
+  /// opslag en de sessies zijn er (init); de lopende taken ophalen en naast de
+  /// opslag leggen, zodra het lezen van de opslag gelukt is (38b-18).
   func start(reason: String) {
     Task { @MainActor in
       let active = UIApplication.shared.applicationState != .background
-      let open = UIApplication.shared.isProtectedDataAvailable
       self.q.async {
         if self.started { return }
         // Werd de app al actief vóór deze start (punt 1), dan blijft dat zo.
         self.foreground = self.foreground || active
         if self.startReason.isEmpty { self.startReason = reason }
-        if open {
-          self.deviceOpen = true
-        } else {
-          self.sawLocked = true
-        }
         self.tryStart()
       }
     }
   }
 
-  /// Leest de opslag en legt hem naast de taken van iOS, zodra het toestel open
-  /// is en het lezen lukt. Alleen op `q`.
+  /// Leest de opslag (als dat nog niet lukte) en legt hem naast de taken van
+  /// iOS. Alleen op `q`.
   private func tryStart() {
-    guard !started, deviceOpen else { return }
-    guard loadStore() else {
-      // Een leesfout: niets wissen, niets stoppen, niets bewaren; later opnieuw.
-      note("opslag van de uploader niet te lezen (op slot of een andere fout): later opnieuw")
-      scheduleRetry()
-      return
-    }
+    guard !started, load() else { return }
     started = true
-    if sawLocked {
-      note("op slot: gewekt vóór de eerste ontgrendeling, gewacht tot het toestel open was")
-    }
     note("uploader start (\(startReason), \(foreground ? "voorgrond" : "achtergrond"))")
     reconcile()
+  }
+
+  /// De opslag laden, als dat nog niet gebeurd is. Na het laden eerst de
+  /// bewaarde afloop van taken, dan pas (in `tryStart`) het naast elkaar
+  /// leggen (38b-20). Lukt het lezen niet: niets wissen, stoppen of bewaren,
+  /// later opnieuw (38b-18). Alleen op `q`.
+  private func load() -> Bool {
+    if loaded { return true }
+    guard loadStore() else {
+      if !readFailed {
+        readFailed = true
+        note("opslag van de uploader niet te lezen (op slot of een andere fout): later opnieuw")
+      }
+      scheduleRetry()
+      return false
+    }
+    if readFailed {
+      note("op slot: de opslag van de uploader was eerst niet te lezen, nu wel")
+    }
+    let pending = pendingCompletions
+    pendingCompletions = []
+    if !pending.isEmpty {
+      note("\(pending.count) meldingen van iOS van vóór het laden verwerkt")
+    }
+    for item in pending {
+      urlSession(item.session, task: item.task, didCompleteWithError: item.error)
+    }
+    return true
   }
 
   private func scheduleRetry() {
@@ -417,7 +434,7 @@ final class OriginalUploader: NSObject, URLSessionDataDelegate, @unchecked Senda
 
   /// `false`: een leesfout (op slot of anders); dan blijft alles zoals het was.
   /// Niet te decoderen is iets anders: leeg beginnen, "Alleen via wifi" aan (38b-17).
-  /// Alleen op `q`.
+  /// Alleen op `q` (of in `init`, vóór de sessies er zijn).
   private func loadStore() -> Bool {
     if loaded { return true }
     let file = storeFile
@@ -1014,6 +1031,11 @@ final class OriginalUploader: NSObject, URLSessionDataDelegate, @unchecked Senda
 
   func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
     guard let tag = Self.tag(task) else { return }
+    // 38b-20: de opslag is nog niet geladen; bewaren tot het laden lukt.
+    guard loaded else {
+      pendingCompletions.append((session: session, task: task, error: error))
+      return
+    }
     let status = (task.response as? HTTPURLResponse)?.statusCode
     let body = responseBodies.removeValue(forKey: tag.token)
     let via = sessionName(session)
