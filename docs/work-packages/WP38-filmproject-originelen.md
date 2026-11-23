@@ -378,3 +378,32 @@ Aangepast: in `_film.ts` de ondergrens (1 MiB) en de daggrens (600), plus de gre
 - **Na `geen_video`** kan hetzelfde filmpje opnieuw worden aangemeld (`originals.test.ts`).
 - **Voor 38b**: bewaar het bestand precies zoals het werd aangemeld en exporteer het niet opnieuw. Een andere grootte weigert `startOriginal` met `niet_toegestaan`, en terugtrekken en opnieuw insturen kan niet.
 - **Cron-venster** (regie): 7 dagen plus 1 dag; de getallen bij fix-cyclus 2, punt 2, zijn bijgewerkt. Test erbij: een deel op het laatste moment van zijn link, de cron 7 dagen en 22 uur na de links rondt nog af.
+
+## Spike 38b: uploader op de iPhone (regie, 2026-11-23)
+
+Doel: weten wat iOS en R2 echt doen met een origineel van ~1,5 GB, vóór A de tests van 38b schrijft. Net als bij WP14 doet één uitvoer-sessie met het `wp-b`-mandaat de code; regie maakt de dev-build en zet hem op TestFlight; Wouter test op zijn iPhone. De code staat op een eigen branch `wp38b-spike` (worktree `~/Code/clubalmanac-v2-spike`) en gaat niet naar `main`. B van 38b mag hem later lezen. Tegen dev (`glorious-pheasant-759`, `clubalmanac-originals-dev`); de backend van 38a staat daar al.
+
+**Wat de spike bouwt** (snel en wegwerp, geen tests nodig; app-typecheck groen):
+
+- In `clubalmanac-video` een uploader met een URLSession voor de achtergrond. Per deel een eigen bestand (iOS uploadt op de achtergrond alleen vanuit een bestand), een PUT naar de deel-link, de wifi-keuze via de instellingen van de sessie. Voortgang en klaar als events. Na het opnieuw starten van de app pakt hij de lopende taken weer op. Ook: de SHA-256 van een bestand.
+- Een proefscherm, alleen in dev-builds, bereikbaar vanuit Instellingen. Daarop:
+  - een filmproject openen in een groep waar je oprichter bent (album kiezen, einde over 14 dagen) en sluiten;
+  - één filmpje kiezen zoals in het toevoegscherm (WP39), met grootte, SHA-256 en metadata in beeld;
+  - het verkleinde filmpje toevoegen zoals in WP37 (de albumregel zet het in het filmalbum), dan `startOriginal`, de delen via de uploader, `finishOriginal`;
+  - een schakelaar "Alleen via wifi" die meteen werkt, ook voor wachtende delen;
+  - een log met tijden en de stand per deel, die een herstart overleeft;
+  - terugtrekken, en de vrije ruimte op het toestel;
+  - een knop die één deel met een verkeerde grootte stuurt (R2 hoort 403 te geven).
+- Een eenvoudige wachtrij op schijf (inzending, bestand, links, stand), zodat de app na wegvegen of een herstart verder kan.
+
+**Wat Wouter meet op de iPhone** (de gate-checks voor iOS en R2):
+
+1. Upload van ~1,5 GB op wifi: hoe lang, en loopt hij door met de app op de achtergrond en het scherm uit?
+2. "Alleen via wifi": wacht hij op mobiel internet en op een persoonlijke hotspot, en gaat hij verder op wifi? Omzetten tijdens het wachten.
+3. App wegvegen en opnieuw openen: gaat hij verder (iOS breekt de taken dan af; de app moet ze opnieuw starten)?
+4. De telefoon herstarten: gaat hij daarna verder?
+5. Geeft de kiezer het origineel bit voor bit? SHA-256 in de app naast die van dezelfde video via AirDrop met "Alle fotogegevens". Ook een filmpje uit iCloud, een bewerkt filmpje, slow motion, Cinematic en ProRes: wat komt eruit?
+6. R2: een deel met een verkeerde grootte geeft 403; afronden lukt; de vrije ruimte komt terug na binnen en na terugtrekken.
+7. Datering in R2 (open vraag uit 38a): een upload over twee dagen spreiden (de helft vandaag, de rest morgen) en in het R2-dashboard kijken welke datum het object krijgt.
+
+**Uitkomst:** regie schrijft de metingen hieronder. Daarna besluiten met Wouter, en pas dan A voor 38b.
