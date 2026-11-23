@@ -438,3 +438,305 @@ Nog open voor de gate van 38b: datering in R2 (upload over twee dagen spreiden),
 ### Besluiten Wouter na de spike (2026-11-23)
 
 Besluiten 21–26: alle zes ja. Daarna A voor 38b.
+
+## Spec-criticus 38b (A)
+
+> A 2026-11-23, na besluiten 21–26. Bronnen: deze spec, de spike (`wp38b-spike`, `990fd2b`: `OriginalUploader.swift`, `OriginalFiles.swift`, `ClubalmanacUploadAppDelegate.swift`, het proefscherm), de backend van 38a (`convex/filmProjects.ts`), `videoUpload.ts` en `AddPhotosScreen.tsx` (WP37, WP39), `signOutAndWipe.ts` (WP29). Pariteit met de oude app: niet van toepassing, v1 kende geen originelen.
+
+### De grens tussen 38b en 38c
+
+**38b levert het gedrag en de data, 38c de schermen.** De gate van 38b moet het risico in iOS toetsen voordat er schermen zijn. Daarom zitten de schakelaar en de stand aan de kant van het gedrag in 38b, en hun plek in de schermen in 38c.
+
+- **38b**:
+  - de uploader in `clubalmanac-video` en de wachtrij met zijn runner;
+  - het aanmelden na het album (A-invariant 18);
+  - het verplaatsen en opruimen van de kopie;
+  - besluit 25.
+  - De beslissing of een origineel meegaat (`originalPlan`), met de ondergrens: die stond bij fix-cyclus 1, punt 6, nog bij 38c. Het is dezelfde beslissing als de grens en de vrije ruimte.
+  - De instelling "Alleen via wifi": onthouden per toestel, standaard aan, en het omzetten van de sessie in iOS.
+  - De stand per eigen origineel als functie (`ownOriginalStand`).
+  - Account verwijderen wist de wachtrij.
+  - Een proefscherm, alleen in dev-builds, voor de gate. B mag dat van de spike overnemen. Het toont de wachtrij met de stand, de schakelaar, terugtrekken en of het bestand er nog is.
+- **38c**:
+  - besluit 3 (A-invariant 17) en de teksten in het toevoegscherm, ook de melding bij `te_klein`, `te_groot` en `geen_ruimte`;
+  - de schakelaar "Alleen via wifi" in het toevoegscherm en op de projectpagina (hij zet de instelling van 38b);
+  - de stand op de projectpagina;
+  - de knop Terugtrekken met de waarschuwing dat het definitief is;
+  - de banner, starten en sluiten, de downloadpagina.
+
+Tot 38c er is, gaat in 38b een nieuw filmpje mee als origineel zodra zijn groep een open project heeft (`listOpenForMe`). De backend zet het filmpje toch al in X (A-invariant 2).
+
+### Invarianten 38b
+
+*Getest in de pure modules (testcontract hieronder):*
+
+1. **Gaat het origineel mee.** Bij "Toevoegen", per filmpje, in deze volgorde:
+   - een build zonder uploader (de webapp, een oude build): niet;
+   - de groep van het gekozen album heeft geen open project: niet;
+   - onder 1 MiB of boven 2 GiB (dezelfde getallen als de backend): niet;
+   - de vrije ruimte is kleiner dan het origineel plus 1 GiB: niet. Besluit 21 zet alle delen tegelijk op schijf. Kan de module de vrije ruimte niet geven, dan houdt dat het origineel niet tegen.
+
+   Gaat het niet mee, dan gaat het filmpje gewoon naar het album en geldt voor de kopie van de kiezer de opruimregel van WP39.
+2. **Bewaren zoals aangemeld.** De kopie van de kiezer wordt verplaatst, niet gekopieerd, naar een eigen map in Application Support:
+   - buiten de iCloud-backup;
+   - na de eerste ontgrendeling leesbaar, ook op de achtergrond met het scherm op slot.
+
+   De grootte na het verplaatsen gaat naar `startOriginal`, bij de eerste aanmelding en bij elke hervatting. Het bestand wordt nooit gewijzigd of opnieuw geëxporteerd. Het verkleinen voor het album leest dit bestand. De opruimregels van WP39 (`dropCopies`, sluiten) wissen het niet.
+3. **Aanmelden na het album** (A-invariant 18). De wachtrij krijgt het origineel bij "Toevoegen", met als stap: wacht op het album. Staat het filmpje in het album (`photoId`), dan aanmelden, op elk netwerk. Het origineel gaat weg in twee gevallen:
+   - het filmpje krijgt een vaste reden;
+   - de ronde sluit zonder dat het filmpje in het album staat.
+4. **De wachtrij.**
+   - Per filmpje hooguit één origineel. De sleutel is de upload-id van het filmpje voor het album (WP37).
+   - Elk origineel hoort bij een user. Er gaan alleen aanroepen voor de user die nu is ingelogd.
+   - Uitloggen pauzeert de wachtrij en wist niets. Account verwijderen (WP29, `signOutAndWipe` met user) wist alles van die user: iOS-taken, deelbestanden en bewaarde bestanden.
+   - De wachtrij staat op schijf en overleeft een herstart. Hij bewaart geen links; die staan alleen in de opslag van de uploader.
+   - Hij draait vanuit de wortel van de app, ook als iOS de app op de achtergrond start, niet vanuit een scherm. In de webapp draait hij niet.
+5. **Herstart en wegvegen** (besluit 22, red-team N1). Bij elke start van de app:
+   - wat iOS nog heeft, loopt door, zonder `startOriginal`, zolang de bewaarde links gelden;
+   - zijn alle delen klaar, dan afronden;
+   - weet de uploader niets meer van het origineel, dan opnieuw aanmelden;
+   - een origineel dat nog op zijn album wachtte, gaat weg: die ronde bestaat niet meer na een herstart;
+   - iOS-taken en bestanden zonder origineel in de wachtrij gaan weg; die van een andere user blijven.
+
+   Gelden de links nog minder dan een dag, dan eerst nieuwe links, ook als de delen op wifi wachten. Zo gaat een deel niet met een verlopen link over de lijn.
+6. **Een mislukt deel.**
+   - Na 403 (verlopen link, verkeerde grootte) of `NoSuchUpload`: opnieuw aanmelden. Veel delen tegelijk 403 geeft één aanmelding.
+   - Anders (geen antwoord, 5xx, 429, andere 4xx): hetzelfde deel met dezelfde link opnieuw bij iOS, hooguit 5 mislukte pogingen. Daarna wacht het origineel een uur en meldt het opnieuw aan.
+   - Hervatten loopt niet eindeloos. Na 3 aanmeldingen op rij waarbij R2 niet minder delen mist dan bij de vorige, wacht het origineel een dag. Dat geldt voor 403-rondes en voor steeds `missing` na afronden.
+7. **Aanroepen na elkaar.** Eén aanroep tegelijk (`startOriginal` of `finishOriginal`), voor de hele wachtrij.
+   - Volgorde: eerst afronden, dan hervatten, dan een nieuwe aanmelding; binnen elke soort de oudste eerst.
+   - `te_vaak`: alles van die user wacht een uur. De grens glijdt, en een geweigerde aanroep telt in de backend niet mee.
+   - `bezig`: alleen die nieuwe aanmelding wacht, tot een ander origineel van die user uit de wachtrij is, hooguit een uur. Hervatten en afronden gaan door.
+   - Verder:
+
+     | Uitkomst | Wachten |
+     |---|---|
+     | fout zonder reden | 1 minuut |
+     | `uitgelogd` | 5 minuten |
+     | onbekende reden | 1 uur |
+     | `vol` | 1 dag (open vraag 1) |
+
+   - Valt de verbinding weg, dan eerst één nieuwe poging, zoals WP37 (`withOneRetry`).
+8. **Afronden pas als alle delen verstuurd zijn**, niet na elk deel. De uploader meldt "alle delen klaar".
+   - `missing` betekent opnieuw aanmelden.
+   - Afronden mag ook op de achtergrond (spike 2).
+   - Kan de app dat niet, bijvoorbeeld zonder login met het scherm op slot, dan rondt de cron het binnen een uur af (A-invariant 9). Een ontbrekende login op de achtergrond wist nooit iets.
+9. **Weg is weg.** In deze gevallen stopt de uploader alle taken van dat origineel en wist hij de deelbestanden. Ook het bewaarde bestand gaat weg, het origineel gaat uit de wachtrij, en de app meldt dat filmpje nooit meer aan:
+   - binnen (`done`);
+   - teruggetrokken (`withdraw` gelukt);
+   - geweigerd met `niet_toegestaan`, `te_groot`, `te_klein` of `geen_video`;
+   - een kapot bestand.
+
+   Bij wachten of een fout blijft het bestand staan.
+10. **Opruimen controleren aan het bestand** (spike 9). Na "weg" bestaan het bewaarde bestand en de deelbestanden van dat origineel niet meer. Het getal voor de vrije ruimte telt niet als bewijs.
+11. **"Alleen via wifi"** (besluit 6, A-invariant 21).
+    - Standaard aan, per toestel onthouden. Een onleesbare waarde telt als aan.
+    - Aan: wachten op mobiel internet, een persoonlijke hotspot (een duur netwerk), geen netwerk of een onbekend netwerk.
+    - Aanmelden en afronden gaan op elk netwerk; alleen de delen wachten.
+    - De stand per eigen origineel:
+
+      | Stand | Wanneer |
+      |---|---|
+      | `binnen` | de backend zegt binnen |
+      | `elders` | onderweg, maar niet in de wachtrij van dit toestel |
+      | `wacht` | er loopt een wachttijd |
+      | `wacht_op_wifi` | de delen zijn bij iOS en het netwerk is niet goed genoeg |
+      | `wordt_verstuurd` | de rest |
+12. **Besluit 25.** Was de app tijdens het verkleinen niet steeds `active`, dan is een mislukking geen fout van het filmpje. De app wacht tot hij weer `active` is en probeert het opnieuw:
+    - met dezelfde upload-id;
+    - zonder melding; het filmpje blijft "bezig" en het scherm blijft wakker zoals nu;
+    - hooguit 3 keer op rij, daarna de gewone melding van WP37.
+
+    Bleef de app voor, dan is het de gewone mislukking. Dit geldt ook voor filmpjes zonder origineel.
+
+*Alleen in de native uploader (niet te unit-testen; gate):*
+
+13. **Alle delen meteen aan iOS** (besluit 21).
+    - Krijgt de uploader delen, dan snijdt hij ze allemaal, elk naar een eigen bestand met precies het stuk van het bewaarde bestand. Hij geeft ze meteen aan iOS.
+    - Een deelbestand gaat weg zodra het deel klaar is.
+    - Delen die op de achtergrond aan iOS gegeven zijn en nog niet lopen, gaan zodra de app voor komt (spike 3).
+    - Heeft het bewaarde bestand niet meer de aangemelde grootte, of is het weg, dan stuurt hij geen kort deel maar meldt hij een kapot bestand.
+    - Lukt het snijden niet (geen ruimte), dan meldt hij een mislukking zonder status.
+14. **Elk deel één keer onderweg** (spike 5).
+    - Bij het openen legt de uploader zijn opslag naast de taken van iOS. Een deel zonder taak krijgt er precies één; een taak zonder deel stopt.
+    - Nieuwe links voor een origineel vervangen de oude. Een deel dat met een oude link nog loopt, stopt eerst. De afloop van een taak met een oude link telt niet, niet als klaar en niet als mislukt.
+    - Twee achtergrond-sessies met een vaste naam (alleen wifi zonder dure netwerken, en alles). Omzetten van de schakelaar verplaatst wachtende en lopende delen meteen. Een deel loopt nooit in beide.
+15. **Events naar de app.** Per deel klaar, of mislukt met de HTTP-status (of geen) en de foutcode van R2 (`<Code>`). Daarbij het aantal mislukte pogingen met de huidige link.
+    - Een stop door iOS bij wegvegen (fout -999) telt niet als poging en is geen mislukking: bij het openen gaat het deel verder.
+    - Eén event "alle delen klaar" per origineel.
+    - Over een mislukking met status beslist de app (invariant 6), niet de uploader.
+    - De terugroep van iOS voor een sessie gaat pas als alle events verwerkt zijn. De achtergrond-upload van `expo-file-system` (het filmpje voor het album, WP37) blijft werken.
+16. **Geen link, sleutel of pad** in een log, een event of de stand naar de app. Alleen inzending-id, deelnummer, status en foutcode.
+
+### Testcontract 38b
+
+> Namen en vormen zijn A-keuzes; het hoe is aan B. Pure modules, zonder React Native, in `app/src/lib/`.
+
+**`originalUpload.ts`**
+
+```ts
+export const ORIGINAL_MIN_BYTES: number;          // 1 MiB, = MIN_ORIGINAL_BYTES
+export const ORIGINAL_MAX_BYTES: number;          // 2 GiB, = MAX_ORIGINAL_BYTES
+export const ORIGINAL_FREE_MARGIN_BYTES: number;  // 1 GiB
+export const PART_ATTEMPTS: number;               // 5
+
+export type OpenProject = { groupId: string; projectId: string };
+export type OriginalPlan =
+  | { kind: "mee"; projectId: string }
+  | { kind: "niet"; reason: "geen_uploader" | "geen_project" | "te_klein" | "te_groot" | "geen_ruimte" };
+export function originalPlan(input: {
+  uploaderAvailable: boolean; groupId: string; openProjects: readonly OpenProject[];
+  bytes: number; freeBytes: number | null;
+}): OriginalPlan;
+
+export type PlannedPart = { partNumber: number; offset: number; size: number };
+export function planParts(bytes: number, partSize: number): PlannedPart[];
+export type PartToSend = PlannedPart & { url: string };
+export function partsToSend(bytes: number, partSize: number, links: readonly { partNumber: number; url: string }[]): PartToSend[] | null;
+
+export type PartFailureAction = "opnieuw" | "opnieuw_aanmelden" | "later";
+export function partFailure(failure: { status: number | null; code: string | null; attempts: number }): PartFailureAction;
+
+export type Refusal = { kind: "geweigerd"; reason: string } | { kind: "fout" };
+export function originalRefusal(error: unknown): Refusal;
+
+export function wifiOnlyFromStore(stored: string | null): boolean;
+export function wifiOnlyToStore(on: boolean): string;
+export type NetworkView = { type: "wifi" | "mobiel" | "kabel" | "geen" | "anders" | "onbekend"; expensive: boolean };
+export function waitsForWifi(wifiOnly: boolean, network: NetworkView): boolean;
+```
+
+- `planParts` geeft delen die aansluiten en allemaal even groot zijn behalve het laatste. Een ongeldige grootte geeft `[]`.
+- `partsToSend` legt de links van `startOriginal` naast het plan. Een link voor een deel dat niet bestaat, of twee keer hetzelfde deel, geeft `null`.
+- `originalRefusal`: `ORIGINAL_REFUSED` met zijn reden, of `onbekend` zonder reden. Al het andere is `fout`.
+
+**`originalQueue.ts`**
+
+```ts
+export const WAIT_MS: { fout: number; uitgelogd: number; te_vaak: number; bezig: number; later: number; onbekend: number; vol: number; vast: number };
+export const RESUME_ROUNDS: number;   // 3
+export const LINK_MARGIN_MS: number;  // 1 dag
+
+export type QueueEntry = {
+  key: string; userId: string; projectId: string; fileName: string; bytes: number;
+  photoId: string | null; originalId: string | null;
+  step: "album" | "aanmelden" | "versturen" | "afronden";
+  addedAt: number;
+  // plus wat B nodig heeft (wachttijd, geldigheid van de links, rondes); geen links
+};
+export type StartResult =
+  | { kind: "upload"; originalId: string; partSize: number; parts: { partNumber: number; url: string }[]; expiresAt: number }
+  | { kind: "done"; originalId: string }
+  | Refusal;
+export type FinishResult = { kind: "done" } | { kind: "missing"; parts: number[] } | Refusal;
+export type QueueEvent =
+  | { kind: "album_klaar"; key: string; photoId: string }
+  | { kind: "album_mislukt"; key: string }
+  | { kind: "aangemeld"; key: string; result: StartResult }
+  | { kind: "afgerond"; key: string; result: FinishResult }
+  | { kind: "delen_klaar"; originalId: string }
+  | { kind: "deel_mislukt"; originalId: string; partNumber: number; status: number | null; code: string | null; attempts: number }
+  | { kind: "teruggetrokken"; originalId: string }
+  | { kind: "bestand_kapot"; key: string };
+export type Effect =
+  | { kind: "aan_ios"; originalId: string; fileName: string; parts: PartToSend[] }
+  | { kind: "ios_opnieuw"; originalId: string; partNumber: number }
+  | { kind: "ios_vergeten"; originalId: string }
+  | { kind: "bestand_weg"; fileName: string };
+export type QueueStep = { queue: QueueEntry[]; effects: Effect[] };
+
+export function addOriginal(queue: QueueEntry[], input: { key: string; userId: string; projectId: string; fileName: string; bytes: number }, now: number): QueueEntry[];
+export function applyEvent(queue: QueueEntry[], event: QueueEvent, now: number): QueueStep;
+export type NextCall =
+  | { kind: "start"; key: string; photoId: string; bytes: number }
+  | { kind: "finish"; key: string; originalId: string };
+export function nextCall(queue: readonly QueueEntry[], ctx: { now: number; userId: string | null }): NextCall | null;
+export function nextWake(queue: readonly QueueEntry[], ctx: { now: number; userId: string | null }): number | null;
+export type NativeJobView = {
+  originalId: string;
+  parts: { partNumber: number; state: "wacht" | "bezig" | "klaar" | "mislukt"; status: number | null; code: string | null; attempts: number }[];
+};
+export function atLaunch(queue: QueueEntry[], native: { jobs: readonly NativeJobView[]; files: readonly string[] }, now: number): QueueStep;
+export function forgetUser(queue: QueueEntry[], userId: string): QueueStep;
+export type OwnStand = "binnen" | "wordt_verstuurd" | "wacht_op_wifi" | "wacht" | "elders";
+export function ownOriginalStand(input: {
+  status: "onderweg" | "binnen"; originalId: string; queue: readonly QueueEntry[];
+  wifiOnly: boolean; network: NetworkView; now: number;
+}): OwnStand;
+```
+
+- De runner past de effecten toe op de uploader en de bestanden, en bewaart de wachtrij.
+- Hij vraagt `nextCall` om de volgende aanroep en zet een wekker op `nextWake`. Dat is het vroegste moment waarop iets dat nu wacht weer mag, of `null`.
+- Een event voor een onbekende sleutel of inzending verandert niets.
+
+**`compressResume.ts`**
+
+```ts
+export const COMPRESS_AUTO_RETRIES: number;  // 3
+export function leftForeground(appStates: readonly string[]): boolean;
+export function afterCompressFailure(input: { leftForeground: boolean; autoRetries: number }): "opnieuw_als_actief" | "mislukt";
+```
+
+### Tests per invariant (stand na A)
+
+| Inv. | Test (`app/tests/`) | Niet getest, omdat … |
+|---|---|---|
+| 38b-1 | `originalUpload.test.ts` (`originalPlan`, grenzen gelijk aan de backend) | de vrije ruimte van iOS: gate |
+| 38b-2 | `originalQueue.test.ts` (dezelfde grootte bij elke aanmelding) | verplaatsen, map en bescherming: gate |
+| 38b-3 | `originalQueue.test.ts` (album klaar of mislukt) | de aansluiting in het toevoegscherm: gate |
+| 38b-4 | `originalQueue.test.ts` (één per sleutel, alleen de ingelogde user, `forgetUser`) | op schijf en vanuit de wortel: gate |
+| 38b-5 | `originalQueue.test.ts` (`atLaunch`, links bijna verlopen) | |
+| 38b-6 | `originalUpload.test.ts` (`partFailure`), `originalQueue.test.ts` (rondes, veel 403 tegelijk) | |
+| 38b-7 | `originalQueue.test.ts` (volgorde, `te_vaak`, `bezig`, wachttijden) | één aanroep tegelijk (runner): audit |
+| 38b-8 | `originalQueue.test.ts` (afronden) | op de achtergrond: gate |
+| 38b-9 | `originalQueue.test.ts` (weg en nooit meer, het bestand blijft bij wachten) | |
+| 38b-10 | | alleen op het toestel |
+| 38b-11 | `originalUpload.test.ts` (wifi), `originalQueue.test.ts` (`ownOriginalStand`) | hotspot en omzetten: gate |
+| 38b-12 | `compressResume.test.ts` | de aansluiting op AppState: gate |
+| 38b-13–16 | | native: gate en audit |
+
+### Gate 38b (op de iPhone, dev, met het proefscherm)
+
+1. **Datering in R2** (open punt van 38a). Verstuur een upload over twee dagen: de helft vandaag, de rest morgen. Kijk in het R2-dashboard welke datum het object krijgt. Daarmee beslist regie het open punt.
+2. **Persoonlijke hotspot** met "Alleen via wifi" aan: de delen wachten.
+3. **Een origineel van ≥ 1 GB** (4K, 60 fps):
+   - binnen op wifi, ook met de app op de achtergrond en het scherm uit;
+   - de SHA-256 van het object in R2 is gelijk aan die van het bewaarde bestand.
+4. **Wegvegen** tijdens het versturen, dan openen: hij gaat verder en het log toont elk deel één keer over de lijn. De telefoon herstarten: hij gaat ook verder.
+5. **Omzetten van de schakelaar**, tijdens het wachten en tijdens het versturen: het geldt meteen.
+6. **Delen die op de achtergrond aan iOS gegeven zijn**, bijvoorbeeld als het album pas klaar was na het verlaten van de app, gaan meteen zodra de app voor komt.
+7. **De oprichter verwijdert het origineel in de webapp** tijdens het versturen. Op de iPhone:
+   - een deel krijgt `NoSuchUpload`;
+   - `startOriginal` geeft `niet_toegestaan`;
+   - het bestand en de deelbestanden zijn weg.
+
+   Hetzelfde na Terugtrekken op het proefscherm. Controleer met "bestaat het bestand", niet met de vrije ruimte.
+8. **Afronden op de achtergrond met het scherm op slot**: binnen een uur binnen (door de app of door de cron).
+9. **Besluit 25**: verlaat de app tijdens het verkleinen en kom terug. Het verkleinen gaat vanzelf verder, zonder "verkleinen lukte niet".
+10. **Zonder project, of te klein**: een filmpje in een groep zonder project, en een clip onder 1 MiB, gaan alleen naar het album. Er komt geen bestand in de map van de originelen.
+11. **Herstart tijdens het verkleinen** van het filmpje voor het album: na het openen staat er geen bestand meer in de map van de originelen.
+
+Niet op het toestel te toetsen in redelijke tijd: links die na 7 dagen verlopen, `te_vaak`, `bezig` en `vol`. Die dekken de tests.
+
+### Open vragen 38b (voor regie of Wouter)
+
+1. **`vol`** (het project of het totaal zit aan de grens).
+   - A-keuze: een dag wachten en opnieuw proberen. Een geweigerde aanroep kost niets, en de oprichter kan ruimte maken.
+   - Dat duurt tot het project het origineel niet meer aanneemt (`niet_toegestaan`, dan weg).
+   - Het alternatief is meteen weggooien. Aanbevolen: wachten.
+2. **Uitloggen** laat wachtende originelen, met GPS, in de map van de app staan tot dezelfde user weer inlogt. Alleen Account verwijderen wist ze. Aanbevolen: zo laten.
+3. **Herstart vóór het filmpje in het album staat.** Het origineel gaat weg. Het filmpje moet het lid opnieuw toevoegen; dat geldt in WP37 nu ook. Aanbevolen: aanvaarden.
+4. **Bestand kapot of weg.** De app trekt niet vanzelf terug: terugtrekken blokkeert het filmpje voor altijd.
+   - De inzending blijft "onderweg" (stand `elders`) en telt mee voor de 30 en het project, tot 14 dagen na sluiten.
+   - Het lid kan hem in 38c terugtrekken.
+   - Aanbevolen: aanvaarden.
+5. **Langer dan 7 dagen geen wifi zonder de app te openen.** Delen die al bij iOS liggen, kunnen dan met een verlopen link gaan (403, wifi-data voor niets). Met de app open vernieuwt de wachtrij de links een dag vooraf. Aanbevolen: aanvaarden.
+
+Geen backend-wijziging nodig: 38b gebruikt `startOriginal`, `finishOriginal`, `withdraw` en `listOpenForMe` zoals ze zijn. De daggrens van 600 laat ruimte voor de rondes hierboven.
+
+**Stand na A (38b):**
+
+- Drie nieuwe testbestanden, 106 tests, alle rood. De modules bestaan nog niet: `Cannot find module`.
+- De app-typecheck faalt alleen op die drie imports.
+- De bestaande 2118 app-tests blijven groen.
+- A draaide de tests tegen een wegwerp-uitwerking. Die is niet gecommit en weggegooid. Zo is gecontroleerd dat de tests samen kloppen en typechecken.
