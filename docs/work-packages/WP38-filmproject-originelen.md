@@ -908,3 +908,5 @@ De zes punten staan nu in de invarianten 38b-4, 38b-7, 38b-8, 38b-13, 38b-17 tot
 1. **Punt 2, eerst U2 en dan weer U.** A pint: ook dan `fout`. De action kan tijdens U2 zijn verstuurd. Kost hooguit een minuut. Aanbevolen: zo laten.
 2. **Punt 4 zonder wekking.** Wekt iOS de app niet vóór de eerste ontgrendeling, dan toetst gate 12 alleen dat de herstart niets kapotmaakt. Het pad "op slot" dekt dan alleen de audit. Aanbevolen: aanvaarden.
 3. **Punt 5 op het toestel.** Zonder een dev-schakelaar is "de wachtrij neemt het niet aan" niet na te bootsen; gate 13 vervalt dan en de audit toetst de aansluiting. Aanbevolen: B beslist of de schakelaar goedkoop is.
+
+**Regie op de open vragen van A (fix-cyclus 2):** 1 zo laten (ook bij terug naar U telt het antwoord als `fout`); 2 aanvaarden; 3 geen dev-schakelaar voor "de wachtrij weigert": gate 13 vervalt, de audit toetst de aansluiting van het scherm.
