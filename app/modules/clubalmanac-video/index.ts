@@ -230,6 +230,7 @@ export const writeOriginalState = (name: string, text: string) => originals().wr
 export const uploaderSend = (job: UploaderSendInput) => originals().uploaderSend(job);
 export const uploaderRetryPart = (originalId: string, partNumber: number) => originals().uploaderRetryPart(originalId, partNumber);
 export const uploaderForget = (originalId: string) => originals().uploaderForget(originalId);
+/** De stand van de uploader. Is hij nog niet gestart (toestel op slot), dan een fout, geen lege lijst (38b-18). */
 export const uploaderJobs = async (): Promise<UploaderJobView[]> => {
   const parsed = JSON.parse(await originals().uploaderJobs()) as { jobs?: UploaderJobView[] };
   return Array.isArray(parsed.jobs) ? parsed.jobs : [];
@@ -244,7 +245,8 @@ export const uploaderClearLog = () => originals().uploaderClearLog();
 /**
  * Gate 6, koud (alleen het proefscherm van een dev-build): stopt de app
  * zichzelf direct nadat hij op de achtergrond delen aan iOS gaf? Eén keer;
- * daarna staat hij weer uit. `null`: deze build kan het niet.
+ * daarna staat hij weer uit. Alleen in het geheugen: bij elke start uit
+ * (38b-19). `null`: deze build kan het niet.
  */
 export async function uploaderExitAfterBackgroundSend(): Promise<boolean | null> {
   if (!native?.uploaderExitAfterBackgroundSend) return null;

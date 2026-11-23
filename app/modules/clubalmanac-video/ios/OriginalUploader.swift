@@ -44,6 +44,18 @@
 // - Gate 6 (koud), alleen via het proefscherm van een dev-build: een schakelaar
 //   waarmee de app zichzelf stopt direct nadat hij op de achtergrond delen aan
 //   iOS gaf (één keer).
+//
+// Fix-cyclus 2:
+// - Punt 1 (38b-19): die schakelaar staat alleen in het geheugen, niet in
+//   `UserDefaults`; bij elke start van de app is hij uit.
+// - Punt 4 (38b-18): de uploader start pas als het toestel open is
+//   (`isProtectedDataAvailable`). Daarvoor legt hij niets naast elkaar, start,
+//   stopt, wist en bewaart hij niets, en geeft hij JS een fout in plaats van een
+//   lege stand. Een leesfout van zijn opslag is geen onleesbare opslag: geen
+//   lege start, later opnieuw lezen. Gewekt vóór de eerste ontgrendeling: een
+//   regel "op slot" in het log zodra dat kan.
+// - Punt 6 (38b-13): is een deel al klaar als zijn snijden afloopt, dan gaat
+//   het deelbestand meteen weg.
 
 import ExpoModulesCore
 import Foundation
@@ -116,12 +128,14 @@ enum UploaderError: Error, LocalizedError {
   case badJob
   case noSource
   case short
+  case notStarted
 
   var errorDescription: String? {
     switch self {
     case .badJob: return "Ongeldige upload"
     case .noSource: return "Het origineel staat niet meer op het toestel"
     case .short: return "Het origineel is korter dan aangemeld"
+    case .notStarted: return "De uploader is nog niet gestart (toestel op slot of opslag niet te lezen)"
     }
   }
 }
@@ -239,9 +253,22 @@ final class OriginalUploader: NSObject, URLSessionDataDelegate, @unchecked Senda
   private var store = UploaderStore()
   /// Gate 6: sinds de app voor was, zijn er op de achtergrond delen aan iOS gegeven.
   private var givenInBackground = false
-  private static let exitKey = "clubalmanac.originals.exitAfterBackgroundSend"
+  /// Gate 6 (koud): alleen in het geheugen, bij elke start uit (38b-19).
+  private var exitAfterSend = false
+  /// De sleutel waarmee een eerdere dev-build de schakelaar bewaarde; alleen nog om hem weg te halen.
+  private static let legacyExitKey = "clubalmanac.originals.exitAfterBackgroundSend"
   private var wifiSession: URLSession!
   private var anySession: URLSession!
+  /// De opslag is gelezen (of er was er geen, of hij was onleesbaar). Daarvoor
+  /// bewaart de uploader niets en geeft hij JS een fout (38b-18).
+  private var loaded = false
+  /// Het toestel is sinds deze start open geweest (de bestanden zijn dan leesbaar).
+  private var deviceOpen = false
+  /// Gewekt vóór de eerste ontgrendeling: de regel "op slot" volgt zodra het log kan.
+  private var sawLocked = false
+  /// Er staat al een nieuwe poging om de opslag te lezen.
+  private var retryPending = false
+  private var startReason = ""
   private var started = false
   /// Pas na het naast elkaar leggen van opslag en taken start er iets (38b-14).
   private var reconciled = false
@@ -265,14 +292,10 @@ final class OriginalUploader: NSObject, URLSessionDataDelegate, @unchecked Senda
 
   private override init() {
     super.init()
-    if FileManager.default.fileExists(atPath: storeFile.path) {
-      if let data = try? Data(contentsOf: storeFile), let s = try? JSONDecoder().decode(UploaderStore.self, from: data) {
-        store = s
-      } else {
-        // 38b-17: onleesbaar. Leeg beginnen; "Alleen via wifi" is dan aan.
-        log.add("opslag van de uploader onleesbaar: leeg begonnen, alleen via wifi aan", net: net.label)
-      }
-    }
+    // 38b-19: een eerdere dev-build bewaarde de schakelaar van gate 6; die telt niet meer.
+    UserDefaults.standard.removeObject(forKey: Self.legacyExitKey)
+    // De opslag leest `tryStart`, pas als het toestel open is (38b-18). Een
+    // terugroep van een sessie vóór die tijd vindt geen deel en telt niet.
     let oq = OperationQueue()
     oq.maxConcurrentOperationCount = 1
     oq.underlyingQueue = q
@@ -285,7 +308,18 @@ final class OriginalUploader: NSObject, URLSessionDataDelegate, @unchecked Senda
     }
     let center = NotificationCenter.default
     center.addObserver(forName: UIApplication.didBecomeActiveNotification, object: nil, queue: nil) { [weak self] _ in
-      self?.q.async { self?.becameActive() }
+      let open = UIApplication.shared.isProtectedDataAvailable
+      self?.q.async {
+        if open { self?.deviceOpen = true }
+        self?.becameActive()
+      }
+    }
+    center.addObserver(forName: UIApplication.protectedDataDidBecomeAvailableNotification, object: nil, queue: nil) {
+      [weak self] _ in
+      self?.q.async {
+        self?.deviceOpen = true
+        self?.tryStart()
+      }
     }
     center.addObserver(forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: nil) { [weak self] _ in
       self?.q.async {
@@ -323,6 +357,8 @@ final class OriginalUploader: NSObject, URLSessionDataDelegate, @unchecked Senda
   }
 
   private func save() {
+    // 38b-18: vóór het lezen nooit een (lege) opslag over de echte heen.
+    guard loaded else { return }
     store.version = UploaderStore.currentVersion
     guard let data = try? JSONEncoder().encode(store) else { return }
     try? data.write(to: storeFile, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
@@ -332,18 +368,82 @@ final class OriginalUploader: NSObject, URLSessionDataDelegate, @unchecked Senda
 
   /// Bij het starten van de app (ook als iOS hem op de achtergrond wekt): de
   /// sessies zijn er (init); de lopende taken ophalen en naast de opslag leggen.
+  /// Pas als het toestel open is (38b-18).
   func start(reason: String) {
     Task { @MainActor in
       let active = UIApplication.shared.applicationState != .background
+      let open = UIApplication.shared.isProtectedDataAvailable
       self.q.async {
         if self.started { return }
-        self.started = true
         // Werd de app al actief vóór deze start (punt 1), dan blijft dat zo.
         self.foreground = self.foreground || active
-        self.note("uploader start (\(reason), \(active ? "voorgrond" : "achtergrond"))")
-        self.reconcile()
+        if self.startReason.isEmpty { self.startReason = reason }
+        if open {
+          self.deviceOpen = true
+        } else {
+          self.sawLocked = true
+        }
+        self.tryStart()
       }
     }
+  }
+
+  /// Leest de opslag en legt hem naast de taken van iOS, zodra het toestel open
+  /// is en het lezen lukt. Alleen op `q`.
+  private func tryStart() {
+    guard !started, deviceOpen else { return }
+    guard loadStore() else {
+      // Een leesfout: niets wissen, niets stoppen, niets bewaren; later opnieuw.
+      note("opslag van de uploader niet te lezen (op slot of een andere fout): later opnieuw")
+      scheduleRetry()
+      return
+    }
+    started = true
+    if sawLocked {
+      note("op slot: gewekt vóór de eerste ontgrendeling, gewacht tot het toestel open was")
+    }
+    note("uploader start (\(startReason), \(foreground ? "voorgrond" : "achtergrond"))")
+    reconcile()
+  }
+
+  private func scheduleRetry() {
+    if retryPending { return }
+    retryPending = true
+    q.asyncAfter(deadline: .now() + 30) {
+      self.retryPending = false
+      self.tryStart()
+    }
+  }
+
+  /// `false`: een leesfout (op slot of anders); dan blijft alles zoals het was.
+  /// Niet te decoderen is iets anders: leeg beginnen, "Alleen via wifi" aan (38b-17).
+  /// Alleen op `q`.
+  private func loadStore() -> Bool {
+    if loaded { return true }
+    let file = storeFile
+    if FileManager.default.fileExists(atPath: file.path) {
+      let data: Data
+      do {
+        data = try Data(contentsOf: file)
+      } catch {
+        return false
+      }
+      if let s = try? JSONDecoder().decode(UploaderStore.self, from: data) {
+        store = s
+      } else {
+        store = UploaderStore()
+        note("opslag van de uploader onleesbaar: leeg begonnen, alleen via wifi aan")
+      }
+    }
+    loaded = true
+    return true
+  }
+
+  /// Voor een aanroep van JS: gestart, of nu te starten. Anders een fout (38b-18).
+  /// Alleen op `q`.
+  private func requireStarted() throws {
+    tryStart()
+    guard started else { throw UploaderError.notStarted }
   }
 
   private func allTasks(_ done: @escaping (_ wifi: [URLSessionTask], _ any: [URLSessionTask]) -> Void) {
@@ -399,6 +499,7 @@ final class OriginalUploader: NSObject, URLSessionDataDelegate, @unchecked Senda
   private func becameActive() {
     foreground = true
     givenInBackground = false
+    tryStart()
     guard reconciled else { return }
     restartDeferred()
   }
@@ -455,6 +556,12 @@ final class OriginalUploader: NSObject, URLSessionDataDelegate, @unchecked Senda
       else { throw UploaderError.badJob }
     }
     q.sync {
+      // 38b-18: niet gestart. Geen fout naar JS (dat zou het origineel als kapot
+      // weggooien); de volgende start ziet dat de uploader niets weet.
+      guard (try? self.requireStarted()) != nil else {
+        self.note("\(originalId): delen niet aangenomen, de uploader is nog niet gestart")
+        return
+      }
       let byNumber = Dictionary(links.map { ($0.partNumber, $0) }, uniquingKeysWith: { a, _ in a })
       let now = nowMs()
       var stale = Set<String>()
@@ -519,8 +626,9 @@ final class OriginalUploader: NSObject, URLSessionDataDelegate, @unchecked Senda
   }
 
   /// Een mislukt deel opnieuw bij iOS, met dezelfde link (`ios_opnieuw`).
-  func retryPart(_ originalId: String, _ partNumber: Int) {
-    q.sync {
+  func retryPart(_ originalId: String, _ partNumber: Int) throws {
+    try q.sync {
+      try self.requireStarted()
       guard let j = self.store.jobs.firstIndex(where: { $0.originalId == originalId }),
         let p = self.store.jobs[j].parts.firstIndex(where: { $0.partNumber == partNumber }),
         self.store.jobs[j].parts[p].state == "mislukt"
@@ -533,8 +641,9 @@ final class OriginalUploader: NSObject, URLSessionDataDelegate, @unchecked Senda
   }
 
   /// Alles van dit origineel weg: taken, deelbestanden en opslag (`ios_vergeten`).
-  func forget(_ originalId: String) {
-    q.sync {
+  func forget(_ originalId: String) throws {
+    try q.sync {
+      try self.requireStarted()
       let known = self.store.jobs.contains { $0.originalId == originalId }
       self.store.jobs.removeAll { $0.originalId == originalId }
       self.removePartFiles(originalId)
@@ -544,13 +653,17 @@ final class OriginalUploader: NSObject, URLSessionDataDelegate, @unchecked Senda
     }
   }
 
-  func wifiOnly() -> Bool {
-    q.sync { self.store.wifiOnly }
+  func wifiOnly() throws -> Bool {
+    try q.sync {
+      try self.requireStarted()
+      return self.store.wifiOnly
+    }
   }
 
   /// Omzetten geldt meteen, ook voor wachtende en lopende delen.
-  func setWifiOnly(_ on: Bool) {
-    q.sync {
+  func setWifiOnly(_ on: Bool) throws {
+    try q.sync {
+      try self.requireStarted()
       if self.store.wifiOnly == on { return }
       self.store.wifiOnly = on
       let from = on ? Self.anyName : Self.wifiName
@@ -569,9 +682,10 @@ final class OriginalUploader: NSObject, URLSessionDataDelegate, @unchecked Senda
     }
   }
 
-  /// De stand per origineel, zonder links.
-  func jobsJSON() -> String {
-    q.sync {
+  /// De stand per origineel, zonder links. Niet gestart: een fout, geen lege lijst (38b-18).
+  func jobsJSON() throws -> String {
+    try q.sync {
+      try self.requireStarted()
       let jobs: [[String: Any]] = self.store.jobs.map { job in
         [
           "originalId": job.originalId,
@@ -596,14 +710,17 @@ final class OriginalUploader: NSObject, URLSessionDataDelegate, @unchecked Senda
     }
   }
 
-  /// Gate 6 (koud), alleen via het proefscherm van een dev-build.
+  /// Gate 6 (koud), alleen via het proefscherm van een dev-build. Alleen in
+  /// het geheugen (38b-19): een productie-build op hetzelfde toestel ziet hem nooit.
   func exitAfterBackgroundSend() -> Bool {
-    UserDefaults.standard.bool(forKey: Self.exitKey)
+    q.sync { self.exitAfterSend }
   }
 
   func setExitAfterBackgroundSend(_ on: Bool) {
-    UserDefaults.standard.set(on, forKey: Self.exitKey)
-    note("gate 6: stoppen na delen op de achtergrond \(on ? "aan" : "uit")")
+    q.sync {
+      self.exitAfterSend = on
+      self.note("gate 6: stoppen na delen op de achtergrond \(on ? "aan" : "uit") (tot de app stopt)")
+    }
   }
 
   func setBackgroundCompletion(_ identifier: String, _ handler: @escaping () -> Void) {
@@ -795,6 +912,11 @@ final class OriginalUploader: NSObject, URLSessionDataDelegate, @unchecked Senda
       pump()
       return
     }
+    // Punt 6 (38b-13): het deel is intussen klaar (nieuwe links zonder dit
+    // deel); het deelbestand hoort nergens meer bij.
+    if failure == nil, store.jobs[j].parts[p].state == "klaar" {
+      try? FileManager.default.removeItem(at: file)
+    }
     if let failure, store.jobs[j].parts[p].state == "wacht" {
       switch failure {
       case UploaderError.short, UploaderError.noSource:
@@ -821,10 +943,9 @@ final class OriginalUploader: NSObject, URLSessionDataDelegate, @unchecked Senda
   private func exitForGateIfDone() {
     guard givenInBackground, !foreground, slicing.isEmpty,
       !store.jobs.contains(where: { !$0.broken && $0.parts.contains { $0.state == "wacht" } }),
-      UserDefaults.standard.bool(forKey: Self.exitKey)
+      exitAfterSend
     else { return }
-    UserDefaults.standard.set(false, forKey: Self.exitKey)
-    UserDefaults.standard.synchronize()
+    exitAfterSend = false
     save()
     note("gate 6: de app stopt zichzelf na delen op de achtergrond")
     log.flush()

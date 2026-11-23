@@ -1,4 +1,5 @@
 import { ConvexError } from "convex/values";
+import { videoRetryable, type VideoFailReason } from "./videos";
 
 // WP38b: de pure beslissingen van de uploader voor originelen. Geen React,
 // geen native modules; de wachtrij (originalQueue.ts), de runner
@@ -15,6 +16,10 @@ import { ConvexError } from "convex/values";
 // - 38b-6: een mislukt deel. Na 403 of `NoSuchUpload` opnieuw aanmelden,
 //   anders dezelfde link opnieuw, hooguit PART_ATTEMPTS keer, dan later.
 // - "Alleen via wifi" (besluit 6, A-invariant 21): standaard aan, per toestel.
+// - Fix-cyclus 2, punt 5: het verplaatste bestand in de ronde van het
+//   toevoegscherm. Nam de wachtrij het origineel niet aan, dan gaat het bestand
+//   pas weg bij een eindstand (in het album, een vaste reden, of het einde van
+//   de ronde); na een uitkomst die opnieuw kan, blijft het staan.
 
 const MiB = 1024 * 1024;
 const GiB = 1024 * MiB;
@@ -142,4 +147,33 @@ export function waitsForWifi(wifiOnly: boolean, network: NetworkView): boolean {
   if (!wifiOnly) return false;
   if (network.expensive) return true;
   return network.type !== "wifi" && network.type !== "kabel";
+}
+
+// --- het verplaatste bestand in de ronde van het toevoegscherm (fix-cyclus 2, punt 5) ---
+
+/** De uitkomst van het filmpje voor het album (WP37). */
+export type VideoOutcome = { ok: true; photoId: string } | { ok: false; reason: VideoFailReason };
+export type MovedOriginalAction =
+  | { kind: "album_klaar"; photoId: string }
+  | { kind: "album_mislukt" }
+  | { kind: "bestand_weg" }
+  | { kind: "laten" };
+
+/**
+ * Na de uitkomst van het filmpje voor het album (na besluit 25). Opnieuw te
+ * proberen: niets, "Opnieuw proberen" leest het bestand weer. Anders hoort de
+ * wachtrij het (A-invariant 18), of gaat het bestand weg als de wachtrij het
+ * niet aannam.
+ */
+export function originalAfterVideo(input: { queued: boolean; outcome: VideoOutcome }): MovedOriginalAction {
+  const { queued, outcome } = input;
+  if (!outcome.ok && videoRetryable(outcome.reason)) return { kind: "laten" };
+  if (!queued) return { kind: "bestand_weg" };
+  return outcome.ok ? { kind: "album_klaar", photoId: outcome.photoId } : { kind: "album_mislukt" };
+}
+
+/** De ronde eindigt (sluiten, of een nieuwe keuze). */
+export function originalAtRoundEnd(input: { queued: boolean; inAlbum: boolean }): MovedOriginalAction {
+  if (!input.queued) return { kind: "bestand_weg" };
+  return input.inAlbum ? { kind: "laten" } : { kind: "album_mislukt" };
 }

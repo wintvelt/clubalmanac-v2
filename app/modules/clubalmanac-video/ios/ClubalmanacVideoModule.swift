@@ -182,24 +182,25 @@ public class ClubalmanacVideoModule: Module {
         })
     }
 
-    AsyncFunction("uploaderRetryPart") { (originalId: String, partNumber: Int) in
-      OriginalUploader.shared.retryPart(originalId, partNumber)
+    AsyncFunction("uploaderRetryPart") { (originalId: String, partNumber: Int) throws in
+      try OriginalUploader.shared.retryPart(originalId, partNumber)
     }
 
-    AsyncFunction("uploaderForget") { (originalId: String) in
-      OriginalUploader.shared.forget(originalId)
+    AsyncFunction("uploaderForget") { (originalId: String) throws in
+      try OriginalUploader.shared.forget(originalId)
     }
 
-    AsyncFunction("uploaderJobs") { () -> String in
-      return OriginalUploader.shared.jobsJSON()
+    // 38b-18: niet gestart (toestel op slot, opslag niet te lezen): een fout, geen lege lijst.
+    AsyncFunction("uploaderJobs") { () throws -> String in
+      return try OriginalUploader.shared.jobsJSON()
     }
 
-    AsyncFunction("uploaderWifiOnly") { () -> Bool in
-      return OriginalUploader.shared.wifiOnly()
+    AsyncFunction("uploaderWifiOnly") { () throws -> Bool in
+      return try OriginalUploader.shared.wifiOnly()
     }
 
-    AsyncFunction("uploaderSetWifiOnly") { (on: Bool) in
-      OriginalUploader.shared.setWifiOnly(on)
+    AsyncFunction("uploaderSetWifiOnly") { (on: Bool) throws in
+      try OriginalUploader.shared.setWifiOnly(on)
     }
 
     AsyncFunction("uploaderNote") { (text: String) in
@@ -214,7 +215,7 @@ public class ClubalmanacVideoModule: Module {
       OriginalUploader.shared.log.clear()
     }
 
-    // Gate 6 (koud): alleen het proefscherm van een dev-build zet dit aan.
+    // Gate 6 (koud): alleen het proefscherm van een dev-build zet dit aan; alleen in het geheugen (38b-19).
     AsyncFunction("uploaderExitAfterBackgroundSend") { () -> Bool in
       return OriginalUploader.shared.exitAfterBackgroundSend()
     }

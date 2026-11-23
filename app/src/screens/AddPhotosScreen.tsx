@@ -45,7 +45,13 @@ import {
 import { afterCompressFailure, leftForeground } from "../lib/compressResume";
 import { albumPath } from "../lib/groupRoutes";
 import { lastAlbumChoice, type LastAlbumChoice, type StoredAlbum } from "../lib/lastAlbum";
-import { originalPlan, type OpenProject } from "../lib/originalUpload";
+import {
+  originalAfterVideo,
+  originalAtRoundEnd,
+  originalPlan,
+  type MovedOriginalAction,
+  type OpenProject,
+} from "../lib/originalUpload";
 import { PICK_IDLE, beginPick, endPick, fetchStarted, pickView, stopPick, type PickSession } from "../lib/pickSession";
 import {
   UPLOAD_PARALLEL,
@@ -121,8 +127,11 @@ import { AlbumChoiceSheet } from "./AlbumChoice";
 // zonder dat het in het album staat, dan gaat het origineel weg (38b-3). Het
 // versturen loopt daarna buiten dit scherm (src/data/originals.ts).
 // Fix-cyclus 1, punt 3: de kopie gaat pas naar de map als de wachtrij geladen
-// is. Neemt de wachtrij het origineel toch niet aan, dan gaat het verplaatste
-// bestand weg zodra het verkleinen klaar is.
+// is. Fix-cyclus 2, punt 5: neemt de wachtrij het origineel toch niet aan, dan
+// gaat het verplaatste bestand pas weg bij een eindstand (in het album, een
+// vaste reden, of het einde van de ronde); na een uitkomst die opnieuw kan,
+// blijft het staan, want "Opnieuw proberen" verkleint weer uit dat bestand
+// (`originalAfterVideo`, `originalAtRoundEnd`).
 // Besluit 25 (38b-12): verkleinen dat mislukte omdat de app de voorgrond
 // verliet, gaat vanzelf opnieuw zodra de app weer actief is (hooguit drie
 // keer op rij, src/lib/compressResume.ts); ook zonder origineel.
@@ -245,8 +254,12 @@ export function AddPhotosScreen({ albumId }: { albumId?: string }) {
   const onOpenProjects = useCallback((list: readonly OpenProject[]) => {
     openProjects.current = list;
   }, []);
-  // `queued`: de wachtrij nam het aan; anders ruimt het scherm het verplaatste bestand op (punt 3).
-  const originals = useRef(new Map<string, { uri: string | null; fileName?: string; queued?: boolean }>());
+  // `queued`: de wachtrij nam het aan; anders ruimt het scherm het verplaatste
+  // bestand op bij een eindstand (punt 5). `settled`: de eindstand is er al
+  // (de wachtrij hoorde het, of het bestand is weg).
+  const originals = useRef(
+    new Map<string, { uri: string | null; fileName?: string; queued?: boolean; settled?: boolean }>(),
+  );
   // Besluit 25: de AppState-waarden tijdens het verkleinen van het filmpje dat nu loopt.
   const compressStates = useRef<string[] | null>(null);
   useEffect(() => {
@@ -597,13 +610,35 @@ export function AddPhotosScreen({ albumId }: { albumId?: string }) {
     return moved;
   }
 
+  // WP38b 38b-3, fix-cyclus 2 punt 5: wat de uitkomst voor het verplaatste
+  // bestand betekent, uitgevoerd.
+  function applyOriginalAction(uploadId: string, fileName: string, action: MovedOriginalAction): void {
+    switch (action.kind) {
+      case "album_klaar":
+        originalEvent({ kind: "album_klaar", key: uploadId, photoId: action.photoId });
+        return;
+      case "album_mislukt":
+        originalEvent({ kind: "album_mislukt", key: uploadId });
+        return;
+      case "bestand_weg":
+        void removeOriginal(fileName).catch(() => {});
+        return;
+      case "laten":
+        return;
+    }
+  }
+
   // WP38b 38b-3: de ronde sluit. Een origineel van een filmpje dat niet in het
-  // album kwam, gaat weg.
+  // album kwam, gaat weg; een verplaatst bestand dat de wachtrij niet aannam
+  // ook (fix-cyclus 2, punt 5).
+  // Weet het scherm nog niet of de wachtrij het aannam, dan laat het het
+  // bestand staan; de volgende start ruimt het op als het een wees is.
   function endOriginalRound() {
     for (const item of videoItemsRef.current ?? []) {
-      if (item.state !== "klaar" && originals.current.get(item.uploadId)?.queued) {
-        originalEvent({ kind: "album_mislukt", key: item.uploadId });
-      }
+      const original = originals.current.get(item.uploadId);
+      if (!original?.uri || !original.fileName || original.settled || original.queued === undefined) continue;
+      const action = originalAtRoundEnd({ queued: original.queued, inAlbum: item.state === "klaar" });
+      applyOriginalAction(item.uploadId, original.fileName, action);
     }
     originals.current.clear();
   }
@@ -632,16 +667,14 @@ export function AddPhotosScreen({ albumId }: { albumId?: string }) {
           // Geen filmpje blijft op "bezig" hangen (invariant 5).
           outcome = { ok: false, reason: "server" };
         }
-        // A-invariant 18: het origineel wacht op het album; daarna meldt de wachtrij het aan.
+        // A-invariant 18: het origineel wacht op het album; daarna meldt de
+        // wachtrij het aan. Nam de wachtrij het niet aan, dan gaat het
+        // verplaatste bestand pas weg bij een eindstand (fix-cyclus 2, punt 5).
         const original = originals.current.get(next.uploadId);
-        if (original?.queued) {
-          if (outcome.ok) originalEvent({ kind: "album_klaar", key: next.uploadId, photoId: outcome.photoId });
-          else if (!videoRetryable(outcome.reason)) originalEvent({ kind: "album_mislukt", key: next.uploadId });
-        } else if (original?.uri && original.fileName) {
-          // Punt 3: de wachtrij nam het niet aan; het verkleinen is klaar, dus het verplaatste bestand weg.
-          const fileName = original.fileName;
-          originals.current.set(next.uploadId, { uri: null });
-          void removeOriginal(fileName).catch(() => {});
+        if (original?.uri && original.fileName && !original.settled) {
+          const action = originalAfterVideo({ queued: original.queued === true, outcome });
+          applyOriginalAction(next.uploadId, original.fileName, action);
+          if (action.kind !== "laten") originals.current.set(next.uploadId, { ...original, settled: true });
         }
         patchVideo(
           next.key,

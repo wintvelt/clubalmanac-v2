@@ -59,6 +59,8 @@ import { originalRefusal, wifiOnlyAtStart, wifiOnlyToStore, type NetworkView } f
 //   action vast tot hij weer verbinding heeft; een nieuwe aanroep gaat pas als
 //   de vorige een uitkomst heeft (antwoord of fout van de client). Een laat
 //   antwoord telt nog.
+//   Fix-cyclus 2, punt 2: was er tijdens de aanroep een andere user ingelogd
+//   (ook als de eerste al terug is), dan telt de uitkomst als fout.
 // - Uitloggen pauzeert alleen; Account verwijderen wist alles van die user.
 //   Laadt de wachtrij nog niet, dan wacht Account verwijderen niet: de runner
 //   onthoudt de user en wist hem zodra het laden lukt (punt 4).
@@ -148,6 +150,12 @@ class OriginalRunner {
   private client: OriginalsActions | null = null;
   private userId: string | null = null;
   private calling = false;
+  /**
+   * Punt 2 (fix-cyclus 2): de user van de aanroep die loopt, en of er tijdens
+   * die aanroep een andere user ingelogd was.
+   */
+  private callUser: string | null = null;
+  private callSwitched = false;
   private timer: ReturnType<typeof setTimeout> | null = null;
   private listeners = new Set<Listener>();
   private started = false;
@@ -204,6 +212,8 @@ class OriginalRunner {
   }
 
   setSession(client: OriginalsActions | null, userId: string | null): void {
+    // Punt 2: een andere user tijdens een aanroep (uitloggen telt niet).
+    if (this.calling && userId !== null && userId !== this.callUser) this.callSwitched = true;
     this.client = client;
     this.userId = userId;
     this.changed();
@@ -550,20 +560,32 @@ class OriginalRunner {
     }
     this.schedule(null);
     this.calling = true;
+    this.callUser = userId;
+    this.callSwitched = false;
     try {
+      const failed: QueueEvent =
+        call.kind === "start"
+          ? { kind: "aangemeld", key: call.key, result: { kind: "fout" } }
+          : { kind: "afgerond", key: call.key, result: { kind: "fout" } };
       let event: QueueEvent;
       try {
         event = await withBackgroundWork(() => this.perform(client, call));
       } catch {
-        event =
-          call.kind === "start"
-            ? { kind: "aangemeld", key: call.key, result: { kind: "fout" } }
-            : { kind: "afgerond", key: call.key, result: { kind: "fout" } };
+        event = failed;
+      }
+      // Punt 2: was er tussendoor een andere user ingelogd, dan kan de
+      // Convex-client de action met diens login hebben verstuurd. De uitkomst
+      // zegt dan niets over dit origineel: een fout, niets weg.
+      if (this.callSwitched) {
+        this.note(`${call.kind === "start" ? "startOriginal" : "finishOriginal"}: andere user tussendoor, telt als fout`);
+        event = failed;
       }
       // Pas na het verwerken van de uitkomst de volgende aanroep (38b-7: één tegelijk).
       await this.run(() => this.apply(event));
     } finally {
       this.calling = false;
+      this.callUser = null;
+      this.callSwitched = false;
     }
     void this.pump();
   }

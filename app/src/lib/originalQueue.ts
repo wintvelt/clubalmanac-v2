@@ -38,6 +38,9 @@ import {
 // - Na een fout van een aanroep oplopend wachten: 1 minuut, tot een uur (punt 8).
 // - Op schijf met een versie; een nieuwere versie zet er alleen velden bij
 //   (punt 9).
+// Fix-cyclus 2:
+// - Komen er links binnen terwijl de stap al afronden is, dan blijven ze
+//   liggen en volgt `finishOriginal` (punt 3).
 
 const MINUTE = 60 * 1000;
 const HOUR = 60 * MINUTE;
@@ -274,6 +277,10 @@ export function applyEvent(queue: QueueEntry[], event: QueueEvent, now: number):
     case "aangemeld": {
       const entry = queue.find((e) => e.key === event.key);
       if (!entry || entry.step === "album" || entry.photoId === null) return unchanged(queue);
+      // Fix-cyclus 2, punt 3: alle delen zijn al verstuurd terwijl de
+      // hervatting liep. De nieuwe links blijven liggen: eerst afronden;
+      // `missing` zegt wat er nog moet.
+      if (entry.step === "afronden" && event.result.kind === "upload") return unchanged(queue);
       return onStart(queue, entry, event.result, now);
     }
     case "afgerond": {
