@@ -24,11 +24,13 @@ import {
   addOriginal,
   applyEvent,
   atLaunch,
+  dropAbsent,
   forgetUser,
   nextCall,
   nextWake,
   queueFromStore,
   queueToStore,
+  seenUser,
   type Effect,
   type FinishResult,
   type NextCall,
@@ -73,6 +75,11 @@ import { originalRefusal, wifiOnlyAtStart, wifiOnlyToStore, type NetworkView } f
 //   het snijden of een aanroep (punt 10).
 // - De wachtrij op schijf heeft een versie (queueToStore); een onleesbare
 //   wachtrij geeft een regel in het log (punt 9).
+// - Besluit red-team N6: de runner ziet een user bij inloggen, bij het
+//   laden, bij terugkomst (`nudge`), bij toevoegen, en bij uitloggen of een
+//   wissel (de vorige user). Na het laden en bij elke login gaan de
+//   originelen weg van een andere user die 30 dagen niet gezien is
+//   (`dropAbsent`), zonder aanroep. Zonder login gaat niets weg.
 // - Geen link, sleutel of pad in het log: alleen inzending-id, deelnummer,
 //   status en reden (38b-16).
 
@@ -145,6 +152,11 @@ class OriginalRunner {
   private ownFiles = new Set<string>();
   /** Account verwijderd terwijl de wachtrij niet laadde: wissen zodra het laden lukt (punt 4). */
   private forgetAfterLoad = new Set<string>();
+  /**
+   * Besluit red-team N6: per user het laatste moment dat de app hem ingelogd
+   * zag en dat nog niet in de wachtrij staat (die laadt misschien nog niet).
+   */
+  private seenPending = new Map<string, number>();
   private network: NetworkView = { type: "onbekend", expensive: false };
   private chain: Promise<void> = Promise.resolve();
   private client: OriginalsActions | null = null;
@@ -214,17 +226,28 @@ class OriginalRunner {
   setSession(client: OriginalsActions | null, userId: string | null): void {
     // Punt 2: een andere user tijdens een aanroep (uitloggen telt niet).
     if (this.calling && userId !== null && userId !== this.callUser) this.callSwitched = true;
+    // Besluit red-team N6: de vorige user (uitloggen of een wissel) en de nieuwe zijn nu gezien.
+    const now = Date.now();
+    if (this.userId !== null) this.markSeen(this.userId, now);
+    if (userId !== null) this.markSeen(userId, now);
     this.client = client;
     this.userId = userId;
     this.changed();
-    this.nudge();
+    if (!this.started) return;
+    // Bij elke login: de originelen van een andere user die 30 dagen niet gezien is.
+    void this.run(async () => {
+      await this.flushSeen();
+      if (userId !== null) await this.dropAbsentUsers();
+    });
   }
 
   /** De app is weer actief, of iets anders kan nu misschien verder. */
   nudge(): void {
     if (!this.started) return;
-    if (!this.loaded) {
-      void this.run(async () => {});
+    // Besluit red-team N6: terugkomst in de app telt als gezien.
+    if (this.userId !== null) this.markSeen(this.userId, Date.now());
+    if (!this.loaded || this.seenPending.size > 0) {
+      void this.run(() => this.flushSeen());
       return;
     }
     void this.pump();
@@ -244,7 +267,8 @@ class OriginalRunner {
     this.ownFiles.add(input.fileName);
     let taken = false;
     const loaded = await this.run(async () => {
-      this.queue = addOriginal(this.queue, input, Date.now());
+      const now = Date.now();
+      this.queue = seenUser(addOriginal(this.queue, input, now), input.userId, now);
       taken = this.queue.some((e) => e.key === input.key && e.fileName === input.fileName);
       if (!taken) return;
       await this.save();
@@ -392,6 +416,36 @@ class OriginalRunner {
     });
   }
 
+  /** Besluit red-team N6: onthoud dat de app deze user nu ingelogd zag (nooit vroeger). */
+  private markSeen(userId: string, now: number): void {
+    const before = this.seenPending.get(userId);
+    if (before === undefined || before < now) this.seenPending.set(userId, now);
+  }
+
+  /** Zet de onthouden momenten in de wachtrij (alleen na het laden). */
+  private async flushSeen(): Promise<void> {
+    if (!this.loaded || this.seenPending.size === 0) return;
+    const before = this.queue;
+    let queue = this.queue;
+    for (const [userId, at] of this.seenPending) queue = seenUser(queue, userId, at);
+    this.seenPending.clear();
+    if (queue === before) return;
+    await this.commit({ queue, effects: [] });
+  }
+
+  /**
+   * Besluit red-team N6: de originelen van een andere user dan wie nu is
+   * ingelogd, die 30 dagen niet gezien is. Niemand ingelogd: niets.
+   */
+  private async dropAbsentUsers(): Promise<void> {
+    const userId = this.userId;
+    if (!this.loaded || userId === null) return;
+    const step = dropAbsent(this.queue, { now: Date.now(), userId });
+    if (step.queue.length === this.queue.length) return;
+    this.note(`${this.queue.length - step.queue.length} originelen van een user die 30 dagen niet ingelogd was: weg`);
+    await this.commit(step);
+  }
+
   private note(text: string): void {
     void uploaderNote(text).catch(() => {});
   }
@@ -466,6 +520,10 @@ class OriginalRunner {
       const entry = this.queue.find((e) => e.originalId === job.originalId);
       if (entry) await this.commit(applyEvent(this.queue, { kind: "bestand_kapot", key: entry.key }, Date.now()));
     }
+    // Besluit red-team N6: wie nu is ingelogd, is gezien; daarna de users die 30 dagen weg zijn.
+    if (this.userId !== null) this.markSeen(this.userId, Date.now());
+    await this.flushSeen();
+    await this.dropAbsentUsers();
     this.note(`wachtrij geladen: ${this.queue.length} originelen`);
     this.changed();
     return true;

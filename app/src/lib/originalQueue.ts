@@ -41,6 +41,11 @@ import {
 // Fix-cyclus 2:
 // - Komen er links binnen terwijl de stap al afronden is, dan blijven ze
 //   liggen en volgt `finishOriginal` (punt 3).
+// Besluit red-team N6:
+// - Elk origineel onthoudt wanneer de app zijn user voor het laatst ingelogd
+//   zag (`seenAt`, nooit vroeger). Van een user die niet is ingelogd, gaan de
+//   originelen na ABSENT_USER_MS weg (`dropAbsent`), zonder aanroep. Versie 2
+//   op schijf; in versie 1 telt het moment van toevoegen.
 
 const MINUTE = 60 * 1000;
 const HOUR = 60 * MINUTE;
@@ -64,6 +69,11 @@ export const LINK_MARGIN_MS = DAY;
 const LINK_VALID_MS = 7 * DAY;
 /** Na de zoveelste fout op rij wacht een aanroep nooit langer dan dit. */
 const MAX_ERROR_WAIT_MS = HOUR;
+/**
+ * Besluit red-team N6: zo lang niet gezien, dan gaan de originelen van een
+ * user die niet is ingelogd van het toestel.
+ */
+export const ABSENT_USER_MS = 30 * DAY;
 
 export type QueueEntry = {
   key: string;
@@ -75,6 +85,11 @@ export type QueueEntry = {
   originalId: string | null;
   step: "album" | "aanmelden" | "versturen" | "afronden";
   addedAt: number;
+  /**
+   * Besluit red-team N6: het laatste moment dat de app deze user ingelogd zag
+   * (in de klok van het toestel). Wordt nooit vroeger.
+   */
+  seenAt: number;
   /** Geen aanroep vóór dit moment (fout, te_vaak, vol, …). */
   waitUntil: number | null;
   /** `bezig`: een nieuwe aanmelding wacht tot een ander origineel van deze user weg is, hooguit tot hier. */
@@ -138,6 +153,7 @@ export function addOriginal(
       originalId: null,
       step: "album",
       addedAt: now,
+      seenAt: now,
       waitUntil: null,
       busyUntil: null,
       linksValidUntil: null,
@@ -468,6 +484,28 @@ export function forgetUser(queue: QueueEntry[], userId: string): QueueStep {
   return { queue: queue.filter((e) => e.userId !== userId), effects };
 }
 
+/** De app ziet deze user ingelogd: het moment gaat naar `now`, maar nooit vroeger. */
+export function seenUser(queue: QueueEntry[], userId: string, now: number): QueueEntry[] {
+  if (!queue.some((e) => e.userId === userId && e.seenAt < now)) return queue;
+  return queue.map((e) => (e.userId === userId && e.seenAt < now ? { ...e, seenAt: now } : e));
+}
+
+/**
+ * Besluit red-team N6: de originelen van elke user behalve `ctx.userId` die
+ * ABSENT_USER_MS of langer niet gezien is, gaan weg, met bestand en iOS-taken.
+ * Zonder login niets (38b-8). Een klok die achter staat, wist niets.
+ */
+export function dropAbsent(queue: QueueEntry[], ctx: { now: number; userId: string | null }): QueueStep {
+  if (ctx.userId === null) return unchanged(queue);
+  let step = unchanged(queue);
+  for (const entry of queue) {
+    if (entry.userId === ctx.userId || ctx.now - entry.seenAt < ABSENT_USER_MS) continue;
+    const next = removeEntry(step.queue, entry);
+    step = { queue: next.queue, effects: [...step.effects, ...next.effects] };
+  }
+  return step;
+}
+
 // --- de stand van een eigen origineel (38c toont hem) ----------------------------------
 
 export type OwnStand = "binnen" | "wordt_verstuurd" | "wacht_op_wifi" | "wacht" | "elders";
@@ -498,7 +536,7 @@ export function ownOriginalStand(input: {
  * De versie van de wachtrij op schijf. Een nieuwere versie zet er alleen
  * velden bij; deze app leest wat hij kent en laat de rest weg.
  */
-const QUEUE_STORE_VERSION = 1;
+const QUEUE_STORE_VERSION = 2;
 
 const STEPS: readonly QueueEntry["step"][] = ["album", "aanmelden", "versturen", "afronden"];
 
@@ -521,6 +559,8 @@ function entryFromStore(v: unknown): QueueEntry | null {
   const originalId = strOrNull("originalId");
   const step = STEPS.find((s) => s === e.step);
   const addedAt = num("addedAt");
+  // Versie 1 kende `seenAt` niet: dan telt het moment van toevoegen (besluit red-team N6).
+  const seenAt = e.seenAt === undefined ? addedAt : num("seenAt");
   const waitUntil = numOrNull("waitUntil");
   const busyUntil = numOrNull("busyUntil");
   const linksValidUntil = numOrNull("linksValidUntil");
@@ -538,6 +578,7 @@ function entryFromStore(v: unknown): QueueEntry | null {
     originalId === undefined ||
     step === undefined ||
     addedAt === null ||
+    seenAt === null ||
     waitUntil === undefined ||
     busyUntil === undefined ||
     linksValidUntil === undefined ||
@@ -558,6 +599,7 @@ function entryFromStore(v: unknown): QueueEntry | null {
     originalId,
     step,
     addedAt,
+    seenAt,
     waitUntil,
     busyUntil,
     linksValidUntil,
