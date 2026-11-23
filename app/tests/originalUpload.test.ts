@@ -16,6 +16,7 @@ import {
   partsToSend,
   planParts,
   waitsForWifi,
+  wifiOnlyAtStart,
   wifiOnlyFromStore,
   wifiOnlyToStore,
   type NetworkView,
@@ -276,5 +277,38 @@ describe('"Alleen via wifi" (besluit 6, A-invariant 21)', () => {
     expect(waitsForWifi(false, net("mobiel", true))).toBe(false);
     expect(waitsForWifi(false, net("wifi", true))).toBe(false);
     expect(waitsForWifi(false, net("geen"))).toBe(false);
+  });
+});
+
+describe('"Alleen via wifi" bij twijfel aan (fix-cyclus 1, punt 6)', () => {
+  // Bij de start: wat de app bewaarde naast wat de uploader zegt (`null`: de
+  // uploader kon het niet zeggen). Alleen als beide uit zeggen, is het uit.
+  const uit = wifiOnlyToStore(false);
+  const aan = wifiOnlyToStore(true);
+
+  it("beide uit: uit", () => {
+    expect(wifiOnlyAtStart(uit, false)).toBe(false);
+  });
+
+  it("de app zegt uit, de uploader aan: aan", () => {
+    expect(wifiOnlyAtStart(uit, true)).toBe(true);
+  });
+
+  it("de app zegt aan, de uploader uit: aan", () => {
+    expect(wifiOnlyAtStart(aan, false)).toBe(true);
+  });
+
+  it("de app bewaarde niets of iets onleesbaars, de uploader zegt uit: aan", () => {
+    expect(wifiOnlyAtStart(null, false)).toBe(true);
+    expect(wifiOnlyAtStart("kapot{", false)).toBe(true);
+  });
+
+  it("de uploader kon het niet zeggen: aan, ook als de app uit bewaarde", () => {
+    expect(wifiOnlyAtStart(uit, null)).toBe(true);
+    expect(wifiOnlyAtStart(null, null)).toBe(true);
+  });
+
+  it("beide aan: aan", () => {
+    expect(wifiOnlyAtStart(aan, true)).toBe(true);
   });
 });
