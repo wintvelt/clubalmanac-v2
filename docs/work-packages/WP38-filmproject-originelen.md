@@ -407,3 +407,30 @@ Doel: weten wat iOS en R2 echt doen met een origineel van ~1,5 GB, vóór A de t
 7. Datering in R2 (open vraag uit 38a): een upload over twee dagen spreiden (de helft vandaag, de rest morgen) en in het R2-dashboard kijken welke datum het object krijgt.
 
 **Uitkomst:** regie schrijft de metingen hieronder. Daarna besluiten met Wouter, en pas dan A voor 38b.
+
+### Uitkomst spike (2026-11-23, build 83, iPhone 15 Pro, dev)
+
+Gemeten met filmpjes van 217 MiB (1080p, 1:46) en 291 MiB (4K, 1:59, 10 delen). Code: branch `wp38b-spike` (commit `990fd2b`).
+
+1. **Grootte en snelheid.** Een 4K-filmpje van de iPhone zelf is ongeveer 150 MB per minuut; 1,5 GB haal je alleen met 4K op 60 fps of ProRes. Op wifi ging een origineel met ongeveer 20 MB/s (291 MiB in 15 s). Een filmpje van 4:55 (3,2 GiB) weigert de albumregel al met `te_lang`.
+2. **Achtergrond en scherm uit: werkt.** iOS wekt de app per afgerond deel; `finishOriginal` loopt dan ook op de achtergrond, zonder dat het lid de app opent.
+3. **Een taak die de app op de achtergrond start, stelt iOS uit** (2,8 MB duurde 82 s). Met alle delen tegelijk aan iOS gegeven, terwijl de app open is, gebeurt dat niet.
+4. **"Alleen via wifi": werkt.** Op 5G wachtten alle delen op 0%. Zodra er wifi was, merkte de app dat, ook op de achtergrond, en 28 s later was het origineel binnen. Een persoonlijke hotspot is niet getest.
+5. **App wegvegen: iOS breekt alle taken af** (fout -999). Er gebeurt niets tot het lid de app weer opent; dan gaat hij verder en is het binnen 20 s klaar. Bij het opnieuw starten gingen een paar delen twee keer over de lijn (dubbel opnieuw in de rij); dat kan geen kwaad maar kost data.
+6. **Telefoon herstarten: werkt.** De taken die nog liepen staan na de herstart nog bij iOS en gaan door.
+7. **Bit voor bit:** het object in R2 (304.848.345 bytes) heeft dezelfde SHA-256 als het bestand dat de app uit de kiezer bewaarde, met opnamedatum en plaats. Niet vergeleken met AirDrop. Slow motion, bewerkt, Filmisch, ProRes en een filmpje dat alleen in iCloud staat: niet getest (Wouter: overslaan).
+8. **R2:** een deel met één byte te weinig geeft 403 `SignatureDoesNotMatch`; afronden lukt; terugtrekken lukt en haalt de deelbestanden weg; de downloadlink (GET met `response-content-disposition`) geeft het bestand. Links van 7 dagen neemt R2 aan.
+9. **Vrije ruimte:** het getal van iOS loopt achter (soms geen verschil, soms 0,15 GiB terug). Niet gebruiken als bewijs; kijk of het bestand weg is.
+10. **Kiezer bij een filmpje uit iCloud:** de knop stond ~3 minuten grijs zonder uitleg; ging de telefoon intussen slapen, dan was de app weg.
+11. **Verkleinen stopt als de app de voorgrond verlaat** (`comprimeren`, ~50 s voor 4K van 2 min). Het toevoegscherm van WP37 houdt het scherm wakker, maar wie zelf de app verlaat, krijgt "verkleinen lukte niet". Dat geldt nu ook al voor elk filmpje in een album.
+
+Nog open voor de gate van 38b: datering in R2 (upload over twee dagen spreiden), persoonlijke hotspot. Voor 38c: download in Safari en Chrome.
+
+### Voorstel besluiten 38b (regie, na de spike)
+
+21. **Alle delen meteen aan iOS** zodra het origineel is aangemeld, terwijl de app open is (geen rij van een paar tegelijk). Tijdelijk kost dat de grootte van het origineel nog eens aan schijfruimte; elk deelbestand gaat weg zodra het deel binnen is.
+22. **Na wegvegen gaat de app verder bij het openen**, zonder dubbele delen. Geen herinnering in 38b; die komt mee als de app notificaties krijgt (Wouter, 2026-11-23).
+23. **De kiezer geeft wat het lid in Foto's ziet.** Bij een bewerkt filmpje, slow motion of Filmisch is dat de getoonde versie, niet per se het ruwe bestand. Geen extra werk daarvoor.
+24. **Tijdens het ophalen uit iCloud en het verkleinen** toont de app wat er gebeurt en houdt hij het scherm wakker (38c, toevoegscherm).
+25. **Verkleinen dat stopt omdat de app de voorgrond verliet, probeert het opnieuw** zodra de app terug is (ook voor gewone filmpjes uit WP37).
+26. **B van 38b mag de spike-code lezen en als start gebruiken** (`wp38b-spike`); A schrijft eerst de tests, zoals altijd.
