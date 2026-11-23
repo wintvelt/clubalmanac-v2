@@ -823,3 +823,16 @@ Bestaande tests aangepast: in `originalQueue.test.ts` hebben `delen_klaar`, `dee
 4. **Een aanroep die nooit een uitkomst krijgt** houdt de wachtrij op dit toestel stil tot de app opnieuw start, ook voor een andere user die inlogt. De Convex-client geeft een uitkomst zodra hij weer verbinding heeft. Aanbevolen: aanvaarden.
 
 **Regie op de open vragen van A (fix-cyclus 1):** alle vier volgens het advies. De app rekent 7 dagen vanaf het antwoord (geen wijziging in 38a); het onthouden van de te wissen user geldt alleen zolang de app draait; een onleesbare wachtrij wist alles op het toestel; een aanroep zonder uitkomst legt de wachtrij stil tot de volgende start.
+
+### 38b fix-cyclus 2 (heraudit en red-team-hercheck, regie 2026-11-23)
+
+Hercheck op `4f6e99a`: alle tien punten van fix-cyclus 1 dicht, geen blocker, geen Z. Te fixen (A eerst tests, dan B):
+
+1. **De gate-schakelaar met `exit(0)` alleen in het geheugen** (audit N2, red-team N2). Een vlag in `UserDefaults` overleeft een productie-build op hetzelfde toestel (zelfde bundle-id). Geen bewaarde vlag; bij de start is hij uit.
+2. **Een laat antwoord onder een andere user** (red-team N1). Wisselde de ingelogde user tijdens een aanroep, dan zegt de uitkomst niets over het origineel van de vorige user: tellen als `fout`, niets weggooien.
+3. **Nieuwe links terwijl alle delen al binnen zijn** (red-team N3). Komt `upload` binnen terwijl de stap `afronden` is, dan blijven de links liggen en volgt `finishOriginal`; `missing` zegt wat er nog moet.
+4. **Opslag op slot na een herstart** (red-team N4, audit). De uploader start pas als het toestel open is (`isProtectedDataAvailable`), en een leesfout is iets anders dan een bestand dat niet te decoderen is: bij een leesfout niets wissen en niets stoppen.
+5. **Het verplaatste bestand pas weg bij een eindstand** (audit N1, red-team). Neemt de wachtrij het origineel niet aan, dan gaat het bestand pas weg als het filmpje in het album staat, een vaste reden kreeg of de ronde eindigt; niet na een uitkomst die het lid opnieuw kan proberen.
+6. **Een deelbestand dat na `klaar` nog gesneden werd, gaat weg** in `sliced` (38b-13).
+
+Patroon voor het track-record: een late uitkomst van een async aanroep toetsen aan de sessie van toen (eerder ook in WP37).
