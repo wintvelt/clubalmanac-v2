@@ -1029,3 +1029,5 @@ Bestaande tests niet aangepast. Geen test eiste dat een "aan" bij twijfel ook be
 2. **`te_vaak` voor de andere originelen.** A pint alleen dat het afronden niet wacht. Aanbevolen: aan B laten.
 
 **Regie op A (fix-cyclus 3):** de aanvulling van A (ook een eigen leesfout bewaart geen "aan") blijft. Open vragen: 1 één keer langer wachten, anders dekt de audit het; 2 aan B.
+
+**Hercheck fix-cyclus 3 (`816185a`):** alle vier punten dicht, geen Z/S. Aanvaard (regie): de eigen wifi-waarde onleesbaar terwijl de uploader "uit" zegt (scherm toont aan, uploader blijft uit; bijna onmogelijk); `save()` in Swift negeert een schrijffout; de buffer van vroege events (38b-20) is alleen door de audit getoetst, niet op een gate. Gate op de build daarna.
