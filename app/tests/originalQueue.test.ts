@@ -51,6 +51,11 @@ import { ORIGINAL_PART_LINK_SECONDS } from "../../convex/lib/constants";
 //   - Komen nieuwe links binnen terwijl alle delen al verstuurd zijn (stap
 //     afronden), dan blijven ze liggen: eerst `finishOriginal`; `missing` zegt
 //     wat er nog moet (punt 3).
+//   Fix-cyclus 3:
+//   - Geeft die hervatting tijdens afronden iets anders dan links (`te_vaak`,
+//     `vol`, `uitgelogd`, een onbekende reden, een fout), dan geen wachttijd
+//     op het afronden: `finishOriginal` volgt meteen. Alleen een definitieve
+//     weigering of binnen geldt (punt 4).
 //   Besluit red-team N6 (Wouter, 2026-11-23):
 //   - Originelen van een user die niet is ingelogd, gaan na 30 dagen van het
 //     toestel (bestand, deelbestanden, iOS-taken). De 30 dagen tellen vanaf
@@ -952,6 +957,53 @@ describe("nieuwe links terwijl alle delen al verstuurd zijn (fix-cyclus 2, punt 
     const q = finishingWhileResuming();
     const lying = run(q, [{ kind: "aangemeld", key: "k1", result: upload("o1", [9, 10], later + 7 * DAY) }], later).queue;
     const { queue, effects } = run(lying, [{ kind: "afgerond", key: "k1", result: { kind: "done" } }], later);
+    expect(queue).toEqual([]);
+    expect(effects).toContainEqual({ kind: "bestand_weg", fileName: "k1.mov" });
+  });
+});
+
+describe("een andere uitkomst dan links tijdens afronden (fix-cyclus 3, punt 4)", () => {
+  // Zoals hierboven: een hervatting liep terwijl iOS de laatste delen
+  // verstuurde. Haar uitkomst komt pas als de stap al afronden is.
+  const later = T0 + 6 * DAY + 1;
+  const finish = { kind: "finish", key: "k1", originalId: "o1" };
+  function finishing(): QueueEntry[] {
+    const q = sending();
+    expect(nextCall(q, ctx(later))).toEqual({ kind: "start", key: "k1", photoId: "photo-k1", bytes: BYTES });
+    const done = run(q, [{ kind: "delen_klaar", originalId: "o1", generation: HUIDIG }], later).queue;
+    expect(nextCall(done, ctx(later))).toEqual(finish);
+    return done;
+  }
+
+  it.each([
+    ["te_vaak", refused("te_vaak")],
+    ["vol", refused("vol")],
+    ["uitgelogd", refused("uitgelogd")],
+    ["een onbekende reden", refused("iets_nieuws")],
+    ["een fout", { kind: "fout" } as StartResult],
+  ])("%s: geen wachttijd, afronden volgt meteen, niets weg", (_label, result) => {
+    const { queue, effects } = run(finishing(), [{ kind: "aangemeld", key: "k1", result }], later);
+    expect(effects).toEqual([]);
+    expect(queue.map((e) => e.key)).toEqual(["k1"]);
+    expect(nextCall(queue, ctx(later))).toEqual(finish);
+  });
+
+  it("een fout van de hervatting telt niet mee voor het oplopen: een fout bij afronden wacht daarna 1 minuut", () => {
+    const q = run(finishing(), [{ kind: "aangemeld", key: "k1", result: { kind: "fout" } }], later).queue;
+    const failed = run(q, [{ kind: "afgerond", key: "k1", result: { kind: "fout" } }], later).queue;
+    expect(nextCall(failed, ctx(later + WAIT_MS.fout - 1))).toBeNull();
+    expect(nextCall(failed, ctx(later + WAIT_MS.fout))).toEqual(finish);
+  });
+
+  it.each(["niet_toegestaan", "te_groot", "te_klein", "geen_video"])("een definitieve weigering (%s) geldt wel: weg", (reason) => {
+    const { queue, effects } = run(finishing(), [{ kind: "aangemeld", key: "k1", result: refused(reason) }], later);
+    expect(queue).toEqual([]);
+    expect(effects).toContainEqual({ kind: "ios_vergeten", originalId: "o1" });
+    expect(effects).toContainEqual({ kind: "bestand_weg", fileName: "k1.mov" });
+  });
+
+  it("al binnen (done) geldt ook: weg", () => {
+    const { queue, effects } = run(finishing(), [{ kind: "aangemeld", key: "k1", result: { kind: "done", originalId: "o1" } }], later);
     expect(queue).toEqual([]);
     expect(effects).toContainEqual({ kind: "bestand_weg", fileName: "k1.mov" });
   });

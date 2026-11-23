@@ -1,6 +1,7 @@
 import { ConvexError } from "convex/values";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { queueFromStore } from "../src/lib/originalQueue";
+import { wifiOnlyToStore } from "../src/lib/originalUpload";
 
 // WP38b fix-cyclus 1: de runner van de wachtrij (src/data/originals.ts), met
 // een nagebootste uploader en een nagebootste Convex-client.
@@ -36,11 +37,19 @@ import { queueFromStore } from "../src/lib/originalQueue";
 //     die nu is ingelogd verliest niets, zonder login gaat niets weg, en een
 //     klok die terug springt maakt het moment niet vroeger.
 //
+// Fix-cyclus 3:
+//   - Punt 3: een wekking zet "Alleen via wifi" niet blijvend aan. Bij het
+//     laden eerst `uploaderJobs`, pas daarna de stand van de uploader. Lukt
+//     `uploaderJobs` niet, dan verandert er niets aan de stand. Kan de
+//     uploader zijn stand niet geven (of de app zijn eigen waarde niet lezen),
+//     dan aan voor nu, maar niets bewaard: niet in de app, niet bij de
+//     uploader.
+//
 // Het nep-toestel houdt zijn bestanden en opslag over een "herstart" heen
 // (een verse import van de runner). De namen van de bestanden in de opslag
 // zijn aan B; de tests kijken alleen naar wat erin staat.
 // Spec: docs/work-packages/WP38-filmproject-originelen.md §Spec-criticus 38b,
-// §38b fix-cyclus 1 en §38b fix-cyclus 2.
+// §38b fix-cyclus 1, §38b fix-cyclus 2 en §38b fix-cyclus 3.
 
 const dev = vi.hoisted(() => ({
   state: new Map<string, string>(),
@@ -50,6 +59,8 @@ const dev = vi.hoisted(() => ({
   nativeWifiUnreadable: false,
   readGate: null as Promise<void> | null,
   readFails: false,
+  /** Bestanden met deze inhoud zijn niet te lezen (een leesfout, geen onleesbare inhoud). */
+  unreadable: [] as string[],
   jobsFail: false,
   writeFails: false,
   setWifiFails: false,
@@ -57,6 +68,8 @@ const dev = vi.hoisted(() => ({
   forgotten: [] as string[],
   sent: [] as unknown[],
   notes: [] as string[],
+  /** Volgorde van de vragen aan de uploader (fix-cyclus 3, punt 3). */
+  calls: [] as string[],
 }));
 
 vi.mock("../modules/clubalmanac-video", () => ({
@@ -67,7 +80,9 @@ vi.mock("../modules/clubalmanac-video", () => ({
   readOriginalState: async (name: string) => {
     if (dev.readGate) await dev.readGate;
     if (dev.readFails) throw new Error("bestand op slot");
-    return dev.state.get(name) ?? null;
+    const text = dev.state.get(name) ?? null;
+    if (text !== null && dev.unreadable.includes(text)) throw new Error("bestand niet te lezen");
+    return text;
   },
   writeOriginalState: async (name: string, text: string) => {
     if (dev.writeFails) throw new Error("schrijven lukte niet");
@@ -93,14 +108,17 @@ vi.mock("../modules/clubalmanac-video", () => ({
     dev.forgotten.push(originalId);
   },
   uploaderJobs: async () => {
+    dev.calls.push("uploaderJobs");
     if (dev.jobsFail) throw new Error("opslag van de uploader op slot");
     return dev.jobs;
   },
   uploaderWifiOnly: async () => {
+    dev.calls.push("uploaderWifiOnly");
     if (dev.nativeWifiUnreadable) throw new Error("opslag van de uploader onleesbaar");
     return dev.nativeWifi;
   },
   uploaderSetWifiOnly: async (on: boolean) => {
+    dev.calls.push(`uploaderSetWifiOnly(${on})`);
     if (dev.setWifiFails) throw new Error("omzetten lukte niet");
     dev.nativeWifi = on;
   },
@@ -221,6 +239,7 @@ beforeEach(() => {
   dev.nativeWifiUnreadable = false;
   dev.readGate = null;
   dev.readFails = false;
+  dev.unreadable = [];
   dev.jobsFail = false;
   dev.writeFails = false;
   dev.setWifiFails = false;
@@ -228,6 +247,7 @@ beforeEach(() => {
   dev.forgotten = [];
   dev.sent = [];
   dev.notes = [];
+  dev.calls = [];
 });
 
 afterEach(() => {
@@ -444,6 +464,88 @@ describe('"Alleen via wifi" bij twijfel aan (fix-cyclus 1, punt 6)', () => {
     await settle();
     expect(R.originalsSnapshot().wifiOnly).toBe(true);
     expect(dev.nativeWifi).toBe(true);
+  });
+});
+
+describe('"Alleen via wifi": een wekking zet hem niet blijvend aan (fix-cyclus 3, punt 3)', () => {
+  const ON = wifiOnlyToStore(true);
+  const OFF = wifiOnlyToStore(false);
+  const stored = () => [...dev.state.values()];
+
+  /** Het lid zette "Alleen via wifi" uit; dat staat in de app en bij de uploader. */
+  async function switchedOff(): Promise<void> {
+    await startApp();
+    await R.setOriginalsWifiOnly(false);
+    await settle();
+    expect(R.originalsSnapshot().wifiOnly).toBe(false);
+    expect(dev.nativeWifi).toBe(false);
+    expect(stored()).toContain(OFF);
+  }
+
+  it("bij het laden eerst uploaderJobs, pas daarna de stand van de uploader", async () => {
+    await startApp();
+    expect(R.originalsSnapshot().loaded).toBe(true);
+    const jobs = dev.calls.indexOf("uploaderJobs");
+    const wifi = dev.calls.indexOf("uploaderWifiOnly");
+    expect(jobs).toBeGreaterThanOrEqual(0);
+    expect(wifi).toBeGreaterThan(jobs);
+  });
+
+  it("gewekt terwijl de uploader nog niet kan lezen: niets aan de stand veranderd; zodra hij kan, blijft hij uit", async () => {
+    await switchedOff();
+
+    // Een wekking op de achtergrond; de uploader kon zijn opslag nog niet lezen.
+    dev.jobsFail = true;
+    dev.nativeWifiUnreadable = true;
+    await startApp();
+    await settle(5 * MINUTE);
+    expect(R.originalsSnapshot().loaded).toBe(false);
+    expect(dev.nativeWifi).toBe(false);
+    expect(stored()).toContain(OFF);
+    expect(stored()).not.toContain(ON);
+
+    // De uploader kan weer lezen: zelfde proces, het laden lukt.
+    dev.jobsFail = false;
+    dev.nativeWifiUnreadable = false;
+    R.nudgeOriginals();
+    await settle(2 * MINUTE);
+    expect(R.originalsSnapshot().loaded).toBe(true);
+    expect(R.originalsSnapshot().wifiOnly).toBe(false);
+    expect(dev.nativeWifi).toBe(false);
+  });
+
+  it("de uploader geeft zijn taken wel, maar zijn stand niet: aan voor nu, niets bewaard; bij de volgende start weer uit", async () => {
+    await switchedOff();
+
+    dev.nativeWifiUnreadable = true;
+    await startApp();
+    expect(R.originalsSnapshot().loaded).toBe(true);
+    expect(R.originalsSnapshot().wifiOnly).toBe(true);
+    expect(dev.nativeWifi).toBe(false);
+    expect(stored()).toContain(OFF);
+    expect(stored()).not.toContain(ON);
+
+    dev.nativeWifiUnreadable = false;
+    await startApp();
+    expect(R.originalsSnapshot().wifiOnly).toBe(false);
+    expect(dev.nativeWifi).toBe(false);
+  });
+
+  it("de app kan zijn eigen waarde niet lezen (een leesfout): aan voor nu, niets bewaard; bij de volgende start weer uit", async () => {
+    await switchedOff();
+
+    dev.unreadable = [OFF];
+    await startApp();
+    expect(R.originalsSnapshot().loaded).toBe(true);
+    expect(R.originalsSnapshot().wifiOnly).toBe(true);
+    expect(dev.nativeWifi).toBe(false);
+    expect(stored()).toContain(OFF);
+    expect(stored()).not.toContain(ON);
+
+    dev.unreadable = [];
+    await startApp();
+    expect(R.originalsSnapshot().wifiOnly).toBe(false);
+    expect(dev.nativeWifi).toBe(false);
   });
 });
 
