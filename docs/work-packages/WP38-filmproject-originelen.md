@@ -740,3 +740,7 @@ Geen backend-wijziging nodig: 38b gebruikt `startOriginal`, `finishOriginal`, `w
 - De app-typecheck faalt alleen op die drie imports.
 - De bestaande 2118 app-tests blijven groen.
 - A draaide de tests tegen een wegwerp-uitwerking. Die is niet gecommit en weggegooid. Zo is gecontroleerd dat de tests samen kloppen en typechecken.
+
+### Besluiten Wouter na A van 38b (2026-11-23)
+
+De vijf open vragen van A: alle vijf volgens het advies (bij `vol` wachten; na uitloggen blijven wachtende originelen staan; herstart vóór het album aanvaarden; kapot bestand aanvaarden; langer dan 7 dagen geen wifi aanvaarden). Daarna B voor 38b.
