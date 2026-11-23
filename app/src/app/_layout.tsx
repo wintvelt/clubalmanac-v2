@@ -2,6 +2,7 @@ import { Stack, ThemeProvider } from "expo-router";
 import App from "../../App";
 import { AuthGate } from "../AuthGate";
 import { useAuthState } from "../data/authStateContext";
+import { OriginalsRunner } from "../data/originalsRunner";
 import {
   CloseButton,
   useNavigationTheme,
@@ -10,10 +11,12 @@ import {
 
 // Wortel van de router: providers (App.tsx), dan de auth-poort, dan één
 // stack met de tabs, de modaal en de uitgelogde tabs (Inloggen · Info). Routes
-// en deep links: WP15a §Routes, WP15b §Routes.
+// en deep links: WP15a §Routes, WP15b §Routes. WP38b: naast de poort de
+// wachtrij met originelen, die ook zonder scherm loopt.
 export default function RootLayout() {
   return (
     <App>
+      <OriginalsRunner />
       <AuthGate>
         <RootStack />
       </AuthGate>

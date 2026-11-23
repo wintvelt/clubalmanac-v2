@@ -18,6 +18,9 @@
 // - WP39 besluit 10: `pickerOnScreen` zegt of er nog een fotokiezer over het
 //   scherm staat. De app vraagt dat zolang ze op de kiezer wacht; de teller van
 //   "Je keuze ophalen…" loopt vanaf het moment dat hij dicht is.
+// - WP38b: het bewaarde origineel (OriginalFiles.swift) en de uploader voor
+//   originelen (OriginalUploader.swift). `remove` wist nooit iets in de mappen
+//   van de originelen (38b-2: de opruimregels van WP39 raken ze niet).
 
 import ExpoModulesCore
 import Foundation
@@ -30,6 +33,24 @@ struct CompressOptions: Record {
   @Field var videoBitrate: Int = 3_600_000
   @Field var audioBitrate: Int = 128_000
   @Field var maxFps: Int = 30
+}
+
+/// WP38b: een deel met zijn link, voor de uploader (`aan_ios`).
+struct OriginalPartRecord: Record {
+  @Field var partNumber: Int = 0
+  @Field var offset: Double = 0
+  @Field var size: Double = 0
+  @Field var url: String = ""
+}
+
+/// WP38b: de delen van één origineel voor de uploader.
+struct OriginalSendRecord: Record {
+  @Field var originalId: String = ""
+  @Field var fileName: String = ""
+  @Field var totalBytes: Double = 0
+  @Field var partSize: Double = 0
+  @Field var expiresAt: Double = 0
+  @Field var parts: [OriginalPartRecord] = []
 }
 
 /// De lopende compressies, om te kunnen stoppen.
@@ -59,7 +80,17 @@ public class ClubalmanacVideoModule: Module {
   public func definition() -> ModuleDefinition {
     Name("ClubalmanacVideo")
 
-    Events("onProgress")
+    Events("onProgress", "onPartDone", "onPartFailed", "onAllPartsDone", "onFileBroken", "onNetwork")
+
+    OnCreate {
+      let uploader = OriginalUploader.shared
+      uploader.emit = { [weak self] name, body in self?.sendEvent(name, body) }
+      uploader.start(reason: "module geladen")
+    }
+
+    OnDestroy {
+      OriginalUploader.shared.emit = nil
+    }
 
     AsyncFunction("readMetadata") { (uri: String) async throws -> [String: Any?] in
       return try await VideoMetadata.read(try fileURL(uri))
@@ -88,11 +119,104 @@ public class ClubalmanacVideoModule: Module {
     }
 
     AsyncFunction("remove") { (uri: String) in
-      if let url = try? fileURL(uri) { try? FileManager.default.removeItem(at: url) }
+      // 38b-2: een bewaard origineel of deelbestand gaat hier nooit weg.
+      if let url = try? fileURL(uri), !OriginalDirs.isProtected(url) { try? FileManager.default.removeItem(at: url) }
     }
 
     AsyncFunction("pickerOnScreen") { () async -> Bool in
       return await MainActor.run { pickerOnScreen() }
+    }
+
+    // MARK: WP38b, originelen
+
+    AsyncFunction("keepOriginal") { (uri: String) throws -> [String: Any] in
+      return try OriginalFiles.keep(uri)
+    }
+
+    AsyncFunction("originalInfo") { (fileName: String) throws -> [String: Any] in
+      return try OriginalFiles.info(fileName)
+    }
+
+    AsyncFunction("removeOriginal") { (fileName: String) throws in
+      try OriginalFiles.remove(fileName)
+    }
+
+    AsyncFunction("listOriginals") { () -> [String] in
+      return OriginalFiles.list()
+    }
+
+    AsyncFunction("originalSha256") { (fileName: String) throws -> String in
+      return try OriginalFiles.sha256(fileName)
+    }
+
+    AsyncFunction("freeBytes") { () -> Double? in
+      return OriginalFiles.freeBytes()
+    }
+
+    AsyncFunction("partsBytes") { () -> Double in
+      return OriginalFiles.partsBytes()
+    }
+
+    AsyncFunction("networkStatus") { () -> [String: Any] in
+      let status = OriginalUploader.shared.net.status
+      return ["type": status["type"] ?? "onbekend", "expensive": status["expensive"] ?? false]
+    }
+
+    AsyncFunction("readState") { (name: String) throws -> String? in
+      return try OriginalFiles.readState(name)
+    }
+
+    AsyncFunction("writeState") { (name: String, text: String) throws in
+      try OriginalFiles.writeState(name, text)
+    }
+
+    AsyncFunction("uploaderSend") { (job: OriginalSendRecord) throws in
+      try OriginalUploader.shared.send(
+        originalId: job.originalId, fileName: job.fileName, totalBytes: Int64(job.totalBytes),
+        partSize: Int64(job.partSize), expiresAt: job.expiresAt,
+        links: job.parts.map {
+          NewPartLink(partNumber: $0.partNumber, offset: Int64($0.offset), size: Int64($0.size), url: $0.url)
+        })
+    }
+
+    AsyncFunction("uploaderRetryPart") { (originalId: String, partNumber: Int) in
+      OriginalUploader.shared.retryPart(originalId, partNumber)
+    }
+
+    AsyncFunction("uploaderForget") { (originalId: String) in
+      OriginalUploader.shared.forget(originalId)
+    }
+
+    AsyncFunction("uploaderJobs") { () -> String in
+      return OriginalUploader.shared.jobsJSON()
+    }
+
+    AsyncFunction("uploaderWifiOnly") { () -> Bool in
+      return OriginalUploader.shared.wifiOnly()
+    }
+
+    AsyncFunction("uploaderSetWifiOnly") { (on: Bool) in
+      OriginalUploader.shared.setWifiOnly(on)
+    }
+
+    AsyncFunction("uploaderNote") { (text: String) in
+      OriginalUploader.shared.noteFromApp(text)
+    }
+
+    AsyncFunction("uploaderLog") { (limit: Int) -> [[String: Any]] in
+      return OriginalUploader.shared.log.read(limit: limit)
+    }
+
+    AsyncFunction("uploaderClearLog") { () in
+      OriginalUploader.shared.log.clear()
+    }
+
+    AsyncFunction("backgroundWorkBegin") { () async -> Int in
+      return await MainActor.run { BackgroundWork.begin() }
+    }
+
+    AsyncFunction("backgroundWorkEnd") { (id: Int) async in
+      await MainActor.run { BackgroundWork.end(id) }
     }
   }
 }

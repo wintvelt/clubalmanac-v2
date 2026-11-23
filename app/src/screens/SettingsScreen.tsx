@@ -2,6 +2,7 @@ import { router } from "expo-router";
 import { SignOutButton } from "../auth/SignOutButton";
 import { ListRow, ListSection } from "../components/ListRow";
 import { Screen } from "../components/Screen";
+import { DEV_TOOLS } from "../data/devTools";
 import { READ_ONLY } from "../data/readOnly";
 import { InfoList } from "./InfoList";
 
@@ -18,6 +19,12 @@ export function SettingsScreen() {
         <ListSection>
           <ListRow icon="idea" title="Ideeën" onPress={() => router.push("/instellingen/ideeen")} />
           <ListRow icon="problem" title="Probleem melden" onPress={() => router.push("/instellingen/problemen")} />
+        </ListSection>
+      )}
+      {/* WP38b: het proefscherm van de originelen, alleen in een build tegen dev. */}
+      {DEV_TOOLS && !READ_ONLY && (
+        <ListSection>
+          <ListRow icon="film" title="Proef: originelen" onPress={() => router.push("/instellingen/proef-origineel")} />
         </ListSection>
       )}
       <SignOutButton />

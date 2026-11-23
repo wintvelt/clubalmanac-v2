@@ -13,6 +13,8 @@ export default function Layout() {
       <Stack.Screen name="ideeen" options={{ title: "Ideeën" }} />
       <Stack.Screen name="problemen" options={{ title: "Problemen" }} />
       <Stack.Screen name="doorgeven" options={{ title: "Doorgeven" }} />
+      {/* WP38b: alleen in dev-builds te zien in de lijst. */}
+      <Stack.Screen name="proef-origineel" options={{ title: "Proef originelen" }} />
       {INFO_PAGES.map((page) => (
         <Stack.Screen key={page.slug} name={page.slug} options={{ title: page.title }} />
       ))}
