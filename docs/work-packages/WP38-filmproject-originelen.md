@@ -1037,3 +1037,7 @@ Bestaande tests niet aangepast. Geen test eiste dat een "aan" bij twijfel ook be
 **Ronde 1 (build 87, 2026-11-23):** gate 3 goed (1,83 GB binnen op de achtergrond met het scherm uit; grootte in R2 gelijk; SHA-256 niet tegen de telefoon vergeleken). Gate 9 goed: het verkleinen begint na terugkomen opnieuw bij 0%, zonder melding (besluit 25). Gate 10 goed voor een groep zonder project; een clip onder 1 MiB niet apart getoetst.
 
 Nog open: 1, 2, 4, 5, 6, 7, 8, 11, 12. Vanaf build 88 met "Kopieer log".
+
+**Ronde 2 (build 88, 2026-11-23):** gate 6 goed: warm (delen binnen 8 s na voor), koud met de dev-schakelaar (11 uitgestelde delen binnen 14 s), en de schakelaar staat na wegvegen en na de koude start uit. Gate 4 goed: twee keer wegvegen (meteen en na een paar minuten openen), elk deel één keer binnen, 55 van 55; daarna wekte iOS de app en rondde die op de achtergrond af. Gate 7 goed voor de oprichter: `NoSuchUpload`, `niet_toegestaan`, vergeten, deelbestanden weg.
+
+**Wouter (2026-11-23): genoeg getest.** Vervallen: gate 1 (regie gaat uit van de datum van de start van de upload; de lifecycle-marge rekent daarmee), 2, 5, 7 met Terugtrekken, 11 en 12; die dekken de tests en de audit. Nog lopend: gate 6 en 8 in het gewone gebruik (scherm op slot, telefoon weg), log de ochtend erna.
