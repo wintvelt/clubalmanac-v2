@@ -12,6 +12,8 @@ import {
   PART_ATTEMPTS,
   originalPlan,
   originalRefusal,
+  originalAfterVideo,
+  originalAtRoundEnd,
   partFailure,
   partsToSend,
   planParts,
@@ -22,6 +24,7 @@ import {
   type NetworkView,
   type PlannedPart,
 } from "../src/lib/originalUpload";
+import { videoRetryable, type VideoFailReason } from "../src/lib/videos";
 
 // WP38b — de pure beslissingen van de uploader voor originelen.
 //   - Gaat het origineel mee (A-invariant 38b-1): alleen met de uploader in
@@ -38,6 +41,13 @@ import {
 //   - "Alleen via wifi" (besluit 6, A-invariant 21): standaard aan, per
 //     toestel onthouden; aan betekent geen mobiel internet en geen
 //     persoonlijke hotspot (een duur netwerk).
+//   Fix-cyclus 2, punt 5: het verplaatste bestand van een filmpje in de ronde
+//   van het toevoegscherm. Staat het origineel in de wachtrij, dan zegt het
+//   scherm de wachtrij of het filmpje in het album staat of een vaste reden
+//   kreeg (A-invariant 18). Nam de wachtrij het niet aan, dan gaat het
+//   bestand pas weg bij een eindstand: in het album, een vaste reden, of het
+//   einde van de ronde. Na een uitkomst die het lid opnieuw kan proberen,
+//   blijft het staan: "Opnieuw proberen" verkleint weer uit dat bestand.
 // Spec: docs/work-packages/WP38-filmproject-originelen.md §Spec-criticus 38b.
 
 const MiB = 1024 * 1024;
@@ -310,5 +320,81 @@ describe('"Alleen via wifi" bij twijfel aan (fix-cyclus 1, punt 6)', () => {
 
   it("beide aan: aan", () => {
     expect(wifiOnlyAtStart(aan, true)).toBe(true);
+  });
+});
+
+describe("het verplaatste bestand in de ronde van het toevoegscherm (fix-cyclus 2, punt 5)", () => {
+  // Alle redenen van WP37 (src/lib/videos.ts). Opnieuw te proberen of vast
+  // volgt `videoRetryable`, zoals de knop "Opnieuw proberen".
+  const REASONS: VideoFailReason[] = [
+    "te_lang",
+    "te_groot",
+    "locatie",
+    "codec",
+    "geen_mp4",
+    "index_achteraan",
+    "comprimeren",
+    "netwerk",
+    "niet_binnen",
+    "bezig",
+    "limiet",
+    "geen_album",
+    "uitgelogd",
+    "verlopen",
+    "te_vaak",
+    "server",
+  ];
+  const retryable = REASONS.filter((r) => videoRetryable(r));
+  const fixed = REASONS.filter((r) => !videoRetryable(r));
+
+  it("beide soorten redenen komen voor", () => {
+    expect(retryable).toEqual(expect.arrayContaining(["netwerk", "comprimeren", "server", "uitgelogd"]));
+    expect(fixed).toEqual(expect.arrayContaining(["te_groot", "locatie", "codec"]));
+  });
+
+  describe("in de wachtrij (A-invariant 18, zoals nu)", () => {
+    it("in het album: de wachtrij hoort het, met het filmpje", () => {
+      expect(originalAfterVideo({ queued: true, outcome: { ok: true, photoId: "photo-1" } })).toEqual({
+        kind: "album_klaar",
+        photoId: "photo-1",
+      });
+    });
+
+    it.each(fixed)("vaste reden %s: de wachtrij hoort dat het filmpje niet in het album komt", (reason) => {
+      expect(originalAfterVideo({ queued: true, outcome: { ok: false, reason } })).toEqual({ kind: "album_mislukt" });
+    });
+
+    it.each(retryable)("%s (opnieuw te proberen): nog niets", (reason) => {
+      expect(originalAfterVideo({ queued: true, outcome: { ok: false, reason } })).toEqual({ kind: "laten" });
+    });
+  });
+
+  describe("niet aangenomen door de wachtrij", () => {
+    it("in het album: het bestand weg", () => {
+      expect(originalAfterVideo({ queued: false, outcome: { ok: true, photoId: "photo-1" } })).toEqual({ kind: "bestand_weg" });
+    });
+
+    it.each(fixed)("vaste reden %s: het bestand weg", (reason) => {
+      expect(originalAfterVideo({ queued: false, outcome: { ok: false, reason } })).toEqual({ kind: "bestand_weg" });
+    });
+
+    it.each(retryable)("%s (opnieuw te proberen): het bestand blijft, opnieuw proberen leest het", (reason) => {
+      expect(originalAfterVideo({ queued: false, outcome: { ok: false, reason } })).toEqual({ kind: "laten" });
+    });
+  });
+
+  describe("de ronde eindigt (sluiten, of een nieuwe keuze na de ronde)", () => {
+    it("in de wachtrij en niet in het album: de wachtrij hoort het (het origineel gaat weg)", () => {
+      expect(originalAtRoundEnd({ queued: true, inAlbum: false })).toEqual({ kind: "album_mislukt" });
+    });
+
+    it("in de wachtrij en in het album: niets, de wachtrij heeft het", () => {
+      expect(originalAtRoundEnd({ queued: true, inAlbum: true })).toEqual({ kind: "laten" });
+    });
+
+    it("niet aangenomen door de wachtrij: het bestand weg, of het filmpje nu in het album staat of niet", () => {
+      expect(originalAtRoundEnd({ queued: false, inAlbum: false })).toEqual({ kind: "bestand_weg" });
+      expect(originalAtRoundEnd({ queued: false, inAlbum: true })).toEqual({ kind: "bestand_weg" });
+    });
   });
 });

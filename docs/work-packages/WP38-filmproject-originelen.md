@@ -492,7 +492,8 @@ Tot 38c er is, gaat in 38b een nieuw filmpje mee als origineel zodra zijn groep 
    - Laadt de wachtrij nog niet (bijvoorbeeld op slot), dan wacht Account verwijderen daar niet op. De runner onthoudt de user en wist alles van hem zodra het laden lukt (fix-cyclus 1, punt 4).
    - De wachtrij staat op schijf en overleeft een herstart. Hij bewaart geen links; die staan alleen in de opslag van de uploader.
    - De wachtrij en de opslag van de uploader hebben elk een versie. Een nieuwe versie zet er alleen velden bij; een oudere app leest wat hij kent (punt 9, runbook voor 38c). Een onleesbare wachtrij geeft een regel in het log met "onleesbaar".
-   - Het laden wist niets wat in dit proces is aangemaakt: geen origineel en geen bestand dat het toevoegscherm net heeft verplaatst (punt 3). Het toevoegscherm wacht tot de wachtrij geladen is voordat het de kopie verplaatst. Neemt de wachtrij het origineel niet aan (`addOriginalToQueue` geeft `false`), dan ruimt het scherm het verplaatste bestand op zodra het verkleinen klaar is.
+   - Het laden wist niets wat in dit proces is aangemaakt: geen origineel en geen bestand dat het toevoegscherm net heeft verplaatst (punt 3). Het toevoegscherm wacht tot de wachtrij geladen is voordat het de kopie verplaatst.
+   - Neemt de wachtrij het origineel niet aan (`addOriginalToQueue` geeft `false`), dan blijft het verplaatste bestand tot een eindstand (fix-cyclus 2, punt 5). Een eindstand is: het filmpje staat in het album, het kreeg een vaste reden, of de ronde eindigt (sluiten of een nieuwe keuze). Na een uitkomst die het lid opnieuw kan proberen (`videoRetryable`), blijft het staan: "Opnieuw proberen" en besluit 25 verkleinen weer uit dat bestand. Hetzelfde onderscheid geldt voor een origineel in de wachtrij (38b-3). Wat het scherm laat staan, ruimt de volgende start op (wezen, 38b-5).
    - Hij draait vanuit de wortel van de app, ook als iOS de app op de achtergrond start, niet vanuit een scherm. In de webapp draait hij niet.
 5. **Herstart en wegvegen** (besluit 22, red-team N1). Bij elke start van de app:
    - wat iOS nog heeft, loopt door, zonder `startOriginal`, zolang de bewaarde links gelden;
@@ -512,6 +513,11 @@ Tot 38c er is, gaat in 38b een nieuw filmpje mee als origineel zodra zijn groep 
    - **Generaties** (punt 5). Elke ronde links krijgt een eigen generatie, ook twee rondes op hetzelfde moment. De app geeft hem mee aan de uploader; elk event van de uploader en elke taak in zijn stand heeft hem. Een event van een oudere generatie telt niet: geen "alle delen klaar", geen nieuwe aanmelding na 403, geen poging opnieuw.
 7. **Aanroepen na elkaar.** Eén aanroep tegelijk (`startOriginal` of `finishOriginal`), voor de hele wachtrij.
    - Ook als een aanroep lang niets geeft (punt 2). De Convex-client houdt een action vast tot hij weer verbinding heeft. Een nieuwe aanroep gaat pas als de vorige een uitkomst heeft: een antwoord of een fout van de client. Een eigen time-out, terugkomst in de app, een wekker of een nieuwe sessie start er geen tweede naast. Komt het antwoord laat, dan telt het nog.
+   - **Een andere user tussendoor** (fix-cyclus 2, punt 2). De Convex-client stuurt een vastgehouden action pas bij herverbinden, met de login van dat moment. Was er tijdens de aanroep een andere user ingelogd, dan zegt de uitkomst niets over het origineel. Dat geldt ook als de eerste user weer terug is als het antwoord komt. De uitkomst telt dan als `fout`, wat hij ook zegt (`niet_toegestaan`, `te_vaak`, links of binnen):
+     - niets weg, niets aan iOS;
+     - opnieuw na de wachttijd van een fout, voor de user van het origineel.
+
+     Alleen uitloggen tussendoor is geen wissel: zonder login geeft de backend `uitgelogd`. Dezelfde user met een nieuwe client ook niet.
    - Volgorde: eerst afronden, dan hervatten, dan een nieuwe aanmelding; binnen elke soort de oudste eerst.
    - `te_vaak`: alles van die user wacht een uur. De grens glijdt, en een geweigerde aanroep telt in de backend niet mee.
    - `bezig`: alleen die nieuwe aanmelding wacht, tot een ander origineel van die user uit de wachtrij is, hooguit een uur. Hervatten en afronden gaan door.
@@ -526,6 +532,7 @@ Tot 38c er is, gaat in 38b een nieuw filmpje mee als origineel zodra zijn groep 
 
    - Valt de verbinding weg, dan eerst één nieuwe poging, zoals WP37 (`withOneRetry`).
 8. **Afronden pas als alle delen verstuurd zijn**, niet na elk deel. De uploader meldt "alle delen klaar".
+   - **Nieuwe links tijdens afronden** (fix-cyclus 2, punt 3). Liep er een hervatting (bijvoorbeeld omdat de links bijna verliepen) terwijl iOS de laatste delen verstuurde, dan komen er links binnen terwijl de stap al afronden is. Die links blijven liggen: niets aan iOS, geen nieuwe generatie, en `finishOriginal` volgt. Zegt die `missing`, dan opnieuw aanmelden; de links van die ronde gaan wel aan iOS.
    - `missing` betekent opnieuw aanmelden.
    - Afronden mag ook op de achtergrond (spike 2).
    - Kan de app dat niet, bijvoorbeeld zonder login met het scherm op slot, dan rondt de cron het binnen een uur af (A-invariant 9). Een ontbrekende login op de achtergrond wist nooit iets.
@@ -566,6 +573,7 @@ Tot 38c er is, gaat in 38b een nieuw filmpje mee als origineel zodra zijn groep 
     - Delen die op de achtergrond aan iOS gegeven zijn en nog niet lopen, gaan zodra de app voor komt (spike 3). Ook bij een koude start (punt 1): heeft iOS het proces opgeruimd, dan doet de uploader na het naast elkaar leggen bij het openen dezelfde controle als bij voorgrond. Wordt de app actief vóór dat klaar is, dan telt die controle alsnog.
     - Heeft het bewaarde bestand niet meer de aangemelde grootte, of is het weg, dan stuurt hij geen kort deel maar meldt hij een kapot bestand.
     - Lukt het snijden niet (geen ruimte), dan meldt hij een mislukking zonder status.
+    - Is een deel klaar of niet meer nodig als zijn snijden afloopt (fix-cyclus 2, punt 6), dan gaat het deelbestand meteen weg. Na "klaar" staat er van dat deel geen bestand meer, ook niet als het snijden later afliep dan het versturen.
 14. **Elk deel één keer onderweg** (spike 5).
     - Bij het openen legt de uploader zijn opslag naast de taken van iOS. Een deel zonder taak krijgt er precies één; een taak zonder deel stopt.
     - Nieuwe links voor een origineel vervangen de oude. Een deel dat met een oude link nog loopt, stopt eerst. De afloop van een taak met een oude link telt niet, niet als klaar en niet als mislukt.
@@ -580,6 +588,15 @@ Tot 38c er is, gaat in 38b een nieuw filmpje mee als origineel zodra zijn groep 
     - De terugroep van iOS voor een sessie gaat meteen; daarna houdt de app zichzelf 25 s wakker om de events te verwerken en af te ronden. Wat de app in die tijd niet haalt, rondt de cron af (regie, fix-cyclus 1; gate 8 laat zien wie afrondt). De achtergrond-upload van `expo-file-system` (het filmpje voor het album, WP37) blijft werken.
 16. **Geen link, sleutel of pad** in een log, een event of de stand naar de app. Alleen inzending-id, deelnummer, status en foutcode.
 17. **De opslag van de uploader heeft een versie** (punt 9). Een nieuwe versie zet er alleen velden bij. Is de opslag onleesbaar, dan een regel in het log, en de stand "Alleen via wifi" is aan.
+    - Onleesbaar betekent: het bestand is gelezen, maar de inhoud is geen opslag van een bekende vorm. Een leesfout is iets anders (38b-18).
+18. **Op slot na een herstart** (fix-cyclus 2, punt 4). Na een herstart van de telefoon zijn de bestanden van de app tot de eerste ontgrendeling niet te lezen. iOS kan de app in die tijd op de achtergrond wekken.
+    - De uploader start pas als het toestel open is (`isProtectedDataAvailable`). Daarvoor legt hij niets naast elkaar en start hij geen taak. Hij stopt ook niets, wist niets en bewaart niets. Zodra het toestel open is, start hij zoals altijd.
+    - Een leesfout van zijn opslag (op slot of een andere fout) is geen onleesbare opslag. Dan geen lege start, geen taak stoppen en niets wissen. Hij overschrijft de opslag ook niet met een lege; later opnieuw lezen.
+    - Kan hij zijn stand niet geven omdat hij niet gestart is, dan geeft `uploaderJobs` een fout, geen lege lijst. De runner laadt dan niet en probeert het later (38b-4; getest).
+    - `readState` geeft `null` alleen als het bestand er niet is. Een leesfout gaat als fout naar de app (zoals nu).
+    - Wordt de app vóór de eerste ontgrendeling gewekt, dan schrijft de uploader een regel in het log ("op slot"), eventueel pas na het ontgrendelen.
+    - Wat iOS in die tijd meldde en verloren gaat, kost hooguit dat een deel nog eens over de lijn gaat (38b-14). Nooit stopt een taak of verdwijnt een bestand.
+19. **De gate-schakelaar "stoppen na delen op de achtergrond"** (gate 6 koud, fix-cyclus 2, punt 1) staat alleen in het geheugen. Niet in `UserDefaults` of een bestand, want een productie-build op hetzelfde toestel (zelfde bundle-id) zou een bewaarde vlag lezen. Bij elke start van de app staat hij uit. Alleen een dev-build kan hem aanzetten.
 
 ### Testcontract 38b
 
@@ -623,6 +640,23 @@ export function waitsForWifi(wifiOnly: boolean, network: NetworkView): boolean;
 - `planParts` geeft delen die aansluiten en allemaal even groot zijn behalve het laatste. Een ongeldige grootte geeft `[]`.
 - `partsToSend` legt de links van `startOriginal` naast het plan. Een link voor een deel dat niet bestaat, of twee keer hetzelfde deel, geeft `null`.
 - `originalRefusal`: `ORIGINAL_REFUSED` met zijn reden, of `onbekend` zonder reden. Al het andere is `fout`.
+
+Fix-cyclus 2, punt 5, het verplaatste bestand in de ronde van het toevoegscherm (ook in `originalUpload.ts`):
+
+```ts
+export type VideoOutcome = { ok: true; photoId: string } | { ok: false; reason: VideoFailReason };  // WP37
+export type MovedOriginalAction =
+  | { kind: "album_klaar"; photoId: string }   // in de wachtrij: dat event
+  | { kind: "album_mislukt" }                  // in de wachtrij: dat event
+  | { kind: "bestand_weg" }                    // niet in de wachtrij: het verplaatste bestand weg
+  | { kind: "laten" };                         // niets
+export function originalAfterVideo(input: { queued: boolean; outcome: VideoOutcome }): MovedOriginalAction;
+export function originalAtRoundEnd(input: { queued: boolean; inAlbum: boolean }): MovedOriginalAction;
+```
+
+- `originalAfterVideo`: na de uitkomst van het filmpje voor het album (na besluit 25). Opnieuw te proberen (`videoRetryable`) is `laten`. Anders in de wachtrij het event, en niet in de wachtrij `bestand_weg`.
+- `originalAtRoundEnd`: in de wachtrij en niet in het album `album_mislukt`, in het album `laten`. Niet in de wachtrij altijd `bestand_weg`.
+- Het toevoegscherm volgt deze twee. De aansluiting toetsen audit en gate.
 
 **`originalQueue.ts`**
 
@@ -688,7 +722,7 @@ export function queueFromStore(raw: string | null): { queue: QueueEntry[]; broke
 - Fix-cyclus 1: `generation` is een getal dat `applyEvent` bij elke ronde links kiest en in `aan_ios` meegeeft; de uploader geeft hem terug. De geldigheid van de links in de wachtrij is die van het toestel (punt 7); de wachtrij bewaart nog steeds geen links.
 - `queueToStore` schrijft JSON met bovenaan een geheel getal `version` (vanaf 1). `queueFromStore`: `null` is leeg en niet kapot; wat geen wachtrij van een bekende vorm is, is leeg en kapot; een hogere versie met extra velden leest wat deze app kent.
 
-**De runner (`src/data/originals.ts`)**, getest met een nagebootste uploader en Convex-client (`tests/originals.test.ts`). De tests gebruiken alleen wat er al is: `startOriginals`, `setOriginalsSession`, `nudgeOriginals`, `addOriginalToQueue`, `originalEvent`, `forgetOriginalsOf`, `setOriginalsWifiOnly`, `originalsSnapshot`. Van de uploader-module verwachten ze daarnaast `uploaderWifiOnly` bij het laden. De namen van de bestanden in de opslag zijn aan B.
+**De runner (`src/data/originals.ts`)**, getest met een nagebootste uploader en Convex-client (`tests/originals.test.ts`). De tests gebruiken alleen wat er al is: `startOriginals`, `setOriginalsSession`, `nudgeOriginals`, `addOriginalToQueue`, `originalEvent`, `forgetOriginalsOf`, `setOriginalsWifiOnly`, `originalsSnapshot`. Van de uploader-module verwachten ze daarnaast `uploaderWifiOnly` bij het laden. De namen van de bestanden in de opslag zijn aan B. Fix-cyclus 2: de user van een aanroep is de user van `setOriginalsSession` toen hij begon. Elke `setOriginalsSession` met een andere user dan die (niet `null`) tijdens de aanroep maakt de uitkomst een `fout` (punt 2).
 
 **`compressResume.ts`**
 
@@ -705,16 +739,16 @@ export function afterCompressFailure(input: { leftForeground: boolean; autoRetri
 | 38b-1 | `originalUpload.test.ts` (`originalPlan`, grenzen gelijk aan de backend) | de vrije ruimte van iOS: gate |
 | 38b-2 | `originalQueue.test.ts` (dezelfde grootte bij elke aanmelding) | verplaatsen, map en bescherming: gate |
 | 38b-3 | `originalQueue.test.ts` (album klaar of mislukt) | de aansluiting in het toevoegscherm: gate |
-| 38b-4 | `originalQueue.test.ts` (één per sleutel, alleen de ingelogde user, `forgetUser`, `queueToStore`/`queueFromStore`), `originals.test.ts` (toevoegen tijdens het laden, Account verwijderen als het laden niet lukt, versie op schijf, log bij een onleesbare wachtrij) | vanuit de wortel; het toevoegscherm wacht op het laden en ruimt op na `false`: audit en gate |
+| 38b-4 | `originalQueue.test.ts` (één per sleutel, alleen de ingelogde user, `forgetUser`, `queueToStore`/`queueFromStore`), `originals.test.ts` (toevoegen tijdens het laden, Account verwijderen als het laden niet lukt, versie op schijf, log bij een onleesbare wachtrij, de uploader kan niet lezen), `originalUpload.test.ts` (`originalAfterVideo`, `originalAtRoundEnd`) | vanuit de wortel; het toevoegscherm wacht op het laden en volgt de twee functies: audit en gate |
 | 38b-5 | `originalQueue.test.ts` (`atLaunch`, links bijna verlopen, oudere generatie bij de uploader, klok van het toestel) | |
 | 38b-6 | `originalUpload.test.ts` (`partFailure`), `originalQueue.test.ts` (rondes, veel 403 tegelijk, generaties) | |
-| 38b-7 | `originalQueue.test.ts` (volgorde, `te_vaak`, `bezig`, wachttijden, oplopend na `fout`), `originals.test.ts` (één aanroep tegelijk, ook als hij hangt of wegvalt) | |
-| 38b-8 | `originalQueue.test.ts` (afronden) | op de achtergrond: gate |
+| 38b-7 | `originalQueue.test.ts` (volgorde, `te_vaak`, `bezig`, wachttijden, oplopend na `fout`), `originals.test.ts` (één aanroep tegelijk, ook als hij hangt of wegvalt; een andere user tussendoor) | |
+| 38b-8 | `originalQueue.test.ts` (afronden, nieuwe links tijdens afronden) | op de achtergrond: gate |
 | 38b-9 | `originalQueue.test.ts` (weg en nooit meer, het bestand blijft bij wachten) | |
 | 38b-10 | | alleen op het toestel |
 | 38b-11 | `originalUpload.test.ts` (wifi, `wifiOnlyAtStart`), `originalQueue.test.ts` (`ownOriginalStand`), `originals.test.ts` (bij twijfel aan) | hotspot en omzetten: gate |
 | 38b-12 | `compressResume.test.ts` | de aansluiting op AppState: gate |
-| 38b-13–17 | | native: gate en audit |
+| 38b-13–19 | | native: gate en audit |
 
 `originals.test.ts` staat in `app/tests/` (niet de backend-test met dezelfde naam).
 
@@ -724,12 +758,14 @@ export function afterCompressFailure(input: { leftForeground: boolean; autoRetri
 2. **Persoonlijke hotspot** met "Alleen via wifi" aan: de delen wachten.
 3. **Een origineel van ≥ 1 GB** (4K, 60 fps):
    - binnen op wifi, ook met de app op de achtergrond en het scherm uit;
+   - daarna staat er van dat origineel geen deelbestand meer (38b-13, fix-cyclus 2, punt 6). Controleer met het aantal bestanden, niet met de vrije ruimte;
    - de SHA-256 van het object in R2 is gelijk aan die van het bewaarde bestand.
 4. **Wegvegen** tijdens het versturen, dan openen: hij gaat verder en het log toont elk deel één keer over de lijn. De telefoon herstarten: hij gaat ook verder.
    - *Koud* (punt 1): veeg weg, wacht een minuut, open de app met een tik en laat hem voor staan. Alle delen lopen binnen 20 s, zonder de app eerst te verlaten en terug te komen.
 5. **Omzetten van de schakelaar**, tijdens het wachten en tijdens het versturen: het geldt meteen. Ook tijdens het snijden van een origineel van ≥ 1 GB (punt 10): de delen die al bij iOS zijn, wachten meteen (aan) of gaan meteen (uit).
 6. **Delen die op de achtergrond aan iOS gegeven zijn**, bijvoorbeeld als het album pas klaar was na het verlaten van de app, gaan meteen zodra de app voor komt.
    - *Koud* (punt 1): hetzelfde, maar iOS ruimt het proces op vóór de app terugkomt (niet wegvegen: dan stopt iOS de taken). B geeft het proefscherm daarvoor een schakelaar (alleen dev): de app stopt zichzelf direct nadat hij op de achtergrond delen aan iOS gaf. Zet hem aan, voeg een filmpje toe, verlaat de app tijdens het verkleinen of versturen voor het album, wacht een minuut na "klaar", en open de app met een tik. De delen lopen binnen 20 s.
+   - *De schakelaar is niet bewaard* (38b-19, fix-cyclus 2, punt 1): zet hem aan, veeg de app weg en open hem. De schakelaar staat uit. Na de koude variant hierboven staat hij ook uit.
 7. **De oprichter verwijdert het origineel in de webapp** tijdens het versturen. Op de iPhone:
    - een deel krijgt `NoSuchUpload`;
    - `startOriginal` geeft `niet_toegestaan`;
@@ -740,6 +776,12 @@ export function afterCompressFailure(input: { leftForeground: boolean; autoRetri
 9. **Besluit 25**: verlaat de app tijdens het verkleinen en kom terug. Het verkleinen gaat vanzelf verder, zonder "verkleinen lukte niet".
 10. **Zonder project, of te klein**: een filmpje in een groep zonder project, en een clip onder 1 MiB, gaan alleen naar het album. Er komt geen bestand in de map van de originelen.
 11. **Herstart tijdens het verkleinen** van het filmpje voor het album: na het openen staat er geen bestand meer in de map van de originelen.
+12. **Op slot na een herstart** (38b-18, fix-cyclus 2, punt 4).
+    - Een app openen vóór de eerste ontgrendeling kan niet: na een herstart vraagt iOS eerst de toegangscode. Wel kan iOS de app op de achtergrond wekken, bijvoorbeeld als een deel klaar is.
+    - Daarom: herstart de telefoon tijdens het versturen van een origineel van ≥ 1 GB, op wifi, aan de lader. Ontgrendel hem 15 minuten niet. Ontgrendel dan en open de app.
+    - Het log toont: geen "onleesbaar", geen gestopte taken, elk deel hooguit één keer opnieuw over de lijn, en het origineel gaat verder tot binnen. De schakelaar "Alleen via wifi" staat zoals hij stond.
+    - Staat er een regel "op slot" in het log, dan is de wekking vóór het ontgrendelen gezien. Staat hij er niet, dan heeft iOS de app niet gewekt. Dan dekt de audit dat pad, en regie noteert het als open punt.
+13. **Opnieuw proberen na een origineel dat de wachtrij niet aannam** (fix-cyclus 2, punt 5). Alleen als B dat op het proefscherm kan nabootsen, bijvoorbeeld met een dev-schakelaar "wachtrij weigert". Voeg een filmpje toe in een groep met een project. Zet tijdens het versturen voor het album de vliegtuigmodus aan en wacht op de melding over de verbinding. Zet de vliegtuigmodus uit en tik "Filmpjes opnieuw proberen". Het filmpje komt in het album. Na sluiten staat er geen bestand meer in de map van de originelen.
 
 Niet op het toestel te toetsen in redelijke tijd: links die na 7 dagen verlopen, `te_vaak`, `bezig` en `vol`. Die dekken de tests.
 
@@ -836,3 +878,33 @@ Hercheck op `4f6e99a`: alle tien punten van fix-cyclus 1 dicht, geen blocker, ge
 6. **Een deelbestand dat na `klaar` nog gesneden werd, gaat weg** in `sliced` (38b-13).
 
 Patroon voor het track-record: een late uitkomst van een async aanroep toetsen aan de sessie van toen (eerder ook in WP37).
+
+### Fix-cyclus 2 38b (A)
+
+De zes punten staan nu in de invarianten 38b-4, 38b-7, 38b-8, 38b-13, 38b-17 tot en met 38b-19, het testcontract en de gate.
+
+| Punt | Gepind in | Hoe |
+|---|---|---|
+| 1 | 38b-19, gate 6 | native: alleen in het geheugen, bij de start uit |
+| 2 | `originals.test.ts` | een aanmelding of afronding hangt, U2 logt in, dan het antwoord (`niet_toegestaan`, `te_vaak`, links). Ook als U al terug is. Steeds: niets weg, niets aan iOS, na 1 minuut opnieuw voor U. Alleen uitloggen tussendoor of dezelfde user: het antwoord telt |
+| 3 | `originalQueue.test.ts` | links tijdens afronden: niets aan iOS, `finishOriginal` volgt, een oud event verandert niets; `missing` daarna stuurt de nieuwe links wel; `done` is binnen |
+| 4 | 38b-17, 38b-18, gate 12; `originals.test.ts` | de uploader kan zijn opslag niet lezen: niets weg, de wachtrij blijft op schijf, later verder (groen: dat deel in JS werkt al) |
+| 5 | `originalUpload.test.ts` | `originalAfterVideo` en `originalAtRoundEnd`, voor elke reden van WP37 volgens `videoRetryable`; gate 13 als B het kan nabootsen |
+| 6 | 38b-13, gate 3 | native: geen deelbestand na "klaar" |
+
+**Stand na A (fix-cyclus 2):**
+
+- 51 nieuwe tests, 47 rood om de goede reden:
+  - 37 in `originalUpload.test.ts`: `originalAfterVideo` en `originalAtRoundEnd` bestaan nog niet.
+  - 5 in `originalQueue.test.ts`: links tijdens afronden gaan nu aan iOS.
+  - 5 in `originals.test.ts`: een antwoord onder een andere user telt nu gewoon.
+- Groen: 4. De lijst met redenen van WP37, de uploader die niet kan lezen, en de 2 controles van punt 2 (uitloggen tussendoor, dezelfde user).
+- Bestaande tests niet aangepast. De andere 2272 app-tests blijven groen.
+- De app-typecheck faalt alleen op de twee ontbrekende exports.
+- A draaide alle app-tests tegen een wegwerp-uitwerking buiten de repo: alle groen, typecheck schoon. Die uitwerking is weggegooid.
+
+**Open vragen (fix-cyclus 2):**
+
+1. **Punt 2, eerst U2 en dan weer U.** A pint: ook dan `fout`. De action kan tijdens U2 zijn verstuurd. Kost hooguit een minuut. Aanbevolen: zo laten.
+2. **Punt 4 zonder wekking.** Wekt iOS de app niet vóór de eerste ontgrendeling, dan toetst gate 12 alleen dat de herstart niets kapotmaakt. Het pad "op slot" dekt dan alleen de audit. Aanbevolen: aanvaarden.
+3. **Punt 5 op het toestel.** Zonder een dev-schakelaar is "de wachtrij neemt het niet aan" niet na te bootsen; gate 13 vervalt dan en de audit toetst de aansluiting. Aanbevolen: B beslist of de schakelaar goedkoop is.

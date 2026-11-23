@@ -16,12 +16,23 @@ import { queueFromStore } from "../src/lib/originalQueue";
 //     uploader, of lukt het bewaren niet, dan blijft hij aan.
 //   - Punt 9: de wachtrij staat op schijf met een versie (queueToStore); een
 //     onleesbare wachtrij geeft een regel in het log.
+// Fix-cyclus 2:
+//   - Punt 2: was er tijdens een aanroep een andere user ingelogd, dan zegt de
+//     uitkomst niets over het origineel van de vorige user. De Convex-client
+//     stuurt een vastgehouden action pas bij herverbinden, met de login van
+//     dat moment. De uitkomst telt dan als `fout`: niets weg, en na de
+//     wachttijd van een fout opnieuw. Alleen uitloggen tussendoor is geen
+//     wissel: zonder login geeft de backend `uitgelogd`.
+//   - Punt 4 (het deel in JS): kan de uploader zijn opslag niet lezen (op
+//     slot na een herstart), dan geeft hij een fout en geen lege stand. De
+//     runner wist dan niets en laadt later opnieuw. Dat de uploader zelf niet
+//     start vóór de eerste ontgrendeling, toetst de gate.
 //
 // Het nep-toestel houdt zijn bestanden en opslag over een "herstart" heen
 // (een verse import van de runner). De namen van de bestanden in de opslag
 // zijn aan B; de tests kijken alleen naar wat erin staat.
-// Spec: docs/work-packages/WP38-filmproject-originelen.md §Spec-criticus 38b en
-// §38b fix-cyclus 1.
+// Spec: docs/work-packages/WP38-filmproject-originelen.md §Spec-criticus 38b,
+// §38b fix-cyclus 1 en §38b fix-cyclus 2.
 
 const dev = vi.hoisted(() => ({
   state: new Map<string, string>(),
@@ -31,6 +42,7 @@ const dev = vi.hoisted(() => ({
   nativeWifiUnreadable: false,
   readGate: null as Promise<void> | null,
   readFails: false,
+  jobsFail: false,
   writeFails: false,
   setWifiFails: false,
   removed: [] as string[],
@@ -72,7 +84,10 @@ vi.mock("../modules/clubalmanac-video", () => ({
   uploaderForget: async (originalId: string) => {
     dev.forgotten.push(originalId);
   },
-  uploaderJobs: async () => dev.jobs,
+  uploaderJobs: async () => {
+    if (dev.jobsFail) throw new Error("opslag van de uploader op slot");
+    return dev.jobs;
+  },
   uploaderWifiOnly: async () => {
     if (dev.nativeWifiUnreadable) throw new Error("opslag van de uploader onleesbaar");
     return dev.nativeWifi;
@@ -198,6 +213,7 @@ beforeEach(() => {
   dev.nativeWifiUnreadable = false;
   dev.readGate = null;
   dev.readFails = false;
+  dev.jobsFail = false;
   dev.writeFails = false;
   dev.setWifiFails = false;
   dev.removed = [];
@@ -444,5 +460,148 @@ describe("de wachtrij op schijf (fix-cyclus 1, punt 9)", () => {
     dev.notes = [];
     await startApp();
     expect(dev.notes.some((n) => /onleesbaar/i.test(n))).toBe(true);
+  });
+});
+
+describe("een laat antwoord terwijl een andere user is ingelogd (fix-cyclus 2, punt 2)", () => {
+  const refuse = (reason: string) => new ConvexError({ code: "ORIGINAL_REFUSED", reason });
+
+  /** U meldt k1 aan (of rondt af) en de aanroep hangt (offline). */
+  async function hangingFor(kind: "start" | "finish") {
+    await startApp();
+    const c = client(kind === "start" ? { start: "hang", finish: "hang" } : { start: "upload_leeg", finish: "hang" });
+    R.setOriginalsSession(c.actions, U);
+    await addVideo("k1");
+    await settle();
+    expect(kind === "start" ? c.stats.start : c.stats.finish).toBe(1);
+    return c;
+  }
+
+  /** Niets weg: het origineel staat er nog, met zijn bestand, en de uploader vergat niets. */
+  function nothingThrownAway(): void {
+    expect(keys()).toEqual(["k1"]);
+    expect(dev.removed).not.toContain("k1.mov");
+    expect(dev.files.has("k1.mov")).toBe(true);
+    expect(dev.forgotten).toEqual([]);
+  }
+
+  it("aanmelden: U2 logt in, daarna niet_toegestaan: niets weg; terug bij U na de wachttijd van een fout opnieuw", async () => {
+    const c = await hangingFor("start");
+    const other = client({ start: "hang", finish: "hang" });
+    R.setOriginalsSession(other.actions, U2);
+    await settle();
+    c.pending[0]!.reject(refuse("niet_toegestaan"));
+    await settle();
+    nothingThrownAway();
+
+    const back = client({ start: "upload", finish: "hang" });
+    R.setOriginalsSession(back.actions, U);
+    await settle();
+    expect(back.stats.start).toBe(0); // telt als fout: eerst 1 minuut
+    await settle(MINUTE);
+    expect(back.stats.start).toBe(1);
+    expect(dev.sent).toHaveLength(1);
+  });
+
+  it("aanmelden: U2 logt in en weer uit, U weer in, dan pas het antwoord (niet_toegestaan): ook dan niets weg", async () => {
+    const c = await hangingFor("start");
+    const other = client({ start: "hang", finish: "hang" });
+    R.setOriginalsSession(other.actions, U2);
+    await settle();
+    R.setOriginalsSession(null, null);
+    R.setOriginalsSession(c.actions, U);
+    await settle();
+    expect(c.stats.maxOut).toBe(1);
+    c.pending[0]!.reject(refuse("niet_toegestaan"));
+    await settle();
+    nothingThrownAway();
+  });
+
+  it("aanmelden: links terwijl U2 is ingelogd: niets aan iOS en niets weg; later bij U gewoon verder", async () => {
+    const c = await hangingFor("start");
+    const other = client({ start: "hang", finish: "hang" });
+    R.setOriginalsSession(other.actions, U2);
+    await settle();
+    c.pending[0]!.resolve(upload("photo-k1"));
+    await settle();
+    expect(dev.sent).toEqual([]);
+    nothingThrownAway();
+
+    const back = client({ start: "upload", finish: "hang" });
+    R.setOriginalsSession(back.actions, U);
+    await settle(MINUTE);
+    expect(back.stats.start).toBe(1);
+    expect(dev.sent).toHaveLength(1);
+  });
+
+  it("aanmelden: te_vaak terwijl U2 is ingelogd: geen uur wachten voor U, alleen de wachttijd van een fout", async () => {
+    const c = await hangingFor("start");
+    const other = client({ start: "hang", finish: "hang" });
+    R.setOriginalsSession(other.actions, U2);
+    await settle();
+    c.pending[0]!.reject(refuse("te_vaak"));
+    await settle();
+
+    const back = client({ start: "upload", finish: "hang" });
+    R.setOriginalsSession(back.actions, U);
+    await settle(MINUTE);
+    expect(back.stats.start).toBe(1);
+  });
+
+  it("afronden: U2 logt in, daarna niet_toegestaan: niets weg; terug bij U weer afronden", async () => {
+    const c = await hangingFor("finish");
+    const other = client({ start: "hang", finish: "hang" });
+    R.setOriginalsSession(other.actions, U2);
+    await settle();
+    c.pending[0]!.reject(refuse("niet_toegestaan"));
+    await settle();
+    nothingThrownAway();
+
+    const back = client({ start: "hang", finish: "hang" });
+    R.setOriginalsSession(back.actions, U);
+    await settle();
+    expect(back.stats.finish).toBe(0);
+    await settle(MINUTE);
+    expect(back.stats.finish).toBe(1);
+    expect(back.stats.start).toBe(0);
+  });
+
+  it("alleen uitgelogd tussendoor (geen andere user): het antwoord telt gewoon", async () => {
+    const c = await hangingFor("start");
+    R.setOriginalsSession(null, null);
+    await settle();
+    c.pending[0]!.reject(refuse("niet_toegestaan"));
+    await settle();
+    expect(keys()).toEqual([]);
+    expect(dev.removed).toContain("k1.mov");
+  });
+
+  it("dezelfde user de hele tijd: het antwoord telt gewoon", async () => {
+    const c = await hangingFor("start");
+    c.pending[0]!.reject(refuse("niet_toegestaan"));
+    await settle();
+    expect(keys()).toEqual([]);
+    expect(dev.removed).toContain("k1.mov");
+  });
+});
+
+describe("de uploader kan zijn opslag niet lezen (fix-cyclus 2, punt 4)", () => {
+  it("op slot na een herstart: niets weg, en zodra het lezen lukt gaat het verder", async () => {
+    await startApp();
+    await addVideo("k1");
+
+    dev.jobsFail = true;
+    await startApp();
+    await settle(5 * MINUTE);
+    expect(dev.removed).toEqual([]);
+    expect(dev.forgotten).toEqual([]);
+    expect(dev.state.size).toBeGreaterThan(0);
+    expect([...dev.state.values()].some((raw) => queueFromStore(raw).queue.some((e) => e.key === "k1"))).toBe(true);
+
+    dev.jobsFail = false;
+    R.nudgeOriginals();
+    await settle(2 * MINUTE);
+    expect(keys()).toEqual(["k1"]);
+    expect(dev.removed).toEqual([]);
   });
 });

@@ -44,6 +44,10 @@ import { ORIGINAL_PART_LINK_SECONDS } from "../../convex/lib/constants";
 //     het toestel tegen `expiresAt` van de server (punt 7).
 //   - Na `fout` oplopend wachten: 1 minuut, tot een uur (punt 8).
 //   - De wachtrij op schijf heeft een versie; velden komen er alleen bij (punt 9).
+//   Fix-cyclus 2:
+//   - Komen nieuwe links binnen terwijl alle delen al verstuurd zijn (stap
+//     afronden), dan blijven ze liggen: eerst `finishOriginal`; `missing` zegt
+//     wat er nog moet (punt 3).
 // Spec: docs/work-packages/WP38-filmproject-originelen.md §Spec-criticus 38b.
 
 const MiB = 1024 * 1024;
@@ -887,5 +891,59 @@ describe("de wachtrij op schijf, met een versie (fix-cyclus 1, punt 9)", () => {
     expect(back.queue).toHaveLength(q.length);
     back.queue.forEach((e, i) => expect(e).toMatchObject(q[i]!));
     expect(nextCall(back.queue, ctx(T0 + DAY))).toEqual(nextCall(q, ctx(T0 + DAY)));
+  });
+});
+
+describe("nieuwe links terwijl alle delen al verstuurd zijn (fix-cyclus 2, punt 3)", () => {
+  // De links golden bijna niet meer, dus een hervatting liep. Terwijl die
+  // aanroep liep, verstuurde iOS de laatste delen: de stap is afronden als het
+  // antwoord met nieuwe links binnenkomt.
+  const later = T0 + 6 * DAY + 1;
+  function finishingWhileResuming(): QueueEntry[] {
+    const q = sending();
+    expect(nextCall(q, ctx(later))).toEqual({ kind: "start", key: "k1", photoId: "photo-k1", bytes: BYTES });
+    const done = run(q, [{ kind: "delen_klaar", originalId: "o1", generation: HUIDIG }], later).queue;
+    expect(nextCall(done, ctx(later))).toEqual({ kind: "finish", key: "k1", originalId: "o1" });
+    return done;
+  }
+
+  it.each([
+    ["de laatste delen", [9, 10]],
+    ["alle delen (R2 had ze nog niet toen de backend keek)", [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]],
+  ])("links voor %s: niets aan iOS, en afronden volgt", (_label, parts) => {
+    const q = finishingWhileResuming();
+    const { queue, effects } = run(q, [{ kind: "aangemeld", key: "k1", result: upload("o1", parts, later + 7 * DAY) }], later);
+    expect(effects).toEqual([]);
+    expect(nextCall(queue, ctx(later))).toEqual({ kind: "finish", key: "k1", originalId: "o1" });
+    expect(ownOriginalStand({ status: "onderweg", originalId: "o1", queue, wifiOnly: true, network: { type: "mobiel", expensive: false }, now: later })).toBe("wordt_verstuurd");
+  });
+
+  it("de links die bleven liggen, vervangen niets: een event van de delen van daarvoor verandert niets meer", () => {
+    const q = finishingWhileResuming();
+    const after = run(q, [{ kind: "aangemeld", key: "k1", result: upload("o1", [9, 10], later + 7 * DAY) }], later);
+    const late = run(after.queue, [
+      { kind: "deel_mislukt", originalId: "o1", generation: HUIDIG, partNumber: 10, status: 403, code: null, attempts: 1 },
+    ], later);
+    expect(late.effects).toEqual([]);
+    expect(nextCall(late.queue, ctx(later))).toEqual({ kind: "finish", key: "k1", originalId: "o1" });
+  });
+
+  it("missing na afronden: opnieuw aanmelden, en de links van die ronde gaan wel aan iOS", () => {
+    const q = finishingWhileResuming();
+    const lying = run(q, [{ kind: "aangemeld", key: "k1", result: upload("o1", [9, 10], later + 7 * DAY) }], later).queue;
+    const missing = run(lying, [{ kind: "afgerond", key: "k1", result: { kind: "missing", parts: [10] } }], later).queue;
+    expect(nextCall(missing, ctx(later))).toEqual({ kind: "start", key: "k1", photoId: "photo-k1", bytes: BYTES });
+    const { effects } = run(missing, [{ kind: "aangemeld", key: "k1", result: upload("o1", [10], later + 7 * DAY) }], later);
+    expect(effects).toEqual([
+      expect.objectContaining({ kind: "aan_ios", originalId: "o1", parts: [expect.objectContaining({ partNumber: 10 })] }),
+    ]);
+  });
+
+  it("binnen na afronden: weg, zoals altijd", () => {
+    const q = finishingWhileResuming();
+    const lying = run(q, [{ kind: "aangemeld", key: "k1", result: upload("o1", [9, 10], later + 7 * DAY) }], later).queue;
+    const { queue, effects } = run(lying, [{ kind: "afgerond", key: "k1", result: { kind: "done" } }], later);
+    expect(queue).toEqual([]);
+    expect(effects).toContainEqual({ kind: "bestand_weg", fileName: "k1.mov" });
   });
 });
