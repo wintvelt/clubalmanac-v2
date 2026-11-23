@@ -434,3 +434,7 @@ Nog open voor de gate van 38b: datering in R2 (upload over twee dagen spreiden),
 24. **Tijdens het ophalen uit iCloud en het verkleinen** toont de app wat er gebeurt en houdt hij het scherm wakker (38c, toevoegscherm).
 25. **Verkleinen dat stopt omdat de app de voorgrond verliet, probeert het opnieuw** zodra de app terug is (ook voor gewone filmpjes uit WP37).
 26. **B van 38b mag de spike-code lezen en als start gebruiken** (`wp38b-spike`); A schrijft eerst de tests, zoals altijd.
+
+### Besluiten Wouter na de spike (2026-11-23)
+
+Besluiten 21–26: alle zes ja. Daarna A voor 38b.
