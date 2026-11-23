@@ -967,3 +967,16 @@ Gepind in `originals.test.ts`:
 3. **Een klok die voorliep** toen de app de user zag, maakt het wissen later, nooit eerder. Aanbevolen: aanvaarden.
 
 **Regie op de open vragen van A (30 dagen):** alle drie volgens het advies (zonder login gaat niets weg; geen eigen wekker; een voorlopende klok wist later, nooit eerder).
+
+### 38b fix-cyclus 3 (hercheck cyclus 2 en 30 dagen, regie 2026-11-23)
+
+Hercheck op `fa394b8`: punt 1–3, 5, 6 van fix-cyclus 2 en de 30 dagen dicht. Punt 4 was in de spec fout (regie): `isProtectedDataAvailable` is ook `false` als het toestel gewoon op slot is, niet alleen vóór de eerste ontgrendeling. Te fixen (A eerst spec en tests, dan B):
+
+1. **Geen poort op `isProtectedDataAvailable`** (audit S1, red-team Z1). De uploader leest zijn opslag; lukt lezen niet (vóór de eerste ontgrendeling), dan probeert hij het later opnieuw, zonder te wissen, te stoppen of weg te schrijven. 38b-18 en gate 12 gaan mee. Nieuwe gate: gate 6 koud met het scherm op slot tijdens het wachten; het log toont geen "op slot" en geen dubbel deel, en de app rondt op de achtergrond af.
+2. **De opslag laden vóór de sessies events kunnen geven** (audit S2). `init` leest de opslag synchroon vóór de sessies worden aangemaakt; events die toch vóór het laden komen, worden bewaard tot na het laden en dan verwerkt.
+3. **"Alleen via wifi" niet blijvend aan door een wekking** (audit N1, red-team N1). Eerst `uploaderJobs`, dan de wifi-stand. Kan de uploader zijn stand niet geven, dan geldt aan voor nu, maar dat wordt niet bewaard.
+4. **Een andere uitkomst dan links tijdens afronden** zet geen wachttijd op het afronden (red-team). Alleen een definitieve weigering geldt.
+
+**Aanvaard (regie):** een klok die met de hand vooruit wordt gezet, kan de 30 dagen te vroeg laten aflopen (red-team N2); offline gebruik telt niet als gezien; het toevoegscherm dat tijdens een ronde verdwijnt door uitloggen; `send` vóór de start; downgrade van versie 2 naar 1 (runbook 38c: geen TestFlight-downgrade met wachtende originelen).
+
+Patronen voor het track-record: (a) bewaarde stand laden vóór de bron van events aangaat; (b) een native poort op de stand van het toestel ook toetsen met het scherm op slot, ruim na de eerste ontgrendeling.
