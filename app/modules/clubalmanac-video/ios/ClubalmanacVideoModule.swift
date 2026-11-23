@@ -47,6 +47,8 @@ struct OriginalPartRecord: Record {
 struct OriginalSendRecord: Record {
   @Field var originalId: String = ""
   @Field var fileName: String = ""
+  /// De generatie van de links (fix-cyclus 1, punt 5); een getal van de app, exact tot 2^53.
+  @Field var generation: Double = 0
   @Field var totalBytes: Double = 0
   @Field var partSize: Double = 0
   @Field var expiresAt: Double = 0
@@ -172,7 +174,8 @@ public class ClubalmanacVideoModule: Module {
 
     AsyncFunction("uploaderSend") { (job: OriginalSendRecord) throws in
       try OriginalUploader.shared.send(
-        originalId: job.originalId, fileName: job.fileName, totalBytes: Int64(job.totalBytes),
+        originalId: job.originalId, fileName: job.fileName, generation: Int64(job.generation),
+        totalBytes: Int64(job.totalBytes),
         partSize: Int64(job.partSize), expiresAt: job.expiresAt,
         links: job.parts.map {
           NewPartLink(partNumber: $0.partNumber, offset: Int64($0.offset), size: Int64($0.size), url: $0.url)
@@ -209,6 +212,15 @@ public class ClubalmanacVideoModule: Module {
 
     AsyncFunction("uploaderClearLog") { () in
       OriginalUploader.shared.log.clear()
+    }
+
+    // Gate 6 (koud): alleen het proefscherm van een dev-build zet dit aan.
+    AsyncFunction("uploaderExitAfterBackgroundSend") { () -> Bool in
+      return OriginalUploader.shared.exitAfterBackgroundSend()
+    }
+
+    AsyncFunction("uploaderSetExitAfterBackgroundSend") { (on: Bool) in
+      OriginalUploader.shared.setExitAfterBackgroundSend(on)
     }
 
     AsyncFunction("backgroundWorkBegin") { () async -> Int in

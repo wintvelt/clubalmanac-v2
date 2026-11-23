@@ -28,19 +28,22 @@ export type Poster = { uri: string; width: number; height: number };
 export type PartDoneEvent = { originalId: string; partNumber: number; done: number; total: number };
 export type PartFailedEvent = {
   originalId: string;
+  /** De generatie van de links van de taak (fix-cyclus 1, punt 5). */
+  generation: number;
   partNumber: number;
   status: number | null;
   code: string | null;
   /** Mislukte pogingen met de huidige link. */
   attempts: number;
 };
+export type AllPartsDoneEvent = { originalId: string; generation: number };
 export type NativeNetwork = { type: string; expensive: boolean };
 
 type Events = {
   onProgress: (event: { id: string; progress: number }) => void;
   onPartDone: (event: PartDoneEvent) => void;
   onPartFailed: (event: PartFailedEvent) => void;
-  onAllPartsDone: (event: { originalId: string }) => void;
+  onAllPartsDone: (event: AllPartsDoneEvent) => void;
   onFileBroken: (event: { originalId: string }) => void;
   onNetwork: (event: NativeNetwork) => void;
 };
@@ -60,6 +63,8 @@ export type UploaderPartView = {
 };
 export type UploaderJobView = {
   originalId: string;
+  /** De generatie van de laatste links (0: van vóór de generaties). */
+  generation: number;
   totalBytes: number;
   expiresAt: number;
   /** Het bewaarde bestand is weg of heeft een andere grootte. */
@@ -69,6 +74,7 @@ export type UploaderJobView = {
 export type UploaderSendInput = {
   originalId: string;
   fileName: string;
+  generation: number;
   totalBytes: number;
   partSize: number;
   expiresAt: number;
@@ -106,6 +112,9 @@ declare class ClubalmanacVideoNative extends NativeModule<Events> {
   uploaderClearLog?: () => Promise<void>;
   backgroundWorkBegin?: () => Promise<number>;
   backgroundWorkEnd?: (id: number) => Promise<void>;
+  /** Alleen voor gate 6 (koud), op het proefscherm van een dev-build. */
+  uploaderExitAfterBackgroundSend?: () => Promise<boolean>;
+  uploaderSetExitAfterBackgroundSend?: (on: boolean) => Promise<void>;
 }
 
 const native = requireOptionalNativeModule<ClubalmanacVideoNative>("ClubalmanacVideo");
@@ -232,6 +241,21 @@ export const uploaderNote = (text: string) => originals().uploaderNote(text);
 export const uploaderLog = (limit: number) => originals().uploaderLog(limit);
 export const uploaderClearLog = () => originals().uploaderClearLog();
 
+/**
+ * Gate 6, koud (alleen het proefscherm van een dev-build): stopt de app
+ * zichzelf direct nadat hij op de achtergrond delen aan iOS gaf? Eén keer;
+ * daarna staat hij weer uit. `null`: deze build kan het niet.
+ */
+export async function uploaderExitAfterBackgroundSend(): Promise<boolean | null> {
+  if (!native?.uploaderExitAfterBackgroundSend) return null;
+  return native.uploaderExitAfterBackgroundSend();
+}
+
+export async function uploaderSetExitAfterBackgroundSend(on: boolean): Promise<void> {
+  if (!native?.uploaderSetExitAfterBackgroundSend) throw new Error("Deze build kan dat niet");
+  await native.uploaderSetExitAfterBackgroundSend(on);
+}
+
 /** Houd de app even wakker op de achtergrond zolang `work` loopt (afronden met het scherm op slot). */
 export async function withBackgroundWork<T>(work: () => Promise<T>): Promise<T> {
   let id = 0;
@@ -251,7 +275,7 @@ export async function withBackgroundWork<T>(work: () => Promise<T>): Promise<T> 
 export function listenUploader(handlers: {
   partDone?: (e: PartDoneEvent) => void;
   partFailed?: (e: PartFailedEvent) => void;
-  allPartsDone?: (e: { originalId: string }) => void;
+  allPartsDone?: (e: AllPartsDoneEvent) => void;
   fileBroken?: (e: { originalId: string }) => void;
   network?: (e: NativeNetwork) => void;
 }): () => void {

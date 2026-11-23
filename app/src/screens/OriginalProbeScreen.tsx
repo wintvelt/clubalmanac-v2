@@ -11,8 +11,10 @@ import {
   originalUploaderAvailable,
   partsBytes,
   uploaderClearLog,
+  uploaderExitAfterBackgroundSend,
   uploaderJobs,
   uploaderLog,
+  uploaderSetExitAfterBackgroundSend,
   type UploaderJobView,
   type UploaderLogEntry,
 } from "../../modules/clubalmanac-video";
@@ -39,7 +41,9 @@ import { StatusScreen } from "./StatusScreen";
 // Het toont de wachtrij van dit toestel met de stand per origineel
 // (`ownOriginalStand`), de delen bij iOS, of het bewaarde bestand er nog is,
 // de schakelaar "Alleen via wifi", terugtrekken, de SHA-256 van het bewaarde
-// bestand en het log van de uploader. Daarnaast een filmproject openen en
+// bestand en het log van de uploader. Voor gate 6 (koud) een schakelaar die de
+// app zichzelf laat stoppen direct nadat hij op de achtergrond delen aan iOS
+// gaf (één keer). Daarnaast een filmproject openen en
 // sluiten (oprichter), zodat de gate zonder de schermen van 38c kan. Een
 // filmpje toevoegen gaat via het gewone toevoegscherm. Nooit een link of pad
 // in beeld of in het log.
@@ -72,6 +76,8 @@ function ProbeBody() {
   const [busy, setBusy] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [hashes, setHashes] = useState<Record<string, string>>({});
+  // Gate 6, koud: `null` als de build het niet kan.
+  const [exitAfter, setExitAfter] = useState<boolean | null>(null);
   const withdraw = useMutation(api.filmProjects.withdraw);
 
   const refresh = useCallback(async () => {
@@ -85,6 +91,7 @@ function ProbeBody() {
       ]);
       setJobs(j);
       setLog(l);
+      setExitAfter(await uploaderExitAfterBackgroundSend().catch(() => null));
       setFolder({ count: names.length, parts, free });
       const next: Record<string, FileState> = {};
       for (const e of originalsSnapshot().queue) {
@@ -157,6 +164,23 @@ function ProbeBody() {
           />
         </View>
         {waiting ? <Line text="De delen wachten op wifi (geen mobiel internet, geen hotspot)." /> : null}
+        {exitAfter !== null ? (
+          <View style={styles.row}>
+            <Text variant="body" style={styles.rowText}>
+              Gate 6: app stopt na delen op de achtergrond
+            </Text>
+            <Switch
+              value={exitAfter}
+              onValueChange={(v) =>
+                void act("gate 6", async () => {
+                  await uploaderSetExitAfterBackgroundSend(v);
+                  setExitAfter(v);
+                })
+              }
+              disabled={busy !== null}
+            />
+          </View>
+        ) : null}
         <Line text={`Wachtrij ${snap.loaded ? "geladen" : "nog niet geladen"} · ingelogd: ${snap.userId ? "ja" : "nee"}`} />
         {busy ? <Line text={`Bezig: ${busy}`} /> : null}
         {message ? <Line text={message} /> : null}
@@ -254,7 +278,11 @@ function EntryBlock({
       <Line text={`Stap: ${entry.step} · stand: ${stand}${waits.length ? ` · ${waits.join(", ")}` : ""}`} />
       <Line text={`${bytesText(entry.bytes)} (${entry.bytes} bytes) · bestand: ${file ? (file.exists ? `er (${file.bytes} bytes)` : "weg") : "?"}`} />
       {entry.originalId ? <Line text={`Inzending: ${entry.originalId}`} /> : null}
-      {entry.expiresAt ? <Line text={`Links tot ${dayTime(entry.expiresAt)} · rondes ${entry.rounds}`} /> : null}
+      {entry.linksValidUntil ? (
+        <Line
+          text={`Links tot ${dayTime(entry.linksValidUntil)} · rondes ${entry.rounds} · generatie ${entry.generation}${job ? ` (uploader ${job.generation})` : ""}`}
+        />
+      ) : null}
       {job ? (
         <Line
           text={`Delen: ${done} van ${job.parts.length} klaar, ${failed} mislukt · ${bytesText(sent)} van ${bytesText(job.totalBytes)}${job.broken ? " · bestand kapot" : ""}`}
@@ -436,5 +464,6 @@ const styles = StyleSheet.create({
   inner: { padding: space.m, gap: space.xs },
   block: { gap: space.xs, marginTop: space.s },
   row: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  rowText: { flexShrink: 1, marginRight: space.s },
   buttons: { flexDirection: "row", flexWrap: "wrap", gap: space.s, marginVertical: space.xs },
 });

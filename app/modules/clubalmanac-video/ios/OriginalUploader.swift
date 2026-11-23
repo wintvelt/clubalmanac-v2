@@ -28,6 +28,22 @@
 //   kort deel, maar het event "bestand kapot".
 // - 38b-16: geen link, sleutel of pad in het log of een event; alleen
 //   inzending-id, deelnummer, status en foutcode.
+//
+// Fix-cyclus 1:
+// - Punt 1 (koude start): heeft iOS het proces opgeruimd, dan doet de uploader
+//   na het naast elkaar leggen bij het openen dezelfde controle als bij
+//   voorgrond; werd de app actief vóór dat klaar was, dan telt die alsnog.
+// - Punt 5: elke ronde links heeft een generatie van de app. Elke taak en elk
+//   event draagt hem; de stand per origineel geeft hem.
+// - Punt 6 en 38b-17: de opslag heeft een versie; nieuwe velden zijn optioneel,
+//   zodat een oudere opslag leesbaar blijft. Een onleesbare opslag geeft een
+//   regel in het log, en "Alleen via wifi" is dan aan (de standaard).
+// - Punt 10: het snijden loopt op een eigen queue, deel voor deel. Omzetten van
+//   de schakelaar wacht er niet op; elk deel gaat na het snijden meteen naar
+//   de sessie die op dat moment geldt.
+// - Gate 6 (koud), alleen via het proefscherm van een dev-build: een schakelaar
+//   waarmee de app zichzelf stopt direct nadat hij op de achtergrond delen aan
+//   iOS gaf (één keer).
 
 import ExpoModulesCore
 import Foundation
@@ -60,8 +76,11 @@ struct UploadJob: Codable {
   var fileName: String
   var totalBytes: Int64
   var partSize: Int64
+  /// Tot wanneer de links gelden (klok van het toestel, van de app); alleen voor het proefscherm.
   var expiresAt: Double
   var createdAt: Double
+  /// De generatie van de links (punt 5); ontbreekt in een opslag van vóór de generaties (dan 0).
+  var generation: Int64?
   /// Het event "alle delen klaar" is gestuurd voor deze ronde links.
   var allDoneSent: Bool
   /// Het bewaarde bestand is weg of heeft een andere grootte.
@@ -69,7 +88,11 @@ struct UploadJob: Codable {
   var parts: [UploadPart]
 }
 
+/// 38b-17: de opslag heeft een versie. Een nieuwe versie zet er alleen
+/// (optionele) velden bij; een oudere app leest wat hij kent.
 struct UploaderStore: Codable {
+  static let currentVersion = 1
+  var version: Int? = UploaderStore.currentVersion
   var wifiOnly: Bool = true
   var jobs: [UploadJob] = []
 }
@@ -78,6 +101,8 @@ struct TaskTag: Codable {
   var originalId: String
   var partNumber: Int
   var token: String
+  /// De generatie van de links van deze taak (punt 5).
+  var generation: Int64?
 }
 
 struct NewPartLink {
@@ -187,6 +212,11 @@ final class OriginalLog: @unchecked Sendable {
   func clear() {
     q.sync { try? FileManager.default.removeItem(at: file) }
   }
+
+  /// Wacht tot alle regels op schijf staan.
+  func flush() {
+    q.sync {}
+  }
 }
 
 // MARK: - de uploader
@@ -202,7 +232,14 @@ final class OriginalUploader: NSObject, URLSessionDataDelegate, @unchecked Senda
 
   /// Alles wat de opslag raakt, loopt over deze queue (ook de terugroepen van de sessies).
   private let q = DispatchQueue(label: "clubalmanac.original.uploader")
+  /// Het snijden loopt hier, deel voor deel, zodat `q` er niet op wacht (punt 10).
+  private let sliceQ = DispatchQueue(label: "clubalmanac.original.slice", qos: .utility)
+  /// Delen die nu gesneden worden, met een kaartje per opdracht (alleen op `q`).
+  private var slicing: [String: UUID] = [:]
   private var store = UploaderStore()
+  /// Gate 6: sinds de app voor was, zijn er op de achtergrond delen aan iOS gegeven.
+  private var givenInBackground = false
+  private static let exitKey = "clubalmanac.originals.exitAfterBackgroundSend"
   private var wifiSession: URLSession!
   private var anySession: URLSession!
   private var started = false
@@ -228,8 +265,13 @@ final class OriginalUploader: NSObject, URLSessionDataDelegate, @unchecked Senda
 
   private override init() {
     super.init()
-    if let data = try? Data(contentsOf: storeFile), let s = try? JSONDecoder().decode(UploaderStore.self, from: data) {
-      store = s
+    if FileManager.default.fileExists(atPath: storeFile.path) {
+      if let data = try? Data(contentsOf: storeFile), let s = try? JSONDecoder().decode(UploaderStore.self, from: data) {
+        store = s
+      } else {
+        // 38b-17: onleesbaar. Leeg beginnen; "Alleen via wifi" is dan aan.
+        log.add("opslag van de uploader onleesbaar: leeg begonnen, alleen via wifi aan", net: net.label)
+      }
     }
     let oq = OperationQueue()
     oq.maxConcurrentOperationCount = 1
@@ -281,6 +323,7 @@ final class OriginalUploader: NSObject, URLSessionDataDelegate, @unchecked Senda
   }
 
   private func save() {
+    store.version = UploaderStore.currentVersion
     guard let data = try? JSONEncoder().encode(store) else { return }
     try? data.write(to: storeFile, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
   }
@@ -295,7 +338,8 @@ final class OriginalUploader: NSObject, URLSessionDataDelegate, @unchecked Senda
       self.q.async {
         if self.started { return }
         self.started = true
-        self.foreground = active
+        // Werd de app al actief vóór deze start (punt 1), dan blijft dat zo.
+        self.foreground = self.foreground || active
         self.note("uploader start (\(reason), \(active ? "voorgrond" : "achtergrond"))")
         self.reconcile()
       }
@@ -340,15 +384,28 @@ final class OriginalUploader: NSObject, URLSessionDataDelegate, @unchecked Senda
       self.note("teruggevonden: \(kept.count) taken lopen door, \(restarted) delen opnieuw in de rij, \(orphans) losse taken gestopt")
       self.reconciled = true
       self.holds -= 1
-      self.pump()
+      // Punt 1: een koude start met de app voor (of de app werd actief terwijl
+      // dit liep): dezelfde controle als bij voorgrond.
+      if self.foreground {
+        self.restartDeferred()
+      } else {
+        self.pump()
+      }
     }
   }
 
-  /// De app komt voor: taken die op de achtergrond aan iOS gegeven zijn en nog
-  /// niet begonnen, opnieuw geven (iOS stelt ze anders uit; spike 3).
+  /// De app komt voor. Vóór het naast elkaar leggen doet `reconcile` de
+  /// controle zelf zodra hij klaar is (punt 1).
   private func becameActive() {
     foreground = true
+    givenInBackground = false
     guard reconciled else { return }
+    restartDeferred()
+  }
+
+  /// Taken die op de achtergrond aan iOS gegeven zijn en nog niet begonnen,
+  /// opnieuw geven, nu met de app open (iOS stelt ze anders uit; spike 3).
+  private func restartDeferred() {
     let deferred = store.jobs.contains { $0.parts.contains { $0.state == "bezig" && $0.startedInBackground } }
     if !deferred {
       pump()
@@ -382,7 +439,12 @@ final class OriginalUploader: NSObject, URLSessionDataDelegate, @unchecked Senda
   /// Delen met links aan iOS (`aan_ios`). Nieuwe links vervangen de oude; een
   /// deel zonder link staat al in R2. Een deel dat met een oude link loopt,
   /// stopt eerst.
-  func send(originalId: String, fileName: String, totalBytes: Int64, partSize: Int64, expiresAt: Double, links: [NewPartLink]) throws {
+  ///
+  /// Geeft terug zodra de opslag bij is; het snijden loopt daarna op `sliceQ`.
+  func send(
+    originalId: String, fileName: String, generation: Int64, totalBytes: Int64, partSize: Int64,
+    expiresAt: Double, links: [NewPartLink]
+  ) throws {
     guard !originalId.isEmpty, OriginalDirs.safeName(fileName) != nil, totalBytes > 0, partSize > 0 else {
       throw UploaderError.badJob
     }
@@ -415,15 +477,16 @@ final class OriginalUploader: NSObject, URLSessionDataDelegate, @unchecked Senda
             part.url = nil
             part.sent = part.size
             part.token = nil
-            try? FileManager.default.removeItem(at: self.partFile(originalId, part.partNumber))
+            try? FileManager.default.removeItem(at: self.partFile(originalId, partSize, part.partNumber))
           }
           part.updatedAt = now
           self.store.jobs[j].parts[p] = part
         }
         self.store.jobs[j].expiresAt = expiresAt
+        self.store.jobs[j].generation = generation
         self.store.jobs[j].allDoneSent = false
         self.store.jobs[j].broken = false
-        self.note("\(originalId): nieuwe links voor \(byNumber.count) van \(count) delen")
+        self.note("\(originalId): nieuwe links voor \(byNumber.count) van \(count) delen (generatie \(generation))")
       } else {
         if let j = self.store.jobs.firstIndex(where: { $0.originalId == originalId }) {
           for part in self.store.jobs[j].parts { if let t = part.token { stale.insert(t) } }
@@ -442,8 +505,9 @@ final class OriginalUploader: NSObject, URLSessionDataDelegate, @unchecked Senda
         }
         self.store.jobs.append(UploadJob(
           originalId: originalId, fileName: fileName, totalBytes: totalBytes, partSize: partSize,
-          expiresAt: expiresAt, createdAt: now, allDoneSent: false, broken: false, parts: parts))
-        self.note("\(originalId): \(byNumber.count) van \(count) delen aan iOS")
+          expiresAt: expiresAt, createdAt: now, generation: generation, allDoneSent: false, broken: false,
+          parts: parts))
+        self.note("\(originalId): \(byNumber.count) van \(count) delen aan iOS (generatie \(generation))")
       }
       self.save()
       if stale.isEmpty {
@@ -511,6 +575,7 @@ final class OriginalUploader: NSObject, URLSessionDataDelegate, @unchecked Senda
       let jobs: [[String: Any]] = self.store.jobs.map { job in
         [
           "originalId": job.originalId,
+          "generation": Double(job.generation ?? 0),
           "totalBytes": Double(job.totalBytes),
           "expiresAt": job.expiresAt,
           "broken": job.broken,
@@ -531,6 +596,16 @@ final class OriginalUploader: NSObject, URLSessionDataDelegate, @unchecked Senda
     }
   }
 
+  /// Gate 6 (koud), alleen via het proefscherm van een dev-build.
+  func exitAfterBackgroundSend() -> Bool {
+    UserDefaults.standard.bool(forKey: Self.exitKey)
+  }
+
+  func setExitAfterBackgroundSend(_ on: Bool) {
+    UserDefaults.standard.set(on, forKey: Self.exitKey)
+    note("gate 6: stoppen na delen op de achtergrond \(on ? "aan" : "uit")")
+  }
+
   func setBackgroundCompletion(_ identifier: String, _ handler: @escaping () -> Void) {
     q.async {
       self.backgroundCompletions[identifier] = handler
@@ -544,8 +619,15 @@ final class OriginalUploader: NSObject, URLSessionDataDelegate, @unchecked Senda
     String(originalId.unicodeScalars.map { CharacterSet.alphanumerics.contains($0) && $0.isASCII ? Character($0) : "_" })
   }
 
-  private func partFile(_ originalId: String, _ partNumber: Int) -> URL {
-    OriginalDirs.parts.appendingPathComponent("\(Self.fileKey(originalId))-\(partNumber).part")
+  /// De inhoud hangt alleen af van het origineel, de deelgrootte en het
+  /// deelnummer; zo kan een snijopdracht van een vervangen indeling nooit een
+  /// deel van de nieuwe indeling overschrijven.
+  private func partFile(_ originalId: String, _ partSize: Int64, _ partNumber: Int) -> URL {
+    OriginalDirs.parts.appendingPathComponent("\(Self.fileKey(originalId))-\(partSize)-\(partNumber).part")
+  }
+
+  private static func sliceKey(_ originalId: String, _ partNumber: Int) -> String {
+    "\(originalId)#\(partNumber)"
   }
 
   private func removePartFiles(_ originalId: String) {
@@ -600,9 +682,9 @@ final class OriginalUploader: NSObject, URLSessionDataDelegate, @unchecked Senda
     }
   }
 
-  private func emitFailed(_ originalId: String, _ part: UploadPart) {
+  private func emitFailed(_ job: UploadJob, _ part: UploadPart) {
     emit?("onPartFailed", [
-      "originalId": originalId, "partNumber": part.partNumber,
+      "originalId": job.originalId, "generation": Double(job.generation ?? 0), "partNumber": part.partNumber,
       "status": part.httpStatus, "code": part.code, "attempts": part.attempts,
     ])
   }
@@ -614,7 +696,10 @@ final class OriginalUploader: NSObject, URLSessionDataDelegate, @unchecked Senda
     emit?("onFileBroken", ["originalId": id])
   }
 
-  /// Snijdt elk wachtend deel en geeft het meteen aan iOS (besluit 21). Alleen op `q`.
+  /// Geeft elk wachtend deel aan iOS (besluit 21). Een deel dat nog niet
+  /// gesneden is, gaat eerst naar `sliceQ`; na het snijden komt het hier terug
+  /// (`sliced`) en gaat het meteen naar de sessie die dan geldt (punt 10).
+  /// Alleen op `q`.
   private func pump() {
     guard reconciled, holds == 0 else { return }
     let session = store.wifiOnly ? wifiSession! : anySession!
@@ -622,7 +707,11 @@ final class OriginalUploader: NSObject, URLSessionDataDelegate, @unchecked Senda
     var changed = false
     var startedNow = 0
     for j in store.jobs.indices where !store.jobs[j].broken {
-      guard store.jobs[j].parts.contains(where: { $0.state == "wacht" }) else { continue }
+      let originalId = store.jobs[j].originalId
+      let partSize = store.jobs[j].partSize
+      guard store.jobs[j].parts.contains(where: {
+        $0.state == "wacht" && slicing[Self.sliceKey(originalId, $0.partNumber)] == nil
+      }) else { continue }
       guard let src = source(store.jobs[j]),
         FileManager.default.fileExists(atPath: src.path),
         Int64(fileSize(src)) == store.jobs[j].totalBytes
@@ -631,54 +720,115 @@ final class OriginalUploader: NSObject, URLSessionDataDelegate, @unchecked Senda
         changed = true
         continue
       }
-      let originalId = store.jobs[j].originalId
       for p in store.jobs[j].parts.indices where store.jobs[j].parts[p].state == "wacht" {
         let part = store.jobs[j].parts[p]
-        changed = true
+        let key = Self.sliceKey(originalId, part.partNumber)
+        if slicing[key] != nil { continue }
         guard let link = part.url, let url = URL(string: link) else {
           store.jobs[j].parts[p].state = "mislukt"
           store.jobs[j].parts[p].attempts += 1
           store.jobs[j].parts[p].httpStatus = nil
           store.jobs[j].parts[p].code = nil
-          emitFailed(originalId, store.jobs[j].parts[p])
+          changed = true
+          emitFailed(store.jobs[j], store.jobs[j].parts[p])
           continue
         }
-        let file = partFile(originalId, part.partNumber)
-        do {
-          try slice(source: src, offset: part.offset, length: part.size, to: file)
-        } catch UploaderError.short, UploaderError.noSource {
-          markBroken(j)
-          break
-        } catch {
-          // Geen ruimte of een andere schrijffout: een mislukking zonder status.
-          store.jobs[j].parts[p].state = "mislukt"
-          store.jobs[j].parts[p].attempts += 1
-          store.jobs[j].parts[p].httpStatus = nil
-          store.jobs[j].parts[p].code = nil
+        let file = partFile(originalId, partSize, part.partNumber)
+        if fileSize(file) == Int(part.size) {
+          var request = URLRequest(url: url)
+          request.httpMethod = "PUT"
+          let task = session.uploadTask(with: request, fromFile: file)
+          let token = UUID().uuidString
+          task.taskDescription = Self.encode(TaskTag(
+            originalId: originalId, partNumber: part.partNumber, token: token, generation: store.jobs[j].generation))
+          task.countOfBytesClientExpectsToSend = part.size
+          task.countOfBytesClientExpectsToReceive = 1024
+          store.jobs[j].parts[p].state = "bezig"
+          store.jobs[j].parts[p].token = token
+          store.jobs[j].parts[p].session = name
+          store.jobs[j].parts[p].sent = 0
+          store.jobs[j].parts[p].startedInBackground = !foreground
           store.jobs[j].parts[p].updatedAt = nowMs()
-          note("\(originalId) deel \(part.partNumber): snijden mislukt")
-          emitFailed(originalId, store.jobs[j].parts[p])
+          task.resume()
+          startedNow += 1
+          changed = true
           continue
         }
-        var request = URLRequest(url: url)
-        request.httpMethod = "PUT"
-        let task = session.uploadTask(with: request, fromFile: file)
-        let token = UUID().uuidString
-        task.taskDescription = Self.encode(TaskTag(originalId: originalId, partNumber: part.partNumber, token: token))
-        task.countOfBytesClientExpectsToSend = part.size
-        task.countOfBytesClientExpectsToReceive = 1024
-        store.jobs[j].parts[p].state = "bezig"
-        store.jobs[j].parts[p].token = token
-        store.jobs[j].parts[p].session = name
-        store.jobs[j].parts[p].sent = 0
-        store.jobs[j].parts[p].startedInBackground = !foreground
-        store.jobs[j].parts[p].updatedAt = nowMs()
-        task.resume()
-        startedNow += 1
+        let ticket = UUID()
+        slicing[key] = ticket
+        let offset = part.offset
+        let size = part.size
+        let partNumber = part.partNumber
+        sliceQ.async {
+          var failure: Error?
+          do {
+            try self.slice(source: src, offset: offset, length: size, to: file)
+          } catch {
+            failure = error
+          }
+          self.q.async {
+            self.sliced(originalId, partNumber, partSize: partSize, file: file, ticket: ticket, failure: failure)
+          }
+        }
       }
     }
-    if startedNow > 0 { note("\(startedNow) delen aan iOS (sessie \(name), \(foreground ? "voorgrond" : "achtergrond"))") }
+    if startedNow > 0 {
+      note("\(startedNow) delen aan iOS (sessie \(name), \(foreground ? "voorgrond" : "achtergrond"))")
+      if !foreground { givenInBackground = true }
+    }
     if changed { save() }
+    exitForGateIfDone()
+  }
+
+  /// Een deel is gesneden (of niet). Alleen op `q`.
+  private func sliced(_ originalId: String, _ partNumber: Int, partSize: Int64, file: URL, ticket: UUID, failure: Error?) {
+    let key = Self.sliceKey(originalId, partNumber)
+    // Een nieuwere opdracht voor hetzelfde deel loopt nog: die beslist.
+    guard slicing[key] == ticket else { return }
+    slicing[key] = nil
+    guard let j = store.jobs.firstIndex(where: { $0.originalId == originalId }),
+      store.jobs[j].partSize == partSize,
+      let p = store.jobs[j].parts.firstIndex(where: { $0.partNumber == partNumber })
+    else {
+      // Vergeten of een andere indeling: dit deelbestand hoort nergens meer bij.
+      try? FileManager.default.removeItem(at: file)
+      pump()
+      return
+    }
+    if let failure, store.jobs[j].parts[p].state == "wacht" {
+      switch failure {
+      case UploaderError.short, UploaderError.noSource:
+        markBroken(j)
+      default:
+        // Geen ruimte of een andere schrijffout: een mislukking zonder status.
+        store.jobs[j].parts[p].state = "mislukt"
+        store.jobs[j].parts[p].attempts += 1
+        store.jobs[j].parts[p].httpStatus = nil
+        store.jobs[j].parts[p].code = nil
+        store.jobs[j].parts[p].updatedAt = nowMs()
+        note("\(originalId) deel \(partNumber): snijden mislukt")
+        emitFailed(store.jobs[j], store.jobs[j].parts[p])
+      }
+      save()
+    }
+    pump()
+  }
+
+  /// Gate 6 (koud): de schakelaar staat aan, er zijn op de achtergrond delen
+  /// aan iOS gegeven en er wacht niets meer op snijden. Dan stopt de app
+  /// zichzelf, zoals iOS een proces opruimt (niet wegvegen: de taken blijven).
+  /// Eén keer; daarna staat de schakelaar weer uit.
+  private func exitForGateIfDone() {
+    guard givenInBackground, !foreground, slicing.isEmpty,
+      !store.jobs.contains(where: { !$0.broken && $0.parts.contains { $0.state == "wacht" } }),
+      UserDefaults.standard.bool(forKey: Self.exitKey)
+    else { return }
+    UserDefaults.standard.set(false, forKey: Self.exitKey)
+    UserDefaults.standard.synchronize()
+    save()
+    note("gate 6: de app stopt zichzelf na delen op de achtergrond")
+    log.flush()
+    q.asyncAfter(deadline: .now() + 1) { exit(0) }
   }
 
   /// Stop taken (in de gegeven sessies) die passen; daarna pas weer nieuwe taken.
@@ -773,15 +923,18 @@ final class OriginalUploader: NSObject, URLSessionDataDelegate, @unchecked Senda
       store.jobs[j].parts[p].code = nil
       store.jobs[j].parts[p].sent = store.jobs[j].parts[p].size
       store.jobs[j].parts[p].url = nil
-      try? FileManager.default.removeItem(at: partFile(originalId, partNumber))
+      try? FileManager.default.removeItem(at: partFile(originalId, store.jobs[j].partSize, partNumber))
       let done = store.jobs[j].parts.filter { $0.state == "klaar" }.count
       let total = store.jobs[j].parts.count
       note("\(originalId) deel \(partNumber) klaar (HTTP \(status), sessie \(via)); \(done) van \(total)")
-      emit?("onPartDone", ["originalId": originalId, "partNumber": partNumber, "done": done, "total": total])
+      let generation = Double(store.jobs[j].generation ?? 0)
+      emit?("onPartDone", [
+        "originalId": originalId, "generation": generation, "partNumber": partNumber, "done": done, "total": total,
+      ])
       if done == total && !store.jobs[j].allDoneSent {
         store.jobs[j].allDoneSent = true
-        note("\(originalId): alle delen klaar")
-        emit?("onAllPartsDone", ["originalId": originalId])
+        note("\(originalId): alle delen klaar (generatie \(store.jobs[j].generation ?? 0))")
+        emit?("onAllPartsDone", ["originalId": originalId, "generation": generation])
       }
     } else {
       let code = Self.errorCode(body)
@@ -790,7 +943,7 @@ final class OriginalUploader: NSObject, URLSessionDataDelegate, @unchecked Senda
       store.jobs[j].parts[p].code = code
       let what = status.map { "HTTP \($0)" } ?? "geen antwoord (fout \(nsError?.code ?? 0))"
       note("\(originalId) deel \(partNumber) mislukt: \(what)\(code.map { " \($0)" } ?? ""), sessie \(via), poging \(store.jobs[j].parts[p].attempts)")
-      emitFailed(originalId, store.jobs[j].parts[p])
+      emitFailed(store.jobs[j], store.jobs[j].parts[p])
     }
     save()
     pump()

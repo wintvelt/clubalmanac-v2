@@ -28,6 +28,16 @@ import {
 //   bestand gaat weg en het origineel uit de wachtrij, dus nooit meer
 //   aanmelden. Wachten of een fout: het bestand blijft (38b-9).
 // - De wachtrij bewaart geen links: die staan alleen bij de uploader.
+// Fix-cyclus 1:
+// - Elke ronde links heeft een generatie; `aan_ios` geeft hem mee, de
+//   uploader geeft hem terug in zijn events en taken. Een event of taak van
+//   een andere generatie telt niet (punt 5).
+// - De links gelden LINK_VALID_MS vanaf het moment dat het antwoord binnenkwam,
+//   met de klok van het toestel; `expiresAt` van de server vergelijkt de app
+//   niet met de eigen klok (punt 7).
+// - Na een fout van een aanroep oplopend wachten: 1 minuut, tot een uur (punt 8).
+// - Op schijf met een versie; een nieuwere versie zet er alleen velden bij
+//   (punt 9).
 
 const MINUTE = 60 * 1000;
 const HOUR = 60 * MINUTE;
@@ -47,6 +57,10 @@ export const WAIT_MS = {
 export const RESUME_ROUNDS = 3;
 /** Gelden de links korter dan dit, dan eerst nieuwe links. */
 export const LINK_MARGIN_MS = DAY;
+/** Zo lang gelden de links van `startOriginal` (convex/lib/constants.ts, ORIGINAL_PART_LINK_SECONDS). */
+const LINK_VALID_MS = 7 * DAY;
+/** Na de zoveelste fout op rij wacht een aanroep nooit langer dan dit. */
+const MAX_ERROR_WAIT_MS = HOUR;
 
 export type QueueEntry = {
   key: string;
@@ -62,8 +76,12 @@ export type QueueEntry = {
   waitUntil: number | null;
   /** `bezig`: een nieuwe aanmelding wacht tot een ander origineel van deze user weg is, hooguit tot hier. */
   busyUntil: number | null;
-  /** Tot wanneer de links bij de uploader gelden. */
-  expiresAt: number | null;
+  /** Tot wanneer de links bij de uploader gelden, in de klok van het toestel (vanaf het antwoord). */
+  linksValidUntil: number | null;
+  /** De generatie van de laatste ronde links (0: nog geen). */
+  generation: number;
+  /** Fouten zonder reden op rij bij een aanroep (oplopend wachten). */
+  errors: number;
   /** Aanmeldingen op rij zonder dat R2 minder delen mist. */
   rounds: number;
   /** Hoeveel delen R2 bij de vorige aanmelding miste. */
@@ -80,12 +98,20 @@ export type QueueEvent =
   | { kind: "album_mislukt"; key: string }
   | { kind: "aangemeld"; key: string; result: StartResult }
   | { kind: "afgerond"; key: string; result: FinishResult }
-  | { kind: "delen_klaar"; originalId: string }
-  | { kind: "deel_mislukt"; originalId: string; partNumber: number; status: number | null; code: string | null; attempts: number }
+  | { kind: "delen_klaar"; originalId: string; generation: number }
+  | {
+      kind: "deel_mislukt";
+      originalId: string;
+      generation: number;
+      partNumber: number;
+      status: number | null;
+      code: string | null;
+      attempts: number;
+    }
   | { kind: "teruggetrokken"; originalId: string }
   | { kind: "bestand_kapot"; key: string };
 export type Effect =
-  | { kind: "aan_ios"; originalId: string; fileName: string; parts: PartToSend[] }
+  | { kind: "aan_ios"; originalId: string; fileName: string; generation: number; parts: PartToSend[] }
   | { kind: "ios_opnieuw"; originalId: string; partNumber: number }
   | { kind: "ios_vergeten"; originalId: string }
   | { kind: "bestand_weg"; fileName: string };
@@ -111,7 +137,9 @@ export function addOriginal(
       addedAt: now,
       waitUntil: null,
       busyUntil: null,
-      expiresAt: null,
+      linksValidUntil: null,
+      generation: 0,
+      errors: 0,
       rounds: 0,
       lastMissing: null,
     },
@@ -153,12 +181,24 @@ function toResume(entry: QueueEntry, now: number, wait: number | null = null): P
 /** Een weigering die het origineel voorgoed weg doet. */
 const FINAL = new Set(["niet_toegestaan", "te_groot", "te_klein", "geen_video"]);
 
+/** Punt 8: 1 minuut na de eerste fout op rij, dan steeds het dubbele, nooit langer dan een uur. */
+function errorWait(errorsBefore: number): number {
+  return Math.min(MAX_ERROR_WAIT_MS, WAIT_MS.fout * 2 ** Math.min(errorsBefore, 20));
+}
+
+/** Een fout zonder reden bij een aanroep: oplopend wachten. */
+function onError(queue: QueueEntry[], entry: QueueEntry, now: number, change: Partial<QueueEntry> = {}): QueueEntry[] {
+  return replace(queue, entry.key, { ...change, waitUntil: now + errorWait(entry.errors), errors: entry.errors + 1 });
+}
+
 /**
  * Een weigering of fout die wachten betekent. `te_vaak` geldt voor alles van
  * die user; `bezig` alleen voor een nieuwe aanmelding.
  */
 function applyWait(queue: QueueEntry[], entry: QueueEntry, refusal: Refusal, now: number): QueueEntry[] {
-  if (refusal.kind === "fout") return replace(queue, entry.key, { waitUntil: now + WAIT_MS.fout });
+  if (refusal.kind === "fout") return onError(queue, entry, now);
+  // Een andere uitkomst dan een fout: het oplopen begint weer bij 1 minuut.
+  queue = replace(queue, entry.key, { errors: 0 });
   switch (refusal.reason) {
     case "te_vaak": {
       const until = now + WAIT_MS.te_vaak;
@@ -183,13 +223,20 @@ function onStart(queue: QueueEntry[], entry: QueueEntry, result: StartResult, no
   const parts = partsToSend(entry.bytes, result.partSize, result.parts);
   if (parts === null) {
     // Ongeldige links: niets aan iOS, wachten zoals bij een fout.
-    return unchanged(replace(queue, entry.key, { originalId: result.originalId, waitUntil: now + WAIT_MS.fout }));
+    return unchanged(onError(queue, entry, now, { originalId: result.originalId }));
   }
   const missing = parts.length;
   const stalled = entry.lastMissing !== null && missing >= entry.lastMissing;
+  // Punt 5: een eigen generatie per ronde, ook op hetzelfde moment; hoger dan
+  // elke eerdere, ook als de uploader een ronde kreeg die de wachtrij op schijf
+  // niet meer kent.
+  const generation = Math.max(entry.generation + 1, now);
   const change: Partial<QueueEntry> = {
     originalId: result.originalId,
-    expiresAt: result.expiresAt,
+    // Punt 7: vanaf het antwoord, met de klok van het toestel.
+    linksValidUntil: now + LINK_VALID_MS,
+    generation,
+    errors: 0,
     waitUntil: null,
     busyUntil: null,
     rounds: stalled ? entry.rounds + 1 : 1,
@@ -201,13 +248,13 @@ function onStart(queue: QueueEntry[], entry: QueueEntry, result: StartResult, no
   }
   return {
     queue: replace(queue, entry.key, { ...change, step: "versturen" }),
-    effects: [{ kind: "aan_ios", originalId: result.originalId, fileName: entry.fileName, parts }],
+    effects: [{ kind: "aan_ios", originalId: result.originalId, fileName: entry.fileName, generation, parts }],
   };
 }
 
 function onFinish(queue: QueueEntry[], entry: QueueEntry, result: FinishResult, now: number): QueueStep {
   if (result.kind === "done") return removeEntry(queue, entry);
-  if (result.kind === "missing") return unchanged(replace(queue, entry.key, toResume(entry, now)));
+  if (result.kind === "missing") return unchanged(replace(queue, entry.key, { ...toResume(entry, now), errors: 0 }));
   if (result.kind === "geweigerd" && FINAL.has(result.reason)) return removeEntry(queue, entry);
   return unchanged(applyWait(queue, entry, result, now));
 }
@@ -236,13 +283,14 @@ export function applyEvent(queue: QueueEntry[], event: QueueEvent, now: number):
     }
     case "delen_klaar": {
       const entry = queue.find((e) => e.originalId === event.originalId);
-      if (!entry || entry.step !== "versturen") return unchanged(queue);
+      // Punt 5: alleen de delen van de huidige links tellen.
+      if (!entry || entry.step !== "versturen" || event.generation !== entry.generation) return unchanged(queue);
       return unchanged(replace(queue, entry.key, { step: "afronden" }));
     }
     case "deel_mislukt": {
       // Alleen zolang dit origineel verstuurt; daarna telt een late mislukking niet.
       const entry = queue.find((e) => e.originalId === event.originalId);
-      if (!entry || entry.step !== "versturen") return unchanged(queue);
+      if (!entry || entry.step !== "versturen" || event.generation !== entry.generation) return unchanged(queue);
       const action = partFailure(event);
       if (action === "opnieuw") {
         return { queue, effects: [{ kind: "ios_opnieuw", originalId: event.originalId, partNumber: event.partNumber }] };
@@ -269,7 +317,7 @@ export type NextCall =
 
 type Kind = "finish" | "resume" | "new";
 
-const linksDueAt = (e: QueueEntry) => (e.expiresAt === null ? null : e.expiresAt - LINK_MARGIN_MS + 1);
+const linksDueAt = (e: QueueEntry) => (e.linksValidUntil === null ? null : e.linksValidUntil - LINK_MARGIN_MS + 1);
 
 /** Welke aanroep dit origineel wil, en vanaf wanneer; `null`: geen aanroep (album, of iOS verstuurt). */
 function wants(e: QueueEntry): { kind: Kind; from: number } | null {
@@ -332,6 +380,8 @@ export function nextWake(queue: readonly QueueEntry[], ctx: { now: number; userI
 
 export type NativeJobView = {
   originalId: string;
+  /** De generatie van de links van deze taak (punt 5). */
+  generation: number;
   parts: {
     partNumber: number;
     state: "wacht" | "bezig" | "klaar" | "mislukt";
@@ -364,7 +414,9 @@ export function atLaunch(
 
   for (const entry of q.filter((e) => e.step === "versturen" && e.originalId !== null)) {
     const job = native.jobs.find((j) => j.originalId === entry.originalId);
-    if (!job) {
+    // Punt 5: heeft de uploader alleen een andere ronde links (de app viel weg
+    // tussen het bewaren van de wachtrij en het doorgeven), dan weet hij niets.
+    if (!job || job.generation !== entry.generation) {
       q = replace(q, entry.key, { step: "aanmelden" });
       continue;
     }
@@ -431,4 +483,113 @@ export function ownOriginalStand(input: {
   // Aanmelden en afronden gaan op elk netwerk; alleen een wachttijd houdt ze op.
   const want = wants(entry);
   return want && want.from > input.now ? "wacht" : "wordt_verstuurd";
+}
+
+// --- op schijf (punt 9) ------------------------------------------------------------------
+
+/**
+ * De versie van de wachtrij op schijf. Een nieuwere versie zet er alleen
+ * velden bij; deze app leest wat hij kent en laat de rest weg.
+ */
+const QUEUE_STORE_VERSION = 1;
+
+const STEPS: readonly QueueEntry["step"][] = ["album", "aanmelden", "versturen", "afronden"];
+
+/** Alleen de velden die deze versie kent, of `null` als het geen bekend origineel is. */
+function entryFromStore(v: unknown): QueueEntry | null {
+  if (typeof v !== "object" || v === null || Array.isArray(v)) return null;
+  const e = v as Record<string, unknown>;
+  const str = (k: string): string | null => (typeof e[k] === "string" && e[k] !== "" ? (e[k] as string) : null);
+  const strOrNull = (k: string): string | null | undefined =>
+    e[k] === null ? null : typeof e[k] === "string" ? (e[k] as string) : undefined;
+  const num = (k: string): number | null => (typeof e[k] === "number" && Number.isFinite(e[k]) ? (e[k] as number) : null);
+  const numOrNull = (k: string): number | null | undefined => (e[k] === null ? null : (num(k) ?? undefined));
+
+  const key = str("key");
+  const userId = str("userId");
+  const projectId = str("projectId");
+  const fileName = str("fileName");
+  const bytes = num("bytes");
+  const photoId = strOrNull("photoId");
+  const originalId = strOrNull("originalId");
+  const step = STEPS.find((s) => s === e.step);
+  const addedAt = num("addedAt");
+  const waitUntil = numOrNull("waitUntil");
+  const busyUntil = numOrNull("busyUntil");
+  const linksValidUntil = numOrNull("linksValidUntil");
+  const generation = num("generation");
+  const errors = num("errors");
+  const rounds = num("rounds");
+  const lastMissing = numOrNull("lastMissing");
+  if (
+    key === null ||
+    userId === null ||
+    projectId === null ||
+    fileName === null ||
+    bytes === null ||
+    photoId === undefined ||
+    originalId === undefined ||
+    step === undefined ||
+    addedAt === null ||
+    waitUntil === undefined ||
+    busyUntil === undefined ||
+    linksValidUntil === undefined ||
+    generation === null ||
+    errors === null ||
+    rounds === null ||
+    lastMissing === undefined
+  ) {
+    return null;
+  }
+  return {
+    key,
+    userId,
+    projectId,
+    fileName,
+    bytes,
+    photoId,
+    originalId,
+    step,
+    addedAt,
+    waitUntil,
+    busyUntil,
+    linksValidUntil,
+    generation,
+    errors,
+    rounds,
+    lastMissing,
+  };
+}
+
+export function queueToStore(queue: readonly QueueEntry[]): string {
+  return JSON.stringify({ version: QUEUE_STORE_VERSION, queue });
+}
+
+/**
+ * `null`: niets bewaard (leeg, niet kapot). Wat geen wachtrij van een bekende
+ * vorm is: leeg en kapot. Een origineel dat deze app niet kan lezen, valt weg
+ * en maakt de wachtrij kapot; de rest blijft.
+ */
+export function queueFromStore(raw: string | null): { queue: QueueEntry[]; broken: boolean } {
+  if (raw === null) return { queue: [], broken: false };
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return { queue: [], broken: true };
+  }
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return { queue: [], broken: true };
+  const stored = parsed as { version?: unknown; queue?: unknown };
+  if (typeof stored.version !== "number" || !Number.isInteger(stored.version) || stored.version < 1) {
+    return { queue: [], broken: true };
+  }
+  if (!Array.isArray(stored.queue)) return { queue: [], broken: true };
+  const queue: QueueEntry[] = [];
+  let broken = false;
+  for (const item of stored.queue) {
+    const entry = entryFromStore(item);
+    if (entry === null || queue.some((e) => e.key === entry.key)) broken = true;
+    else queue.push(entry);
+  }
+  return { queue, broken };
 }

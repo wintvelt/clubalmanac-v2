@@ -126,6 +126,15 @@ export function wifiOnlyToStore(on: boolean): string {
   return on ? WIFI_ON : WIFI_OFF;
 }
 
+/**
+ * Fix-cyclus 1, punt 6: bij de start, bij twijfel aan. Wat de app bewaarde
+ * naast wat de uploader zegt (`null`: hij kon het niet zeggen); alleen als
+ * beide uit zeggen, is het uit.
+ */
+export function wifiOnlyAtStart(stored: string | null, uploader: boolean | null): boolean {
+  return wifiOnlyFromStore(stored) || uploader !== false;
+}
+
 export type NetworkView = { type: "wifi" | "mobiel" | "kabel" | "geen" | "anders" | "onbekend"; expensive: boolean };
 
 /** Aan: alleen gewone wifi of een kabel; geen mobiel internet, geen hotspot (duur), geen of onbekend netwerk. */

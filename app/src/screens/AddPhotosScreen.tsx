@@ -13,6 +13,7 @@ import {
   originalUploaderAvailable,
   pickerOnScreen,
   removeFile,
+  removeOriginal,
 } from "../../modules/clubalmanac-video";
 import { Button } from "../components/Button";
 import { Icon } from "../components/Icon";
@@ -25,7 +26,7 @@ import { Text } from "../components/Text";
 import { api } from "../convexApi";
 import { useMyGroups } from "../data/homeGroupState";
 import { forgetLastAlbum, loadLastAlbum, saveLastAlbum } from "../data/lastAlbum";
-import { addOriginalToQueue, originalEvent, originalsSnapshot } from "../data/originals";
+import { addOriginalToQueue, originalEvent, originalsReady, originalsSnapshot } from "../data/originals";
 import { useUploader } from "../data/upload";
 import { useLiveQuery } from "../data/useLiveQuery";
 import { useVideoUploader, type VideoProgress } from "../data/videoUpload";
@@ -119,6 +120,9 @@ import { AlbumChoiceSheet } from "./AlbumChoice";
 // dan meldt de wachtrij het aan; kreeg het een vaste reden, of sluit de ronde
 // zonder dat het in het album staat, dan gaat het origineel weg (38b-3). Het
 // versturen loopt daarna buiten dit scherm (src/data/originals.ts).
+// Fix-cyclus 1, punt 3: de kopie gaat pas naar de map als de wachtrij geladen
+// is. Neemt de wachtrij het origineel toch niet aan, dan gaat het verplaatste
+// bestand weg zodra het verkleinen klaar is.
 // Besluit 25 (38b-12): verkleinen dat mislukte omdat de app de voorgrond
 // verliet, gaat vanzelf opnieuw zodra de app weer actief is (hooguit drie
 // keer op rij, src/lib/compressResume.ts); ook zonder origineel.
@@ -241,7 +245,8 @@ export function AddPhotosScreen({ albumId }: { albumId?: string }) {
   const onOpenProjects = useCallback((list: readonly OpenProject[]) => {
     openProjects.current = list;
   }, []);
-  const originals = useRef(new Map<string, { uri: string | null }>());
+  // `queued`: de wachtrij nam het aan; anders ruimt het scherm het verplaatste bestand op (punt 3).
+  const originals = useRef(new Map<string, { uri: string | null; fileName?: string; queued?: boolean }>());
   // Besluit 25: de AppState-waarden tijdens het verkleinen van het filmpje dat nu loopt.
   const compressStates = useRef<string[] | null>(null);
   useEffect(() => {
@@ -567,6 +572,9 @@ export function AddPhotosScreen({ albumId }: { albumId?: string }) {
       freeBytes: free,
     });
     if (plan.kind !== "mee") return asset;
+    // Punt 3: pas verplaatsen als de wachtrij geladen is (het laden ruimt
+    // anders een bestand op dat er nog niet in staat).
+    if (!(await originalsReady())) return asset;
     let kept: Awaited<ReturnType<typeof keepOriginal>>;
     try {
       kept = await keepOriginal(asset.uri);
@@ -574,17 +582,18 @@ export function AddPhotosScreen({ albumId }: { albumId?: string }) {
       // Niet te verplaatsen: het filmpje gaat zonder origineel.
       return asset;
     }
-    originals.current.set(item.uploadId, { uri: kept.uri });
+    originals.current.set(item.uploadId, { uri: kept.uri, fileName: kept.fileName });
     const moved = { ...asset, uri: kept.uri };
     // De keuze wijst voortaan naar het verplaatste bestand (opnieuw proberen leest het ook).
     updateSelection(selectionRef.current.map((i) => (i.key === item.key ? { ...i, asset: moved } : i)));
-    await addOriginalToQueue({
+    const queued = await addOriginalToQueue({
       key: item.uploadId,
       userId: uid,
       projectId: plan.projectId,
       fileName: kept.fileName,
       bytes: kept.bytes,
-    });
+    }).catch(() => false);
+    originals.current.set(item.uploadId, { uri: kept.uri, fileName: kept.fileName, queued });
     return moved;
   }
 
@@ -592,7 +601,7 @@ export function AddPhotosScreen({ albumId }: { albumId?: string }) {
   // album kwam, gaat weg.
   function endOriginalRound() {
     for (const item of videoItemsRef.current ?? []) {
-      if (item.state !== "klaar" && originals.current.get(item.uploadId)?.uri) {
+      if (item.state !== "klaar" && originals.current.get(item.uploadId)?.queued) {
         originalEvent({ kind: "album_mislukt", key: item.uploadId });
       }
     }
@@ -624,9 +633,15 @@ export function AddPhotosScreen({ albumId }: { albumId?: string }) {
           outcome = { ok: false, reason: "server" };
         }
         // A-invariant 18: het origineel wacht op het album; daarna meldt de wachtrij het aan.
-        if (originals.current.get(next.uploadId)?.uri) {
+        const original = originals.current.get(next.uploadId);
+        if (original?.queued) {
           if (outcome.ok) originalEvent({ kind: "album_klaar", key: next.uploadId, photoId: outcome.photoId });
           else if (!videoRetryable(outcome.reason)) originalEvent({ kind: "album_mislukt", key: next.uploadId });
+        } else if (original?.uri && original.fileName) {
+          // Punt 3: de wachtrij nam het niet aan; het verkleinen is klaar, dus het verplaatste bestand weg.
+          const fileName = original.fileName;
+          originals.current.set(next.uploadId, { uri: null });
+          void removeOriginal(fileName).catch(() => {});
         }
         patchVideo(
           next.key,

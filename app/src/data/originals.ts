@@ -13,6 +13,7 @@ import {
   uploaderRetryPart,
   uploaderSend,
   uploaderSetWifiOnly,
+  uploaderWifiOnly,
   withBackgroundWork,
   writeOriginalState,
   type NativeNetwork,
@@ -26,6 +27,8 @@ import {
   forgetUser,
   nextCall,
   nextWake,
+  queueFromStore,
+  queueToStore,
   type Effect,
   type FinishResult,
   type NextCall,
@@ -34,7 +37,7 @@ import {
   type QueueStep,
   type StartResult,
 } from "../lib/originalQueue";
-import { originalRefusal, wifiOnlyFromStore, wifiOnlyToStore, type NetworkView } from "../lib/originalUpload";
+import { originalRefusal, wifiOnlyAtStart, wifiOnlyToStore, type NetworkView } from "../lib/originalUpload";
 
 // WP38b: de runner van de wachtrij met originelen (src/lib/originalQueue.ts).
 // Spec: docs/work-packages/WP38-filmproject-originelen.md §Spec-criticus 38b,
@@ -52,14 +55,27 @@ import { originalRefusal, wifiOnlyFromStore, wifiOnlyToStore, type NetworkView }
 // - Eén aanroep tegelijk (`startOriginal` of `finishOriginal`), alleen voor de
 //   user die nu is ingelogd; daarna de volgende (`nextCall`), of een wekker op
 //   `nextWake`. Valt de verbinding weg, dan één nieuwe poging (WP37).
+//   Fix-cyclus 1, punt 2: geen eigen time-out. De Convex-client houdt een
+//   action vast tot hij weer verbinding heeft; een nieuwe aanroep gaat pas als
+//   de vorige een uitkomst heeft (antwoord of fout van de client). Een laat
+//   antwoord telt nog.
 // - Uitloggen pauzeert alleen; Account verwijderen wist alles van die user.
+//   Laadt de wachtrij nog niet, dan wacht Account verwijderen niet: de runner
+//   onthoudt de user en wist hem zodra het laden lukt (punt 4).
+// - Het laden wist niets wat in dit proces is aangemaakt: een bestand dat het
+//   toevoegscherm verplaatste terwijl het laden liep, telt niet als wees
+//   (punt 3).
+// - "Alleen via wifi" bij twijfel aan (punt 6): bij de start de eigen waarde
+//   naast die van de uploader; uitzetten geldt pas als bewaren en omzetten
+//   allebei lukken. Het omzetten loopt los van de rij, zodat het niet wacht op
+//   het snijden of een aanroep (punt 10).
+// - De wachtrij op schijf heeft een versie (queueToStore); een onleesbare
+//   wachtrij geeft een regel in het log (punt 9).
 // - Geen link, sleutel of pad in het log: alleen inzending-id, deelnummer,
 //   status en reden (38b-16).
 
 const QUEUE_FILE = "queue.json";
 const WIFI_FILE = "wifi-only.txt";
-/** Een aanroep die zo lang niets geeft, telt als fout (de client wacht anders tot hij weer verbonden is). */
-const CALL_TIMEOUT_MS = 60_000;
 /** Lukte het laden niet (bv. de telefoon nog op slot na een herstart), dan zo opnieuw. */
 const LOAD_RETRY_MS = 60_000;
 /** Een wekker verder dan dit in de toekomst zet de runner niet: hij kijkt dan opnieuw. */
@@ -88,56 +104,6 @@ const NETWORK_TYPES: readonly NetworkView["type"][] = ["wifi", "mobiel", "kabel"
 function toNetworkView(n: NativeNetwork | null | undefined): NetworkView {
   const type = NETWORK_TYPES.find((t) => t === n?.type) ?? "onbekend";
   return { type, expensive: n?.expensive === true };
-}
-
-function isEntry(v: unknown): v is QueueEntry {
-  if (typeof v !== "object" || v === null) return false;
-  const e = v as Record<string, unknown>;
-  const str = (k: string) => typeof e[k] === "string" && e[k] !== "";
-  const strOrNull = (k: string) => e[k] === null || typeof e[k] === "string";
-  const numOrNull = (k: string) => e[k] === null || typeof e[k] === "number";
-  return (
-    str("key") &&
-    str("userId") &&
-    str("projectId") &&
-    str("fileName") &&
-    typeof e.bytes === "number" &&
-    strOrNull("photoId") &&
-    strOrNull("originalId") &&
-    (e.step === "album" || e.step === "aanmelden" || e.step === "versturen" || e.step === "afronden") &&
-    typeof e.addedAt === "number" &&
-    numOrNull("waitUntil") &&
-    numOrNull("busyUntil") &&
-    numOrNull("expiresAt") &&
-    typeof e.rounds === "number" &&
-    numOrNull("lastMissing")
-  );
-}
-
-function parseQueue(raw: string | null): QueueEntry[] {
-  if (!raw) return [];
-  try {
-    const v: unknown = JSON.parse(raw);
-    return Array.isArray(v) ? v.filter(isEntry) : [];
-  } catch {
-    return [];
-  }
-}
-
-function timeout<T>(promise: Promise<T>, ms: number): Promise<T> {
-  return new Promise<T>((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error("timeout")), ms);
-    promise.then(
-      (v) => {
-        clearTimeout(timer);
-        resolve(v);
-      },
-      (e: unknown) => {
-        clearTimeout(timer);
-        reject(e);
-      },
-    );
-  });
 }
 
 function describeEvent(event: QueueEvent): string | null {
@@ -171,6 +137,12 @@ class OriginalRunner {
   private loaded = false;
   private loading: Promise<boolean> | null = null;
   private wifiOnly = true;
+  /** Het omzetten van "Alleen via wifi" na elkaar, los van de rij (punt 10). */
+  private wifiChain: Promise<void> = Promise.resolve();
+  /** Bestanden die dit proces in de map zette: het laden wist ze niet (punt 3). */
+  private ownFiles = new Set<string>();
+  /** Account verwijderd terwijl de wachtrij niet laadde: wissen zodra het laden lukt (punt 4). */
+  private forgetAfterLoad = new Set<string>();
   private network: NetworkView = { type: "onbekend", expensive: false };
   private chain: Promise<void> = Promise.resolve();
   private client: OriginalsActions | null = null;
@@ -199,12 +171,18 @@ class OriginalRunner {
         this.dispatch({
           kind: "deel_mislukt",
           originalId: e.originalId,
+          generation: typeof e.generation === "number" ? e.generation : -1,
           partNumber: e.partNumber,
           status: typeof e.status === "number" ? e.status : null,
           code: typeof e.code === "string" ? e.code : null,
           attempts: typeof e.attempts === "number" ? e.attempts : 1,
         }),
-      allPartsDone: (e) => this.dispatch({ kind: "delen_klaar", originalId: e.originalId }),
+      allPartsDone: (e) =>
+        this.dispatch({
+          kind: "delen_klaar",
+          originalId: e.originalId,
+          generation: typeof e.generation === "number" ? e.generation : -1,
+        }),
       fileBroken: (e) => {
         void this.run(async () => {
           const entry = this.queue.find((q) => q.originalId === e.originalId);
@@ -242,37 +220,91 @@ class OriginalRunner {
     void this.pump();
   }
 
-  /** 38b-3: het origineel bij "Toevoegen", met als stap: wacht op het album. */
-  add(input: { key: string; userId: string; projectId: string; fileName: string; bytes: number }): Promise<boolean> {
-    return this.run(async () => {
+  /** Is de wachtrij geladen (of lukt het laden nu)? Het toevoegscherm wacht hierop voordat het de kopie verplaatst. */
+  ready(): Promise<boolean> {
+    return this.run(async () => {});
+  }
+
+  /**
+   * 38b-3: het origineel bij "Toevoegen", met als stap: wacht op het album.
+   * `false`: niet aangenomen (de wachtrij laadt niet, of dat filmpje staat er
+   * al met een ander bestand).
+   */
+  async add(input: { key: string; userId: string; projectId: string; fileName: string; bytes: number }): Promise<boolean> {
+    this.ownFiles.add(input.fileName);
+    let taken = false;
+    const loaded = await this.run(async () => {
       this.queue = addOriginal(this.queue, input, Date.now());
+      taken = this.queue.some((e) => e.key === input.key && e.fileName === input.fileName);
+      if (!taken) return;
       await this.save();
       this.note(`origineel in de wachtrij (${Math.round(input.bytes / 1048576)} MiB)`);
     });
+    return loaded && taken;
   }
 
   dispatch(event: QueueEvent): void {
     void this.run(() => this.apply(event));
   }
 
-  /** Account verwijderd op dit toestel: alles van die user weg (38b-4). */
-  forgetUser(userId: string): Promise<boolean> {
-    return this.run(async () => {
-      const step = forgetUser(this.queue, userId);
-      await this.commit(step);
+  /**
+   * Account verwijderd op dit toestel: alles van die user weg (38b-4). Laadt
+   * de wachtrij (nog) niet, dan wacht dit niet: de runner onthoudt de user en
+   * wist hem zodra het laden lukt (punt 4; alleen zolang de app draait).
+   */
+  async forgetUser(userId: string): Promise<void> {
+    if (!this.loaded) {
+      this.forgetAfterLoad.add(userId);
+      void this.run(async () => {});
+      return;
+    }
+    await this.run(async () => {
+      await this.commit(forgetUser(this.queue, userId));
     });
   }
 
+  /**
+   * "Alleen via wifi" (punt 6): aanzetten geldt meteen, ook als bewaren niet
+   * lukt. Uitzetten geldt pas als het bewaren en het omzetten bij de uploader
+   * allebei lukken; anders blijft hij aan, in de app en bij de uploader.
+   */
   setWifiOnly(on: boolean): Promise<boolean> {
-    return this.run(async () => {
-      this.wifiOnly = on;
-      this.changed();
-      try {
-        await writeOriginalState(WIFI_FILE, wifiOnlyToStore(on));
-      } catch {
-        // Stil: de uploader onthoudt hem ook.
+    return this.wifiRun(async () => {
+      if (on) {
+        this.setWifiState(true);
+        try {
+          await writeOriginalState(WIFI_FILE, wifiOnlyToStore(true));
+        } catch {
+          this.note("alleen via wifi: bewaren lukte niet, de stand is aan");
+        }
+        try {
+          await uploaderSetWifiOnly(true);
+        } catch {
+          this.note("alleen via wifi: omzetten bij de uploader lukte niet");
+        }
+        return true;
       }
-      await uploaderSetWifiOnly(on);
+      try {
+        await writeOriginalState(WIFI_FILE, wifiOnlyToStore(false));
+      } catch {
+        this.note("alleen via wifi: bewaren lukte niet, de stand blijft aan");
+        this.setWifiState(true);
+        return false;
+      }
+      try {
+        await uploaderSetWifiOnly(false);
+      } catch {
+        this.note("alleen via wifi: omzetten bij de uploader lukte niet, de stand blijft aan");
+        try {
+          await writeOriginalState(WIFI_FILE, wifiOnlyToStore(true));
+        } catch {
+          // Bij de start telt dan de uploader mee: die staat nog aan.
+        }
+        this.setWifiState(true);
+        return false;
+      }
+      this.setWifiState(false);
+      return true;
     });
   }
 
@@ -296,6 +328,58 @@ class OriginalRunner {
       userId: this.userId,
     };
     for (const l of this.listeners) l();
+  }
+
+  private setWifiState(on: boolean): void {
+    if (this.wifiOnly === on) return;
+    this.wifiOnly = on;
+    this.changed();
+  }
+
+  /** Na elkaar, los van de rij met de wachtrij. */
+  private wifiRun(work: () => Promise<boolean>): Promise<boolean> {
+    const next = this.wifiChain.then(work).catch(() => false);
+    this.wifiChain = next.then(() => undefined);
+    return next;
+  }
+
+  /**
+   * Punt 6: bij de start de eigen waarde naast die van de uploader; alleen als
+   * beide uit zeggen, is het uit. Anders aan, ook bij de uploader en op schijf.
+   */
+  private loadWifi(): Promise<boolean> {
+    return this.wifiRun(async () => {
+      let stored: string | null = null;
+      try {
+        stored = await readOriginalState(WIFI_FILE);
+      } catch {
+        // Onleesbaar telt als aan.
+      }
+      let native: boolean | null = null;
+      try {
+        native = await uploaderWifiOnly();
+      } catch {
+        this.note("alleen via wifi: de uploader kon zijn stand niet geven, de stand is aan");
+      }
+      const on = wifiOnlyAtStart(stored, native);
+      this.setWifiState(on);
+      if (!on) return true;
+      if (stored !== wifiOnlyToStore(true)) {
+        try {
+          await writeOriginalState(WIFI_FILE, wifiOnlyToStore(true));
+        } catch {
+          // De uploader staat aan; bij de volgende start telt die mee.
+        }
+      }
+      if (native !== true) {
+        try {
+          await uploaderSetWifiOnly(true);
+        } catch {
+          this.note("alleen via wifi: aanzetten bij de uploader lukte niet");
+        }
+      }
+      return true;
+    });
   }
 
   private note(text: string): void {
@@ -335,22 +419,16 @@ class OriginalRunner {
 
   private async load(): Promise<boolean> {
     let raw: string | null;
-    let wifi: string | null;
     try {
       raw = await readOriginalState(QUEUE_FILE);
-      wifi = await readOriginalState(WIFI_FILE);
     } catch {
       // Nog op slot of een andere leesfout: niets overschrijven, later opnieuw.
       this.schedule(Date.now() + LOAD_RETRY_MS);
       return false;
     }
-    this.queue = parseQueue(raw);
-    this.wifiOnly = wifiOnlyFromStore(wifi);
-    try {
-      await uploaderSetWifiOnly(this.wifiOnly);
-    } catch {
-      // De uploader houdt zijn eigen stand.
-    }
+    const stored = queueFromStore(raw);
+    if (stored.broken) this.note("wachtrij onleesbaar: wat te lezen was blijft, de rest gaat weg");
+    await this.loadWifi();
     let jobs: Awaited<ReturnType<typeof uploaderJobs>>;
     let files: string[];
     try {
@@ -361,8 +439,17 @@ class OriginalRunner {
       return false;
     }
     this.loaded = true;
-    const step = atLaunch(this.queue, { jobs, files }, Date.now());
+    // Punt 3: wat dit proces al in de map zette (het toevoegscherm, terwijl
+    // het laden liep), is geen wees.
+    const known = files.filter((f) => !this.ownFiles.has(f));
+    const step = atLaunch(stored.queue, { jobs, files: known }, Date.now());
     await this.commit(step);
+    // Punt 4: Account verwijderd terwijl het laden nog niet lukte.
+    for (const userId of [...this.forgetAfterLoad]) {
+      this.forgetAfterLoad.delete(userId);
+      await this.commit(forgetUser(this.queue, userId));
+      this.note("account verwijderd: alles van die user weg");
+    }
     // Een kapot bestand dat de uploader al zag terwijl de app er niet was.
     for (const job of jobs) {
       if (!job.broken) continue;
@@ -395,7 +482,7 @@ class OriginalRunner {
 
   private async save(): Promise<void> {
     try {
-      await writeOriginalState(QUEUE_FILE, JSON.stringify(this.queue));
+      await writeOriginalState(QUEUE_FILE, queueToStore(this.queue));
     } catch {
       // Dan blijft hij in het geheugen; de volgende stap probeert het opnieuw.
     }
@@ -412,9 +499,10 @@ class OriginalRunner {
             await uploaderSend({
               originalId: effect.originalId,
               fileName: effect.fileName,
+              generation: effect.generation,
               totalBytes: entry.bytes,
               partSize: links.partSize,
-              expiresAt: links.expiresAt,
+              expiresAt: entry.linksValidUntil ?? links.expiresAt,
               parts: effect.parts,
             });
           } catch {
@@ -484,10 +572,7 @@ class OriginalRunner {
     if (call.kind === "start") {
       let result: StartResult;
       try {
-        result = await timeout(
-          withOneRetry(() => client.startOriginal({ photoId: call.photoId as Id<"photos">, bytes: call.bytes })),
-          CALL_TIMEOUT_MS,
-        );
+        result = await withOneRetry(() => client.startOriginal({ photoId: call.photoId as Id<"photos">, bytes: call.bytes }));
       } catch (e) {
         result = originalRefusal(e);
       }
@@ -495,10 +580,7 @@ class OriginalRunner {
     }
     let result: FinishResult;
     try {
-      result = await timeout(
-        withOneRetry(() => client.finishOriginal({ originalId: call.originalId })),
-        CALL_TIMEOUT_MS,
-      );
+      result = await withOneRetry(() => client.finishOriginal({ originalId: call.originalId }));
     } catch (e) {
       result = originalRefusal(e);
     }
@@ -524,7 +606,17 @@ export function nudgeOriginals(): void {
   runner.nudge();
 }
 
-/** 38b-3: een origineel bij "Toevoegen"; `false` als de wachtrij niet te laden was. */
+/**
+ * Punt 3: is de wachtrij geladen? Het toevoegscherm verplaatst de kopie pas
+ * daarna; `false`: niet te laden (dan gaat het filmpje zonder origineel).
+ */
+export function originalsReady(): Promise<boolean> {
+  if (!originalUploaderAvailable) return Promise.resolve(false);
+  runner.start();
+  return runner.ready();
+}
+
+/** 38b-3: een origineel bij "Toevoegen"; `false` als de wachtrij het niet aannam. */
 export function addOriginalToQueue(input: {
   key: string;
   userId: string;
