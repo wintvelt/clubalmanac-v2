@@ -1,4 +1,5 @@
 import { useMutation } from "convex/react";
+import * as Clipboard from "expo-clipboard";
 import { ConvexError } from "convex/values";
 import { useCallback, useEffect, useState, useSyncExternalStore, type ReactNode } from "react";
 import { StyleSheet, Switch, View } from "react-native";
@@ -148,6 +149,54 @@ function ProbeBody() {
 
   const waiting = waitsForWifi(snap.wifiOnly, snap.network);
 
+  const standOf = (entry: QueueEntry) =>
+    entry.originalId
+      ? ownOriginalStand({
+          status: "onderweg",
+          originalId: entry.originalId,
+          queue: snap.queue,
+          wifiOnly: snap.wifiOnly,
+          network: snap.network,
+          now: Date.now(),
+        })
+      : "nog niet aangemeld";
+
+  const linesOf = (entry: QueueEntry) =>
+    entryLines({
+      entry,
+      mine: entry.userId === snap.userId,
+      job: entry.originalId ? jobs.find((j) => j.originalId === entry.originalId) : undefined,
+      file: files[entry.fileName],
+      hash: hashes[entry.key],
+      stand: standOf(entry),
+    });
+
+  const orphans = jobs.filter((j) => !snap.queue.some((e) => e.originalId === j.originalId));
+
+  // Stand per origineel plus het hele log als platte tekst, het nieuwste
+  // bovenaan, zoals op het scherm. Dezelfde regels als in beeld: geen links,
+  // sleutels, paden of namen.
+  const copyLog = () =>
+    act("kopiëren", async () => {
+      const out: string[] = [
+        `Proefscherm originelen, ${dayTime(Date.now())}`,
+        `Netwerk: ${snap.network.type}${snap.network.expensive ? ", duur" : ""} · alleen via wifi: ${snap.wifiOnly ? "ja" : "nee"}`,
+        "",
+        `Wachtrij (${snap.queue.length})`,
+      ];
+      if (snap.queue.length === 0) out.push("Leeg.");
+      for (const entry of snap.queue) {
+        const l = linesOf(entry);
+        out.push("", l.title, ...l.lines, ...l.parts);
+      }
+      for (const j of orphans) out.push(`Bij iOS zonder wachtrij: ${j.originalId}`);
+      out.push("", `Log (${log.length})`);
+      for (const l of [...log].reverse()) out.push(logLine(l));
+      await Clipboard.setStringAsync(out.join("\n"));
+      setMessage("Gekopieerd");
+      setTimeout(() => setMessage((m) => (m === "Gekopieerd" ? null : m)), 2000);
+    });
+
   return (
     <Screen underHeader>
       <Section title="Toestel">
@@ -195,38 +244,23 @@ function ProbeBody() {
         {snap.queue.map((entry) => (
           <EntryBlock
             key={entry.key}
-            entry={entry}
-            mine={entry.userId === snap.userId}
-            job={entry.originalId ? jobs.find((j) => j.originalId === entry.originalId) : undefined}
-            file={files[entry.fileName]}
-            hash={hashes[entry.key]}
-            stand={
-              entry.originalId
-                ? ownOriginalStand({
-                    status: "onderweg",
-                    originalId: entry.originalId,
-                    queue: snap.queue,
-                    wifiOnly: snap.wifiOnly,
-                    network: snap.network,
-                    now: Date.now(),
-                  })
-                : "nog niet aangemeld"
-            }
+            lines={linesOf(entry)}
+            canWithdraw={Boolean(entry.originalId) && entry.userId === snap.userId}
+            fileExists={files[entry.fileName]?.exists === true}
             busy={busy !== null}
             onWithdraw={() => void doWithdraw(entry)}
             onHash={() => void hash(entry)}
           />
         ))}
-        {jobs
-          .filter((j) => !snap.queue.some((e) => e.originalId === j.originalId))
-          .map((j) => (
-            <Line key={j.originalId} text={`Bij iOS zonder wachtrij: ${j.originalId}`} />
-          ))}
+        {orphans.map((j) => (
+          <Line key={j.originalId} text={`Bij iOS zonder wachtrij: ${j.originalId}`} />
+        ))}
       </Section>
 
       <Section title="Log">
         <View style={styles.buttons}>
           <SmallButton title="Vernieuw" onPress={() => void refresh()} />
+          <SmallButton title="Kopieer log" onPress={() => void copyLog()} disabled={busy !== null} />
           <SmallButton
             title="Log wissen"
             tone="danger"
@@ -236,7 +270,7 @@ function ProbeBody() {
         </View>
         {[...log].reverse().map((l, i) => (
           <Text key={`${l.at}-${i}`} variant="albumMeta" selectable>
-            {`${clock(l.at)} · ${l.net} · ${l.text}`}
+            {logLine(l)}
           </Text>
         ))}
       </Section>
@@ -244,16 +278,20 @@ function ProbeBody() {
   );
 }
 
-function EntryBlock({
+function logLine(l: UploaderLogEntry): string {
+  return `${clock(l.at)} · ${l.net} · ${l.text}`;
+}
+
+type EntryLines = { title: string; lines: string[]; parts: string[] };
+
+// De tekst per origineel, voor het scherm en voor "Kopieer log".
+function entryLines({
   entry,
   mine,
   job,
   file,
   hash,
   stand,
-  busy,
-  onWithdraw,
-  onHash,
 }: {
   entry: QueueEntry;
   mine: boolean;
@@ -261,10 +299,7 @@ function EntryBlock({
   file: FileState | undefined;
   hash: string | undefined;
   stand: string;
-  busy: boolean;
-  onWithdraw: () => void;
-  onHash: () => void;
-}) {
+}): EntryLines {
   const done = job ? job.parts.filter((p) => p.state === "klaar").length : 0;
   const failed = job ? job.parts.filter((p) => p.state === "mislukt").length : 0;
   const sent = job ? job.parts.reduce((sum, p) => sum + (p.state === "klaar" ? p.size : p.sent), 0) : 0;
@@ -272,42 +307,63 @@ function EntryBlock({
     entry.waitUntil && entry.waitUntil > Date.now() ? `wacht tot ${dayTime(entry.waitUntil)}` : null,
     entry.busyUntil && entry.busyUntil > Date.now() ? `bezig-wacht tot ${dayTime(entry.busyUntil)}` : null,
   ].filter(Boolean);
+  const lines = [
+    `Stap: ${entry.step} · stand: ${stand}${waits.length ? ` · ${waits.join(", ")}` : ""}`,
+    `${bytesText(entry.bytes)} (${entry.bytes} bytes) · bestand: ${file ? (file.exists ? `er (${file.bytes} bytes)` : "weg") : "?"}`,
+  ];
+  if (entry.originalId) lines.push(`Inzending: ${entry.originalId}`);
+  if (entry.linksValidUntil) {
+    lines.push(
+      `Links tot ${dayTime(entry.linksValidUntil)} · rondes ${entry.rounds} · generatie ${entry.generation}${job ? ` (uploader ${job.generation})` : ""}`,
+    );
+  }
+  if (job) {
+    lines.push(
+      `Delen: ${done} van ${job.parts.length} klaar, ${failed} mislukt · ${bytesText(sent)} van ${bytesText(job.totalBytes)}${job.broken ? " · bestand kapot" : ""}`,
+    );
+  }
+  if (hash) lines.push(`SHA-256: ${hash}`);
+  const parts = job
+    ? job.parts.map(
+        (p) =>
+          `Deel ${p.partNumber}: ${p.state}${p.state === "bezig" && p.size > 0 ? ` ${Math.round((p.sent / p.size) * 100)}%` : ""}` +
+          `${p.status ? ` · ${p.status}` : ""}${p.code ? ` · ${p.code}` : ""}` +
+          `${p.session ? ` · ${p.session}` : ""}${p.attempts ? ` · poging ${p.attempts}` : ""} · ${clock(p.updatedAt)}`,
+      )
+    : [];
+  return { title: `Origineel van ${clock(entry.addedAt)}${mine ? "" : " (andere user)"}`, lines, parts };
+}
+
+function EntryBlock({
+  lines,
+  canWithdraw,
+  fileExists,
+  busy,
+  onWithdraw,
+  onHash,
+}: {
+  lines: EntryLines;
+  canWithdraw: boolean;
+  fileExists: boolean;
+  busy: boolean;
+  onWithdraw: () => void;
+  onHash: () => void;
+}) {
   return (
     <View style={styles.block}>
-      <Text variant="bodyStrong">{`Origineel van ${clock(entry.addedAt)}${mine ? "" : " (andere user)"}`}</Text>
-      <Line text={`Stap: ${entry.step} · stand: ${stand}${waits.length ? ` · ${waits.join(", ")}` : ""}`} />
-      <Line text={`${bytesText(entry.bytes)} (${entry.bytes} bytes) · bestand: ${file ? (file.exists ? `er (${file.bytes} bytes)` : "weg") : "?"}`} />
-      {entry.originalId ? <Line text={`Inzending: ${entry.originalId}`} /> : null}
-      {entry.linksValidUntil ? (
-        <Line
-          text={`Links tot ${dayTime(entry.linksValidUntil)} · rondes ${entry.rounds} · generatie ${entry.generation}${job ? ` (uploader ${job.generation})` : ""}`}
-        />
-      ) : null}
-      {job ? (
-        <Line
-          text={`Delen: ${done} van ${job.parts.length} klaar, ${failed} mislukt · ${bytesText(sent)} van ${bytesText(job.totalBytes)}${job.broken ? " · bestand kapot" : ""}`}
-        />
-      ) : null}
-      {hash ? (
-        <Text variant="albumMeta" selectable>
-          {`SHA-256: ${hash}`}
-        </Text>
-      ) : null}
+      <Text variant="bodyStrong">{lines.title}</Text>
+      {lines.lines.map((text, i) => (
+        <Line key={i} text={text} />
+      ))}
       <View style={styles.buttons}>
-        <SmallButton title="SHA-256" disabled={busy || !file?.exists} onPress={onHash} />
-        {entry.originalId && mine ? (
-          <SmallButton title="Terugtrekken" tone="danger" disabled={busy} onPress={onWithdraw} />
-        ) : null}
+        <SmallButton title="SHA-256" disabled={busy || !fileExists} onPress={onHash} />
+        {canWithdraw ? <SmallButton title="Terugtrekken" tone="danger" disabled={busy} onPress={onWithdraw} /> : null}
       </View>
-      {job
-        ? job.parts.map((p) => (
-            <Text key={p.partNumber} variant="albumMeta">
-              {`Deel ${p.partNumber}: ${p.state}${p.state === "bezig" && p.size > 0 ? ` ${Math.round((p.sent / p.size) * 100)}%` : ""}` +
-                `${p.status ? ` · ${p.status}` : ""}${p.code ? ` · ${p.code}` : ""}` +
-                `${p.session ? ` · ${p.session}` : ""}${p.attempts ? ` · poging ${p.attempts}` : ""} · ${clock(p.updatedAt)}`}
-            </Text>
-          ))
-        : null}
+      {lines.parts.map((text, i) => (
+        <Text key={i} variant="albumMeta">
+          {text}
+        </Text>
+      ))}
     </View>
   );
 }
