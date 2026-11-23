@@ -630,6 +630,103 @@ ${SIGNATURE_TEXT}`;
   return { subject, htmlPart, textPart };
 }
 
+// WP38 A-invariant 14: de dagelijkse R2-check van de originelen-bucket.
+// Inzending-id's en sleutels, aantallen; nooit een link of geheim. De check
+// wist niets.
+export function filmOriginalsCheckTemplate(opts: {
+  stage: string;
+  timestamp: string;
+  /** Kon de check niet draaien (config, R2 onbereikbaar): de soort fout. */
+  failure?: string;
+  /** Objecten zonder inzending, ouder dan een dag. */
+  orphans: { key: string; lastModified: number }[];
+  /** Inzendingen die binnen zijn, zonder object (inzending-id). */
+  missing: string[];
+  /** Inzendingen waarvan het object een andere grootte heeft (inzending-id). */
+  wrongSize: string[];
+  /** Halve uploads zonder inzending, ouder dan 8 dagen: de lifecycle-regel werkt niet. */
+  staleUploads: { key: string; initiated: number }[];
+}): TemplateBlock {
+  const subject = opts.failure
+    ? `Originelen: de R2-check kon niet draaien (${opts.stage})`
+    : `Originelen: ${opts.staleUploads.length > 0 ? "de opruimregel van R2 werkt niet; " : ""}${opts.orphans.length} wees, ${opts.missing.length} ontbrekend, ${opts.wrongSize.length} met een andere grootte (${opts.stage})`;
+  const lines: string[] = [];
+  if (opts.failure) {
+    lines.push(`De dagelijkse check van de originelen in R2 kon niet draaien: ${opts.failure}.`);
+    lines.push(
+      "Controleer R2_ORIGINALS_BUCKET en de andere R2_*-env-vars in Convex, het R2-token (Object Read & Write op de originelen-bucket) en of de bucket er nog is. Zolang dit faalt, kunnen leden geen originelen insturen en kan de oprichter niet downloaden.",
+    );
+  } else {
+    lines.push(
+      `De dagelijkse check van de originelen in R2 vond ${opts.orphans.length} wees-object(en) (geen inzending, ouder dan een dag), ${opts.missing.length} inzending(en) die binnen zijn zonder bestand en ${opts.wrongSize.length} met een andere grootte.`,
+    );
+    if (opts.missing.length > 0) lines.push(`Inzendingen zonder bestand (inzending-id): ${opts.missing.join(", ")}`);
+    if (opts.wrongSize.length > 0) lines.push(`Inzendingen met een andere grootte (inzending-id): ${opts.wrongSize.join(", ")}`);
+    if (opts.staleUploads.length > 0) {
+      lines.push(
+        `De opruimregel van R2 werkt niet: ${opts.staleUploads.length} halve upload(s) zonder inzending staan er langer dan 8 dagen (de lifecycle-regel had ze na 7 dagen moeten afbreken). Controleer de regel op de originelen-bucket. Sleutels: ${opts.staleUploads.map((u) => u.key).join(", ")}`,
+      );
+    }
+    if (opts.orphans.length > 0) {
+      lines.push(
+        `Wees-objecten (sleutel, laatst gewijzigd): ${opts.orphans
+          .map((o) => `${o.key} (${new Date(o.lastModified).toISOString()})`)
+          .join(", ")}`,
+      );
+    }
+    lines.push(
+      "De check wist niets. Zie docs/conventions/external-services.md, sectie Cloudflare R2: originelen, voor wat je ermee doet.",
+    );
+  }
+  const htmlPart = `
+<p>Hi Admin,</p>
+<p>${escapeHtml(opts.stage)} omgeving, ${escapeHtml(opts.timestamp)}.</p>
+${lines.map((l) => `<p>${escapeHtml(l)}</p>`).join("\n")}
+${SIGNATURE_HTML}
+`.trim();
+  const textPart = `Hi Admin,
+
+${opts.stage} omgeving, ${opts.timestamp}.
+
+${lines.join("\n\n")}
+
+${SIGNATURE_TEXT}`;
+  return { subject, htmlPart, textPart };
+}
+
+// WP38 besluit 15: één mail aan de oprichter, 30 dagen voordat de eerste
+// originelen van een project weggaan. Geen link, geen namen van inzenders.
+export function filmOriginalsReminderTemplate(opts: {
+  founderName: string;
+  groupName: string;
+  albumName: string;
+  count: number;
+  /** De dag waarop de eerste originelen weggaan. */
+  firstGoneAt: number;
+  /** De dag waarop de laatste weggaan (gelijk aan de eerste bij één dag). */
+  lastGoneAt: number;
+}): TemplateBlock {
+  const first = formatNlDate(opts.firstGoneAt);
+  const last = formatNlDate(opts.lastGoneAt);
+  const subject = `De originelen van ${opts.albumName} gaan vanaf ${first} weg`;
+  const range = first === last ? `op ${first}` : `vanaf ${first} (de laatste op ${last})`;
+  const lines = [
+    `De ${opts.count} originele filmpje(s) van het filmproject ${opts.albumName} in ${opts.groupName} gaan ${range} weg: na een jaar verwijdert Clubalmanac ze vanzelf.`,
+    "Wil je ze bewaren, download ze dan vóór die dag in de webapp (app.clubalmanac.com, het filmproject in de groep).",
+  ];
+  const htmlPart = `
+<p>Hi ${escapeHtml(opts.founderName)},</p>
+${lines.map((l) => `<p>${escapeHtml(l)}</p>`).join("\n")}
+${SIGNATURE_HTML}
+`.trim();
+  const textPart = `Hi ${opts.founderName},
+
+${lines.join("\n\n")}
+
+${SIGNATURE_TEXT}`;
+  return { subject, htmlPart, textPart };
+}
+
 // Helper: NL-style date format voor invite-expiry. Output bv. "31-12-2026".
 export function formatNlDate(timestamp: number): string {
   const d = new Date(timestamp);

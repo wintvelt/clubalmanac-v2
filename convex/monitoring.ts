@@ -80,6 +80,22 @@ export const MONITORED_FKS: Array<{
   { table: "userVisits", field: "userId", required: true },
   { table: "uploadIdempotency", field: "ownerId", required: true },
   { table: "uploadIdempotency", field: "photoId", required: false },
+  // WP38: filmprojecten en hun inzendingen. Elk wis-pad haalt ze mee, dus een
+  // losse verwijzing is drift. `albumId` is optioneel: na sluiten mag het
+  // filmalbum weg (besluit 17), en dan gaat de verwijzing eruit. De import
+  // vult deze tabellen niet; de tooling telt en leegt ze wel.
+  { table: "filmProjects", field: "groupId", required: true },
+  { table: "filmProjects", field: "albumId", required: false },
+  { table: "filmOriginals", field: "projectId", required: true },
+  { table: "filmOriginals", field: "groupId", required: true },
+  { table: "filmOriginals", field: "ownerId", required: true },
+  { table: "filmOriginals", field: "photoId", required: true },
+  // Bewust niet hier (WP38 fix-cyclus 2, cascade-matrix U17 en U18):
+  // `videoUploadRequests` en `originalRequests`, dus ook niet in de reset van
+  // de migratie-tooling. Het zijn tellers voor een daggrens: een tijdstip per
+  // aanroep, zonder inhoud, alleen geteld voor hun eigen user. Account
+  // verwijderen wist ze, en een rij van een user die niet meer bestaat doet
+  // niets. `photos.originalBlockedAt` is een tijdstip, geen verwijzing.
 ];
 
 // Tabellen waarvan de scan een aggregate of een storage-referentie herrekent

@@ -61,6 +61,16 @@ export const MONITORED_FK_ORACLE: FkOracleEntry[] = [
   { table: "userVisits", field: "userId", target: "users", required: true },
   { table: "uploadIdempotency", field: "ownerId", target: "users", required: true },
   { table: "uploadIdempotency", field: "photoId", target: "photos", required: false },
+  // WP38 (regie): de filmprojecten en hun inzendingen. Elk wis-pad haalt ze
+  // mee (A-invariant 10, 12; besluit 12, 16), dus een losse verwijzing is
+  // drift. `albumId` is optioneel: na sluiten mag het filmalbum weg (besluit
+  // 17), en dan wijst het project nergens meer naar (de naam blijft).
+  { table: "filmProjects", field: "groupId", target: "groups", required: true },
+  { table: "filmProjects", field: "albumId", target: "albums", required: false },
+  { table: "filmOriginals", field: "projectId", target: "filmProjects", required: true },
+  { table: "filmOriginals", field: "groupId", target: "groups", required: true },
+  { table: "filmOriginals", field: "ownerId", target: "users", required: true },
+  { table: "filmOriginals", field: "photoId", target: "photos", required: true },
 ];
 
 /**
@@ -83,13 +93,16 @@ export const MONITORED_TABLE_ORACLE: string[] = [
   "albumLastSeen",
   "userVisits",
   "uploadIdempotency",
+  "filmProjects",
+  "filmOriginals",
 ];
 
 /**
- * De tabel die de import zelf niet vult. Handmatig benoemd, want het verschil
+ * De tabellen die de import zelf niet vult. Handmatig benoemd, want het verschil
  * tussen "tellen en leegmaken" en "invoegen" is een besluit, geen afleiding.
+ * WP38: filmprojecten en inzendingen bestonden niet in v1.
  */
-export const NOT_LOADED_BY_IMPORT = ["uploadIdempotency"];
+export const NOT_LOADED_BY_IMPORT = ["uploadIdempotency", "filmProjects", "filmOriginals"];
 
 /** De FK's op tabellen die de import wél vult. */
 export const LOAD_FK_ORACLE: FkOracleEntry[] = MONITORED_FK_ORACLE.filter(

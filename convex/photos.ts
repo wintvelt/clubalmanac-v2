@@ -27,6 +27,7 @@ import {
   videoField,
 } from "./lib/shapes";
 import { avatarFieldsOf } from "./lib/profilePhoto";
+import { removeOriginalsOfPhoto } from "./lib/filmOriginals";
 import { hasCompleteFormats, photoView, videoView } from "./lib/formatSet";
 import {
   applyOrientation,
@@ -576,6 +577,9 @@ export async function internalRemovePhoto(
   // ziet het wees-object.
   if (photo.video) {
     await ctx.scheduler.runAfter(0, internal.videos.deleteObjects, { keys: [photo.video.key] });
+    // WP38 besluit 16: het filmpje in het album verwijderen haalt ook het
+    // origineel weg (rij, object en open upload in R2). "Uit album" niet.
+    await removeOriginalsOfPhoto(ctx, photoId);
   }
 
   await ctx.db.delete(photoId);

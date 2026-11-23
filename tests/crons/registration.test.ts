@@ -84,7 +84,8 @@ describe("convex/crons.ts — cron registration", () => {
 
   // WP21 besluit 7: "film link check" (05:00 UTC), gepind in tests/films/monitoring.test.ts.
   // WP37 A-invariant 22: "video storage check" (05:15 UTC), gepind in tests/videos/storageCheck.test.ts.
-  it("registreert exact deze zes crons (geen onbedoelde extra registraties)", () => {
+  // WP38 A-invariant 9, 11 en 14: "film originals complete" (elk uur), "film originals expiry" en "film originals check" (dagelijks), gepind in tests/filmProject/inventory.test.ts.
+  it("registreert exact deze negen crons (geen onbedoelde extra registraties)", () => {
     const ids = Object.keys(crons.crons).sort();
     expect(ids).toEqual(
       [
@@ -94,6 +95,9 @@ describe("convex/crons.ts — cron registration", () => {
         "integrity check",
         "film link check",
         "video storage check",
+        "film originals complete",
+        "film originals expiry",
+        "film originals check",
       ].sort(),
     );
   });

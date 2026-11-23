@@ -165,6 +165,13 @@ export default defineSchema({
     video: v.optional(
       v.object({ key: v.string(), durationMs: v.number(), bytes: v.number() }),
     ),
+    // WP38 fix-cyclus 2 (heraudit 1): het origineel van dit filmpje is
+    // teruggetrokken (`withdraw`) of door de oprichter verwijderd
+    // (`removeOriginal`, `removeAll`), met de tijd. Dan neemt `startOriginal`
+    // voor dit filmpje geen inzending meer aan. Op het filmpje zelf, zodat de
+    // markering meegaat als het filmpje of het account weg is; geen verwijzing,
+    // en geen publiek pad toont het veld.
+    originalBlockedAt: v.optional(v.number()),
     createdAt: v.number(),
   })
     .index("by_owner", ["ownerId"])
@@ -212,6 +219,75 @@ export default defineSchema({
   // rij ouder dan 24 uur ruimt `reserveVideo` zelf op; account verwijderen
   // wist ze (WP29, fase reserveringen). Geen publieke query leest deze tabel.
   videoUploadRequests: defineTable({
+    ownerId: v.id("users"),
+    at: v.number(),
+  }).index("by_owner_and_at", ["ownerId", "at"]),
+
+  // ──────────────────────────────────────────────────────────────────
+  // Filmproject (WP38)
+  // ──────────────────────────────────────────────────────────────────
+  // Per groep hooguit één open project, door de oprichter geopend met een
+  // filmalbum en een einddatum. Open = `closedAt` niet gezet en `endsAt` nog
+  // niet voorbij. `albumName` is de naam bij het openen: na sluiten mag het
+  // album weg (besluit 17 weigert dat alleen zolang het project open staat);
+  // dan gaat `albumId` eruit (WP10: geen losse verwijzing) en blijft de naam.
+  // `reminderSentAt`: de herinnering aan de oprichter (besluit 15) is weg.
+  // Een gesloten project zonder originelen ruimt de dagelijkse ronde op.
+  filmProjects: defineTable({
+    groupId: v.id("groups"),
+    albumId: v.optional(v.id("albums")),
+    albumName: v.string(),
+    endsAt: v.number(),
+    openedAt: v.number(),
+    closedAt: v.optional(v.number()),
+    // Besluit 15, fix-cyclus 1: `reminderClaimedAt` is een ronde die de mail
+    // gepland heeft (een paar uur geldig, zodat twee rondes vlak na elkaar één
+    // mail geven); `reminderSentAt` pas als de mail weg is.
+    reminderClaimedAt: v.optional(v.number()),
+    reminderSentAt: v.optional(v.number()),
+  })
+    .index("by_group", ["groupId"])
+    .index("by_album", ["albumId"]),
+
+  // WP38: een inzending, het origineel van één nieuw filmpje (`photoId`) in
+  // het filmalbum. Het bestand staat in de originelen-bucket van R2
+  // (`R2_ORIGINALS_BUCKET`) onder `key`, door de backend gekozen;
+  // `uploadId` is de multipart-upload van R2 zolang hij onderweg is. `key`
+  // en `uploadId` verlaten de backend nooit los (A-invariant 4, 7). `bytes`
+  // is de aangemelde grootte; binnen pas als R2 het hele object met precies
+  // die grootte heeft (A-invariant 5). `groupId` is die van het project, voor
+  // de cascades. Geen rij in `photos` (A-invariant 7).
+  filmOriginals: defineTable({
+    projectId: v.id("filmProjects"),
+    groupId: v.id("groups"),
+    ownerId: v.id("users"),
+    photoId: v.id("photos"),
+    key: v.string(),
+    uploadId: v.optional(v.string()),
+    bytes: v.number(),
+    status: v.union(v.literal("onderweg"), v.literal("binnen")),
+    container: v.optional(v.union(v.literal("mov"), v.literal("mp4"))),
+    submittedAt: v.number(),
+    completedAt: v.optional(v.number()),
+    // Fix-cyclus 2 (red-team Z2): wanneer `startOriginal` voor het laatst
+    // deel-links gaf. De afrond-cron kijkt alleen inzendingen na met links die
+    // nog gelden.
+    linksAt: v.optional(v.number()),
+    // Fix-cyclus 2 (red-team N3): wanneer de laatste upload in R2 aan deze
+    // inzending is gekoppeld (ook bij hervatten met een nieuwe upload). Blijft
+    // staan na binnen; daar telt MON3 het jaar vanaf.
+    uploadCreatedAt: v.optional(v.number()),
+  })
+    .index("by_project", ["projectId"])
+    .index("by_photo", ["photoId"])
+    .index("by_owner", ["ownerId"])
+    .index("by_group_and_owner", ["groupId", "ownerId"])
+    .index("by_status_and_completedAt", ["status", "completedAt"]),
+
+  // WP38 fix-cyclus 1: de daggrens van `startOriginal` en `finishOriginal`
+  // samen (glijdend, zoals `videoUploadRequests`). Eén rij per aanroep die
+  // doorging; een weigering en de cron tellen niet.
+  originalRequests: defineTable({
     ownerId: v.id("users"),
     at: v.number(),
   }).index("by_owner_and_at", ["ownerId", "at"]),

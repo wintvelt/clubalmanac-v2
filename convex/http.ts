@@ -455,6 +455,7 @@ http.route({
 const PHOTO_PREFIX = "/beeld/foto/";
 const PROFILE_PREFIX = "/beeld/profiel/";
 const INVITE_PREFIX = "/beeld/uitnodiging/";
+const ORIGINAL_POSTER_PREFIX = "/beeld/inzending/";
 
 const NOT_FOUND = () => new Response("Niet gevonden", { status: 404 });
 const BAD_FORMAT = () => new Response("Onbekend formaat", { status: 400 });
@@ -552,6 +553,7 @@ const webPreflight = httpAction(async (_ctx, request) => webPreflightResponse(re
 
 http.route({ pathPrefix: PHOTO_PREFIX, method: "OPTIONS", handler: webPreflight });
 http.route({ pathPrefix: INVITE_PREFIX, method: "OPTIONS", handler: webPreflight });
+http.route({ pathPrefix: ORIGINAL_POSTER_PREFIX, method: "OPTIONS", handler: webPreflight });
 
 http.route({
   pathPrefix: PHOTO_PREFIX,
@@ -661,6 +663,53 @@ async function inviteImageRoute(ctx: ImageRouteCtx, request: Request): Promise<R
 
   const choice = await ctx.runQuery(internal.images.inviteCoverInFormat, {
     inviteId: idFromPath(request, INVITE_PREFIX),
+    formaat: format === "origineel" ? "groot" : format,
+  });
+  if (!choice) return NOT_FOUND();
+  if (choice.fallback) {
+    return await cleanOriginalResponse(ctx, choice.storageId, FALLBACK_CACHE_PHOTO, {
+      Vary: "Authorization",
+    });
+  }
+  return await imageResponse(ctx, choice.storageId, "private, no-cache", {
+    Vary: "Authorization",
+  });
+}
+
+// WP38 A-invariant 7: de poster van een inzending, op inzending-id, voor de
+// projectpagina (ook in de webapp).
+//   GET /beeld/inzending/<originalId>[?formaat=klein|groot]
+//     400 onbekend formaat, ook `origineel` (vóór alles, voor iedereen gelijk,
+//         zoals /beeld/foto/; WP38 fix-cyclus 1)
+//     401 uitgelogd of ongeldige token
+//     404 alle andere gevallen, één antwoord: geen lid van de groep van het
+//         project, onbekend, misvormd, een inzending van een ander die nog
+//         onderweg is, poster gewist
+//     200 de poster (zonder formaat: *groot*). Nooit het origineel zelf: er
+//         is geen pad naar een origineel (besluit 7). `private, no-cache`: de
+//         toegang eindigt met terugtrekken of vertrek.
+http.route({
+  pathPrefix: ORIGINAL_POSTER_PREFIX,
+  method: "GET",
+  handler: httpAction(async (ctx, request) =>
+    withWebCors(request, await originalPosterRoute(ctx, request)),
+  ),
+});
+
+async function originalPosterRoute(ctx: ImageRouteCtx, request: Request): Promise<Response> {
+  const format = parseImageFormat(new URL(request.url).searchParams.get("formaat"));
+  if (format === "ongeldig") return BAD_FORMAT();
+
+  let identity;
+  try {
+    identity = await ctx.auth.getUserIdentity();
+  } catch {
+    return new Response("Unauthorized", { status: 401 });
+  }
+  if (!identity) return new Response("Unauthorized", { status: 401 });
+
+  const choice = await ctx.runQuery(internal.images.originalPosterInFormat, {
+    originalId: idFromPath(request, ORIGINAL_POSTER_PREFIX),
     formaat: format === "origineel" ? "groot" : format,
   });
   if (!choice) return NOT_FOUND();

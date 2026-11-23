@@ -43,6 +43,12 @@ const EXPECTED_PUBLIC_QUERIES = [
   "features:list",
   // WP20 A-invariant 3: de eigen stemmen voor de hele lijst.
   "features:listMyUpvotes",
+  // WP38 A-invariant 7, 16: projectpagina, projecten van een groep (leden,
+  // anders NOT_MEMBER) en de open projecten van de caller (uitgelogd: leeg).
+  // Geen sleutel, upload-id of link in de vorm (tests/filmProject/access.test.ts).
+  "filmProjects:get",
+  "filmProjects:listForGroup",
+  "filmProjects:listOpenForMe",
   // WP21 A-invariant 12: de clubfilms van je groepen, vorm zonder sleutels.
   "films:list",
   "groups:getById",

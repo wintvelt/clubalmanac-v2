@@ -83,7 +83,7 @@ export function encodeKey(key: string): string {
  * methode, pad, query en die headers.
  */
 export async function presignRequest(opts: {
-  method: "GET" | "PUT" | "HEAD" | "DELETE";
+  method: "GET" | "PUT" | "HEAD" | "DELETE" | "POST";
   host: string;
   path: string;
   region: string;

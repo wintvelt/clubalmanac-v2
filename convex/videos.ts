@@ -38,6 +38,7 @@ import {
   type R2Config,
 } from "./lib/r2";
 import { parseLocation, parseTakenAt, uploadImageType } from "./lib/upload";
+import { openProjectOfGroup } from "./lib/filmOriginals";
 
 // WP37 — filmpjes in albums. Het bestand staat in Cloudflare R2, de rij in
 // `photos` (met `video`; `storageId` is de poster). Spec:
@@ -170,14 +171,22 @@ export const reserveVideo = internalMutation({
     v.object({ kind: v.literal("done"), photoId: v.id("photos") }),
     v.object({ kind: v.literal("refused"), reason: REFUSE_REASON }),
   ),
-  handler: async (ctx, { ownerId, clientUploadId, albumId, newKey }) => {
+  handler: async (ctx, { ownerId, clientUploadId, albumId: requestedAlbumId, newKey }) => {
     const owner = await ctx.db.get(ownerId);
     if (!owner || owner.deletion) return { kind: "refused" as const, reason: "uitgelogd" as const };
-    const album = await ctx.db.get(albumId);
-    if (!album || !(await getMembership(ctx, ownerId, album.groupId))) {
+    const requested = await ctx.db.get(requestedAlbumId);
+    if (!requested || !(await getMembership(ctx, ownerId, requested.groupId))) {
       return { kind: "refused" as const, reason: "geen_album" as const };
     }
     const now = Date.now();
+    // WP38 A-invariant 2 (besluit 2, 19): staat er in de groep een open
+    // filmproject, dan komt het filmpje in het filmalbum, welk album van die
+    // groep ook gevraagd werd (ook door een oude app: omleiden, niet
+    // weigeren). Hier beslist, in de reservering: wat het project daarna doet,
+    // verandert deze upload niet. Het antwoord van startUpload blijft gelijk.
+    const project = await openProjectOfGroup(ctx, requested.groupId, now);
+    const filmAlbum = project?.albumId ? await ctx.db.get(project.albumId) : null;
+    const albumId = filmAlbum && filmAlbum.groupId === requested.groupId ? filmAlbum._id : requestedAlbumId;
 
     const existing = await ctx.db
       .query("uploadIdempotency")

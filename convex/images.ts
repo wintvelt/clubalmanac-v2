@@ -3,10 +3,11 @@ import { internalQuery, type QueryCtx } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import { getBySubject } from "./users";
 import { canAccessPhoto, isPublishedInGroup } from "./lib/photoAccess";
-import { isInviteAcceptable } from "./groups";
+import { getMembership, isInviteAcceptable } from "./groups";
 import { normalizeEmail } from "./lib/email";
 import { visibleProfilePhoto } from "./lib/profilePhoto";
 import { isWebmaster } from "./lib/auth";
+import { canSeeOriginal } from "./lib/filmOriginals";
 
 // WP17a: de toegangsregel voor beeldbytes (invariant 1, 2, 3, 13, 14).
 // Het beeldpad (`GET /beeld/...`, convex/http.ts, besluit 1: vorm B) vraagt
@@ -214,6 +215,38 @@ export const inviteMailCover = internalQuery({
     if (!klein) return null;
     const { exifOrientation } = found.cover;
     return { storageId: klein, ...(exifOrientation !== undefined ? { exifOrientation } : {}) };
+  },
+});
+
+/**
+ * WP38 A-invariant 7: de poster van een inzending, voor de projectpagina. Een
+ * eigen regel, los van de foto-toegang: lid van de groep van het project (nu),
+ * en de inzending staat voor hem in de lijst (eigen, binnen, of de oprichter;
+ * `filmProjects.get`). Ook als het filmpje uit het filmalbum is gehaald
+ * (besluit 4). Alleen de poster (zonder GPS, WP37 A-invariant 15), nooit het
+ * origineel zelf: geen afspeelpad (besluit 7). Al het andere: `null`, één 404.
+ */
+export const originalPosterInFormat = internalQuery({
+  args: { originalId: v.string(), formaat: formaatArg },
+  returns: v.union(imageChoice, v.null()),
+  handler: async (ctx, { originalId, formaat }) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) return null;
+    const user = await getBySubject(ctx, identity.subject);
+    if (!user) return null;
+    const id = ctx.db.normalizeId("filmOriginals", originalId);
+    if (!id) return null;
+    const original = await ctx.db.get(id);
+    if (!original) return null;
+    const project = await ctx.db.get(original.projectId);
+    if (!project || !(await getMembership(ctx, user._id, project.groupId))) return null;
+    const group = await ctx.db.get(project.groupId);
+    if (!canSeeOriginal(original, user._id, group?.createdBy === user._id)) return null;
+    const photo = await ctx.db.get(original.photoId);
+    if (!photo) return null;
+    const poster = await storedImage(ctx, photo.storageId);
+    if (!poster) return null;
+    return await chooseFormat(ctx, photo, formaat, poster);
   },
 });
 

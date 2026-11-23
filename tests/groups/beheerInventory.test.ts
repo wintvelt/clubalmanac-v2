@@ -36,6 +36,10 @@ const EXPECTED = [
   "albums:remove",
   "albums:removePhoto",
   "albums:update",
+  // WP38 A-invariant 1: een filmproject openen neemt een groep- en album-id;
+  // gate = oprichter (NOT_ALLOWED voor admin en lid, NOT_MEMBER voor wie geen
+  // lid is), het album hoort bij de groep (tests/filmProject/projects.test.ts).
+  "filmProjects:open",
   "groups:markAllAlbumsSeen",
   "groups:remove",
   "groups:removeMember",

@@ -337,6 +337,42 @@ Wie geen toegang heeft, krijgt altijd de gewone weigering (`VIDEO_UPLOAD_REFUSED
 - **Opruimen** gebeurt elders: een open video-upload blijft een dag staan; daarna haalt de opruimronde (`cleanup old upload idempotency`, 03:30 UTC) reservering én tijdelijk object weg, en de lifecycle-regel wist alles onder `uploads/` na een dag. Verwijderen (ook door de webmaster, na 14 dagen gemeld, en account verwijderen) wist het object in R2. Mislukt dat, dan meldt de check het wees-object.
 - **Integriteitscheck** (WP10): de poster is het beeld van de rij, dus een filmpje zonder poster of formaten valt onder de gewone meldingen.
 
+## Cloudflare R2: originelen voor de clubfilm (WP38)
+
+Zolang een filmproject open staat, sturen leden bij een nieuw filmpje ook het origineel in (volle kwaliteit, met datum en plaats). Die originelen staan in een **eigen bucket**, los van de filmpjes in de albums: de regel van een jaar raakt zo nooit een albumfilmpje, de backup ziet ze niet (bewust, besluit 14: ze staan ook nog op de telefoons), en de R2-check van WP37 ziet ze niet als wees. Zie [WP38](../work-packages/WP38-filmproject-originelen.md) en `convex/filmProjects.ts`.
+
+- De app krijgt per deel van 32 MiB een ondertekende PUT van 7 dagen (multipart; grootte, deelnummer en upload-id in de handtekening). De backend rondt af als alles er is, en elk uur zelf (cron `film originals complete`).
+- Downloaden alleen door de oprichter: een GET van 1 uur, als bijlage met datum en inzender in de naam.
+- Grenzen (besluit 11): 2 GiB per origineel, 200 GiB per project, 400 GiB samen; minstens 1 MiB (`te_klein`; de app stuurt dan alleen het filmpje naar het album); hooguit 30 originelen per lid tegelijk onderweg (`bezig`). Een origineel blijft hooguit een jaar na binnenkomst; na sluiten mag een aangemeld origineel nog 14 dagen binnenkomen.
+- Kosten: $0,015 per GB per maand; 100 GB een jaar lang is ~$1,50 per maand, het plafond van 400 GiB ~$6. Bij gewoon gebruik vallen delen, lijsten en afronden in het gratis miljoen verzoeken per maand. Per lid hooguit 600 keer aanmelden en afronden samen in 24 uur (`te_vaak`); de afrond-cron kijkt elk uur alleen originelen na die in de laatste 7 dagen links kregen. Alle leden een maand op die grenzen is ~1,2 miljoen verzoeken, ~$1 boven het gratis deel. De PUT's op de deel-links zelf vallen daarbuiten; daarvoor is de kostenmelding (stap 7).
+
+### Opzetten (eenmalig, Wouter)
+
+1. **Buckets** (*Create bucket*): `clubalmanac-originals-dev` en `clubalmanac-originals-prod`, *Location*: **Specify jurisdiction → European Union (EU)**, *Standard*, *Public access* uit. Geen CORS-regel: de iPhone uploadt zonder browser en downloaden is een gewone link.
+2. **Tokens**: breid de tokens `clubalmanac-videos-dev` en `clubalmanac-videos-prod` uit (R2 → *Manage API tokens* → token → *Edit*) met *Object Read & Write* op de originelen-bucket van dezelfde omgeving. De sleutels blijven gelijk. Het backup-token (`clubalmanac-videos-backup`) krijgt de originelen-bucket **niet**.
+3. **Lifecycle-regel op de originelen-bucket** (bucket → *Settings* → *Object lifecycle rules* → *Add rule*): één regel `originelen-na-365-dagen`, zonder prefix, met twee acties aangevinkt: *Delete uploaded objects after* **365 days** (vangnet; normaal wist de backend ze op de dag zelf) en *Abort incomplete multipart uploads after* **7 days**.
+   Kijk daarna op de buckets van de albums (`clubalmanac-videos-*`) na dat daar **geen** regel van 365 dagen staat; daar staat alleen `uploads-na-1-dag`.
+4. **Convex env-var** per deployment: `R2_ORIGINALS_BUCKET` (tabel hieronder), in het dashboard (Settings → Environment Variables), **vóór of samen met de deploy** van 38a. De andere R2-vars zijn die van WP37.
+5. **Controle op dev**: `npx convex run filmProjects:checkStorage`. Verwacht: geen mail. Een mail "kon niet draaien" met `R2_CONFIG_MISSING: R2_ORIGINALS_BUCKET` of `HTTP 403` betekent een env-var of token die niet klopt. Daarna de WP38-gate (multipart, lifecycle, download in Chrome en Safari).
+6. **Prod**: bucket, token en regels als hierboven, de env-var op prod, en `npx convex run --prod filmProjects:checkStorage`. 38a mag eerder live; **open op prod geen filmproject vóór de release van 38b en 38c**: zonder app die insturen kan, gaan nieuwe filmpjes wel naar het filmalbum maar komt er geen origineel.
+7. **Kostenmelding** in Cloudflare (*Notifications* → *Add*, een melding op het gebruik van R2), afgesteld op **$5** per maand. Kijk bij het instellen de exacte naam van het menu na.
+   **Bij een melding** (of misbruik van de deel-links): rol het R2-token van die omgeving. Maak een nieuw token met dezelfde rechten, zet `R2_ACCESS_KEY_ID` en `R2_SECRET_ACCESS_KEY` in Convex op de nieuwe sleutels en trek dan het oude token in. Daarna werken de uitgegeven deel-links en downloadlinks niet meer. **Let op:** hetzelfde token tekent de links van de albumfilmpjes (WP37). Ook die vallen weg tot de nieuwe sleutels in Convex staan; trek het oude token dus niet in voordat ze er staan.
+
+| Env-var | Waarde | Wat gebeurt bij ontbreken of leeg |
+|---|---|---|
+| `R2_ORIGINALS_BUCKET` | `clubalmanac-originals-dev` of `clubalmanac-originals-prod` | insturen en downloaden falen voor wie mag met `R2_CONFIG_MISSING: R2_ORIGINALS_BUCKET`; de dagelijkse check mailt; filmpjes in albums werken gewoon |
+
+Wie geen toegang heeft, krijgt altijd de gewone weigering (`ORIGINAL_REFUSED` of `ORIGINAL_NOT_FOUND`), ook zonder config.
+
+### Bewaking, opruimen en downloaden
+
+- **Dagelijkse check** (cron `film originals check`, 05:45 UTC): één mail aan `WEBMASTER_EMAILS` bij een *wees-object* (geen inzending, ouder dan een dag), een inzending die binnen is *zonder bestand* of met *een andere grootte*, een *halve upload* zonder inzending ouder dan 8 dagen (dan werkt de lifecycle-regel voor halve uploads niet), of als de check niet kon draaien. De check wist niets.
+  - Wees-object: meestal een wis-stap die R2 niet bereikte. Controleer in Convex (tabel `filmOriginals`, veld `key`) dat er geen inzending bij hoort en wis het in het Cloudflare-dashboard.
+  - Zonder bestand: er is geen backup. Vraag de inzender het origineel terug te trekken; een nieuw origineel kan alleen bij een nieuw filmpje tijdens een open project.
+- **Opruimen** (cron `film originals expiry`, 05:30 UTC): originelen een jaar na binnenkomst, halve inzendingen 14 dagen na sluiten, en een herinnering aan de oprichter 30 dagen vóór de eerste weggaan. Die herinnering komt één keer; bij een zeldzame storing (de mail ging weg, maar het vastleggen daarvan mislukte) kan hij een tweede keer komen. Terugtrekken, verwijderen, groep of account verwijderen, uit de groep gaan en het filmpje in het album verwijderen halen het origineel meteen weg, ook in R2.
+- **Tabellen leegmaken** (migratie-tooling, bv. een herstart van de import) wist de rijen in `filmProjects` en `filmOriginals`, niet de objecten in de originelen-bucket. Maak die bucket dan apart leeg in het Cloudflare-dashboard; anders meldt de check ze de volgende dag als wees.
+- **Downloaden** (oprichter, in de webapp): per origineel een link van een uur; "alles downloaden" haalt ze na elkaar, elk met een verse link. Is een link verlopen, vraag dan een nieuwe. Daarna "alles verwijderen" als de film klaar is.
+
 ## Webapp: app.clubalmanac.com (WP35)
 
 Expo Web van `app/`: bekijken, plus foto's uploaden en de eigen profielfoto (WP36). Stack [`infra/webapp.yml`](../../infra/webapp.yml) (bucket `clubalmanac-webapp`, eigen CloudFront-distributie, certificaat uit ACM us-east-1, DNS in Route 53, deploy-rol via OIDC). Deploy met de hand: Action *Webapp* op `main`, na de Convex-deploy. Repo-variabelen `WEBAPP_BUCKET`, `WEBAPP_DISTRIBUTION_ID`, `WEBAPP_DEPLOY_ROLE_ARN`, `WEBAPP_CONVEX_URL`, `WEBAPP_CLERK_PUBLISHABLE_KEY`. Deploy in twee jobs: *build* (`npm ci --ignore-scripts`, geen deployrecht) en *deploy* (alleen het artefact en de AWS CLI) in GitHub-environment `webapp`, de enige die de deploy-rol mag aannemen. Content-Security-Policy in de response-headers-policy van de stack, met de prod-hosts van Convex en Clerk als parameters. Opzet en controle: [`docs/runbooks/webapp.md`](../runbooks/webapp.md).
