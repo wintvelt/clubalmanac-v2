@@ -1031,3 +1031,9 @@ Bestaande tests niet aangepast. Geen test eiste dat een "aan" bij twijfel ook be
 **Regie op A (fix-cyclus 3):** de aanvulling van A (ook een eigen leesfout bewaart geen "aan") blijft. Open vragen: 1 één keer langer wachten, anders dekt de audit het; 2 aan B.
 
 **Hercheck fix-cyclus 3 (`816185a`):** alle vier punten dicht, geen Z/S. Aanvaard (regie): de eigen wifi-waarde onleesbaar terwijl de uploader "uit" zegt (scherm toont aan, uploader blijft uit; bijna onmogelijk); `save()` in Swift negeert een schrijffout; de buffer van vroege events (38b-20) is alleen door de audit getoetst, niet op een gate. Gate op de build daarna.
+
+### Uitslag gate 38b
+
+**Ronde 1 (build 87, 2026-11-23):** gate 3 goed (1,83 GB binnen op de achtergrond met het scherm uit; grootte in R2 gelijk; SHA-256 niet tegen de telefoon vergeleken). Gate 9 goed: het verkleinen begint na terugkomen opnieuw bij 0%, zonder melding (besluit 25). Gate 10 goed voor een groep zonder project; een clip onder 1 MiB niet apart getoetst.
+
+Nog open: 1, 2, 4, 5, 6, 7, 8, 11, 12. Vanaf build 88 met "Kopieer log".
