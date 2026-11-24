@@ -58,7 +58,7 @@ Er komt geen intern id van een lid uit het clubboek in. Indexen: `by_group` en `
 
 ### Schrijven (alleen het clubboek)
 
-- `POST /settlements`: de header `Authorization: Bearer <geheim>`, en als body de afrekening in de vorm hierboven, met `key`. Het antwoord is 200 met het aantal deelnemers, of één weigering. Statussen en volgorde van de controles: §A4.
+- `POST /settlements`: de header `X-Clubboek-Secret: <geheim>` (fix-cyclus 1, besluit F1), en als body de afrekening in de vorm hierboven, met `key`. Het antwoord is 200 met het aantal deelnemers, of één weigering. Statussen en volgorde van de controles: §A4.
 - `DELETE /settlements?key=…`: haalt die afrekening weg. Bestaat de sleutel niet, dan is het antwoord hetzelfde als na weghalen. Precies: §A5.
 - Beide routes roepen een interne mutation aan. Er zit een grens op de grootte van de body. Geen CORS: deze routes zijn niet voor een browser.
 - De vergelijking in constante tijd komt uit `lib/testGate.ts` en gaat naar een gedeelde helper. Gedrag van WP26 verandert niet.
@@ -199,7 +199,7 @@ Een JSON-object. Elk veld is verplicht aanwezig; "of null" betekent dat `null` m
 | `rows[].lines[].amount` | centen | `bedrag` |
 | `rows[].lines[].basis` | tekst (mag leeg) | `grondslag` ("14 nacht x 38,50") |
 | `rows[].payments[]` | lijst | `betalingen` |
-| `rows[].payments[].date` / `.amount` | datum / centen | `datum` / `bedrag` |
+| `rows[].payments[].date` / `.amount` | datum / centen | `datum` / `bedrag`: wat de deelnemer aan de club betaalde voor zijn naheffing, positief. Alleen bij `balance` > 0; anders leeg (F3) |
 | `rows[].savings[]` | lijst (leeg als het geen lustrum is) | `spaarpot` |
 | `rows[].savings[].date` / `.description` / `.amount` | datum / tekst / centen | `datum` / `omschrijving` / `bedrag` |
 | `rows[].savings[].months` | lijst van `{date, amount}` of null | `maanden` (alleen bij de maandinleg) |
@@ -212,6 +212,9 @@ Samenhang die Convex controleert (anders is het verzoek ongeldig):
 - Bij `lustrum: true` zijn `potBefore` en `potAfter` in elke rij en in `totals` een bedrag; bij `false` zijn ze null en is `savings` leeg.
 - Elk totaal in `totals` is precies de som van dat veld over de rijen. Dat geldt in het clubboek altijd (A1), dus een afwijking is een fout in de omzetting en geen afronding.
 - Minstens één deelnemer (draft: nul deelnemers wordt geweigerd).
+- `payments` is leeg tenzij `balance` > 0. Het clubboek vult `betalingen` alleen voor wie moet bijbetalen (`afgerond()`: `betalingen` alleen als `saldo` < 0). Wat de club aan iemand die terugkrijgt al uitbetaalde of verrekende, staat alleen in een lagere `open`; de app toont het verschil als één regel (F3, `paymentLines`).
+- Tekst (F2), elk tekstveld: well-formed Unicode (geen losse surrogaathelft), geen control-tekens (U+0000–U+001F, U+007F–U+009F, dus ook geen nul-byte, tab of regeleinde) en geen bidi-override- of isolate-tekens (U+202A–U+202E, U+2066–U+2069).
+- Naam van een deelnemer (F2), bovendien: niet leeg, geen witruimte aan begin of eind, niet alleen punten (`.`, `..`, `...`), geen `%` en geen `/` (de naam staat in de app-route). Uniek binnen het verzoek na NFC-normalisatie en zonder onderscheid tussen hoofd- en kleine letters (A-keuze 12: "Bram" en "bram" mogen niet allebei).
 
 **Voorbeelden met verzonnen gegevens** staan in `tests/fixtures/wp41/` (zie de README daar): `lustrum` (8 deelnemers, 5 onderdelen, spaarpotten, één deelnemer helemaal uit zijn spaarpot met `bij = "-0.00"`, een prijs met een eindeloze breuk) en `weekend` (geen lustrum, clubbijdrage, voorgeschoten, iemand die terugkrijgt, delen niet op centen verdeeld). Per voorbeeld de versie zoals het clubboek hem bewaart (`*.publicatie.json`, met `lid_id`, Decimal als tekst) en het verzoek dat eruit moet komen (`*.request.json`). Die paren zijn het contract tussen de twee codebases.
 
@@ -232,13 +235,13 @@ Groot genoeg voor een lustrum met marge; het voorbeeld-lustrum is compact ±9 KB
 | `count` | geheel getal van 0 tot 1000 |
 | Afrekeningen per groep | ten hoogste 40. Een nieuwe sleutel bij 40 wordt geweigerd; een bestaande vervangen mag altijd |
 
-Waarom de laatste: de tijdlijn leest de afrekeningen van een groep in één query. 40 × 128 KiB blijft ruim onder de leesgrens van één Convex-functie, en het document onder de 1 MiB per rij.
+Waarom de laatste: de tijdlijn leest de afrekeningen van een groep in één query. Een verzoek van 128 KiB wordt opgeslagen als een document van ongeveer 173 KB (gemeten door de red-team; getallen kosten in Convex meer ruimte dan in JSON). 40 stuks is dan ongeveer 6,6 MiB, onder de leesgrens van 16 MiB van één Convex-functie, en elk document blijft ruim onder 1 MiB. Samenvattingsvelden apart opslaan is niet nodig (F6).
 
 ### A4. `POST /settlements`: antwoorden en volgorde
 
-1. **Eerst het geheim.** Zonder geldige toegang is het antwoord altijd dezelfde weigering: status 403, met precies dezelfde body voor elke oorzaak. Oorzaken: geen `FINANCE_SECRET` op de deployment, een `FINANCE_SECRET` korter dan 32 tekens (A-keuze 3: fail-closed op een zwak geheim), geen of een ongeldige `FINANCE_GROUP_ID`, een `FINANCE_GROUP_ID` waarvan de groep niet (meer) bestaat, geen `Authorization`-header, een ander schema dan `Bearer `, een fout geheim, een geheim dat alleen het begin of een verlengde vorm is. Bij een weigering wordt de body niet beoordeeld: ook een te grote of kapotte body geeft dan 403.
+1. **Eerst het geheim.** Zonder geldige toegang is het antwoord altijd dezelfde weigering: status 403, met precies dezelfde body voor elke oorzaak. Oorzaken: geen `FINANCE_SECRET` op de deployment, een `FINANCE_SECRET` korter dan 32 tekens (A-keuze 3: fail-closed op een zwak geheim), geen of een ongeldige `FINANCE_GROUP_ID`, een `FINANCE_GROUP_ID` waarvan de groep niet (meer) bestaat, geen header `X-Clubboek-Secret`, een fout geheim, een geheim dat alleen het begin of een verlengde vorm is, een geheim met `Bearer ` ervoor, en een geheim dat alleen in `Authorization` staat (ook het juiste; F1). Bij een weigering wordt de body niet beoordeeld: ook een te grote of kapotte body geeft dan 403.
 2. **Dan de grootte**: groter dan 128 KiB geeft 413.
-3. **Dan de vorm** (A2, A3): ongeldig geeft 400 met `{ "error": "<korte reden>" }`. De reden mag het pad van het veld noemen (`rows[3].cells`), nooit een waarde uit de body.
+3. **Dan de vorm** (A2, A3): ongeldig geeft 400 met `{ "error": "<korte reden>" }`. De reden mag het pad van het veld noemen (`rows[3].cells`), nooit een waarde uit de body. Bij een onbekend veld is de reden `<pad>: onbekend veld`, zonder de naam van dat veld (F9). Een body die te groot én kapot is, geeft 413 (F4).
 4. **Dan schrijven**, in één mutation: de rij met dezelfde `groupId` en `key` wordt vervangen, anders komt er een nieuwe. Het antwoord is 200 met `{ "participants": <aantal deelnemers> }`.
 
 Verder:
@@ -301,6 +304,9 @@ App (`app/src/lib/settlements.ts`, pure logica):
 - `participantOutcome(row, lustrum: boolean): string`: `Betaalt nog € x`, `Krijgt nog € x terug`, `Zijn deel komt helemaal uit zijn spaarpot` (lustrum, `balance` 0 en `fromPot` > 0), anders `Afgerond`. Leest van de rij alleen `balance`, `open` en `fromPot`.
 - `visibleColumns(settlement): ColumnKey[]`: de vaste kolommen na de onderdelen, in de volgorde van het clubboek: `costs`, `club` (alleen als `totals.club` ≠ 0), `fromPot` en `potAfter` (alleen bij een lustrum), `advanced` (alleen als `totals.advanced` ≠ 0), `balance`, `status`.
 - `stillToPay(rows): { cents: number; count: number }`: de tegel "Nog te betalen" (A-keuze 5).
+- `paymentLines(row: Pick<SettlementRow, "balance" | "open" | "payments">): { label: string; cents: number }[]` (F3): de regels van blok 3, Afrekening. Een bedrag dat eraf gaat is negatief; de regels tellen op tot de laatste. `balance` > 0: `Bijbetalen` (balance), per betaling `Betaald op d-m-jjjj` (−bedrag), dan `Nog te betalen` of `Afgerond` (open). `balance` < 0: `Terugkrijgen` (−balance), als er al iets af is `Uitbetaald of verrekend` (−(−balance − open)), dan `Nog terug te krijgen` of `Afgerond` (open). `balance` 0: geen regels. De datum zoals het clubboek hem toont: zonder voorloopnul (`18-6-2026`, A-keuze 13).
+- De lib-functies nemen alleen getypte vormen (`Settlement`, `SettlementRow` of een `Pick` daarvan), geen losse JSON (F5). De tests casten de voorbeelden naar die types.
+- Grote tekst (F7): bij `fontScale` ≥ 1,2 (`LARGE_TEXT_SCALE`, zoals in `Notice` en `SegmentedTabs`) staan de halve tegels van het overzicht onder elkaar, elk over de hele breedte. Geen test (geen pure logica); simulator-gate.
 - `groupHasSettlements(list: readonly unknown[] | undefined): boolean`: zolang de lijst laadt: nee (geen tab die weer verdwijnt).
 - `groupTabs(opts: { hasFilms: boolean; hasSettlements: boolean }): { key: "albums" | "films" | "leden" | "geld"; title: string }[]`: Albums, (Films), Leden, (Geld).
 - In `app/src/lib/groupRoutes.ts`: `settlementPath(groupId, settlementId)` → `/groep/<g>/geld/<id>`, `settlementTablePath(...)` → `…/tabel`, `participantPath(groupId, settlementId, name)` → `…/deelnemer/<naam>`, elk deel URL-gecodeerd. De deelnemer zit op naam in de route (uniek, A2), zodat hij na opnieuw sturen dezelfde blijft. Staat de naam niet (meer) in de afrekening, dan toont het scherm geen gegevens van een ander.
@@ -319,7 +325,7 @@ Voorstel voor namen: `boek/services/app_geld.py` met `verzoek(p: Publicatie) -> 
 6. Geen of onvolledige instellingen: een melding, niets verstuurd.
 7. Antwoord 200: melding `In de app gezet: versie van 21-11-2026`. Antwoord 403, 400, 413 of een netwerkfout: een melding met de status of de fout, geen foutpagina. Het geheim staat in geen enkele melding.
 8. Geen startdatum op het evenement: melding, niets verstuurd.
-9. Het verzoek: `POST <site>/settlements`, `Authorization: Bearer <geheim>`, `Content-Type: application/json`. Haal uit de app: `DELETE <site>/settlements?key=<pk>`.
+9. Het verzoek: `POST <site>/settlements`, `X-Clubboek-Secret: <geheim>`, `Content-Type: application/json`, geen `Authorization`-header (F1). Haal uit de app: `DELETE <site>/settlements?key=<pk>`, met dezelfde header.
 
 ### A12. Waar de RED tests staan
 
@@ -356,7 +362,9 @@ Voorstel voor namen: `boek/services/app_geld.py` met `verzoek(p: Publicatie) -> 
 8. De periode is overal de tekst uit het clubboek ("12 t/m 26 oktober 2026"), ook op de kaart in de tijdlijn. De app maakt zelf geen datumtekst.
 9. Een onderdeel per aantal (nachten) heeft geen prijs per persoon in `overzicht()`. De lijst Per onderdeel toont dan alleen het aantal deelnemers; de prijs per nacht staat in de grondslag op het scherm van de deelnemer ("14 nacht x 38,50"). Zie vraag 3.
 10. `startDate` is verplicht. Heeft het evenement geen startdatum, dan geeft de knop een melding en stuurt niets.
-11. Bij een vormfout noemt de 400 het pad van het veld, zodat Wouter in het clubboek ziet wat er mis is.
+11. Bij een vormfout noemt de 400 het pad van het veld, zodat Wouter in het clubboek ziet wat er mis is. Bijgesteld in F9: bij een onbekend veld alleen `<pad>: onbekend veld`, niet de naam van het veld (die komt uit de body).
+12. Namen van deelnemers zijn uniek zonder onderscheid tussen hoofd- en kleine letters (na NFC). Twee rijen "Bram" en "bram" zijn in de app niet uit elkaar te houden.
+13. Datums in blok 3 zonder voorloopnul (`18-6-2026`), zoals de deelnemerspagina van het clubboek (`j-n-Y`).
 
 ### Besluiten op de open vragen (Wouter, 2026-11-24)
 
@@ -365,3 +373,19 @@ Alle vier zoals A koos:
 2. Kosten staan in de app **zonder minteken**. Alleen de afrekening krijgt − (bijbetalen) of + (terugkrijgen) (A-keuze 6).
 3. **Geen prijs per nacht** bij een onderdeel dat per aantal telt (A-keuze 9). De mockup wijkt hier af; de spec geldt.
 4. Een migratie-reset vóór T0 **leegt de afrekeningen**. Daarna stuurt Wouter ze opnieuw (A9).
+
+## Fix-cyclus 1 (regie en Wouter, 2026-11-24)
+
+Na audit (3 should-fix) en red-team (geen toegangsgat; 3 zou, 4 nice) op `547ab00` en `84fbef3`. A legt vast, B bouwt.
+
+- **F1. Geheim in een eigen header.** Het clubboek stuurt `X-Clubboek-Secret: <geheim>`, niet `Authorization: Bearer`: Convex probeert een Bearer-token als JWT te lezen, en dat valt in convex-test niet te testen. Alleen `Authorization` (ook met het juiste geheim) is een weigering (403). Verder gelijk: constante tijd, minstens 32 tekens, één weigering (§A4.1, §A5, §A11.9).
+- **F2. Teksten.** 400 bij een tekst die geen well-formed Unicode is, of die control- of bidi-override/isolate-tekens bevat. Namen van deelnemers bovendien: niet leeg, geen witruimte aan begin of eind, niet alleen punten, geen `%` of `/`, uniek na NFC en zonder onderscheid tussen hoofd- en kleine letters (§A2, A-keuze 12).
+- **F3. Betalingen.** `payments[].amount` is positief: wat de deelnemer betaalde. Het clubboek geeft alleen betalingen bij wie moet bijbetalen; wie terugkrijgt heeft er nooit, ook als de club al uitbetaalde (dan is alleen `open` lager). Convex weigert `payments` bij `balance` ≤ 0. Het voorbeeld `weekend` heeft daarom Ruud: schoot € 200 voor, deed verder niet mee, kreeg € 150 uitbetaald, `open` € 50, geen betalingen. De app toont het verschil als regel `Uitbetaald of verrekend` (`paymentLines`, §A10).
+- **F4. 413 vóór 400.** Een body die te groot én kapot is, geeft 413.
+- **F5. Getypte app-logica.** De app-tests casten de voorbeelden naar `Settlement` en `SettlementRow`; de lib neemt geen losse JSON meer.
+- **F6. Leesgrens.** Rekensom in §A3 bijgewerkt (±173 KB per maximaal document, 40 stuks ±6,6 MiB). Geen samenvattingsvelden.
+- **F7. Grote tekst.** Halve tegels onder elkaar bij `fontScale` ≥ 1,2 (§A10).
+- **F8. Runbook (B-taak).** In `external-services.md`, sectie Clubboek → Geld: na een migratie-reset of import, en op T0, eerst `FINANCE_GROUP_ID` op het nieuwe id van de groep zetten, dán opnieuw sturen (een oude waarde wijst naar een groep die niet meer bestaat: elke poging geeft 403). Staat T0 nog open in het draaiboek van WP31, dan daar dezelfde stap.
+- **F9. Onbekend veld.** De 400 zegt `<pad>: onbekend veld`, zonder de veldnaam (A-keuze 11 bijgesteld).
+
+Tests: `tests/settlements/http.test.ts` (F1), `validation.test.ts` (F2, F3, F4, F9), `reads.test.ts` en `fixtures.test.ts` (het nieuwe voorbeeld), `app/tests/settlements.test.ts` (F3, F5).
