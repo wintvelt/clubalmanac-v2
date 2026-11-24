@@ -90,7 +90,7 @@ Verder:
 - Het clubboek zet de versie om naar de vorm van invariant 6: Decimal naar centen, het interne id van een lid weg.
 - Na het sturen een melding met de uitkomst ("In de app gezet: versie van 21-11-2026", of de fout), zoals bij Publiceren.
 - De instellingen staan in een lokaal bestand naast het clubboek: de URL van de Convex-site en het geheim. Wouter vult ze zelf in. Ze staan niet in de code.
-- **Stand naast de knop (besluit Wouter 2026-11-24):** het clubboek onthoudt na een gelukte verzending welke versie het stuurde en wanneer, en toont dat naast de knop: "In de app: versie van 21-11-2026, gezet op 24-11-2026", "Er is een nieuwere versie dan in de app", of "Niet in de app" (nog nooit gestuurd, of weggehaald). Alleen lokaal in het clubboek; Convex wordt er niet voor gevraagd.
+- **Stand naast de knop (besluit Wouter 2026-11-24):** het clubboek onthoudt na een gelukte verzending welke versie het stuurde en wanneer, en toont dat naast de knop: "In de app: versie van 21-11-2026, gezet op 24-11-2026", met " · er is een nieuwere versie" erachter als er later gepubliceerd is, of "Niet in de app" (nog nooit gestuurd, of weggehaald). Alleen lokaal in het clubboek; Convex wordt er niet voor gevraagd.
 - **Publiceren en Zet in de app blijven twee knoppen** (besluit Wouter 2026-11-24): publiceren blijft lokaal.
 - Het clubboek heeft sinds 2026-11-24 git (eigen repo). B bouwt in een eigen worktree (`~/clubboek-wp41`, branch `app-knop` vanaf `main`), zodat het draaiende clubboek ongemoeid blijft, en schrijft tests in `boek/tests.py`.
 
