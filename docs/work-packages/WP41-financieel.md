@@ -405,10 +405,23 @@ Heraudit en red-team-hercheck op `01768d8` groen; drie nice-punten gaan mee. A l
 - **G2. Samenhang per deelnemer** (anders 400 met het pad van de rij, bv. `rows[4]…`):
   - `open` ≤ |`balance`|;
   - bij `balance` = 0 is `open` 0;
-  - bij `balance` > 0 is `balance` − som(`payments`) = `open`.
+  - bij `balance` > 0 is `open` = max(0, `balance` − som(`payments`)) (fix-cyclus 3).
 
   Beide voorbeelden halen dit.
-  **Gevolg:** een overbetaling (meer betaald dan de naheffing) kan het clubboek niet sturen. Het clubboek zet `nog` dan op 0, terwijl `balance` − som negatief is. Komt dat voor, dan geeft de knop een 400 en moet de boeking in het clubboek eerst kloppen.
+  Bijgesteld in fix-cyclus 3: een overbetaling mag (zie daar).
 - **G3. Betalingen strikt positief.** `payments[].amount` > 0. Een bedrag van 0 of lager geeft 400.
 
 Tests: `tests/settlements/validation.test.ts` (G1–G3) en `fixtures.test.ts` (G2 op de voorbeelden).
+
+## Fix-cyclus 3 (besluit Wouter, 2026-11-24)
+
+Een overbetaling leidt nooit tot een weigering. Wie € 105 betaalt op € 100 naheffing, heeft "€ 100 betaald" en is afgerond. Het teveel valt buiten de afrekening. Zo doet het clubboek het ook (`afgerond()`: `nog = max(0, -s - b)`, uitleg `betaald via Debiteuren min(b, -s)`).
+
+- **H1. G2 bijgesteld.** Bij `balance` > 0: `open` = max(0, `balance` − som(`payments`)). De andere regels blijven: `open` ≤ |`balance`|, en bij `balance` 0 is `open` 0. Overbetaald met toch iets open blijft een 400.
+- **H2. `paymentLines`, A-keuze 15.** Het getoonde betaalde totaal is hoogstens de naheffing.
+  - De betalingen gaan in hun volgorde mee tot de naheffing vol is.
+  - De betaling die eroverheen gaat, staat er alleen met wat er nog over was.
+  - Latere betalingen vallen weg.
+  - Zo tellen de regels nog steeds op tot de laatste (`Afgerond`, 0), en staat het teveel nergens.
+  - Voorbeeld: € 60 + € 50 + € 20 op € 100 geeft `Betaald op …` −60 en −40, dan `Afgerond`.
+- **H3. Tests.** `validation.test.ts`: overbetaling in één en in twee keer wordt aangenomen (200). `app/tests/settlements.test.ts`: overbetaling in één keer, over meer betalingen, en op een deelnemer uit het voorbeeld. De voorbeeldbestanden zelf blijven ongewijzigd.
