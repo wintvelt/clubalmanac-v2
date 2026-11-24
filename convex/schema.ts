@@ -1,5 +1,6 @@
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
+import { settlementContentFields } from "./lib/settlementShape";
 
 // Schema voor Clubalmanac v2.
 // Vertaling van het single-table DynamoDB design (zie docs/migratie-plan-convex.md)
@@ -390,6 +391,24 @@ export default defineSchema({
   })
     .index("by_order", ["order"])
     .index("by_group", ["groupId"]),
+
+  // ──────────────────────────────────────────────────────────────────
+  // Afrekeningen uit het clubboek (WP41)
+  // ──────────────────────────────────────────────────────────────────
+  // Eén rij per afrekening van een evenement in het clubboek; `key` is het id
+  // van dat evenement. Alleen het clubboek schrijft, via `POST /settlements`
+  // (groep uit `FINANCE_GROUP_ID`); opnieuw sturen vervangt de rij met behoud
+  // van `_id`. Bedragen zijn hele centen. Geen intern id van een lid: een
+  // deelnemer is zijn korte naam, uniek per afrekening. Toegang = lid van
+  // `groupId`. De vorm staat in lib/settlementShape.ts (spec §A2, §A3).
+  settlements: defineTable({
+    groupId: v.id("groups"),
+    key: v.string(),
+    ...settlementContentFields,
+    receivedAt: v.number(),
+  })
+    .index("by_group", ["groupId"])
+    .index("by_group_key", ["groupId", "key"]),
 
   // ──────────────────────────────────────────────────────────────────
   // Album last-seen (per user × album)

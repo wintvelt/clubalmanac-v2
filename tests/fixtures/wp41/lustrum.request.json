@@ -1,0 +1,887 @@
+{
+  "key": "17",
+  "name": "Lustrum Nepal",
+  "period": "12 t/m 26 oktober 2026",
+  "startDate": "2026-10-12",
+  "settledOn": "2026-11-15",
+  "publishedOn": "2026-11-21",
+  "lustrum": true,
+  "costPerPerson": 235262,
+  "parts": [
+    {
+      "name": "Vluchten",
+      "costs": 729920,
+      "count": 8,
+      "pricePerPerson": 91240
+    },
+    {
+      "name": "Hotels",
+      "costs": 408100,
+      "count": 8,
+      "pricePerPerson": null
+    },
+    {
+      "name": "Trekking",
+      "costs": 524000,
+      "count": 8,
+      "pricePerPerson": 65500
+    },
+    {
+      "name": "Rafting",
+      "costs": 50000,
+      "count": 6,
+      "pricePerPerson": 8333
+    },
+    {
+      "name": "Diners",
+      "costs": 170080,
+      "count": 8,
+      "pricePerPerson": 21260
+    }
+  ],
+  "rows": [
+    {
+      "name": "Bram",
+      "costs": 240234,
+      "club": 0,
+      "fromPot": 210000,
+      "potBefore": 210000,
+      "potAfter": 0,
+      "advanced": 0,
+      "balance": 30234,
+      "open": 0,
+      "cells": [
+        91240,
+        53900,
+        65500,
+        8334,
+        21260
+      ],
+      "lines": [
+        {
+          "part": "Vluchten",
+          "amount": 91240,
+          "basis": "7.299,20 / 8"
+        },
+        {
+          "part": "Hotels",
+          "amount": 53900,
+          "basis": "14 nacht x 38,50"
+        },
+        {
+          "part": "Trekking",
+          "amount": 65500,
+          "basis": "5.240,00 / 8"
+        },
+        {
+          "part": "Rafting",
+          "amount": 8334,
+          "basis": "500,00 / 6"
+        },
+        {
+          "part": "Diners",
+          "amount": 21260,
+          "basis": "1.700,80 / 8"
+        }
+      ],
+      "payments": [
+        {
+          "date": "2026-11-17",
+          "amount": 30234
+        }
+      ],
+      "savings": [
+        {
+          "date": "2026-01-01",
+          "description": "Saldo 1-1-2026",
+          "amount": 175000,
+          "months": null
+        },
+        {
+          "date": "2026-01-05",
+          "description": "Maandinleg (10 x 35,00)",
+          "amount": 35000,
+          "months": [
+            {
+              "date": "2026-01-05",
+              "amount": 3500
+            },
+            {
+              "date": "2026-02-05",
+              "amount": 3500
+            },
+            {
+              "date": "2026-03-05",
+              "amount": 3500
+            },
+            {
+              "date": "2026-04-05",
+              "amount": 3500
+            },
+            {
+              "date": "2026-05-05",
+              "amount": 3500
+            },
+            {
+              "date": "2026-06-05",
+              "amount": 3500
+            },
+            {
+              "date": "2026-07-05",
+              "amount": 3500
+            },
+            {
+              "date": "2026-08-05",
+              "amount": 3500
+            },
+            {
+              "date": "2026-09-05",
+              "amount": 3500
+            },
+            {
+              "date": "2026-10-05",
+              "amount": 3500
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Daan",
+      "costs": 240234,
+      "club": 0,
+      "fromPot": 210000,
+      "potBefore": 210000,
+      "potAfter": 0,
+      "advanced": 0,
+      "balance": 30234,
+      "open": 30234,
+      "cells": [
+        91240,
+        53900,
+        65500,
+        8334,
+        21260
+      ],
+      "lines": [
+        {
+          "part": "Vluchten",
+          "amount": 91240,
+          "basis": "7.299,20 / 8"
+        },
+        {
+          "part": "Hotels",
+          "amount": 53900,
+          "basis": "14 nacht x 38,50"
+        },
+        {
+          "part": "Trekking",
+          "amount": 65500,
+          "basis": "5.240,00 / 8"
+        },
+        {
+          "part": "Rafting",
+          "amount": 8334,
+          "basis": "500,00 / 6"
+        },
+        {
+          "part": "Diners",
+          "amount": 21260,
+          "basis": "1.700,80 / 8"
+        }
+      ],
+      "payments": [],
+      "savings": [
+        {
+          "date": "2026-01-01",
+          "description": "Saldo 1-1-2026",
+          "amount": 175000,
+          "months": null
+        },
+        {
+          "date": "2026-01-05",
+          "description": "Maandinleg (10 x 35,00)",
+          "amount": 35000,
+          "months": [
+            {
+              "date": "2026-01-05",
+              "amount": 3500
+            },
+            {
+              "date": "2026-02-05",
+              "amount": 3500
+            },
+            {
+              "date": "2026-03-05",
+              "amount": 3500
+            },
+            {
+              "date": "2026-04-05",
+              "amount": 3500
+            },
+            {
+              "date": "2026-05-05",
+              "amount": 3500
+            },
+            {
+              "date": "2026-06-05",
+              "amount": 3500
+            },
+            {
+              "date": "2026-07-05",
+              "amount": 3500
+            },
+            {
+              "date": "2026-08-05",
+              "amount": 3500
+            },
+            {
+              "date": "2026-09-05",
+              "amount": 3500
+            },
+            {
+              "date": "2026-10-05",
+              "amount": 3500
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Joris",
+      "costs": 224200,
+      "club": 0,
+      "fromPot": 224200,
+      "potBefore": 245000,
+      "potAfter": 20800,
+      "advanced": 0,
+      "balance": 0,
+      "open": 0,
+      "cells": [
+        91240,
+        46200,
+        65500,
+        null,
+        21260
+      ],
+      "lines": [
+        {
+          "part": "Vluchten",
+          "amount": 91240,
+          "basis": "7.299,20 / 8"
+        },
+        {
+          "part": "Hotels",
+          "amount": 46200,
+          "basis": "12 nacht x 38,50"
+        },
+        {
+          "part": "Trekking",
+          "amount": 65500,
+          "basis": "5.240,00 / 8"
+        },
+        {
+          "part": "Diners",
+          "amount": 21260,
+          "basis": "1.700,80 / 8"
+        }
+      ],
+      "payments": [],
+      "savings": [
+        {
+          "date": "2026-01-01",
+          "description": "Saldo 1-1-2026",
+          "amount": 207500,
+          "months": null
+        },
+        {
+          "date": "2026-01-05",
+          "description": "Maandinleg (10 x 35,00)",
+          "amount": 35000,
+          "months": [
+            {
+              "date": "2026-01-05",
+              "amount": 3500
+            },
+            {
+              "date": "2026-02-05",
+              "amount": 3500
+            },
+            {
+              "date": "2026-03-05",
+              "amount": 3500
+            },
+            {
+              "date": "2026-04-05",
+              "amount": 3500
+            },
+            {
+              "date": "2026-05-05",
+              "amount": 3500
+            },
+            {
+              "date": "2026-06-05",
+              "amount": 3500
+            },
+            {
+              "date": "2026-07-05",
+              "amount": 3500
+            },
+            {
+              "date": "2026-08-05",
+              "amount": 3500
+            },
+            {
+              "date": "2026-09-05",
+              "amount": 3500
+            },
+            {
+              "date": "2026-10-05",
+              "amount": 3500
+            }
+          ]
+        },
+        {
+          "date": "2026-06-30",
+          "description": "Rendement",
+          "amount": 2500,
+          "months": null
+        }
+      ]
+    },
+    {
+      "name": "Koen",
+      "costs": 240233,
+      "club": 0,
+      "fromPot": 210000,
+      "potBefore": 210000,
+      "potAfter": 0,
+      "advanced": 0,
+      "balance": 30233,
+      "open": 0,
+      "cells": [
+        91240,
+        53900,
+        65500,
+        8333,
+        21260
+      ],
+      "lines": [
+        {
+          "part": "Vluchten",
+          "amount": 91240,
+          "basis": "7.299,20 / 8"
+        },
+        {
+          "part": "Hotels",
+          "amount": 53900,
+          "basis": "14 nacht x 38,50"
+        },
+        {
+          "part": "Trekking",
+          "amount": 65500,
+          "basis": "5.240,00 / 8"
+        },
+        {
+          "part": "Rafting",
+          "amount": 8333,
+          "basis": "500,00 / 6"
+        },
+        {
+          "part": "Diners",
+          "amount": 21260,
+          "basis": "1.700,80 / 8"
+        }
+      ],
+      "payments": [
+        {
+          "date": "2026-11-18",
+          "amount": 30233
+        }
+      ],
+      "savings": [
+        {
+          "date": "2026-01-01",
+          "description": "Saldo 1-1-2026",
+          "amount": 175000,
+          "months": null
+        },
+        {
+          "date": "2026-01-05",
+          "description": "Maandinleg (10 x 35,00)",
+          "amount": 35000,
+          "months": [
+            {
+              "date": "2026-01-05",
+              "amount": 3500
+            },
+            {
+              "date": "2026-02-05",
+              "amount": 3500
+            },
+            {
+              "date": "2026-03-05",
+              "amount": 3500
+            },
+            {
+              "date": "2026-04-05",
+              "amount": 3500
+            },
+            {
+              "date": "2026-05-05",
+              "amount": 3500
+            },
+            {
+              "date": "2026-06-05",
+              "amount": 3500
+            },
+            {
+              "date": "2026-07-05",
+              "amount": 3500
+            },
+            {
+              "date": "2026-08-05",
+              "amount": 3500
+            },
+            {
+              "date": "2026-09-05",
+              "amount": 3500
+            },
+            {
+              "date": "2026-10-05",
+              "amount": 3500
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Maarten",
+      "costs": 224833,
+      "club": 0,
+      "fromPot": 140000,
+      "potBefore": 140000,
+      "potAfter": 0,
+      "advanced": 0,
+      "balance": 84833,
+      "open": 34833,
+      "cells": [
+        91240,
+        38500,
+        65500,
+        8333,
+        21260
+      ],
+      "lines": [
+        {
+          "part": "Vluchten",
+          "amount": 91240,
+          "basis": "7.299,20 / 8"
+        },
+        {
+          "part": "Hotels",
+          "amount": 38500,
+          "basis": "10 nacht x 38,50"
+        },
+        {
+          "part": "Trekking",
+          "amount": 65500,
+          "basis": "5.240,00 / 8"
+        },
+        {
+          "part": "Rafting",
+          "amount": 8333,
+          "basis": "500,00 / 6"
+        },
+        {
+          "part": "Diners",
+          "amount": 21260,
+          "basis": "1.700,80 / 8"
+        }
+      ],
+      "payments": [
+        {
+          "date": "2026-11-20",
+          "amount": 50000
+        }
+      ],
+      "savings": [
+        {
+          "date": "2026-01-01",
+          "description": "Saldo 1-1-2026",
+          "amount": 105000,
+          "months": null
+        },
+        {
+          "date": "2026-01-05",
+          "description": "Maandinleg (10 x 35,00)",
+          "amount": 35000,
+          "months": [
+            {
+              "date": "2026-01-05",
+              "amount": 3500
+            },
+            {
+              "date": "2026-02-05",
+              "amount": 3500
+            },
+            {
+              "date": "2026-03-05",
+              "amount": 3500
+            },
+            {
+              "date": "2026-04-05",
+              "amount": 3500
+            },
+            {
+              "date": "2026-05-05",
+              "amount": 3500
+            },
+            {
+              "date": "2026-06-05",
+              "amount": 3500
+            },
+            {
+              "date": "2026-07-05",
+              "amount": 3500
+            },
+            {
+              "date": "2026-08-05",
+              "amount": 3500
+            },
+            {
+              "date": "2026-09-05",
+              "amount": 3500
+            },
+            {
+              "date": "2026-10-05",
+              "amount": 3500
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Pieter",
+      "costs": 231900,
+      "club": 0,
+      "fromPot": 210000,
+      "potBefore": 210000,
+      "potAfter": 0,
+      "advanced": 0,
+      "balance": 21900,
+      "open": 0,
+      "cells": [
+        91240,
+        53900,
+        65500,
+        null,
+        21260
+      ],
+      "lines": [
+        {
+          "part": "Vluchten",
+          "amount": 91240,
+          "basis": "7.299,20 / 8"
+        },
+        {
+          "part": "Hotels",
+          "amount": 53900,
+          "basis": "14 nacht x 38,50"
+        },
+        {
+          "part": "Trekking",
+          "amount": 65500,
+          "basis": "5.240,00 / 8"
+        },
+        {
+          "part": "Diners",
+          "amount": 21260,
+          "basis": "1.700,80 / 8"
+        }
+      ],
+      "payments": [
+        {
+          "date": "2026-11-16",
+          "amount": 21900
+        }
+      ],
+      "savings": [
+        {
+          "date": "2026-01-01",
+          "description": "Saldo 1-1-2026",
+          "amount": 175000,
+          "months": null
+        },
+        {
+          "date": "2026-01-05",
+          "description": "Maandinleg (10 x 35,00)",
+          "amount": 35000,
+          "months": [
+            {
+              "date": "2026-01-05",
+              "amount": 3500
+            },
+            {
+              "date": "2026-02-05",
+              "amount": 3500
+            },
+            {
+              "date": "2026-03-05",
+              "amount": 3500
+            },
+            {
+              "date": "2026-04-05",
+              "amount": 3500
+            },
+            {
+              "date": "2026-05-05",
+              "amount": 3500
+            },
+            {
+              "date": "2026-06-05",
+              "amount": 3500
+            },
+            {
+              "date": "2026-07-05",
+              "amount": 3500
+            },
+            {
+              "date": "2026-08-05",
+              "amount": 3500
+            },
+            {
+              "date": "2026-09-05",
+              "amount": 3500
+            },
+            {
+              "date": "2026-10-05",
+              "amount": 3500
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Sander",
+      "costs": 240233,
+      "club": 0,
+      "fromPot": 210000,
+      "potBefore": 210000,
+      "potAfter": 0,
+      "advanced": 0,
+      "balance": 30233,
+      "open": 0,
+      "cells": [
+        91240,
+        53900,
+        65500,
+        8333,
+        21260
+      ],
+      "lines": [
+        {
+          "part": "Vluchten",
+          "amount": 91240,
+          "basis": "7.299,20 / 8"
+        },
+        {
+          "part": "Hotels",
+          "amount": 53900,
+          "basis": "14 nacht x 38,50"
+        },
+        {
+          "part": "Trekking",
+          "amount": 65500,
+          "basis": "5.240,00 / 8"
+        },
+        {
+          "part": "Rafting",
+          "amount": 8333,
+          "basis": "500,00 / 6"
+        },
+        {
+          "part": "Diners",
+          "amount": 21260,
+          "basis": "1.700,80 / 8"
+        }
+      ],
+      "payments": [
+        {
+          "date": "2026-11-16",
+          "amount": 15000
+        },
+        {
+          "date": "2026-11-19",
+          "amount": 15233
+        }
+      ],
+      "savings": [
+        {
+          "date": "2026-01-01",
+          "description": "Saldo 1-1-2026",
+          "amount": 175000,
+          "months": null
+        },
+        {
+          "date": "2026-01-05",
+          "description": "Maandinleg (10 x 35,00)",
+          "amount": 35000,
+          "months": [
+            {
+              "date": "2026-01-05",
+              "amount": 3500
+            },
+            {
+              "date": "2026-02-05",
+              "amount": 3500
+            },
+            {
+              "date": "2026-03-05",
+              "amount": 3500
+            },
+            {
+              "date": "2026-04-05",
+              "amount": 3500
+            },
+            {
+              "date": "2026-05-05",
+              "amount": 3500
+            },
+            {
+              "date": "2026-06-05",
+              "amount": 3500
+            },
+            {
+              "date": "2026-07-05",
+              "amount": 3500
+            },
+            {
+              "date": "2026-08-05",
+              "amount": 3500
+            },
+            {
+              "date": "2026-09-05",
+              "amount": 3500
+            },
+            {
+              "date": "2026-10-05",
+              "amount": 3500
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Thijs",
+      "costs": 240233,
+      "club": 0,
+      "fromPot": 98000,
+      "potBefore": 98000,
+      "potAfter": 0,
+      "advanced": 0,
+      "balance": 142233,
+      "open": 142233,
+      "cells": [
+        91240,
+        53900,
+        65500,
+        8333,
+        21260
+      ],
+      "lines": [
+        {
+          "part": "Vluchten",
+          "amount": 91240,
+          "basis": "7.299,20 / 8"
+        },
+        {
+          "part": "Hotels",
+          "amount": 53900,
+          "basis": "14 nacht x 38,50"
+        },
+        {
+          "part": "Trekking",
+          "amount": 65500,
+          "basis": "5.240,00 / 8"
+        },
+        {
+          "part": "Rafting",
+          "amount": 8333,
+          "basis": "500,00 / 6"
+        },
+        {
+          "part": "Diners",
+          "amount": 21260,
+          "basis": "1.700,80 / 8"
+        }
+      ],
+      "payments": [],
+      "savings": [
+        {
+          "date": "2026-01-01",
+          "description": "Saldo 1-1-2026",
+          "amount": 63000,
+          "months": null
+        },
+        {
+          "date": "2026-01-05",
+          "description": "Maandinleg (10 x 35,00)",
+          "amount": 35000,
+          "months": [
+            {
+              "date": "2026-01-05",
+              "amount": 3500
+            },
+            {
+              "date": "2026-02-05",
+              "amount": 3500
+            },
+            {
+              "date": "2026-03-05",
+              "amount": 3500
+            },
+            {
+              "date": "2026-04-05",
+              "amount": 3500
+            },
+            {
+              "date": "2026-05-05",
+              "amount": 3500
+            },
+            {
+              "date": "2026-06-05",
+              "amount": 3500
+            },
+            {
+              "date": "2026-07-05",
+              "amount": 3500
+            },
+            {
+              "date": "2026-08-05",
+              "amount": 3500
+            },
+            {
+              "date": "2026-09-05",
+              "amount": 3500
+            },
+            {
+              "date": "2026-10-05",
+              "amount": 3500
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "totals": {
+    "costs": 1882100,
+    "club": 0,
+    "fromPot": 1512200,
+    "potBefore": 1533000,
+    "potAfter": 20800,
+    "advanced": 0,
+    "balance": 369900,
+    "open": 207300
+  }
+}

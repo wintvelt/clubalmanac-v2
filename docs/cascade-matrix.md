@@ -41,7 +41,7 @@ Uitzondering: queries zonder trigger (puur read-tests) leven bij de query-owner.
 | Domain | Rules | Status |
 |---|---|---|
 | Users | 18 | ✅ U3-U4, U7-U18; ❌ U1, U2, U5 eliminated, U6 geschrapt |
-| Groups | 5 | ✅ G1-G5 |
+| Groups | 6 | ✅ G1-G6 |
 | Albums | 3 | ✅ A1-A3 |
 | Photos | 11 | ✅ P1-P3, P5-P11; ❌ P4 geschrapt |
 | Album-photos (publications) | 4 | ✅ AP1, AP2, AP4; ❌ AP3 geschrapt |
@@ -87,6 +87,7 @@ Uitzondering: queries zonder trigger (puur read-tests) leven bij de query-owner.
 | G3 | `groupDelToMembers` | GB delete | Delete memberships, alle uitnodigingen voor de groep, welke status ook (WP28 invariant 4, A-invariant 8), en de films van de groep (WP21; de bestanden in S3 blijven): niets wijst daarna nog naar de groep | 3 | `deleteGroupCascade` in `convex/groups.ts`, gedeeld door `groups.remove` (alleen de oprichter, WP28 besluit 1) en M2-e. Uitnodigingen via `invites.by_group`. Een uitnodiging voor een gewiste groep maakt ook los daarvan geen lidmaatschap (`isGroupInviteStillValid`, zie S1) | `tests/groups/crud.test.ts` (describe `groups.remove`), `tests/invites/exLid.test.ts` (weg c), `tests/groups/fixGoneGroup.test.ts`, `tests/films/cascade.test.ts` | ✅ |
 | G4 | `groupDelToAlbums` | GB delete | Delete albums, met covers en profielfoto's (AP4) | 3 | `deleteGroupCascade` (en transitief `albumPhotos`, zie A1; daarna `afterUnpublish`, zie AP4). Meting WP28 op prod-grootte (18 leden, 14 albums, 1460 publicaties): ±1500 index-reads | `tests/groups/crud.test.ts` (describe `groups.remove`), `tests/groups/beheerCascade.test.ts` | ✅ |
 | G5 | (nieuw, WP38) | GB delete | De filmprojecten van de groep met al hun inzendingen; objecten en open uploads in de originelen-bucket | 3 (extern) | `deleteGroupCascade` via `removeProjectsOfGroup` (lib/filmOriginals), ook bij M2-e. R2 best-effort in `internal.filmProjects.deleteOriginalObjects`; MON3 meldt wat blijft | `tests/filmProject/cascade.test.ts` | ✅ |
+| G6 | (nieuw, WP41) | GB delete | De afrekeningen uit het clubboek van de groep (`settlements`); die van andere groepen blijven. Account verwijderen raakt ze niet (geen koppeling met een gebruiker) | 3 | `deleteGroupCascade` via `settlements.by_group`, ook bij M2-e. MON1 bewaakt `settlements.groupId` | `tests/settlements/cascade.test.ts`, `tests/settlements/integrity.test.ts` | ✅ |
 
 ### Trigger: Albums
 

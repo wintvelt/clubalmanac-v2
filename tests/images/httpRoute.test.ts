@@ -74,7 +74,7 @@ async function snapshot(res: Response) {
 const holds = (body: string, bytes: Uint8Array) => body.includes(Array.from(bytes).join(","));
 
 describe("routes (inventaris http-paden)", () => {
-  it("de bestaande routes blijven, plus alleen de vier beeldpaden (WP19b: uitnodiging, WP38: inzending) en hun preflight (WP35)", () => {
+  it("de bestaande routes blijven, plus alleen de vier beeldpaden (WP19b: uitnodiging, WP38: inzending), hun preflight (WP35) en de twee clubboek-routes (WP41)", () => {
     const routes = http.getRoutes().map(([path, method]) => `${method} ${path}`);
     const others = routes.filter((r) => !r.includes("/beeld/")).sort();
     expect(others).toEqual(
@@ -86,6 +86,10 @@ describe("routes (inventaris http-paden)", () => {
         "POST /upload",
         // WP37 A-invariant 26: afronden van een filmpje (poster + controle in R2).
         "POST /upload/video",
+        // WP41 §A4, §A5: het clubboek zet een afrekening in de app en haalt
+        // hem weg, met het geheim; geen preflight (tests/settlements/).
+        "DELETE /settlements",
+        "POST /settlements",
       ].sort(),
     );
     expect(http.lookup(photoPath("abc"), "GET")).not.toBeNull();
@@ -114,7 +118,7 @@ describe("routes (inventaris http-paden)", () => {
     // WP36 A-invariant U1: de webapp uploadt; `/upload` heeft nu ook een
     // preflight. De webhooks en `/_test/whoami` niet.
     expect(http.lookup("/upload", "OPTIONS")).not.toBeNull();
-    for (const path of ["/email-event", "/clerk-webhook", "/_test/whoami"]) {
+    for (const path of ["/email-event", "/clerk-webhook", "/_test/whoami", "/settlements"]) {
       expect(http.lookup(path, "OPTIONS")).toBeNull();
     }
     // Alleen lezen: geen andere methode op de beeldpaden.

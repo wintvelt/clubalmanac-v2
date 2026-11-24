@@ -1,0 +1,241 @@
+{
+  "key": "9",
+  "name": "Clubweekend Ardennen",
+  "period": "12 t/m 14 juni 2026",
+  "startDate": "2026-06-12",
+  "settledOn": "2026-06-14",
+  "publishedOn": "2026-06-20",
+  "lustrum": false,
+  "costPerPerson": 34250,
+  "parts": [
+    {
+      "name": "Huisje",
+      "costs": 120000,
+      "count": 5,
+      "pricePerPerson": 24000
+    },
+    {
+      "name": "Boodschappen",
+      "costs": 41250,
+      "count": 5,
+      "pricePerPerson": 8250
+    },
+    {
+      "name": "Kano",
+      "costs": 10000,
+      "count": 3,
+      "pricePerPerson": 3333
+    }
+  ],
+  "rows": [
+    {
+      "name": "Bram",
+      "costs": 35583,
+      "club": 4000,
+      "fromPot": 0,
+      "potBefore": null,
+      "potAfter": null,
+      "advanced": 0,
+      "balance": 31583,
+      "open": 0,
+      "cells": [
+        24000,
+        8250,
+        3333
+      ],
+      "lines": [
+        {
+          "part": "Huisje",
+          "amount": 24000,
+          "basis": "1.200,00 / 5"
+        },
+        {
+          "part": "Boodschappen",
+          "amount": 8250,
+          "basis": "412,50 / 5"
+        },
+        {
+          "part": "Kano",
+          "amount": 3333,
+          "basis": "100,00 / 3"
+        }
+      ],
+      "payments": [
+        {
+          "date": "2026-06-18",
+          "amount": 31583
+        }
+      ],
+      "savings": []
+    },
+    {
+      "name": "Daan",
+      "costs": 32250,
+      "club": 4000,
+      "fromPot": 0,
+      "potBefore": null,
+      "potAfter": null,
+      "advanced": 41250,
+      "balance": -13000,
+      "open": 13000,
+      "cells": [
+        24000,
+        8250,
+        null
+      ],
+      "lines": [
+        {
+          "part": "Huisje",
+          "amount": 24000,
+          "basis": "1.200,00 / 5"
+        },
+        {
+          "part": "Boodschappen",
+          "amount": 8250,
+          "basis": "412,50 / 5"
+        }
+      ],
+      "payments": [],
+      "savings": []
+    },
+    {
+      "name": "Gijs",
+      "costs": 35583,
+      "club": 0,
+      "fromPot": 0,
+      "potBefore": null,
+      "potAfter": null,
+      "advanced": 0,
+      "balance": 35583,
+      "open": 35583,
+      "cells": [
+        24000,
+        8250,
+        3333
+      ],
+      "lines": [
+        {
+          "part": "Huisje",
+          "amount": 24000,
+          "basis": "1.200,00 / 5"
+        },
+        {
+          "part": "Boodschappen",
+          "amount": 8250,
+          "basis": "412,50 / 5"
+        },
+        {
+          "part": "Kano",
+          "amount": 3333,
+          "basis": "100,00 / 3"
+        }
+      ],
+      "payments": [],
+      "savings": []
+    },
+    {
+      "name": "Koen",
+      "costs": 32250,
+      "club": 4000,
+      "fromPot": 0,
+      "potBefore": null,
+      "potAfter": null,
+      "advanced": 0,
+      "balance": 28250,
+      "open": 0,
+      "cells": [
+        24000,
+        8250,
+        null
+      ],
+      "lines": [
+        {
+          "part": "Huisje",
+          "amount": 24000,
+          "basis": "1.200,00 / 5"
+        },
+        {
+          "part": "Boodschappen",
+          "amount": 8250,
+          "basis": "412,50 / 5"
+        }
+      ],
+      "payments": [
+        {
+          "date": "2026-06-17",
+          "amount": 28250
+        }
+      ],
+      "savings": []
+    },
+    {
+      "name": "Ruud",
+      "costs": 0,
+      "club": 0,
+      "fromPot": 0,
+      "potBefore": null,
+      "potAfter": null,
+      "advanced": 20000,
+      "balance": -20000,
+      "open": 5000,
+      "cells": [
+        null,
+        null,
+        null
+      ],
+      "lines": [],
+      "payments": [],
+      "savings": []
+    },
+    {
+      "name": "Thijs",
+      "costs": 35583,
+      "club": 4000,
+      "fromPot": 0,
+      "potBefore": null,
+      "potAfter": null,
+      "advanced": 0,
+      "balance": 31583,
+      "open": 21583,
+      "cells": [
+        24000,
+        8250,
+        3333
+      ],
+      "lines": [
+        {
+          "part": "Huisje",
+          "amount": 24000,
+          "basis": "1.200,00 / 5"
+        },
+        {
+          "part": "Boodschappen",
+          "amount": 8250,
+          "basis": "412,50 / 5"
+        },
+        {
+          "part": "Kano",
+          "amount": 3333,
+          "basis": "100,00 / 3"
+        }
+      ],
+      "payments": [
+        {
+          "date": "2026-06-19",
+          "amount": 10000
+        }
+      ],
+      "savings": []
+    }
+  ],
+  "totals": {
+    "costs": 171249,
+    "club": 16000,
+    "fromPot": 0,
+    "potBefore": null,
+    "potAfter": null,
+    "advanced": 61250,
+    "balance": 93999,
+    "open": 75166
+  }
+}

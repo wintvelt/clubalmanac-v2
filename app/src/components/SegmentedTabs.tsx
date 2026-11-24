@@ -1,5 +1,5 @@
-import { Pressable, StyleSheet, View } from "react-native";
-import { radius, size, space, useTheme } from "../theme";
+import { Pressable, StyleSheet, useWindowDimensions, View } from "react-native";
+import { LARGE_TEXT_SCALE, radius, size, space, useTheme } from "../theme";
 import { Text } from "./Text";
 
 type Props<K extends string> = {
@@ -11,10 +11,14 @@ type Props<K extends string> = {
 // Groepstabs (design.md §5, §7): gekozen is een `segOn`-pil met vette
 // `onSegOn`-tekst. Minstens 44 pt hoog; bij grote tekst breekt een titel over
 // regels, hij wordt nooit afgekapt (WP16 besluit 5: twee tabs, dus geen 2×2).
+// WP41: met vier tabs (Albums, Films, Leden, Geld) twee rijen van twee zodra
+// de tekst groot is (design.md §3, fontScale ≥ 1,2).
 export function SegmentedTabs<K extends string>({ tabs, selected, onSelect }: Props<K>) {
   const { colors } = useTheme();
+  const { fontScale } = useWindowDimensions();
+  const grid = tabs.length >= 4 && fontScale >= LARGE_TEXT_SCALE;
   return (
-    <View accessibilityRole="tablist" style={[styles.bar, { backgroundColor: colors.segBg }]}>
+    <View accessibilityRole="tablist" style={[styles.bar, grid && styles.grid, { backgroundColor: colors.segBg }]}>
       {tabs.map((tab) => {
         const on = tab.key === selected;
         return (
@@ -25,6 +29,7 @@ export function SegmentedTabs<K extends string>({ tabs, selected, onSelect }: Pr
             onPress={() => onSelect(tab.key)}
             style={({ pressed }) => [
               styles.tab,
+              grid && styles.gridTab,
               on && { backgroundColor: colors.segOn },
               pressed && !on && styles.pressed,
             ]}
@@ -41,6 +46,8 @@ export function SegmentedTabs<K extends string>({ tabs, selected, onSelect }: Pr
 
 const styles = StyleSheet.create({
   bar: { flexDirection: "row", padding: space.xs, gap: space.xs, borderRadius: radius.pill },
+  grid: { flexWrap: "wrap", borderRadius: radius.card },
+  gridTab: { flexBasis: "40%" },
   tab: {
     flex: 1,
     minHeight: size.segTab,
