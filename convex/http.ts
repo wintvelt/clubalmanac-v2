@@ -430,8 +430,8 @@ http.route({
 });
 
 // WP41: de afrekeningen uit het clubboek (convex/settlements.ts). Alleen het
-// clubboek, met `Authorization: Bearer <FINANCE_SECRET>`; de groep staat op de
-// deployment (`FINANCE_GROUP_ID`).
+// clubboek, met `X-Clubboek-Secret: <FINANCE_SECRET>` (niet in Authorization,
+// WP41 F1); de groep staat op de deployment (`FINANCE_GROUP_ID`).
 //   POST   /settlements           403 één weigering (vóór de body), 413 groter
 //                                 dan 128 KiB, 400 vorm (pad, geen waarde),
 //                                 200 `{ participants }`; vervangt per sleutel

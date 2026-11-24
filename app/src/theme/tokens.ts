@@ -207,3 +207,7 @@ export const typography = {
 } as const satisfies Record<string, TypeRole>;
 
 export type TypeRoleName = keyof typeof typography;
+
+// Vanaf deze tekstvergroting gaan naast elkaar staande vlakken onder elkaar
+// (design.md §3): de groepstabs, het icoon van een melding, de tegels van Geld.
+export const LARGE_TEXT_SCALE = 1.2;

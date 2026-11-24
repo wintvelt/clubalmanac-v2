@@ -57,13 +57,6 @@ export type Settlement = {
   totals: SettlementTotals;
 };
 
-// De tests geven rijen en afrekeningen als losse JSON uit tests/fixtures/wp41
-// (`Record<string, any>`); de schermen geven de getypte vorm uit
-// `settlements.get`. Beide mogen; gelezen worden alleen de genoemde velden.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type Json = Readonly<Record<string, any>>;
-type RowFields<K extends keyof SettlementRow> = Pick<SettlementRow, K> | Json;
-
 // --- bedragen -----------------------------------------------------------------------
 
 /** `123456` → `1.234,56` (zonder teken). */
@@ -127,10 +120,10 @@ export function formatLongDate(iso: string): string {
   return `${d}${NBSP}${MONTHS[m - 1] ?? ""} ${y}`;
 }
 
-/** `2026-11-21` → `21-11-2026`, zoals het clubboek. */
+/** `2026-06-18` → `18-6-2026`: zoals het clubboek hem toont (`j-n-Y`, zonder voorloopnul; A-keuze 13). */
 export function formatShortDate(iso: string): string {
   const [y, m, d] = dateParts(iso);
-  return `${String(d).padStart(2, "0")}-${String(m).padStart(2, "0")}-${y}`;
+  return `${d}-${m}-${y}`;
 }
 
 // --- tijdlijn ----------------------------------------------------------------------------
@@ -174,19 +167,17 @@ export function participantsText(n: number): string {
 export type ParticipantStatusKind = "done" | "pays" | "receives";
 
 /** De status in de lijst Deelnemers: grijs `Afgerond`, rood `Nog € x`, groen `Krijgt nog € x` (x = open). */
-export function participantStatus(input: RowFields<"balance" | "open">): {
+export function participantStatus(row: Pick<SettlementRow, "balance" | "open">): {
   kind: ParticipantStatusKind;
   label: string;
 } {
-  const row = input as Pick<SettlementRow, "balance" | "open">;
   if (row.open === 0) return { kind: "done", label: "Afgerond" };
   if (row.balance > 0) return { kind: "pays", label: `Nog ${formatEuro(row.open)}` };
   return { kind: "receives", label: `Krijgt nog ${formatEuro(row.open)}` };
 }
 
 /** De uitkomst bovenaan het scherm van één deelnemer, in de derde persoon. */
-export function participantOutcome(input: RowFields<"balance" | "open" | "fromPot">, lustrum: boolean): string {
-  const row = input as Pick<SettlementRow, "balance" | "open" | "fromPot">;
+export function participantOutcome(row: Pick<SettlementRow, "balance" | "open" | "fromPot">, lustrum: boolean): string {
   if (row.open > 0) {
     return row.balance > 0 ? `Betaalt nog ${formatEuro(row.open)}` : `Krijgt nog ${formatEuro(row.open)} terug`;
   }
@@ -201,17 +192,41 @@ export function balanceLine(balance: number): { label: string; cents: number } {
   return { label: "Afrekening", cents: 0 };
 }
 
-/** De slotregel van het blok Afrekening: wat nog open staat. */
-export function openLine(row: { balance: number; open: number }): { label: string; kind: ParticipantStatusKind } {
-  if (row.open === 0) return { label: "Afgerond", kind: "done" };
-  return row.balance > 0 ? { label: "Nog te betalen", kind: "pays" } : { label: "Nog terug te krijgen", kind: "receives" };
+/**
+ * De regels van blok 3, Afrekening (F3). Een bedrag dat eraf gaat is negatief;
+ * de regels tellen op tot de laatste (`open`). Bijbetalen: de naheffing, per
+ * betaling `Betaald op d-m-jjjj`, dan wat nog open staat. Terugkrijgen: het
+ * bedrag, als er al iets af is één regel `Uitbetaald of verrekend` (het
+ * clubboek geeft daar geen betalingen), dan wat nog open staat. Niets af te
+ * rekenen: geen regels.
+ */
+export function paymentLines(
+  row: Pick<SettlementRow, "balance" | "open" | "payments">,
+): { label: string; cents: number }[] {
+  const end = (label: string) => ({ label: row.open > 0 ? label : "Afgerond", cents: row.open });
+  if (row.balance > 0) {
+    return [
+      { label: "Bijbetalen", cents: row.balance },
+      ...row.payments.map((p) => ({ label: `Betaald op ${formatShortDate(p.date)}`, cents: -p.amount })),
+      end("Nog te betalen"),
+    ];
+  }
+  if (row.balance < 0) {
+    const back = -row.balance;
+    const settled = back - row.open;
+    return [
+      { label: "Terugkrijgen", cents: back },
+      ...(settled !== 0 ? [{ label: "Uitbetaald of verrekend", cents: -settled }] : []),
+      end("Nog terug te krijgen"),
+    ];
+  }
+  return [];
 }
 
 // --- de afrekening ------------------------------------------------------------------------
 
 /** De tegel "Nog te betalen" (A-keuze 5): de som van `open` van wie bijbetaalt, en hoeveel dat zijn. */
-export function stillToPay(input: readonly RowFields<"balance" | "open">[]): { cents: number; count: number } {
-  const rows = input as readonly Pick<SettlementRow, "balance" | "open">[];
+export function stillToPay(rows: readonly Pick<SettlementRow, "balance" | "open">[]): { cents: number; count: number } {
   const paying = rows.filter((r) => r.balance > 0 && r.open > 0);
   return { cents: paying.reduce((a, r) => a + r.open, 0), count: paying.length };
 }
@@ -241,8 +256,7 @@ export const COLUMN_TITLES: Record<ColumnKey, string> = {
  * en Voorgeschoten alleen als hun totaal niet 0 is; de spaarpot alleen bij een
  * lustrum.
  */
-export function visibleColumns(input: Pick<Settlement, "lustrum" | "totals"> | Json): ColumnKey[] {
-  const settlement = input as Pick<Settlement, "lustrum" | "totals">;
+export function visibleColumns(settlement: Pick<Settlement, "lustrum" | "totals">): ColumnKey[] {
   const cols: ColumnKey[] = ["costs"];
   if (settlement.totals.club !== 0) cols.push("club");
   if (settlement.lustrum) cols.push("fromPot", "potAfter");

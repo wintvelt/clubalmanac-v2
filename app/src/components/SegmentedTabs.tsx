@@ -1,5 +1,5 @@
 import { Pressable, StyleSheet, useWindowDimensions, View } from "react-native";
-import { radius, size, space, useTheme } from "../theme";
+import { LARGE_TEXT_SCALE, radius, size, space, useTheme } from "../theme";
 import { Text } from "./Text";
 
 type Props<K extends string> = {
@@ -43,8 +43,6 @@ export function SegmentedTabs<K extends string>({ tabs, selected, onSelect }: Pr
     </View>
   );
 }
-
-const LARGE_TEXT_SCALE = 1.2;
 
 const styles = StyleSheet.create({
   bar: { flexDirection: "row", padding: space.xs, gap: space.xs, borderRadius: radius.pill },

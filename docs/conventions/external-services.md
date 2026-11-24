@@ -375,7 +375,7 @@ Wie geen toegang heeft, krijgt altijd de gewone weigering (`ORIGINAL_REFUSED` of
 
 ## Clubboek → Geld (WP41)
 
-Het clubboek (lokaal, alleen 127.0.0.1) zet een afrekening met **Zet in de app** in de tab Geld van één groep, en haalt hem weg met **Haal uit de app**. Het clubboek stuurt; Convex haalt nooit iets op. Routes op de Convex-site (`https://<deployment>.<region>.convex.site`): `POST /settlements` (vervangt per evenement) en `DELETE /settlements?key=<id>`, met `Authorization: Bearer <FINANCE_SECRET>`. Geen CORS: niet voor een browser. Zie [WP41](../work-packages/WP41-financieel.md).
+Het clubboek (lokaal, alleen 127.0.0.1) zet een afrekening met **Zet in de app** in de tab Geld van één groep, en haalt hem weg met **Haal uit de app**. Het clubboek stuurt; Convex haalt nooit iets op. Routes op de Convex-site (`https://<deployment>.<region>.convex.site`): `POST /settlements` (vervangt per evenement) en `DELETE /settlements?key=<id>`, met de header `X-Clubboek-Secret: <FINANCE_SECRET>`. Het geheim in `Authorization` telt niet (403). Geen CORS: niet voor een browser. Zie [WP41](../work-packages/WP41-financieel.md).
 
 ### Env-vars per deployment (dev en prod)
 
@@ -388,7 +388,7 @@ Het clubboek (lokaal, alleen 127.0.0.1) zet een afrekening met **Zet in de app**
 - **In het clubboek** staan de URL van de Convex-site en hetzelfde geheim in een lokaal instellingenbestand naast het clubboek (alleen leesbaar voor de eigenaar), niet in de code en niet in deze repo. Wouter vult het zelf in.
 - **Roteren:** een nieuwe waarde met `openssl rand -hex 32`, zet hem op de deployment (dashboard → Settings → Environment Variables) en in het instellingenbestand van het clubboek. Convex leest env-vars per aanroep, dus direct actief; daartussen geeft de knop een 403. De afrekeningen in de app blijven staan. Roteer ook als het geheim ergens anders terecht is gekomen (een chat, een log, een schermafbeelding).
 - **Andere groep of groep weg:** een verwijderde groep neemt haar afrekeningen mee (cascade G6); zet daarna `FINANCE_GROUP_ID` op de nieuwe groep en stuur opnieuw.
-- **Migratie-reset:** de tooling leegt `settlements` mee (de import vult hem niet). Stuur de afrekeningen daarna opnieuw vanuit het clubboek.
+- **Na een migratie-reset of import:** de tooling leegt `settlements` mee (de import vult hem niet), en de groep krijgt een nieuw id. Zet eerst `FINANCE_GROUP_ID` op het nieuwe id van de groep, dán opnieuw sturen vanuit het clubboek. Met de oude waarde geeft elke poging 403 (de groep bestaat niet meer).
 - **Logs:** de routes loggen niets (geen geheim, header of body). Een weigering staat als 403 op `/settlements`; een vormfout als 400 met het pad van het veld in het antwoord.
 
 ## Webapp: app.clubalmanac.com (WP35)

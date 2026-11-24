@@ -29,7 +29,7 @@ import {
 // de return-validators (WP23): geen `key`, `groupId` of `receivedAt`.
 //
 // Schrijven (invariant 2, 3, 4): alleen het clubboek, via `POST` en `DELETE
-// /settlements` naar de interne mutations hieronder. Er is geen publieke
+// /settlements` (header `X-Clubboek-Secret`) naar de interne mutations hieronder. Er is geen publieke
 // mutation of action in deze module. Het geheim (`FINANCE_SECRET`) hoort bij
 // één groep (`FINANCE_GROUP_ID`); de groep komt nooit uit het verzoek. Eén
 // weigering (403, steeds dezelfde body) voor elke oorzaak, vóór de body
@@ -176,7 +176,9 @@ export const removeFromClubbook = internalMutation({
 // --- de HTTP-routes (convex/http.ts) --------------------------------------------------
 
 const MIN_SECRET_LENGTH = 32;
-const BEARER = "Bearer ";
+// Fix-cyclus 1 (F1): het geheim staat in een eigen header. `Authorization`
+// leest Convex als JWT; die header telt hier niet, ook niet met het juiste geheim.
+const SECRET_HEADER = "X-Clubboek-Secret";
 
 // Eén weigering voor elke oorzaak (invariant 4, A4.1): zelfde status, body en
 // headers. Noemt geen geheim, env-var of groep.
@@ -187,17 +189,16 @@ const tooLarge = () => Response.json({ error: "body: groter dan 128 KiB" }, { st
 /**
  * De groep van het geheim, of `null` bij elke oorzaak van weigering: geen of
  * een te kort `FINANCE_SECRET` (A-keuze 3), geen `FINANCE_GROUP_ID`, geen
- * header, een ander schema dan `Bearer `, een fout of onvolledig geheim, of een
- * groep die niet (meer) bestaat. De vergelijking stopt niet vroeg.
+ * `X-Clubboek-Secret`, een fout of onvolledig geheim (ook met `Bearer `
+ * ervoor), het geheim alleen in `Authorization`, of een groep die niet (meer)
+ * bestaat. De vergelijking stopt niet vroeg.
  */
 async function financeAccess(ctx: ActionCtx, request: Request): Promise<Id<"groups"> | null> {
   const expected = process.env.FINANCE_SECRET ?? "";
   const groupId = process.env.FINANCE_GROUP_ID ?? "";
-  const header = request.headers.get("Authorization") ?? "";
-  const bearer = header.startsWith(BEARER);
-  const given = bearer ? header.slice(BEARER.length) : "";
+  const given = request.headers.get(SECRET_HEADER) ?? "";
   const equal = constantTimeEqual(given, expected);
-  const open = equal && bearer && given.length > 0 && expected.length >= MIN_SECRET_LENGTH && groupId !== "";
+  const open = equal && given.length > 0 && expected.length >= MIN_SECRET_LENGTH && groupId !== "";
   if (!open) return null;
   return await ctx.runQuery(internal.settlements.financeGroup, { groupId });
 }

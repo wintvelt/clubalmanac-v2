@@ -26,11 +26,11 @@ import {
   formatEuro,
   formatLongDate,
   formatShortDate,
-  openLine,
   participantOutcome,
   participantsText,
   participantStatus,
   partMeta,
+  paymentLines,
   rowCell,
   stillToPay,
   totalCell,
@@ -39,7 +39,7 @@ import {
   type Settlement,
   type SettlementRow,
 } from "../lib/settlements";
-import { border, radius, size, space, useTheme, type ColorTokens } from "../theme";
+import { border, LARGE_TEXT_SCALE, radius, size, space, useTheme, type ColorTokens } from "../theme";
 import { LoadError } from "./GroupParts";
 import { WideSplit } from "./WideSide";
 
@@ -223,10 +223,10 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
 
 // De tegels: Totale kosten (met het bedrag per persoon), Uit spaarpotten (bij
 // een lustrum), Bijdrage uit clubkas (als die er is), Nog te betalen. Bij grote
-// tekst onder elkaar.
+// tekst (fontScale ≥ 1,2, design.md §3; F7) onder elkaar, elk over de hele breedte.
 function Tiles({ settlement }: { settlement: Settlement }) {
   const { fontScale } = useWindowDimensions();
-  const half = fontScale < 1.4;
+  const half = fontScale < LARGE_TEXT_SCALE;
   const { totals } = settlement;
   const toPay = stillToPay(settlement.rows);
   return (
@@ -673,18 +673,27 @@ function SavingsBlock({ settlement, row }: { settlement: Settlement; row: Settle
   );
 }
 
-// 3. Afrekening: wat er bij moet of terug komt, de betalingen, en wat nog open staat.
+// 3. Afrekening (F3, paymentLines): wat er bij moet of terug komt, wat eraf
+// ging, en wat nog open staat. Niets af te rekenen: geen blok.
 function PaymentsBlock({ row }: { row: SettlementRow }) {
-  const start = balanceLine(row.balance);
-  const end = openLine(row);
-  const paidLabel = row.balance < 0 ? "Ontvangen" : "Betaald";
+  const lines = paymentLines(row);
+  if (lines.length === 0) return null;
+  const status = participantStatus(row);
   return (
     <Block title="3. Afrekening">
-      <Line first label={start.label} amount={formatEuro(start.cents)} />
-      {row.payments.map((p, i) => (
-        <Line key={i} label={`${paidLabel} op ${formatShortDate(p.date)}`} amount={formatEuro(-p.amount)} />
-      ))}
-      <Line sum label={end.label} amount={formatEuro(row.open)} color={STATUS_COLOR[end.kind]} />
+      {lines.map((line, i) => {
+        const last = i === lines.length - 1;
+        return (
+          <Line
+            key={i}
+            first={i === 0}
+            sum={last}
+            label={line.label}
+            amount={formatEuro(line.cents)}
+            color={last ? STATUS_COLOR[status.kind] : undefined}
+          />
+        );
+      })}
     </Block>
   );
 }

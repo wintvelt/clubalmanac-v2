@@ -101,7 +101,7 @@ export type SettlementContent = Infer<typeof settlementContent>;
 // --- de controle van het verzoek --------------------------------------------------
 
 type Spec =
-  | { k: "text"; required?: boolean }
+  | { k: "text"; required?: boolean; participant?: boolean }
   | { k: "key" }
   | { k: "date" }
   | { k: "bool" }
@@ -113,6 +113,8 @@ type Spec =
 
 const text: Spec = { k: "text" };
 const name: Spec = { k: "text", required: true };
+// De naam van een deelnemer staat in de app-route (F2, A-keuze 12).
+const participantName: Spec = { k: "text", required: true, participant: true };
 const dateSpec: Spec = { k: "date" };
 const amount: Spec = { k: "cents" };
 const amountOrNull: Spec = { k: "nullable", of: amount };
@@ -143,7 +145,7 @@ const REQUEST: Spec = {
       of: {
         k: "object",
         fields: {
-          name,
+          name: participantName,
           costs: amount,
           club: amount,
           fromPot: amount,
@@ -161,7 +163,8 @@ const REQUEST: Spec = {
           payments: {
             k: "list",
             max: MAX_PAYMENTS,
-            of: { k: "object", fields: { date: dateSpec, amount } },
+            // F3: wat de deelnemer betaalde, nooit negatief.
+            of: { k: "object", fields: { date: dateSpec, amount: { k: "cents", min: 0 } } },
           },
           savings: {
             k: "list",
@@ -220,6 +223,21 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
 // Tekens, niet UTF-16-eenheden: een emoji telt als één.
 const textLength = (s: string): number => Array.from(s).length;
 
+// F2: een losse surrogaathelft (geen well-formed Unicode).
+const LONE_SURROGATE = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
+// F2: control-tekens (C0, DEL, C1) en bidi-override- en isolate-tekens.
+const FORBIDDEN_CHAR = /[\u0000-\u001F\u007F-\u009F\u202A-\u202E\u2066-\u2069]/;
+// F2: de naam van een deelnemer. Geen witruimte (ook geen harde spatie) aan de
+// randen, niet alleen punten, geen `%` of `/`.
+const EDGE_SPACE = /^\s|\s$/;
+const ONLY_DOTS = /^\.+$/;
+const ROUTE_CHAR = /[%/]/;
+
+/** De sleutel voor uniekheid van een deelnemer: NFC, zonder hoofdletteronderscheid (A-keuze 12). */
+function nameKey(name: string): string {
+  return name.normalize("NFC").toLowerCase();
+}
+
 class Invalid extends Error {}
 
 function fail(path: string, reason: string): never {
@@ -232,7 +250,14 @@ function check(spec: Spec, value: unknown, path: string): unknown {
     case "text":
       if (typeof value !== "string") fail(path, "moet tekst zijn");
       if (spec.required && value.length === 0) fail(path, "is leeg");
+      if (LONE_SURROGATE.test(value)) fail(path, "geen geldige Unicode");
+      if (FORBIDDEN_CHAR.test(value)) fail(path, "bevat een control- of richtingsteken");
       if (textLength(value) > MAX_TEXT) fail(path, `is langer dan ${MAX_TEXT} tekens`);
+      if (spec.participant) {
+        if (EDGE_SPACE.test(value)) fail(path, "witruimte aan begin of eind");
+        if (ONLY_DOTS.test(value)) fail(path, "alleen punten");
+        if (ROUTE_CHAR.test(value)) fail(path, "bevat % of /");
+      }
       return value;
     case "key":
       if (!isSettlementKey(value)) fail(path, "ongeldige sleutel (1 tot 64 tekens, A-Z a-z 0-9 _ -)");
@@ -282,19 +307,26 @@ export type SettlementRequest = SettlementContent & { key: string };
 const SUMMED = ["costs", "club", "fromPot", "advanced", "balance", "open"] as const;
 const POTS = ["potBefore", "potAfter"] as const;
 
-/** De samenhang van A2: cellen per onderdeel, spaarpot bij een lustrum, unieke namen, totalen. */
+/**
+ * De samenhang van A2: cellen per onderdeel, spaarpot bij een lustrum, unieke
+ * namen (NFC, zonder hoofdletteronderscheid), betalingen alleen bij
+ * bijbetalen, totalen.
+ */
 function checkCoherence(s: SettlementRequest): void {
   const names = new Set<string>();
   s.rows.forEach((row, i) => {
     const at = `rows[${i}]`;
-    if (names.has(row.name)) fail(`${at}.name`, "komt twee keer voor");
-    names.add(row.name);
+    const key = nameKey(row.name);
+    if (names.has(key)) fail(`${at}.name`, "komt twee keer voor");
+    names.add(key);
     if (row.cells.length !== s.parts.length) fail(`${at}.cells`, "niet één cel per onderdeel");
     for (const pot of POTS) {
       if (s.lustrum && row[pot] === null) fail(`${at}.${pot}`, "moet bij een lustrum een bedrag zijn");
       if (!s.lustrum && row[pot] !== null) fail(`${at}.${pot}`, "moet null zijn als het geen lustrum is");
     }
     if (!s.lustrum && row.savings.length > 0) fail(`${at}.savings`, "moet leeg zijn als het geen lustrum is");
+    // F3: het clubboek geeft betalingen alleen bij wie moet bijbetalen.
+    if (row.balance <= 0 && row.payments.length > 0) fail(`${at}.payments`, "alleen bij balance > 0");
   });
   for (const field of SUMMED) {
     const sum = s.rows.reduce((a, r) => a + r[field], 0);

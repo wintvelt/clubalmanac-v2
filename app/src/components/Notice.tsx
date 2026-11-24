@@ -1,6 +1,6 @@
 import { useEffect, type ReactNode } from "react";
 import { AccessibilityInfo, StyleSheet, useWindowDimensions, View } from "react-native";
-import { border, radius, size, space, useTheme } from "../theme";
+import { border, LARGE_TEXT_SCALE, radius, size, space, useTheme } from "../theme";
 import { Icon } from "./Icon";
 import { FadeIn } from "./Motion";
 import { Text } from "./Text";
@@ -53,9 +53,6 @@ export function Notice({ kind, title, message, children }: Props) {
     </FadeIn>
   );
 }
-
-// Dezelfde grens als de groepstabs (design.md §3).
-const LARGE_TEXT_SCALE = 1.2;
 
 const styles = StyleSheet.create({
   notice: {
