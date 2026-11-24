@@ -163,8 +163,8 @@ const REQUEST: Spec = {
           payments: {
             k: "list",
             max: MAX_PAYMENTS,
-            // F3: wat de deelnemer betaalde, nooit negatief.
-            of: { k: "object", fields: { date: dateSpec, amount: { k: "cents", min: 0 } } },
+            // F3, G3: wat de deelnemer betaalde, groter dan 0.
+            of: { k: "object", fields: { date: dateSpec, amount: { k: "cents", min: 1 } } },
           },
           savings: {
             k: "list",
@@ -226,16 +226,23 @@ const textLength = (s: string): number => Array.from(s).length;
 // F2: een losse surrogaathelft (geen well-formed Unicode).
 const LONE_SURROGATE = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
 // F2: control-tekens (C0, DEL, C1) en bidi-override- en isolate-tekens.
-const FORBIDDEN_CHAR = /[\u0000-\u001F\u007F-\u009F\u202A-\u202E\u2066-\u2069]/;
+// A-keuze 14: ook U+2028 en U+2029 (regeleinden), in elk tekstveld.
+const FORBIDDEN_CHAR = /[\u0000-\u001F\u007F-\u009F\u2028\u2029\u202A-\u202E\u2066-\u2069]/;
 // F2: de naam van een deelnemer. Geen witruimte (ook geen harde spatie) aan de
 // randen, niet alleen punten, geen `%` of `/`.
 const EDGE_SPACE = /^\s|\s$/;
 const ONLY_DOTS = /^\.+$/;
 const ROUTE_CHAR = /[%/]/;
+// G1: onzichtbare en opmaaktekens (Unicode-categorie Cf), alleen in namen van
+// deelnemers (A-keuze 14): zachte afbreking, ZW(N)J, richtingstekens, BOM, tags.
+const FORMAT_CHAR = /\p{Cf}/u;
+// G1: minstens één letter of cijfer dat geen opvulteken is.
+const FILLER = /[\u115F\u1160\u3164\uFFA0]/gu;
+const VISIBLE = /[\p{L}\p{N}]/u;
 
-/** De sleutel voor uniekheid van een deelnemer: NFC, zonder hoofdletteronderscheid (A-keuze 12). */
+/** De sleutel voor uniekheid van een deelnemer: NFKC, zonder hoofdletteronderscheid (A-keuze 12, G1). */
 function nameKey(name: string): string {
-  return name.normalize("NFC").toLowerCase();
+  return name.normalize("NFKC").toLowerCase();
 }
 
 class Invalid extends Error {}
@@ -257,6 +264,8 @@ function check(spec: Spec, value: unknown, path: string): unknown {
         if (EDGE_SPACE.test(value)) fail(path, "witruimte aan begin of eind");
         if (ONLY_DOTS.test(value)) fail(path, "alleen punten");
         if (ROUTE_CHAR.test(value)) fail(path, "bevat % of /");
+        if (FORMAT_CHAR.test(value)) fail(path, "bevat een onzichtbaar teken");
+        if (!VISIBLE.test(value.replace(FILLER, ""))) fail(path, "geen letter of cijfer");
       }
       return value;
     case "key":
@@ -271,7 +280,9 @@ function check(spec: Spec, value: unknown, path: string): unknown {
     case "cents":
       if (typeof value !== "number" || !Number.isInteger(value)) fail(path, "geen geheel aantal centen");
       if (Math.abs(value) > MAX_CENTS) fail(path, "bedrag buiten de grens");
-      if (spec.min !== undefined && value < spec.min) fail(path, "mag niet negatief zijn");
+      if (spec.min !== undefined && value < spec.min) {
+        fail(path, spec.min > 0 ? "moet groter dan 0 zijn" : "mag niet negatief zijn");
+      }
       return value === 0 ? 0 : value;
     case "count":
       if (typeof value !== "number" || !Number.isInteger(value)) fail(path, "geen geheel getal");
@@ -309,8 +320,8 @@ const POTS = ["potBefore", "potAfter"] as const;
 
 /**
  * De samenhang van A2: cellen per onderdeel, spaarpot bij een lustrum, unieke
- * namen (NFC, zonder hoofdletteronderscheid), betalingen alleen bij
- * bijbetalen, totalen.
+ * namen (NFKC, zonder hoofdletteronderscheid), betalingen alleen bij
+ * bijbetalen, open per deelnemer (G2), totalen.
  */
 function checkCoherence(s: SettlementRequest): void {
   const names = new Set<string>();
@@ -327,6 +338,14 @@ function checkCoherence(s: SettlementRequest): void {
     if (!s.lustrum && row.savings.length > 0) fail(`${at}.savings`, "moet leeg zijn als het geen lustrum is");
     // F3: het clubboek geeft betalingen alleen bij wie moet bijbetalen.
     if (row.balance <= 0 && row.payments.length > 0) fail(`${at}.payments`, "alleen bij balance > 0");
+    // G2: open past bij de afrekening en de betalingen. Een overbetaling
+    // (meer betaald dan de naheffing) past niet: die boekt het clubboek elders.
+    if (row.open > Math.abs(row.balance)) fail(`${at}.open`, "groter dan de afrekening");
+    if (row.balance === 0 && row.open !== 0) fail(`${at}.open`, "moet 0 zijn als er niets af te rekenen is");
+    if (row.balance > 0) {
+      const paid = row.payments.reduce((a, p) => a + p.amount, 0);
+      if (row.balance - paid !== row.open) fail(`${at}.open`, "is niet de afrekening min de betalingen");
+    }
   });
   for (const field of SUMMED) {
     const sum = s.rows.reduce((a, r) => a + r[field], 0);
