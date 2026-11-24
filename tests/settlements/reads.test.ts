@@ -78,9 +78,9 @@ describe("listByGroup: de tijdlijn", () => {
         name: "Clubweekend Ardennen",
         period: "12 t/m 14 juni 2026",
         startDate: "2026-06-12",
-        participantCount: 5,
-        // Daan krijgt nog terug, Gijs en Thijs betalen nog.
-        openCount: 3,
+        participantCount: 6,
+        // Daan en Ruud krijgen nog terug, Gijs en Thijs betalen nog.
+        openCount: 4,
       },
     ]);
   });

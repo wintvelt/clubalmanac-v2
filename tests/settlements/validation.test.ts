@@ -351,3 +351,114 @@ describe("A3: aantallen", () => {
     await expectRejected(lustrum, (b) => void (((row0(b).savings as R[])[1]!.months as R[])[0]!.date = "2026-01-5"));
   });
 });
+
+// --- fix-cyclus 1 -----------------------------------------------------------------
+
+describe("F2: teksten zijn nette Unicode, zonder control- of bidi-tekens", () => {
+  const cases: Array<[string, Mutate]> = [
+    ["naam van de afrekening met een losse hoge surrogaathelft", (b) => void (b.name = "Ab\ud800")],
+    ["periode met een losse lage surrogaathelft", (b) => void (b.period = "\udc00 oktober")],
+    ["naam van een deelnemer met een omgedraaid surrogaatpaar", (b) => void (row0(b).name = "Br\udc00\ud800am")],
+    ["onderdeel met een nul-byte", (b) => void ((b.parts as R[])[0]!.name = "Vlucht\u0000en")],
+    ["grondslag met een bel-teken", (b) => void ((row0(b).lines as R[])[0]!.basis = "7.299,20 / 8\u0007")],
+    ["omschrijving in de spaarpot met een regeleinde", (b) => void ((row0(b).savings as R[])[0]!.description = "Saldo\nextra")],
+    ["omschrijving in de spaarpot met een tab", (b) => void ((row0(b).savings as R[])[0]!.description = "Saldo\t1-1")],
+    ["periode met een C1-teken (U+0085)", (b) => void (b.period = "12 t/m 26\u0085 oktober")],
+    ["onderdeel met DEL (U+007F)", (b) => void ((b.parts as R[])[1]!.name = "Hotels\u007f")],
+    ["naam van een deelnemer met right-to-left override (U+202E)", (b) => void (row0(b).name = "‮Bram")],
+    ["onderdeel van een regel met pop directional formatting (U+202C)", (b) => void ((row0(b).lines as R[])[0]!.part = "Vluchten‬")],
+    ["grondslag met een isolate (U+2066 … U+2069)", (b) => void ((row0(b).lines as R[])[0]!.basis = "⁦x⁩")],
+    ["naam van de afrekening met first strong isolate (U+2068)", (b) => void (b.name = "Lustrum⁨")],
+  ];
+  for (const [label, mutate] of cases) {
+    it(`${label}: 400`, async () => {
+      await expectRejected(lustrum, mutate);
+    });
+  }
+
+  it("gewone tekens buiten ASCII, een emoji en een apostrof mogen", async () => {
+    const b = lustrum();
+    b.name = "Lustrum Nepal 🏔️";
+    b.period = "12 t/m 26 oktober 2026 — Kathmandu";
+    row0(b).name = "Zoë";
+    (b.rows as R[])[1]!.name = "D'Arcy";
+    (row0(b).lines as R[])[0]!.basis = "7.299,20 / 8 · ½";
+    await expectAccepted(b);
+  });
+});
+
+describe("F2: namen van deelnemers (ze staan in de app-route)", () => {
+  const cases: Array<[string, Mutate]> = [
+    ["spatie vooraan", (b) => void (row0(b).name = " Bram")],
+    ["spatie achteraan", (b) => void (row0(b).name = "Bram ")],
+    ["harde spatie achteraan", (b) => void (row0(b).name = "Bram ")],
+    ["alleen een punt", (b) => void (row0(b).name = ".")],
+    ["twee punten", (b) => void (row0(b).name = "..")],
+    ["drie punten", (b) => void (row0(b).name = "...")],
+    ["een procentteken", (b) => void (row0(b).name = "Bram%20")],
+    ["een schuine streep", (b) => void (row0(b).name = "Bram/Daan")],
+    ["alleen witruimte", (b) => void (row0(b).name = "   ")],
+    ["dubbel na NFC (é los en samengesteld)", (b) => {
+      row0(b).name = "José";
+      (b.rows as R[])[1]!.name = "José";
+    }],
+    ["dubbel zonder onderscheid in hoofdletters (A-keuze 12)", (b) => void ((b.rows as R[])[1]!.name = "bram")],
+  ];
+  for (const [label, mutate] of cases) {
+    it(`${label}: 400`, async () => {
+      await expectRejected(lustrum, mutate);
+    });
+  }
+
+  it("een spatie of punt binnenin mag", async () => {
+    const b = lustrum();
+    row0(b).name = "Jan Willem";
+    (b.rows as R[])[1]!.name = "J.P.";
+    (b.rows as R[])[2]!.name = "José";
+    await expectAccepted(b);
+  });
+});
+
+describe("F3: betalingen alleen bij wie moet bijbetalen", () => {
+  const rowOf = (b: R, name: string): R => (b.rows as R[]).find((r) => r.name === name)!;
+
+  it("wie terugkrijgt (balance < 0) met een betaling: 400", async () => {
+    await expectRejected(weekend, (b) => void (rowOf(b, "Daan").payments = [{ date: "2026-06-21", amount: 13000 }]));
+  });
+
+  it("wie terugkrijgt en al deels is uitbetaald (Ruud) heeft geen betalingen; zo wordt het aangenomen", async () => {
+    const b = weekend();
+    const ruud = rowOf(b, "Ruud");
+    expect([ruud.balance, ruud.open, ruud.payments]).toEqual([-20000, 5000, []]);
+    await expectAccepted(b);
+  });
+
+  it("wie niets af te rekenen heeft (balance 0) met een betaling: 400", async () => {
+    await expectRejected(lustrum, (b) => void (rowOf(b, "Joris").payments = [{ date: "2026-11-20", amount: 100 }]));
+  });
+
+  it("wie bijbetaalt mag betalingen hebben (Sander, twee keer)", async () => {
+    const b = lustrum();
+    expect((rowOf(b, "Sander").payments as R[]).length).toBe(2);
+    await expectAccepted(b);
+  });
+});
+
+describe("F4: eerst de grootte, dan de vorm", () => {
+  it("te groot én kapot: 413, niet 400", async () => {
+    await expectRejected(lustrum, () => `{ "key": "17", ${" ".repeat(MAX_BODY_BYTES)}`, 413);
+  });
+});
+
+describe("F9: een onbekend veld noemt alleen het pad", () => {
+  it("rows[0]: onbekend veld, zonder de naam van het veld", async () => {
+    const text = await expectRejected(lustrum, (b) => void (row0(b).VELDNAAM_UIT_DE_BODY = 1));
+    expect(text).not.toContain("VELDNAAM_UIT_DE_BODY");
+    expect((JSON.parse(text) as R).error).toBe("rows[0]: onbekend veld");
+  });
+
+  it("bovenaan: body: onbekend veld", async () => {
+    const text = await expectRejected(lustrum, (b) => void (b.VELDNAAM_UIT_DE_BODY = 1));
+    expect((JSON.parse(text) as R).error).toBe("body: onbekend veld");
+  });
+});

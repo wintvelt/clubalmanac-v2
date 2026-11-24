@@ -2,7 +2,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   as,
   asRead,
-  BEARER,
   configure,
   del,
   newT,
@@ -11,6 +10,7 @@ import {
   request,
   rows,
   SECRET,
+  SECRET_HEADER,
   seedWorld,
   settlementsApi,
   snapshot,
@@ -27,30 +27,36 @@ import {
 //   A-invariant 5: zonder toegang wordt de body niet beoordeeld.
 //   A-invariant 7: ten hoogste 40 afrekeningen per groep.
 //   Geen CORS (draft §Schrijven).
+//   Fix-cyclus 1, F1: het geheim staat in X-Clubboek-Secret; Authorization
+//   (ook met het juiste geheim) is een weigering.
 
 useFinanceEnv();
 
 // --- toegang: één weigering ---------------------------------------------------
 
+type Access = { secret: string | null; headers?: Record<string, string> };
+
 type RefusalCase = {
   label: string;
-  /** Zet de deployment en geeft de Authorization-header (null: geen header). */
-  setup: (t: T, w: Awaited<ReturnType<typeof seedWorld>>) => Promise<string | null>;
+  /** Zet de deployment en geeft wat het verzoek meestuurt. */
+  setup: (t: T, w: Awaited<ReturnType<typeof seedWorld>>) => Promise<Access>;
 };
+
+const OTHER = `${SECRET.slice(0, -1)}${SECRET.endsWith("0") ? "1" : "0"}`;
 
 const REFUSALS: RefusalCase[] = [
   {
     label: "geen FINANCE_SECRET op de deployment",
     setup: async () => {
       delete process.env.FINANCE_SECRET;
-      return BEARER;
+      return { secret: SECRET };
     },
   },
   {
     label: "lege FINANCE_SECRET op de deployment",
     setup: async () => {
       process.env.FINANCE_SECRET = "";
-      return "Bearer ";
+      return { secret: "" };
     },
   },
   {
@@ -58,28 +64,28 @@ const REFUSALS: RefusalCase[] = [
     setup: async (_t, w) => {
       const short = SECRET.slice(0, 31);
       configure(w.groups.club, short);
-      return `Bearer ${short}`;
+      return { secret: short };
     },
   },
   {
     label: "geen FINANCE_GROUP_ID op de deployment",
     setup: async () => {
       delete process.env.FINANCE_GROUP_ID;
-      return BEARER;
+      return { secret: SECRET };
     },
   },
   {
     label: "FINANCE_GROUP_ID is geen id",
     setup: async () => {
       process.env.FINANCE_GROUP_ID = "geen-groep";
-      return BEARER;
+      return { secret: SECRET };
     },
   },
   {
     label: "FINANCE_GROUP_ID is een id uit een andere tabel (een user)",
     setup: async (_t, w) => {
       process.env.FINANCE_GROUP_ID = w.users.alice;
-      return BEARER;
+      return { secret: SECRET };
     },
   },
   {
@@ -92,19 +98,23 @@ const REFUSALS: RefusalCase[] = [
         return id;
       });
       process.env.FINANCE_GROUP_ID = gone;
-      return BEARER;
+      return { secret: SECRET };
     },
   },
-  { label: "geen Authorization-header", setup: async () => null },
-  { label: "Basic in plaats van Bearer", setup: async () => `Basic ${btoa(`clubboek:${SECRET}`)}` },
-  { label: "het geheim zonder 'Bearer '", setup: async () => SECRET },
-  { label: "'Bearer ' zonder geheim", setup: async () => "Bearer " },
+  { label: "geen X-Clubboek-Secret", setup: async () => ({ secret: null }) },
+  { label: "lege X-Clubboek-Secret", setup: async () => ({ secret: "" }) },
   {
-    label: "een fout geheim van dezelfde lengte",
-    setup: async () => `Bearer ${SECRET.slice(0, -1)}${SECRET.endsWith("0") ? "1" : "0"}`,
+    label: "F1: het juiste geheim alleen in Authorization: Bearer",
+    setup: async () => ({ secret: null, headers: { Authorization: `Bearer ${SECRET}` } }),
   },
-  { label: "alleen het begin van het geheim", setup: async () => `Bearer ${SECRET.slice(0, 63)}` },
-  { label: "het geheim met iets erachter", setup: async () => `Bearer ${SECRET}0` },
+  {
+    label: "F1: het juiste geheim alleen in Authorization, zonder schema",
+    setup: async () => ({ secret: null, headers: { Authorization: SECRET } }),
+  },
+  { label: "F1: 'Bearer ' voor het geheim in X-Clubboek-Secret", setup: async () => ({ secret: `Bearer ${SECRET}` }) },
+  { label: "een fout geheim van dezelfde lengte", setup: async () => ({ secret: OTHER }) },
+  { label: "alleen het begin van het geheim", setup: async () => ({ secret: SECRET.slice(0, 63) }) },
+  { label: "het geheim met iets erachter", setup: async () => ({ secret: `${SECRET}0` }) },
 ];
 
 describe("A4.1: zonder geldige toegang één weigering, en niets geschreven", () => {
@@ -112,8 +122,8 @@ describe("A4.1: zonder geldige toegang één weigering, en niets geschreven", ()
     it(c.label, async () => {
       const t = newT();
       const w = await seedWorld(t);
-      const auth = await c.setup(t, w);
-      const res = await post(t, request("lustrum"), { auth });
+      const access = await c.setup(t, w);
+      const res = await post(t, request("lustrum"), access);
       expect(res.status).toBe(403);
       expect(await rows(t)).toEqual([]);
     });
@@ -125,8 +135,8 @@ describe("A4.1: zonder geldige toegang één weigering, en niets geschreven", ()
     for (const c of REFUSALS) {
       const t = newT();
       const w = await seedWorld(t);
-      const auth = await c.setup(t, w);
-      const res = await post(t, request("lustrum"), { auth });
+      const access = await c.setup(t, w);
+      const res = await post(t, request("lustrum"), access);
       bodies.add(`${res.status} ${await res.text()}`);
       types.add(res.headers.get("content-type") ?? "");
     }
@@ -138,8 +148,8 @@ describe("A4.1: zonder geldige toegang één weigering, en niets geschreven", ()
   it("DELETE geeft dezelfde weigering als POST", async () => {
     const t = newT();
     await seedWorld(t);
-    const a = await post(t, request("lustrum"), { auth: "Bearer fout" });
-    const b = await del(t, "17", "Bearer fout");
+    const a = await post(t, request("lustrum"), { secret: OTHER });
+    const b = await del(t, "17", OTHER);
     expect(b.status).toBe(403);
     expect(await b.text()).toBe(await a.text());
   });
@@ -147,7 +157,7 @@ describe("A4.1: zonder geldige toegang één weigering, en niets geschreven", ()
   it("de weigering noemt geen geheim, geen env-var en geen groep", async () => {
     const t = newT();
     const w = await seedWorld(t);
-    const res = await post(t, request("lustrum"), { auth: `Bearer ${SECRET.slice(0, 63)}` });
+    const res = await post(t, request("lustrum"), { secret: SECRET.slice(0, 63) });
     expect(res.status).toBe(403);
     const text = await res.text();
     const headers = JSON.stringify([...res.headers.entries()]);
@@ -163,7 +173,7 @@ describe("A-invariant 5: zonder toegang wordt de body niet beoordeeld", () => {
   it("fout geheim en kapotte JSON: 403, niet 400", async () => {
     const t = newT();
     await seedWorld(t);
-    const res = await post(t, "{ dit is geen json", { auth: "Bearer fout" });
+    const res = await post(t, "{ dit is geen json", { secret: OTHER });
     expect(res.status).toBe(403);
   });
 
@@ -171,14 +181,14 @@ describe("A-invariant 5: zonder toegang wordt de body niet beoordeeld", () => {
     const t = newT();
     await seedWorld(t);
     const big = JSON.stringify(request("lustrum")).padEnd(200 * 1024, " ");
-    const res = await post(t, big, { auth: "Bearer fout" });
+    const res = await post(t, big, { secret: OTHER });
     expect(res.status).toBe(403);
   });
 
   it("fout geheim en een geldige body met een andere vorm: 403", async () => {
     const t = newT();
     await seedWorld(t);
-    const res = await post(t, { key: "17" }, { auth: null });
+    const res = await post(t, { key: "17" }, { secret: null });
     expect(res.status).toBe(403);
   });
 });
@@ -197,14 +207,14 @@ describe("invariant 4: het geheim komt niet in een log", () => {
   it("weigering, vormfout, schrijven en weghalen: nergens het geheim of de header", async () => {
     const t = newT();
     await seedWorld(t);
-    await post(t, request("lustrum"), { auth: `Bearer ${SECRET.slice(0, 63)}` });
+    await post(t, request("lustrum"), { secret: SECRET.slice(0, 63) });
     expect((await post(t, { ...request("lustrum"), name: "" })).status).toBe(400);
     await postOk(t, request("lustrum"));
     expect((await del(t, "17")).status).toBe(200);
     const logged = JSON.stringify(spies.flatMap((s) => s.mock.calls));
     expect(logged).not.toContain(SECRET.slice(0, 16));
     expect(logged).not.toContain(SECRET.slice(-16));
-    expect(logged).not.toMatch(/Bearer/);
+    expect(logged).not.toContain(SECRET_HEADER);
   });
 });
 
@@ -403,7 +413,16 @@ describe("A5: DELETE /settlements?key=…", () => {
     const t = newT();
     await seedWorld(t);
     await postOk(t, request("lustrum"));
-    const res = await del(t, "17", `Bearer ${SECRET.slice(0, 63)}`);
+    const res = await del(t, "17", SECRET.slice(0, 63));
+    expect(res.status).toBe(403);
+    expect(await rows(t)).toHaveLength(1);
+  });
+
+  it("F1: het juiste geheim alleen in Authorization: 403, niets weg", async () => {
+    const t = newT();
+    await seedWorld(t);
+    await postOk(t, request("lustrum"));
+    const res = await del(t, "17", null, { Authorization: `Bearer ${SECRET}` });
     expect(res.status).toBe(403);
     expect(await rows(t)).toHaveLength(1);
   });
@@ -430,7 +449,7 @@ describe("geen CORS en geen andere ingang", () => {
     await seedWorld(t);
     const a = await post(t, request("lustrum"));
     const b = await del(t, "17");
-    const c = await post(t, request("lustrum"), { auth: "Bearer fout" });
+    const c = await post(t, request("lustrum"), { secret: OTHER });
     expect([a.status, b.status, c.status]).toEqual([200, 200, 403]);
     for (const res of [a, b, c]) {
       expect([...res.headers.keys()].filter((h) => h.toLowerCase().startsWith("access-control-"))).toEqual([]);
@@ -455,7 +474,7 @@ describe("geen CORS en geen andere ingang", () => {
       await postOk(t, request("lustrum"));
       const res = await t.fetch("/settlements?key=17", {
         method,
-        headers: { Authorization: BEARER },
+        headers: { [SECRET_HEADER]: SECRET },
         ...(method === "GET" ? {} : { body: JSON.stringify(request("lustrum")) }),
       });
       expect(res.status).toBeGreaterThanOrEqual(400);

@@ -169,6 +169,25 @@
       "savings": []
     },
     {
+      "name": "Ruud",
+      "costs": 0,
+      "club": 0,
+      "fromPot": 0,
+      "potBefore": null,
+      "potAfter": null,
+      "advanced": 20000,
+      "balance": -20000,
+      "open": 5000,
+      "cells": [
+        null,
+        null,
+        null
+      ],
+      "lines": [],
+      "payments": [],
+      "savings": []
+    },
+    {
       "name": "Thijs",
       "costs": 35583,
       "club": 4000,
@@ -215,8 +234,8 @@
     "fromPot": 0,
     "potBefore": null,
     "potAfter": null,
-    "advanced": 41250,
-    "balance": 113999,
-    "open": 70166
+    "advanced": 61250,
+    "balance": 93999,
+    "open": 75166
   }
 }

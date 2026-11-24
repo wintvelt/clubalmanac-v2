@@ -22,7 +22,9 @@ De voorbeelden:
 - `weekend`: "Clubweekend Ardennen", geen lustrum, 5 deelnemers, clubbijdrage,
   Daan schoot de boodschappen voor en krijgt terug, Kano is niet op centen
   verdeeld (cel `"-33.33333333333333333333333333"`, de rijen tellen een cent
-  minder op dan de onderdelen).
+  minder op dan de onderdelen). Ruud (fix-cyclus 1, F3) deed niet mee maar schoot
+  € 200 voor; hij kreeg al € 150 uitbetaald. Het clubboek geeft hem geen
+  betalingen (die alleen bij wie bijbetaalt), alleen `nog` € 50.
 
 `tests/settlements/fixtures.test.ts` controleert dat de paren bij elkaar
 passen. De tests van de knop in het clubboek (spec §A11) gebruiken een kopie

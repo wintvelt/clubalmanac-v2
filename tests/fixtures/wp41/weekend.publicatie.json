@@ -160,6 +160,27 @@
           "spaarpot": []
         },
         {
+          "lid": "Ruud",
+          "lid_id": 24,
+          "kosten": "0.00",
+          "club": "0.00",
+          "uit_pot": "0.00",
+          "bij": "-200.00",
+          "voorgeschoten": "200.00",
+          "nog": "50.00",
+          "afgerond": false,
+          "cellen": [
+            null,
+            null,
+            null
+          ],
+          "delen": [],
+          "betalingen": [],
+          "betaald": "0.00",
+          "terug": "200.00",
+          "spaarpot": []
+        },
+        {
           "lid": "Thijs",
           "lid_id": 18,
           "kosten": "355.83",
@@ -206,13 +227,13 @@
         "kosten": "1712.49",
         "club": "160.00",
         "uit_pot": "0.00",
-        "bij": "1139.99",
-        "voorgeschoten": "412.50",
-        "nog": "701.66"
+        "bij": "939.99",
+        "voorgeschoten": "612.50",
+        "nog": "751.66"
       },
-      "n": 5,
+      "n": 6,
       "kosten_pp": "342.50",
-      "n_open": 3,
+      "n_open": 4,
       "onderdelen": [
         {
           "naam": "Huisje",

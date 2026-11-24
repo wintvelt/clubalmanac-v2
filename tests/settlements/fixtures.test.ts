@@ -71,6 +71,8 @@ for (const name of EXAMPLES) {
         for (const r of rows) expect([r.potBefore, r.potAfter, r.savings]).toEqual([null, null, []]);
       }
       for (const r of rows) expect(r.open).toBeGreaterThanOrEqual(0);
+      // F3: betalingen alleen bij wie bijbetaalt, zoals afgerond() in het clubboek.
+      for (const r of rows) if (r.balance <= 0) expect(r.payments).toEqual([]);
     });
 
     it("geen lid_id en geen clubboek-veldnaam in het verzoek", () => {
@@ -169,6 +171,15 @@ describe("randgevallen die de voorbeelden dekken", () => {
     // Afronding: de som van de rijen wijkt een cent af van de onderdelen.
     const req = request("weekend");
     expect(req.totals.costs).toBe((req.parts as R[]).reduce((a, p) => a + (p.costs as number), 0) - 1);
+  });
+
+  it("F3, weekend: Ruud krijgt terug en is deels uitbetaald; het clubboek geeft dan geen betalingen", () => {
+    const rij = (publicatie("weekend").publicatie.data.rijen as R[]).find((r) => r.lid === "Ruud")!;
+    expect([rij.bij, rij.nog, rij.betalingen, rij.terug]).toEqual(["-200.00", "50.00", [], "200.00"]);
+    const r = (request("weekend").rows as R[]).find((x) => x.name === "Ruud")!;
+    expect([r.costs, r.advanced, r.balance, r.open, r.payments]).toEqual([0, 20000, -20000, 5000, []]);
+    // Uitbetaald of verrekend: alleen af te leiden uit balance en open.
+    expect(-r.balance - r.open).toBe(15000);
   });
 
   it("weekend: iemand die terugkrijgt (balance < 0, open > 0)", () => {

@@ -24,7 +24,8 @@ export type R = Record<string, any>;
 
 /** 64 hex-tekens, zoals het runbook voorschrijft (32 bytes). Verzonnen. */
 export const SECRET = "4f1c0e9a7b2d6c38e5a1f0b9d7c3e2a18b6f4d0c2e9a7b5d3f1c8e6a4b2d0f97";
-export const BEARER = `Bearer ${SECRET}`;
+/** Fix-cyclus 1 (F1): het geheim gaat in een eigen header, niet in Authorization. */
+export const SECRET_HEADER = "X-Clubboek-Secret";
 
 export const MAX_BODY_BYTES = 128 * 1024;
 
@@ -144,13 +145,19 @@ export const as = {
 
 // --- de routes ---------------------------------------------------------------
 
-type PostOpts = { auth?: string | null; contentType?: string | null };
+type PostOpts = {
+  /** Waarde van X-Clubboek-Secret; null: geen header. Standaard het juiste geheim. */
+  secret?: string | null;
+  /** Extra headers, bv. een Authorization-header. */
+  headers?: Record<string, string>;
+  contentType?: string | null;
+};
 
 /** POST /settlements. `body` als object (wordt JSON) of als ruwe tekst. */
 export async function post(t: T, body: unknown, opts: PostOpts = {}): Promise<Response> {
-  const headers: Record<string, string> = {};
-  const auth = opts.auth === undefined ? BEARER : opts.auth;
-  if (auth !== null) headers.Authorization = auth;
+  const headers: Record<string, string> = { ...(opts.headers ?? {}) };
+  const secret = opts.secret === undefined ? SECRET : opts.secret;
+  if (secret !== null) headers[SECRET_HEADER] = secret;
   const ct = opts.contentType === undefined ? "application/json" : opts.contentType;
   if (ct !== null) headers["Content-Type"] = ct;
   return await t.fetch("/settlements", {
@@ -161,9 +168,14 @@ export async function post(t: T, body: unknown, opts: PostOpts = {}): Promise<Re
 }
 
 /** DELETE /settlements?key=… (`key` null: geen parameter). */
-export async function del(t: T, key: string | null, auth: string | null = BEARER): Promise<Response> {
-  const headers: Record<string, string> = {};
-  if (auth !== null) headers.Authorization = auth;
+export async function del(
+  t: T,
+  key: string | null,
+  secret: string | null = SECRET,
+  extra: Record<string, string> = {},
+): Promise<Response> {
+  const headers: Record<string, string> = { ...extra };
+  if (secret !== null) headers[SECRET_HEADER] = secret;
   const q = key === null ? "" : `?key=${encodeURIComponent(key)}`;
   return await t.fetch(`/settlements${q}`, { method: "DELETE", headers });
 }

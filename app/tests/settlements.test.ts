@@ -10,10 +10,13 @@ import {
   groupTabs,
   participantOutcome,
   participantStatus,
+  paymentLines,
   settlementsByYear,
   stillToPay,
   timelineLabel,
   visibleColumns,
+  type Settlement,
+  type SettlementRow,
 } from "../src/lib/settlements";
 import { participantPath, settlementPath, settlementTablePath } from "../src/lib/groupRoutes";
 import { PUBLIC_PATHS, routeAccess } from "../src/lib/routeAccess";
@@ -29,17 +32,17 @@ import { listFiles } from "./support/sourceScan";
 //   - De tab Geld alleen bij minstens één afrekening (invariant 8).
 // De bedragen komen uit tests/fixtures/wp41 (verzonnen).
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type R = Record<string, any>;
-
-function fixture(name: "lustrum" | "weekend"): R {
+// Fix-cyclus 1 (F5): de voorbeelden als de echte vormen; de lib neemt geen
+// losse JSON. Het verzoek heeft ook `key`, dat `settlements.get` niet geeft.
+function fixture(name: "lustrum" | "weekend"): Settlement {
   const url = new URL(`../../tests/fixtures/wp41/${name}.request.json`, import.meta.url);
-  return JSON.parse(readFileSync(fileURLToPath(url), "utf8")) as R;
+  const { key: _key, ...rest } = JSON.parse(readFileSync(fileURLToPath(url), "utf8")) as Settlement & { key: string };
+  return rest;
 }
 
 const NBSP = " ";
 const MINUS = "−";
-const row = (s: R, name: string): R => (s.rows as R[]).find((r) => r.name === name)!;
+const row = (s: Settlement, name: string): SettlementRow => s.rows.find((r) => r.name === name)!;
 
 describe("formatEuro", () => {
   it.each([
@@ -153,7 +156,7 @@ describe("uitkomst op het scherm van één deelnemer (derde persoon)", () => {
     ["weekend", "Gijs", `Betaalt nog €${NBSP}355,83`],
   ] as const)("%s, %s → %s", (which, name, text) => {
     const s = which === "lustrum" ? lustrum : weekend;
-    expect(participantOutcome(row(s, name), s.lustrum as boolean)).toBe(text);
+    expect(participantOutcome(row(s, name), s.lustrum)).toBe(text);
   });
 
   it("geen lustrum en niets af te rekenen: Afgerond (geen spaarpot-tekst)", () => {
@@ -166,8 +169,8 @@ describe("uitkomst op het scherm van één deelnemer (derde persoon)", () => {
 
   it("nooit in de tweede persoon", () => {
     for (const s of [lustrum, weekend]) {
-      for (const r of s.rows as R[]) {
-        expect(participantOutcome(r, s.lustrum as boolean)).not.toMatch(/\b(je|jij|jouw|u)\b/i);
+      for (const r of s.rows) {
+        expect(participantOutcome(r, s.lustrum)).not.toMatch(/\b(je|jij|jouw|u)\b/i);
       }
     }
   });
@@ -197,11 +200,81 @@ describe("kolommen van de hele tabel (zoals het clubboek)", () => {
 
 describe("tegel Nog te betalen (A-keuze 5)", () => {
   it("lustrum: drie deelnemers betalen nog", () => {
-    expect(stillToPay(fixture("lustrum").rows as R[])).toEqual({ cents: 30234 + 34833 + 142233, count: 3 });
+    expect(stillToPay(fixture("lustrum").rows)).toEqual({ cents: 30234 + 34833 + 142233, count: 3 });
   });
 
   it("weekend: alleen wie bijbetaalt; Daan krijgt terug en telt niet mee", () => {
-    expect(stillToPay(fixture("weekend").rows as R[])).toEqual({ cents: 35583 + 21583, count: 2 });
+    expect(stillToPay(fixture("weekend").rows)).toEqual({ cents: 35583 + 21583, count: 2 });
+  });
+});
+
+describe("F3: blok 3, Afrekening (paymentLines)", () => {
+  const lustrum = fixture("lustrum");
+  const weekend = fixture("weekend");
+
+  it("bijbetalen, deels betaald: naheffing, de betaling eraf, wat nog open staat", () => {
+    expect(paymentLines(row(lustrum, "Maarten"))).toEqual([
+      { label: "Bijbetalen", cents: 84833 },
+      { label: "Betaald op 20-11-2026", cents: -50000 },
+      { label: "Nog te betalen", cents: 34833 },
+    ]);
+  });
+
+  it("bijbetalen in twee keer, helemaal betaald: Afgerond", () => {
+    expect(paymentLines(row(lustrum, "Sander"))).toEqual([
+      { label: "Bijbetalen", cents: 30233 },
+      { label: "Betaald op 16-11-2026", cents: -15000 },
+      { label: "Betaald op 19-11-2026", cents: -15233 },
+      { label: "Afgerond", cents: 0 },
+    ]);
+  });
+
+  it("de datum zoals het clubboek (j-n-Y): geen voorloopnul (A-keuze 13)", () => {
+    expect(paymentLines(row(weekend, "Thijs"))).toEqual([
+      { label: "Bijbetalen", cents: 31583 },
+      { label: "Betaald op 19-6-2026", cents: -10000 },
+      { label: "Nog te betalen", cents: 21583 },
+    ]);
+  });
+
+  it("terugkrijgen, al deels uitbetaald (Ruud): het verschil als één regel, nooit als betaling", () => {
+    expect(paymentLines(row(weekend, "Ruud"))).toEqual([
+      { label: "Terugkrijgen", cents: 20000 },
+      { label: "Uitbetaald of verrekend", cents: -15000 },
+      { label: "Nog terug te krijgen", cents: 5000 },
+    ]);
+  });
+
+  it("terugkrijgen, nog niets uitbetaald (Daan): geen tussenregel", () => {
+    expect(paymentLines(row(weekend, "Daan"))).toEqual([
+      { label: "Terugkrijgen", cents: 13000 },
+      { label: "Nog terug te krijgen", cents: 13000 },
+    ]);
+  });
+
+  it("terugkrijgen en helemaal uitbetaald: Afgerond", () => {
+    expect(paymentLines({ balance: -13000, open: 0, payments: [] })).toEqual([
+      { label: "Terugkrijgen", cents: 13000 },
+      { label: "Uitbetaald of verrekend", cents: -13000 },
+      { label: "Afgerond", cents: 0 },
+    ]);
+  });
+
+  it("niets af te rekenen (Joris, uit zijn spaarpot): geen regels", () => {
+    expect(paymentLines(row(lustrum, "Joris"))).toEqual([]);
+  });
+
+  it("de regels tellen op tot de laatste, voor elke deelnemer in de voorbeelden", () => {
+    for (const s of [lustrum, weekend]) {
+      for (const r of s.rows) {
+        const lines = paymentLines(r);
+        if (lines.length === 0) continue;
+        const last = lines[lines.length - 1]!;
+        const sum = lines.slice(0, -1).reduce((a: number, l: { cents: number }) => a + l.cents, 0);
+        expect(sum, r.name).toBe(last.cents);
+        expect(last.cents, r.name).toBe(r.open);
+      }
+    }
   });
 });
 
