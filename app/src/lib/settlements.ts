@@ -192,10 +192,25 @@ export function balanceLine(balance: number): { label: string; cents: number } {
   return { label: "Afrekening", cents: 0 };
 }
 
+/** De betalingen in hun volgorde, samen hoogstens `due` (A-keuze 15). */
+function paidUpTo(due: number, payments: readonly { date: string; amount: number }[]): { label: string; cents: number }[] {
+  const lines: { label: string; cents: number }[] = [];
+  let left = due;
+  for (const p of payments) {
+    if (left <= 0) break;
+    const part = Math.min(p.amount, left);
+    lines.push({ label: `Betaald op ${formatShortDate(p.date)}`, cents: -part });
+    left -= part;
+  }
+  return lines;
+}
+
 /**
  * De regels van blok 3, Afrekening (F3). Een bedrag dat eraf gaat is negatief;
  * de regels tellen op tot de laatste (`open`). Bijbetalen: de naheffing, per
- * betaling `Betaald op d-m-jjjj`, dan wat nog open staat. Terugkrijgen: het
+ * betaling `Betaald op d-m-jjjj`, dan wat nog open staat. Het betaalde totaal
+ * is hoogstens de naheffing (A-keuze 15): de betaling die eroverheen gaat telt
+ * alleen voor wat er nog over was, latere vallen weg; het teveel staat nergens. Terugkrijgen: het
  * bedrag, als er al iets af is één regel `Uitbetaald of verrekend` (het
  * clubboek geeft daar geen betalingen), dan wat nog open staat. Niets af te
  * rekenen: geen regels.
@@ -207,7 +222,7 @@ export function paymentLines(
   if (row.balance > 0) {
     return [
       { label: "Bijbetalen", cents: row.balance },
-      ...row.payments.map((p) => ({ label: `Betaald op ${formatShortDate(p.date)}`, cents: -p.amount })),
+      ...paidUpTo(row.balance, row.payments),
       end("Nog te betalen"),
     ];
   }

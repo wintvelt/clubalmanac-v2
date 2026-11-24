@@ -338,13 +338,13 @@ function checkCoherence(s: SettlementRequest): void {
     if (!s.lustrum && row.savings.length > 0) fail(`${at}.savings`, "moet leeg zijn als het geen lustrum is");
     // F3: het clubboek geeft betalingen alleen bij wie moet bijbetalen.
     if (row.balance <= 0 && row.payments.length > 0) fail(`${at}.payments`, "alleen bij balance > 0");
-    // G2: open past bij de afrekening en de betalingen. Een overbetaling
-    // (meer betaald dan de naheffing) past niet: die boekt het clubboek elders.
+    // G2, H1: open past bij de afrekening en de betalingen. Een overbetaling
+    // (meer betaald dan de naheffing) mag: dan is open 0, zoals het clubboek.
     if (row.open > Math.abs(row.balance)) fail(`${at}.open`, "groter dan de afrekening");
     if (row.balance === 0 && row.open !== 0) fail(`${at}.open`, "moet 0 zijn als er niets af te rekenen is");
     if (row.balance > 0) {
       const paid = row.payments.reduce((a, p) => a + p.amount, 0);
-      if (row.balance - paid !== row.open) fail(`${at}.open`, "is niet de afrekening min de betalingen");
+      if (Math.max(0, row.balance - paid) !== row.open) fail(`${at}.open`, "past niet bij de afrekening en de betalingen");
     }
   });
   for (const field of SUMMED) {
