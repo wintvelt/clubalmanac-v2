@@ -264,6 +264,58 @@ describe("F3: blok 3, Afrekening (paymentLines)", () => {
     expect(paymentLines(row(lustrum, "Joris"))).toEqual([]);
   });
 
+  // Fix-cyclus 3 (besluit Wouter, A-keuze 15): het getoonde betaalde totaal
+  // is hoogstens de naheffing, zoals `min(b, -s)` in het clubboek. De
+  // betalingen gaan in hun volgorde mee tot de naheffing vol is: de betaling
+  // die eroverheen gaat, telt alleen voor wat er nog over was; latere
+  // betalingen verschijnen niet. Het teveel staat nergens.
+  it("overbetaling in één keer (€ 105 op € 100): € 100 betaald, afgerond", () => {
+    expect(
+      paymentLines({ balance: 10000, open: 0, payments: [{ date: "2026-11-18", amount: 10500 }] }),
+    ).toEqual([
+      { label: "Bijbetalen", cents: 10000 },
+      { label: "Betaald op 18-11-2026", cents: -10000 },
+      { label: "Afgerond", cents: 0 },
+    ]);
+  });
+
+  it("overbetaling over meer betalingen: de tweede afgekapt, de derde valt weg", () => {
+    expect(
+      paymentLines({
+        balance: 10000,
+        open: 0,
+        payments: [
+          { date: "2026-11-18", amount: 6000 },
+          { date: "2026-11-20", amount: 5000 },
+          { date: "2026-11-22", amount: 2000 },
+        ],
+      }),
+    ).toEqual([
+      { label: "Bijbetalen", cents: 10000 },
+      { label: "Betaald op 18-11-2026", cents: -6000 },
+      { label: "Betaald op 20-11-2026", cents: -4000 },
+      { label: "Afgerond", cents: 0 },
+    ]);
+  });
+
+  it("precies betaald: niets afgekapt", () => {
+    expect(paymentLines(row(lustrum, "Bram"))).toEqual([
+      { label: "Bijbetalen", cents: 30234 },
+      { label: "Betaald op 17-11-2026", cents: -30234 },
+      { label: "Afgerond", cents: 0 },
+    ]);
+  });
+
+  it("een overbetaalde deelnemer in een voorbeeld: de regels tellen nog steeds op", () => {
+    const s = fixture("lustrum");
+    const bram = row(s, "Bram");
+    bram.payments = [{ date: "2026-11-17", amount: 30234 + 2500 }];
+    const lines = paymentLines(bram);
+    expect(lines.slice(0, -1).reduce((a: number, l: { cents: number }) => a + l.cents, 0)).toBe(0);
+    expect(lines[lines.length - 1]).toEqual({ label: "Afgerond", cents: 0 });
+    expect(JSON.stringify(lines)).not.toContain("2500");
+  });
+
   it("de regels tellen op tot de laatste, voor elke deelnemer in de voorbeelden", () => {
     for (const s of [lustrum, weekend]) {
       for (const r of s.rows) {

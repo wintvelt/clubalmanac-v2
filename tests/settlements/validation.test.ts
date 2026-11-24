@@ -553,9 +553,13 @@ describe("G2: samenhang per deelnemer", () => {
     ["bijbetalen: open een cent te hoog (Maarten)", lustrum, (b) => void (rowOf(b, "Maarten").open += 1), /^rows\[4\]/],
     ["bijbetalen: open een cent te laag (Daan, niets betaald)", lustrum, (b) => void (rowOf(b, "Daan").open -= 1), /^rows\[1\]/],
     [
-      "bijbetalen: meer betaald dan de afrekening, open 0 (overbetaling)",
+      "overbetaald maar toch iets open (Bram, open moet 0 zijn)",
       lustrum,
-      (b) => void ((rowOf(b, "Bram").payments as R[])[0]!.amount += 100),
+      (b) => {
+        const bram = rowOf(b, "Bram");
+        (bram.payments as R[])[0]!.amount += 100;
+        bram.open = 100;
+      },
       /^rows\[0\]/,
     ],
     ["balance 0 met iets open (Joris)", lustrum, (b) => void (rowOf(b, "Joris").open = 100), /^rows\[2\]/],
@@ -571,6 +575,26 @@ describe("G2: samenhang per deelnemer", () => {
       expect((JSON.parse(text) as R).error).toMatch(path);
     });
   }
+
+  // Fix-cyclus 3 (besluit Wouter): een overbetaling leidt nooit tot een
+  // weigering. Bij balance > 0 is open = max(0, balance − som(betalingen)),
+  // zoals `nog = max(0, -s - b)` in het clubboek.
+  it("overbetaling in één keer (Bram betaalt € 1 meer dan zijn afrekening), open 0: aangenomen", async () => {
+    const b = lustrum();
+    const bram = rowOf(b, "Bram");
+    (bram.payments as R[])[0]!.amount += 100;
+    expect([bram.balance, bram.open]).toEqual([30234, 0]);
+    await expectAccepted(b);
+  });
+
+  it("overbetaling in twee keer (Sander betaalt € 150 + € 160 op € 302,33), open 0: aangenomen", async () => {
+    const b = lustrum();
+    rowOf(b, "Sander").payments = [
+      { date: "2026-11-16", amount: 15000 },
+      { date: "2026-11-19", amount: 16000 },
+    ];
+    await expectAccepted(b);
+  });
 
   it("terugkrijgen met minder open dan |balance| (deels uitbetaald) mag", async () => {
     const b = weekend();
