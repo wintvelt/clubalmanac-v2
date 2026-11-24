@@ -39,6 +39,7 @@ Na een reis wil Wouter een nieuwe clubfilm monteren uit de filmpjes van de leden
 - **Toevoegscherm:** een korte regel dat filmpjes in volle kwaliteit, met plek, naar de clubfilm gaan; het gedrag uit besluit 3.
 - **Downloadpagina in de webapp** (oprichter): lijst met download per filmpje, waar het kan "alles downloaden"; alles verwijderen als de film klaar is.
 - **Na sluiten:** de projectpagina blijft zichtbaar tot de originelen weg zijn (hooguit een jaar). Filmpjes gaan weer naar het gekozen album.
+- **Mockup** (Wouter akkoord, 2026-11-24): `builds/filmproject-mockup.html` (gitignored, alleen op de server). Groep met balk, projectpagina, toevoegscherm met splitsen, starten en sluiten, downloadpagina in de webapp. Leidraad voor 38c.
 
 ## Wat er is
 
