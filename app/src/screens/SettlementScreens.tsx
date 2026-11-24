@@ -39,7 +39,7 @@ import {
   type Settlement,
   type SettlementRow,
 } from "../lib/settlements";
-import { border, LARGE_TEXT_SCALE, radius, size, space, useTheme, type ColorTokens } from "../theme";
+import { border, LARGE_TEXT_SCALE, radius, size, space, typography, useTheme, type ColorTokens } from "../theme";
 import { LoadError } from "./GroupParts";
 import { WideSplit } from "./WideSide";
 
@@ -224,13 +224,29 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
 // De tegels: Totale kosten (met het bedrag per persoon), Uit spaarpotten (bij
 // een lustrum), Bijdrage uit clubkas (als die er is), Nog te betalen. Bij grote
 // tekst (fontScale ≥ 1,2, design.md §3; F7) onder elkaar, elk over de hele breedte.
+//
+// Gate WP41: een bedrag breekt nooit midden in een getal. Op het web breekt een
+// woord dat niet past wél (ook met harde spaties), bv. in de smalle linkerkolom
+// van een breed scherm. Daarom naast elkaar alleen als elk bedrag in een halve
+// tegel past: de breedte van de rij gemeten (onLayout), het bedrag geschat aan
+// de hand van zijn tekens. Tot de meting er is: onder elkaar.
 function Tiles({ settlement }: { settlement: Settlement }) {
   const { fontScale } = useWindowDimensions();
-  const half = fontScale < LARGE_TEXT_SCALE;
+  const [width, setWidth] = useState(0);
   const { totals } = settlement;
   const toPay = stillToPay(settlement.rows);
+  const halves = [
+    settlement.lustrum ? formatEuro(totals.fromPot) : null,
+    totals.club !== 0 ? formatEuro(totals.club) : null,
+    formatEuro(toPay.cents),
+  ].filter((x): x is string => x !== null);
+  const halfInner = (width - space.s) / 2 - 2 * space.m;
+  const half =
+    fontScale < LARGE_TEXT_SCALE &&
+    width > 0 &&
+    halves.every((v) => amountWidth(v, typography.amount.fontSize * fontScale) <= halfInner);
   return (
-    <View style={styles.tiles}>
+    <View style={styles.tiles} onLayout={(e) => setWidth(e.nativeEvent.layout.width)}>
       <Tile
         label="Totale kosten"
         value={formatEuro(totals.costs)}
@@ -242,6 +258,15 @@ function Tiles({ settlement }: { settlement: Settlement }) {
       <Tile label="Nog te betalen" value={formatEuro(toPay.cents)} sub={participantsText(toPay.count)} half={half} />
     </View>
   );
+}
+
+// Breedte van een bedrag in de vette systeemletter, in em per teken, met marge
+// (liever een keer onder elkaar dan een bedrag dat breekt).
+const NARROW_CHARS = new Set([".", ",", "\u00A0", " "]);
+function amountWidth(text: string, fontSize: number): number {
+  let em = 0;
+  for (const c of text) em += NARROW_CHARS.has(c) ? 0.3 : 0.62;
+  return em * fontSize * 1.05;
 }
 
 function Tile({ label, value, sub, half }: { label: string; value: string; sub?: string; half: boolean }) {
@@ -715,7 +740,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: space.l,
     paddingVertical: space.s,
   },
-  rowText: { flex: 1, gap: space.xs / 2 },
+  rowText: { flex: 1, minWidth: 0, gap: space.xs / 2 },
   amount: { flexShrink: 0, textAlign: "right" },
   table: { flexDirection: "row", borderRadius: radius.listBlock, overflow: "hidden" },
   nameColumn: { borderRightWidth: StyleSheet.hairlineWidth, maxWidth: "45%" },
@@ -735,6 +760,6 @@ const styles = StyleSheet.create({
     paddingVertical: space.s + space.xs / 2,
     minHeight: size.touchMin,
   },
-  lineText: { flex: 1, gap: space.xs / 2 },
+  lineText: { flex: 1, minWidth: 0, gap: space.xs / 2 },
   date: { flexShrink: 0 },
 });
