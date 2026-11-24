@@ -73,6 +73,14 @@ for (const name of EXAMPLES) {
       for (const r of rows) expect(r.open).toBeGreaterThanOrEqual(0);
       // F3: betalingen alleen bij wie bijbetaalt, zoals afgerond() in het clubboek.
       for (const r of rows) if (r.balance <= 0) expect(r.payments).toEqual([]);
+      // G2, G3: samenhang per deelnemer, en elke betaling > 0.
+      for (const r of rows) {
+        expect(r.open, r.name).toBeLessThanOrEqual(Math.abs(r.balance));
+        if (r.balance === 0) expect(r.open, r.name).toBe(0);
+        const paid = (r.payments as R[]).reduce((a, p) => a + (p.amount as number), 0);
+        if (r.balance > 0) expect(r.balance - paid, r.name).toBe(r.open);
+        for (const p of r.payments as R[]) expect(p.amount).toBeGreaterThan(0);
+      }
     });
 
     it("geen lid_id en geen clubboek-veldnaam in het verzoek", () => {

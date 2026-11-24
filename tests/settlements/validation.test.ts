@@ -271,7 +271,15 @@ function weekendRow(i: number): R {
   r.name = `Deelnemer ${i}`;
   r.lines = [];
   r.payments = [];
+  // G2: zonder betalingen staat de hele afrekening nog open.
+  r.open = r.balance;
   return r;
+}
+
+/** `n` betalingen, elk > 0, die samen precies `total` zijn (G2, G3). */
+function spread(total: number, n: number): R[] {
+  const base = Math.floor(total / n);
+  return Array.from({ length: n }, (_, i) => ({ date: "2026-06-18", amount: base + (i < total - base * n ? 1 : 0) }));
 }
 
 describe("A3: aantallen", () => {
@@ -300,7 +308,8 @@ describe("A3: aantallen", () => {
 
   const lists: Array<[string, number, (b: R, n: number) => void]> = [
     ["regels (lines)", 50, (b, n) => (row0(b).lines = Array.from({ length: n }, () => ({ part: "Huisje", amount: 0, basis: "" })))],
-    ["betalingen", 50, (b, n) => (row0(b).payments = Array.from({ length: n }, () => ({ date: "2026-06-18", amount: 0 })))],
+    // G2/G3: elk bedrag > 0, en samen precies de afrekening van Bram (open 0).
+    ["betalingen", 50, (b, n) => (row0(b).payments = spread(row0(b).balance as number, n))],
     [
       "spaarpotregels",
       100,
@@ -460,5 +469,131 @@ describe("F9: een onbekend veld noemt alleen het pad", () => {
   it("bovenaan: body: onbekend veld", async () => {
     const text = await expectRejected(lustrum, (b) => void (b.VELDNAAM_UIT_DE_BODY = 1));
     expect((JSON.parse(text) as R).error).toBe("body: onbekend veld");
+  });
+});
+
+// --- fix-cyclus 2 -----------------------------------------------------------------
+
+describe("G1: namen van deelnemers zonder onzichtbare tekens", () => {
+  const cases: Array<[string, string]> = [
+    ["zero width space (U+200B)", "Br\u200bam"],
+    ["zero width non-joiner (U+200C)", "Br\u200cam"],
+    ["zero width joiner (U+200D)", "Bram\u200d"],
+    ["left-to-right mark (U+200E)", "Bram\u200e"],
+    ["right-to-left mark (U+200F)", "\u200fBram"],
+    ["word joiner (U+2060)", "\u2060Bram"],
+    ["byte order mark (U+FEFF)", "\ufeffBram"],
+    ["zachte afbreking (U+00AD)", "Br\u00adam"],
+    ["Arabic letter mark (U+061C)", "Bram\u061c"],
+    ["tag-teken (U+E0041)", "Bram\u{e0041}"],
+    ["line separator (U+2028)", "Bram\u2028"],
+    ["paragraph separator (U+2029)", "Bram\u2029"],
+    ["alleen Hangul filler (U+3164)", "\u3164"],
+    ["alleen Hangul choseong filler (U+115F)", "\u115f"],
+    ["alleen braille blank (U+2800)", "\u2800"],
+    ["twee Hangul fillers", "\u3164\u3164"],
+    ["alleen leestekens", "'-'"],
+  ];
+  for (const [label, name] of cases) {
+    it(`${label}: 400`, async () => {
+      await expectRejected(lustrum, (b) => void (row0(b).name = name));
+    });
+  }
+
+  const dups: Array<[string, string, string]> = [
+    ["fullwidth (NFKC)", "Bram", "\uff22\uff52\uff41\uff4d"],
+    ["ligatuur fi (NFKC)", "Soﬁe", "sofie"],
+    ["superscript-cijfer (NFKC)", "Koen²", "koen2"],
+  ];
+  for (const [label, a, b2] of dups) {
+    it(`dubbel na NFKC zonder hoofdletters, ${label}: 400`, async () => {
+      await expectRejected(lustrum, (b) => {
+        row0(b).name = a;
+        (b.rows as R[])[1]!.name = b2;
+      });
+    });
+  }
+
+  it("besluit: gelijkende letters uit een ander schrift (Cyrillische В naast Bram) mogen", async () => {
+    const b = lustrum();
+    (b.rows as R[])[1]!.name = "\u0412ram";
+    await expectAccepted(b);
+  });
+
+  it("namen met letters of cijfers buiten ASCII mogen", async () => {
+    const b = lustrum();
+    row0(b).name = "李";
+    (b.rows as R[])[1]!.name = "Ørjan";
+    (b.rows as R[])[2]!.name = "Nr. 7";
+    await expectAccepted(b);
+  });
+});
+
+describe("A-keuze 14: U+2028/U+2029 overal, de rest van Cf alleen in namen", () => {
+  it("U+2028 in een omschrijving: 400", async () => {
+    await expectRejected(lustrum, (b) => void ((row0(b).savings as R[])[0]!.description = "Saldo\u2028extra"));
+  });
+
+  it("U+2029 in de periode: 400", async () => {
+    await expectRejected(lustrum, (b) => void (b.period = "12 t/m 26 oktober\u2029"));
+  });
+
+  it("een emoji met ZWJ in de naam van de afrekening en een zachte afbreking in een grondslag mogen", async () => {
+    const b = lustrum();
+    b.name = "Lustrum met gezin 👨\u200d👩\u200d👧";
+    (row0(b).lines as R[])[0]!.basis = "7.299,20 / 8 vlieg\u00adtickets";
+    await expectAccepted(b);
+  });
+});
+
+describe("G2: samenhang per deelnemer", () => {
+  const rowOf = (b: R, name: string): R => (b.rows as R[]).find((r) => r.name === name)!;
+
+  const cases: Array<[string, () => R, (b: R) => void, RegExp]> = [
+    ["bijbetalen: open een cent te hoog (Maarten)", lustrum, (b) => void (rowOf(b, "Maarten").open += 1), /^rows\[4\]/],
+    ["bijbetalen: open een cent te laag (Daan, niets betaald)", lustrum, (b) => void (rowOf(b, "Daan").open -= 1), /^rows\[1\]/],
+    [
+      "bijbetalen: meer betaald dan de afrekening, open 0 (overbetaling)",
+      lustrum,
+      (b) => void ((rowOf(b, "Bram").payments as R[])[0]!.amount += 100),
+      /^rows\[0\]/,
+    ],
+    ["balance 0 met iets open (Joris)", lustrum, (b) => void (rowOf(b, "Joris").open = 100), /^rows\[2\]/],
+    ["terugkrijgen: open groter dan |balance| (Daan)", weekend, (b) => void (rowOf(b, "Daan").open = 13001), /^rows\[1\]/],
+    ["terugkrijgen: open groter dan |balance| (Ruud)", weekend, (b) => void (rowOf(b, "Ruud").open = 25000), /^rows\[4\]/],
+  ];
+  for (const [label, base, mutate, path] of cases) {
+    it(`${label}: 400 met het pad van de rij`, async () => {
+      const text = await expectRejected(base, (b) => {
+        mutate(b);
+        return withTotals(b);
+      });
+      expect((JSON.parse(text) as R).error).toMatch(path);
+    });
+  }
+
+  it("terugkrijgen met minder open dan |balance| (deels uitbetaald) mag", async () => {
+    const b = weekend();
+    rowOf(b, "Daan").open = 1;
+    await expectAccepted(withTotals(b));
+  });
+});
+
+describe("G3: een betaling is groter dan 0", () => {
+  it("bedrag 0: 400", async () => {
+    await expectRejected(lustrum, (b) => {
+      const sander = (b.rows as R[]).find((r) => r.name === "Sander")!;
+      (sander.payments as R[]).push({ date: "2026-11-20", amount: 0 });
+    });
+  });
+
+  it("negatief bedrag (met kloppende som): 400", async () => {
+    await expectRejected(lustrum, (b) => {
+      const sander = (b.rows as R[]).find((r) => r.name === "Sander")!;
+      sander.payments = [
+        { date: "2026-11-16", amount: 30333 },
+        { date: "2026-11-19", amount: -100 },
+      ];
+    });
   });
 });
