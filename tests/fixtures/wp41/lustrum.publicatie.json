@@ -1,0 +1,921 @@
+{
+  "evenement": {
+    "pk": 17,
+    "startdatum": "2026-10-12"
+  },
+  "publicatie": {
+    "datum": "2026-11-21",
+    "data": {
+      "naam": "Lustrum Nepal",
+      "periode": "12 t/m 26 oktober 2026",
+      "afrekendatum": "2026-11-15",
+      "lustrum": true,
+      "rijen": [
+        {
+          "lid": "Bram",
+          "lid_id": 3,
+          "kosten": "2402.34",
+          "club": "0.00",
+          "uit_pot": "2100.00",
+          "bij": "302.34",
+          "voorgeschoten": "0.00",
+          "nog": "0.00",
+          "afgerond": true,
+          "pot": "2100.00",
+          "pot_na": "0.00",
+          "cellen": [
+            "-912.40",
+            "-539.00",
+            "-655.00",
+            "-83.34",
+            "-212.60"
+          ],
+          "delen": [
+            {
+              "onderdeel": "Vluchten",
+              "bedrag": "912.40",
+              "grondslag": "7.299,20 / 8"
+            },
+            {
+              "onderdeel": "Hotels",
+              "bedrag": "539.00",
+              "grondslag": "14 nacht x 38,50"
+            },
+            {
+              "onderdeel": "Trekking",
+              "bedrag": "655.00",
+              "grondslag": "5.240,00 / 8"
+            },
+            {
+              "onderdeel": "Rafting",
+              "bedrag": "83.34",
+              "grondslag": "500,00 / 6"
+            },
+            {
+              "onderdeel": "Diners",
+              "bedrag": "212.60",
+              "grondslag": "1.700,80 / 8"
+            }
+          ],
+          "betalingen": [
+            {
+              "datum": "2026-11-17",
+              "bedrag": "302.34"
+            }
+          ],
+          "betaald": "302.34",
+          "terug": "0.00",
+          "spaarpot": [
+            {
+              "datum": "2026-01-01",
+              "omschrijving": "Saldo 1-1-2026",
+              "bedrag": "1750.00"
+            },
+            {
+              "datum": "2026-01-05",
+              "omschrijving": "Maandinleg (10 x 35,00)",
+              "bedrag": "350.00",
+              "maanden": [
+                {
+                  "datum": "2026-01-05",
+                  "bedrag": "35.00"
+                },
+                {
+                  "datum": "2026-02-05",
+                  "bedrag": "35.00"
+                },
+                {
+                  "datum": "2026-03-05",
+                  "bedrag": "35.00"
+                },
+                {
+                  "datum": "2026-04-05",
+                  "bedrag": "35.00"
+                },
+                {
+                  "datum": "2026-05-05",
+                  "bedrag": "35.00"
+                },
+                {
+                  "datum": "2026-06-05",
+                  "bedrag": "35.00"
+                },
+                {
+                  "datum": "2026-07-05",
+                  "bedrag": "35.00"
+                },
+                {
+                  "datum": "2026-08-05",
+                  "bedrag": "35.00"
+                },
+                {
+                  "datum": "2026-09-05",
+                  "bedrag": "35.00"
+                },
+                {
+                  "datum": "2026-10-05",
+                  "bedrag": "35.00"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "lid": "Daan",
+          "lid_id": 5,
+          "kosten": "2402.34",
+          "club": "0.00",
+          "uit_pot": "2100.00",
+          "bij": "302.34",
+          "voorgeschoten": "0.00",
+          "nog": "302.34",
+          "afgerond": false,
+          "pot": "2100.00",
+          "pot_na": "0.00",
+          "cellen": [
+            "-912.40",
+            "-539.00",
+            "-655.00",
+            "-83.34",
+            "-212.60"
+          ],
+          "delen": [
+            {
+              "onderdeel": "Vluchten",
+              "bedrag": "912.40",
+              "grondslag": "7.299,20 / 8"
+            },
+            {
+              "onderdeel": "Hotels",
+              "bedrag": "539.00",
+              "grondslag": "14 nacht x 38,50"
+            },
+            {
+              "onderdeel": "Trekking",
+              "bedrag": "655.00",
+              "grondslag": "5.240,00 / 8"
+            },
+            {
+              "onderdeel": "Rafting",
+              "bedrag": "83.34",
+              "grondslag": "500,00 / 6"
+            },
+            {
+              "onderdeel": "Diners",
+              "bedrag": "212.60",
+              "grondslag": "1.700,80 / 8"
+            }
+          ],
+          "betalingen": [],
+          "betaald": "0.00",
+          "terug": "0.00",
+          "spaarpot": [
+            {
+              "datum": "2026-01-01",
+              "omschrijving": "Saldo 1-1-2026",
+              "bedrag": "1750.00"
+            },
+            {
+              "datum": "2026-01-05",
+              "omschrijving": "Maandinleg (10 x 35,00)",
+              "bedrag": "350.00",
+              "maanden": [
+                {
+                  "datum": "2026-01-05",
+                  "bedrag": "35.00"
+                },
+                {
+                  "datum": "2026-02-05",
+                  "bedrag": "35.00"
+                },
+                {
+                  "datum": "2026-03-05",
+                  "bedrag": "35.00"
+                },
+                {
+                  "datum": "2026-04-05",
+                  "bedrag": "35.00"
+                },
+                {
+                  "datum": "2026-05-05",
+                  "bedrag": "35.00"
+                },
+                {
+                  "datum": "2026-06-05",
+                  "bedrag": "35.00"
+                },
+                {
+                  "datum": "2026-07-05",
+                  "bedrag": "35.00"
+                },
+                {
+                  "datum": "2026-08-05",
+                  "bedrag": "35.00"
+                },
+                {
+                  "datum": "2026-09-05",
+                  "bedrag": "35.00"
+                },
+                {
+                  "datum": "2026-10-05",
+                  "bedrag": "35.00"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "lid": "Joris",
+          "lid_id": 8,
+          "kosten": "2242.00",
+          "club": "0.00",
+          "uit_pot": "2242.00",
+          "bij": "-0.00",
+          "voorgeschoten": "0.00",
+          "nog": "0.00",
+          "afgerond": true,
+          "pot": "2450.00",
+          "pot_na": "208.00",
+          "cellen": [
+            "-912.40",
+            "-462.00",
+            "-655.00",
+            null,
+            "-212.60"
+          ],
+          "delen": [
+            {
+              "onderdeel": "Vluchten",
+              "bedrag": "912.40",
+              "grondslag": "7.299,20 / 8"
+            },
+            {
+              "onderdeel": "Hotels",
+              "bedrag": "462.00",
+              "grondslag": "12 nacht x 38,50"
+            },
+            {
+              "onderdeel": "Trekking",
+              "bedrag": "655.00",
+              "grondslag": "5.240,00 / 8"
+            },
+            {
+              "onderdeel": "Diners",
+              "bedrag": "212.60",
+              "grondslag": "1.700,80 / 8"
+            }
+          ],
+          "betalingen": [],
+          "betaald": "0.00",
+          "terug": "0.00",
+          "spaarpot": [
+            {
+              "datum": "2026-01-01",
+              "omschrijving": "Saldo 1-1-2026",
+              "bedrag": "2075.00"
+            },
+            {
+              "datum": "2026-01-05",
+              "omschrijving": "Maandinleg (10 x 35,00)",
+              "bedrag": "350.00",
+              "maanden": [
+                {
+                  "datum": "2026-01-05",
+                  "bedrag": "35.00"
+                },
+                {
+                  "datum": "2026-02-05",
+                  "bedrag": "35.00"
+                },
+                {
+                  "datum": "2026-03-05",
+                  "bedrag": "35.00"
+                },
+                {
+                  "datum": "2026-04-05",
+                  "bedrag": "35.00"
+                },
+                {
+                  "datum": "2026-05-05",
+                  "bedrag": "35.00"
+                },
+                {
+                  "datum": "2026-06-05",
+                  "bedrag": "35.00"
+                },
+                {
+                  "datum": "2026-07-05",
+                  "bedrag": "35.00"
+                },
+                {
+                  "datum": "2026-08-05",
+                  "bedrag": "35.00"
+                },
+                {
+                  "datum": "2026-09-05",
+                  "bedrag": "35.00"
+                },
+                {
+                  "datum": "2026-10-05",
+                  "bedrag": "35.00"
+                }
+              ]
+            },
+            {
+              "datum": "2026-06-30",
+              "omschrijving": "Rendement",
+              "bedrag": "25.00"
+            }
+          ]
+        },
+        {
+          "lid": "Koen",
+          "lid_id": 11,
+          "kosten": "2402.33",
+          "club": "0.00",
+          "uit_pot": "2100.00",
+          "bij": "302.33",
+          "voorgeschoten": "0.00",
+          "nog": "0.00",
+          "afgerond": true,
+          "pot": "2100.00",
+          "pot_na": "0.00",
+          "cellen": [
+            "-912.40",
+            "-539.00",
+            "-655.00",
+            "-83.33",
+            "-212.60"
+          ],
+          "delen": [
+            {
+              "onderdeel": "Vluchten",
+              "bedrag": "912.40",
+              "grondslag": "7.299,20 / 8"
+            },
+            {
+              "onderdeel": "Hotels",
+              "bedrag": "539.00",
+              "grondslag": "14 nacht x 38,50"
+            },
+            {
+              "onderdeel": "Trekking",
+              "bedrag": "655.00",
+              "grondslag": "5.240,00 / 8"
+            },
+            {
+              "onderdeel": "Rafting",
+              "bedrag": "83.33",
+              "grondslag": "500,00 / 6"
+            },
+            {
+              "onderdeel": "Diners",
+              "bedrag": "212.60",
+              "grondslag": "1.700,80 / 8"
+            }
+          ],
+          "betalingen": [
+            {
+              "datum": "2026-11-18",
+              "bedrag": "302.33"
+            }
+          ],
+          "betaald": "302.33",
+          "terug": "0.00",
+          "spaarpot": [
+            {
+              "datum": "2026-01-01",
+              "omschrijving": "Saldo 1-1-2026",
+              "bedrag": "1750.00"
+            },
+            {
+              "datum": "2026-01-05",
+              "omschrijving": "Maandinleg (10 x 35,00)",
+              "bedrag": "350.00",
+              "maanden": [
+                {
+                  "datum": "2026-01-05",
+                  "bedrag": "35.00"
+                },
+                {
+                  "datum": "2026-02-05",
+                  "bedrag": "35.00"
+                },
+                {
+                  "datum": "2026-03-05",
+                  "bedrag": "35.00"
+                },
+                {
+                  "datum": "2026-04-05",
+                  "bedrag": "35.00"
+                },
+                {
+                  "datum": "2026-05-05",
+                  "bedrag": "35.00"
+                },
+                {
+                  "datum": "2026-06-05",
+                  "bedrag": "35.00"
+                },
+                {
+                  "datum": "2026-07-05",
+                  "bedrag": "35.00"
+                },
+                {
+                  "datum": "2026-08-05",
+                  "bedrag": "35.00"
+                },
+                {
+                  "datum": "2026-09-05",
+                  "bedrag": "35.00"
+                },
+                {
+                  "datum": "2026-10-05",
+                  "bedrag": "35.00"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "lid": "Maarten",
+          "lid_id": 12,
+          "kosten": "2248.33",
+          "club": "0.00",
+          "uit_pot": "1400.00",
+          "bij": "848.33",
+          "voorgeschoten": "0.00",
+          "nog": "348.33",
+          "afgerond": false,
+          "pot": "1400.00",
+          "pot_na": "0.00",
+          "cellen": [
+            "-912.40",
+            "-385.00",
+            "-655.00",
+            "-83.33",
+            "-212.60"
+          ],
+          "delen": [
+            {
+              "onderdeel": "Vluchten",
+              "bedrag": "912.40",
+              "grondslag": "7.299,20 / 8"
+            },
+            {
+              "onderdeel": "Hotels",
+              "bedrag": "385.00",
+              "grondslag": "10 nacht x 38,50"
+            },
+            {
+              "onderdeel": "Trekking",
+              "bedrag": "655.00",
+              "grondslag": "5.240,00 / 8"
+            },
+            {
+              "onderdeel": "Rafting",
+              "bedrag": "83.33",
+              "grondslag": "500,00 / 6"
+            },
+            {
+              "onderdeel": "Diners",
+              "bedrag": "212.60",
+              "grondslag": "1.700,80 / 8"
+            }
+          ],
+          "betalingen": [
+            {
+              "datum": "2026-11-20",
+              "bedrag": "500.00"
+            }
+          ],
+          "betaald": "500.00",
+          "terug": "0.00",
+          "spaarpot": [
+            {
+              "datum": "2026-01-01",
+              "omschrijving": "Saldo 1-1-2026",
+              "bedrag": "1050.00"
+            },
+            {
+              "datum": "2026-01-05",
+              "omschrijving": "Maandinleg (10 x 35,00)",
+              "bedrag": "350.00",
+              "maanden": [
+                {
+                  "datum": "2026-01-05",
+                  "bedrag": "35.00"
+                },
+                {
+                  "datum": "2026-02-05",
+                  "bedrag": "35.00"
+                },
+                {
+                  "datum": "2026-03-05",
+                  "bedrag": "35.00"
+                },
+                {
+                  "datum": "2026-04-05",
+                  "bedrag": "35.00"
+                },
+                {
+                  "datum": "2026-05-05",
+                  "bedrag": "35.00"
+                },
+                {
+                  "datum": "2026-06-05",
+                  "bedrag": "35.00"
+                },
+                {
+                  "datum": "2026-07-05",
+                  "bedrag": "35.00"
+                },
+                {
+                  "datum": "2026-08-05",
+                  "bedrag": "35.00"
+                },
+                {
+                  "datum": "2026-09-05",
+                  "bedrag": "35.00"
+                },
+                {
+                  "datum": "2026-10-05",
+                  "bedrag": "35.00"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "lid": "Pieter",
+          "lid_id": 14,
+          "kosten": "2319.00",
+          "club": "0.00",
+          "uit_pot": "2100.00",
+          "bij": "219.00",
+          "voorgeschoten": "0.00",
+          "nog": "0.00",
+          "afgerond": true,
+          "pot": "2100.00",
+          "pot_na": "0.00",
+          "cellen": [
+            "-912.40",
+            "-539.00",
+            "-655.00",
+            null,
+            "-212.60"
+          ],
+          "delen": [
+            {
+              "onderdeel": "Vluchten",
+              "bedrag": "912.40",
+              "grondslag": "7.299,20 / 8"
+            },
+            {
+              "onderdeel": "Hotels",
+              "bedrag": "539.00",
+              "grondslag": "14 nacht x 38,50"
+            },
+            {
+              "onderdeel": "Trekking",
+              "bedrag": "655.00",
+              "grondslag": "5.240,00 / 8"
+            },
+            {
+              "onderdeel": "Diners",
+              "bedrag": "212.60",
+              "grondslag": "1.700,80 / 8"
+            }
+          ],
+          "betalingen": [
+            {
+              "datum": "2026-11-16",
+              "bedrag": "219.00"
+            }
+          ],
+          "betaald": "219.00",
+          "terug": "0.00",
+          "spaarpot": [
+            {
+              "datum": "2026-01-01",
+              "omschrijving": "Saldo 1-1-2026",
+              "bedrag": "1750.00"
+            },
+            {
+              "datum": "2026-01-05",
+              "omschrijving": "Maandinleg (10 x 35,00)",
+              "bedrag": "350.00",
+              "maanden": [
+                {
+                  "datum": "2026-01-05",
+                  "bedrag": "35.00"
+                },
+                {
+                  "datum": "2026-02-05",
+                  "bedrag": "35.00"
+                },
+                {
+                  "datum": "2026-03-05",
+                  "bedrag": "35.00"
+                },
+                {
+                  "datum": "2026-04-05",
+                  "bedrag": "35.00"
+                },
+                {
+                  "datum": "2026-05-05",
+                  "bedrag": "35.00"
+                },
+                {
+                  "datum": "2026-06-05",
+                  "bedrag": "35.00"
+                },
+                {
+                  "datum": "2026-07-05",
+                  "bedrag": "35.00"
+                },
+                {
+                  "datum": "2026-08-05",
+                  "bedrag": "35.00"
+                },
+                {
+                  "datum": "2026-09-05",
+                  "bedrag": "35.00"
+                },
+                {
+                  "datum": "2026-10-05",
+                  "bedrag": "35.00"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "lid": "Sander",
+          "lid_id": 15,
+          "kosten": "2402.33",
+          "club": "0.00",
+          "uit_pot": "2100.00",
+          "bij": "302.33",
+          "voorgeschoten": "0.00",
+          "nog": "0.00",
+          "afgerond": true,
+          "pot": "2100.00",
+          "pot_na": "0.00",
+          "cellen": [
+            "-912.40",
+            "-539.00",
+            "-655.00",
+            "-83.33",
+            "-212.60"
+          ],
+          "delen": [
+            {
+              "onderdeel": "Vluchten",
+              "bedrag": "912.40",
+              "grondslag": "7.299,20 / 8"
+            },
+            {
+              "onderdeel": "Hotels",
+              "bedrag": "539.00",
+              "grondslag": "14 nacht x 38,50"
+            },
+            {
+              "onderdeel": "Trekking",
+              "bedrag": "655.00",
+              "grondslag": "5.240,00 / 8"
+            },
+            {
+              "onderdeel": "Rafting",
+              "bedrag": "83.33",
+              "grondslag": "500,00 / 6"
+            },
+            {
+              "onderdeel": "Diners",
+              "bedrag": "212.60",
+              "grondslag": "1.700,80 / 8"
+            }
+          ],
+          "betalingen": [
+            {
+              "datum": "2026-11-16",
+              "bedrag": "150.00"
+            },
+            {
+              "datum": "2026-11-19",
+              "bedrag": "152.33"
+            }
+          ],
+          "betaald": "302.33",
+          "terug": "0.00",
+          "spaarpot": [
+            {
+              "datum": "2026-01-01",
+              "omschrijving": "Saldo 1-1-2026",
+              "bedrag": "1750.00"
+            },
+            {
+              "datum": "2026-01-05",
+              "omschrijving": "Maandinleg (10 x 35,00)",
+              "bedrag": "350.00",
+              "maanden": [
+                {
+                  "datum": "2026-01-05",
+                  "bedrag": "35.00"
+                },
+                {
+                  "datum": "2026-02-05",
+                  "bedrag": "35.00"
+                },
+                {
+                  "datum": "2026-03-05",
+                  "bedrag": "35.00"
+                },
+                {
+                  "datum": "2026-04-05",
+                  "bedrag": "35.00"
+                },
+                {
+                  "datum": "2026-05-05",
+                  "bedrag": "35.00"
+                },
+                {
+                  "datum": "2026-06-05",
+                  "bedrag": "35.00"
+                },
+                {
+                  "datum": "2026-07-05",
+                  "bedrag": "35.00"
+                },
+                {
+                  "datum": "2026-08-05",
+                  "bedrag": "35.00"
+                },
+                {
+                  "datum": "2026-09-05",
+                  "bedrag": "35.00"
+                },
+                {
+                  "datum": "2026-10-05",
+                  "bedrag": "35.00"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "lid": "Thijs",
+          "lid_id": 18,
+          "kosten": "2402.33",
+          "club": "0.00",
+          "uit_pot": "980.00",
+          "bij": "1422.33",
+          "voorgeschoten": "0.00",
+          "nog": "1422.33",
+          "afgerond": false,
+          "pot": "980.00",
+          "pot_na": "0.00",
+          "cellen": [
+            "-912.40",
+            "-539.00",
+            "-655.00",
+            "-83.33",
+            "-212.60"
+          ],
+          "delen": [
+            {
+              "onderdeel": "Vluchten",
+              "bedrag": "912.40",
+              "grondslag": "7.299,20 / 8"
+            },
+            {
+              "onderdeel": "Hotels",
+              "bedrag": "539.00",
+              "grondslag": "14 nacht x 38,50"
+            },
+            {
+              "onderdeel": "Trekking",
+              "bedrag": "655.00",
+              "grondslag": "5.240,00 / 8"
+            },
+            {
+              "onderdeel": "Rafting",
+              "bedrag": "83.33",
+              "grondslag": "500,00 / 6"
+            },
+            {
+              "onderdeel": "Diners",
+              "bedrag": "212.60",
+              "grondslag": "1.700,80 / 8"
+            }
+          ],
+          "betalingen": [],
+          "betaald": "0.00",
+          "terug": "0.00",
+          "spaarpot": [
+            {
+              "datum": "2026-01-01",
+              "omschrijving": "Saldo 1-1-2026",
+              "bedrag": "630.00"
+            },
+            {
+              "datum": "2026-01-05",
+              "omschrijving": "Maandinleg (10 x 35,00)",
+              "bedrag": "350.00",
+              "maanden": [
+                {
+                  "datum": "2026-01-05",
+                  "bedrag": "35.00"
+                },
+                {
+                  "datum": "2026-02-05",
+                  "bedrag": "35.00"
+                },
+                {
+                  "datum": "2026-03-05",
+                  "bedrag": "35.00"
+                },
+                {
+                  "datum": "2026-04-05",
+                  "bedrag": "35.00"
+                },
+                {
+                  "datum": "2026-05-05",
+                  "bedrag": "35.00"
+                },
+                {
+                  "datum": "2026-06-05",
+                  "bedrag": "35.00"
+                },
+                {
+                  "datum": "2026-07-05",
+                  "bedrag": "35.00"
+                },
+                {
+                  "datum": "2026-08-05",
+                  "bedrag": "35.00"
+                },
+                {
+                  "datum": "2026-09-05",
+                  "bedrag": "35.00"
+                },
+                {
+                  "datum": "2026-10-05",
+                  "bedrag": "35.00"
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "totaal": {
+        "kosten": "18821.00",
+        "club": "0.00",
+        "uit_pot": "15122.00",
+        "bij": "3699.00",
+        "voorgeschoten": "0.00",
+        "nog": "2073.00",
+        "pot": "15330.00",
+        "pot_na": "208.00"
+      },
+      "n": 8,
+      "kosten_pp": "2352.62",
+      "n_open": 3,
+      "onderdelen": [
+        {
+          "naam": "Vluchten",
+          "kosten": "7299.20",
+          "n": 8,
+          "prijs": "912.4"
+        },
+        {
+          "naam": "Hotels",
+          "kosten": "4081.00",
+          "n": 8,
+          "prijs": null
+        },
+        {
+          "naam": "Trekking",
+          "kosten": "5240.00",
+          "n": 8,
+          "prijs": "655"
+        },
+        {
+          "naam": "Rafting",
+          "kosten": "500.00",
+          "n": 6,
+          "prijs": "83.33333333333333333333333333"
+        },
+        {
+          "naam": "Diners",
+          "kosten": "1700.80",
+          "n": 8,
+          "prijs": "212.6"
+        }
+      ],
+      "onderdelen_totaal": "18821.00",
+      "met_club": false,
+      "met_voorgeschoten": false
+    }
+  }
+}

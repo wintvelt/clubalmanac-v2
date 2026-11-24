@@ -69,6 +69,10 @@ const EXPECTED_PUBLIC_QUERIES = [
   // WP17c invariant 1, 2: Mijn foto's, bladerend.
   "photos:listMine",
   "photos:listMyFlagged",
+  // WP41 §A6, §A7: de afrekeningen van een groep (tijdlijn) en één
+  // afrekening; leden, anders NOT_MEMBER (tests/settlements/reads.test.ts).
+  "settlements:get",
+  "settlements:listByGroup",
   // WP19a: ratings:listForPhoto is weg (ratings geschrapt).
   "smoke:ping",
   "users:current",
