@@ -373,6 +373,24 @@ Wie geen toegang heeft, krijgt altijd de gewone weigering (`ORIGINAL_REFUSED` of
 - **Tabellen leegmaken** (migratie-tooling, bv. een herstart van de import) wist de rijen in `filmProjects` en `filmOriginals`, niet de objecten in de originelen-bucket. Maak die bucket dan apart leeg in het Cloudflare-dashboard; anders meldt de check ze de volgende dag als wees.
 - **Downloaden** (oprichter, in de webapp): per origineel een link van een uur; "alles downloaden" haalt ze na elkaar, elk met een verse link. Is een link verlopen, vraag dan een nieuwe. Daarna "alles verwijderen" als de film klaar is.
 
+## Clubboek → Geld (WP41)
+
+Het clubboek (lokaal, alleen 127.0.0.1) zet een afrekening met **Zet in de app** in de tab Geld van één groep, en haalt hem weg met **Haal uit de app**. Het clubboek stuurt; Convex haalt nooit iets op. Routes op de Convex-site (`https://<deployment>.<region>.convex.site`): `POST /settlements` (vervangt per evenement) en `DELETE /settlements?key=<id>`, met `Authorization: Bearer <FINANCE_SECRET>`. Geen CORS: niet voor een browser. Zie [WP41](../work-packages/WP41-financieel.md).
+
+### Env-vars per deployment (dev en prod)
+
+| Env-var | Waarde | Bij ontbreken of fout |
+|---|---|---|
+| `FINANCE_SECRET` | 32 willekeurige bytes, hex (64 tekens): `openssl rand -hex 32`. Per deployment een eigen waarde | elk verzoek krijgt dezelfde 403 (fail-closed, geen standaardwaarde). Korter dan 32 tekens telt als geen geheim |
+| `FINANCE_GROUP_ID` | het `_id` van de groep op die deployment (dashboard → Data → `groups`) | idem, ook als de groep niet (meer) bestaat |
+
+- **De groep staat op de deployment**, niet in het verzoek: een gelekt geheim beschrijft alleen die groep.
+- **In het clubboek** staan de URL van de Convex-site en hetzelfde geheim in een lokaal instellingenbestand naast het clubboek (alleen leesbaar voor de eigenaar), niet in de code en niet in deze repo. Wouter vult het zelf in.
+- **Roteren:** een nieuwe waarde met `openssl rand -hex 32`, zet hem op de deployment (dashboard → Settings → Environment Variables) en in het instellingenbestand van het clubboek. Convex leest env-vars per aanroep, dus direct actief; daartussen geeft de knop een 403. De afrekeningen in de app blijven staan. Roteer ook als het geheim ergens anders terecht is gekomen (een chat, een log, een schermafbeelding).
+- **Andere groep of groep weg:** een verwijderde groep neemt haar afrekeningen mee (cascade G6); zet daarna `FINANCE_GROUP_ID` op de nieuwe groep en stuur opnieuw.
+- **Migratie-reset:** de tooling leegt `settlements` mee (de import vult hem niet). Stuur de afrekeningen daarna opnieuw vanuit het clubboek.
+- **Logs:** de routes loggen niets (geen geheim, header of body). Een weigering staat als 403 op `/settlements`; een vormfout als 400 met het pad van het veld in het antwoord.
+
 ## Webapp: app.clubalmanac.com (WP35)
 
 Expo Web van `app/`: bekijken, plus foto's uploaden en de eigen profielfoto (WP36). Stack [`infra/webapp.yml`](../../infra/webapp.yml) (bucket `clubalmanac-webapp`, eigen CloudFront-distributie, certificaat uit ACM us-east-1, DNS in Route 53, deploy-rol via OIDC). Deploy met de hand: Action *Webapp* op `main`, na de Convex-deploy. Repo-variabelen `WEBAPP_BUCKET`, `WEBAPP_DISTRIBUTION_ID`, `WEBAPP_DEPLOY_ROLE_ARN`, `WEBAPP_CONVEX_URL`, `WEBAPP_CLERK_PUBLISHABLE_KEY`. Deploy in twee jobs: *build* (`npm ci --ignore-scripts`, geen deployrecht) en *deploy* (alleen het artefact en de AWS CLI) in GitHub-environment `webapp`, de enige die de deploy-rol mag aannemen. Content-Security-Policy in de response-headers-policy van de stack, met de prod-hosts van Convex en Clerk als parameters. Opzet en controle: [`docs/runbooks/webapp.md`](../runbooks/webapp.md).

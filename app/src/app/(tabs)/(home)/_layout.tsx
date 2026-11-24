@@ -2,7 +2,8 @@ import { Stack } from "expo-router";
 import { filmScreenOptions } from "../../../lib/films";
 import { CloseButton, useStackScreenOptions } from "../../../navigation/stackOptions";
 
-// WP16 §Routes: Mijn groepen → Groep → Album → Foto (WP17a) → Draaien (WP17b). Een deep link naar een groep
+// WP16 §Routes: Mijn groepen → Groep → Album → Foto (WP17a) → Draaien (WP17b).
+// WP41: Groep → Afrekening → Alle bedragen / Deelnemer. Een deep link naar een groep
 // opent met Mijn groepen eronder, dus de terugknop-pil werkt altijd.
 // WP28b: Bewerk groep en Bewerk album boven hun scherm; Nieuwe groep en Nieuw
 // album modaal, met "Sluiten" rechtsboven (design.md §7).
@@ -20,6 +21,10 @@ export default function Layout() {
       <Stack.Screen name="groep/[groupId]/album/[albumId]/locatie/[photoId]" options={{ title: "Locatie wijzigen" }} />
       {/* WP21: het filmscherm van een clubfilm; geen terugveeg, zodat spoelen werkt. */}
       <Stack.Screen name="groep/[groupId]/film/[filmId]" options={filmScreenOptions} />
+      {/* WP41: Geld. De titel zet het scherm zelf (de naam van de afrekening of deelnemer). */}
+      <Stack.Screen name="groep/[groupId]/geld/[settlementId]/index" options={{ title: "Afrekening" }} />
+      <Stack.Screen name="groep/[groupId]/geld/[settlementId]/tabel" options={{ title: "Alle bedragen" }} />
+      <Stack.Screen name="groep/[groupId]/geld/[settlementId]/deelnemer/[name]" options={{ title: "Deelnemer" }} />
       <Stack.Screen name="groep/[groupId]/bewerken" options={{ title: "Bewerk groep" }} />
       <Stack.Screen name="groep/[groupId]/album/[albumId]/bewerken" options={{ title: "Bewerk album" }} />
       <Stack.Screen

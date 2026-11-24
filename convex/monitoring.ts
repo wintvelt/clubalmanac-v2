@@ -90,6 +90,10 @@ export const MONITORED_FKS: Array<{
   { table: "filmOriginals", field: "groupId", required: true },
   { table: "filmOriginals", field: "ownerId", required: true },
   { table: "filmOriginals", field: "photoId", required: true },
+  // WP41: de afrekeningen uit het clubboek. Groep weg haalt ze mee (G6), dus
+  // een losse verwijzing is drift. De import vult de tabel niet; een reset
+  // leegt hem (daarna stuurt het clubboek ze opnieuw).
+  { table: "settlements", field: "groupId", required: true },
   // Bewust niet hier (WP38 fix-cyclus 2, cascade-matrix U17 en U18):
   // `videoUploadRequests` en `originalRequests`, dus ook niet in de reset van
   // de migratie-tooling. Het zijn tellers voor een daggrens: een tijdstip per

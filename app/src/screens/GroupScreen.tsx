@@ -46,6 +46,7 @@ import {
   type Role,
 } from "../lib/groupAdmin";
 import { groupHasFilms } from "../lib/films";
+import { groupHasSettlements, groupTabs, type GroupTabKey } from "../lib/settlements";
 import { albumPath, editGroupPath, newAlbumPath } from "../lib/groupRoutes";
 import {
   albumsByYear,
@@ -60,25 +61,21 @@ import {
 import { radius, size, space, useTheme } from "../theme";
 import { toMyGroups } from "./AlbumParts";
 import { FilmsTab } from "./FilmsTab";
+import { SettlementsTab } from "./SettlementsTab";
 import { AlbumCoverTile, backToMyGroups, CoverHeader, LoadError } from "./GroupParts";
 import { WideSide, WideSplit } from "./WideSide";
 
-type Tab = "albums" | "films" | "leden";
-const TABS = [
-  { key: "albums", title: "Albums" },
-  { key: "leden", title: "Leden" },
-] as const;
 // WP21 (pariteit): Films tussen Albums en Leden, alleen in een groep met films.
-const TABS_WITH_FILMS = [
-  { key: "albums", title: "Albums" },
-  { key: "films", title: "Films" },
-  { key: "leden", title: "Leden" },
-] as const;
+// WP41: Geld als vierde tab na Leden, alleen in een groep met afrekeningen.
+type Tab = GroupTabKey;
 
 // WP16: Groep, met de groepstabs Albums en Leden (besluit 5). Alleen de
 // zichtbare tab heeft een live query (§Routes): de andere is niet gemount.
 // WP21: in een groep met films staat Films ertussen. De filmlijst loopt wel
 // altijd mee (klein): hij beslist of die tab er is.
+// WP41: in een groep met afrekeningen staat Geld achteraan. Ook de tijdlijn
+// loopt altijd mee: hij beslist of die tab er is (invariant 8). Haalt het
+// clubboek de laatste weg, dan verdwijnt de tab.
 // Geen lid (meer), of de groep bestaat niet: de NOT_MEMBER-fout van de
 // backend, opgevangen door de grens hieronder (invarianten 5 en 9).
 export function GroupScreen() {
@@ -115,16 +112,29 @@ function GroupContent({ groupId }: { groupId: Id<"groups"> }) {
   // Films er is; de tab zelf speelt niets af.
   const films = useLiveQuery(api.films.list, {});
   const hasFilms = groupHasFilms(films, groupId);
-  const shownTab: Tab = tab === "films" && !hasFilms ? "albums" : tab;
+  const settlements = useLiveQuery(api.settlements.listByGroup, { groupId });
+  const hasSettlements = groupHasSettlements(settlements);
+  const tabs = groupTabs({ hasFilms, hasSettlements });
+  const shownTab: Tab = tabs.some((t) => t.key === tab) ? tab : "albums";
 
   const wide = useWideLayout();
 
   if (group === null) return departing ? <Departing /> : <NotMember groupId={groupId} />;
 
+  const content =
+    shownTab === "albums" ? (
+      <AlbumsTab groupId={groupId} canCreate={rights?.createAlbum ?? false} />
+    ) : shownTab === "films" ? (
+      <FilmsTab groupId={groupId} films={(films ?? []).filter((f) => f.groupId === groupId)} />
+    ) : shownTab === "geld" ? (
+      <SettlementsTab groupId={groupId} settlements={settlements ?? []} />
+    ) : group ? (
+      <MembersTab groupId={groupId} groupName={group.name} founderId={group.createdBy} />
+    ) : null;
+
   // WP35 (breed web-venster, liggende iPad): links de cover, titel, "Bewerk
   // groep" en tabs; rechts de inhoud.
   if (wide) {
-    const tabs = hasFilms ? TABS_WITH_FILMS : TABS;
     return (
       <WideSplit
         side={
@@ -151,13 +161,7 @@ function GroupContent({ groupId }: { groupId: Id<"groups"> }) {
           ) : (
             <>
               {notice && <Notice kind="success" message={notice} />}
-              {shownTab === "albums" ? (
-                <AlbumsTab groupId={groupId} canCreate={rights?.createAlbum ?? false} />
-              ) : shownTab === "films" ? (
-                <FilmsTab groupId={groupId} films={(films ?? []).filter((f) => f.groupId === groupId)} />
-              ) : (
-                <MembersTab groupId={groupId} groupName={group.name} founderId={group.createdBy} />
-              )}
+              {content}
             </>
           )}
         </Screen>
@@ -188,14 +192,8 @@ function GroupContent({ groupId }: { groupId: Id<"groups"> }) {
             )}
           </View>
           {notice && <Notice kind="success" message={notice} />}
-          <SegmentedTabs tabs={hasFilms ? TABS_WITH_FILMS : TABS} selected={shownTab} onSelect={setTab} />
-          {shownTab === "albums" ? (
-            <AlbumsTab groupId={groupId} canCreate={rights?.createAlbum ?? false} />
-          ) : shownTab === "films" ? (
-            <FilmsTab groupId={groupId} films={(films ?? []).filter((f) => f.groupId === groupId)} />
-          ) : (
-            <MembersTab groupId={groupId} groupName={group.name} founderId={group.createdBy} />
-          )}
+          <SegmentedTabs tabs={tabs} selected={shownTab} onSelect={setTab} />
+          {content}
         </>
       )}
     </Screen>
