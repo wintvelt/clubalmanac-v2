@@ -298,7 +298,7 @@ App (`app/src/lib/settlements.ts`, pure logica):
 - `settlementsByYear<S extends { startDate: string }>(items: readonly S[]): { year: number; settlements: S[] }[]`: groepeert opeenvolgende afrekeningen per jaar van `startDate`, in de volgorde van de backend.
 - `timelineLabel(item: { participantCount: number; openCount: number }): string`: `3 van 8 nog open`, of `Afgerond`.
 - `participantStatus(row): { kind: "done" | "pays" | "receives"; label: string }`: `Afgerond`, `Nog € x`, `Krijgt nog € x` (x = `open`). Grijs, rood, groen.
-- `participantOutcome(row, lustrum: boolean): string`: `Betaalt nog € x`, `Krijgt nog € x terug`, `Zijn deel komt helemaal uit zijn spaarpot` (lustrum, `balance` 0 en `fromPot` > 0), anders `Afgerond`.
+- `participantOutcome(row, lustrum: boolean): string`: `Betaalt nog € x`, `Krijgt nog € x terug`, `Zijn deel komt helemaal uit zijn spaarpot` (lustrum, `balance` 0 en `fromPot` > 0), anders `Afgerond`. Leest van de rij alleen `balance`, `open` en `fromPot`.
 - `visibleColumns(settlement): ColumnKey[]`: de vaste kolommen na de onderdelen, in de volgorde van het clubboek: `costs`, `club` (alleen als `totals.club` ≠ 0), `fromPot` en `potAfter` (alleen bij een lustrum), `advanced` (alleen als `totals.advanced` ≠ 0), `balance`, `status`.
 - `stillToPay(rows): { cents: number; count: number }`: de tegel "Nog te betalen" (A-keuze 5).
 - `groupHasSettlements(list: readonly unknown[] | undefined): boolean`: zolang de lijst laadt: nee (geen tab die weer verdwijnt).
@@ -328,8 +328,9 @@ Voorstel voor namen: `boek/services/app_geld.py` met `verzoek(p: Publicatie) -> 
 - `tests/settlements/reads.test.ts`: A6 (NOT_MEMBER, whitelist, tijdlijn, toegang kwijt, live vervangen).
 - `tests/settlements/cascade.test.ts`, `integrity.test.ts`: A9.
 - `tests/settlements/inventory.test.ts`: A7, A8 en het schema.
+- `tests/settlements/constantTime.test.ts`: A8, de gedeelde vergelijking in constante tijd.
 - `tests/settlements/fixtures.test.ts`: de voorbeelden zelf kloppen (sommen, samenhang). Groen; een vangnet voor wie ze aanpast.
-- Aangepast: `tests/readWhitelist/inventory.test.ts` (twee queries erbij) en `tests/migration/fkOracle.ts` (`settlements.groupId`). Die maken bestaande tests rood tot B de queries en de FK toevoegt.
+- Aangepast: `tests/readWhitelist/inventory.test.ts` (twee queries erbij) en `tests/migration/fkOracle.ts` (`settlements.groupId`). Daardoor zijn `tests/readWhitelist/inventory.test.ts`, `tests/migration/sharedLists.test.ts` en `tests/migration/migrationFunctions.test.ts` rood tot B de queries en de FK toevoegt.
 - `app/tests/settlements.test.ts`: A10 app.
 
 ### A-invarianten (aanvulling op de draft)
@@ -357,9 +358,10 @@ Voorstel voor namen: `boek/services/app_geld.py` met `verzoek(p: Publicatie) -> 
 10. `startDate` is verplicht. Heeft het evenement geen startdatum, dan geeft de knop een melding en stuurt niets.
 11. Bij een vormfout noemt de 400 het pad van het veld, zodat Wouter in het clubboek ziet wat er mis is.
 
-### Open vragen voor Wouter
+### Besluiten op de open vragen (Wouter, 2026-11-24)
 
-1. **Tegel "Nog te betalen"** (A-keuze 5): alleen wat deelnemers nog moeten betalen (mockup), of "Nog openstaand" zoals het clubboek, inclusief wat de club nog terugbetaalt? Bij het lustrum is het verschil nul zolang niemand geld terugkrijgt.
-2. **Kosten zonder minteken** in de app (A-keuze 6), terwijl het clubboek ze negatief en rood toont. Akkoord?
-3. **Prijs per nacht** (A-keuze 9): de mockup toont "€ 38,50 per nacht" bij Hotels, maar die prijs zit niet in de gepubliceerde versie. Goed zo, of moet het clubboek per onderdeel ook de eenheid en de prijs per eenheid meesturen? Dat is een kleine uitbreiding van het contract.
-4. **Migratie-reset leegt de afrekeningen** (A9, zoals bij de filmprojecten). Na een reset (alleen vóór T0) stuur je ze opnieuw. Akkoord?
+Alle vier zoals A koos:
+1. De tegel heet **Nog te betalen** en telt alleen wat deelnemers nog moeten bijbetalen (A-keuze 5).
+2. Kosten staan in de app **zonder minteken**. Alleen de afrekening krijgt − (bijbetalen) of + (terugkrijgen) (A-keuze 6).
+3. **Geen prijs per nacht** bij een onderdeel dat per aantal telt (A-keuze 9). De mockup wijkt hier af; de spec geldt.
+4. Een migratie-reset vóór T0 **leegt de afrekeningen**. Daarna stuurt Wouter ze opnieuw (A9).
