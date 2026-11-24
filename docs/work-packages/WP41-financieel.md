@@ -199,7 +199,7 @@ Een JSON-object. Elk veld is verplicht aanwezig; "of null" betekent dat `null` m
 | `rows[].lines[].amount` | centen | `bedrag` |
 | `rows[].lines[].basis` | tekst (mag leeg) | `grondslag` ("14 nacht x 38,50") |
 | `rows[].payments[]` | lijst | `betalingen` |
-| `rows[].payments[].date` / `.amount` | datum / centen | `datum` / `bedrag`: wat de deelnemer aan de club betaalde voor zijn naheffing, positief. Alleen bij `balance` > 0; anders leeg (F3) |
+| `rows[].payments[].date` / `.amount` | datum / centen | `datum` / `bedrag`: wat de deelnemer aan de club betaalde voor zijn naheffing, groter dan 0 (G3). Alleen bij `balance` > 0; anders leeg (F3). Samenhang met `open`: G2 |
 | `rows[].savings[]` | lijst (leeg als het geen lustrum is) | `spaarpot` |
 | `rows[].savings[].date` / `.description` / `.amount` | datum / tekst / centen | `datum` / `omschrijving` / `bedrag` |
 | `rows[].savings[].months` | lijst van `{date, amount}` of null | `maanden` (alleen bij de maandinleg) |
@@ -389,3 +389,26 @@ Na audit (3 should-fix) en red-team (geen toegangsgat; 3 zou, 4 nice) op `547ab0
 - **F9. Onbekend veld.** De 400 zegt `<pad>: onbekend veld`, zonder de veldnaam (A-keuze 11 bijgesteld).
 
 Tests: `tests/settlements/http.test.ts` (F1), `validation.test.ts` (F2, F3, F4, F9), `reads.test.ts` en `fixtures.test.ts` (het nieuwe voorbeeld), `app/tests/settlements.test.ts` (F3, F5).
+
+## Fix-cyclus 2 (regie en Wouter, 2026-11-24)
+
+Heraudit en red-team-hercheck op `01768d8` groen; drie nice-punten gaan mee. A legt vast, B bouwt.
+
+- **G1. Namen van deelnemers, strenger.** Bovenop F2 wordt een naam geweigerd (400) als hij bevat:
+  - een onzichtbaar of opmaakteken (Unicode-categorie Cf), onder meer U+00AD, U+061C, U+200B–U+200F, U+2060, U+FEFF en de tag-tekens U+E0000–U+E007F;
+  - U+2028 of U+2029;
+  - geen enkel zichtbaar teken: er moet minstens één letter of cijfer in staan dat geen opvulteken is (U+115F, U+1160, U+3164, U+FFA0 tellen niet; U+2800 is geen letter). Een naam van alleen leestekens of een emoji wordt dus ook geweigerd.
+
+  Uniek wordt bepaald na **NFKC** (in plaats van NFC) en zonder onderscheid tussen hoofd- en kleine letters: "Ｂｒａｍ" botst met "Bram", "Soﬁe" met "sofie".
+  **Besluit:** gelijkende tekens uit andere schriften (Cyrillische В naast Latijnse B) laten we door. Het clubboek is de enige schrijver en de namen komen uit één ledenlijst.
+- **A-keuze 14.** U+2028 en U+2029 zijn in **elk** tekstveld verboden: het zijn regeleinden, net als de control-tekens van F2. De rest van Cf geldt **alleen voor namen van deelnemers**: die staan in de route en worden vergeleken. In de andere teksten mogen bijvoorbeeld een zachte afbreking of de ZWJ in een emoji (👨‍👩‍👧) gewoon blijven. De bidi-tekens van F2 blijven overal verboden. De bestaande voorbeelden voldoen.
+- **G2. Samenhang per deelnemer** (anders 400 met het pad van de rij, bv. `rows[4]…`):
+  - `open` ≤ |`balance`|;
+  - bij `balance` = 0 is `open` 0;
+  - bij `balance` > 0 is `balance` − som(`payments`) = `open`.
+
+  Beide voorbeelden halen dit.
+  **Gevolg:** een overbetaling (meer betaald dan de naheffing) kan het clubboek niet sturen. Het clubboek zet `nog` dan op 0, terwijl `balance` − som negatief is. Komt dat voor, dan geeft de knop een 400 en moet de boeking in het clubboek eerst kloppen.
+- **G3. Betalingen strikt positief.** `payments[].amount` > 0. Een bedrag van 0 of lager geeft 400.
+
+Tests: `tests/settlements/validation.test.ts` (G1–G3) en `fixtures.test.ts` (G2 op de voorbeelden).
