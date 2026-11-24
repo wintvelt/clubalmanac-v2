@@ -90,7 +90,9 @@ Verder:
 - Het clubboek zet de versie om naar de vorm van invariant 6: Decimal naar centen, het interne id van een lid weg.
 - Na het sturen een melding met de uitkomst ("In de app gezet: versie van 21-11-2026", of de fout), zoals bij Publiceren.
 - De instellingen staan in een lokaal bestand naast het clubboek: de URL van de Convex-site en het geheim. Wouter vult ze zelf in. Ze staan niet in de code.
-- Het clubboek heeft geen git. Wie het bouwt, maakt eerst een kopie van de bestanden die hij raakt, en schrijft tests in `boek/tests.py`.
+- **Stand naast de knop (besluit Wouter 2026-11-24):** het clubboek onthoudt na een gelukte verzending welke versie het stuurde en wanneer, en toont dat naast de knop: "In de app: versie van 21-11-2026, gezet op 24-11-2026", "Er is een nieuwere versie dan in de app", of "Niet in de app" (nog nooit gestuurd, of weggehaald). Alleen lokaal in het clubboek; Convex wordt er niet voor gevraagd.
+- **Publiceren en Zet in de app blijven twee knoppen** (besluit Wouter 2026-11-24): publiceren blijft lokaal.
+- Het clubboek heeft sinds 2026-11-24 git (eigen repo). B bouwt in een eigen worktree (`~/clubboek-wp41`, branch `app-knop` vanaf `main`), zodat het draaiende clubboek ongemoeid blijft, en schrijft tests in `boek/tests.py`.
 
 ## Edge cases en scope
 
@@ -315,7 +317,7 @@ App (`app/src/lib/settlements.ts`, pure logica):
 
 ### A11. Tests voor het clubboek (B schrijft ze in `boek/tests.py`; A raakt het clubboek niet aan)
 
-Voorstel voor namen: `boek/services/app_geld.py` met `verzoek(p: Publicatie) -> dict` (alleen omzetten, geen netwerk), en een functie per knop die verstuurt en een melding teruggeeft. Instellingen in een JSON-bestand naast `manage.py` (`app_geld.json`, alleen leesbaar voor de eigenaar), met de site-URL en het geheim. Netwerk met de standaardbibliotheek; geen nieuwe afhankelijkheid.
+Voorstel voor namen: `boek/services/app_geld.py` met `verzoek(p: Publicatie) -> dict` (alleen omzetten, geen netwerk), en een functie per knop die verstuurt en een melding teruggeeft. Instellingen in `data/app_geld.json` (map `data/` staat in `.gitignore`; bestand alleen leesbaar voor de eigenaar), met de site-URL en het geheim. Netwerk met de standaardbibliotheek; geen nieuwe afhankelijkheid.
 
 1. `verzoek` op een kopie van `tests/fixtures/wp41/lustrum.publicatie.json` en `weekend.publicatie.json` (als `Publicatie` met een `Evenement` met die `pk` en `startdatum`) geeft precies het bijbehorende `*.request.json`.
 2. Nergens in de uitkomst `lid_id`, en geen sleutel buiten A2 (recursief nagelopen).
@@ -326,6 +328,8 @@ Voorstel voor namen: `boek/services/app_geld.py` met `verzoek(p: Publicatie) -> 
 7. Antwoord 200: melding `In de app gezet: versie van 21-11-2026`. Antwoord 403, 400, 413 of een netwerkfout: een melding met de status of de fout, geen foutpagina. Het geheim staat in geen enkele melding.
 8. Geen startdatum op het evenement: melding, niets verstuurd.
 9. Het verzoek: `POST <site>/settlements`, `X-Clubboek-Secret: <geheim>`, `Content-Type: application/json`, geen `Authorization`-header (F1). Haal uit de app: `DELETE <site>/settlements?key=<pk>`, met dezelfde header.
+
+10. Stand naast de knop: na een 200 bewaart het clubboek evenement, versiedatum en tijdstip; de pagina toont "In de app: versie van …, gezet op …". Na een nieuwere publicatie: "Er is een nieuwere versie dan in de app". Na Haal uit de app (200) of zonder verzending: "Niet in de app". Bij een fout verandert de bewaarde stand niet.
 
 ### A12. Waar de RED tests staan
 
