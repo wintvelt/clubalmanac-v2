@@ -564,3 +564,5 @@ Geen UI-tests. De rest controleert Wouter bij de gate.
 1. **`imageVersion` naast `hasImage`?** Besluit 4 noemt alleen `hasImage`. Daarmee blijft een nieuwe foto in de app onzichtbaar tot de cache leeg is (uitloggen). **Advies: ja.** Een ondoorzichtige versie, zoals bij de profielfoto. De tests gaan hiervan uit.
 
 **Regie (2026-11-25) op de open vraag van A:** ja, naast `hasImage` ook een ondoorzichtige `imageVersion`, zoals `profileVersion`. Dat volgt uit besluit 4 ("een nieuwe foto geeft een nieuwe URL"). A-keuzes 16–19 aanvaard.
+
+**Gate WP41c (Wouter, 2026-11-25, dev):** goed. Foto in het clubboek, "Naar dev-app" met `"foto": true` in de dev-instellingen, en in de webapp de foto in de tijdlijn en op het overzicht.
