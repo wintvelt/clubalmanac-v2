@@ -1,6 +1,7 @@
 import { restartClerk } from "../data/clerkRestart";
 import { clearLastAlbum } from "../data/lastAlbum";
 import { clearLastGroup } from "../data/lastGroup";
+import { forgetOriginalsOf } from "../data/originals";
 import { wipeClerkStorage } from "./deviceClerkStorage";
 
 // WP13 invarianten 6 + 11: uitloggen laat geen token achter. Clerk beëindigt de
@@ -12,7 +13,9 @@ import { wipeClerkStorage } from "./deviceClerkStorage";
 //
 // WP32 A6: `deletedUserId` alleen na een gelukt "Account verwijderen": dan gaat
 // ook de thuisgroep van die user van het toestel. Gewoon uitloggen wist hem
-// niet. WP39 (F1): het laatst gekozen album van die user ook.
+// niet. WP39 (F1): het laatst gekozen album van die user ook. WP38b (38b-4):
+// en zijn wachtende originelen (iOS-taken, deelbestanden en bewaarde
+// bestanden, met GPS); uitloggen laat ze staan.
 export async function signOutAndWipe(
   signOut: () => Promise<unknown>,
   deletedUserId?: string | null,
@@ -20,6 +23,7 @@ export async function signOutAndWipe(
   if (deletedUserId) {
     await clearLastGroup(deletedUserId);
     await clearLastAlbum(deletedUserId);
+    await forgetOriginalsOf(deletedUserId).catch(() => {});
   }
   let failed = false;
   try {

@@ -3,7 +3,7 @@
 Pod::Spec.new do |s|
   s.name           = 'ClubalmanacVideo'
   s.version        = '1.0.0'
-  s.summary        = 'Clubalmanac: filmpjes comprimeren, poster en metadata'
+  s.summary        = 'Clubalmanac: filmpjes comprimeren, poster, metadata en originelen uploaden'
   s.description    = 'Comprimeert een filmpje naar mp4 (H.264, AAC, index vooraan, zonder metadata), maakt een poster en leest datum en plaats uit het origineel.'
   s.license        = { :type => 'Proprietary' }
   s.author         = 'Clubalmanac'
