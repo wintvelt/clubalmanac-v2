@@ -442,3 +442,123 @@ Aanvulling vanuit het clubboek: `~/clubboek/docs/WP41-foto.md` (alleen lezen). H
 4. **Lezen:** geen storage-URL naar de client (WP17a). `listByGroup` en `get` geven `hasImage` (boolean); de app laadt de foto via het beveiligde beeldpad (`GET /beeld/…`) met de toegangsregel van de afrekening (lid van de groep), zoals groepsomslagen. Een nieuwe foto moet in de app een nieuwe URL geven (cache).
 5. **Schermen:** tijdlijn in de tab Geld: de foto in plaats van de lettertegel. Overzicht van de afrekening: de foto groot bovenaan, zoals de omslag van een groep; breed in de linkerkolom (`WideSide`). Zonder foto blijft alles zoals nu.
 6. **Werkwijze:** eigen branch `wp41c` (map `~/Code/clubalmanac-v2-wp41c`). A → B → audit. Dev eerst; prod pas na akkoord van Wouter (Wouter deployt).
+
+### WP41c spec-criticus (A)
+
+> A, 2026-11-25. Bronnen: het clubboek (`services/app_geld.py`: `image` alleen als er een foto is, standaard base64 met `=`-opvulling; zonder foto ontbreekt het veld), het beeldpad (WP17a, WP17d, WP35) en de migratie-tooling (WP10, WP12). Namen zijn A-keuzes; het hoe is aan B.
+
+#### C1. Blinde vlekken
+
+1. **MON1 en de migratie-tooling kennen de foto niet (kritiek).** Er is één definitie van verwezen storage, gedeeld door de wees-controle van MON1 en `storageInventory`. Daar staan nu foto's, formaten en profielfoto's in. Een foto van een afrekening telt dus als wees: MON1 meldt hem elke nacht, `verify` op T0 ook, en `prune-storage` wist hem. De foto hoort in die ene definitie. Omgekeerd telt een afrekening die naar een gewist object wijst als dangling. Een reset (`clearTable` op `settlements`) neemt de foto mee, zoals een foto-rij zijn formaten.
+2. **Grootte meten.** Of `image` erin staat, zie je pas na het parsen. Daarom twee stappen, zie C2.
+3. **Opruimen bij elke fout.** De JPEG komt in storage vóór de mutation. Elke weg waarop de afrekening niet geschreven wordt (40 vol, groep intussen weg, een fout in de mutation), haalt de nieuwe JPEG weer weg.
+4. **Cache.** Met alleen `hasImage` heeft de app niets dat verandert als de foto verandert. Dezelfde URL geeft op iOS (cache-sleutel = URL) en op het web (geheugen per user, soort, id en variant) de oude foto. Er is een versie nodig: C4, vraag 1.
+5. **Metadata.** Een foto uit het beeldpad gaat nooit met EXIF of GPS naar buiten (WP17d). Het clubboek stuurt een schone JPEG, maar Convex leunt daar niet op (A-keuze 19).
+6. **Webapp.** Het nieuwe pad heeft een token nodig, dus net als `/beeld/foto/` een preflight (`OPTIONS`) en CORS voor de toegestane origins (WP35). Het geheugen van de webapp kent de soort `afrekening`, met de versie als variant.
+7. **Inventaris.** De lijst van HTTP-routes (`tests/images/httpRoute.test.ts`) en de whitelist-velden van beide queries veranderen. `noStorageIds` vangt al een storage-id in een return-validator.
+8. **Tegelijk sturen.** De oude foto is de foto die op de rij staat op het moment dat de mutation hem vervangt, niet die van vóór het uploaden. Twee verzoeken tegelijk laten dan geen wees achter en wissen nooit de huidige foto.
+9. **Volgorde bij de uitrol.** Het clubboek stuurt `image` pas bij `"foto": true` voor die omgeving. Staat dat aan vóór Convex het veld kent, dan geeft elke verzending 400 (onbekend veld). Eerst Convex, dan de vlag. B zet dit in het runbook (`external-services.md`, Clubboek → Geld).
+
+#### C2. Het veld `image` en de volgorde (aanvulling op A2, A3, A4)
+
+- `image` is optioneel en staat alleen bovenaan. Ontbreekt het, dan heeft de afrekening geen foto. Op een andere plek is het een onbekend veld.
+- Staat het erin, dan is het een tekst: `null`, een lege tekst, een getal of een object geeft 400.
+- Base64 met het standaardalfabet (`A–Z a–z 0–9 + /`), met `=`-opvulling (lengte een viervoud), zonder witruimte of regeleinde, zonder `data:`-voorvoegsel. Het URL-alfabet (`-`, `_`) geeft 400.
+- Ontsleuteld ten hoogste 1 MiB (1 048 576 bytes, A-keuze 16) en de eerste drie bytes zijn `FF D8 FF`.
+- Elke fout in `image` geeft 400 met een reden die met `image` begint, zonder een waarde uit de body.
+- De grens van 200 tekens en de controles op tekens (F2, G1) gelden niet voor `image`.
+- Niet gecontroleerd: afmetingen, vierkant, of de rest van de JPEG klopt (A-keuze 17). Een JPEG die het beeldpad niet kan serveren, geeft daar 404, en de app toont de letter.
+
+De volgorde van A4, bijgesteld:
+1. Het geheim: 403, wat de body ook is. Er komt niets in storage.
+2. Een body boven 1,5 MiB (1 572 864 bytes): 413, zonder verder te lezen.
+3. Geen geldige JSON: 413 als de body boven 128 KiB is (F4), anders 400.
+4. Wat naast de foto staat (de bytes van de body min de tekens van de `image`-tekst) boven 128 KiB: 413. Zonder `image`, of met een `image` die geen tekst is, is dat de hele body. De grens van 128 KiB zonder foto verandert dus niet.
+5. De vorm, met `image`: 400.
+6. De JPEG in storage, als `image/jpeg`. Dan vervangen in één mutation. Mislukt dat, dan gaat de nieuwe JPEG weg.
+7. 200 met `{ "participants": n }`.
+
+Bij elke 4xx komt er geen rij bij, verandert er geen rij en komt er geen object in storage.
+
+#### C3. Opslag en opruimen
+
+- Na elke geslaagde POST heeft een afrekening met foto precies één object in storage, en een afrekening zonder foto geen.
+- Vervangen (met of zonder nieuwe foto) haalt de oude foto weg in dezelfde mutation die de rij vervangt. Het `_id` blijft (A-invariant 4).
+- `DELETE /settlements?key=…` haalt de foto mee weg. Een onbekende sleutel en dezelfde sleutel in een andere groep raken niets.
+- G6: `deleteGroupCascade` haalt de foto's van de afrekeningen van die groep weg, ook bij M2-e. B werkt de rij G6 in de cascade-matrix bij ("met hun foto's in storage").
+- MON1, `storageInventory` en de reset: C1.1.
+
+#### C4. Lezen
+
+- `listByGroup` (per afrekening) en `get` geven `hasImage: boolean` en `imageVersion: string | null` (null precies als er geen foto is).
+- `imageVersion` is ondoorzichtig, zoals `profileVersion` (WP17b): hij verandert bij elke nieuwe foto en er valt geen storage-id uit terug te halen. Dezelfde foto opnieuw sturen mag een nieuwe versie geven (dan haalt de app hem één keer opnieuw).
+- In geen antwoord een storage-id, een storage-URL of de base64 (WP17a invariant 10).
+
+#### C5. Het beeldpad: `GET /beeld/afrekening/<settlementId>[?versie=…]`
+
+- Toegang zoals `settlements.get`: de caller is ingelogd, heeft een users-rij en is nu lid van de groep van de afrekening, en de afrekening heeft een foto die in storage staat. Dan 200 met de foto.
+- Al het andere geeft één en hetzelfde 404, byte voor byte gelijk:
+  - uitgelogd of een ongeldige token (A-keuze 18; de andere token-paden geven 401, regie vroeg één 404);
+  - geen lid, de webmaster buiten zijn groepen, een lid van een andere groep, wie net uit de groep ging;
+  - een onbekend, misvormd of kapot-gecodeerd id, of een id van een andere tabel;
+  - een weggehaalde afrekening, een afrekening zonder foto, een object dat weg is.
+- `versie` opent niets: het pad leest hem niet en geeft altijd de huidige foto. Er zijn geen formaten (één maat).
+- Headers: `Content-Type: image/jpeg`, `Cache-Control` met `private` (en `no-cache`: de toegang eindigt bij vertrek), `Vary: Authorization`, `X-Content-Type-Options: nosniff`.
+- Geen metadata (A-keuze 19): de foto gaat naar buiten zoals een origineel (WP17d), zonder EXIF en GPS.
+- `OPTIONS` en CORS zoals `/beeld/foto/`. Geen andere methodes.
+- Aanvulling A7: dit is het enige andere pad dat een settlements-id aanneemt. Het is een HTTP-pad, geen functie, en heeft dezelfde regel als `get`.
+
+#### C6. App en webapp
+
+- `settlementImageUrl(siteUrl, settlementId, version)` in `imageUrls.ts` geeft `<site>/beeld/afrekening/<id>?versie=<versie>`, met id en versie URL-gecodeerd. Een nieuwe versie geeft een nieuwe URL.
+- `settlementTile(item: { hasImage: boolean; imageVersion: string | null }, failedVersion: string | null): { kind: "image"; version: string } | { kind: "letter" }` in `settlements.ts`:
+  - zonder foto de letter, met foto de foto;
+  - een foto die bij deze versie niet laadde: de letter;
+  - een nieuwe versie probeert het opnieuw, zoals de kop van Groep.
+- Een hook per platform (`images.tsx` en `images.web.tsx`, dezelfde export). Het token gaat in de header, zoals bij een foto. Op het web is de versie de variant in de geheugensleutel.
+- Tijdens het laden staat er een lege tegel, geen letter die daarna wegspringt. Toegankelijkheidslabel: "Foto van <naam>".
+- De schermen volgen besluit 5. De tabel en het scherm van een deelnemer veranderen niet.
+
+#### C7. Buiten scope
+
+- Verkleinde formaten. Elke kaart laadt de JPEG van 1024 (100–300 KB). Bij een handvol afrekeningen is dat geen probleem.
+- Afmetingen controleren, en de foto in de app wijzigen.
+- Een foto zonder afrekening.
+
+#### C8. Testcontract
+
+| Bestand | Wat |
+|---|---|
+| `tests/settlements/image.test.ts` (nieuw) | C2 (vorm, grenzen, volgorde), C3 (vervangen, weghalen, mislukt schrijven, G6, M2-e), C4 |
+| `tests/settlements/imagePath.test.ts` (nieuw) | C5: lid 200 met headers, één 404 voor al het andere, oude versie geeft nieuwe foto, geen GPS, vertrek, object weg |
+| `tests/settlements/integrity.test.ts` | C1.1: geen wees in MON1 en `storageInventory`, dangling, reset |
+| `tests/settlements/inventory.test.ts` | schema: precies één optioneel storage-id, geen base64 in de tabel |
+| `tests/settlements/reads.test.ts`, `_settlements.ts` (`asRead`) | whitelist met `hasImage` en `imageVersion` |
+| `tests/images/httpRoute.test.ts` | routelijst: `GET` en `OPTIONS /beeld/afrekening/*` |
+| `app/tests/settlementImage.test.ts` (nieuw) | `settlementImageUrl`, `settlementTile` |
+
+Geen UI-tests. De rest controleert Wouter bij de gate.
+
+#### C9. Gate (Wouter, op dev)
+
+- In het clubboek `"foto": true` voor dev, een foto bij het evenement, Zet in de app. Bekijk het in de simulator en de webapp:
+  - de tijdlijn toont de foto in plaats van de letter;
+  - het overzicht toont hem groot bovenaan;
+  - breed staat hij in de linkerkolom.
+- Een andere foto, opnieuw publiceren en sturen: de app toont de nieuwe foto zonder herstart (iOS en web).
+- Sturen zonder foto: de letter komt terug.
+- Haal uit de app: de tab verdwijnt.
+- Daarna meldt `verify` van de migratie-tooling op dev (of MON1 de volgende ochtend) geen wezen.
+- Een account dat geen lid is: geen tab. De beeld-URL geeft 404.
+- Prod pas na akkoord: eerst Convex deployen (Wouter), dan `"foto": true` voor prod (C1.9).
+
+#### C10. A-keuzes (vervolg)
+
+16. "1 MB" is 1 MiB (1 048 576 bytes), net als de andere grenzen.
+17. Convex controleert alleen base64, grootte en `FF D8 FF`, geen afmetingen.
+18. Het beeldpad geeft ook bij uitgelogd hetzelfde 404 (opdracht regie). Zo valt het nog minder op dan de 401 van de andere paden.
+19. De foto gaat naar buiten zoals een origineel: zonder metadata.
+
+#### C11. Open vraag voor Wouter
+
+1. **`imageVersion` naast `hasImage`?** Besluit 4 noemt alleen `hasImage`. Daarmee blijft een nieuwe foto in de app onzichtbaar tot de cache leeg is (uitloggen). **Advies: ja.** Een ondoorzichtige versie, zoals bij de profielfoto. De tests gaan hiervan uit.
