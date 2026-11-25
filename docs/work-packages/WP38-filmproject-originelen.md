@@ -1611,3 +1611,26 @@ De andere app-tests blijven groen.
 
 1. **Lege standen: het icoon in het verloop**, het huidige schuine verloop (`gradStart` → `gradEnd`, 135°), in licht én donker thema gelijk. Web: CSS (`background-clip: text`). iOS en Android: `@react-native-masked-view/masked-view` als echte afhankelijkheid (`npx expo install`), komt mee in de volgende native build.
 2. **Brede schermen** (webapp, iPad liggend): projectpagina en downloadpagina gebruiken de indeling van de groepspagina (`WideSplit`/`WideSide`): links titel, stand, schakelaar en de knoppen van de oprichter; rechts de lijsten. Smal blijft zoals nu.
+
+### Feedback derde ronde (A)
+
+Bronscans in `app/tests/filmProjectLayout.test.ts`. Het uiterlijk zelf toetst de gate.
+
+- **Punt 1, het icoon in het verloop.** A-keuze: één component `GradientIcon`, die `EmptyState` gebruikt, in plaats van `Icon` in een effen kleur.
+  - `src/components/GradientIcon.tsx` (iOS en Android): maskeert het verloop van `gradStart` naar `gradEnd` met `@react-native-masked-view/masked-view`. Dat is een echte afhankelijkheid in `app/package.json` (`npx expo install`), en komt dus mee in de volgende native build.
+  - `src/components/GradientIcon.web.tsx`: CSS met `background-clip: text` en `linear-gradient(135deg, …)` van `gradStart` naar `gradEnd`, zonder masked-view.
+  - Vangnet: het verloop is in licht en donker gelijk (de tokens). Deze test is al groen.
+  - De scan van de vorige ronde blijft: geen cirkel en geen `onGradient`.
+- **Punt 2, brede schermen.** `FilmProjectScreens.tsx` importeert `WideSplit` en `WideSide` uit `./WideSide`. `ProjectPage` en `DownloadPage` roepen elk `useWideLayout()` aan en gebruiken een `Wide…`-component. Wat links en wat rechts staat, toetst de gate.
+
+**Gate erbij:**
+- het icoon in het verloop in een lege stand: op de iPhone (licht en donker) en in Safari en Chrome;
+- projectpagina en downloadpagina breed, in de webapp en op een iPad liggend. Links staan titel, stand, schakelaar en de knoppen van de oprichter, rechts de lijsten. Smal blijft zoals het was.
+
+**Stand na A:** 7 tests rood:
+- masked-view ontbreekt in `package.json`;
+- `EmptyState` gebruikt `GradientIcon` niet;
+- `GradientIcon.tsx` en `.web.tsx` bestaan niet;
+- `useWideLayout`, `WideSplit` en `WideSide` ontbreken in het scherm, in `ProjectPage` en in `DownloadPage` (3 tests).
+
+Groen: het vangnet voor de tokens. De andere app-tests blijven groen.
