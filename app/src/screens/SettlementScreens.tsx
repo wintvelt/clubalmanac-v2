@@ -663,7 +663,7 @@ function CostsBlock({ settlement, row }: { settlement: Settlement; row: Settleme
       ))}
       <Line first={row.lines.length === 0} sum label="Totaal" amount={formatEuro(row.costs)} />
       {row.club !== 0 && <Line label="Uit clubkas" amount={formatEuro(-row.club)} />}
-      {settlement.lustrum && row.fromPot !== 0 && <Line label="Uit zijn spaarpot" amount={formatEuro(-row.fromPot)} />}
+      {settlement.lustrum && row.fromPot !== 0 && <Line label="Uit spaarpot" amount={formatEuro(-row.fromPot)} />}
       {row.advanced !== 0 && <Line label="Voorgeschoten" amount={formatEuro(-row.advanced)} />}
       <Line sum label={end.label} amount={formatEuro(end.cents)} />
     </Block>
