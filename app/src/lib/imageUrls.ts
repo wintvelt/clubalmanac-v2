@@ -36,3 +36,10 @@ export function profileImageUrl(
 export function inviteCoverUrl(siteUrl: string, inviteId: string, format: ImageFormat): string {
   return `${siteUrl}/beeld/uitnodiging/${encodeURIComponent(inviteId)}?formaat=${format}`;
 }
+
+// WP38c (38c-19): de poster van een inzending via het eigen beeldpad van 38a
+// (lid van de groep van het project), met het token zoals een foto. Nooit via
+// `/beeld/foto/`, en nooit een link naar het origineel.
+export function originalPosterUrl(siteUrl: string, originalId: string, format: ImageFormat): string {
+  return `${siteUrl}/beeld/inzending/${encodeURIComponent(originalId)}?formaat=${format}`;
+}

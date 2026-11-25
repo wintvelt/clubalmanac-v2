@@ -43,6 +43,10 @@ const IONICONS = {
   // WP21: de clubfilms.
   film: "film",
   play: "play-circle",
+  // WP38c (besluit 1 na A): "Filmproject starten", alleen voor de oprichter.
+  key: "key",
+  // WP38c: de downloadpagina.
+  download: "download",
 } as const;
 
 export type IconName = keyof typeof IONICONS;

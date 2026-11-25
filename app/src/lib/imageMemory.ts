@@ -98,7 +98,7 @@ export function createImageMemory<V>(opts: { limit: number; release: (value: V) 
   };
 }
 
-export type ImageMemoryKind = "foto" | "uitnodiging";
+export type ImageMemoryKind = "foto" | "uitnodiging" | "inzending";
 
 /**
  * De sleutel van een beeld in het geheugen: per user, soort, id en formaat.

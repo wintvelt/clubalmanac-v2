@@ -79,3 +79,13 @@ export function myRotatePath(photoId: string): string {
 export function filmPath(groupId: string, filmId: string): string {
   return `${groupPath(groupId)}/film/${encodeURIComponent(filmId)}`;
 }
+
+// WP38c (38c-19): de projectpagina van een filmproject onder de groep, en
+// "Filmproject starten" modaal, zoals Nieuw album.
+export function filmProjectPath(groupId: string, projectId: string): string {
+  return `${groupPath(groupId)}/filmproject/${encodeURIComponent(projectId)}`;
+}
+
+export function newFilmProjectPath(groupId: string): string {
+  return `${groupPath(groupId)}/nieuw-filmproject`;
+}

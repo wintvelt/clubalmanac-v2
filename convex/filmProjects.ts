@@ -326,6 +326,17 @@ export const listOpenForMe = query({
 });
 
 /**
+ * WP38c (besluit 3 na A): wanneer een inzending uiterlijk weggaat, zoals de
+ * opruimronde (`expireOriginals`) het doet. Binnen: een jaar na binnenkomst.
+ * Onderweg: 14 dagen na het sluiten (of de einddatum, ook als die nog komt of
+ * verschuift), maar nooit later dan een jaar na het aanmelden.
+ */
+function originalGoneAt(original: Doc<"filmOriginals">, project: Doc<"filmProjects">): number {
+  if (original.status === "binnen" && original.completedAt !== undefined) return original.completedAt + ORIGINAL_KEEP_MS;
+  return Math.min(projectClosedAt(project) + ORIGINAL_ARRIVAL_AFTER_CLOSE_MS, original.submittedAt + ORIGINAL_KEEP_MS);
+}
+
+/**
  * De projectpagina (leden; anders NOT_MEMBER). Van anderen alleen wat binnen
  * is; eigen inzendingen altijd, met de stand; de oprichter ziet alles
  * (A-invariant 7). Geen sleutel, upload-id of link.
@@ -340,6 +351,7 @@ export const get = query({
       albumName: v.string(),
       endsAt: v.number(),
       open: v.boolean(),
+      closedAt: v.union(v.number(), v.null()),
     }),
     isFounder: v.boolean(),
     originals: v.array(
@@ -351,6 +363,8 @@ export const get = query({
         durationMs: v.number(),
         submittedAt: v.number(),
         takenAt: v.union(v.number(), v.null()),
+        bytes: v.number(),
+        goneAt: v.number(),
       }),
     ),
   }),
@@ -364,6 +378,8 @@ export const get = query({
       .query("filmOriginals")
       .withIndex("by_project", (q) => q.eq("projectId", project._id))
       .collect();
+    const now = Date.now();
+    const open = projectIsOpen(project, now);
     const originals = [];
     for (const r of rows.sort((a, b) => a.submittedAt - b.submittedAt)) {
       if (!canSeeOriginal(r, user._id, isFounder)) continue;
@@ -377,6 +393,8 @@ export const get = query({
         durationMs: photo?.video?.durationMs ?? 0,
         submittedAt: r.submittedAt,
         takenAt: photo?.takenAt ?? null,
+        bytes: r.bytes,
+        goneAt: originalGoneAt(r, project),
       });
     }
     return {
@@ -386,7 +404,8 @@ export const get = query({
         albumId: project.albumId ?? null,
         albumName: await albumNameOf(ctx, project),
         endsAt: project.endsAt,
-        open: projectIsOpen(project, Date.now()),
+        open,
+        closedAt: open ? null : projectClosedAt(project),
       },
       isFounder,
       originals,

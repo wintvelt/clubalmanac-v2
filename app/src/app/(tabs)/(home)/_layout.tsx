@@ -20,6 +20,8 @@ export default function Layout() {
       <Stack.Screen name="groep/[groupId]/album/[albumId]/locatie/[photoId]" options={{ title: "Locatie wijzigen" }} />
       {/* WP21: het filmscherm van een clubfilm; geen terugveeg, zodat spoelen werkt. */}
       <Stack.Screen name="groep/[groupId]/film/[filmId]" options={filmScreenOptions} />
+      {/* WP38c: de projectpagina van een filmproject. */}
+      <Stack.Screen name="groep/[groupId]/filmproject/[projectId]" options={{ title: "Filmproject" }} />
       <Stack.Screen name="groep/[groupId]/bewerken" options={{ title: "Bewerk groep" }} />
       <Stack.Screen name="groep/[groupId]/album/[albumId]/bewerken" options={{ title: "Bewerk album" }} />
       <Stack.Screen
@@ -33,6 +35,10 @@ export default function Layout() {
       <Stack.Screen
         name="groep/[groupId]/nieuw-album"
         options={{ title: "Nieuw album", presentation: "modal", headerRight: () => <CloseButton /> }}
+      />
+      <Stack.Screen
+        name="groep/[groupId]/nieuw-filmproject"
+        options={{ title: "Filmproject starten", presentation: "modal", headerRight: () => <CloseButton /> }}
       />
     </Stack>
   );

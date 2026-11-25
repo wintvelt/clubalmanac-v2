@@ -59,6 +59,7 @@ import {
 } from "../lib/groups";
 import { radius, size, space, useTheme } from "../theme";
 import { toMyGroups } from "./AlbumParts";
+import { FilmProjectBanners, StartFilmProjectButton } from "./FilmProjectParts";
 import { FilmsTab } from "./FilmsTab";
 import { AlbumCoverTile, backToMyGroups, CoverHeader, LoadError } from "./GroupParts";
 import { WideSide, WideSplit } from "./WideSide";
@@ -116,6 +117,9 @@ function GroupContent({ groupId }: { groupId: Id<"groups"> }) {
   const films = useLiveQuery(api.films.list, {});
   const hasFilms = groupHasFilms(films, groupId);
   const shownTab: Tab = tab === "films" && !hasFilms ? "albums" : tab;
+  // WP38c (38c-3): de oprichter ziet "Filmproject starten" (in de app, zonder
+  // open project), elk lid de balk per project.
+  const isFounder = group !== undefined && group !== null && me !== undefined && me !== null && group.createdBy === me._id;
 
   const wide = useWideLayout();
 
@@ -134,11 +138,13 @@ function GroupContent({ groupId }: { groupId: Id<"groups"> }) {
             description={group?.description}
             meta={group ? `Opgericht ${displayYear(group)}` : undefined}
           >
-            {rights?.editGroup && (
-              <View style={styles.sideAction}>
+            <View style={styles.sideActions}>
+              {rights?.editGroup && (
                 <SmallButton title="Bewerk groep" icon="edit" onPress={() => router.push(editGroupPath(groupId))} />
-              </View>
-            )}
+              )}
+              {group !== undefined && <StartFilmProjectButton groupId={groupId} isFounder={isFounder} />}
+            </View>
+            {group !== undefined && <FilmProjectBanners groupId={groupId} isFounder={isFounder} />}
             {group !== undefined && <SegmentedTabs tabs={tabs} selected={shownTab} onSelect={setTab} />}
           </WideSide>
         }
@@ -181,12 +187,16 @@ function GroupContent({ groupId }: { groupId: Id<"groups"> }) {
             <Text variant="meta" color="muted">
               Opgericht {displayYear(group)}
             </Text>
-            {rights?.editGroup && (
-              <View style={styles.action}>
-                <SmallButton title="Bewerk groep" icon="edit" onPress={() => router.push(editGroupPath(groupId))} />
+            {(rights?.editGroup || isFounder) && (
+              <View style={styles.actions}>
+                {rights?.editGroup && (
+                  <SmallButton title="Bewerk groep" icon="edit" onPress={() => router.push(editGroupPath(groupId))} />
+                )}
+                <StartFilmProjectButton groupId={groupId} isFounder={isFounder} />
               </View>
             )}
           </View>
+          <FilmProjectBanners groupId={groupId} isFounder={isFounder} />
           {notice && <Notice kind="success" message={notice} />}
           <SegmentedTabs tabs={hasFilms ? TABS_WITH_FILMS : TABS} selected={shownTab} onSelect={setTab} />
           {shownTab === "albums" ? (
@@ -573,6 +583,7 @@ const styles = StyleSheet.create({
     paddingVertical: space.s,
   },
   text: { flex: 1, gap: space.xs },
-  action: { paddingTop: space.s },
-  sideAction: { alignSelf: "flex-start" },
+  // "Bewerk groep" en "Filmproject starten" naast elkaar; leeg neemt geen ruimte.
+  actions: { flexDirection: "row", flexWrap: "wrap", gap: space.s, paddingTop: space.s },
+  sideActions: { flexDirection: "row", flexWrap: "wrap", gap: space.s, alignSelf: "flex-start" },
 });

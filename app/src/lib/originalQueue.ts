@@ -539,6 +539,17 @@ export function ownOriginalStand(input: {
   if (input.status === "binnen") return "binnen";
   const entry = input.queue.find((e) => e.originalId === input.originalId);
   if (!entry) return "elders";
+  return queuedStand(entry, input);
+}
+
+/**
+ * De stand van een origineel in de wachtrij van dit toestel, ook als het nog
+ * geen inzending heeft (WP38c, 38c-6: "Mijn filmpjes" toont het dan al).
+ */
+export function queuedStand(
+  entry: QueueEntry,
+  input: { wifiOnly: boolean; network: NetworkView; now: number },
+): "wordt_verstuurd" | "wacht_op_wifi" | "wacht" {
   if (entry.step === "versturen") {
     // De delen zijn bij iOS; alleen die wachten op wifi.
     return waitsForWifi(input.wifiOnly, input.network) ? "wacht_op_wifi" : "wordt_verstuurd";
