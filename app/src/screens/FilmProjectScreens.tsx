@@ -22,6 +22,7 @@ import { askConfirmation } from "../data/confirm";
 import { originalEvent } from "../data/originals";
 import { startDownload } from "../data/originalDownload";
 import { useLiveQuery } from "../data/useLiveQuery";
+import { useWideLayout } from "../components/wideLayout";
 import {
   FOUNDER_BUTTONS,
   WITHDRAW_CONFIRMATION,
@@ -58,6 +59,7 @@ import { groupErrorKind } from "../lib/groups";
 import { formatDuration } from "../lib/videos";
 import { radius, size, space, useTheme } from "../theme";
 import { LoadError } from "./GroupParts";
+import { WideSide, WideSplit } from "./WideSide";
 import { FILM_PLATFORM, OriginalPoster, WifiOnlySwitch, useNow, useOriginals } from "./FilmProjectParts";
 
 // WP38c: de schermen van het filmproject. Spec:
@@ -199,21 +201,27 @@ function ProjectPage({
     .filter(Boolean)
     .join(" · ");
 
-  return (
-    <Screen underHeader>
-      <Stack.Screen options={{ title: "Filmproject" }} />
-      <View style={styles.intro}>
-        <Text variant="title" accessibilityRole="header">
-          {title}
-        </Text>
-        <Text variant="meta" color="muted">
-          {header}
-        </Text>
-      </View>
-
+  // Links (breed) of bovenaan (smal): titel, stand, schakelaar en de knoppen van de oprichter.
+  const controls = (
+    <>
       <FounderEdits project={project} view={view} now={now} actions={actions} withClose={false} />
-
       {view.wifiSwitch && <WifiOnlySwitch />}
+    </>
+  );
+  const tail = (
+    <>
+      {view.downloadHint && (
+        <Text variant="meta" color="muted">
+          Downloaden kan in de webapp.
+        </Text>
+      )}
+      {view.close && (
+        <FounderButton button={FOUNDER_BUTTONS.close} tone="danger" disabled={busy} onPress={() => void actions.onClose()} />
+      )}
+    </>
+  );
+  const lists = (
+    <>
       {status && <Notice kind={status.kind} message={status.text} />}
 
       {mine.length > 0 && (
@@ -264,17 +272,42 @@ function ProjectPage({
           </ListSection>
         )}
       </View>
+    </>
+  );
 
-      {view.downloadHint && (
-        <Text variant="meta" color="muted">
-          Downloaden kan in de webapp.
+  // Feedback derde ronde, punt 2: breed (webapp, iPad liggend) zoals de
+  // groepspagina: links titel, stand, schakelaar en knoppen; rechts de lijsten.
+  const wide = useWideLayout();
+  if (wide) {
+    return (
+      <WideSplit
+        side={
+          <WideSide back={{ title: "Groep", onPress: () => backToGroup(project.groupId) }} name={title} cover={null} meta={header}>
+            {controls}
+            {tail}
+          </WideSide>
+        }
+      >
+        <Stack.Screen options={{ title: "Filmproject", headerShown: false }} />
+        <Screen underHeader>{lists}</Screen>
+      </WideSplit>
+    );
+  }
+
+  return (
+    <Screen underHeader>
+      <Stack.Screen options={{ title: "Filmproject", headerShown: true }} />
+      <View style={styles.intro}>
+        <Text variant="title" accessibilityRole="header">
+          {title}
         </Text>
-      )}
-
-      {view.close && (
-        <FounderButton button={FOUNDER_BUTTONS.close} tone="danger" disabled={busy} onPress={() => void actions.onClose()} />
-      )}
-
+        <Text variant="meta" color="muted">
+          {header}
+        </Text>
+      </View>
+      {controls}
+      {lists}
+      {tail}
     </Screen>
   );
 }
@@ -531,17 +564,10 @@ function DownloadPage({ data, view }: { data: ProjectData; view: ReturnType<type
       }
     });
 
-  return (
-    <Screen underHeader>
-      <Stack.Screen options={{ title: "Filmproject" }} />
-      <View style={styles.intro}>
-        <Text variant="title" accessibilityRole="header">
-          {projectTitle(project.title)}
-        </Text>
-        <Text variant="meta" color="muted">
-          {downloadHeaderText(project, originals, now)}
-        </Text>
-      </View>
+  const headerText = downloadHeaderText(project, originals, now);
+  // Links (breed) of bovenaan (smal): de knoppen van de oprichter.
+  const controls = (
+    <>
       <FounderEdits project={project} view={view} now={now} actions={actions} withClose />
       {actions.status && <Notice kind={actions.status.kind} message={actions.status.text} />}
       {all.length > 0 && (
@@ -552,6 +578,18 @@ function DownloadPage({ data, view }: { data: ProjectData; view: ReturnType<type
           onPress={() => void onDownloadAll()}
         />
       )}
+    </>
+  );
+  const removeAllButton = canRemoveAll ? (
+    <FounderButton
+      button={FOUNDER_BUTTONS.removeAll}
+      tone="danger"
+      disabled={busy !== null}
+      onPress={() => void onRemoveAll()}
+    />
+  ) : null;
+  const list = (
+    <>
       {status && <Notice kind={status.kind} message={status.text} />}
       {rows.length === 0 ? (
         <EmptyState icon="film" title="Nog geen filmpjes" text="Er is nog geen origineel ingestuurd." />
@@ -570,16 +608,54 @@ function DownloadPage({ data, view }: { data: ProjectData; view: ReturnType<type
           ))}
         </ListSection>
       )}
-      {canRemoveAll && (
-        <FounderButton
-          button={FOUNDER_BUTTONS.removeAll}
-          tone="danger"
-          disabled={busy !== null}
-          onPress={() => void onRemoveAll()}
-        />
-      )}
+    </>
+  );
+
+  // Feedback derde ronde, punt 2: breed zoals de groepspagina.
+  const wide = useWideLayout();
+  if (wide) {
+    return (
+      <WideSplit
+        side={
+          <WideSide
+            back={{ title: "Groep", onPress: () => backToGroup(project.groupId) }}
+            name={projectTitle(project.title)}
+            cover={null}
+            meta={headerText}
+          >
+            {controls}
+            {removeAllButton}
+          </WideSide>
+        }
+      >
+        <Stack.Screen options={{ title: "Filmproject", headerShown: false }} />
+        <Screen underHeader>{list}</Screen>
+      </WideSplit>
+    );
+  }
+
+  return (
+    <Screen underHeader>
+      <Stack.Screen options={{ title: "Filmproject", headerShown: true }} />
+      <View style={styles.intro}>
+        <Text variant="title" accessibilityRole="header">
+          {projectTitle(project.title)}
+        </Text>
+        <Text variant="meta" color="muted">
+          {headerText}
+        </Text>
+      </View>
+      {controls}
+      {list}
+      {removeAllButton}
     </Screen>
   );
+}
+
+/** Terug naar de groep: de stack terug, of (een directe link) naar de groep. */
+function backToGroup(groupId: Id<"groups">) {
+  if (router.canGoBack()) router.back();
+  else router.replace(groupPath(groupId));
 }
 
 function DownloadRow({

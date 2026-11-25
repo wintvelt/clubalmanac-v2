@@ -1,7 +1,8 @@
 import type { ReactNode } from "react";
 import { ActivityIndicator, StyleSheet, View } from "react-native";
 import { size, space, useTheme } from "../theme";
-import { Icon, type IconName } from "./Icon";
+import { GradientIcon } from "./GradientIcon";
+import type { IconName } from "./Icon";
 import { Text } from "./Text";
 
 // Laden en leeg (design.md §6). Beide staan in het inhoudsgebied; de kop van
@@ -27,15 +28,12 @@ type EmptyProps = {
 };
 
 export function EmptyState({ icon, title, text, children }: EmptyProps) {
-  const { colors } = useTheme();
   return (
     <View style={styles.empty}>
-      {/* WP38 (feedback na besluit 27, punt 2): geen cirkel met verloop meer,
-          het icoon zelf in een kleur uit het verloop. Een verloop óp het icoon
-          (een glyph van Ionicons) kan niet netjes op iOS, Android en web met
-          wat er is; daarom één effen kleur: het einde van het verloop. */}
+      {/* WP38 (feedback na besluit 27, punt 2; derde ronde): geen cirkel met
+          verloop meer, het icoon zelf in het verloop (GradientIcon). */}
       <View style={styles.badge}>
-        <Icon name={icon} size={56} color={colors.gradEnd} />
+        <GradientIcon name={icon} size={56} />
       </View>
       <Text variant="emptyTitle" style={styles.center} accessibilityRole="header">
         {title}
