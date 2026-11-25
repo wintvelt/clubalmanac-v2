@@ -51,7 +51,7 @@ import {
   type SkipReason,
 } from "../lib/filmProject";
 import { albumPath } from "../lib/groupRoutes";
-import { lastAlbumChoice, type LastAlbumChoice, type StoredAlbum } from "../lib/lastAlbum";
+import { groupDefaultAlbum, lastAlbumChoice, type LastAlbumChoice, type StoredAlbum } from "../lib/lastAlbum";
 import {
   originalAfterVideo,
   originalAtRoundEnd,
@@ -230,7 +230,7 @@ function dropCopies(assets: readonly Asset[], keep: readonly Item[]): void {
   for (const a of assets) if (!used.has(a.uri)) void removeFile(a.uri);
 }
 
-export function AddPhotosScreen({ albumId }: { albumId?: string }) {
+export function AddPhotosScreen({ albumId, groupId }: { albumId?: string; groupId?: string }) {
   const { colors } = useTheme();
   const upload = useUploader();
   const uploadVideo = useVideoUploader();
@@ -255,6 +255,10 @@ export function AddPhotosScreen({ albumId }: { albumId?: string }) {
   const [albumKnown, setAlbumKnown] = useState(false);
   const [choosing, setChoosing] = useState(false);
   const [initialAlbumId] = useState(albumId ?? null);
+  // WP38 besluit 29.2: de + gaf een groep mee (groepspagina, projectpagina):
+  // een album van die groep (`groupDefaultAlbum`).
+  const [initialGroupId] = useState(groupId ?? null);
+  const [groupStored, setGroupStored] = useState<StoredAlbum | null | undefined>(undefined);
   const { userId } = useAuth();
   // Het onthouden album (undefined: nog niet gelezen), of dat uit de route.
   const [candidate, setCandidate] = useState<StoredAlbum | null | undefined>(undefined);
@@ -449,6 +453,8 @@ export function AddPhotosScreen({ albumId }: { albumId?: string }) {
   // --- het album (fixronde gate 1, F1–F5) ---------------------------------
 
   // F3: uit de route (het album van de +), anders het onthouden album.
+  // Besluit 29.2: gaf de + een groep mee, dan kiest GroupAlbum hieronder met
+  // het onthouden album een album van die groep.
   useEffect(() => {
     if (initialAlbumId) return;
     if (!userId) {
@@ -457,12 +463,14 @@ export function AddPhotosScreen({ albumId }: { albumId?: string }) {
     }
     let live = true;
     void loadLastAlbum(userId).then((stored) => {
-      if (live) setCandidate(stored);
+      if (!live) return;
+      if (initialGroupId) setGroupStored(stored);
+      else setCandidate(stored);
     });
     return () => {
       live = false;
     };
-  }, [userId, initialAlbumId]);
+  }, [userId, initialAlbumId, initialGroupId]);
 
   const inRoundRef = useRef(false);
   const userIdRef = useRef(userId);
@@ -983,6 +991,13 @@ export function AddPhotosScreen({ albumId }: { albumId?: string }) {
         </QueryBoundary>
       )}
 
+      {/* WP38 besluit 29.2: een album van de groep van de +; bij een fout het onthouden album. */}
+      {!initialAlbumId && initialGroupId && candidate === undefined && groupStored !== undefined && (
+        <QueryBoundary fallback={() => <Found onFound={setCandidate} target={groupStored} />}>
+          <GroupAlbum groupId={initialGroupId} stored={groupStored} onFound={setCandidate} />
+        </QueryBoundary>
+      )}
+
       {/* WP38c: de open filmprojecten, voor besluit 3 en het origineel. Een fout telt als geen project. */}
       <QueryBoundary fallback={() => <NoOpenProjects onChange={onOpenProjects} />}>
         <OpenProjects onChange={onOpenProjects} />
@@ -1150,6 +1165,23 @@ function NoOpenProjects({ onChange }: { onChange: (list: readonly OpenFilmProjec
 function RouteAlbum({ albumId, onFound }: { albumId: string; onFound: (t: StoredAlbum | null) => void }) {
   const row = useLiveQuery(api.albums.getWithGroup, { albumId: albumId as Id<"albums"> });
   const target = row === undefined ? undefined : row ? { albumId: row._id, groupId: row.groupId } : null;
+  if (target === undefined) return null;
+  return <Found target={target} onFound={onFound} />;
+}
+
+// WP38 besluit 29.2: het onthouden album als het in deze groep ligt, anders
+// het nieuwste album van de groep; zonder albums "Kies een album".
+function GroupAlbum({
+  groupId,
+  stored,
+  onFound,
+}: {
+  groupId: string;
+  stored: StoredAlbum | null;
+  onFound: (t: StoredAlbum | null) => void;
+}) {
+  const albums = useLiveQuery(api.albums.listByGroup, { groupId: groupId as Id<"groups"> });
+  const target = groupDefaultAlbum({ groupId, stored, albums });
   if (target === undefined) return null;
   return <Found target={target} onFound={onFound} />;
 }

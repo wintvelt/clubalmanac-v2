@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import { StyleSheet, View } from "react-native";
 import { Button } from "../components/Button";
 import { Icon } from "../components/Icon";
+import { QueryBoundary } from "../components/QueryBoundary";
 import { Screen } from "../components/Screen";
 import { SmallButton } from "../components/SmallButton";
 import { EmptyState, LoadingState } from "../components/States";
@@ -13,7 +14,10 @@ import { askConfirmation } from "../data/confirm";
 import { useUploader, type WebPhoto } from "../data/upload";
 import { openFilePicker, webPhotoOf } from "../data/webConvert";
 import { listenAddPick, type AddPick } from "../data/webPick";
+import { api } from "../convexApi";
+import { useLiveQuery } from "../data/useLiveQuery";
 import { albumPath } from "../lib/groupRoutes";
+import { groupDefaultAlbum } from "../lib/lastAlbum";
 import {
   UPLOAD_PARALLEL,
   albumBatch,
@@ -26,6 +30,7 @@ import {
 } from "../lib/upload";
 import { addButton } from "../lib/addSelection";
 import { CloseButton } from "../navigation/stackOptions";
+import type { Id } from "../../../convex/_generated/dataModel";
 import { space, useTheme } from "../theme";
 import { AlbumChoice, RoundResult, THUMB, addPhotosStyles, type ChosenAlbum } from "./AddPhotosParts";
 
@@ -54,12 +59,20 @@ type Picked = { key: string; assetId: string | null; photo: WebPhoto };
 
 let pickRound = 0;
 
-export function AddPhotosScreen({ albumId }: { albumId?: string }) {
+export function AddPhotosScreen({ albumId, groupId }: { albumId?: string; groupId?: string }) {
   const upload = useUploader();
   const [picked, setPicked] = useState<Picked[]>([]);
   const [reading, setReading] = useState(false);
   const [album, setAlbum] = useState<ChosenAlbum>(null);
   const [initialAlbumId] = useState(albumId ?? null);
+  // WP38 besluit 29.2: de + gaf een groep mee. Op het web wordt geen album
+  // onthouden (WP39 besluit 9), dus het nieuwste album van die groep
+  // (`groupDefaultAlbum`); undefined zolang dat laadt.
+  const [initialGroupId] = useState(groupId ?? null);
+  const [groupAlbumId, setGroupAlbumId] = useState<string | null | undefined>(
+    initialGroupId && !initialAlbumId ? undefined : null,
+  );
+  const startAlbumId = initialAlbumId ?? groupAlbumId ?? null;
   const [items, setItems] = useState<UploadItem[] | null>(null);
   const itemsRef = useRef<UploadItem[] | null>(null);
   const running = useRef(false);
@@ -266,8 +279,14 @@ export function AddPhotosScreen({ albumId }: { albumId?: string }) {
         />
       )}
 
-      {picked.length > 0 && (
-        <AlbumChoice initialAlbumId={initialAlbumId} selected={album} onSelect={setAlbum} locked={inRound} />
+      {groupAlbumId === undefined && initialGroupId && (
+        <QueryBoundary fallback={() => <GroupAlbumFound albumId={null} onFound={setGroupAlbumId} />}>
+          <GroupAlbum groupId={initialGroupId} onFound={setGroupAlbumId} />
+        </QueryBoundary>
+      )}
+
+      {picked.length > 0 && groupAlbumId !== undefined && (
+        <AlbumChoice initialAlbumId={startAlbumId} selected={album} onSelect={setAlbum} locked={inRound} />
       )}
 
       {!inRound && picked.length > 0 && (
@@ -392,3 +411,19 @@ const local = StyleSheet.create({
   placeholder: { width: THUMB, height: THUMB, alignItems: "center", justifyContent: "center" },
   headerRight: { paddingRight: space.s },
 });
+
+// WP38 besluit 29.2: het nieuwste album van de groep van de + (op het web geen
+// onthouden album); zonder albums niets ("Kies een album").
+function GroupAlbum({ groupId, onFound }: { groupId: string; onFound: (albumId: string | null) => void }) {
+  const albums = useLiveQuery(api.albums.listByGroup, { groupId: groupId as Id<"groups"> });
+  const target = groupDefaultAlbum({ groupId, stored: null, albums });
+  if (target === undefined) return null;
+  return <GroupAlbumFound albumId={target?.albumId ?? null} onFound={onFound} />;
+}
+
+function GroupAlbumFound({ albumId, onFound }: { albumId: string | null; onFound: (albumId: string | null) => void }) {
+  useEffect(() => {
+    onFound(albumId);
+  }, [albumId]); // eslint-disable-line react-hooks/exhaustive-deps
+  return null;
+}

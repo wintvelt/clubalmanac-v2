@@ -19,6 +19,7 @@ import { Text } from "../components/Text";
 import { TextField } from "../components/TextField";
 import { api } from "../convexApi";
 import { askConfirmation } from "../data/confirm";
+import { saveLastAlbum } from "../data/lastAlbum";
 import { originalEvent } from "../data/originals";
 import { startDownload } from "../data/originalDownload";
 import { useLiveQuery } from "../data/useLiveQuery";
@@ -56,6 +57,7 @@ import {
 import { formatDay, type Day } from "../lib/groupAdmin";
 import { filmProjectPath, groupPath } from "../lib/groupRoutes";
 import { groupErrorKind } from "../lib/groups";
+import { newestAlbum, type AlbumRow } from "../lib/lastAlbum";
 import { formatDuration } from "../lib/videos";
 import { radius, size, space, useTheme } from "../theme";
 import { LoadError } from "./GroupParts";
@@ -729,6 +731,9 @@ export function NewFilmProjectScreen() {
 function NewProject({ groupId }: { groupId: Id<"groups"> }) {
   const open = useMutation(api.filmProjects.open);
   const once = useOnce();
+  const { userId } = useAuth();
+  // Besluit 29.1: de albums van de groep (live), voor het laatst gekozen album na starten.
+  const albumsRef = useRef<readonly AlbumRow[] | undefined>(undefined);
   const [now] = useState(() => Date.now());
   const [title, setTitle] = useState("");
   const [busy, setBusy] = useState(false);
@@ -744,6 +749,16 @@ function NewProject({ groupId }: { groupId: Id<"groups"> }) {
       setRefusal(null);
       try {
         const projectId = await open({ groupId, title: title.trim(), endsAt: endOfDutchDay(day) });
+        // Besluit 29.1: een album van deze groep wordt het laatst gekozen album:
+        // het album dat besluit 28 net maakte (in een groep zonder album het
+        // enige), anders het nieuwste. `open` geeft geen album-id; de live
+        // lijst heeft het nieuwe album kort na het antwoord.
+        const albums = await waitFor(() => {
+          const a = albumsRef.current;
+          return a && a.length > 0 ? a : undefined;
+        }, ALBUMS_WAIT_MS);
+        const newest = albums ? newestAlbum(albums) : null;
+        if (userId && newest) await saveLastAlbum(userId, newest).catch(() => {});
         router.replace(filmProjectPath(groupId, projectId));
       } catch (error) {
         setRefusal(filmRefusalText(error, "start"));
@@ -754,6 +769,9 @@ function NewProject({ groupId }: { groupId: Id<"groups"> }) {
 
   return (
     <Screen underHeader>
+      <QueryBoundary fallback={() => null}>
+        <GroupAlbumsInto groupId={groupId} target={albumsRef} />
+      </QueryBoundary>
       <TextField
         label="Titel"
         value={title}
@@ -782,6 +800,34 @@ function NewProject({ groupId }: { groupId: Id<"groups"> }) {
       </View>
     </Screen>
   );
+}
+
+/** Zo lang wacht starten hooguit op het nieuwe album in de live lijst. */
+const ALBUMS_WAIT_MS = 3000;
+
+/** Wacht tot `read` iets geeft, hooguit `ms`; anders undefined. */
+async function waitFor<T>(read: () => T | undefined, ms: number): Promise<T | undefined> {
+  const until = Date.now() + ms;
+  for (;;) {
+    const value = read();
+    if (value !== undefined || Date.now() >= until) return value;
+    await wait(50);
+  }
+}
+
+/** Houdt de albums van de groep bij in `target` (besluit 29.1); toont niets. */
+function GroupAlbumsInto({
+  groupId,
+  target,
+}: {
+  groupId: Id<"groups">;
+  target: { current: readonly AlbumRow[] | undefined };
+}) {
+  const albums = useLiveQuery(api.albums.listByGroup, { groupId });
+  useEffect(() => {
+    target.current = albums;
+  }, [albums, target]);
+  return null;
 }
 
 /** Besluit 27: de titel wijzigen op de projectpagina (oprichter, ook na sluiten). */

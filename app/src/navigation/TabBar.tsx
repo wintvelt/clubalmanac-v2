@@ -14,7 +14,7 @@ import { homeDecisions, homeSessionKey } from "../lib/homeDecision";
 import { groupPath } from "../lib/groupRoutes";
 import { homeButton, trackTabOrigin, type HomeButtonTarget, type TabOrigin } from "../lib/homeGroup";
 import { startAddPick } from "../data/webPick";
-import { albumIdFromPath } from "../lib/upload";
+import { plusParams } from "../lib/upload";
 import { border, plusButton, radius, size, space, useTheme } from "../theme";
 import { setTabBarDocked, takeTabBarSnap } from "./tabBarState";
 
@@ -265,10 +265,11 @@ function PlusButton() {
       accessibilityRole="button"
       accessibilityLabel="Toevoegen"
       onPress={press.withRelease(() => {
-        const albumId = albumIdFromPath(pathname);
+        // WP38 besluit 29.2: vanuit een album dat album; onder een groep de groep.
+        const params = plusParams(pathname);
         // WP36 U9: op het web opent de kiezer in de tik; op iOS niets.
         startAddPick();
-        router.push(albumId ? { pathname: "/toevoegen", params: { albumId } } : "/toevoegen");
+        router.push(Object.keys(params).length > 0 ? { pathname: "/toevoegen", params } : "/toevoegen");
       })}
       onPressIn={press.onPressIn}
       onPressOut={press.onPressOut}

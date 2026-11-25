@@ -302,3 +302,26 @@ export function albumIdFromPath(pathname: string): string | null {
     return null;
   }
 }
+
+const GROUP_PATH = /^\/groep\/([^/?#]+)(?:\/|$)/;
+
+/**
+ * WP38 besluit 29.2: wat de + in de tabbalk meegeeft. Vanuit een album (of een
+ * foto erin, of de kaart): dat album, zoals WP18. Op elk ander scherm onder
+ * `/groep/<id>` (groepspagina, projectpagina, film, starten, bewerken): de
+ * groep. Elders, of een pad dat niet te lezen is: niets (het laatst gekozen
+ * album).
+ */
+export function plusParams(pathname: string): { albumId: string } | { groupId: string } | Record<string, never> {
+  if (ALBUM_PATH.test(pathname)) {
+    const albumId = albumIdFromPath(pathname);
+    return albumId ? { albumId } : {};
+  }
+  const m = GROUP_PATH.exec(pathname);
+  if (!m) return {};
+  try {
+    return { groupId: decodeURIComponent(m[1]!) };
+  } catch {
+    return {};
+  }
+}
