@@ -1046,3 +1046,19 @@ Nog open: 1, 2, 4, 5, 6, 7, 8, 11, 12. Vanaf build 88 met "Kopieer log".
 **Ronde 3 (build 88, 2026-11-24), scherm op slot:** goed. Een nieuw filmpje van 1656 MiB; scherm op slot bij "Versturen… 16%". Daarna op de achtergrond: aanmelden, `startOriginal` met 52 links, de delen klaargezet en aan iOS gegeven, zonder regel "op slot" of "niet te lezen". iOS wekte de app, elk deel kwam één keer binnen (52 van 52, HTTP 200), `finishOriginal` gaf `binnen` en de deelbestanden waren weg, 4,5 minuten na het op slot zetten. De eerste poging viel af: dat filmpje was eerder door de oprichter verwijderd en nam terecht geen origineel meer aan (`niet_toegestaan`).
 
 Gate 38b afgerond.
+
+## Opdracht 38c: schermen (regie, 2026-11-25)
+
+38b staat op `main` (PR #58), R2 op prod is ingericht met backup. 38c maakt de schermen; 38b en 38c gaan samen in app 2.0.2. Leidraad: de UI-sectie bovenaan, de mockup (`builds/filmproject-mockup.html`) en de lijst "38c" bij *De grens tussen 38b en 38c*.
+
+**In:**
+- Groep: de balk "Filmproject [album]" met einddatum; tik opent de projectpagina. Na sluiten blijft de projectpagina bereikbaar tot de originelen weg zijn.
+- Starten (oprichter): album van de groep en einddatum kiezen. Sluiten op de projectpagina.
+- Projectpagina (alle leden): schakelaar "Alleen via wifi"; eigen inzendingen met de stand uit `ownOriginalStand` (ook `elders`) en grootte; Terugtrekken met de waarschuwing dat het definitief is; alle inzendingen met poster, lengte, inzender, datum van inzending en opnamedatum als die er is.
+- Toevoegscherm: besluit 3 (A-invariant 17) met splitsen en de regel over volle kwaliteit; de schakelaar; de meldingen bij `te_klein`, `te_groot` en `geen_ruimte`; besluit 24 (tonen wat er gebeurt bij ophalen uit iCloud en verkleinen, scherm wakker).
+- Webapp (oprichter): downloadpagina met download per origineel (`<a href>`, geen fetch), "alles downloaden" na elkaar met verse links, "alles verwijderen" met waarschuwing.
+- De regel "tot 38c er is" (elk nieuw filmpje gaat mee zodra er een open project is) vervalt waar 38c hem vervangt; het proefscherm blijft alleen in dev-builds.
+
+**Uit:** backend-wijzigingen, tenzij A een gat vindt (dan melden, niet zelf bouwen in 38c).
+
+**Voor A:** vul de spec aan (blind spots, waar de knop "Filmproject starten" staat, lege en foutstanden, webapp-varianten), schrijf RED tests voor de pure delen (besluit 3, teksten, standen, bestandsnaam, wat wie ziet), en zet open vragen voor Wouter in een eigen kopje. Gate-checks voor 38c: iPhone met dev-build, en downloaden in Safari en Chrome.
