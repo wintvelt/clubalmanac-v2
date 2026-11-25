@@ -364,12 +364,14 @@ describe("projectPageView: wie wat ziet op de projectpagina (38c-4)", () => {
     expect(view("ios", true, false)).toMatchObject({ close: false, changeEnd: false, downloadHint: true });
   });
 
-  it("de titel wijzigen (besluit 27, Wouter: ja): oprichter in de app, ook na sluiten; niet een lid, niet op het web", () => {
+  it("de titel wijzigen (besluit 27, Wouter: ja): de oprichter, in de app en op het web, ook na sluiten; niet een lid", () => {
     expect(view("ios", true, true).changeTitle).toBe(true);
     expect(view("ios", true, false).changeTitle).toBe(true);
     expect(view("ios", false, true).changeTitle).toBe(false);
-    expect(view("web", true, true).changeTitle).toBe(false);
-    expect(view("web", true, false).changeTitle).toBe(false);
+    // Feedback webapp dev, tweede ronde, punt 1: ook op de downloadpagina.
+    expect(view("web", true, true).changeTitle).toBe(true);
+    expect(view("web", true, false).changeTitle).toBe(true);
+    expect(view("web", false, true).changeTitle).toBe(false);
   });
 
   it("zonder uploader: geen schakelaar", () => {
@@ -381,6 +383,7 @@ describe("projectPageView: wie wat ziet op de projectpagina (38c-4)", () => {
       wifiSwitch: false,
       close: false,
       changeEnd: false,
+      changeTitle: false,
       downloadHint: false,
       download: false,
       removeAll: false,
@@ -388,8 +391,15 @@ describe("projectPageView: wie wat ziet op de projectpagina (38c-4)", () => {
     });
   });
 
-  it("oprichter op het web: de downloadpagina; geen sluiten, verschuiven of schakelaar", () => {
-    expect(view("web", true, true)).toMatchObject({ download: true, close: false, changeEnd: false, changeTitle: false, wifiSwitch: false, downloadHint: false });
+  // Feedback Wouter, webapp dev (2026-11-25, tweede ronde), punt 1: op de
+  // downloadpagina ook Sluiten (alleen open), Titel wijzigen en Einddatum
+  // wijzigen (alleen open, zoals setEndsAt), met de knoppen van de oprichter.
+  it("oprichter op het web, open: de downloadpagina met sluiten, titel en einddatum wijzigen; geen schakelaar", () => {
+    expect(view("web", true, true)).toMatchObject({ download: true, close: true, changeEnd: true, changeTitle: true, wifiSwitch: false, downloadHint: false });
+  });
+
+  it("oprichter op het web, gesloten: niet sluiten of de einddatum wijzigen, wel de titel", () => {
+    expect(view("web", true, false)).toMatchObject({ download: true, close: false, changeEnd: false, changeTitle: true });
   });
 
   it("'Alles verwijderen': oprichter, web, gesloten, en er is iets (open vraag 5)", () => {

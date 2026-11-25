@@ -1115,11 +1115,12 @@ Besloten (besluit 1 na A): een kleine knop "Filmproject starten" met een sleutel
 | Groep: balk | ja | ja (bekijken) |
 | Groep: "Filmproject starten" | oprichter | nee; het pad toont "Alleen in de app" |
 | Projectpagina, lid | alles, met schakelaar en Terugtrekken | lijst en eigen inzendingen met "Onderweg" of "Binnen"; geen schakelaar, geen Terugtrekken |
-| Projectpagina, oprichter | als lid, plus Sluiten, einddatum verschuiven, "nog N onderweg" en "Downloaden kan in de webapp" | de downloadpagina |
-| Downloadpagina | nee | oprichter: download per origineel, "Alles downloaden", "Alles verwijderen" |
-| Toevoegscherm | besluit 3, regel boven de knop, schakelaar | ongewijzigd (alleen foto's) |
+| Projectpagina, oprichter | als lid, plus Sluiten en Einddatum wijzigen (open), Titel wijzigen (altijd), "nog N onderweg" en "Downloaden kan in de webapp" | de downloadpagina |
+| Downloadpagina | nee | oprichter: download per origineel, "Alles downloaden", "Alles verwijderen" (na sluiten), Sluiten en Einddatum wijzigen (open), Titel wijzigen (altijd); dezelfde bevestigingen als in de app; elke knop met de gele sleutel (`FOUNDER_BUTTONS`) |
+| Mijn groepen | "Oprichter" met de gele sleutel als je de oprichter bent, anders "Admin" of "Lid" | idem |
+| Toevoegscherm | besluit 27: het gekozen album, regel boven de knop, schakelaar | ongewijzigd (alleen foto's) |
 
-Een build zonder uploader (`originalUploaderAvailable` uit) gedraagt zich als de app, maar zonder schakelaar en zonder "volle kwaliteit". Besluit 3 geldt daar wel: de backend leidt de filmpjes toch om.
+Een build zonder uploader (`originalUploaderAvailable` uit) gedraagt zich als de app, maar zonder schakelaar en zonder regel boven de knop. Filmpjes gaan ook daar naar het gekozen album (besluit 27).
 
 ### Invarianten 38c
 
@@ -1138,7 +1139,7 @@ Een build zonder uploader (`originalUploaderAvailable` uit) gedraagt zich als de
 3. **Wie wat ziet in de groep.** "Filmproject starten" alleen voor de oprichter, in de app, als de projecten geladen zijn en er geen open project is. Een balk per project uit `listForGroup`: het open project eerst. "Filmproject [album]", met "Open tot [dag maand]" (het jaar erbij als het niet dit jaar is, in Nederlandse tijd) of "Gesloten".
 4. **Wie wat ziet op de projectpagina.**
    - Schakelaar: app met uploader.
-   - Sluiten en einddatum verschuiven: oprichter, app, project open.
+   - Sluiten en einddatum verschuiven: oprichter, app en web, project open. Titel wijzigen: oprichter, app en web, ook na sluiten (feedback webapp dev, tweede ronde).
    - "Downloaden kan in de webapp": oprichter, app.
    - Downloadpagina: oprichter, web.
    - "Alles verwijderen": oprichter, web, project gesloten, minstens één inzending.
@@ -1581,3 +1582,27 @@ export type ProjectRow = { projectId: string; title: string; endsAt: number; ope
 
 1. **Sluiten ook in de webapp**, op de downloadpagina van de oprichter, met dezelfde bevestiging als in de app. Titel en einddatum wijzigen komen daar ook bij (zelfde plek, zelfde knoppen met sleutel).
 2. **Mijn groepen:** bij een groep waarvan je oprichter bent, staat "Oprichter" in plaats van "Admin", met de gele sleutel erachter. App en webapp.
+
+### Feedback webapp dev, tweede ronde (A)
+
+- **Punt 1, de webapp.** `projectPageView` geeft op het web voor de oprichter ook `close` en `changeEnd` (alleen als het project open is) en `changeTitle` (altijd). Voor een lid op het web blijft alles uit. Dit is een tweede bewuste uitzondering op W5 (alleen-lezen web), net als downloaden en "Alles verwijderen": alleen de oprichter, alleen op de downloadpagina.
+  - De knoppen komen uit `FOUNDER_BUTTONS`; de bevestiging is `closeConfirmation`, dezelfde als in de app.
+  - De webvarianten-tabel en 38c-4 zijn bijgewerkt.
+  - De plek op de downloadpagina toetsen audit en gate.
+- **Punt 2, Mijn groepen.** Een nieuwe pure functie `myGroupRole({ role, createdBy, me })` in `groups.ts` geeft `{ label, founderKey }`.
+  - Ben je de oprichter: "Oprichter", met de sleutel.
+  - Anders "Admin" of "Lid", zonder sleutel.
+  - Zolang de eigen user nog laadt: zoals nu, zonder sleutel.
+  - Een bronscan checkt dat `MyGroupsScreen.tsx` `myGroupRole` gebruikt (niet meer `roleLabel`) en de sleutel tekent in `founderKey`, direct of via een `Founder…`-component.
+  - Hetzelfde scherm geldt voor app en webapp.
+
+**Gate erbij:**
+- in Safari en Chrome als oprichter: Sluiten (met de bevestiging), Titel wijzigen en Einddatum wijzigen op de downloadpagina, elk met de gele sleutel;
+- in Mijn groepen "Oprichter" met de sleutel, op de iPhone en in de webapp.
+
+**Stand na A:** 9 tests rood:
+- `app/tests/filmProject.test.ts`: 3, want het web geeft nog geen sluiten of titel en einddatum wijzigen;
+- `app/tests/myGroupRole.test.ts`: 6 (nieuw bestand), want `myGroupRole` ontbreekt en het scherm gebruikt `roleLabel`.
+
+De andere app-tests blijven groen.
+
