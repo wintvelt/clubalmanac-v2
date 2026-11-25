@@ -1042,3 +1042,7 @@ Nog open: 1, 2, 4, 5, 6, 7, 8, 11, 12. Vanaf build 88 met "Kopieer log".
 **Ronde 2 (build 88, 2026-11-23):** gate 6 goed: warm (delen binnen 8 s na voor), koud met de dev-schakelaar (11 uitgestelde delen binnen 14 s), en de schakelaar staat na wegvegen en na de koude start uit. Gate 4 goed: twee keer wegvegen (meteen en na een paar minuten openen), elk deel één keer binnen, 55 van 55; daarna wekte iOS de app en rondde die op de achtergrond af. Gate 7 goed voor de oprichter: `NoSuchUpload`, `niet_toegestaan`, vergeten, deelbestanden weg.
 
 **Wouter (2026-11-23): genoeg getest.** Vervallen: gate 1 (regie gaat uit van de datum van de start van de upload; de lifecycle-marge rekent daarmee), 2, 5, 7 met Terugtrekken, 11 en 12; die dekken de tests en de audit. Nog lopend: gate 6 en 8 in het gewone gebruik (scherm op slot, telefoon weg), log de ochtend erna.
+
+**Ronde 3 (build 88, 2026-11-24), scherm op slot:** goed. Een nieuw filmpje van 1656 MiB; scherm op slot bij "Versturen… 16%". Daarna op de achtergrond: aanmelden, `startOriginal` met 52 links, de delen klaargezet en aan iOS gegeven, zonder regel "op slot" of "niet te lezen". iOS wekte de app, elk deel kwam één keer binnen (52 van 52, HTTP 200), `finishOriginal` gaf `binnen` en de deelbestanden waren weg, 4,5 minuten na het op slot zetten. De eerste poging viel af: dat filmpje was eerder door de oprichter verwijderd en nam terecht geen origineel meer aan (`niet_toegestaan`).
+
+Gate 38b afgerond.
