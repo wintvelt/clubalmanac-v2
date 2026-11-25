@@ -92,6 +92,10 @@ Een lid met een Android-telefoon installeert Clubalmanac uit Google Play en doet
 - **B7.** Pakketnaam `com.clubalmanac.app`.
 - **B8.** (a): info-teksten overal neutraal ("de app"), ook op iOS en web. De uitnodigingsmail en de webapp-zin pas als de app in Play te koop is, in een eigen cyclus.
 - **B9.** (a): dev-builds alleen op de emulator; de interne track alleen voor prod-builds; de test op een echte telefoon doet een Android-lid met de prod-build.
+- **B10.** Privacytekst: de alinea "Kaart op het web" in `PRIVACY` (`app/src/content/infoTexts.ts`) wordt vervangen door deze, letterlijk; daarna `node scripts/site/build.mjs` en `site/` mee committen:
+  > **Kaart.** De albumkaart haalt de kaart op bij Apple Kaarten (op de iPhone), Google Maps (op Android) of OpenStreetMap (in de webapp). Uit welke stukken kaart er worden opgevraagd, is af te leiden waar de foto's ongeveer liggen. Je naam en e-mailadres gaan niet mee.
+
+  (`lead` = "Kaart.", `text` = de rest.) In de fix-ronde van 42a.
 
 ---
 
