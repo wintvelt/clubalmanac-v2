@@ -1542,3 +1542,10 @@ export type ProjectRow = { projectId: string; title: string; endsAt: number; ope
 
 - Backend: 14 tests rood (13 nieuw in `setTitle.test.ts`, 1 in de inventaris) (`setTitle` bestaat niet). In `tests/filmProject/` samen 176 van de 182 rood, met die van besluit 27. De root-typecheck is schoon.
 - App: 5 rood erbij in `filmProject.test.ts`, samen 25. De andere 2521 app-tests blijven groen.
+
+### Feedback Wouter na besluit 27 (2026-11-25, webapp dev)
+
+1. **Oprichter-sleutel:** op elke knop die alleen de oprichter heeft, staat links het eigen icoon van de handeling en **achter de tekst een gele sleutel** (Ionicons `key-outline`, goud: lichter in donker, donkerder in licht thema, contrast ≥ 3:1). Geldt voor: Filmproject starten (links een filmrol), Project sluiten, titel en einddatum wijzigen, Downloaden, Alles downloaden, Alles verwijderen. Het toegankelijkheidslabel noemt "oprichter".
+2. **Lege standen in de hele app:** geen icoon in een cirkel met verloop meer, maar het icoon zelf in de kleuren van het verloop (zoals de verlooptekst). Lukt een verloop op het icoon niet netjes op iOS, Android en web, dan één effen kleur uit het verloop; melden.
+3. **Overal "feature-film"** in plaats van "clubfilm" in de teksten van het filmproject (meldingen als een origineel niet meegaat, terugtrekken, alles verwijderen, lege standen).
+4. Audit-nits besluit 27: commentaar in `convex/filmProjects.ts` (±72) en `convex/monitoring.ts` (±84) naar besluit 27; `TitleEditor` volgt een titel die elders verandert zolang de gebruiker niet typt.
