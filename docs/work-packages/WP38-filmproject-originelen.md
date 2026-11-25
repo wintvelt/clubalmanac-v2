@@ -1711,3 +1711,7 @@ export function groupDefaultAlbum(input: { groupId: string; stored: StoredAlbum 
 - Op de groepspagina en de projectpagina geeft de + een album van die groep. In een album blijft het dat album. Vanuit Mijn foto's het laatst gekozen album.
 
 **Stand na A:** 20 nieuwe tests in `app/tests/plusAlbum.test.ts`, alle rood: 16 omdat de pure functies niet bestaan, 4 omdat de aansluiting ontbreekt (bronscans). A draaide de pure tests tegen een wegwerp-uitwerking: groen, weggegooid. De andere app-tests blijven groen.
+
+### Uitslag gate 38c (Wouter, 2026-11-25)
+
+Builds 89–94 en de dev-webapp. Build 93: goed (Mijn groepen met Oprichter, starten, wijzigen, toevoegen met de regel van besluit 27, te lang filmpje, sluiten, lege stand met verloop). Besluit 28 op dev goed. Build 94: besluit 29 goed (+ na starten, op de groepspagina, in een album, vanuit Mijn foto's). Webapp: downloadpagina, sluiten en wijzigen, brede indeling, lege stand in Safari. **Gate 38c afgerond.**
