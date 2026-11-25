@@ -93,13 +93,19 @@ function ready(t: ReturnType<typeof addTargets>) {
   return t;
 }
 
-/** De regel van de filmpjes: aantal en album vast, met "volle kwaliteit", "met gps" en "clubfilm" (besluit 2 na A). */
-function expectVideoLine(line: string | undefined, count: string, album: string) {
-  expect(line).toBeDefined();
-  expect(line!.startsWith(`${count} naar ${album}`)).toBe(true);
-  expect(line).toContain("volle kwaliteit");
-  expect(line).toContain("met gps");
-  expect(line).toContain("clubfilm");
+// Feedback Wouter op build 89, punt 2 (vervangt besluit 2 na A; "met gps"
+// vervalt): de regel van de filmpjes met uploader.
+/** Zonder splitsen: "Je filmpje wordt ook …" / "Je [n] filmpjes worden ook …". */
+function keepLine(n: number): string {
+  return n === 1
+    ? "Je filmpje wordt ook in volle kwaliteit bewaard voor de feature-film."
+    : `Je ${n} filmpjes worden ook in volle kwaliteit bewaard voor de feature-film.`;
+}
+/** Bij splitsen: "[n] filmpjes gaan naar [X] en worden ook …". */
+function splitLine(n: number, album: string): string {
+  return n === 1
+    ? `1 filmpje gaat naar ${album} en wordt ook in volle kwaliteit bewaard voor de feature-film.`
+    : `${n} filmpjes gaan naar ${album} en worden ook in volle kwaliteit bewaard voor de feature-film.`;
 }
 
 describe("addTargets: de tabel van besluit 3", () => {
@@ -117,21 +123,21 @@ describe("addTargets: de tabel van besluit 3", () => {
     const t = ready(targets(0, 2, X));
     expect(t).toMatchObject({ photoAlbumId: null, videoAlbumId: "ax", rowAlbumId: "ax", projectId: "pg", split: false, wifiSwitch: true });
     expect(t.lines).toHaveLength(1);
-    expectVideoLine(t.lines[0], "2 filmpjes gaan", "Reis 2026");
+    expect(t.lines[0]).toBe(keepLine(2));
   });
 
   it("alleen filmpjes, Y: X staat gekozen (de rij toont X), alles naar X", () => {
     const t = ready(targets(0, 2, Y));
     expect(t).toMatchObject({ photoAlbumId: null, videoAlbumId: "ax", rowAlbumId: "ax", projectId: "pg", split: false, wifiSwitch: true });
     expect(t.lines).toHaveLength(1);
-    expectVideoLine(t.lines[0], "2 filmpjes gaan", "Reis 2026");
+    expect(t.lines[0]).toBe(keepLine(2));
   });
 
   it("foto's en filmpjes, X: alles naar X, alleen de regel van de filmpjes", () => {
     const t = ready(targets(3, 2, X));
     expect(t).toMatchObject({ photoAlbumId: "ax", videoAlbumId: "ax", rowAlbumId: "ax", split: false, wifiSwitch: true });
     expect(t.lines).toHaveLength(1);
-    expectVideoLine(t.lines[0], "2 filmpjes gaan", "Reis 2026");
+    expect(t.lines[0]).toBe(keepLine(2));
   });
 
   it("foto's en filmpjes, Y: splitsen; foto's naar Y, filmpjes naar X, twee regels (mockup 3)", () => {
@@ -139,7 +145,7 @@ describe("addTargets: de tabel van besluit 3", () => {
     expect(t).toMatchObject({ photoAlbumId: "ay", videoAlbumId: "ax", rowAlbumId: "ay", projectId: "pg", split: true, wifiSwitch: true });
     expect(t.lines).toHaveLength(2);
     expect(t.lines[0]).toBe("3 foto's gaan naar Dag 3");
-    expectVideoLine(t.lines[1], "2 filmpjes gaan", "Reis 2026");
+    expect(t.lines[1]).toBe(splitLine(2, "Reis 2026"));
   });
 
   it("alles naar een album van een groep zonder project: zoals nu", () => {
@@ -150,7 +156,7 @@ describe("addTargets: de tabel van besluit 3", () => {
   it("een album van een andere groep met een eigen project: dat project telt (niet dat van G)", () => {
     const t = ready(targets(3, 2, YK));
     expect(t).toMatchObject({ photoAlbumId: "ayk", videoAlbumId: "axk", projectId: "pk", split: true });
-    expectVideoLine(t.lines[1], "2 filmpjes gaan", "Weekend");
+    expect(t.lines[1]).toBe(splitLine(2, "Weekend"));
     expect(ready(targets(0, 1, XK))).toMatchObject({ videoAlbumId: "axk", projectId: "pk" });
   });
 
@@ -164,7 +170,33 @@ describe("addTargets: randen", () => {
   it("enkelvoud: '1 foto gaat', '1 filmpje gaat'", () => {
     const t = ready(targets(1, 1, Y));
     expect(t.lines[0]).toBe("1 foto gaat naar Dag 3");
-    expectVideoLine(t.lines[1], "1 filmpje gaat", "Reis 2026");
+    expect(t.lines[1]).toBe(splitLine(1, "Reis 2026"));
+  });
+
+  it("enkelvoud zonder splitsen: 'Je filmpje wordt ook …'", () => {
+    expect(ready(targets(0, 1, X)).lines).toEqual([keepLine(1)]);
+    expect(ready(targets(0, 1, Y)).lines).toEqual([keepLine(1)]);
+    expect(ready(targets(2, 1, X)).lines).toEqual([keepLine(1)]);
+  });
+
+  it("meervoud zonder splitsen, ook met foto's naar X: 'Je [n] filmpjes worden ook …'", () => {
+    expect(ready(targets(0, 5, X)).lines).toEqual([keepLine(5)]);
+    expect(ready(targets(3, 5, X)).lines).toEqual([keepLine(5)]);
+  });
+
+  it("'met gps' en 'clubfilm' zijn weg, in elke stand", () => {
+    for (const [photos, videos, album, originals] of [
+      [0, 1, X, true],
+      [0, 2, Y, true],
+      [3, 2, Y, true],
+      [1, 1, Y, true],
+      [3, 2, Y, false],
+    ] as const) {
+      for (const l of ready(targets(photos, videos, album, { originals })).lines) {
+        expect(l).not.toContain("gps");
+        expect(l).not.toContain("clubfilm");
+      }
+    }
   });
 
   it("komen er foto's bij nadat X werd getoond, dan staat Y er weer en wordt er gesplitst (het gekozen album blijft Y)", () => {
@@ -177,7 +209,7 @@ describe("addTargets: randen", () => {
     expect(ready(targets(3, 0, Y))).toMatchObject({ photoAlbumId: "ay", videoAlbumId: null, split: false, lines: [], wifiSwitch: false });
   });
 
-  it("zonder uploader (web, oude build): wel splitsen, maar zonder 'volle kwaliteit' en zonder schakelaar", () => {
+  it("zonder uploader (web, oude build): wel splitsen, alleen '[n] filmpjes gaan naar [X]', zonder schakelaar", () => {
     const split = ready(targets(3, 2, Y, { originals: false }));
     expect(split).toMatchObject({ photoAlbumId: "ay", videoAlbumId: "ax", split: true, wifiSwitch: false });
     expect(split.lines).toHaveLength(2);
@@ -185,8 +217,9 @@ describe("addTargets: randen", () => {
     expect(split.lines[1]).toBe("2 filmpjes gaan naar Reis 2026");
     for (const l of split.lines) {
       expect(l).not.toContain("volle kwaliteit");
-      expect(l).not.toContain("gps");
+      expect(l).not.toContain("feature-film");
     }
+    expect(ready(targets(1, 1, Y, { originals: false })).lines).toEqual(["1 foto gaat naar Dag 3", "1 filmpje gaat naar Reis 2026"]);
   });
 
   it("zonder uploader en zonder splitsen: geen regel", () => {

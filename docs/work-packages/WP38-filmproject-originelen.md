@@ -1127,7 +1127,11 @@ Een build zonder uploader (`originalUploaderAvailable` uit) gedraagt zich als de
 
 1. **Besluit 3 in één functie** (A-invariant 17). Uit de keuze (aantal foto's, aantal filmpjes dat meegaat: een te lang filmpje telt niet), het gekozen album en de open projecten volgt: het album van de foto's, het album van de filmpjes, of er gesplitst wordt, welk album de albumrij toont, de regels boven de knop, en of de schakelaar er staat.
    - Het gekozen album blijft wat het lid (of de +, of het onthouden album) koos. Alleen filmpjes met Y gekozen: de rij toont X. Komen er foto's bij, dan staat Y er weer en wordt er gesplitst. Het onthouden album (WP39 F2) is het gekozen album.
-   - Regels boven de knop: bij splitsen "[n] foto's gaan naar [Y]" en "[n] filmpjes gaan naar [X], …" met "volle kwaliteit", "met gps" en "clubfilm" (mockup 3, besluit 2 na A). Gaan de filmpjes zonder splitsen naar X, dan alleen de regel van de filmpjes. Zonder uploader valt het deel over volle kwaliteit en gps weg, en zonder splitsen dan ook de regel. Zonder project geen regel.
+   - Regels boven de knop (feedback build 89, punt 2):
+     - zonder splitsen, filmpjes naar X: "Je filmpje wordt ook in volle kwaliteit bewaard voor de feature-film." of "Je [n] filmpjes worden ook in volle kwaliteit bewaard voor de feature-film.";
+     - bij splitsen: "[n] foto's gaan naar [Y]" en "[n] filmpjes gaan naar [X] en worden ook in volle kwaliteit bewaard voor de feature-film." (enkelvoud "1 filmpje gaat … en wordt ook …");
+     - zonder uploader: geen zin over volle kwaliteit; bij splitsen alleen "[n] filmpjes gaan naar [X]", zonder splitsen geen regel;
+     - zonder project geen regel.
    - De schakelaar "Alleen via wifi" staat er alleen met uploader en met minstens één filmpje naar X.
    - Zijn de open projecten nog niet geladen en zitten er filmpjes in de keuze, dan is de uitkomst "nog niet klaar".
 2. **Y grijs in het kiesscherm.** Alleen filmpjes in de keuze: elk album van een groep met een open project, behalve X zelf, is niet te kiezen, met "Filmpjes gaan nu naar [X]". Met foto's erbij is Y te kiezen.
@@ -1282,7 +1286,7 @@ export function filmRefusalText(error: unknown, action: FilmAction): string;
 
 1. **Starten**: als oprichter in een groep zonder project: de knop met het sleutel-icoon naast "Bewerk groep"; VoiceOver zegt dat hij alleen voor de oprichter is. Album en einddatum kiezen, de balk verschijnt. Een lid (tweede account) ziet de balk, niet de knop.
 2. **Besluit 3**: alleen filmpjes met het onthouden album Y: de rij toont X, Y is grijs met "Filmpjes gaan nu naar X". Foto's en filmpjes met Y: twee regels boven de knop; na afloop staan de foto's in Y en de filmpjes in X, en de meldingen noemen elk hun album. Ook via de + in album Y.
-3. **Schakelaar**: in het toevoegscherm en op de projectpagina dezelfde stand; omzetten op de een staat meteen op de ander.
+3. **Schakelaar**: in het toevoegscherm en op de projectpagina dezelfde stand; omzetten op de een staat meteen op de ander. Opmaak (feedback build 89, punt 1): label en schakelaar op één lijn, verticaal gecentreerd, in een kaart zoals mockup 2, op beide schermen.
 4. **Projectpagina**, per filmpje: een eigen filmpje gaat van "Wordt verstuurd" naar "Binnen"; met de schakelaar aan op mobiel internet "Wacht op wifi". Een filmpje staat bij "Mijn filmpjes" zodra het in de wachtrij is: dat is als zijn verkleinen voor het album begint. Bij een reeks komt het volgende filmpje pas in de wachtrij als het vorige voor het album verstuurd is (38b); dat is goed.
 5. **Terugtrekken**, met de waarschuwing: de rij is weg, het filmpje staat nog in het album, in het log van het proefscherm is het bestand weg.
 6. **Een clip onder 1 MiB**: de melding "te klein", het filmpje staat in het album.
@@ -1317,7 +1321,7 @@ Open vragen 1–8 volgens het advies van A, met twee aanvullingen:
 
 Verwerkt in 38c-1, 4, 6, 7, 9 en de nieuwe 38c-20 tot 22, het testcontract, de tabel en de gate.
 
-- **Besluit 2**: de regel van de filmpjes moet "met gps" bevatten (en "volle kwaliteit" en "clubfilm"); zonder uploader geen van drieën.
+- **Besluit 2**: vervangen door feedback build 89, punt 2 (zie 38c-1).
 - **Besluit 3**: backend-tests voor `get` (38c-22); in de app de kop van de downloadpagina en "weg op". De grootte van een eigen inzending komt nu uit `get`, ook bij `binnen` en `elders`.
 - **Besluit 1**: `START_BUTTON` met `key` en een label; Icon kent `key`; een scherm gebruikt de constante.
 - **Besluit 7**: de zin over het origineel in het menu.
@@ -1379,3 +1383,11 @@ De ronde van het scherm volgt `roundTargets`: met `videoResult` krijgt elk filmp
    - zonder splitsen: "Je filmpje wordt ook in volle kwaliteit bewaard voor de feature-film." (meervoud: "Je [n] filmpjes worden ook …");
    - bij splitsen blijft de regel van de foto's ("[n] foto's gaan naar [Y]"), en voor de filmpjes: "[n] filmpjes gaan naar [X] en worden ook in volle kwaliteit bewaard voor de feature-film."
    - Zonder uploader: geen zin over volle kwaliteit; bij splitsen alleen "[n] filmpjes gaan naar [X]".
+
+### Feedback build 89 (A)
+
+- **Punt 1** (opmaak van de schakelaar) is niet puur te toetsen: gate 3.
+- **Punt 2** staat in 38c-1 en in `filmProject.test.ts` (`addTargets`), met de exacte zinnen: zonder splitsen enkel- en meervoud (ook met foto's naar X), bij splitsen enkel- en meervoud, zonder uploader, en nergens nog "gps" of "clubfilm".
+
+**Stand na A (build 89):** 9 tests rood om de goede reden (de oude zin met "met gps … clubfilm"): de vijf van de tabel van besluit 3 met een regel, het enkelvoud bij splitsen, en drie nieuwe (enkelvoud zonder splitsen, meervoud zonder splitsen, geen "gps" of "clubfilm"). Zonder uploader is al groen. De andere 2547 app-tests blijven groen; typecheck schoon.
+
