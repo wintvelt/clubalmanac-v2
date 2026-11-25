@@ -180,8 +180,8 @@ function endsAtAllowed(endsAt: number, now: number): boolean {
  * Besluit 1, A-invariant 1: alleen de oprichter (op het moment van het
  * verzoek). Besluit 28: een groep zonder album krijgt een album met de titel.
  * Besluit 27: een titel (de regels van een albumnaam: getrimd, 1 tot
- * 50 tekens, geen onzichtbare tekens), geen album; een groep zonder albums kan
- * ook een project hebben. De einddatum ligt in de toekomst en hooguit een jaar
+ * 50 tekens, geen onzichtbare tekens); het project hangt niet aan een album.
+ * De einddatum ligt in de toekomst en hooguit een jaar
  * vooruit (besluit 13); hooguit één open project per groep. Het project sluit
  * vanzelf op de einddatum.
  */
