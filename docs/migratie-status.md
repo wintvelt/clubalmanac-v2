@@ -143,7 +143,7 @@ Besluit Wouter 2026-11-15: niemand gebruikt de oude webapp. Volgorde: eerst de o
 
 **App 2.0.1** (iPad liggend met zijkolom, naam "Clubalmanac", Engelse teksten) vrijgegeven in de App Store op 2026-11-22.
 
-[WP37](./work-packages/WP37-filmpjes-in-albums.md) ✅ 2026-11-22: filmpjes in albums (hooguit 3 minuten), op de iPhone verkleind naar 1080p, opslag in Cloudflare R2, met poster, duur en plek op de kaart, ook in de webapp. Audit en red-team verwerkt. Gate op een iPhone 15 Pro tegen dev met echte R2: verkleinen, tonen, afspelen, geluid, kaart, doorgaan na een app-switch, eerste tik op Uploaden. Live met app 2.0.2. R2 op prod staat sinds 2026-11-25 (beide buckets, token `clubalmanac-prod`, env-vars, checks schoon); vóór 2.0.2 nog de backup van R2 en de kostenmelding van $5 (Wouter).
+[WP37](./work-packages/WP37-filmpjes-in-albums.md) ✅ 2026-11-22: filmpjes in albums (hooguit 3 minuten), op de iPhone verkleind naar 1080p, opslag in Cloudflare R2, met poster, duur en plek op de kaart, ook in de webapp. Audit en red-team verwerkt. Gate op een iPhone 15 Pro tegen dev met echte R2: verkleinen, tonen, afspelen, geluid, kaart, doorgaan na een app-switch, eerste tik op Uploaden. Live met app 2.0.2. R2 op prod staat sinds 2026-11-25 (beide buckets, token `clubalmanac-prod`, env-vars, checks schoon), met backup van R2 (eerste run groen) en een budget alert van $10.
 
 [WP39](./work-packages/WP39-toevoegscherm.md) ✅ 2026-11-22: toevoegscherm voor foto's en filmpjes: raster met omslagen, keuze aanvullen en inkorten, albumkiezer met het laatst gekozen album, "Stoppen" met teller bij het ophalen uit iCloud, grijze uit-knoppen in de hele app. Drie gate-rondes op de iPhone. Live met app 2.0.2.
 
