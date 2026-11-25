@@ -1371,3 +1371,11 @@ De ronde van het scherm volgt `roundTargets`: met `videoResult` krijgt elk filmp
 
 **Stand na A (fix-cyclus 1):** 23 nieuwe tests, alle rood om de goede reden: `roundTargets` (12), `downloadStatusText` (1), `downloadAll` (3) en `deleteMessage` (4) bestaan nog niet; `FlagScreens.tsx` kent geen filmpje (2); `AddPhotosScreen` roept `useMyGroups` zelf aan (1). De andere 2473 app-tests blijven groen. A draaide de 138 tests van 38c tegen een wegwerp-uitwerking buiten de repo: groen, typecheck schoon; weggegooid.
 
+
+### Feedback Wouter op build 89 (2026-11-25)
+
+1. **Schakelaar "Alleen via wifi"** (projectpagina en toevoegscherm): label en schakelaar netjes op één lijn, verticaal gecentreerd, in een kaart zoals mockup 2.
+2. **De regel boven de knop** wordt (vervangt besluit 2 na A, "met gps" vervalt):
+   - zonder splitsen: "Je filmpje wordt ook in volle kwaliteit bewaard voor de feature-film." (meervoud: "Je [n] filmpjes worden ook …");
+   - bij splitsen blijft de regel van de foto's ("[n] foto's gaan naar [Y]"), en voor de filmpjes: "[n] filmpjes gaan naar [X] en worden ook in volle kwaliteit bewaard voor de feature-film."
+   - Zonder uploader: geen zin over volle kwaliteit; bij splitsen alleen "[n] filmpjes gaan naar [X]".
