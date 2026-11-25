@@ -100,8 +100,8 @@ const PRIVACY: readonly InfoBlock[] = [
   },
   {
     kind: "paragraph",
-    lead: "Kaart op het web.",
-    text: "De albumkaart in de webapp (app.clubalmanac.com) laadt de kaart van OpenStreetMap (OpenStreetMap Foundation, Verenigd Koninkrijk). Uit welke stukken kaart je browser opvraagt, is af te leiden waar de foto's ongeveer liggen; je naam en e-mailadres gaan niet mee.",
+    lead: "Kaart.",
+    text: "De albumkaart haalt de kaart op bij Apple Kaarten (op de iPhone), Google Maps (op Android) of OpenStreetMap (in de webapp). Uit welke stukken kaart er worden opgevraagd, is af te leiden waar de foto's ongeveer liggen. Je naam en e-mailadres gaan niet mee.",
   },
   {
     kind: "paragraph",

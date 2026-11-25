@@ -8,6 +8,7 @@ import { ActionMenuHost } from "./src/components/ActionMenu";
 import { deviceClerkStorage } from "./src/auth/deviceClerkStorage";
 import { ConvexProviderWithClerkRetry } from "./src/data/convexConnection";
 import { ImageHostProvider } from "./src/data/images";
+import { clearPickerCopiesAtStart } from "./src/data/pickerCopies";
 import { clearOldShares } from "./src/data/shareFiles";
 import { OnlineProvider } from "./src/data/online";
 import { parseClientEnv, type ClientEnv } from "./src/lib/env";
@@ -34,7 +35,11 @@ const envResult = readEnv();
 // Convex. Het entry-punt is expo-router/entry; de routes staan in src/app/.
 export default function App({ children }: { children: ReactNode }) {
   // WP42 A7: op Android deelbestanden van de vorige keer opruimen; op iOS niets.
-  useEffect(() => clearOldShares(), []);
+  // WP42 fix-ronde, punt 3: kopieën van de kiezer van een vorige keer, ook op iOS.
+  useEffect(() => {
+    clearOldShares();
+    clearPickerCopiesAtStart();
+  }, []);
   return (
     <SafeAreaProvider>
       <StatusBar style="auto" />

@@ -1,4 +1,4 @@
-import type { ImagePickerOptions, MediaType } from "expo-image-picker";
+import type { ImagePickerAsset, ImagePickerOptions, MediaType } from "expo-image-picker";
 
 // WP42 A6 en B4: wat deze build in het toevoegscherm kan kiezen, en hoe. Op
 // iOS foto's en filmpjes (WP37); pickMedia.android.ts heeft alleen foto's
@@ -38,3 +38,12 @@ export const PICKER_CLOSE_BY_APP_STATE = false;
  * fotokiezer van Android vraagt geen toegang.
  */
 export const PICKER_ASKS_ACCESS = true;
+
+/**
+ * WP42 fix-ronde, punt 2: elk gekozen beeld een vaste `assetId`, voor het
+ * ontdubbelen bij "Meer selecteren" en de upload-id (WP18 A-inv. 25). Op iOS
+ * geeft de kiezer die zelf; hier verandert niets.
+ */
+export async function withContentKeys(assets: ImagePickerAsset[]): Promise<ImagePickerAsset[]> {
+  return assets;
+}

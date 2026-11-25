@@ -36,6 +36,7 @@ import { api } from "../convexApi";
 import { useMyGroups } from "../data/homeGroupState";
 import { forgetLastAlbum, loadLastAlbum, saveLastAlbum } from "../data/lastAlbum";
 import { addOriginalToQueue, originalEvent, originalsReady, originalsSnapshot } from "../data/originals";
+import { removePickerCopies } from "../data/pickerCopies";
 import {
   beforePick,
   PHOTOS_ONLY_TEXTS,
@@ -43,6 +44,7 @@ import {
   PICK_MEDIA_TYPES,
   PICKER_ASKS_ACCESS,
   PICKER_CLOSE_BY_APP_STATE,
+  withContentKeys,
 } from "../data/pickMedia";
 import { useUploader } from "../data/upload";
 import { useLiveQuery } from "../data/useLiveQuery";
@@ -241,11 +243,14 @@ function videoCountText(n: number): string {
 
 /**
  * B-besluit 3: de kopie die de kiezer van een asset maakte, weg. Niet als een
- * item dat blijft hetzelfde bestand gebruikt.
+ * item dat blijft hetzelfde bestand gebruikt. WP42 fix-ronde, punt 3: ook via
+ * src/data/pickerCopies, want op Android is er geen eigen module.
  */
 function dropCopies(assets: readonly Asset[], keep: readonly Item[]): void {
   const used = new Set(keep.map((i) => i.asset.uri));
-  for (const a of assets) if (!used.has(a.uri)) void removeFile(a.uri);
+  const gone = assets.filter((a) => !used.has(a.uri)).map((a) => a.uri);
+  for (const uri of gone) void removeFile(uri);
+  removePickerCopies(gone);
 }
 
 export function AddPhotosScreen({ albumId }: { albumId?: string }) {
@@ -374,6 +379,8 @@ export function AddPhotosScreen({ albumId }: { albumId?: string }) {
         videoExportPreset: ImagePicker.VideoExportPreset.Passthrough,
         ...PICK_EXTRA_OPTIONS,
       });
+      // WP42 fix-ronde, punt 2: op Android een sleutel uit de inhoud (geen `assetId`); op iOS niets.
+      if (!result.canceled) result = { ...result, assets: await withContentKeys(result.assets) };
     } catch (e) {
       failure = e;
       failed = true;
@@ -410,7 +417,9 @@ export function AddPhotosScreen({ albumId }: { albumId?: string }) {
     }
     dropCopies(skipped, next);
     if (mode === "nieuw") {
-      // Een nieuwe keuze is een nieuwe ronde; het album blijft gekozen.
+      // Een nieuwe keuze is een nieuwe ronde; het album blijft gekozen. WP42
+      // fix-ronde, punt 3: de kopieën van de vorige keuze zijn niet meer nodig.
+      dropCopies(selectionRef.current.map((i) => i.asset), next);
       endOriginalRound();
       update(null);
       updateVideos(null);
@@ -454,10 +463,13 @@ export function AddPhotosScreen({ albumId }: { albumId?: string }) {
   // Dicht: een antwoord dat nog komt, telt niet (zijn kopieën gaan weg).
   // WP38b: de ronde sluit; een origineel van een filmpje dat niet in het album
   // kwam, gaat weg (38b-3).
+  // WP42 fix-ronde, punt 3: de kopieën van de kiezer (met hun plaats) weg; een
+  // verplaatst origineel ligt niet in de map van de kiezer en blijft.
   useEffect(
     () => () => {
       sessionRef.current = stopPick(sessionRef.current);
       endOriginalRound();
+      removePickerCopies(selectionRef.current.map((i) => i.asset.uri));
     },
     [], // eslint-disable-line react-hooks/exhaustive-deps
   );

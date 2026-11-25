@@ -2,6 +2,7 @@ import { restartClerk } from "../data/clerkRestart";
 import { clearLastAlbum } from "../data/lastAlbum";
 import { clearLastGroup } from "../data/lastGroup";
 import { forgetOriginalsOf } from "../data/originals";
+import { clearPickerCopies } from "../data/pickerCopies";
 import { clearOldShares } from "../data/shareFiles";
 import { wipeClerkStorage } from "./deviceClerkStorage";
 
@@ -35,6 +36,8 @@ export async function signOutAndWipe(
   await wipeClerkStorage();
   // WP42 A7: op Android blijft het laatst gedeelde bestand staan; bij uitloggen weg.
   clearOldShares();
+  // WP42 fix-ronde, punt 3: en wat de kiezer nog had liggen (met plaats).
+  clearPickerCopies();
   if (!failed) return true;
   return await restartClerk().then(
     () => true,
