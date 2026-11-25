@@ -1391,3 +1391,13 @@ De ronde van het scherm volgt `roundTargets`: met `videoResult` krijgt elk filmp
 
 **Stand na A (build 89):** 9 tests rood om de goede reden (de oude zin met "met gps … clubfilm"): de vijf van de tabel van besluit 3 met een regel, het enkelvoud bij splitsen, en drie nieuwe (enkelvoud zonder splitsen, meervoud zonder splitsen, geen "gps" of "clubfilm"). Zonder uploader is al groen. De andere 2547 app-tests blijven groen; typecheck schoon.
 
+
+### Besluit 27 (Wouter, 2026-11-25, na build 89): alles naar het gekozen album
+
+Vervangt besluit 2 en 3, A-invariant 2 en 17, en de punten over splitsen en het grijze album.
+
+1. **Alles wat het lid kiest, gaat naar het album dat het lid kiest.** Ook filmpjes. De backend leidt niets meer om; geen splitsen, geen grijs album in het kiesscherm.
+2. **Staat er in die groep een project open, dan gaat van elk nieuw filmpje ook het origineel naar het project**, in welk album van de groep het ook komt. De voorwaarden blijven verder gelijk (eigen nieuw filmpje, gemaakt terwijl het project open staat, lid van de groep; besluit 4 over bestaande filmpjes blijft).
+3. **Een project hangt niet meer aan een album.** De oprichter geeft bij het starten een **titel** en een einddatum. Banner, projectpagina en downloadpagina tonen de titel. Bestaande projecten (alleen dev; op prod staat er geen) krijgen als titel de albumnaam.
+4. **De regel boven de knop**, alleen met uploader en minstens één filmpje dat meegaat: "1 filmpje wordt ook als origineel bewaard voor filmproject [titel]" / "[n] filmpjes worden ook als origineel bewaard voor filmproject [titel]". Zonder uploader geen regel.
+5. **Backend (38a) verandert**: `startOriginal` en wat ervan afhangt kijken naar de groep in plaats van naar het filmalbum; het schema krijgt een titel. Na de merge deployt Wouter de backend naar prod (er staat daar nog geen project, dus geen migratie van echte data).
