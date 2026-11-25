@@ -41,6 +41,7 @@ import type * as lib_profilePhoto from "../lib/profilePhoto.js";
 import type * as lib_r2 from "../lib/r2.js";
 import type * as lib_s3Presign from "../lib/s3Presign.js";
 import type * as lib_selfTestImages from "../lib/selfTestImages.js";
+import type * as lib_settlementImage from "../lib/settlementImage.js";
 import type * as lib_settlementShape from "../lib/settlementShape.js";
 import type * as lib_shapes from "../lib/shapes.js";
 import type * as lib_testGate from "../lib/testGate.js";
@@ -98,6 +99,7 @@ declare const fullApi: ApiFromModules<{
   "lib/r2": typeof lib_r2;
   "lib/s3Presign": typeof lib_s3Presign;
   "lib/selfTestImages": typeof lib_selfTestImages;
+  "lib/settlementImage": typeof lib_settlementImage;
   "lib/settlementShape": typeof lib_settlementShape;
   "lib/shapes": typeof lib_shapes;
   "lib/testGate": typeof lib_testGate;
