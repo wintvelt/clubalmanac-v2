@@ -84,7 +84,14 @@ Een lid met een Android-telefoon installeert Clubalmanac uit Google Play en doet
 ## Besluiten Wouter (2026-11-25)
 
 - **B1.** Hooguit 3–4 leden gebruiken Android. (Welke telefoons en welke Android-versie: nog navragen, zie A-antwoord 2 en 8.)
-- **B5.** Play wordt een **organisatie-account** (bedrijfsaccount), niet persoonlijk. Testers zoeken voor een gesloten test lukt niet. Wat dat account vraagt en wat het oplevert: zie A §Play, "Organisatie-account".
+- **B5.** Play wordt een **organisatie-account** (bedrijfsaccount), niet persoonlijk. Testers zoeken voor een gesloten test lukt niet. Wat dat account vraagt en wat het oplevert: zie A §Play, "Organisatie-account". Het D-U-N-S-nummer van Inc. Management B.V. bestaat al; Wouter maakt het account aan.
+- **B2.** Opknippen in 42a, 42b en 42c.
+- **B3.** Google Maps, met een donkere kaartstijl in donker thema (a1). Wouter maakt het Google Cloud-project en de sleutel; tot dan werkt B zonder sleutel (lege kaart op de emulator is verwacht).
+- **B4.** Eerst spike S1. Werkt variant (d), dan die; anders ontbreekt de plaats op Android, zoals in de webapp. Nooit toegang tot de hele galerij.
+- **B6.** Lokaal bouwen; de EAS-cloud alleen als uitwijk. JDK 17 komt op de server.
+- **B7.** Pakketnaam `com.clubalmanac.app`.
+- **B8.** (a): info-teksten overal neutraal ("de app"), ook op iOS en web. De uitnodigingsmail en de webapp-zin pas als de app in Play te koop is, in een eigen cyclus.
+- **B9.** (a): dev-builds alleen op de emulator; de interne track alleen voor prod-builds; de test op een echte telefoon doet een Android-lid met de prod-build.
 
 ---
 
