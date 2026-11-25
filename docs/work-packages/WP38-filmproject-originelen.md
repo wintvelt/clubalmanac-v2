@@ -1665,3 +1665,20 @@ Start de oprichter een filmproject in een groep **zonder album**, dan maakt de b
 **Gate erbij:** start als oprichter een project in een groep zonder album. Het album met de titel staat meteen in de groep en in het kiesscherm van het toevoegscherm. Een filmpje daarin geeft "wordt ook als origineel bewaard".
 
 **Stand na A:** 5 rood en 5 groen, in één nieuw bestand. A draaide alle 192 tests van het filmproject tegen een wegwerp-uitwerking (een album maken na de controles in `open`): allemaal groen. Die uitwerking is weggegooid. De root-typecheck is schoon.
+
+### Besluit 30 (Wouter, 2026-11-25): kortere teksten
+
+De bevestigingen en meldingen van het filmproject worden ongeveer de helft korter (de iOS-melding met Liquid Glass leest slecht bij veel tekst):
+
+| Waar | Tekst |
+|---|---|
+| Project sluiten | "Nieuwe filmpjes gaan dan niet meer mee. Wat onderweg is, mag nog 14 dagen binnenkomen." |
+| Terugtrekken | "Het filmpje blijft in het album, maar kan nooit meer mee naar een feature-film." |
+| Alles verwijderen | "[n] originelen gaan weg, ook wat nog onderweg is. De filmpjes blijven in de albums." (enkelvoud: "1 origineel gaat weg, ook als het nog onderweg is. Het filmpje blijft in het album.") |
+| Geen ruimte | "[n] filmpjes niet naar de feature-film: te weinig ruimte op je iPhone." (enkelvoud "1 filmpje") |
+| Te klein / te groot | "[n] filmpjes te klein voor de feature-film." / "… te groot …" (enkelvoud "1 filmpje") |
+| Niet gelukt (overig) | "[n] filmpjes niet naar de feature-film." |
+| Algemene fout | "Dat lukte niet. Probeer het opnieuw." |
+| Verkeerd teken in titel | "De titel bevat een teken dat niet mag." |
+
+Andere teksten die langer zijn dan nodig: zelfde stijl (kort, wat de gebruiker moet weten). Een eigen dialoog met dichte achtergrond in plaats van de iOS-melding is een apart werkpakket (later).
