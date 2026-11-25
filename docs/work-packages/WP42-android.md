@@ -263,3 +263,17 @@ Niet in unit-tests (gate en audit): menu's, bevestigingen en de terugknop (A1–
 
 - **42b:** verkleinen met Media3 Transformer (AndroidX) of een bibliotheek; datum uit `MediaMetadataRetriever`. De fotokiezer haalt ook bij filmpjes de plaats weg; de backend weigert een filmpje mét plaats al (WP37).
 - **42c:** WorkManager met een langlopende worker draait als foreground service van het type `dataSync`: Play vraagt dan een verklaring met video, en Android 15 begrenst `dataSync` op 6 uur per 24 uur. Alternatief vanaf Android 14: een door de gebruiker gestarte overdracht (user-initiated data transfer job). Kiezen bij de kickoff van 42c. Zekerheid: middel.
+
+## Fix-ronde 42a (regie, na audit 2026-11-25)
+
+Audit: niets blokkerends. Door B in één ronde:
+
+1. **Oudere Android.** Variant (d) is alleen op API 36 gemeten. Meet op een emulator met API 30 of 31 (en zo nodig 33) dezelfde varianten als S1. Regel per versie: eerst de fotokiezer met meerdere tegelijk (A6), dan pas de plaats. Opent `legacy` op een versie de app Bestanden, dan daar geen `legacy` en geen plaats. Ook meten: welke systeemvraag het recht daar geeft.
+2. **Dubbele foto's** (`assetId` `null`). Als `assetId` ontbreekt, een vaste sleutel uit de inhoud van het bestand (bv. md5 van de kopie van de kiezer) gebruiken voor "Meer selecteren" en voor de upload-id (WP18 A-inv. 25). iOS ongewijzigd.
+3. **GPS-kopieën** in `cache/ImagePicker` weghalen zodra ze niet meer nodig zijn. Ook nagaan of iOS hetzelfde doet; zo ja, daar ook.
+4. **Privacytekst**: besluit B10.
+5. **`docs/conventions/external-services.md`**: de rechten-zin noemt ook `READ/WRITE_EXTERNAL_STORAGE` tot API 32 (uit `expo-image-picker`, nooit gevraagd).
+6. **De vraag om het recht**: op de emulator ook "Select photos" en "Don't allow" doorlopen. Geen eigen uitleg vooraf.
+7. **Keuze kwijt na het sluiten van de app** door Android: `ImagePicker.getPendingResultAsync()` op Android oppakken, als dat klein blijft; anders melden.
+
+Niet doen: de sleutelcontrole buiten EAS (audit-nit 5, aanvaard).
