@@ -1514,3 +1514,5 @@ export type ProjectRow = { projectId: string; title: string; endsAt: number; ope
 **Open vragen (voor Wouter)**
 
 1. **De titel achteraf wijzigen?** Een tikfout staat anders een jaar lang op de balk, de projectpagina en in de mail. Advies: ja, voor de oprichter, op dezelfde plek als de einddatum. Dat is één extra backend-functie met de gate van `setEndsAt`. A schrijft de tests na het besluit.
+
+**Wouter (2026-11-25), open vraag 1 van besluit 27 (A):** ja, de oprichter kan de titel achteraf wijzigen, op dezelfde plek als de einddatum (tik op de kop van de projectpagina). A-keuzes (album verwijderen mag altijd; bestandsnaam datum plus inzender; bij twee groepen telt het eerste album) aanvaard.
