@@ -20,6 +20,8 @@ import type { CoverPhoto } from "./GroupParts";
 
 const COVER_WIDTH = SIDE_WIDTH - 2 * size.screenMargin;
 const COVER_HEIGHT = Math.round((COVER_WIDTH * 3) / 4);
+// WP41c: hetzelfde vak voor de foto van een afrekening in de linkerkolom.
+export const SIDE_COVER_BOX = { width: COVER_WIDTH, height: COVER_HEIGHT };
 
 // Beide kolommen beginnen onder de statusbalk (op iOS; in de browser is die
 // marge 0). Links en rechts heeft een iPad geen veilige marge; onderaan staat

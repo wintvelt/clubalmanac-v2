@@ -74,7 +74,7 @@ async function snapshot(res: Response) {
 const holds = (body: string, bytes: Uint8Array) => body.includes(Array.from(bytes).join(","));
 
 describe("routes (inventaris http-paden)", () => {
-  it("de bestaande routes blijven, plus alleen de vier beeldpaden (WP19b: uitnodiging, WP38: inzending), hun preflight (WP35) en de twee clubboek-routes (WP41)", () => {
+  it("de bestaande routes blijven, plus alleen de vijf beeldpaden (WP19b: uitnodiging, WP38: inzending, WP41c: afrekening), hun preflight (WP35) en de twee clubboek-routes (WP41)", () => {
     const routes = http.getRoutes().map(([path, method]) => `${method} ${path}`);
     const others = routes.filter((r) => !r.includes("/beeld/")).sort();
     expect(others).toEqual(
@@ -103,12 +103,16 @@ describe("routes (inventaris http-paden)", () => {
     // WP35 A-invariant W1: `OPTIONS` (de preflight van de webapp) alleen op
     // de paden met een token (WP38: ook de inzending, de projectpagina in de
     // webapp); het profielpad is openbaar en heeft geen CORS nodig. `/upload` krijgt zijn preflight in WP36 (hierboven).
+    // WP41c besluit 4: de foto van een afrekening, voor leden van de groep
+    // (tests/settlements/imagePath.test.ts), ook in de webapp.
     expect(beeld).toEqual(
       [
+        "GET /beeld/afrekening/*",
         "GET /beeld/foto/*",
         "GET /beeld/inzending/*",
         "GET /beeld/profiel/*",
         "GET /beeld/uitnodiging/*",
+        "OPTIONS /beeld/afrekening/*",
         "OPTIONS /beeld/foto/*",
         "OPTIONS /beeld/inzending/*",
         "OPTIONS /beeld/uitnodiging/*",
@@ -127,6 +131,7 @@ describe("routes (inventaris http-paden)", () => {
       expect(http.lookup(profilePath("abc"), method)).toBeNull();
       expect(http.lookup("/beeld/uitnodiging/abc", method)).toBeNull();
       expect(http.lookup("/beeld/inzending/abc", method)).toBeNull();
+      expect(http.lookup("/beeld/afrekening/abc", method)).toBeNull();
     }
   });
 });

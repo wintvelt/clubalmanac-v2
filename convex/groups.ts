@@ -31,6 +31,7 @@ import {
 import { afterUnpublish } from "./lib/unpublish";
 import { wipeIfLost } from "./lib/profilePhoto";
 import { removeOriginalsOfMemberInGroup, removeProjectsOfGroup } from "./lib/filmOriginals";
+import { deleteSettlementImage } from "./lib/settlementImage";
 
 const ROLE = v.union(v.literal("admin"), v.literal("member"));
 
@@ -428,12 +429,16 @@ export async function deleteGroupCascade(
   // (object en open upload). De filmpjes in de albums zijn foto's en blijven.
   await removeProjectsOfGroup(ctx, groupId);
 
-  // WP41 (G6): de afrekeningen uit het clubboek. Die van andere groepen blijven.
+  // WP41 (G6): de afrekeningen uit het clubboek, met hun foto's in storage
+  // (WP41c). Die van andere groepen blijven.
   const settlements = await ctx.db
     .query("settlements")
     .withIndex("by_group", (q) => q.eq("groupId", groupId))
     .collect();
-  for (const s of settlements) await ctx.db.delete(s._id);
+  for (const s of settlements) {
+    await deleteSettlementImage(ctx, s);
+    await ctx.db.delete(s._id);
+  }
 
   await ctx.db.delete(groupId);
 

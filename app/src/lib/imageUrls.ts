@@ -36,3 +36,11 @@ export function profileImageUrl(
 export function inviteCoverUrl(siteUrl: string, inviteId: string, format: ImageFormat): string {
   return `${siteUrl}/beeld/uitnodiging/${encodeURIComponent(inviteId)}?formaat=${format}`;
 }
+
+// WP41c (C6): de foto van een afrekening, op afrekening-id, met het
+// Clerk-token zoals een foto. De versie (`imageVersion` uit de reads) maakt
+// van een nieuwe foto een nieuwe URL: een nieuwe sleutel in de beeldcache
+// (iOS) en in het geheugen van de webapp. Het pad leest de versie niet.
+export function settlementImageUrl(siteUrl: string, settlementId: string, version: string): string {
+  return `${siteUrl}/beeld/afrekening/${encodeURIComponent(settlementId)}?versie=${encodeURIComponent(version)}`;
+}

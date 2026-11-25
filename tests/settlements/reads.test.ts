@@ -28,10 +28,22 @@ import {
 
 useFinanceEnv();
 
-const LIST_FIELDS = ["_id", "name", "openCount", "participantCount", "period", "startDate"];
+// WP41c besluit 4: `hasImage` en `imageVersion` erbij (spec §WP41c C4).
+const LIST_FIELDS = [
+  "_id",
+  "hasImage",
+  "imageVersion",
+  "name",
+  "openCount",
+  "participantCount",
+  "period",
+  "startDate",
+];
 const GET_FIELDS = [
   "_id",
   "costPerPerson",
+  "hasImage",
+  "imageVersion",
   "lustrum",
   "name",
   "parts",
@@ -72,6 +84,8 @@ describe("listByGroup: de tijdlijn", () => {
         startDate: "2026-10-12",
         participantCount: 8,
         openCount: 3,
+        hasImage: false,
+        imageVersion: null,
       },
       {
         _id: w.ids.weekend,
@@ -81,6 +95,8 @@ describe("listByGroup: de tijdlijn", () => {
         participantCount: 6,
         // Daan en Ruud krijgen nog terug, Gijs en Thijs betalen nog.
         openCount: 4,
+        hasImage: false,
+        imageVersion: null,
       },
     ]);
   });

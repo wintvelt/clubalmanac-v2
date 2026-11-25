@@ -433,8 +433,10 @@ http.route({
 // clubboek, met `X-Clubboek-Secret: <FINANCE_SECRET>` (niet in Authorization,
 // WP41 F1); de groep staat op de deployment (`FINANCE_GROUP_ID`).
 //   POST   /settlements           403 één weigering (vóór de body), 413 groter
-//                                 dan 128 KiB, 400 vorm (pad, geen waarde),
-//                                 200 `{ participants }`; vervangt per sleutel
+//                                 dan 1,5 MiB, of wat naast `image` staat
+//                                 groter dan 128 KiB (WP41c), 400 vorm (pad,
+//                                 geen waarde), 200 `{ participants }`;
+//                                 vervangt per sleutel, met of zonder foto
 //   DELETE /settlements?key=<id>  403, 400 sleutel, 200 (ook als er niets was)
 // Geen CORS en geen OPTIONS: niet voor een browser. Andere methodes: 404.
 http.route({
@@ -477,6 +479,7 @@ const PHOTO_PREFIX = "/beeld/foto/";
 const PROFILE_PREFIX = "/beeld/profiel/";
 const INVITE_PREFIX = "/beeld/uitnodiging/";
 const ORIGINAL_POSTER_PREFIX = "/beeld/inzending/";
+const SETTLEMENT_PREFIX = "/beeld/afrekening/";
 
 const NOT_FOUND = () => new Response("Niet gevonden", { status: 404 });
 const BAD_FORMAT = () => new Response("Onbekend formaat", { status: 400 });
@@ -575,6 +578,7 @@ const webPreflight = httpAction(async (_ctx, request) => webPreflightResponse(re
 http.route({ pathPrefix: PHOTO_PREFIX, method: "OPTIONS", handler: webPreflight });
 http.route({ pathPrefix: INVITE_PREFIX, method: "OPTIONS", handler: webPreflight });
 http.route({ pathPrefix: ORIGINAL_POSTER_PREFIX, method: "OPTIONS", handler: webPreflight });
+http.route({ pathPrefix: SETTLEMENT_PREFIX, method: "OPTIONS", handler: webPreflight });
 
 http.route({
   pathPrefix: PHOTO_PREFIX,
@@ -742,6 +746,39 @@ async function originalPosterRoute(ctx: ImageRouteCtx, request: Request): Promis
   return await imageResponse(ctx, choice.storageId, "private, no-cache", {
     Vary: "Authorization",
   });
+}
+
+// WP41c besluit 4 en C5: de foto van een afrekening, op afrekening-id, voor
+// de leden van de groep (ook in de webapp).
+//   GET /beeld/afrekening/<settlementId>[?versie=…]
+//     404 alle andere gevallen, één antwoord byte voor byte: uitgelogd of een
+//         ongeldige token (A-keuze 18: hier geen 401), geen users-rij, geen
+//         lid (ook de webmaster buiten zijn groepen), onbekend, misvormd, een
+//         id van een andere tabel, weggehaald, zonder foto, object weg, of
+//         een JPEG die de schoonmaker niet kan volgen
+//     200 de foto zonder metadata, zoals een origineel (A-keuze 19, WP17d).
+//         `versie` is alleen voor de cache van de app: het pad leest hem
+//         niet en geeft altijd de huidige foto. `private, no-cache`: de
+//         toegang eindigt bij vertrek uit de groep.
+// Eén maat: geen `formaat`.
+http.route({
+  pathPrefix: SETTLEMENT_PREFIX,
+  method: "GET",
+  handler: httpAction(async (ctx, request) =>
+    withWebCors(request, await settlementImageRoute(ctx, request)),
+  ),
+});
+
+async function settlementImageRoute(ctx: ImageRouteCtx, request: Request): Promise<Response> {
+  try {
+    if (!(await ctx.auth.getUserIdentity())) return NOT_FOUND();
+  } catch {
+    return NOT_FOUND();
+  }
+  const storageId = await ctx.runQuery(internal.images.settlementImage, {
+    settlementId: idFromPath(request, SETTLEMENT_PREFIX),
+  });
+  return await cleanOriginalResponse(ctx, storageId, "private, no-cache", { Vary: "Authorization" });
 }
 
 // WP17d besluit 2 en 4 (A-invariant 8, 9 en 10): een origineel gaat nooit
