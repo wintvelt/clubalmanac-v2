@@ -1,9 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { ConvexError } from "convex/values";
 import { describe, expect, it } from "vitest";
 import ts from "typescript";
-import { refusalOf } from "../src/lib/groupAdmin";
 import { deleteMessage } from "../src/lib/photoActions";
 import { filmProjectPath, newFilmProjectPath } from "../src/lib/groupRoutes";
 import { originalPosterUrl } from "../src/lib/imageUrls";
@@ -19,9 +17,6 @@ const read = (rel: string) => (existsSync(SRC + rel) ? readFileSync(SRC + rel, "
 //     afgeschermd (geen publiek pad).
 //   - De poster van een inzending via het eigen beeldpad van 38a
 //     (`/beeld/inzending/<id>`), nooit via `/beeld/foto/`.
-//   - Blind spot 8 (besluit 17): "Album verwijderen" van het filmalbum van een
-//     open project geeft `FILM_PROJECT_OPEN`; de app zegt "Sluit eerst het
-//     filmproject".
 // Spec: docs/work-packages/WP38-filmproject-originelen.md §Spec-criticus 38c.
 
 const APP_DIR = fileURLToPath(new URL("../src/app", import.meta.url));
@@ -76,13 +71,6 @@ describe("de poster van een inzending", () => {
   });
 });
 
-describe("album verwijderen tijdens een open project (besluit 17)", () => {
-  it("FILM_PROJECT_OPEN: 'Sluit eerst het filmproject'", () => {
-    const r = refusalOf(new ConvexError({ code: "FILM_PROJECT_OPEN" }), "deleteAlbum");
-    expect(r.field).toBe("general");
-    expect(r.text).toContain("Sluit eerst het filmproject");
-  });
-});
 
 describe("de knop 'Filmproject starten' in de schermen (besluit 1 na A)", () => {
   it("Icon kent 'key'", () => {

@@ -1401,3 +1401,116 @@ Vervangt besluit 2 en 3, A-invariant 2 en 17, en de punten over splitsen en het 
 3. **Een project hangt niet meer aan een album.** De oprichter geeft bij het starten een **titel** en een einddatum. Banner, projectpagina en downloadpagina tonen de titel. Bestaande projecten (alleen dev; op prod staat er geen) krijgen als titel de albumnaam.
 4. **De regel boven de knop**, alleen met uploader en minstens één filmpje dat meegaat: "1 filmpje wordt ook als origineel bewaard voor filmproject [titel]" / "[n] filmpjes worden ook als origineel bewaard voor filmproject [titel]". Zonder uploader geen regel.
 5. **Backend (38a) verandert**: `startOriginal` en wat ervan afhangt kijken naar de groep in plaats van naar het filmalbum; het schema krijgt een titel. Na de merge deployt Wouter de backend naar prod (er staat daar nog geen project, dus geen migratie van echte data).
+
+### Besluit 27 (A)
+
+> A 2026-11-25, op `76bfc4d`. Vervangt wat hieronder genoemd staat; de rest van 38a, 38b en 38c blijft.
+
+**38a (backend)**
+
+- **Albumregel weg** (besluit 2, 19, A-invariant 2). `videos.reserveVideo` legt elk filmpje in het gevraagde album. App 2.0.2 krijgt hetzelfde: het filmpje staat in het album dat het lid koos, zonder origineel.
+- **Wie mag insturen** (A-invariant 3): "in het filmalbum" wordt "in een album van de groep van een open project". De rest blijft:
+  - eigen filmpje;
+  - gemaakt terwijl het project open stond;
+  - lid van de groep;
+  - één inzending per filmpje;
+  - de blokkade na terugtrekken;
+  - 14 dagen na sluiten.
+
+  Staat een nieuw filmpje in albums van twee groepen die elk een project open hebben, dan telt het album waar het het eerst in kwam (A-keuze).
+- **Starten** (A-invariant 1): `open({ groupId, title, endsAt })`.
+  - De titel volgt de regels van een albumnaam (`lib/names.ts`): getrimd, 1 tot 50 tekens, geen onzichtbare tekens. Weigeringen: `NAME_REQUIRED`, `NAME_TOO_LONG`, `NAME_INVALID`.
+  - Een groep zonder albums kan een project hebben.
+  - De weigering "album van een andere groep" vervalt.
+- **Schema `filmProjects`**:
+  - `title: v.optional(v.string())` komt erbij.
+  - `albumId` en `albumName` worden beide optioneel: ze bestaan alleen nog in oude rijen op dev.
+  - Overal geldt als titel `title ?? albumName`.
+  - `by_album` blijft zolang het veld bestaat; bij het verwijderen van een album haalt de backend `albumId` weg uit zo'n oude rij.
+- **Antwoorden**, zonder `albumId` en `albumName`:
+  - `listForGroup`: `{ projectId, title, endsAt, open }`;
+  - `listOpenForMe`: `{ groupId, projectId, title, endsAt }`;
+  - `get.project`: `{ projectId, groupId, title, endsAt, open, closedAt }`.
+- **Album verwijderen**:
+  - Mag altijd, ook als het project open staat, en ook bij een oude rij met `albumId`. Inzendingen blijven, want ze horen bij het project en het filmpje.
+  - Daarmee vervallen `FILM_PROJECT_OPEN`, `albumHasOpenProject` en de melding in `groupAdmin.ts` (besluit 17).
+- **Herinnering** (besluit 15): de mail noemt de titel.
+- **WP10**: `filmProjects.albumId` blijft in `MONITORED_FKS`, als optioneel veld, zolang het in het schema staat.
+
+**38c (app)**
+
+- **Toevoegscherm** (vervalt: besluit 3, A-invariant 17, 38c-1, 38c-2, het splitsen bij 38c-14):
+  - `addTargets` geeft:
+    - het gekozen album;
+    - het project van die groep, als er filmpjes meegaan;
+    - één regel (besluit 27.4);
+    - de schakelaar.
+  - `roundTargets` werkt met datzelfde ene album.
+  - `albumOption` en het grijze album vervallen; het kiesscherm is weer zoals WP39.
+  - Met filmpjes en uploader wacht de knop tot de open projecten geladen zijn. Anders gaat het origineel stil niet mee.
+  - Na afloop één melding, en "Naar album" gaat naar het gekozen album.
+  - De upload-id van een filmpje hoort bij het gekozen album, zoals in WP37.
+- **Starten**:
+  - een titelveld en de einddatum; geen albumlijst, en de lege stand "Nog geen albums" vervalt;
+  - "Starten" blijft grijs zolang de titel leeg is;
+  - weigeringen over de titel zeggen "titel", niet "naam".
+- **Balk, projectpagina, downloadpagina**:
+  - overal "Filmproject [titel]";
+  - de lege stand van de projectpagina zegt dat nieuwe filmpjes in deze groep ook als origineel naar dit project gaan.
+- **Bestandsnaam**: blijft "datum en naam van de inzender". De titel staat er niet in (A-keuze): de map kiest de oprichter zelf bij het downloaden.
+- **`originalPlan` (38b)**: ongewijzigd. Het kijkt naar de groep van het gekozen album, en dat is nu ook het album van het filmpje.
+
+**Prod en deploy**
+
+- Op prod draait 38a zonder projecten: `filmProjects` is leeg. Op dev staan rijen met `albumId` en `albumName`, zonder titel.
+- Convex controleert bij een deploy alle bestaande rijen tegen het schema. Een verplichte `title` zou op dev falen. Daarom is `title` optioneel, met de albumnaam als terugval, en zijn `albumId` en `albumName` optioneel. Dat past op prod en op dev zonder migratie en zonder vaste volgorde. De tests met een oude rij leggen dat vast (`projects.test.ts`, `cascade.test.ts`, `integrity.test.ts`).
+- De backend gaat vóór of samen met de app van 38c. Een oudere dev-build die `open` nog met `albumId` aanroept, krijgt een validatiefout; dat raakt alleen Wouter.
+- Later, in een eigen klein WP en niet nodig voor 2.0.2: als de oude dev-rijen weg zijn, `title` verplicht maken en `albumId`, `albumName` en `by_album` weghalen.
+
+**Blind spots**
+
+1. **"Naar album" naar een groep met een project.** Een nieuw filmpje uit groep H (zonder project) dat tijdens een project van G met "Naar album" in G komt, mag insturen: het is nieuw, van de eigenaar, en staat in een album van G. Met X kon dat ook al. De app doet het niet, en het blijft het eigen filmpje van het lid. Aanvaardbaar; niet getest.
+2. **Een album van het project verwijderen.** Leden zien het filmpje dan niet meer in dat album. Het origineel blijft wel op de projectpagina, met de poster via `/beeld/inzending/`. Dat is zoals bedoeld.
+3. **Het lid ziet vooraf alleen de regel boven de knop.** Het kiesscherm zegt niets meer over een project. Zonder uploader (web, 2.0.1) is er geen regel en gaat er ook geen origineel.
+
+**Testcontract (wijzigingen)**
+
+- Backend: `open({ groupId: Id<"groups">, title: string, endsAt: number })`, en de antwoorden hierboven.
+- App (`filmProject.ts`):
+
+```ts
+export type OpenFilmProject = { groupId: string; projectId: string; title: string };
+export type AddTargets =
+  | { ready: false }
+  | { ready: true; albumId: string | null; projectId: string | null; lines: string[]; wifiSwitch: boolean };
+export type RoundTargets =
+  | { ready: false }
+  | { ready: true; albumId: string | null; projectId: string | null; videoResult: boolean; tooLong: number };
+export type ProjectRow = { projectId: string; title: string; endsAt: number; open: boolean };
+// albumOption vervalt.
+```
+
+**Tests**
+
+| Wat | Waar |
+|---|---|
+| alles naar het gekozen album, ook met een project, ook bij sluiten of openen tijdens de upload | `tests/filmProject/albumRule.test.ts` (omgedraaid) |
+| een nieuw filmpje in Y mag insturen; een filmpje van vóór het project in Y niet; "Uit album" laat de inzending staan | `albumRule.test.ts`, `originals.test.ts` |
+| starten met een titel: getrimd, 50 tekens wel, leeg, 51 en een tab niet; een groep zonder albums; geen album in het antwoord | `projects.test.ts` |
+| een oude rij zonder titel: de albumnaam als titel, insturen werkt | `projects.test.ts` |
+| album verwijderen tijdens een project mag (ook bij een oude rij); de inzending blijft en is te downloaden | `cascade.test.ts` (omgedraaid) |
+| de herinnering noemt de titel | `cascade.test.ts` |
+| WP10 met een oude rij; inventaris `open` met `title` | `integrity.test.ts`, `inventory.test.ts` |
+| app: `addTargets`, `roundTargets` met één album, de regel van besluit 27.4, `ProjectRow` met titel, titel-weigeringen; geen test meer voor `FILM_PROJECT_OPEN`, `albumOption` of splitsen | `app/tests/filmProject.test.ts`, `filmProjectRoutes.test.ts` |
+
+`tests/filmProject/_film.ts`: `openProject` geeft een titel (`PROJECT_TITLE`); `newVideoInX` kan een ander album van Reis nemen.
+
+**Stand na A (besluit 27):**
+
+- Backend: 163 van de 169 tests in `tests/filmProject/` rood. De meeste omdat `open` nog `albumId` eist (`Missing required field albumId`); de rest om het oude gedrag (omleiden, `FILM_PROJECT_OPEN`, `albumId`/`albumName` in de antwoorden, inventaris). De root-typecheck is schoon.
+- App: 20 rood in `app/tests/filmProject.test.ts` (één album, de regel van besluit 27.4, de titel in de balk, titel-weigeringen). De app-typecheck faalt alleen op de nieuwe types in dat testbestand (`title` in plaats van `albumId`/`albumName`). De andere 2523 app-tests blijven groen.
+- A draaide alles tegen een wegwerp-uitwerking buiten de repo (schema met optionele `title`, `albumName` en `albumId`; geen omleiden; geen `FILM_PROJECT_OPEN`; insturen per groep): de film-, inventaris- en migratietests van de backend (315) en de 128 app-tests van 38c groen, backend-typecheck schoon. Die uitwerking is weggegooid.
+
+**Open vragen (voor Wouter)**
+
+1. **De titel achteraf wijzigen?** Een tikfout staat anders een jaar lang op de balk, de projectpagina en in de mail. Advies: ja, voor de oprichter, op dezelfde plek als de einddatum. Dat is één extra backend-functie met de gate van `setEndsAt`. A schrijft de tests na het besluit.

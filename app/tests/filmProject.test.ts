@@ -5,7 +5,6 @@ import {
   START_BUTTON,
   WITHDRAW_CONFIRMATION,
   addTargets,
-  albumOption,
   allRows,
   closeConfirmation,
   downloadAll,
@@ -65,18 +64,22 @@ const GiB = 1024 * MiB;
 // 25 november 2026, 12:00 in Nederland (winter: UTC+1).
 const NOW = Date.UTC(2026, 10, 25, 11, 0);
 
-// --- besluit 3 -------------------------------------------------------------------------
+// --- besluit 27: alles naar het gekozen album ----------------------------------------------
 
-// Groep G heeft een open project met filmalbum X; Y is een ander album van G.
-// Groep H heeft geen project. Groep K heeft een eigen project met filmalbum XK.
-const X: ChosenAlbumRef = { albumId: "ax", groupId: "g", name: "Reis 2026" };
+// Besluit 27 (Wouter, 2026-11-25, na build 89; vervangt besluit 3 en
+// A-invariant 17): foto's en filmpjes gaan naar het album dat het lid kiest.
+// Geen splitsen, geen grijs album. Staat er in de groep van dat album een
+// project open, dan gaat van elk filmpje dat meegaat ook het origineel mee
+// (alleen met de uploader), met één regel boven de knop.
+// Groep G heeft een open project "Reis 2026"; X en Y zijn albums van G.
+// Groep H heeft geen project. Groep K heeft een eigen project "Weekend".
+const X: ChosenAlbumRef = { albumId: "ax", groupId: "g", name: "Georgië" };
 const Y: ChosenAlbumRef = { albumId: "ay", groupId: "g", name: "Dag 3" };
 const H: ChosenAlbumRef = { albumId: "ah", groupId: "h", name: "Diner" };
-const XK: ChosenAlbumRef = { albumId: "axk", groupId: "k", name: "Weekend" };
 const YK: ChosenAlbumRef = { albumId: "ayk", groupId: "k", name: "Zondag" };
 const PROJECTS: OpenFilmProject[] = [
-  { groupId: "g", projectId: "pg", albumId: "ax", albumName: "Reis 2026" },
-  { groupId: "k", projectId: "pk", albumId: "axk", albumName: "Weekend" },
+  { groupId: "g", projectId: "pg", title: "Reis 2026" },
+  { groupId: "k", projectId: "pk", title: "Weekend" },
 ];
 
 const targets = (photos: number, videos: number, album: ChosenAlbumRef | null, extra: { openProjects?: readonly OpenFilmProject[] | undefined; originals?: boolean } = {}) =>
@@ -93,161 +96,86 @@ function ready(t: ReturnType<typeof addTargets>) {
   return t;
 }
 
-// Feedback Wouter op build 89, punt 2 (vervangt besluit 2 na A; "met gps"
-// vervalt): de regel van de filmpjes met uploader.
-/** Zonder splitsen: "Je filmpje wordt ook …" / "Je [n] filmpjes worden ook …". */
-function keepLine(n: number): string {
+/** Besluit 27.4: "1 filmpje wordt ook …" / "[n] filmpjes worden ook …". */
+function originalLine(n: number, title: string): string {
   return n === 1
-    ? "Je filmpje wordt ook in volle kwaliteit bewaard voor de feature-film."
-    : `Je ${n} filmpjes worden ook in volle kwaliteit bewaard voor de feature-film.`;
-}
-/** Bij splitsen: "[n] filmpjes gaan naar [X] en worden ook …". */
-function splitLine(n: number, album: string): string {
-  return n === 1
-    ? `1 filmpje gaat naar ${album} en wordt ook in volle kwaliteit bewaard voor de feature-film.`
-    : `${n} filmpjes gaan naar ${album} en worden ook in volle kwaliteit bewaard voor de feature-film.`;
+    ? `1 filmpje wordt ook als origineel bewaard voor filmproject ${title}`
+    : `${n} filmpjes worden ook als origineel bewaard voor filmproject ${title}`;
 }
 
-describe("addTargets: de tabel van besluit 3", () => {
-  it("alleen foto's, Y: zoals nu, alles naar Y, geen regel, geen schakelaar", () => {
-    const t = ready(targets(3, 0, Y));
-    expect(t).toMatchObject({ photoAlbumId: "ay", videoAlbumId: null, rowAlbumId: "ay", split: false, lines: [], wifiSwitch: false });
+describe("addTargets: alles naar het gekozen album (besluit 27)", () => {
+  it.each([
+    ["alleen foto's", 3, 0],
+    ["alleen filmpjes", 0, 2],
+    ["foto's en filmpjes", 3, 2],
+  ] as const)("%s naar Y: alles naar Y", (_name, photos, videos) => {
+    expect(ready(targets(photos, videos, Y)).albumId).toBe("ay");
   });
 
-  it("alleen foto's, X: zoals nu, naar X", () => {
-    const t = ready(targets(3, 0, X));
-    expect(t).toMatchObject({ photoAlbumId: "ax", videoAlbumId: null, split: false, lines: [], wifiSwitch: false });
+  it("ook naar X of naar een album van een groep zonder project: het gekozen album", () => {
+    expect(ready(targets(3, 2, X)).albumId).toBe("ax");
+    expect(ready(targets(3, 2, H)).albumId).toBe("ah");
+    expect(ready(targets(0, 1, YK)).albumId).toBe("ayk");
   });
 
-  it("alleen filmpjes, X: alles naar X, met de regel en de schakelaar", () => {
-    const t = ready(targets(0, 2, X));
-    expect(t).toMatchObject({ photoAlbumId: null, videoAlbumId: "ax", rowAlbumId: "ax", projectId: "pg", split: false, wifiSwitch: true });
-    expect(t.lines).toHaveLength(1);
-    expect(t.lines[0]).toBe(keepLine(2));
+  it("nog geen album: nergens heen, geen regel, geen schakelaar", () => {
+    expect(ready(targets(3, 2, null))).toEqual({ ready: true, albumId: null, projectId: null, lines: [], wifiSwitch: false });
   });
 
-  it("alleen filmpjes, Y: X staat gekozen (de rij toont X), alles naar X", () => {
-    const t = ready(targets(0, 2, Y));
-    expect(t).toMatchObject({ photoAlbumId: null, videoAlbumId: "ax", rowAlbumId: "ax", projectId: "pg", split: false, wifiSwitch: true });
-    expect(t.lines).toHaveLength(1);
-    expect(t.lines[0]).toBe(keepLine(2));
-  });
-
-  it("foto's en filmpjes, X: alles naar X, alleen de regel van de filmpjes", () => {
-    const t = ready(targets(3, 2, X));
-    expect(t).toMatchObject({ photoAlbumId: "ax", videoAlbumId: "ax", rowAlbumId: "ax", split: false, wifiSwitch: true });
-    expect(t.lines).toHaveLength(1);
-    expect(t.lines[0]).toBe(keepLine(2));
-  });
-
-  it("foto's en filmpjes, Y: splitsen; foto's naar Y, filmpjes naar X, twee regels (mockup 3)", () => {
+  it("geen splitsen meer: het antwoord kent geen eigen album voor foto's of filmpjes", () => {
     const t = ready(targets(3, 2, Y));
-    expect(t).toMatchObject({ photoAlbumId: "ay", videoAlbumId: "ax", rowAlbumId: "ay", projectId: "pg", split: true, wifiSwitch: true });
-    expect(t.lines).toHaveLength(2);
-    expect(t.lines[0]).toBe("3 foto's gaan naar Dag 3");
-    expect(t.lines[1]).toBe(splitLine(2, "Reis 2026"));
-  });
-
-  it("alles naar een album van een groep zonder project: zoals nu", () => {
-    const t = ready(targets(3, 2, H));
-    expect(t).toMatchObject({ photoAlbumId: "ah", videoAlbumId: "ah", rowAlbumId: "ah", projectId: null, split: false, lines: [], wifiSwitch: false });
-  });
-
-  it("een album van een andere groep met een eigen project: dat project telt (niet dat van G)", () => {
-    const t = ready(targets(3, 2, YK));
-    expect(t).toMatchObject({ photoAlbumId: "ayk", videoAlbumId: "axk", projectId: "pk", split: true });
-    expect(t.lines[1]).toBe(splitLine(2, "Weekend"));
-    expect(ready(targets(0, 1, XK))).toMatchObject({ videoAlbumId: "axk", projectId: "pk" });
-  });
-
-  it("nog geen album: nergens heen, geen regel, geen schakelaar (de knop is grijs, zoals nu)", () => {
-    const t = ready(targets(3, 2, null));
-    expect(t).toMatchObject({ photoAlbumId: null, videoAlbumId: null, rowAlbumId: null, projectId: null, split: false, lines: [], wifiSwitch: false });
+    expect(t).not.toHaveProperty("split");
+    expect(t).not.toHaveProperty("videoAlbumId");
+    expect(t).not.toHaveProperty("photoAlbumId");
   });
 });
 
-describe("addTargets: randen", () => {
-  it("enkelvoud: '1 foto gaat', '1 filmpje gaat'", () => {
-    const t = ready(targets(1, 1, Y));
-    expect(t.lines[0]).toBe("1 foto gaat naar Dag 3");
-    expect(t.lines[1]).toBe(splitLine(1, "Reis 2026"));
-  });
-
-  it("enkelvoud zonder splitsen: 'Je filmpje wordt ook …'", () => {
-    expect(ready(targets(0, 1, X)).lines).toEqual([keepLine(1)]);
-    expect(ready(targets(0, 1, Y)).lines).toEqual([keepLine(1)]);
-    expect(ready(targets(2, 1, X)).lines).toEqual([keepLine(1)]);
-  });
-
-  it("meervoud zonder splitsen, ook met foto's naar X: 'Je [n] filmpjes worden ook …'", () => {
-    expect(ready(targets(0, 5, X)).lines).toEqual([keepLine(5)]);
-    expect(ready(targets(3, 5, X)).lines).toEqual([keepLine(5)]);
-  });
-
-  it("'met gps' en 'clubfilm' zijn weg, in elke stand", () => {
-    for (const [photos, videos, album, originals] of [
-      [0, 1, X, true],
-      [0, 2, Y, true],
-      [3, 2, Y, true],
-      [1, 1, Y, true],
-      [3, 2, Y, false],
-    ] as const) {
-      for (const l of ready(targets(photos, videos, album, { originals })).lines) {
-        expect(l).not.toContain("gps");
-        expect(l).not.toContain("clubfilm");
-      }
+describe("addTargets: het origineel en de regel boven de knop (besluit 27.2, 27.4)", () => {
+  it("filmpjes naar een album van een groep met een project: het project, de regel en de schakelaar", () => {
+    for (const album of [X, Y]) {
+      expect(ready(targets(0, 2, album))).toEqual({ ready: true, albumId: album.albumId, projectId: "pg", lines: [originalLine(2, "Reis 2026")], wifiSwitch: true });
     }
   });
 
-  it("komen er foto's bij nadat X werd getoond, dan staat Y er weer en wordt er gesplitst (het gekozen album blijft Y)", () => {
-    expect(ready(targets(0, 2, Y)).rowAlbumId).toBe("ax");
-    const t = ready(targets(1, 2, Y));
-    expect(t).toMatchObject({ rowAlbumId: "ay", split: true });
+  it("enkelvoud en meervoud; met foto's erbij dezelfde ene regel", () => {
+    expect(ready(targets(0, 1, Y)).lines).toEqual([originalLine(1, "Reis 2026")]);
+    expect(ready(targets(3, 1, Y)).lines).toEqual([originalLine(1, "Reis 2026")]);
+    expect(ready(targets(3, 5, Y)).lines).toEqual([originalLine(5, "Reis 2026")]);
   });
 
-  it("alleen te lange filmpjes (de schermen tellen ze niet: videos 0) met foto's naar Y: zoals alleen foto's", () => {
-    expect(ready(targets(3, 0, Y))).toMatchObject({ photoAlbumId: "ay", videoAlbumId: null, split: false, lines: [], wifiSwitch: false });
+  it("de titel van het project van de eigen groep", () => {
+    expect(ready(targets(0, 2, YK))).toMatchObject({ projectId: "pk", lines: [originalLine(2, "Weekend")] });
   });
 
-  it("zonder uploader (web, oude build): wel splitsen, alleen '[n] filmpjes gaan naar [X]', zonder schakelaar", () => {
-    const split = ready(targets(3, 2, Y, { originals: false }));
-    expect(split).toMatchObject({ photoAlbumId: "ay", videoAlbumId: "ax", split: true, wifiSwitch: false });
-    expect(split.lines).toHaveLength(2);
-    expect(split.lines[0]).toBe("3 foto's gaan naar Dag 3");
-    expect(split.lines[1]).toBe("2 filmpjes gaan naar Reis 2026");
-    for (const l of split.lines) {
-      expect(l).not.toContain("volle kwaliteit");
-      expect(l).not.toContain("feature-film");
-    }
-    expect(ready(targets(1, 1, Y, { originals: false })).lines).toEqual(["1 foto gaat naar Dag 3", "1 filmpje gaat naar Reis 2026"]);
+  it("alleen foto's, of alleen te lange filmpjes (videos 0): geen project, geen regel, geen schakelaar", () => {
+    expect(ready(targets(3, 0, Y))).toEqual({ ready: true, albumId: "ay", projectId: null, lines: [], wifiSwitch: false });
   });
 
-  it("zonder uploader en zonder splitsen: geen regel", () => {
-    const t = ready(targets(0, 2, Y, { originals: false }));
-    expect(t).toMatchObject({ videoAlbumId: "ax", rowAlbumId: "ax", lines: [], wifiSwitch: false });
+  it("een groep zonder project: geen regel", () => {
+    expect(ready(targets(3, 2, H))).toEqual({ ready: true, albumId: "ah", projectId: null, lines: [], wifiSwitch: false });
+    expect(ready(targets(0, 2, Y, { openProjects: [] }))).toMatchObject({ projectId: null, lines: [] });
   });
 
-  it("open projecten nog niet geladen, met filmpjes: nog niet klaar", () => {
+  it("zonder uploader (web, oude build): geen regel en geen schakelaar", () => {
+    expect(ready(targets(3, 2, Y, { originals: false }))).toMatchObject({ albumId: "ay", lines: [], wifiSwitch: false });
+  });
+
+  it("open projecten nog niet geladen, met filmpjes en uploader: nog niet klaar (anders gaat het origineel stil niet mee)", () => {
     expect(targets(0, 2, Y, { openProjects: undefined })).toEqual({ ready: false });
     expect(targets(3, 2, H, { openProjects: undefined })).toEqual({ ready: false });
   });
 
-  it("open projecten nog niet geladen, alleen foto's: wel klaar (zoals nu)", () => {
-    expect(ready(targets(3, 0, Y, { openProjects: undefined }))).toMatchObject({ photoAlbumId: "ay", lines: [] });
-  });
-
-  it("geen open projecten: zoals nu", () => {
-    const t = ready(targets(3, 2, Y, { openProjects: [] }));
-    expect(t).toMatchObject({ photoAlbumId: "ay", videoAlbumId: "ay", projectId: null, split: false, lines: [], wifiSwitch: false });
+  it("nog niet geladen, maar alleen foto's of geen uploader: wel klaar", () => {
+    expect(ready(targets(3, 0, Y, { openProjects: undefined }))).toMatchObject({ albumId: "ay", lines: [] });
+    expect(ready(targets(0, 2, Y, { openProjects: undefined, originals: false }))).toMatchObject({ albumId: "ay", lines: [] });
   });
 });
 
-// 38c fix-cyclus 1, punt 1 (regressie op WP37 A12): elk filmpje in de keuze
-// krijgt een uitkomst, ook een te lang filmpje dat niet meegaat. `videos` telt
-// de filmpjes die meegaan, `tooLong` de te lange; `videoResult` zegt of de
-// ronde van de filmpjes er is (met "niet gelukt: te lang" voor de te lange).
-// Waar ze heen gaan, is hetzelfde als `addTargets` met alleen de filmpjes die
-// meegaan.
+// 38c fix-cyclus 1, punt 1 (regressie op WP37 A12), met besluit 27: elk
+// filmpje in de keuze krijgt een uitkomst, ook een te lang filmpje dat niet
+// meegaat. `videos` telt de filmpjes die meegaan, `tooLong` de te lange;
+// `videoResult` zegt of de ronde van de filmpjes er is. Album en project zijn
+// die van `addTargets` met alleen de filmpjes die meegaan.
 describe("roundTargets: de doelen van de ronde, ook met te lange filmpjes (fix-cyclus 1, punt 1)", () => {
   const round = (photos: number, videos: number, tooLong: number, album: ChosenAlbumRef | null, extra: { openProjects?: readonly OpenFilmProject[] | undefined } = {}) =>
     roundTargets({ photos, videos, tooLong, album, openProjects: "openProjects" in extra ? extra.openProjects : PROJECTS, originals: true });
@@ -257,24 +185,20 @@ describe("roundTargets: de doelen van de ronde, ook met te lange filmpjes (fix-c
     return r;
   }
 
-  it("alleen te lange filmpjes: geen album voor foto's of filmpjes, wel een uitkomst voor de filmpjes", () => {
-    expect(readyRound(round(0, 0, 2, Y))).toMatchObject({ photoAlbumId: null, videoAlbumId: null, projectId: null, videoResult: true, tooLong: 2 });
+  it("alleen te lange filmpjes: het gekozen album, geen project, wel een uitkomst voor de filmpjes", () => {
+    expect(readyRound(round(0, 0, 2, Y))).toEqual({ ready: true, albumId: "ay", projectId: null, videoResult: true, tooLong: 2 });
   });
 
-  it("alleen te lange filmpjes, ook als de open projecten nog laden: klaar (er gaat niets naar een project)", () => {
-    expect(readyRound(round(0, 0, 1, Y, { openProjects: undefined }))).toMatchObject({ videoAlbumId: null, videoResult: true, tooLong: 1 });
+  it("alleen te lange filmpjes, ook als de open projecten nog laden: klaar", () => {
+    expect(readyRound(round(0, 0, 1, Y, { openProjects: undefined }))).toMatchObject({ videoResult: true, tooLong: 1 });
   });
 
-  it("foto's met een te lang filmpje: de foto's naar Y, en een uitkomst voor het filmpje", () => {
-    expect(readyRound(round(3, 0, 1, Y))).toMatchObject({ photoAlbumId: "ay", videoAlbumId: null, projectId: null, videoResult: true, tooLong: 1 });
+  it("foto's met een te lang filmpje: naar Y, en een uitkomst voor het filmpje", () => {
+    expect(readyRound(round(3, 0, 1, Y))).toEqual({ ready: true, albumId: "ay", projectId: null, videoResult: true, tooLong: 1 });
   });
 
-  it("een te lang filmpje naast een goed filmpje, met een open project: het goede naar X, beide een uitkomst", () => {
-    expect(readyRound(round(0, 1, 1, Y))).toMatchObject({ photoAlbumId: null, videoAlbumId: "ax", projectId: "pg", videoResult: true, tooLong: 1 });
-  });
-
-  it("idem in een groep zonder project: naar het gekozen album", () => {
-    expect(readyRound(round(0, 1, 1, H))).toMatchObject({ videoAlbumId: "ah", projectId: null, videoResult: true });
+  it("een te lang filmpje naast een goed filmpje, met een open project: het project, beide een uitkomst", () => {
+    expect(readyRound(round(0, 1, 1, Y))).toEqual({ ready: true, albumId: "ay", projectId: "pg", videoResult: true, tooLong: 1 });
   });
 
   it("goede filmpjes met open projecten die nog laden: nog niet klaar", () => {
@@ -282,7 +206,7 @@ describe("roundTargets: de doelen van de ronde, ook met te lange filmpjes (fix-c
   });
 
   it("alleen foto's: geen ronde voor filmpjes", () => {
-    expect(readyRound(round(3, 0, 0, Y))).toMatchObject({ photoAlbumId: "ay", videoAlbumId: null, videoResult: false, tooLong: 0 });
+    expect(readyRound(round(3, 0, 0, Y))).toMatchObject({ albumId: "ay", projectId: null, videoResult: false, tooLong: 0 });
   });
 
   it.each([
@@ -291,45 +215,11 @@ describe("roundTargets: de doelen van de ronde, ook met te lange filmpjes (fix-c
     [0, 2, 3, X],
     [3, 0, 2, H],
     [1, 1, 1, YK],
-  ] as const)("de albums zijn die van addTargets (%i foto's, %i goed, %i te lang)", (photos, videos, tooLong, album) => {
+  ] as const)("album en project zijn die van addTargets (%i foto's, %i goed, %i te lang)", (photos, videos, tooLong, album) => {
     const r = readyRound(round(photos, videos, tooLong, album));
     const t = ready(targets(photos, videos, album));
-    expect({ photoAlbumId: r.photoAlbumId, videoAlbumId: r.videoAlbumId, projectId: r.projectId }).toEqual({
-      photoAlbumId: t.photoAlbumId,
-      videoAlbumId: t.videoAlbumId,
-      projectId: t.projectId,
-    });
+    expect({ albumId: r.albumId, projectId: r.projectId }).toEqual({ albumId: t.albumId, projectId: t.projectId });
     expect(r.videoResult).toBe(videos + tooLong > 0);
-  });
-});
-
-describe("albumOption: Y grijs in het kiesscherm (besluit 3)", () => {
-  const option = (album: ChosenAlbumRef, photos: number, videos: number) =>
-    albumOption({ albumId: album.albumId, groupId: album.groupId, photos, videos, openProjects: PROJECTS });
-
-  it("alleen filmpjes: Y niet te kiezen, met 'Filmpjes gaan nu naar [X]'", () => {
-    expect(option(Y, 0, 2)).toEqual({ disabled: true, note: "Filmpjes gaan nu naar Reis 2026" });
-  });
-
-  it("alleen filmpjes: X zelf wel", () => {
-    expect(option(X, 0, 2).disabled).toBe(false);
-  });
-
-  it("alleen filmpjes: een album van een andere groep met een project is grijs met zijn eigen X", () => {
-    expect(option(YK, 0, 1)).toEqual({ disabled: true, note: "Filmpjes gaan nu naar Weekend" });
-  });
-
-  it("alleen filmpjes: een groep zonder project gewoon", () => {
-    expect(option(H, 0, 2)).toEqual({ disabled: false, note: null });
-  });
-
-  it("foto's en filmpjes: Y te kiezen (splitsen)", () => {
-    expect(option(Y, 3, 2).disabled).toBe(false);
-  });
-
-  it("alleen foto's, of nog niets gekozen: alles te kiezen, zonder uitleg", () => {
-    expect(option(Y, 3, 0)).toEqual({ disabled: false, note: null });
-    expect(option(Y, 0, 0)).toEqual({ disabled: false, note: null });
   });
 });
 
@@ -366,8 +256,9 @@ describe("originalSkipLines: als het origineel niet meegaat (38c-13)", () => {
 // --- groep en projectpagina: wie wat ziet ---------------------------------------------
 
 const END = endOfDutchDay({ year: 2026, month: 11, day: 30 });
-const openRow: ProjectRow = { projectId: "p-open", albumId: "ax", albumName: "Reis 2026", endsAt: END, open: true };
-const closedRow: ProjectRow = { projectId: "p-dicht", albumId: null, albumName: "Zomer 2026", endsAt: Date.UTC(2026, 7, 31, 21, 59, 59, 999), open: false };
+// Besluit 27: een project heeft een titel.
+const openRow: ProjectRow = { projectId: "p-open", title: "Reis 2026", endsAt: END, open: true };
+const closedRow: ProjectRow = { projectId: "p-dicht", title: "Zomer 2026", endsAt: Date.UTC(2026, 7, 31, 21, 59, 59, 999), open: false };
 
 describe("groupFilmView: de knop en de balk (38c-3)", () => {
   const view = (platform: "ios" | "web", isFounder: boolean, projects: readonly ProjectRow[] | undefined) =>
@@ -377,7 +268,7 @@ describe("groupFilmView: de knop en de balk (38c-3)", () => {
     expect(view("ios", true, [])).toEqual({ start: true, banners: [] });
   });
 
-  it("oprichter in de app, een open project: geen knop, de balk 'Filmproject [album]', 'Open tot [dag maand]'", () => {
+  it("oprichter in de app, een open project: geen knop, de balk 'Filmproject [titel]', 'Open tot [dag maand]'", () => {
     expect(view("ios", true, [openRow])).toEqual({
       start: false,
       banners: [{ projectId: "p-open", title: "Filmproject Reis 2026", text: "Open tot 30 november" }],
@@ -408,7 +299,7 @@ describe("groupFilmView: de knop en de balk (38c-3)", () => {
     expect(view("ios", true, undefined)).toEqual({ start: false, banners: [] });
   });
 
-  it("projectTitle", () => {
+  it("projectTitle: 'Filmproject [titel]'", () => {
     expect(projectTitle("Reis 2026")).toBe("Filmproject Reis 2026");
   });
 });
@@ -989,6 +880,15 @@ describe("filmRefusalText: weigeringen (38c-12)", () => {
     for (const a of ["start", "close", "changeEnd", "removeAll"] as const) {
       expect(filmRefusalText(err("NOT_ALLOWED"), a), a).toContain("oprichter");
     }
+  });
+
+  it("starten met een titel die niet kan (besluit 27.3): over de titel, niet over een naam", () => {
+    for (const code of ["NAME_REQUIRED", "NAME_TOO_LONG", "NAME_INVALID"]) {
+      const text = filmRefusalText(err(code), "start");
+      expect(text, code).toContain("titel");
+      expect(text, code).not.toContain("naam");
+    }
+    expect(filmRefusalText(err("NAME_TOO_LONG"), "start")).toContain("50");
   });
 
   it("al gesloten", () => {

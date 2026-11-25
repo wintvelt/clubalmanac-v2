@@ -14,6 +14,7 @@ import {
   newVideoInX,
   openProject,
   ORIGINAL,
+  PROJECT_TITLE,
   outcome,
   runUntil,
   seedFilmWorld,
@@ -23,10 +24,11 @@ import {
 // WP38a — project openen en sluiten (besluit 1, invariant 1, A-invariant 1).
 // Alleen de oprichter (`groups.createdBy`, op het moment van het verzoek); een
 // admin of lid krijgt NOT_ALLOWED, wie geen lid is NOT_MEMBER (zoals de
-// beheerpaden van WP28). Het filmalbum hoort bij de groep; de einddatum ligt
-// in de toekomst en hooguit een jaar vooruit; hooguit één open project per
-// groep; het sluit vanzelf en de oprichter mag de einddatum verschuiven
-// (besluit 13).
+// beheerpaden van WP28). Besluit 27: het project heeft een titel (de regels
+// van een albumnaam: getrimd, 1 tot 50 tekens, geen onzichtbare tekens), geen
+// album. De einddatum ligt in de toekomst en hooguit een jaar vooruit;
+// hooguit één open project per groep; het sluit vanzelf en de oprichter mag
+// de einddatum verschuiven (besluit 13).
 // Spec: docs/work-packages/WP38-filmproject-originelen.md §A-invarianten.
 
 const env = useFilmEnv();
@@ -37,19 +39,19 @@ describe("filmProjects.open", () => {
     const t = newT();
     const w = await seedFilmWorld(t);
     const endsAt = Date.now() + 14 * DAY;
-    const projectId = await asFilm.alice(t).mutation(filmApi.open, { groupId: w.groups.reis, albumId: w.albums.georgie, endsAt });
+    const projectId = await asFilm.alice(t).mutation(filmApi.open, { groupId: w.groups.reis, title: "Reis naar Georgië", endsAt });
     expect(typeof projectId).toBe("string");
     const rows = await asFilm.bob(t).query(filmApi.listForGroup, { groupId: w.groups.reis });
-    expect(rows).toEqual([{ projectId, albumId: w.albums.georgie, albumName: "Georgië", endsAt, open: true }]);
+    expect(rows).toEqual([{ projectId, title: "Reis naar Georgië", endsAt, open: true }]);
     expect(await asFilm.bob(t).query(filmApi.listOpenForMe, {})).toEqual([
-      { groupId: w.groups.reis, projectId, albumId: w.albums.georgie, albumName: "Georgië", endsAt },
+      { groupId: w.groups.reis, projectId, title: "Reis naar Georgië", endsAt },
     ]);
   });
 
   it("een admin die geen oprichter is, en een lid: NOT_ALLOWED; niets aangemaakt", async () => {
     const t = newT();
     const w = await seedFilmWorld(t);
-    const args = { groupId: w.groups.reis, albumId: w.albums.georgie, endsAt: Date.now() + DAY };
+    const args = { groupId: w.groups.reis, title: PROJECT_TITLE, endsAt: Date.now() + DAY };
     expectCode(await outcome(() => asFilm.erik(t).mutation(filmApi.open, args)), "NOT_ALLOWED");
     expectCode(await outcome(() => asFilm.bob(t).mutation(filmApi.open, args)), "NOT_ALLOWED");
     expect(await asFilm.alice(t).query(filmApi.listForGroup, { groupId: w.groups.reis })).toEqual([]);
@@ -58,7 +60,7 @@ describe("filmProjects.open", () => {
   it("wie geen lid is, of een groep die er niet meer is: NOT_MEMBER", async () => {
     const t = newT();
     const w = await seedFilmWorld(t);
-    const args = { groupId: w.groups.reis, albumId: w.albums.georgie, endsAt: Date.now() + DAY };
+    const args = { groupId: w.groups.reis, title: PROJECT_TITLE, endsAt: Date.now() + DAY };
     expectCode(await outcome(() => asFilm.carol(t).mutation(filmApi.open, args)), "NOT_MEMBER");
     expectCode(await outcome(() => asFilm.dave(t).mutation(filmApi.open, args)), "NOT_MEMBER");
     const gone = await t.run(async (ctx) => {
@@ -67,7 +69,7 @@ describe("filmProjects.open", () => {
       return g;
     });
     expectCode(
-      await outcome(() => asFilm.alice(t).mutation(filmApi.open, { groupId: gone, albumId: w.albums.georgie, endsAt: Date.now() + DAY })),
+      await outcome(() => asFilm.alice(t).mutation(filmApi.open, { groupId: gone, title: PROJECT_TITLE, endsAt: Date.now() + DAY })),
       "NOT_MEMBER",
     );
   });
@@ -75,20 +77,41 @@ describe("filmProjects.open", () => {
   it("niet ingelogd: een weigering, geen project", async () => {
     const t = newT();
     const w = await seedFilmWorld(t);
-    const o = await outcome(() => t.mutation(filmApi.open, { groupId: w.groups.reis, albumId: w.albums.georgie, endsAt: Date.now() + DAY }));
+    const o = await outcome(() => t.mutation(filmApi.open, { groupId: w.groups.reis, title: PROJECT_TITLE, endsAt: Date.now() + DAY }));
     expect("err" in o).toBe(true);
     expect(await asFilm.alice(t).query(filmApi.listForGroup, { groupId: w.groups.reis })).toEqual([]);
   });
 
-  it("een album van een andere groep als filmalbum: NOT_MEMBER", async () => {
+  it("de titel wordt getrimd opgeslagen; een groep zonder albums kan ook een project hebben (besluit 27)", async () => {
     const t = newT();
     const w = await seedFilmWorld(t);
-    // dave is oprichter van Ander, maar Georgië is van Reis.
-    expectCode(
-      await outcome(() => asFilm.dave(t).mutation(filmApi.open, { groupId: w.groups.ander, albumId: w.albums.georgie, endsAt: Date.now() + DAY })),
-      "NOT_MEMBER",
-    );
-    expect(await asFilm.dave(t).query(filmApi.listForGroup, { groupId: w.groups.ander })).toEqual([]);
+    // Ander heeft het album Elders; een nieuwe groep van dave heeft er geen.
+    const leeg = await t.run(async (ctx) => {
+      const g = await ctx.db.insert("groups", { name: "Leeg", createdBy: w.users.dave, createdAt: Date.now() });
+      await ctx.db.insert("memberships", { groupId: g, userId: w.users.dave, role: "admin", joinedAt: Date.now() });
+      return g;
+    });
+    const projectId = await asFilm.dave(t).mutation(filmApi.open, { groupId: leeg, title: "  Zomer  ", endsAt: Date.now() + DAY });
+    expect((await asFilm.dave(t).query(filmApi.get, { projectId })).project.title).toBe("Zomer");
+  });
+
+  it.each([
+    ["leeg", "", "NAME_REQUIRED"],
+    ["alleen spaties", "   ", "NAME_REQUIRED"],
+    ["51 tekens", "x".repeat(51), "NAME_TOO_LONG"],
+    ["een tab", "Reis\tGeorgië", "NAME_INVALID"],
+  ])("een titel die niet kan (%s): %s, geen project", async (_name, title, code) => {
+    const t = newT();
+    const w = await seedFilmWorld(t);
+    expectCode(await outcome(() => asFilm.alice(t).mutation(filmApi.open, { groupId: w.groups.reis, title, endsAt: Date.now() + DAY })), code);
+    expect(await asFilm.alice(t).query(filmApi.listForGroup, { groupId: w.groups.reis })).toEqual([]);
+  });
+
+  it("50 tekens mag", async () => {
+    const t = newT();
+    const w = await seedFilmWorld(t);
+    const projectId = await asFilm.alice(t).mutation(filmApi.open, { groupId: w.groups.reis, title: "x".repeat(50), endsAt: Date.now() + DAY });
+    expect((await asFilm.alice(t).query(filmApi.get, { projectId })).project.title).toBe("x".repeat(50));
   });
 
   it("een einddatum in het verleden of nu: DATE_INVALID", async () => {
@@ -96,20 +119,20 @@ describe("filmProjects.open", () => {
     const w = await seedFilmWorld(t);
     for (const endsAt of [Date.now() - DAY, Date.now()]) {
       expectCode(
-        await outcome(() => asFilm.alice(t).mutation(filmApi.open, { groupId: w.groups.reis, albumId: w.albums.georgie, endsAt })),
+        await outcome(() => asFilm.alice(t).mutation(filmApi.open, { groupId: w.groups.reis, title: PROJECT_TITLE, endsAt })),
         "DATE_INVALID",
       );
     }
     expect(await asFilm.alice(t).query(filmApi.listForGroup, { groupId: w.groups.reis })).toEqual([]);
   });
 
-  it("hooguit één open project per groep: de tweede is PROJECT_ALREADY_OPEN, ook met een ander album", async () => {
+  it("hooguit één open project per groep: de tweede is PROJECT_ALREADY_OPEN, ook met een andere titel", async () => {
     const t = newT();
     const w = await seedFilmWorld(t);
     const first = await openProject(t, w);
     expectCode(
       await outcome(() =>
-        asFilm.alice(t).mutation(filmApi.open, { groupId: w.groups.reis, albumId: w.albums.tbilisi, endsAt: Date.now() + DAY }),
+        asFilm.alice(t).mutation(filmApi.open, { groupId: w.groups.reis, title: "Iets anders", endsAt: Date.now() + DAY }),
       ),
       "PROJECT_ALREADY_OPEN",
     );
@@ -121,11 +144,39 @@ describe("filmProjects.open", () => {
     const t = newT();
     const w = await seedFilmWorld(t);
     await openProject(t, w);
-    const other = await asFilm.dave(t).mutation(filmApi.open, { groupId: w.groups.ander, albumId: w.albums.elders, endsAt: Date.now() + DAY });
+    const other = await asFilm.dave(t).mutation(filmApi.open, { groupId: w.groups.ander, title: "Elders", endsAt: Date.now() + DAY });
     expect((await asFilm.dave(t).query(filmApi.listForGroup, { groupId: w.groups.ander })).map((r) => r.projectId)).toEqual([other]);
     // bob is alleen lid van Reis: hij ziet alleen dat project.
     expect((await asFilm.bob(t).query(filmApi.listOpenForMe, {})).map((r) => r.groupId)).toEqual([w.groups.reis]);
     expect(await asFilm.carol(t).query(filmApi.listOpenForMe, {})).toEqual([]);
+  });
+});
+
+// Besluit 27.3: een project van vóór besluit 27 (alleen dev: met `albumId` en
+// `albumName`, zonder titel) blijft werken en toont als titel de albumnaam. Zo
+// kan het nieuwe schema naast de bestaande rijen worden gedeployd.
+describe("een project van vóór besluit 27 (alleen dev)", () => {
+  it("zonder titel: overal de albumnaam als titel; nieuwe filmpjes in elk album van de groep mogen insturen", async () => {
+    const t = newT();
+    const w = await seedFilmWorld(t);
+    const endsAt = Date.now() + 10 * DAY;
+    const projectId = await t.run(async (ctx) =>
+      ctx.db.insert("filmProjects", {
+        groupId: w.groups.reis,
+        albumId: w.albums.georgie,
+        albumName: "Georgië",
+        endsAt,
+        openedAt: Date.now(),
+      } as never),
+    );
+    expect(await asFilm.bob(t).query(filmApi.listForGroup, { groupId: w.groups.reis })).toEqual([
+      { projectId, title: "Georgië", endsAt, open: true },
+    ]);
+    expect(await asFilm.bob(t).query(filmApi.listOpenForMe, {})).toEqual([{ groupId: w.groups.reis, projectId, title: "Georgië", endsAt }]);
+    expect((await asFilm.bob(t).query(filmApi.get, { projectId })).project.title).toBe("Georgië");
+    const photoId = await newVideoInX(t, env.r2, w, w.users.bob, { albumId: w.albums.tbilisi });
+    const s = await announce(asFilm.bob(t), photoId, ORIGINAL.byteLength);
+    expect(s.parts.length).toBeGreaterThan(0);
   });
 });
 
@@ -146,9 +197,9 @@ describe("filmProjects.close", () => {
     // Nog een keer sluiten verandert niets.
     await asFilm.alice(t).mutation(filmApi.close, { projectId });
 
-    const next = await asFilm.alice(t).mutation(filmApi.open, { groupId: w.groups.reis, albumId: w.albums.tbilisi, endsAt: Date.now() + DAY });
+    const next = await asFilm.alice(t).mutation(filmApi.open, { groupId: w.groups.reis, title: "Tweede", endsAt: Date.now() + DAY });
     expect(next).not.toBe(projectId);
-    expect((await asFilm.bob(t).query(filmApi.listOpenForMe, {})).map((r) => r.albumName)).toEqual(["Tbilisi"]);
+    expect((await asFilm.bob(t).query(filmApi.listOpenForMe, {})).map((r) => r.title)).toEqual(["Tweede"]);
   });
 
   it("de rechten volgen de oprichter op het moment van het verzoek (na overdragen)", async () => {
@@ -170,7 +221,10 @@ describe("lezen: alleen leden", () => {
     expectCode(await outcome(() => asFilm.carol(t).query(filmApi.listForGroup, { groupId: w.groups.reis })), "NOT_MEMBER");
     expectCode(await outcome(() => asFilm.dave(t).query(filmApi.get, { projectId })), "NOT_MEMBER");
     const view = await asFilm.bob(t).query(filmApi.get, { projectId });
-    expect(view.project).toMatchObject({ projectId, groupId: w.groups.reis, albumId: w.albums.georgie, albumName: "Georgië", open: true });
+    expect(view.project).toMatchObject({ projectId, groupId: w.groups.reis, title: PROJECT_TITLE, open: true });
+    // Besluit 27: geen album meer in het antwoord.
+    expect(view.project).not.toHaveProperty("albumId");
+    expect(view.project).not.toHaveProperty("albumName");
     expect(view.isFounder).toBe(false);
     expect(view.originals).toEqual([]);
     expect((await asFilm.alice(t).query(filmApi.get, { projectId })).isFounder).toBe(true);
@@ -187,14 +241,14 @@ describe("einddatum (besluit 13)", () => {
     const w = await seedFilmWorld(t);
     expectCode(
       await outcome(() =>
-        asFilm.alice(t).mutation(filmApi.open, { groupId: w.groups.reis, albumId: w.albums.georgie, endsAt: Date.now() + 400 * DAY }),
+        asFilm.alice(t).mutation(filmApi.open, { groupId: w.groups.reis, title: PROJECT_TITLE, endsAt: Date.now() + 400 * DAY }),
       ),
       "DATE_INVALID",
     );
     expect(await asFilm.alice(t).query(filmApi.listForGroup, { groupId: w.groups.reis })).toEqual([]);
     const projectId = await asFilm.alice(t).mutation(filmApi.open, {
       groupId: w.groups.reis,
-      albumId: w.albums.georgie,
+      title: PROJECT_TITLE,
       endsAt: Date.now() + 360 * DAY,
     });
     expect((await asFilm.bob(t).query(filmApi.listOpenForMe, {})).map((r) => r.projectId)).toEqual([projectId]);
@@ -243,19 +297,19 @@ describe("filmProjects.setEndsAt (besluit 13)", () => {
     const later = Date.now() + 10 * DAY;
     expect(await asFilm.alice(t).mutation(filmApi.setEndsAt, { projectId, endsAt: later })).toBeNull();
     expect(await asFilm.bob(t).query(filmApi.listOpenForMe, {})).toEqual([
-      { groupId: w.groups.reis, projectId, albumId: w.albums.georgie, albumName: "Georgië", endsAt: later },
+      { groupId: w.groups.reis, projectId, title: PROJECT_TITLE, endsAt: later },
     ]);
     expect((await asFilm.bob(t).query(filmApi.listForGroup, { groupId: w.groups.reis }))[0]?.endsAt).toBe(later);
 
     // De oude einddatum voorbij, met de geplande stappen: nog open.
     await runUntil(t, 3 * DAY);
     expect((await asFilm.bob(t).query(filmApi.get, { projectId })).project).toMatchObject({ open: true, endsAt: later });
-    // Een nieuw filmpje na de oude einddatum gaat nog naar X en mag insturen.
+    // Een nieuw filmpje na de oude einddatum mag nog insturen, en gaat naar het gekozen album (besluit 27).
     const photoId = await newVideoInX(t, env.r2, w, w.users.bob);
     const s = await announce(asFilm.bob(t), photoId, ORIGINAL.byteLength);
     expect(s.parts).toHaveLength(1);
     const { res } = await fullUpload(asFilm.bob(t), env.r2, { uploadId: "na-oud-einde", albumId: w.albums.tbilisi });
-    expect(await albumsOf(t, ((await res.json()) as { photoId: Id<"photos"> }).photoId)).toEqual([w.albums.georgie]);
+    expect(await albumsOf(t, ((await res.json()) as { photoId: Id<"photos"> }).photoId)).toEqual([w.albums.tbilisi]);
 
     // De nieuwe einddatum voorbij: dicht.
     await runUntil(t, 7 * DAY + MINUTE_MS);

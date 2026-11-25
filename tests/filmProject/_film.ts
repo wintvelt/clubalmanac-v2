@@ -83,18 +83,16 @@ export function padTo(bytes: Uint8Array, size: number): Uint8Array<ArrayBuffer> 
 
 type Ref<K extends "query" | "mutation" | "action", A extends DefaultFunctionArgs, R> = FunctionReference<K, "public", A, R>;
 /**
- * `albumId` is `null` als het filmalbum na sluiten verwijderd is (besluit 17);
- * `albumName` is dan de naam bij het openen. Een open project heeft altijd zijn
- * album (`albums.remove` weigert zolang het open staat).
+ * Besluit 27: een project hangt niet aan een album; het heeft een titel. Een
+ * project van vóór besluit 27 (alleen dev) toont als titel de albumnaam.
  */
 export type ProjectRow = {
   projectId: string;
-  albumId: string | null;
-  albumName: string;
+  title: string;
   endsAt: number;
   open: boolean;
 };
-export type OpenRow = { groupId: string; projectId: string; albumId: string; albumName: string; endsAt: number };
+export type OpenRow = { groupId: string; projectId: string; title: string; endsAt: number };
 export type OriginalRow = {
   originalId: string;
   ownerName: string;
@@ -112,8 +110,7 @@ export type ProjectView = {
   project: {
     projectId: string;
     groupId: string;
-    albumId: string | null;
-    albumName: string;
+    title: string;
     endsAt: number;
     open: boolean;
     /** WP38c, besluit 3 na A: `null` zolang hij open is. */
@@ -130,7 +127,7 @@ export type FinishOriginalResult = { kind: "done" } | { kind: "missing"; parts: 
 export const filmApi = (
   api as unknown as {
     filmProjects: {
-      open: Ref<"mutation", { groupId: Id<"groups">; albumId: Id<"albums">; endsAt: number }, string>;
+      open: Ref<"mutation", { groupId: Id<"groups">; title: string; endsAt: number }, string>;
       close: Ref<"mutation", { projectId: string }, null>;
       setEndsAt: Ref<"mutation", { projectId: string; endsAt: number }, null>;
       listForGroup: Ref<"query", { groupId: Id<"groups"> }, ProjectRow[]>;
@@ -548,22 +545,28 @@ export function advance(ms: number): void {
   vi.setSystemTime(Date.now() + ms);
 }
 
-/** Alice (oprichter) zet een project open op Georgië, 14 dagen. */
-export async function openProject(t: T, w: FilmWorld, endsInMs = 14 * 24 * 60 * 60 * 1000): Promise<string> {
+/** Besluit 27: de titel die `openProject` geeft. */
+export const PROJECT_TITLE = "Clubfilm Reis";
+
+/** Alice (oprichter) zet een project open in Reis, met een titel, 14 dagen. */
+export async function openProject(t: T, w: FilmWorld, endsInMs = 14 * 24 * 60 * 60 * 1000, title = PROJECT_TITLE): Promise<string> {
   return await asFilm.alice(t).mutation(filmApi.open, {
     groupId: w.groups.reis,
-    albumId: w.albums.georgie,
+    title,
     endsAt: Date.now() + endsInMs,
   });
 }
 
-/** Een nieuw filmpje in het filmalbum, een minuut na nu (dus na het openen). */
+/**
+ * Een nieuw filmpje in een album van Reis (standaard Georgië), een minuut na
+ * nu (dus na het openen). Besluit 27: elk album van de groep telt.
+ */
 export async function newVideoInX(
   t: T,
   r2: FakeR2,
   w: FilmWorld,
   ownerId: Id<"users">,
-  extra: { takenAt?: number; durationMs?: number } = {},
+  extra: { takenAt?: number; durationMs?: number; albumId?: Id<"albums"> } = {},
 ): Promise<Id<"photos">> {
   advance(MINUTE_MS);
   const v = await seedVideo(t, r2, { ownerId, albumId: w.albums.georgie, ...extra });
