@@ -1724,3 +1724,21 @@ De laatste regel was ook grammaticaal fout ("originelen lukte"). De teksten van 
 De andere app-tests blijven groen.
 
 **Wouter (2026-11-25):** alle voorstellen van "Besluit 30 (A)" aanvaard, en bij "Alles verwijderen" "voor altijd": "[n] originelen gaan voor altijd weg, ook wat nog onderweg is. De filmpjes blijven in de albums." (enkelvoud: "1 origineel gaat voor altijd weg, ook als het nog onderweg is. Het filmpje blijft in het album.")
+
+**Vastgelegd na het besluit van Wouter (A):** de aanvaarde voorstellen staan nu exact in de tests.
+- **`app/tests/filmProject.test.ts`**, `filmRefusalText`:
+  - `DATE_INVALID` bij starten en bij de einddatum wijzigen;
+  - `NOT_ALLOWED` bij elke handeling van de oprichter;
+  - `NAME_TOO_LONG` bij starten en bij de titel wijzigen;
+  - `NOT_MEMBER` bij starten: "Je bent geen lid meer van deze groep.";
+  - `NOT_MEMBER` bij alle andere handelingen: "Dit filmproject is er niet meer.";
+  - "Alles verwijderen" met "voor altijd", in enkel- en meervoud.
+- **`app/tests/filmProjectRoutes.test.ts`**, een bronscan op de strings van `FilmProjectScreens.tsx`, `FilmProjectParts.tsx` en `filmProject.ts`:
+  - "Dit filmproject is er niet meer.";
+  - "Teruggetrokken. Het filmpje staat nog in het album.";
+  - "Nieuwe filmpjes in deze groep gaan ook als origineel mee.";
+  - "Sluit vanzelf aan het eind van …", zonder "Nederlandse tijd";
+  - "1 download lukte niet." en "[n] downloads lukten niet.";
+  - de oude zinnen zijn weg.
+
+**Stand na A:** 28 tests rood: 18 in `filmProject.test.ts` en 10 in `filmProjectRoutes.test.ts`. De andere app-tests blijven groen.

@@ -228,3 +228,54 @@ describe("het toevoegscherm: geen ongegrensde query (fix-cyclus 1, punt 5)", () 
     expect(direct).toEqual([]);
   });
 });
+
+// Besluit 30, voorstellen van A aanvaard (Wouter, 2026-11-25): de korte teksten
+// op de schermen van het filmproject, exact (alleen strings, geen commentaar).
+// Ze mogen ook in src/lib/filmProject.ts staan.
+describe("korte teksten op de schermen van het filmproject (besluit 30)", () => {
+  const FILES = ["screens/FilmProjectScreens.tsx", "screens/FilmProjectParts.tsx", "lib/filmProject.ts"];
+  function allStrings(): string[] {
+    const out: string[] = [];
+    for (const rel of FILES) {
+      const src = read(rel);
+      if (!src) continue;
+      const sf = parse(src, rel.split("/").pop());
+      const walk = (n: ts.Node) => {
+        if (ts.isStringLiteral(n) || ts.isNoSubstitutionTemplateLiteral(n)) out.push(n.text);
+        else if (ts.isTemplateExpression(n)) out.push(n.head.text, ...n.templateSpans.map((x) => x.literal.text));
+        else if (ts.isJsxText(n) && n.text.trim() !== "") out.push(n.text.trim());
+        ts.forEachChild(n, walk);
+      };
+      walk(sf);
+    }
+    return out;
+  }
+
+  it.each([
+    "Dit filmproject is er niet meer.",
+    "Teruggetrokken. Het filmpje staat nog in het album.",
+    "Nieuwe filmpjes in deze groep gaan ook als origineel mee.",
+    "1 download lukte niet.",
+  ])("'%s' staat er", (text) => {
+    expect(allStrings()).toContain(text);
+  });
+
+  it("einddatum kiezen: 'Sluit vanzelf aan het eind van [dag].', zonder '(Nederlandse tijd)'", () => {
+    const s = allStrings();
+    expect(s).toContain("Sluit vanzelf aan het eind van ");
+    expect(s.some((x) => x.includes("Nederlandse tijd"))).toBe(false);
+  });
+
+  it("alles downloaden, meer dan één mislukt: '[n] downloads lukten niet.'", () => {
+    expect(allStrings()).toContain(" downloads lukten niet.");
+  });
+
+  it.each([
+    "Dit filmproject is er niet meer, of je bent geen lid meer van de groep.",
+    "Het origineel is teruggetrokken. Het filmpje staat nog in het album.",
+    "Van nieuwe filmpjes in deze groep gaat het origineel ook naar dit project.",
+    " lukte niet. Zie de melding bij de rij.",
+  ])("de oude tekst is weg: '%s'", (old) => {
+    expect(allStrings()).not.toContain(old);
+  });
+});

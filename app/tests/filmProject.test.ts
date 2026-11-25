@@ -951,8 +951,9 @@ describe("bevestigingen (38c-8)", () => {
     const c = removeAllConfirmation(18);
     expect(c.destructive).toBe(true);
     expect(c.button.toLowerCase()).toContain("verwijderen");
-    expect(c.message).toBe("18 originelen gaan weg, ook wat nog onderweg is. De filmpjes blijven in de albums.");
-    expect(removeAllConfirmation(1).message).toBe("1 origineel gaat weg, ook als het nog onderweg is. Het filmpje blijft in het album.");
+    // Wouter: "voor altijd" erbij.
+    expect(c.message).toBe("18 originelen gaan voor altijd weg, ook wat nog onderweg is. De filmpjes blijven in de albums.");
+    expect(removeAllConfirmation(1).message).toBe("1 origineel gaat voor altijd weg, ook als het nog onderweg is. Het filmpje blijft in het album.");
   });
 
   it("sluiten: vraagt het, met een knop 'sluiten', en de tekst van besluit 30 (zonder titel)", () => {
@@ -970,14 +971,21 @@ describe("filmRefusalText: weigeringen (38c-12)", () => {
     expect(filmRefusalText(err("PROJECT_ALREADY_OPEN"), "start")).toContain("al een filmproject open");
   });
 
+  // Besluit 30, voorstellen van A aanvaard (Wouter, 2026-11-25): exact.
   it("een datum die niet kan", () => {
-    expect(filmRefusalText(err("DATE_INVALID"), "start").toLowerCase()).toContain("datum");
-    expect(filmRefusalText(err("DATE_INVALID"), "changeEnd").toLowerCase()).toContain("datum");
+    expect(filmRefusalText(err("DATE_INVALID"), "start")).toBe("Kies een dag van vandaag tot over een jaar.");
+    expect(filmRefusalText(err("DATE_INVALID"), "changeEnd")).toBe("Kies een dag van vandaag tot over een jaar.");
   });
 
   it("niet de oprichter", () => {
     for (const a of ["start", "close", "changeEnd", "changeTitle", "removeAll"] as const) {
-      expect(filmRefusalText(err("NOT_ALLOWED"), a), a).toContain("oprichter");
+      expect(filmRefusalText(err("NOT_ALLOWED"), a), a).toBe("Alleen de oprichter kan dat.");
+    }
+  });
+
+  it("een titel die te lang is", () => {
+    for (const a of ["start", "changeTitle"] as const) {
+      expect(filmRefusalText(err("NAME_TOO_LONG"), a)).toBe("De titel mag hoogstens 50 tekens hebben.");
     }
   });
 
@@ -990,16 +998,18 @@ describe("filmRefusalText: weigeringen (38c-12)", () => {
     expect(filmRefusalText(err("NAME_TOO_LONG"), action)).toContain("50");
   });
 
-  it("de titel wijzigen: geen lid (meer) of het project is weg", () => {
-    expect(filmRefusalText(err("NOT_MEMBER"), "changeTitle")).toContain("lid");
+  it("geen lid (meer) of het project is weg, buiten starten: 'Dit filmproject is er niet meer.'", () => {
+    for (const a of ["close", "changeEnd", "changeTitle", "withdraw", "download", "removeAll"] as const) {
+      expect(filmRefusalText(err("NOT_MEMBER"), a), a).toBe("Dit filmproject is er niet meer.");
+    }
   });
 
   it("al gesloten", () => {
     expect(filmRefusalText(err("PROJECT_CLOSED"), "changeEnd")).toContain("gesloten");
   });
 
-  it("geen lid (meer), of weg", () => {
-    expect(filmRefusalText(err("NOT_MEMBER"), "start")).toContain("lid");
+  it("geen lid (meer), bij starten", () => {
+    expect(filmRefusalText(err("NOT_MEMBER"), "start")).toBe("Je bent geen lid meer van deze groep.");
   });
 
   it("een origineel dat er niet meer is", () => {
