@@ -2,18 +2,21 @@ import { ConvexError } from "convex/values";
 import { afterEach, describe, expect, it } from "vitest";
 import { FILM_PROJECT_MAX_AHEAD_MS } from "../../convex/lib/constants";
 import {
+  START_BUTTON,
   WITHDRAW_CONFIRMATION,
   addTargets,
   albumOption,
   allRows,
   closeConfirmation,
   downloadAllIds,
+  downloadHeaderText,
   downloadRows,
   dutchDayOf,
   endDayRange,
   endOfDutchDay,
   filmRefusalText,
   formatBytes,
+  goneText,
   groupFilmView,
   mineRows,
   originalMetaText,
@@ -87,11 +90,12 @@ function ready(t: ReturnType<typeof addTargets>) {
   return t;
 }
 
-/** De regel van de filmpjes: aantal en album vast, "volle kwaliteit" en "clubfilm" erin (open vraag 2: "met plek" mag). */
+/** De regel van de filmpjes: aantal en album vast, met "volle kwaliteit", "met gps" en "clubfilm" (besluit 2 na A). */
 function expectVideoLine(line: string | undefined, count: string, album: string) {
   expect(line).toBeDefined();
   expect(line!.startsWith(`${count} naar ${album}`)).toBe(true);
   expect(line).toContain("volle kwaliteit");
+  expect(line).toContain("met gps");
   expect(line).toContain("clubfilm");
 }
 
@@ -176,7 +180,10 @@ describe("addTargets: randen", () => {
     expect(split.lines).toHaveLength(2);
     expect(split.lines[0]).toBe("3 foto's gaan naar Dag 3");
     expect(split.lines[1]).toBe("2 filmpjes gaan naar Reis 2026");
-    for (const l of split.lines) expect(l).not.toContain("volle kwaliteit");
+    for (const l of split.lines) {
+      expect(l).not.toContain("volle kwaliteit");
+      expect(l).not.toContain("gps");
+    }
   });
 
   it("zonder uploader en zonder splitsen: geen regel", () => {
@@ -317,6 +324,8 @@ const orig = (id: string, extra: Partial<ProjectOriginal> = {}): ProjectOriginal
   durationMs: 75_000,
   submittedAt: NOW - DAY,
   takenAt: null,
+  bytes: 820_000_000,
+  goneAt: NOW + 360 * DAY,
   ...extra,
 });
 
@@ -457,20 +466,20 @@ describe("mineRows: 'Mijn filmpjes' (38c-6)", () => {
 
   it("de stand uit de wachtrij: wordt verstuurd op wifi, wacht op wifi op mobiel internet; met de grootte", () => {
     const q = sending("k1", "o1");
-    const own = [orig("o1", { mine: true, status: "onderweg" })];
+    const own = [orig("o1", { mine: true, status: "onderweg", bytes: BYTES })];
     expect(rows(own, device(q))[0]).toMatchObject({ key: "o1", originalId: "o1", stand: "wordt_verstuurd", bytes: BYTES, canWithdraw: true });
     expect(rows(own, device(q, MOBIEL))[0]).toMatchObject({ stand: "wacht_op_wifi", bytes: BYTES });
     expect(rows(own, device(q, MOBIEL, false))[0]!.stand).toBe("wordt_verstuurd");
   });
 
-  it("onderweg maar niet in de wachtrij van dit toestel: elders, zonder grootte, wel terugtrekken", () => {
-    const r = rows([orig("o9", { mine: true, status: "onderweg" })], device([]));
-    expect(r[0]).toMatchObject({ stand: "elders", bytes: null, canWithdraw: true });
+  it("onderweg maar niet in de wachtrij van dit toestel: elders, met de grootte uit de backend, wel terugtrekken", () => {
+    const r = rows([orig("o9", { mine: true, status: "onderweg", bytes: 123_000_000 })], device([]));
+    expect(r[0]).toMatchObject({ stand: "elders", bytes: 123_000_000, canWithdraw: true });
   });
 
-  it("binnen: binnen, zonder grootte, wel terugtrekken", () => {
-    const r = rows([orig("o2", { mine: true, status: "binnen" })], device([]));
-    expect(r[0]).toMatchObject({ stand: "binnen", bytes: null, canWithdraw: true });
+  it("binnen: binnen, met de grootte uit de backend, wel terugtrekken", () => {
+    const r = rows([orig("o2", { mine: true, status: "binnen", bytes: 77_000_000 })], device([]));
+    expect(r[0]).toMatchObject({ stand: "binnen", bytes: 77_000_000, canWithdraw: true });
   });
 
   it("een origineel in de wachtrij zonder inzending staat er ook, als 'wordt verstuurd', zonder terugtrekken", () => {
@@ -589,6 +598,65 @@ describe("downloadRows: de volgorde van de bestandsnamen (38c-9)", () => {
     ];
     expect(downloadAllIds(list)).toEqual(["a", "c"]);
     expect(downloadAllIds([])).toEqual([]);
+  });
+});
+
+describe("downloadHeaderText en goneText: de kop van de downloadpagina (besluit 3 na A, mockup 5)", () => {
+  const CLOSED_AT = endOfDutchDay({ year: 2026, month: 11, day: 30 });
+  const NOW_DEC = Date.UTC(2026, 11, 2, 11, 0);
+  const closed = { open: false, endsAt: CLOSED_AT, closedAt: CLOSED_AT };
+
+  it("gesloten: 'Gesloten op [dag] · [n] originelen · [grootte] · weg op [eerste datum]'", () => {
+    const list = [
+      orig("a", { bytes: 9_000_000_000, goneAt: endOfDutchDay({ year: 2027, month: 12, day: 3 }) }),
+      orig("b", { bytes: 5_600_000_000, goneAt: endOfDutchDay({ year: 2027, month: 11, day: 30 }) }),
+    ];
+    expect(downloadHeaderText(closed, list, NOW_DEC)).toBe("Gesloten op 30 november · 2 originelen · 14,6 GB · weg op 30 november 2027");
+  });
+
+  it("telt alleen wat binnen is: aantal, grootte en de eerste datum van weggaan", () => {
+    const list = [
+      orig("a", { bytes: 1_200_000_000, goneAt: endOfDutchDay({ year: 2027, month: 11, day: 30 }) }),
+      orig("b", { status: "onderweg", bytes: 3_000_000_000, goneAt: endOfDutchDay({ year: 2026, month: 12, day: 14 }) }),
+    ];
+    expect(downloadHeaderText(closed, list, NOW_DEC)).toBe("Gesloten op 30 november · 1 origineel · 1,2 GB · weg op 30 november 2027");
+  });
+
+  it("nog niets binnen: alleen de stand en 'nog geen originelen'", () => {
+    expect(downloadHeaderText(closed, [orig("b", { status: "onderweg" })], NOW_DEC)).toBe("Gesloten op 30 november · nog geen originelen");
+    expect(downloadHeaderText(closed, [], NOW_DEC)).toBe("Gesloten op 30 november · nog geen originelen");
+  });
+
+  it("open: 'Open tot …' vooraan", () => {
+    const open = { open: true, endsAt: END, closedAt: null };
+    expect(downloadHeaderText(open, [orig("a", { bytes: 410_000_000, goneAt: endOfDutchDay({ year: 2027, month: 11, day: 20 }) })], NOW)).toBe(
+      "Open tot 30 november · 1 origineel · 410 MB · weg op 20 november 2027",
+    );
+  });
+
+  it("eerder gesloten dan de einddatum: de datum van sluiten, niet de einddatum", () => {
+    const early = { open: false, endsAt: endOfDutchDay({ year: 2026, month: 12, day: 20 }), closedAt: Date.UTC(2026, 10, 27, 15, 0) };
+    expect(downloadHeaderText(early, [], NOW_DEC)).toBe("Gesloten op 27 november · nog geen originelen");
+  });
+
+  it("gesloten zonder datum (oude stand): alleen 'Gesloten'", () => {
+    expect(downloadHeaderText({ open: false, endsAt: END, closedAt: null }, [], NOW_DEC)).toBe("Gesloten · nog geen originelen");
+  });
+
+  it("goneText: dit jaar zonder jaar, een ander jaar met het jaar, in Nederlandse tijd", () => {
+    expect(goneText(endOfDutchDay({ year: 2026, month: 12, day: 14 }), NOW)).toBe("weg op 14 december");
+    expect(goneText(endOfDutchDay({ year: 2027, month: 11, day: 30 }), NOW)).toBe("weg op 30 november 2027");
+    // 23:30 UTC in de winter is in Nederland al de volgende dag.
+    expect(goneText(Date.UTC(2026, 11, 13, 23, 30), NOW)).toBe("weg op 14 december");
+  });
+});
+
+describe("de knop 'Filmproject starten' (besluit 1 na A)", () => {
+  it("een sleutel-icoon, de tekst, en een label dat zegt dat het alleen voor de oprichter is", () => {
+    expect(START_BUTTON.title).toBe("Filmproject starten");
+    expect(START_BUTTON.icon).toBe("key");
+    expect(START_BUTTON.accessibilityLabel).toContain("Filmproject starten");
+    expect(START_BUTTON.accessibilityLabel).toContain("oprichter");
   });
 });
 

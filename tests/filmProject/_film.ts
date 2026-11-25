@@ -103,9 +103,22 @@ export type OriginalRow = {
   durationMs: number;
   submittedAt: number;
   takenAt: number | null;
+  /** WP38c, besluit 3 na A: de aangemelde grootte. */
+  bytes: number;
+  /** WP38c, besluit 3 na A: wanneer hij uiterlijk weggaat. */
+  goneAt: number;
 };
 export type ProjectView = {
-  project: { projectId: string; groupId: string; albumId: string | null; albumName: string; endsAt: number; open: boolean };
+  project: {
+    projectId: string;
+    groupId: string;
+    albumId: string | null;
+    albumName: string;
+    endsAt: number;
+    open: boolean;
+    /** WP38c, besluit 3 na A: `null` zolang hij open is. */
+    closedAt: number | null;
+  };
   isFounder: boolean;
   originals: OriginalRow[];
 };

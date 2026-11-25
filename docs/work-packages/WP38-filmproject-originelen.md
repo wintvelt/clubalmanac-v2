@@ -1069,7 +1069,7 @@ Gate 38b afgerond.
 
 ### Blind spots
 
-1. **De backend geeft niet alles wat de downloadpagina toont** (gat, open vraag 3). `get` heeft per inzending geen grootte en geen datum waarop hij weggaat, en het project geen datum van sluiten. De mockup toont "14,6 GB", per rij de grootte, "weg op …" en "Gesloten op …". De spec van 38a beloofde "De downloadpagina toont per origineel de datum waarop het weggaat". Die datum is niet uit `get` af te leiden: het jaar telt vanaf binnenkomst (`completedAt`), en dat veld staat niet in het antwoord. Een eerder gesloten project heeft `endsAt` op de geplande datum, niet op het sluiten.
+1. **De backend gaf niet alles wat de downloadpagina toont.** `get` had per inzending geen grootte en geen datum van weggaan, en het project geen datum van sluiten. Besluit 3 na A: `get` krijgt ze (38c-22).
 2. **De webapp is alleen-lezen** (WP35 W5). Downloaden en "Alles verwijderen" zijn de eerste schrijfacties op het web buiten uploaden (WP36). Dat is een bewuste uitzondering, alleen voor de oprichter, alleen op de downloadpagina. De rest van het filmproject is op het web alleen te bekijken: geen starten, sluiten, verschuiven, terugtrekken of wifi-schakelaar.
 3. **De webapp voegt geen filmpjes toe** (WP36: alleen foto's). Besluit 3 speelt op het web dus niet: een foto naar Y blijft in Y.
 4. **Een origineel dat nog niet is aangemeld, staat niet in `get`.** Tussen "Toevoegen" en een gelukte `startOriginal` kent de backend het niet. Bij geen verbinding, `te_vaak`, `bezig` of `vol` kan dat uren tot dagen duren. "Mijn filmpjes" toont daarom ook de originelen in de wachtrij van dit toestel zonder inzending (A-invariant 38c-6).
@@ -1083,7 +1083,7 @@ Gate 38b afgerond.
 
 ### Waar "Filmproject starten" staat
 
-Voorstel (open vraag 1): een kleine knop "Filmproject starten" naast "Bewerk groep", in de kop van de groep (smal) en in de zijkolom (breed, iPad liggend). Alleen voor de oprichter, alleen in de app, en alleen zolang er geen open project is. Staat er een open project, dan staat daar de balk. De knop opent een eigen scherm (mockup 4) in de stack van de groep: albumlijst, einddatum, "Starten".
+Besloten (besluit 1 na A): een kleine knop "Filmproject starten" met een sleutel-icoon, naast "Bewerk groep", in de kop van de groep (smal) en in de zijkolom (breed, iPad liggend). Alleen voor de oprichter, alleen in de app, en alleen zolang er geen open project is. Staat er een open project, dan staat daar de balk. De knop opent een eigen scherm (mockup 4) in de stack van de groep: albumlijst, einddatum, "Starten".
 
 ### Lege en foutstanden
 
@@ -1127,7 +1127,7 @@ Een build zonder uploader (`originalUploaderAvailable` uit) gedraagt zich als de
 
 1. **Besluit 3 in één functie** (A-invariant 17). Uit de keuze (aantal foto's, aantal filmpjes dat meegaat: een te lang filmpje telt niet), het gekozen album en de open projecten volgt: het album van de foto's, het album van de filmpjes, of er gesplitst wordt, welk album de albumrij toont, de regels boven de knop, en of de schakelaar er staat.
    - Het gekozen album blijft wat het lid (of de +, of het onthouden album) koos. Alleen filmpjes met Y gekozen: de rij toont X. Komen er foto's bij, dan staat Y er weer en wordt er gesplitst. Het onthouden album (WP39 F2) is het gekozen album.
-   - Regels boven de knop: bij splitsen "[n] foto's gaan naar [Y]" en "[n] filmpjes gaan naar [X], in volle kwaliteit voor de clubfilm" (mockup 3). Gaan de filmpjes zonder splitsen naar X, dan alleen de regel van de filmpjes. Zonder uploader valt ", in volle kwaliteit…" weg, en zonder splitsen dan ook de regel. Zonder project geen regel.
+   - Regels boven de knop: bij splitsen "[n] foto's gaan naar [Y]" en "[n] filmpjes gaan naar [X], …" met "volle kwaliteit", "met gps" en "clubfilm" (mockup 3, besluit 2 na A). Gaan de filmpjes zonder splitsen naar X, dan alleen de regel van de filmpjes. Zonder uploader valt het deel over volle kwaliteit en gps weg, en zonder splitsen dan ook de regel. Zonder project geen regel.
    - De schakelaar "Alleen via wifi" staat er alleen met uploader en met minstens één filmpje naar X.
    - Zijn de open projecten nog niet geladen en zitten er filmpjes in de keuze, dan is de uitkomst "nog niet klaar".
 2. **Y grijs in het kiesscherm.** Alleen filmpjes in de keuze: elk album van een groep met een open project, behalve X zelf, is niet te kiezen, met "Filmpjes gaan nu naar [X]". Met foto's erbij is Y te kiezen.
@@ -1137,21 +1137,28 @@ Een build zonder uploader (`originalUploaderAvailable` uit) gedraagt zich als de
    - Sluiten en einddatum verschuiven: oprichter, app, project open.
    - "Downloaden kan in de webapp": oprichter, app.
    - Downloadpagina: oprichter, web.
-   - "Alles verwijderen": oprichter, web, project gesloten, minstens één inzending (open vraag 5).
+   - "Alles verwijderen": oprichter, web, project gesloten, minstens één inzending.
    - Het aantal filmpjes in de kop is het aantal dat binnen is. De oprichter ziet daarnaast hoeveel er onderweg zijn.
 5. **"Alle filmpjes"**: alleen wat binnen is, het nieuwste eerst. Eigen inzendingen heten "Jij".
 6. **"Mijn filmpjes"**: de eigen inzendingen uit `get`, plus (in de app met uploader) de originelen in de wachtrij van dit toestel voor dit project en deze user die nog geen inzending hebben. Het nieuwste eerst.
    - De stand komt uit `ownOriginalStand` (38b). Zonder uploader en op het web: "Onderweg" of "Binnen".
    - Een origineel zonder inzending heeft de stand "Wordt verstuurd", of "Later opnieuw" als er een wachttijd loopt.
-   - De grootte staat erbij als het origineel in de wachtrij van dit toestel staat.
+   - De grootte: bij een inzending die uit `get`, bij een origineel zonder inzending die uit de wachtrij.
    - Terugtrekken: in de app, bij elke eigen inzending (onderweg, `elders` of binnen). Niet bij een origineel zonder inzending, niet op het web.
-7. **Teksten van de stand**: "Binnen", "Wordt verstuurd", "Wacht op wifi" (mockup), "Later opnieuw" (`wacht`), "Niet op dit toestel" (`elders`), "Onderweg" (web, geen uploader). Open vraag 8.
+7. **Teksten van de stand**: "Binnen", "Wordt verstuurd", "Wacht op wifi" (mockup), "Later opnieuw" (`wacht`), "Niet op dit toestel" (`elders`), "Onderweg" (web, geen uploader).
 8. **Na terugtrekken** hoort de wachtrij het (`teruggetrokken`), pas als `withdraw` gelukt is. De bevestiging zegt dat het definitief is: dat filmpje kan nooit meer naar een clubfilm, en het blijft in het album. "Alles verwijderen" zegt hetzelfde, met het aantal.
-9. **Downloadpagina**: alle inzendingen die de oprichter ziet, in de volgorde van de bestandsnamen: de opnamedatum, of zonder die het inzenden in Nederlandse tijd (zoals `originalFilename` in 38a). Zo staan ze in de map van de downloads in dezelfde volgorde. Alleen wat binnen is, is te downloaden. "Alles downloaden" haalt per origineel een verse link, in die volgorde.
+9. **Downloadpagina**: de kop zoals mockup 5: "Gesloten op [dag] · [n] originelen · [grootte] · weg op [datum]" (of "Open tot …" vooraan). Aantal, grootte en "weg op" (de eerste die weggaat) tellen alleen wat binnen is; zonder iets binnen "nog geen originelen". Per rij de grootte en "weg op [datum]". Alle inzendingen die de oprichter ziet, in de volgorde van de bestandsnamen: de opnamedatum, of zonder die het inzenden in Nederlandse tijd (zoals `originalFilename` in 38a). Zo staan ze in de map van de downloads in dezelfde volgorde. Alleen wat binnen is, is te downloaden. "Alles downloaden" haalt per origineel een verse link, in die volgorde.
 10. **Data en tijden.** Inzenden: "Vandaag 14:12", "Gisteren 19:03", anders "21 nov 19:03", met het jaar als het niet dit jaar is, in Nederlandse tijd. Bij elke rij in "Alle filmpjes": "Ingestuurd 22 nov · opgenomen 20 nov". De opnamedatum is de kloktijd van de camera. Grootte decimaal, zoals iOS: "410 MB", "1,2 GB".
 11. **Einddatum.** Het lid kiest een dag. `endsAt` is het einde van die dag in Nederland (23:59:59,999), ook bij een wissel van zomertijd. Te kiezen: vandaag tot de laatste dag waarvan het einde binnen 366 dagen na nu valt.
 12. **Weigeringen**: een eigen tekst per code (zie de tabel). Een onbekende code of een fout zonder code geeft de algemene tekst, zonder de tekst van de fout (geen "Server Error", geen `R2_CONFIG_MISSING`, geen link).
 13. **Meldingen als het origineel niet meegaat**: één regel per reden, met het aantal filmpjes, in de uitkomst van de filmpjes. `geen_uploader` en `geen_project` geven geen melding.
+
+20. **De knop "Filmproject starten"** (besluit 1 na A): tekst, sleutel-icoon (`key`) en een toegankelijkheidslabel dat zegt dat hij alleen voor de oprichter is, uit één constante in de pure module.
+21. **"Filmpje overal verwijderen?"** (besluit 16, besluit 7 na A): de bevestiging in het menu krijgt bij een filmpje de zin "Is het ingestuurd voor een filmproject, dan gaat het origineel ook weg." Ook bij meerdere tegelijk als er een filmpje bij is.
+22. **`filmProjects.get` in de backend** (besluit 3 na A):
+    - per inzending `bytes` (de aangemelde grootte) en `goneAt`: binnen een jaar na binnenkomst; onderweg 14 dagen na het sluiten (of de einddatum als het project nog open is, of eerder dichtging), maar nooit later dan een jaar na het aanmelden. Dat is wat de opruimronde doet; verschuift de einddatum, dan schuift `goneAt` mee;
+    - per project `closedAt`: `null` zolang hij open is, anders het sluiten door de oprichter, of de einddatum als hij vanzelf dichtging (ook als de geplande stap nog niet liep);
+    - toegang: elk veld staat bij elke rij die de caller al ziet. Geen veld alleen voor de oprichter: een grootte en een datum zeggen niets over de inhoud of de plek. `listForGroup` en `listOpenForMe` blijven zoals ze zijn.
 
 *Aansluiting (audit en gate):*
 
@@ -1208,7 +1215,11 @@ export function originalMetaText(o: { submittedAt: number; takenAt: number | nul
 export function formatBytes(bytes: number): string;
 
 export type ProjectOriginal = { originalId: string; ownerName: string; mine: boolean; status: "onderweg" | "binnen";
-  durationMs: number; submittedAt: number; takenAt: number | null };   // = een rij uit filmProjects.get
+  durationMs: number; submittedAt: number; takenAt: number | null; bytes: number; goneAt: number };   // = een rij uit filmProjects.get
+export function goneText(goneAt: number, now: number): string;                 // "weg op 30 november 2027"
+export function downloadHeaderText(project: { open: boolean; endsAt: number; closedAt: number | null },
+  originals: readonly ProjectOriginal[], now: number): string;
+export const START_BUTTON: { title: string; icon: "key"; accessibilityLabel: string };
 export function projectPageView(input: { platform: Platform; uploader: boolean; isFounder: boolean; open: boolean;
   originals: readonly ProjectOriginal[] }): { wifiSwitch: boolean; close: boolean; changeEnd: boolean;
   downloadHint: boolean; download: boolean; removeAll: boolean; count: number; underway: number | null };
@@ -1235,6 +1246,8 @@ export function filmRefusalText(error: unknown, action: FilmAction): string;
 - `mineRows`: `device` is `null` op het web en zonder uploader. `key` is het inzending-id, of voor een origineel zonder inzending de sleutel uit de wachtrij; `submittedAt` is dan het moment van toevoegen.
 - `downloadRows` krijgt wat `get` de oprichter geeft (ook onderweg).
 
+**Backend**: `filmProjects.get` geeft per inzending ook `bytes: number` en `goneAt: number`, en in `project` ook `closedAt: number | null` (38c-22).
+
 **Elders**: `filmProjectPath(groupId, projectId)` en `newFilmProjectPath(groupId)` in `groupRoutes.ts`; `originalPosterUrl(siteUrl, originalId, format)` in `imageUrls.ts`; `refusalOf` kent `FILM_PROJECT_OPEN` bij `deleteAlbum`.
 
 ### Tests per invariant (stand na A)
@@ -1251,6 +1264,10 @@ export function filmRefusalText(error: unknown, action: FilmAction): string;
 | 38c-12, 13 | `filmProject.test.ts` (`filmRefusalText`, `originalSkipLines`), `filmProjectRoutes.test.ts` (`FILM_PROJECT_OPEN`) | |
 | 38c-14–18 | | aansluiting: audit en gate |
 | 38c-19 | `filmProjectRoutes.test.ts` (paden, routebestanden, web-variant van starten, posterpad) | |
+| 38c-9 (kop) | `filmProject.test.ts` (`downloadHeaderText`, `goneText`) | |
+| 38c-20 | `filmProject.test.ts` (`START_BUTTON`), `filmProjectRoutes.test.ts` (`key` in Icon, een scherm gebruikt `START_BUTTON`) | de plek naast "Bewerk groep": gate |
+| 38c-21 | `filmProjectRoutes.test.ts` (de zin staat in het menu) | of hij alleen bij filmpjes staat: audit |
+| 38c-22 | `tests/filmProject/getDetails.test.ts` (open, gesloten, vanzelf dicht; binnen, onderweg, verschoven, eerder gesloten, bijna een jaar open; gelijk aan de opruimronde; wie wat ziet) | |
 
 **Stand na A (38c):**
 
@@ -1259,20 +1276,20 @@ export function filmRefusalText(error: unknown, action: FilmAction): string;
   - 8 in `filmProjectRoutes.test.ts`: de paden, de poster en de routebestanden ontbreken; `FILM_PROJECT_OPEN` geeft de algemene tekst.
 - De andere 2358 app-tests blijven groen. De app-typecheck faalt alleen op de ontbrekende module en exports.
 - A draaide de tests tegen een wegwerp-uitwerking buiten de repo: alle 104 groen, typecheck schoon. Met "vandaag plus 365 dagen", een sortering zonder Nederlandse tijd, de tijdzone van het toestel, of zonder de originelen zonder inzending werd telkens een test rood. Die uitwerking is weggegooid.
-- Geen backend-test: het gat van open vraag 3 wacht op het besluit.
+- Na de besluiten van Wouter: zie "Na de besluiten van 38c (A)".
 
 ### Gate 38c (iPhone met dev-build; Safari en Chrome op de Mac)
 
-1. **Starten**: als oprichter in een groep zonder project: de knop, album en einddatum kiezen, de balk verschijnt. Een lid (tweede account) ziet de balk, niet de knop.
+1. **Starten**: als oprichter in een groep zonder project: de knop met het sleutel-icoon naast "Bewerk groep"; VoiceOver zegt dat hij alleen voor de oprichter is. Album en einddatum kiezen, de balk verschijnt. Een lid (tweede account) ziet de balk, niet de knop.
 2. **Besluit 3**: alleen filmpjes met het onthouden album Y: de rij toont X, Y is grijs met "Filmpjes gaan nu naar X". Foto's en filmpjes met Y: twee regels boven de knop; na afloop staan de foto's in Y en de filmpjes in X, en de meldingen noemen elk hun album. Ook via de + in album Y.
 3. **Schakelaar**: in het toevoegscherm en op de projectpagina dezelfde stand; omzetten op de een staat meteen op de ander.
 4. **Projectpagina**: een eigen filmpje gaat van "Wordt verstuurd" naar "Binnen"; met de schakelaar aan op mobiel internet "Wacht op wifi". Direct na "Toevoegen" staat het al bij "Mijn filmpjes".
 5. **Terugtrekken**, met de waarschuwing: de rij is weg, het filmpje staat nog in het album, in het log van het proefscherm is het bestand weg.
 6. **Een clip onder 1 MiB**: de melding "te klein", het filmpje staat in het album.
-7. **Sluiten**: de balk zegt "Gesloten", een nieuw filmpje gaat naar het gekozen album, de projectpagina blijft bereikbaar. Einddatum verschuiven, als besluit 4 ja is.
+7. **Sluiten**: de balk zegt "Gesloten", een nieuw filmpje gaat naar het gekozen album, de projectpagina blijft bereikbaar. Einddatum verschuiven: tik op "Open tot …", kies een andere dag.
 8. **Tijdzone**: zet op de iPhone een andere tijdzone (bv. New York). De balk toont dezelfde einddatum.
 9. **Besluit 24**: een filmpje dat alleen in iCloud staat: "Je keuze ophalen…" met teller, het scherm blijft aan; daarna "Verkleinen… %", het scherm blijft aan.
-10. **Webapp, Safari en Chrome**, als oprichter: de downloadpagina. Download een origineel van ≥ 1 GB: de naam is "jjjj-mm-dd uu.mm Naam.mov" en de grootte is gelijk aan die in R2. "Alles downloaden" met minstens drie: alle bestanden komen heel binnen (Chrome kan vragen of de site meer bestanden mag downloaden). Het geheugen van het tabblad blijft laag.
+10. **Webapp, Safari en Chrome**, als oprichter: de downloadpagina, met de kop en per rij grootte en "weg op". Download een origineel van ≥ 1 GB: de naam is "jjjj-mm-dd uu.mm Naam.mov" en de grootte is gelijk aan die in R2. "Alles downloaden" met minstens drie: alle bestanden komen heel binnen (Chrome kan vragen of de site meer bestanden mag downloaden). Het geheugen van het tabblad blijft laag.
 11. **Webapp als lid**: de projectpagina zonder Terugtrekken en zonder schakelaar; het pad van starten toont "Alleen in de app".
 12. **Alles verwijderen** in de webapp, met de waarschuwing: de lijst is leeg; op de iPhone gaat een origineel dat nog onderweg was uit de wachtrij.
 13. **iPad liggend**: de balk en de knop in de zijkolom.
@@ -1295,3 +1312,20 @@ Open vragen 1–8 volgens het advies van A, met twee aanvullingen:
 1. De knop "Filmproject starten" moet herkenbaar alleen voor de oprichter zijn: een sleutel-icoon (`key` uit Ionicons) vóór de tekst, en een toegankelijkheidslabel dat het zegt.
 2. Niet "met plek" maar **"met gps"**: de regel boven de knop noemt "volle kwaliteit", "met gps" en "clubfilm".
 3. `filmProjects.get` krijgt grootte en datum van weggaan per inzending en de datum van sluiten per project (kleine uitbreiding van 38a, eerst tests van A). Na de merge deployt Wouter de backend naar prod.
+
+### Na de besluiten van 38c (A, 2026-11-25)
+
+Verwerkt in 38c-1, 4, 6, 7, 9 en de nieuwe 38c-20 tot 22, het testcontract, de tabel en de gate.
+
+- **Besluit 2**: de regel van de filmpjes moet "met gps" bevatten (en "volle kwaliteit" en "clubfilm"); zonder uploader geen van drieën.
+- **Besluit 3**: backend-tests voor `get` (38c-22); in de app de kop van de downloadpagina en "weg op". De grootte van een eigen inzending komt nu uit `get`, ook bij `binnen` en `elders`.
+- **Besluit 1**: `START_BUTTON` met `key` en een label; Icon kent `key`; een scherm gebruikt de constante.
+- **Besluit 7**: de zin over het origineel in het menu.
+- **Besluiten 4, 5, 6, 8**: stonden al in de tests zoals geadviseerd; niets veranderd.
+
+**Stand na A (besluiten 38c):**
+
+- Backend: 11 nieuwe tests in `tests/filmProject/getDetails.test.ts`, alle rood: `closedAt`, `bytes` en `goneAt` ontbreken. De andere 147 tests van het filmproject blijven groen; de root-typecheck is schoon (`_film.ts` kent de nieuwe velden).
+- App: `filmProject.test.ts` heeft nu 104 tests (8 nieuw), rood zolang de module ontbreekt; `filmProjectRoutes.test.ts` 11 (3 nieuw), alle rood. De andere 2358 app-tests blijven groen.
+- A draaide alles tegen een wegwerp-uitwerking buiten de repo (backend en app): groen, beide typechecks schoon, ook de inventaristests. Die uitwerking is weggegooid.
+

@@ -1,4 +1,4 @@
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { ConvexError } from "convex/values";
 import { describe, expect, it } from "vitest";
@@ -7,6 +7,9 @@ import { filmProjectPath, newFilmProjectPath } from "../src/lib/groupRoutes";
 import { originalPosterUrl } from "../src/lib/imageUrls";
 import { PUBLIC_PATHS, routeAccess } from "../src/lib/routeAccess";
 import { listFiles } from "./support/sourceScan";
+
+const SRC = fileURLToPath(new URL("../src/", import.meta.url));
+const read = (rel: string) => (existsSync(SRC + rel) ? readFileSync(SRC + rel, "utf8") : "");
 
 // WP38c — de routes en de randen van het filmproject buiten de eigen module.
 //   - 38c-19: de projectpagina onder de groep, starten modaal naast "Nieuw
@@ -76,5 +79,23 @@ describe("album verwijderen tijdens een open project (besluit 17)", () => {
     const r = refusalOf(new ConvexError({ code: "FILM_PROJECT_OPEN" }), "deleteAlbum");
     expect(r.field).toBe("general");
     expect(r.text).toContain("Sluit eerst het filmproject");
+  });
+});
+
+describe("de knop 'Filmproject starten' in de schermen (besluit 1 na A)", () => {
+  it("Icon kent 'key'", () => {
+    expect(read("components/Icon.tsx")).toMatch(/\bkey:\s*"key"/);
+  });
+
+  it("een scherm gebruikt START_BUTTON (icoon en label uit de pure module)", () => {
+    const screens = listFiles(SRC + "screens", new Set()).filter((f) => /\.tsx?$/.test(f));
+    expect(screens.some((f) => read("screens/" + f).includes("START_BUTTON"))).toBe(true);
+  });
+});
+
+describe("filmpje verwijderen noemt het origineel (besluit 16, besluit 7 na A)", () => {
+  it("de bevestiging in het menu heeft de zin over het origineel", () => {
+    const text = read("screens/PhotoMenu.tsx") + read("lib/photoActions.ts");
+    expect(text).toContain("Is het ingestuurd voor een filmproject, dan gaat het origineel ook weg.");
   });
 });
