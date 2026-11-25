@@ -23,6 +23,7 @@ import {
   balanceLine,
   COLUMN_TITLES,
   formatCell,
+  formatDayMonth,
   formatEuro,
   formatLongDate,
   formatShortDate,
@@ -31,6 +32,7 @@ import {
   participantStatus,
   partMeta,
   paymentLines,
+  potAfterNote,
   rowCell,
   stillToPay,
   totalCell,
@@ -530,7 +532,7 @@ function ParticipantContent({
           {[settlement.name, settlement.period].filter(Boolean).join(" · ")}
         </Text>
       </View>
-      <OutcomeCard text={outcome} kind={status.kind} />
+      <OutcomeCard text={outcome} kind={status.kind} note={potAfterNote(row, settlement.lustrum)} />
       <CostsBlock settlement={settlement} row={row} />
       {settlement.lustrum && <SavingsBlock settlement={settlement} row={row} />}
       <PaymentsBlock row={row} />
@@ -538,13 +540,20 @@ function ParticipantContent({
   );
 }
 
-function OutcomeCard({ text, kind }: { text: string; kind: ParticipantStatusKind }) {
+// De uitkomst, met eronder (bij een lustrum) wat er na de afrekening in de
+// spaarpot zit (WP41b, potAfterNote).
+function OutcomeCard({ text, kind, note }: { text: string; kind: ParticipantStatusKind; note: string | null }) {
   const { colors } = useTheme();
   return (
     <View style={[styles.outcome, { backgroundColor: colors.surface }]}>
       <Text variant="amount" color={kind === "done" ? "text" : STATUS_COLOR[kind]} accessibilityLiveRegion="polite">
         {text}
       </Text>
+      {note !== null && (
+        <Text variant="meta" color="muted">
+          {note}
+        </Text>
+      )}
     </View>
   );
 }
@@ -582,10 +591,14 @@ function Line({
   expanded?: boolean;
 }) {
   const { colors } = useTheme();
+  const { fontScale } = useWindowDimensions();
+  // De datums staan in een kolom van vaste breedte (de breedste, `28-12`), zodat
+  // de omschrijvingen eronder recht beginnen (WP41b).
+  const dateWidth = amountWidth("00-00", typography.albumMeta.fontSize * fontScale);
   const body = (
     <>
       {date !== undefined && (
-        <Text variant="albumMeta" color="muted" style={[styles.figures, styles.date]}>
+        <Text variant="albumMeta" color="muted" style={[styles.figures, styles.date, { minWidth: dateWidth }]}>
           {date}
         </Text>
       )}
@@ -674,7 +687,7 @@ function SavingsBlock({ settlement, row }: { settlement: Settlement; row: Settle
         <View key={i}>
           <Line
             first={i === 0}
-            date={formatShortDate(s.date)}
+            date={formatDayMonth(s.date)}
             label={s.description}
             amount={formatEuro(s.amount)}
             onPress={s.months && s.months.length > 0 ? () => toggle(i) : undefined}
@@ -682,7 +695,7 @@ function SavingsBlock({ settlement, row }: { settlement: Settlement; row: Settle
           />
           {open.has(i) &&
             (s.months ?? []).map((m, j) => (
-              <Line key={j} date={formatShortDate(m.date)} label="" amount={formatEuro(m.amount)} color="muted" />
+              <Line key={j} date={formatDayMonth(m.date)} label="" amount={formatEuro(m.amount)} color="muted" />
             ))}
         </View>
       ))}

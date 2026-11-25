@@ -126,6 +126,12 @@ export function formatShortDate(iso: string): string {
   return `${d}-${m}-${y}`;
 }
 
+/** `2026-06-18` → `18-6`: in het spaarpot-overzicht, zonder jaartal (WP41b). */
+export function formatDayMonth(iso: string): string {
+  const [, m, d] = dateParts(iso);
+  return `${d}-${m}`;
+}
+
 // --- tijdlijn ----------------------------------------------------------------------------
 
 /** Het jaar van een ISO-datum, uit de tekst (geen tijdzone). */
@@ -176,13 +182,23 @@ export function participantStatus(row: Pick<SettlementRow, "balance" | "open">):
   return { kind: "receives", label: `Krijgt nog ${formatEuro(row.open)}` };
 }
 
-/** De uitkomst bovenaan het scherm van één deelnemer, in de derde persoon. */
+/** De uitkomst bovenaan het scherm van één deelnemer: in de derde persoon of onpersoonlijk. */
 export function participantOutcome(row: Pick<SettlementRow, "balance" | "open" | "fromPot">, lustrum: boolean): string {
   if (row.open > 0) {
     return row.balance > 0 ? `Betaalt nog ${formatEuro(row.open)}` : `Krijgt nog ${formatEuro(row.open)} terug`;
   }
-  if (lustrum && row.balance === 0 && row.fromPot > 0) return "Zijn deel komt helemaal uit zijn spaarpot";
+  if (lustrum && row.balance === 0 && row.fromPot > 0) return "Deelname volledig uit spaarpot betaald";
   return "Afgerond";
+}
+
+/**
+ * De regel onder de uitkomst (WP41b, zoals `evenement_lid.html` in het
+ * clubboek): wat er na de afrekening in de spaarpot zit. Alleen bij een
+ * lustrum en als dat niet 0 is; anders null.
+ */
+export function potAfterNote(row: Pick<SettlementRow, "potAfter">, lustrum: boolean): string | null {
+  if (!lustrum || !row.potAfter) return null;
+  return `Na de afrekening zit er ${formatEuro(row.potAfter)} in de spaarpot`;
 }
 
 /** De slotregel van de kosten: wat er bij moet of terug komt, als positief bedrag. */
