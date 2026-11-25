@@ -38,6 +38,10 @@ export type SettlementListItem = {
   startDate: string;
   participantCount: number;
   openCount: number;
+  /** WP41c: heeft de afrekening een foto. */
+  hasImage: boolean;
+  /** WP41c: een ondoorzichtige versie van die foto, of null zonder foto. */
+  imageVersion: string | null;
 };
 
 export const settlementsApi = (
@@ -221,8 +225,60 @@ export async function expectNotMember(promise: Promise<unknown>): Promise<void> 
   expect((err as ConvexError<{ code: string }>).data).toMatchObject({ code: "NOT_MEMBER" });
 }
 
-/** Het verzoek zonder `key`: zo hoort `settlements.get` het terug te geven (A6). */
+/**
+ * Het verzoek zonder `key` (en zonder `image`): zo hoort `settlements.get` de
+ * inhoud terug te geven (A6). WP41c: `hasImage` en `imageVersion` komen erbij;
+ * zonder foto `false` en `null`.
+ */
 export function asRead(body: R): R {
-  const { key: _key, ...rest } = body;
-  return rest;
+  const { key: _key, image: _image, ...rest } = body;
+  return { ...rest, hasImage: false, imageVersion: null };
+}
+
+// --- WP41c: de foto ----------------------------------------------------------
+
+/** WP41c besluit 2: met `image` ten hoogste 1,5 MiB in totaal. */
+export const MAX_BODY_WITH_IMAGE_BYTES = 1.5 * 1024 * 1024;
+/** WP41c besluit 2, A-keuze 16: ontsleuteld ten hoogste 1 MiB. */
+export const MAX_IMAGE_BYTES = 1024 * 1024;
+
+/** Standaard base64 met `=`-opvulling, zoals Python `base64.b64encode`. */
+export function b64(bytes: Uint8Array): string {
+  return Buffer.from(bytes).toString("base64");
+}
+
+/** Het verzoek met een foto. */
+export function withImage(body: R, bytes: Uint8Array): R {
+  return { ...body, image: b64(bytes) };
+}
+
+/** Een "JPEG" van precies `n` bytes: de handtekening FF D8 FF, dan nullen. */
+export function jpegOfSize(n: number): Uint8Array {
+  const out = new Uint8Array(n);
+  out.set([0xff, 0xd8, 0xff]);
+  return out;
+}
+
+/** Alle objecten in file storage (id's). */
+export async function storageIds(t: T): Promise<string[]> {
+  return await t.run(async (ctx) => (await ctx.db.system.query("_storage").collect()).map((s) => s._id as string));
+}
+
+/** De bytes van een object in storage. */
+export async function storedBytes(t: T, id: string): Promise<Uint8Array> {
+  // convex-test geeft alleen Convex-waarden terug uit `t.run`: een ArrayBuffer
+  // wel, een Uint8Array niet.
+  const buffer = await t.run(async (ctx) => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const blob = await ctx.storage.get(id as any);
+    if (!blob) throw new Error(`geen object ${id}`);
+    return await blob.arrayBuffer();
+  });
+  return new Uint8Array(buffer);
+}
+
+/** WP41c: het beeldpad van een afrekening. */
+export function imagePath(settlementId: string, version?: string): string {
+  const base = `/beeld/afrekening/${encodeURIComponent(settlementId)}`;
+  return version === undefined ? base : `${base}?versie=${encodeURIComponent(version)}`;
 }

@@ -250,6 +250,29 @@ export const originalPosterInFormat = internalQuery({
   },
 });
 
+/**
+ * WP41c besluit 4, C5: de foto van een afrekening. Dezelfde regel als
+ * `settlements.get`: de caller is ingelogd, heeft een users-rij en is nu lid
+ * van de groep van de afrekening (ook de webmaster alleen in zijn groepen).
+ * Dan het object, als de afrekening een foto heeft en die nog in storage
+ * staat. Al het andere: `null`, één 404. Eén maat, geen formaten.
+ */
+export const settlementImage = internalQuery({
+  args: { settlementId: v.string() },
+  returns: v.union(v.id("_storage"), v.null()),
+  handler: async (ctx, { settlementId }) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) return null;
+    const user = await getBySubject(ctx, identity.subject);
+    if (!user) return null;
+    const id = ctx.db.normalizeId("settlements", settlementId);
+    if (!id) return null;
+    const settlement = await ctx.db.get(id);
+    if (!settlement || !(await getMembership(ctx, user._id, settlement.groupId))) return null;
+    return await storedImage(ctx, settlement.imageStorageId);
+  },
+});
+
 /** Het formaat van een foto, of het origineel als terugval. */
 async function chooseFormat(
   ctx: QueryCtx,

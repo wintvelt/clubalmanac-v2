@@ -8,6 +8,7 @@ import {
   originalPosterUrl,
   photoImageUrl,
   profileImageUrl,
+  settlementImageUrl,
   siteUrlOf,
   type ImageFormat,
 } from "../lib/imageUrls";
@@ -84,6 +85,14 @@ export function useInviteCoverLoad(inviteId: string, format: ImageFormat) {
 // WP38c: de poster van een inzending (src/data/images.tsx).
 export function useOriginalPosterLoad(originalId: string, format: ImageFormat) {
   return useTokenImageLoad("inzending", originalId, format, (site) => originalPosterUrl(site, originalId, format));
+}
+
+// WP41c (C6): de foto van een afrekening; de versie is de variant in de
+// sleutel van het geheugen, dus een nieuwe foto wordt opnieuw opgehaald.
+export function useSettlementImageLoad(settlementId: string, version: string) {
+  return useTokenImageLoad("afrekening", settlementId, version, (site) =>
+    settlementImageUrl(site, settlementId, version),
+  );
 }
 
 function useTokenImageLoad(

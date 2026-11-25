@@ -5,12 +5,14 @@ import {
   balanceCell,
   balanceLabel,
   formatCell,
+  formatDayMonth,
   formatEuro,
   groupHasSettlements,
   groupTabs,
   participantOutcome,
   participantStatus,
   paymentLines,
+  potAfterNote,
   settlementsByYear,
   stillToPay,
   timelineLabel,
@@ -149,7 +151,7 @@ describe("uitkomst op het scherm van één deelnemer (derde persoon)", () => {
   it.each([
     ["lustrum", "Maarten", `Betaalt nog €${NBSP}348,33`],
     ["lustrum", "Daan", `Betaalt nog €${NBSP}302,34`],
-    ["lustrum", "Joris", "Zijn deel komt helemaal uit zijn spaarpot"],
+    ["lustrum", "Joris", "Deelname volledig uit spaarpot betaald"],
     ["lustrum", "Bram", "Afgerond"],
     ["weekend", "Daan", `Krijgt nog €${NBSP}130,00 terug`],
     ["weekend", "Bram", "Afgerond"],
@@ -173,6 +175,42 @@ describe("uitkomst op het scherm van één deelnemer (derde persoon)", () => {
         expect(participantOutcome(r, s.lustrum)).not.toMatch(/\b(je|jij|jouw|u)\b/i);
       }
     }
+  });
+});
+
+// WP41b: de regel onder de uitkomst, zoals in het clubboek (evenement_lid.html):
+// alleen bij een lustrum en als er na de afrekening iets in de spaarpot zit.
+describe("regel onder de uitkomst: wat er na de afrekening in de spaarpot zit", () => {
+  const lustrum = fixture("lustrum");
+  const weekend = fixture("weekend");
+
+  it("lustrum met iets over: het bedrag uit potAfter", () => {
+    expect(potAfterNote(row(lustrum, "Joris"), true)).toBe(`Na de afrekening zit er €${NBSP}208,00 in de spaarpot`);
+  });
+
+  it("lustrum en de spaarpot is leeg: geen regel", () => {
+    expect(potAfterNote(row(lustrum, "Maarten"), true)).toBeNull();
+  });
+
+  it("geen lustrum (potAfter null): geen regel", () => {
+    expect(potAfterNote(row(weekend, "Daan"), false)).toBeNull();
+    expect(potAfterNote({ potAfter: 5000 }, false)).toBeNull();
+  });
+
+  it("nooit in de tweede persoon", () => {
+    for (const r of lustrum.rows) {
+      expect(potAfterNote(r, true) ?? "").not.toMatch(/\b(je|jij|jouw|u)\b/i);
+    }
+  });
+});
+
+describe("datum in het spaarpot-overzicht: zonder jaartal", () => {
+  it.each([
+    ["2026-06-18", "18-6"],
+    ["2022-01-01", "1-1"],
+    ["2025-12-31", "31-12"],
+  ])("%s → %s", (iso, text) => {
+    expect(formatDayMonth(iso)).toBe(text);
   });
 });
 

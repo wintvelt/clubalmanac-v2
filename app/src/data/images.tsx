@@ -6,6 +6,7 @@ import {
   originalPosterUrl,
   photoImageUrl,
   profileImageUrl,
+  settlementImageUrl,
   siteUrlOf,
   type ImageFormat,
 } from "../lib/imageUrls";
@@ -74,6 +75,17 @@ export function useInviteCoverLoad(inviteId: string, format: ImageFormat) {
 export function useOriginalPosterLoad(originalId: string, format: ImageFormat) {
   return useTokenImageLoad((site) => {
     const uri = originalPosterUrl(site, originalId, format);
+    return { uri, cacheKey: uri };
+  });
+}
+
+// WP41c (C6): de foto van een afrekening. Dezelfde token-toestand als een
+// foto; de versie zit in de URL, dus een nieuwe foto is een nieuwe
+// cache-sleutel. Alleen in het geheugen (zoals de cover van een uitnodiging):
+// de toegang eindigt bij vertrek uit de groep.
+export function useSettlementImageLoad(settlementId: string, version: string) {
+  return useTokenImageLoad((site) => {
+    const uri = settlementImageUrl(site, settlementId, version);
     return { uri, cacheKey: uri };
   });
 }

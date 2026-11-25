@@ -141,6 +141,21 @@ describe("A10: het schema", () => {
     expect(raw).not.toMatch(/"type":"record"/);
   });
 
+  it("WP41c: precies één veld met een storage-id, en dat is optioneel (een afrekening zonder foto)", () => {
+    const doc = settlementsTable()!.documentType;
+    const storage = Object.entries(doc.value).filter(
+      ([, f]) => f.fieldType.type === "id" && f.fieldType.tableName === "_storage",
+    );
+    expect(storage, JSON.stringify(Object.keys(doc.value))).toHaveLength(1);
+    expect((storage[0]![1] as { optional?: boolean }).optional).toBe(true);
+  });
+
+  it("WP41c: de foto zelf (base64 of bytes) staat niet in de tabel", () => {
+    const doc = settlementsTable()!.documentType;
+    expect(Object.keys(doc.value)).not.toContain("image");
+    expect(JSON.stringify(doc)).not.toMatch(/"type":"bytes"/);
+  });
+
   it("er is geen veld voor een intern id van een lid", () => {
     const raw = JSON.stringify(settlementsTable()!.documentType);
     expect(raw).not.toMatch(/lid_?id|memberId|userId/i);

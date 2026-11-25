@@ -129,13 +129,15 @@ const FORMATS_GRACE_MS = 60 * 60 * 1000;
 
 /**
  * De verwezen storage: `photos.storageId`, de twee formaten van elke foto
- * (WP25 A-invariant 15) en `users.profilePhotoStorageId`. Eén definitie voor
+ * (WP25 A-invariant 15), `users.profilePhotoStorageId` en de foto van een
+ * afrekening (`settlements.imageStorageId`, WP41c C1.1). Eén definitie voor
  * de wees-controle hier en `storageInventory` in convex/migration.ts, zodat
  * `prune-storage` en WP10 nooit iets anders verwezen vinden.
  */
 export function referencedStorageIds(
   photos: Doc<"photos">[],
   users: Doc<"users">[],
+  settlements: Pick<Doc<"settlements">, "imageStorageId">[],
 ): Set<string> {
   const referenced = new Set<string>();
   for (const p of photos) {
@@ -147,6 +149,9 @@ export function referencedStorageIds(
   }
   for (const u of users) {
     if (u.profilePhotoStorageId) referenced.add(u.profilePhotoStorageId);
+  }
+  for (const s of settlements) {
+    if (s.imageStorageId) referenced.add(s.imageStorageId);
   }
   return referenced;
 }
@@ -187,10 +192,12 @@ export async function collectDriftLines(ctx: {
 
   // ── (2a) Storage-orphans ──────────────────────────────────────────
   // Referentie-set = photos.storageId ∪ photos.formats ∪
-  // users.profilePhotoStorageId. Een blob die in géén ervan voorkomt is
-  // orphan. profilePhotoStorageId meenemen is kritisch: anders is élke
-  // profielfoto een vals-positief. Zo ook de formaten (WP25 A-invariant 15).
-  const referencedStorage = referencedStorageIds(allPhotos, allUsers);
+  // users.profilePhotoStorageId ∪ settlements.imageStorageId. Een blob die in
+  // géén ervan voorkomt is orphan. profilePhotoStorageId meenemen is
+  // kritisch: anders is élke profielfoto een vals-positief. Zo ook de
+  // formaten (WP25 A-invariant 15) en de foto van een afrekening (WP41c).
+  const allSettlements = await ctx.db.query("settlements").collect();
+  const referencedStorage = referencedStorageIds(allPhotos, allUsers, allSettlements);
   const storageDocs = await ctx.db.system.query("_storage").collect();
   for (const s of storageDocs) {
     if (!referencedStorage.has(s._id)) {

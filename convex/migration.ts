@@ -3,6 +3,7 @@ import { internalMutation, internalQuery } from "./_generated/server";
 import { formatStorageIds } from "./photos";
 import type { Doc, Id, TableNames } from "./_generated/dataModel";
 import { collectDriftLines, MONITORED_TABLES, referencedStorageIds } from "./monitoring";
+import { deleteSettlementImage } from "./lib/settlementImage";
 
 // WP12 — migratie-only Convex-functies (data-import vanuit AWS).
 //
@@ -185,10 +186,12 @@ export const storageInventory = internalQuery({
     const sample = sampleSize ?? 10;
     const photos = await ctx.db.query("photos").collect();
     const users = await ctx.db.query("users").collect();
+    const settlements = await ctx.db.query("settlements").collect();
 
     // WP25 (A-invariant 15): de formaten zijn verwezen storage. Anders wist
-    // `prune-storage` na de backfill élk formaat (A-kernvondst 3).
-    const referenced = referencedStorageIds(photos, users);
+    // `prune-storage` na de backfill élk formaat (A-kernvondst 3). Zo ook de
+    // foto van een afrekening (WP41c C1.1).
+    const referenced = referencedStorageIds(photos, users, settlements);
 
     const storageDocs = await ctx.db.system.query("_storage").collect();
     const present = new Set(storageDocs.map((s) => s._id as string));
@@ -281,6 +284,9 @@ export const clearTable = internalMutation({
           if (await ctx.db.system.get(id)) await ctx.storage.delete(id);
         }
       }
+      // WP41c C1.1: een afrekening neemt haar foto mee. De import vult
+      // `settlements` niet; na een reset stuurt het clubboek opnieuw.
+      if (name === "settlements") await deleteSettlementImage(ctx, doc as Doc<"settlements">);
       await ctx.db.delete(doc._id as Id<TableNames>);
     }
     const next = await ctx.db.query(name).take(1);

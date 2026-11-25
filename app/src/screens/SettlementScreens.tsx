@@ -10,6 +10,7 @@ import { ListSection } from "../components/ListRow";
 import { Notice } from "../components/Notice";
 import { QueryBoundary } from "../components/QueryBoundary";
 import { Screen } from "../components/Screen";
+import { SettlementImage } from "../components/SettlementImage";
 import { LoadingState } from "../components/States";
 import { Text } from "../components/Text";
 import { useWideLayout } from "../components/wideLayout";
@@ -23,6 +24,7 @@ import {
   balanceLine,
   COLUMN_TITLES,
   formatCell,
+  formatDayMonth,
   formatEuro,
   formatLongDate,
   formatShortDate,
@@ -31,17 +33,19 @@ import {
   participantStatus,
   partMeta,
   paymentLines,
+  potAfterNote,
   rowCell,
   stillToPay,
   totalCell,
   visibleColumns,
   type ParticipantStatusKind,
   type Settlement,
+  type SettlementImageInfo,
   type SettlementRow,
 } from "../lib/settlements";
 import { border, LARGE_TEXT_SCALE, radius, size, space, typography, useTheme, type ColorTokens } from "../theme";
 import { LoadError } from "./GroupParts";
-import { WideSplit } from "./WideSide";
+import { SIDE_COVER_BOX, WideSplit } from "./WideSide";
 
 // WP41: de schermen van Geld, onder de groep in de Home-stack (spec
 // §Schermen): de afrekening, de hele tabel en één deelnemer. Alleen kijken:
@@ -112,7 +116,7 @@ function Gone({ groupId, title }: { groupId: Id<"groups">; title: string }) {
   );
 }
 
-function useSettlement(settlementId: Id<"settlements">): Settlement | undefined {
+function useSettlement(settlementId: Id<"settlements">): (Settlement & SettlementImageInfo) | undefined {
   return useLiveQuery(api.settlements.get, { settlementId });
 }
 
@@ -156,7 +160,8 @@ function SettlementOverview({ groupId, settlementId }: { groupId: Id<"groups">; 
     ) : null;
 
   // Breed (web, iPad liggend): links de kop, de tegels en de deelnemers;
-  // rechts de hele tabel zonder vegen, en de onderdelen.
+  // rechts de hele tabel zonder vegen, en de onderdelen. WP41c: de foto in de
+  // linkerkolom, in het vak van de cover van WideSide.
   if (wide) {
     return (
       <WideSplit
@@ -165,6 +170,13 @@ function SettlementOverview({ groupId, settlementId }: { groupId: Id<"groups">; 
             <View style={styles.pill}>
               <BackPill title="Groep" onPress={() => backTo(groupPath(groupId))} />
             </View>
+            <SettlementImage
+              settlementId={settlementId}
+              name={settlement.name}
+              image={settlement}
+              box={SIDE_COVER_BOX}
+              radius={radius.groupPhoto}
+            />
             {intro}
             {tiles}
             {participants}
@@ -180,8 +192,13 @@ function SettlementOverview({ groupId, settlementId }: { groupId: Id<"groups">; 
     );
   }
 
+  // WP41c: de foto groot bovenaan, over de volle breedte, zoals de omslag
+  // van een groep. Zonder foto (of als hij niet laadt) alles zoals zonder.
   return (
-    <Screen underHeader>
+    <Screen
+      underHeader
+      header={<SettlementCover settlementId={settlementId} name={settlement.name} image={settlement} />}
+    >
       <Stack.Screen options={{ title: settlement.name, headerShown: true }} />
       {intro}
       {tiles}
@@ -194,6 +211,21 @@ function SettlementOverview({ groupId, settlementId }: { groupId: Id<"groups">; 
       />
     </Screen>
   );
+}
+
+function SettlementCover({
+  settlementId,
+  name,
+  image,
+}: {
+  settlementId: Id<"settlements">;
+  name: string;
+  image: SettlementImageInfo;
+}) {
+  const { width } = useWindowDimensions();
+  if (!image.hasImage) return null;
+  const box = { width, height: Math.min(Math.round((width * 3) / 4), 2 * size.cover) };
+  return <SettlementImage settlementId={settlementId} name={name} image={image} box={box} />;
 }
 
 function Intro({ settlement }: { settlement: Settlement }) {
@@ -530,7 +562,7 @@ function ParticipantContent({
           {[settlement.name, settlement.period].filter(Boolean).join(" · ")}
         </Text>
       </View>
-      <OutcomeCard text={outcome} kind={status.kind} />
+      <OutcomeCard text={outcome} kind={status.kind} note={potAfterNote(row, settlement.lustrum)} />
       <CostsBlock settlement={settlement} row={row} />
       {settlement.lustrum && <SavingsBlock settlement={settlement} row={row} />}
       <PaymentsBlock row={row} />
@@ -538,13 +570,20 @@ function ParticipantContent({
   );
 }
 
-function OutcomeCard({ text, kind }: { text: string; kind: ParticipantStatusKind }) {
+// De uitkomst, met eronder (bij een lustrum) wat er na de afrekening in de
+// spaarpot zit (WP41b, potAfterNote).
+function OutcomeCard({ text, kind, note }: { text: string; kind: ParticipantStatusKind; note: string | null }) {
   const { colors } = useTheme();
   return (
     <View style={[styles.outcome, { backgroundColor: colors.surface }]}>
       <Text variant="amount" color={kind === "done" ? "text" : STATUS_COLOR[kind]} accessibilityLiveRegion="polite">
         {text}
       </Text>
+      {note !== null && (
+        <Text variant="meta" color="muted">
+          {note}
+        </Text>
+      )}
     </View>
   );
 }
@@ -582,10 +621,14 @@ function Line({
   expanded?: boolean;
 }) {
   const { colors } = useTheme();
+  const { fontScale } = useWindowDimensions();
+  // De datums staan in een kolom van vaste breedte (de breedste, `28-12`), zodat
+  // de omschrijvingen eronder recht beginnen (WP41b).
+  const dateWidth = amountWidth("00-00", typography.albumMeta.fontSize * fontScale);
   const body = (
     <>
       {date !== undefined && (
-        <Text variant="albumMeta" color="muted" style={[styles.figures, styles.date]}>
+        <Text variant="albumMeta" color="muted" style={[styles.figures, styles.date, { minWidth: dateWidth }]}>
           {date}
         </Text>
       )}
@@ -650,7 +693,7 @@ function CostsBlock({ settlement, row }: { settlement: Settlement; row: Settleme
       ))}
       <Line first={row.lines.length === 0} sum label="Totaal" amount={formatEuro(row.costs)} />
       {row.club !== 0 && <Line label="Uit clubkas" amount={formatEuro(-row.club)} />}
-      {settlement.lustrum && row.fromPot !== 0 && <Line label="Uit zijn spaarpot" amount={formatEuro(-row.fromPot)} />}
+      {settlement.lustrum && row.fromPot !== 0 && <Line label="Uit spaarpot" amount={formatEuro(-row.fromPot)} />}
       {row.advanced !== 0 && <Line label="Voorgeschoten" amount={formatEuro(-row.advanced)} />}
       <Line sum label={end.label} amount={formatEuro(end.cents)} />
     </Block>
@@ -674,7 +717,7 @@ function SavingsBlock({ settlement, row }: { settlement: Settlement; row: Settle
         <View key={i}>
           <Line
             first={i === 0}
-            date={formatShortDate(s.date)}
+            date={formatDayMonth(s.date)}
             label={s.description}
             amount={formatEuro(s.amount)}
             onPress={s.months && s.months.length > 0 ? () => toggle(i) : undefined}
@@ -682,7 +725,7 @@ function SavingsBlock({ settlement, row }: { settlement: Settlement; row: Settle
           />
           {open.has(i) &&
             (s.months ?? []).map((m, j) => (
-              <Line key={j} date={formatShortDate(m.date)} label="" amount={formatEuro(m.amount)} color="muted" />
+              <Line key={j} date={formatDayMonth(m.date)} label="" amount={formatEuro(m.amount)} color="muted" />
             ))}
         </View>
       ))}

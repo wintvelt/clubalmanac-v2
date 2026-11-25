@@ -409,6 +409,11 @@ export default defineSchema({
     groupId: v.id("groups"),
     key: v.string(),
     ...settlementContentFields,
+    // WP41c: de foto bij de afrekening (JPEG uit het clubboek), of geen.
+    // Nooit naar de client; de app krijgt `hasImage` en `imageVersion` en
+    // laadt hem via `GET /beeld/afrekening/<id>`. Verwezen storage voor MON1
+    // en de migratie-tooling (monitoring.referencedStorageIds).
+    imageStorageId: v.optional(v.id("_storage")),
     receivedAt: v.number(),
   })
     .index("by_group", ["groupId"])
