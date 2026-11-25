@@ -7,6 +7,7 @@ import {
   inviteCoverUrl,
   photoImageUrl,
   profileImageUrl,
+  settlementImageUrl,
   siteUrlOf,
   type ImageFormat,
 } from "../lib/imageUrls";
@@ -78,6 +79,14 @@ export function usePhotoLoad(photoId: string, format: ImageFormat, hasFormats?: 
 
 export function useInviteCoverLoad(inviteId: string, format: ImageFormat) {
   return useTokenImageLoad("uitnodiging", inviteId, format, (site) => inviteCoverUrl(site, inviteId, format));
+}
+
+// WP41c (C6): de foto van een afrekening; de versie is de variant in de
+// sleutel van het geheugen, dus een nieuwe foto wordt opnieuw opgehaald.
+export function useSettlementImageLoad(settlementId: string, version: string) {
+  return useTokenImageLoad("afrekening", settlementId, version, (site) =>
+    settlementImageUrl(site, settlementId, version),
+  );
 }
 
 function useTokenImageLoad(

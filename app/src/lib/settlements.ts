@@ -336,6 +336,25 @@ export function totalCell(totals: SettlementTotals, column: ColumnKey): string {
   }
 }
 
+// --- de foto (WP41c) -------------------------------------------------------------------------
+
+/** Wat de reads over de foto geven (C4): of er een is, en een ondoorzichtige versie. */
+export type SettlementImageInfo = { hasImage: boolean; imageVersion: string | null };
+
+export type SettlementTile = { kind: "image"; version: string } | { kind: "letter" };
+
+/**
+ * De tegel (en de foto bovenaan het overzicht), C6. Zonder foto de letter,
+ * met foto de foto met zijn versie. Laadde de foto van deze versie niet
+ * (`failedVersion`), dan de letter; een nieuwe versie probeert het opnieuw,
+ * zoals de kop van Groep.
+ */
+export function settlementTile(item: SettlementImageInfo, failedVersion: string | null): SettlementTile {
+  if (!item.hasImage || item.imageVersion === null) return { kind: "letter" };
+  if (item.imageVersion === failedVersion) return { kind: "letter" };
+  return { kind: "image", version: item.imageVersion };
+}
+
 // --- de tab ----------------------------------------------------------------------------------
 
 /** Of de groep afrekeningen heeft. Zolang de lijst laadt: nee (geen tab die weer verdwijnt). */

@@ -390,6 +390,11 @@ Het clubboek (lokaal, alleen 127.0.0.1) zet een afrekening met **Zet in de app**
 - **Andere groep of groep weg:** een verwijderde groep neemt haar afrekeningen mee (cascade G6); zet daarna `FINANCE_GROUP_ID` op de nieuwe groep en stuur opnieuw.
 - **Na een migratie-reset of import:** de tooling leegt `settlements` mee (de import vult hem niet), en de groep krijgt een nieuw id. Zet eerst `FINANCE_GROUP_ID` op het nieuwe id van de groep, dán opnieuw sturen vanuit het clubboek. Met de oude waarde geeft elke poging 403 (de groep bestaat niet meer).
 - **Logs:** de routes loggen niets (geen geheim, header of body). Een weigering staat als 403 op `/settlements`; een vormfout als 400 met het pad van het veld in het antwoord.
+- **Foto bij een afrekening (WP41c):** het clubboek stuurt `image` (een JPEG als base64, ontsleuteld hoogstens 1 MiB; het hele verzoek dan hoogstens 1,5 MiB) pas als in zijn instellingen `"foto": true` staat voor die omgeving. Een Convex zonder WP41c weigert het veld (400 bij elke verzending). Volgorde, eerst op dev en pas na de gate op prod:
+  1. Convex deployen (Wouter).
+  2. Dan pas `"foto": true` in het clubboek voor die omgeving, en opnieuw sturen.
+
+  De foto staat in Convex-storage en gaat mee weg bij opnieuw sturen, Haal uit de app, het verwijderen van de groep en een migratie-reset. MON1 en `verify` tellen hem als verwezen storage, dus niet als wees.
 
 ## Webapp: app.clubalmanac.com (WP35)
 

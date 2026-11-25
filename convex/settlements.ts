@@ -11,6 +11,12 @@ import { internal } from "./_generated/api";
 import { getMembership, NOT_MEMBER, requireMemberForRead } from "./groups";
 import { requireCurrentUser } from "./users";
 import { constantTimeEqual } from "./lib/constantTime";
+import { profileVersionOf } from "./lib/profilePhoto";
+import {
+  deleteSettlementImage,
+  parseSettlementImage,
+  SETTLEMENT_MAX_BODY_WITH_IMAGE_BYTES,
+} from "./lib/settlementImage";
 import {
   isSettlementKey,
   parseSettlementRequest,
@@ -38,6 +44,11 @@ import {
 //
 // Geen CORS: deze routes zijn niet voor een browser (geen OPTIONS, geen
 // Access-Control-headers).
+//
+// WP41c: een afrekening kan een foto hebben (`image` in het verzoek, een
+// JPEG in storage). De reads geven alleen `hasImage` en een ondoorzichtige
+// `imageVersion`; de foto zelf komt via `GET /beeld/afrekening/<id>`
+// (convex/images.ts, convex/http.ts), met dezelfde toegangsregel als `get`.
 
 // --- lezen ----------------------------------------------------------------------
 
@@ -48,6 +59,8 @@ const listItem = v.object({
   startDate: v.string(),
   participantCount: v.number(),
   openCount: v.number(),
+  hasImage: v.boolean(),
+  imageVersion: v.union(v.string(), v.null()),
 });
 
 /**
@@ -72,6 +85,7 @@ export const listByGroup = query({
       startDate: s.startDate,
       participantCount: s.rows.length,
       openCount: s.rows.filter((r) => r.open > 0).length,
+      ...imageOf(s),
     }));
   },
 });
@@ -83,14 +97,29 @@ function compare(a: string, b: string): number {
 /** De hele afrekening, voor het overzicht, de tabel en een deelnemer (A6). */
 export const get = query({
   args: { settlementId: v.id("settlements") },
-  returns: v.object({ _id: v.id("settlements"), ...settlementContentFields }),
+  returns: v.object({
+    _id: v.id("settlements"),
+    ...settlementContentFields,
+    hasImage: v.boolean(),
+    imageVersion: v.union(v.string(), v.null()),
+  }),
   handler: async (ctx, { settlementId }) => {
     const user = await requireCurrentUser(ctx);
     const doc = await ctx.db.get(settlementId);
     if (!doc || !(await getMembership(ctx, user._id, doc.groupId))) throw new ConvexError(NOT_MEMBER);
-    return { _id: doc._id, ...contentOf(doc) };
+    return { _id: doc._id, ...contentOf(doc), ...imageOf(doc) };
   },
 });
+
+/**
+ * WP41c (C4): of er een foto is, en een ondoorzichtige versie ervan (zoals
+ * `profileVersion`, WP17b): een andere foto geeft een andere versie, en het
+ * storage-id is er niet uit terug te halen. Zonder foto `null`.
+ */
+function imageOf(doc: Doc<"settlements">): { hasImage: boolean; imageVersion: string | null } {
+  const id = doc.imageStorageId;
+  return id ? { hasImage: true, imageVersion: profileVersionOf(id) } : { hasImage: false, imageVersion: null };
+}
 
 function contentOf(doc: Doc<"settlements">) {
   return {
@@ -129,22 +158,39 @@ async function groupExists(ctx: MutationCtx, groupId: Id<"groups">): Promise<boo
  * (invariant 5). Vervangen houdt het `_id` (A-invariant 4). Een nieuwe sleutel
  * in een groep met al 40 afrekeningen: `full` (A-invariant 7). Is de groep
  * intussen weg: `refused`, en er wordt niets geschreven.
+ *
+ * WP41c (C3): `imageStorageId` is de nieuwe foto (al in storage), of geen.
+ * Vervangen haalt de foto weg die nu op de rij staat (met of zonder nieuwe
+ * foto); zo laten twee verzoeken tegelijk geen wees achter. Bij `full` en
+ * `refused` ruimt de route de nieuwe foto op.
  */
 export const replaceFromClubbook = internalMutation({
-  args: { groupId: v.id("groups"), key: v.string(), settlement: settlementContent },
+  args: {
+    groupId: v.id("groups"),
+    key: v.string(),
+    settlement: settlementContent,
+    imageStorageId: v.optional(v.id("_storage")),
+  },
   returns: v.union(
     v.object({ kind: v.literal("ok"), participants: v.number() }),
     v.object({ kind: v.literal("full") }),
     v.object({ kind: v.literal("refused") }),
   ),
-  handler: async (ctx, { groupId, key, settlement }) => {
+  handler: async (ctx, { groupId, key, settlement, imageStorageId }) => {
     if (!(await groupExists(ctx, groupId))) return { kind: "refused" as const };
     const existing = await ctx.db
       .query("settlements")
       .withIndex("by_group_key", (q) => q.eq("groupId", groupId).eq("key", key))
       .unique();
-    const doc = { groupId, key, ...settlement, receivedAt: Date.now() };
+    const doc = {
+      groupId,
+      key,
+      ...settlement,
+      ...(imageStorageId ? { imageStorageId } : {}),
+      receivedAt: Date.now(),
+    };
     if (existing) {
+      if (existing.imageStorageId !== imageStorageId) await deleteSettlementImage(ctx, existing);
       await ctx.db.replace(existing._id, doc);
     } else {
       const inGroup = await ctx.db
@@ -168,7 +214,10 @@ export const removeFromClubbook = internalMutation({
       .query("settlements")
       .withIndex("by_group_key", (q) => q.eq("groupId", groupId).eq("key", key))
       .unique();
-    if (existing) await ctx.db.delete(existing._id);
+    if (existing) {
+      await deleteSettlementImage(ctx, existing);
+      await ctx.db.delete(existing._id);
+    }
     return "ok" as const;
   },
 });
@@ -185,6 +234,7 @@ const SECRET_HEADER = "X-Clubboek-Secret";
 const refused = () => Response.json({ error: "Forbidden" }, { status: 403 });
 const invalid = (error: string) => Response.json({ error }, { status: 400 });
 const tooLarge = () => Response.json({ error: "body: groter dan 128 KiB" }, { status: 413 });
+const tooLargeWithImage = () => Response.json({ error: "body: groter dan 1,5 MiB" }, { status: 413 });
 
 /**
  * De groep van het geheim, of `null` bij elke oorzaak van weigering: geen of
@@ -203,35 +253,84 @@ async function financeAccess(ctx: ActionCtx, request: Request): Promise<Id<"grou
   return await ctx.runQuery(internal.settlements.financeGroup, { groupId });
 }
 
-/** `POST /settlements` (A4): toegang, grootte, vorm, schrijven; in die volgorde. */
+/**
+ * `POST /settlements` (A4, WP41c C2): toegang, grootte, vorm, de foto in
+ * storage, schrijven; in die volgorde. Bij elke 4xx komt er geen rij bij,
+ * verandert er geen rij en blijft er geen nieuw object in storage.
+ */
 export async function postSettlementRoute(ctx: ActionCtx, request: Request): Promise<Response> {
   const groupId = await financeAccess(ctx, request);
   if (!groupId) return refused();
 
+  // Met `image` ten hoogste 1,5 MiB; zonder blijft 128 KiB de grens (stap 4).
   const declared = Number(request.headers.get("Content-Length") ?? "");
-  if (Number.isFinite(declared) && declared > SETTLEMENT_MAX_BODY_BYTES) return tooLarge();
+  if (Number.isFinite(declared) && declared > SETTLEMENT_MAX_BODY_WITH_IMAGE_BYTES) return tooLargeWithImage();
   let bytes: Uint8Array;
   try {
     bytes = new Uint8Array(await request.arrayBuffer());
   } catch {
     return invalid("body: niet volledig ontvangen");
   }
-  if (bytes.byteLength > SETTLEMENT_MAX_BODY_BYTES) return tooLarge();
+  if (bytes.byteLength > SETTLEMENT_MAX_BODY_WITH_IMAGE_BYTES) return tooLargeWithImage();
 
   let raw: unknown;
   try {
     raw = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes));
   } catch {
-    return invalid("body: geen geldige JSON");
+    // F4: te groot én kapot is 413.
+    return bytes.byteLength > SETTLEMENT_MAX_BODY_BYTES ? tooLarge() : invalid("body: geen geldige JSON");
   }
-  const parsed = parseSettlementRequest(raw);
-  if (!parsed.ok) return invalid(parsed.error);
 
+  // Wat naast de foto staat: de bytes van de body min de tekens van de
+  // `image`-tekst. Zonder `image`, of met een `image` die geen tekst is, de
+  // hele body.
+  const { image, rest } = splitImage(raw);
+  const imageChars = typeof image?.value === "string" ? image.value.length : 0;
+  if (bytes.byteLength - imageChars > SETTLEMENT_MAX_BODY_BYTES) return tooLarge();
+
+  const parsed = parseSettlementRequest(rest);
+  if (!parsed.ok) return invalid(parsed.error);
+  let photo: Uint8Array | null = null;
+  if (image) {
+    const checked = parseSettlementImage(image.value);
+    if (!checked.ok) return invalid(checked.error);
+    photo = checked.bytes;
+  }
+
+  // De JPEG pas na een geldige vorm in storage; mislukt het vervangen, dan
+  // gaat hij weer weg (C1.3).
+  const imageStorageId = photo
+    ? await ctx.storage.store(new Blob([new Uint8Array(photo)], { type: "image/jpeg" }))
+    : undefined;
   const { key, ...settlement } = parsed.value;
-  const result = await ctx.runMutation(internal.settlements.replaceFromClubbook, { groupId, key, settlement });
+  let result;
+  try {
+    result = await ctx.runMutation(internal.settlements.replaceFromClubbook, {
+      groupId,
+      key,
+      settlement,
+      ...(imageStorageId ? { imageStorageId } : {}),
+    });
+  } catch (error) {
+    if (imageStorageId) await ctx.storage.delete(imageStorageId);
+    throw error;
+  }
+  if (result.kind !== "ok" && imageStorageId) await ctx.storage.delete(imageStorageId);
   if (result.kind === "refused") return refused();
   if (result.kind === "full") return invalid(`key: al ${SETTLEMENTS_PER_GROUP} afrekeningen in deze groep`);
   return Response.json({ participants: result.participants }, { status: 200 });
+}
+
+/**
+ * Haalt `image` uit de bovenste laag van het verzoek (C2: alleen daar mag het
+ * staan; elders blijft het een onbekend veld). `image` is `null` als het veld
+ * er niet is.
+ */
+function splitImage(raw: unknown): { image: { value: unknown } | null; rest: unknown } {
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return { image: null, rest: raw };
+  if (!Object.prototype.hasOwnProperty.call(raw, "image")) return { image: null, rest: raw };
+  const { image, ...rest } = raw as Record<string, unknown>;
+  return { image: { value: image }, rest };
 }
 
 /** `DELETE /settlements?key=…` (A5): hetzelfde antwoord of er iets was of niet. */

@@ -5,6 +5,7 @@ import type { Id } from "../../../convex/_generated/dataModel";
 import { Icon } from "../components/Icon";
 import { LetterTile } from "../components/LetterTile";
 import { AnimatedPressable, FadeIn, PressShade, TileZoom, useArrivals, usePressMotion } from "../components/Motion";
+import { SettlementImage } from "../components/SettlementImage";
 import { Text } from "../components/Text";
 import { YearHeading } from "../components/YearHeading";
 import type { api } from "../convexApi";
@@ -18,7 +19,8 @@ export type SettlementListItem = FunctionReturnType<typeof api.settlements.listB
 // als de albums. Per afrekening een kaart: de tegel, de naam, de periode met
 // het aantal deelnemers en "x van y nog open" of "Afgerond". Tik op de kaart
 // en het overzicht opent. De lijst komt van GroupScreen (hij beslist ook of
-// de tab er is, invariant 8).
+// de tab er is, invariant 8). WP41c: met een foto staat die in de tegel, in
+// plaats van de letter.
 export function SettlementsTab({ groupId, settlements }: { groupId: Id<"groups">; settlements: SettlementListItem[] }) {
   const arrivals = useArrivals(settlements.map((s) => s._id));
   return (
@@ -53,7 +55,14 @@ function SettlementCard({ item, onPress }: { item: SettlementListItem; onPress: 
       style={[styles.card, { backgroundColor: colors.surface }, press.style]}
     >
       <TileZoom zoom={press.coverStyle} size={size.albumTile} radius={radius.albumTile}>
-        <LetterTile name={item.name} size={size.albumTile} radius={radius.albumTile} variant="albumName" />
+        <SettlementImage
+          settlementId={item._id}
+          name={item.name}
+          image={item}
+          box={{ width: size.albumTile, height: size.albumTile }}
+          radius={radius.albumTile}
+          fallback={<LetterTile name={item.name} size={size.albumTile} radius={radius.albumTile} variant="albumName" />}
+        />
       </TileZoom>
       <View style={styles.text}>
         <Text variant="albumName">{item.name}</Text>
