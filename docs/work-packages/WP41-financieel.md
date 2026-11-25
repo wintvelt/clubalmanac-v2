@@ -73,7 +73,7 @@ Er komt geen intern id van een lid uit het clubboek in. Indexen: `by_group` en `
    - de lijst Per onderdeel;
    - onderaan de knop "Bekijk de hele tabel".
 3. **De hele tabel**: dezelfde kolommen als in het clubboek. De namen blijven staan en de rest veegt opzij. Onderaan staat een totaalrij. Kolommen zonder inhoud (clubkas, voorgeschoten) verdwijnen, zoals in het clubboek.
-4. **Eén deelnemer**: de naam en de uitkomst in één regel ("Betaalt nog € x", "Krijgt nog € x terug", "Afgerond", of "Zijn deel komt helemaal uit zijn spaarpot"). Daaronder drie blokken: 1. Kosten, 2. Spaarpot (alleen bij een lustrum; de maandinleg ingeklapt in één regel) en 3. Afrekening, met de betalingen.
+4. **Eén deelnemer**: de naam en de uitkomst in één regel ("Betaalt nog € x", "Krijgt nog € x terug", "Afgerond", of "Deelname volledig uit spaarpot betaald"; bij een lustrum eronder "Na de afrekening zit er € x in de spaarpot" als dat niet 0 is). Daaronder drie blokken: 1. Kosten, 2. Spaarpot (alleen bij een lustrum; de maandinleg ingeklapt in één regel) en 3. Afrekening, met de betalingen.
 
 Verder:
 - Routes onder de groep, zoals album en film.
@@ -303,7 +303,7 @@ App (`app/src/lib/settlements.ts`, pure logica):
 - `settlementsByYear<S extends { startDate: string }>(items: readonly S[]): { year: number; settlements: S[] }[]`: groepeert opeenvolgende afrekeningen per jaar van `startDate`, in de volgorde van de backend.
 - `timelineLabel(item: { participantCount: number; openCount: number }): string`: `3 van 8 nog open`, of `Afgerond`.
 - `participantStatus(row): { kind: "done" | "pays" | "receives"; label: string }`: `Afgerond`, `Nog € x`, `Krijgt nog € x` (x = `open`). Grijs, rood, groen.
-- `participantOutcome(row, lustrum: boolean): string`: `Betaalt nog € x`, `Krijgt nog € x terug`, `Zijn deel komt helemaal uit zijn spaarpot` (lustrum, `balance` 0 en `fromPot` > 0), anders `Afgerond`. Leest van de rij alleen `balance`, `open` en `fromPot`.
+- `participantOutcome(row, lustrum: boolean): string`: `Betaalt nog € x`, `Krijgt nog € x terug`, `Deelname volledig uit spaarpot betaald` (lustrum, `balance` 0 en `fromPot` > 0), anders `Afgerond`. Leest van de rij alleen `balance`, `open` en `fromPot`.
 - `visibleColumns(settlement): ColumnKey[]`: de vaste kolommen na de onderdelen, in de volgorde van het clubboek: `costs`, `club` (alleen als `totals.club` ≠ 0), `fromPot` en `potAfter` (alleen bij een lustrum), `advanced` (alleen als `totals.advanced` ≠ 0), `balance`, `status`.
 - `stillToPay(rows): { cents: number; count: number }`: de tegel "Nog te betalen" (A-keuze 5).
 - `paymentLines(row: Pick<SettlementRow, "balance" | "open" | "payments">): { label: string; cents: number }[]` (F3): de regels van blok 3, Afrekening. Een bedrag dat eraf gaat is negatief; de regels tellen op tot de laatste. `balance` > 0: `Bijbetalen` (balance), per betaling `Betaald op d-m-jjjj` (−bedrag), dan `Nog te betalen` of `Afgerond` (open). `balance` < 0: `Terugkrijgen` (−balance), als er al iets af is `Uitbetaald of verrekend` (−(−balance − open)), dan `Nog terug te krijgen` of `Afgerond` (open). `balance` 0: geen regels. De datum zoals het clubboek hem toont: zonder voorloopnul (`18-6-2026`, A-keuze 13).

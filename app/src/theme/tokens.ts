@@ -188,6 +188,9 @@ export const typography = {
   groupName: { fontSize: 21, fontWeight: "600" },
   body: { fontSize: 18, fontWeight: "400" },
   bodyStrong: { fontSize: 18, fontWeight: "700" },
+  // WP41b: de groepstabs met vier op één regel (iets kleiner dan body).
+  segTabCompact: { fontSize: 16, fontWeight: "400" },
+  segTabCompactActive: { fontSize: 16, fontWeight: "700" },
   listRow: { fontSize: 18, fontWeight: "400" },
   button: { fontSize: 18, fontWeight: "700" },
   meta: { fontSize: 17, fontWeight: "400" },
