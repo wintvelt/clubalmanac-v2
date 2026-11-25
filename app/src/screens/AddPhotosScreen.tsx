@@ -24,7 +24,7 @@ import { SmallButton } from "../components/SmallButton";
 import { EmptyState, LoadingState } from "../components/States";
 import { Text } from "../components/Text";
 import { api } from "../convexApi";
-import { useMyGroups } from "../data/homeGroupState";
+import { useKnownMyGroups, useMyGroups } from "../data/homeGroupState";
 import { forgetLastAlbum, loadLastAlbum, saveLastAlbum } from "../data/lastAlbum";
 import { addOriginalToQueue, originalEvent, originalsReady, originalsSnapshot } from "../data/originals";
 import { useUploader } from "../data/upload";
@@ -47,6 +47,7 @@ import {
   addTargets,
   albumOption,
   originalSkipLines,
+  roundTargets,
   type OpenFilmProject,
   type SkipReason,
 } from "../lib/filmProject";
@@ -163,7 +164,7 @@ type Item = SelectionItem<Asset>;
 type Chosen = { album: ChosenAlbum };
 type Target = NonNullable<ChosenAlbum>;
 /** WP38c: waar de foto's en de filmpjes van een ronde heen gaan (vast bij de start). */
-type RoundTargets = { photo: Target | null; video: (Target & { projectId: string | null }) | null };
+type RoundAlbums = { photo: Target | null; video: (Target & { projectId: string | null }) | null };
 
 // Vóór een ronde vult de kiezer aan; na een ronde begint hij een nieuwe keuze (A4).
 type PickMode = "aanvullen" | "nieuw";
@@ -232,8 +233,6 @@ function dropCopies(assets: readonly Asset[], keep: readonly Item[]): void {
 
 export function AddPhotosScreen({ albumId }: { albumId?: string }) {
   const { colors } = useTheme();
-  // WP38c: de groepsnamen, voor "Groep · Album" van X.
-  const myGroups = useMyGroups();
   const upload = useUploader();
   const uploadVideo = useVideoUploader();
   const [selection, setSelection] = useState<Item[]>([]);
@@ -258,6 +257,9 @@ export function AddPhotosScreen({ albumId }: { albumId?: string }) {
   const [choosing, setChoosing] = useState(false);
   const [initialAlbumId] = useState(albumId ?? null);
   const { userId } = useAuth();
+  // WP38c: de groepsnamen, voor "Groep · Album" van X. De laatst bekende lijst
+  // (fix-cyclus 1, punt 5): geen eigen query buiten een QueryBoundary.
+  const myGroups = useKnownMyGroups(userId);
   // Het onthouden album (undefined: nog niet gelezen), of dat uit de route.
   const [candidate, setCandidate] = useState<StoredAlbum | null | undefined>(undefined);
   // Het album uit de route bestaat niet (meer), of de user mag er niet in.
@@ -279,8 +281,8 @@ export function AddPhotosScreen({ albumId }: { albumId?: string }) {
   const [openProjects, setOpenProjects] = useState<readonly OpenFilmProject[] | undefined>(undefined);
   const onOpenProjects = useCallback((list: readonly OpenFilmProject[]) => setOpenProjects(list), []);
   // WP38c: de albums van de ronde die loopt (foto's naar Y, filmpjes naar X).
-  const roundTargets = useRef<RoundTargets>({ photo: null, video: null });
-  const [shownTargets, setShownTargets] = useState<RoundTargets>({ photo: null, video: null });
+  const roundAlbums = useRef<RoundAlbums>({ photo: null, video: null });
+  const [shownTargets, setShownTargets] = useState<RoundAlbums>({ photo: null, video: null });
   // WP38b: per upload-id van een filmpje of zijn origineel meegaat (met de
   // verplaatste kopie). `queued`: de wachtrij nam het aan; anders ruimt het
   // scherm het verplaatste bestand op bij een eindstand (punt 5). `settled`:
@@ -547,7 +549,7 @@ export function AddPhotosScreen({ albumId }: { albumId?: string }) {
   // `fresh`: de foto's die eerder "uitgelogd" kregen; die halen een vers token.
   async function runRound(start: UploadItem[], fresh: ReadonlySet<string> = new Set()) {
     // Een tweede tik start niets.
-    const photoTarget = roundTargets.current.photo;
+    const photoTarget = roundAlbums.current.photo;
     if (running.current || !photoTarget) return;
     running.current = true;
     setBusy(true);
@@ -692,8 +694,15 @@ export function AddPhotosScreen({ albumId }: { albumId?: string }) {
   // WP37: de filmpjes één voor één. `fresh`: na "uitgelogd" een vers token
   // (A-invariant 33).
   async function runVideos(start: VideoItem[], fresh: ReadonlySet<string> = new Set()) {
-    const videoTarget = roundTargets.current.video;
-    if (videoRunning.current || !videoTarget) return;
+    if (videoRunning.current) return;
+    // 38c fix-cyclus 1, punt 1: ook zonder album voor de filmpjes (alleen te
+    // lange) krijgt elk filmpje een uitkomst; een filmpje dat zou moeten gaan
+    // maar geen doel heeft, telt als mislukt (komt niet voor: `roundTargets`).
+    const videoTarget = roundAlbums.current.video;
+    if (!videoTarget) {
+      updateVideos(start.map((i) => (i.state === "wacht" ? { ...i, state: "mislukt", reason: "server" } : i)));
+      return;
+    }
     videoRunning.current = true;
     setVideoBusy(true);
     updateVideos(start);
@@ -777,40 +786,53 @@ export function AddPhotosScreen({ albumId }: { albumId?: string }) {
       if (albumKnown) setChoosing(true);
       return;
     }
-    // WP38c: besluit 3; zolang de open projecten laden, nog niet.
-    if (!targets.ready) return;
-    // F2: het album van deze ronde is het laatst gekozen album (ook als de
-    // filmpjes naar X gaan: het onthouden album is het gekozen album).
-    if (userId) void saveLastAlbum(userId, { albumId: album.albumId, groupId: album.groupId });
-    const round: RoundTargets = {
-      photo: targets.photoAlbumId ? album : null,
-      video: targets.videoAlbumId
-        ? {
-            albumId: targets.videoAlbumId,
-            groupId: album.groupId,
-            label: targets.videoAlbumId === album.albumId ? album.label : labelIn(album.groupId, xName ?? ""),
-            projectId: targets.projectId,
-          }
-        : null,
-    };
-    roundTargets.current = round;
-    setShownTargets(round);
     const current = selectionRef.current;
     const photos = current.filter((p) => p.kind === "foto");
     const videos = current.filter((v) => v.kind === "filmpje");
+    const tooLongKeys = new Set(
+      videos.filter((v) => typeof v.asset.duration === "number" && videoTooLongToSend(v.asset.duration)).map((v) => v.key),
+    );
+    // WP38c: besluit 3; zolang de open projecten laden, nog niet. Fix-cyclus
+    // 1, punt 1: de doelen van de ronde, met een uitkomst voor elk filmpje,
+    // ook als het te lang is (WP37 A12).
+    const round = roundTargets({
+      photos: photos.length,
+      videos: videos.length - tooLongKeys.size,
+      tooLong: tooLongKeys.size,
+      album: { albumId: album.albumId, groupId: album.groupId, name: albumName(album) },
+      openProjects,
+      originals: originalUploaderAvailable,
+    });
+    if (!round.ready) return;
+    // F2: het album van deze ronde is het laatst gekozen album (ook als de
+    // filmpjes naar X gaan: het onthouden album is het gekozen album).
+    if (userId) void saveLastAlbum(userId, { albumId: album.albumId, groupId: album.groupId });
+    const xAlbumName = openProjects?.find((p) => p.projectId === round.projectId)?.albumName ?? "";
+    const albums: RoundAlbums = {
+      photo: round.photoAlbumId ? album : null,
+      video: round.videoAlbumId
+        ? {
+            albumId: round.videoAlbumId,
+            groupId: album.groupId,
+            label: round.videoAlbumId === album.albumId ? album.label : labelIn(album.groupId, xAlbumName),
+            projectId: round.projectId,
+          }
+        : null,
+    };
+    roundAlbums.current = albums;
+    setShownTargets(albums);
     const picks = photos.map((p) => ({ key: p.key, assetId: p.asset.assetId }));
     // 38c-14: de upload-id van een filmpje hoort bij het album waar het heen gaat (X).
     const clips = albumBatch(
       videos.map((v) => ({ key: v.key, assetId: v.asset.assetId })),
-      round.video?.albumId ?? album.albumId,
-    ).map((i): VideoItem => {
-      const duration = videos.find((v) => v.key === i.key)?.asset.duration;
+      albums.video?.albumId ?? album.albumId,
+    ).map((i): VideoItem =>
       // Te lang: meteen zeggen, niet eerst verkleinen (A12).
-      return typeof duration === "number" && videoTooLongToSend(duration)
+      tooLongKeys.has(i.key)
         ? { key: i.key, uploadId: i.uploadId, state: "mislukt", reason: "te_lang" }
-        : { key: i.key, uploadId: i.uploadId, state: "wacht" };
-    });
-    if (clips.length > 0) void runVideos(clips);
+        : { key: i.key, uploadId: i.uploadId, state: "wacht" },
+    );
+    if (round.videoResult && clips.length > 0) void runVideos(clips);
     if (picks.length > 0) void runRound(albumBatch(picks, album.albumId));
   }
 
@@ -863,10 +885,9 @@ export function AddPhotosScreen({ albumId }: { albumId?: string }) {
     originals: originalUploaderAvailable,
   });
   const xProject = targets.ready && targets.projectId ? openProjects?.find((p) => p.projectId === targets.projectId) : undefined;
-  const xName = xProject?.albumName ?? null;
   // De rij: het gekozen album, of X bij alleen filmpjes; tijdens en na een ronde wat die ronde deed.
   const rowAlbum: ChosenAlbum = inRound
-    ? (shownTargets.photo ?? shownTargets.video)
+    ? (shownTargets.photo ?? shownTargets.video ?? album)
     : album && targets.ready && targets.rowAlbumId !== null && targets.rowAlbumId !== album.albumId && xProject
       ? { albumId: xProject.albumId, groupId: album.groupId, label: labelIn(album.groupId, xProject.albumName) }
       : album;

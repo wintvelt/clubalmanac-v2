@@ -25,15 +25,16 @@ import {
   WITHDRAW_CONFIRMATION,
   allRows,
   closeConfirmation,
+  downloadAll,
   downloadAllIds,
   downloadHeaderText,
   downloadRows,
+  downloadStatusText,
   dutchDayOf,
   endDayRange,
   endOfDutchDay,
   filmRefusalText,
   formatBytes,
-  goneText,
   mineRows,
   originalMetaText,
   projectPageView,
@@ -398,18 +399,19 @@ function DownloadPage({ data, removeAll: canRemoveAll }: { data: ProjectData; re
   const once = useOnce();
   const [busy, setBusy] = useState<string | null>(null);
   const [status, setStatus] = useState<Status>(null);
-  const [rowError, setRowError] = useState<{ originalId: string; text: string } | null>(null);
+  // Fix-cyclus 1, punt 3: een foutmelding per rij.
+  const [rowErrors, setRowErrors] = useState<ReadonlyMap<string, string>>(new Map());
   const rows = downloadRows(originals);
   const all = downloadAllIds(originals);
 
   // Een verse link per origineel, en dan een gewone link (geen fetch, 38c-17).
-  async function downloadOne(originalId: string): Promise<boolean> {
+  // `null`: gelukt; anders de tekst voor die rij.
+  async function downloadOne(originalId: string): Promise<string | null> {
     try {
       const { url } = await downloadUrl({ originalId });
-      return startDownload(url);
+      return startDownload(url) ? null : filmRefusalText(null, "download");
     } catch (error) {
-      setRowError({ originalId, text: filmRefusalText(error, "download") });
-      return false;
+      return filmRefusalText(error, "download");
     }
   }
 
@@ -417,9 +419,9 @@ function DownloadPage({ data, removeAll: canRemoveAll }: { data: ProjectData; re
     once(async () => {
       setBusy(originalId);
       setStatus(null);
-      setRowError(null);
+      setRowErrors(new Map());
       try {
-        await downloadOne(originalId);
+        setRowErrors(await downloadAll([originalId], downloadOne, () => wait(DOWNLOAD_GAP_MS)));
       } finally {
         setBusy(null);
       }
@@ -429,15 +431,15 @@ function DownloadPage({ data, removeAll: canRemoveAll }: { data: ProjectData; re
     once(async () => {
       setBusy("all");
       setStatus(null);
-      setRowError(null);
-      let failed = 0;
+      setRowErrors(new Map());
       try {
-        for (const [i, id] of all.entries()) {
-          if (i > 0) await wait(DOWNLOAD_GAP_MS);
-          if (!(await downloadOne(id))) failed++;
-        }
-        if (failed > 0) {
-          setStatus({ kind: "error", text: `${failed === 1 ? "1 origineel" : `${failed} originelen`} lukte niet. Probeer die opnieuw.` });
+        const errors = await downloadAll(all, downloadOne, () => wait(DOWNLOAD_GAP_MS));
+        setRowErrors(errors);
+        if (errors.size > 0) {
+          setStatus({
+            kind: "error",
+            text: `${errors.size === 1 ? "1 origineel" : `${errors.size} originelen`} lukte niet. Zie de melding bij de rij.`,
+          });
         }
       } finally {
         setBusy(null);
@@ -449,7 +451,7 @@ function DownloadPage({ data, removeAll: canRemoveAll }: { data: ProjectData; re
       if (!(await askConfirmation(removeAllConfirmation(originals.length)))) return;
       setBusy("remove");
       setStatus(null);
-      setRowError(null);
+      setRowErrors(new Map());
       try {
         await removeAll({ projectId: project.projectId });
         setStatus({ kind: "success", text: "Alle originelen zijn verwijderd." });
@@ -493,7 +495,7 @@ function DownloadPage({ data, removeAll: canRemoveAll }: { data: ProjectData; re
               canDownload={o.canDownload}
               now={now}
               busy={busy !== null}
-              error={rowError?.originalId === o.originalId ? rowError.text : null}
+              error={rowErrors.get(o.originalId) ?? null}
               onDownload={() => void onDownload(o.originalId)}
             />
           ))}
@@ -533,7 +535,7 @@ function DownloadRow({
     `Ingestuurd ${submittedDayText(original.submittedAt, now)}`,
     formatDuration(original.durationMs),
     formatBytes(original.bytes),
-    canDownload ? goneText(original.goneAt, now) : "Onderweg",
+    downloadStatusText(original, now),
   ]
     .filter(Boolean)
     .join(" · ");

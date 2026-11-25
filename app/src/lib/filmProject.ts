@@ -116,6 +116,50 @@ export function addTargets(input: {
   };
 }
 
+export type RoundTargets =
+  | { ready: false }
+  | {
+      ready: true;
+      photoAlbumId: string | null;
+      videoAlbumId: string | null;
+      projectId: string | null;
+      /** Er komt een uitkomst voor de filmpjes: elk filmpje in de keuze, ook een te lang (WP37 A12). */
+      videoResult: boolean;
+      tooLong: number;
+    };
+
+/**
+ * 38c fix-cyclus 1, punt 1: de doelen van een ronde. De albums zijn die van
+ * `addTargets` met de filmpjes die meegaan (`videos`); een te lang filmpje
+ * (`tooLong`) gaat nergens heen, maar krijgt wel een uitkomst ("niet gelukt:
+ * te lang"), ook als er geen ander filmpje is.
+ */
+export function roundTargets(input: {
+  photos: number;
+  videos: number;
+  tooLong: number;
+  album: ChosenAlbumRef | null;
+  openProjects: readonly OpenFilmProject[] | undefined;
+  originals: boolean;
+}): RoundTargets {
+  const t = addTargets({
+    photos: input.photos,
+    videos: input.videos,
+    album: input.album,
+    openProjects: input.openProjects,
+    originals: input.originals,
+  });
+  if (!t.ready) return { ready: false };
+  return {
+    ready: true,
+    photoAlbumId: t.photoAlbumId,
+    videoAlbumId: t.videoAlbumId,
+    projectId: t.projectId,
+    videoResult: input.videos + input.tooLong > 0,
+    tooLong: input.tooLong,
+  };
+}
+
 /**
  * Besluit 3 in het kiesscherm: met alleen filmpjes is elk album van een groep
  * met een open project grijs, behalve X zelf.
@@ -457,6 +501,36 @@ export function downloadAllIds(originals: readonly ProjectOriginal[]): string[] 
   return downloadRows(originals)
     .filter((o) => o.canDownload)
     .map((o) => o.originalId);
+}
+
+/** Per rij van de downloadpagina: "weg op …", of onderweg "Onderweg · weg op …" (fix-cyclus 1, punt 2). */
+export function downloadStatusText(original: ProjectOriginal, now: number): string {
+  const gone = goneText(original.goneAt, now);
+  return original.status === "binnen" ? gone : `Onderweg · ${gone}`;
+}
+
+/**
+ * "Alles downloaden" (fix-cyclus 1, punt 3): na elkaar, met een pauze tussen
+ * twee downloads. `download` geeft `null` als het lukte, anders de tekst voor
+ * die rij; gooit hij, dan de algemene tekst. De rest gaat altijd door. Geeft
+ * per mislukte rij de tekst.
+ */
+export async function downloadAll(
+  ids: readonly string[],
+  download: (id: string) => Promise<string | null>,
+  pause: () => Promise<void>,
+): Promise<Map<string, string>> {
+  const errors = new Map<string, string>();
+  for (const [i, id] of ids.entries()) {
+    if (i > 0) await pause();
+    try {
+      const failed = await download(id);
+      if (failed !== null) errors.set(id, failed);
+    } catch {
+      errors.set(id, GENERIC);
+    }
+  }
+  return errors;
 }
 
 /** "weg op 30 november 2027" (het jaar alleen als het niet dit jaar is). */

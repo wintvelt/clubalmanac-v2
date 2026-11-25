@@ -14,6 +14,7 @@ import { Text } from "../components/Text";
 import { api } from "../convexApi";
 import { successTap } from "../data/haptics";
 import { useLiveQuery } from "../data/useLiveQuery";
+import { ORIGINAL_GOES_TOO, deleteMessage } from "../lib/photoActions";
 import { flagDay, flagQueueOrder, flagStage, flagStageLabel, ownFlagView, removalDay, type FlagDates } from "../lib/flags";
 import { radius, space, useTheme } from "../theme";
 import { LoadError } from "./GroupParts";
@@ -147,20 +148,24 @@ function MyFlaggedContent() {
 
   const doRemove = (p: MyFlagged) =>
     run(p._id, "remove", () =>
+      // WP38c (besluit 16, fix-cyclus 1 punt 4): bij een filmpje de zin over het origineel.
       confirm(
-        "Foto overal verwijderen?",
-        "De foto verdwijnt uit elk album. Is hij een cover of een profielfoto, dan is hij dat niet meer. Dit kun je niet ongedaan maken.",
+        p.video ? "Filmpje overal verwijderen?" : "Foto overal verwijderen?",
+        deleteMessage({ count: 1, videos: p.video ? 1 : 0 }),
         "Verwijderen",
       ),
     async () => {
       setStatus(null);
       try {
         await remove({ photoId: p._id });
-        setStatus({ kind: "success", text: "De foto is verwijderd." });
+        setStatus({ kind: "success", text: p.video ? "Het filmpje is verwijderd." : "De foto is verwijderd." });
         // WP33 invariant 10: een bevestigde verwijdering is gelukt.
         successTap();
       } catch {
-        setStatus({ kind: "error", text: "De foto is niet verwijderd. Probeer het later opnieuw." });
+        setStatus({
+          kind: "error",
+          text: p.video ? "Het filmpje is niet verwijderd. Probeer het later opnieuw." : "De foto is niet verwijderd. Probeer het later opnieuw.",
+        });
       }
     });
 
@@ -319,16 +324,22 @@ function FlagQueueContent() {
 
   const removeNow = (p: Flagged) =>
     run(p._id, "removeNow", () =>
+      // WP38c (besluit 16, fix-cyclus 1 punt 4): bij een filmpje de zin over het origineel.
       confirm(
-        "Foto nu verwijderen?",
-        "De foto verdwijnt meteen uit elk album. De eigenaar krijgt een mail. Dit kun je niet ongedaan maken.",
+        p.video ? "Filmpje nu verwijderen?" : "Foto nu verwijderen?",
+        p.video
+          ? `Het filmpje verdwijnt meteen uit elk album. De eigenaar krijgt een mail. Dit kun je niet ongedaan maken. ${ORIGINAL_GOES_TOO}`
+          : "De foto verdwijnt meteen uit elk album. De eigenaar krijgt een mail. Dit kun je niet ongedaan maken.",
         "Verwijderen",
       ),
     async () => {
       setStatus(null);
       try {
         await removeFlagged({ photoId: p._id });
-        setStatus({ kind: "success", text: "De foto is verwijderd. De eigenaar krijgt een mail." });
+        setStatus({
+          kind: "success",
+          text: p.video ? "Het filmpje is verwijderd. De eigenaar krijgt een mail." : "De foto is verwijderd. De eigenaar krijgt een mail.",
+        });
         // WP33 invariant 10: een bevestigde verwijdering is gelukt.
         successTap();
       } catch {

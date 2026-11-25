@@ -189,3 +189,24 @@ export function previewOrientation(current: number | undefined, edit: RotationEd
   }
   return 1;
 }
+
+// --- Wat er weggaat bij verwijderen (WP17b invariant 2) -------------------------------
+//
+// WP38c (besluit 16, besluit 7 na A, fix-cyclus 1 punt 4): de app weet niet of
+// een filmpje een origineel heeft. Bij een filmpje (of een selectie met een
+// filmpje) staat daarom altijd de zin over het origineel erbij.
+
+export const ORIGINAL_GOES_TOO = "Is het ingestuurd voor een filmproject, dan gaat het origineel ook weg.";
+
+export function deleteMessage(input: { count: number; videos: number }): string {
+  const { count, videos } = input;
+  const base =
+    count === 1
+      ? videos > 0
+        ? "Het filmpje verdwijnt uit elk album. Is het een cover, dan is het dat niet meer. Dit kun je niet ongedaan maken."
+        : "De foto verdwijnt uit elk album. Is hij een cover of een profielfoto, dan is hij dat niet meer. Dit kun je niet ongedaan maken."
+      : videos >= count
+        ? `De ${count} filmpjes verdwijnen uit elk album. Zijn ze een cover, dan zijn ze dat niet meer. Dit kun je niet ongedaan maken.`
+        : `De ${count} foto's verdwijnen uit elk album. Zijn ze een cover of een profielfoto, dan zijn ze dat niet meer. Dit kun je niet ongedaan maken.`;
+  return videos > 0 ? `${base} ${ORIGINAL_GOES_TOO}` : base;
+}
