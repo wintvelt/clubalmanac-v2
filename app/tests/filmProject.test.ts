@@ -8,9 +8,11 @@ import {
   albumOption,
   allRows,
   closeConfirmation,
+  downloadAll,
   downloadAllIds,
   downloadHeaderText,
   downloadRows,
+  downloadStatusText,
   dutchDayOf,
   endDayRange,
   endOfDutchDay,
@@ -25,6 +27,7 @@ import {
   projectStatusText,
   projectTitle,
   removeAllConfirmation,
+  roundTargets,
   standText,
   submittedText,
   type ChosenAlbumRef,
@@ -203,6 +206,67 @@ describe("addTargets: randen", () => {
   it("geen open projecten: zoals nu", () => {
     const t = ready(targets(3, 2, Y, { openProjects: [] }));
     expect(t).toMatchObject({ photoAlbumId: "ay", videoAlbumId: "ay", projectId: null, split: false, lines: [], wifiSwitch: false });
+  });
+});
+
+// 38c fix-cyclus 1, punt 1 (regressie op WP37 A12): elk filmpje in de keuze
+// krijgt een uitkomst, ook een te lang filmpje dat niet meegaat. `videos` telt
+// de filmpjes die meegaan, `tooLong` de te lange; `videoResult` zegt of de
+// ronde van de filmpjes er is (met "niet gelukt: te lang" voor de te lange).
+// Waar ze heen gaan, is hetzelfde als `addTargets` met alleen de filmpjes die
+// meegaan.
+describe("roundTargets: de doelen van de ronde, ook met te lange filmpjes (fix-cyclus 1, punt 1)", () => {
+  const round = (photos: number, videos: number, tooLong: number, album: ChosenAlbumRef | null, extra: { openProjects?: readonly OpenFilmProject[] | undefined } = {}) =>
+    roundTargets({ photos, videos, tooLong, album, openProjects: "openProjects" in extra ? extra.openProjects : PROJECTS, originals: true });
+
+  function readyRound(r: ReturnType<typeof roundTargets>) {
+    if (!r.ready) throw new Error("verwacht: ready");
+    return r;
+  }
+
+  it("alleen te lange filmpjes: geen album voor foto's of filmpjes, wel een uitkomst voor de filmpjes", () => {
+    expect(readyRound(round(0, 0, 2, Y))).toMatchObject({ photoAlbumId: null, videoAlbumId: null, projectId: null, videoResult: true, tooLong: 2 });
+  });
+
+  it("alleen te lange filmpjes, ook als de open projecten nog laden: klaar (er gaat niets naar een project)", () => {
+    expect(readyRound(round(0, 0, 1, Y, { openProjects: undefined }))).toMatchObject({ videoAlbumId: null, videoResult: true, tooLong: 1 });
+  });
+
+  it("foto's met een te lang filmpje: de foto's naar Y, en een uitkomst voor het filmpje", () => {
+    expect(readyRound(round(3, 0, 1, Y))).toMatchObject({ photoAlbumId: "ay", videoAlbumId: null, projectId: null, videoResult: true, tooLong: 1 });
+  });
+
+  it("een te lang filmpje naast een goed filmpje, met een open project: het goede naar X, beide een uitkomst", () => {
+    expect(readyRound(round(0, 1, 1, Y))).toMatchObject({ photoAlbumId: null, videoAlbumId: "ax", projectId: "pg", videoResult: true, tooLong: 1 });
+  });
+
+  it("idem in een groep zonder project: naar het gekozen album", () => {
+    expect(readyRound(round(0, 1, 1, H))).toMatchObject({ videoAlbumId: "ah", projectId: null, videoResult: true });
+  });
+
+  it("goede filmpjes met open projecten die nog laden: nog niet klaar", () => {
+    expect(round(0, 1, 1, Y, { openProjects: undefined })).toEqual({ ready: false });
+  });
+
+  it("alleen foto's: geen ronde voor filmpjes", () => {
+    expect(readyRound(round(3, 0, 0, Y))).toMatchObject({ photoAlbumId: "ay", videoAlbumId: null, videoResult: false, tooLong: 0 });
+  });
+
+  it.each([
+    [3, 2, 0, Y],
+    [3, 2, 1, Y],
+    [0, 2, 3, X],
+    [3, 0, 2, H],
+    [1, 1, 1, YK],
+  ] as const)("de albums zijn die van addTargets (%i foto's, %i goed, %i te lang)", (photos, videos, tooLong, album) => {
+    const r = readyRound(round(photos, videos, tooLong, album));
+    const t = ready(targets(photos, videos, album));
+    expect({ photoAlbumId: r.photoAlbumId, videoAlbumId: r.videoAlbumId, projectId: r.projectId }).toEqual({
+      photoAlbumId: t.photoAlbumId,
+      videoAlbumId: t.videoAlbumId,
+      projectId: t.projectId,
+    });
+    expect(r.videoResult).toBe(videos + tooLong > 0);
   });
 });
 
@@ -657,6 +721,62 @@ describe("de knop 'Filmproject starten' (besluit 1 na A)", () => {
     expect(START_BUTTON.icon).toBe("key");
     expect(START_BUTTON.accessibilityLabel).toContain("Filmproject starten");
     expect(START_BUTTON.accessibilityLabel).toContain("oprichter");
+  });
+});
+
+describe("downloadStatusText: per rij (fix-cyclus 1, punt 2)", () => {
+  it("binnen: 'weg op …'; onderweg: 'Onderweg · weg op …'", () => {
+    const binnen = orig("a", { goneAt: endOfDutchDay({ year: 2027, month: 11, day: 30 }) });
+    const onderweg = orig("b", { status: "onderweg", goneAt: endOfDutchDay({ year: 2026, month: 12, day: 14 }) });
+    expect(downloadStatusText(binnen, NOW)).toBe("weg op 30 november 2027");
+    expect(downloadStatusText(onderweg, NOW)).toBe("Onderweg · weg op 14 december");
+  });
+});
+
+describe("downloadAll: 'Alles downloaden' met een fout per rij (fix-cyclus 1, punt 3)", () => {
+  it("na elkaar, met een pauze ertussen (niet vooraf), en elke mislukte rij met haar eigen tekst", async () => {
+    const calls: string[] = [];
+    const errors = await downloadAll(
+      ["a", "b", "c", "d"],
+      async (id) => {
+        calls.push(id);
+        return id === "b" ? "fout bij b" : id === "d" ? "fout bij d" : null;
+      },
+      async () => {
+        calls.push("pauze");
+      },
+    );
+    expect(calls).toEqual(["a", "pauze", "b", "pauze", "c", "pauze", "d"]);
+    expect([...errors]).toEqual([
+      ["b", "fout bij b"],
+      ["d", "fout bij d"],
+    ]);
+  });
+
+  it("alles gelukt: geen fouten; niets te doen: geen aanroep", async () => {
+    const ok = await downloadAll(["a", "b"], async () => null, async () => {});
+    expect(ok.size).toBe(0);
+    let called = false;
+    const none = await downloadAll([], async () => ((called = true), null), async () => {});
+    expect(none.size).toBe(0);
+    expect(called).toBe(false);
+  });
+
+  it("een downloader die gooit, telt als een fout bij die rij; de rest gaat door", async () => {
+    const seen: string[] = [];
+    const errors = await downloadAll(
+      ["a", "b", "c"],
+      async (id) => {
+        seen.push(id);
+        if (id === "a") throw new Error("Server Error https://r2.invalid/x?X-Amz-Signature=geheim");
+        return null;
+      },
+      async () => {},
+    );
+    expect(seen).toEqual(["a", "b", "c"]);
+    expect([...errors.keys()]).toEqual(["a"]);
+    expect(errors.get("a")).not.toMatch(/Server Error|https?:|Signature/);
+    expect((errors.get("a") ?? "").length).toBeGreaterThan(0);
   });
 });
 

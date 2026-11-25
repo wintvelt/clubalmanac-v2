@@ -1283,7 +1283,7 @@ export function filmRefusalText(error: unknown, action: FilmAction): string;
 1. **Starten**: als oprichter in een groep zonder project: de knop met het sleutel-icoon naast "Bewerk groep"; VoiceOver zegt dat hij alleen voor de oprichter is. Album en einddatum kiezen, de balk verschijnt. Een lid (tweede account) ziet de balk, niet de knop.
 2. **Besluit 3**: alleen filmpjes met het onthouden album Y: de rij toont X, Y is grijs met "Filmpjes gaan nu naar X". Foto's en filmpjes met Y: twee regels boven de knop; na afloop staan de foto's in Y en de filmpjes in X, en de meldingen noemen elk hun album. Ook via de + in album Y.
 3. **Schakelaar**: in het toevoegscherm en op de projectpagina dezelfde stand; omzetten op de een staat meteen op de ander.
-4. **Projectpagina**: een eigen filmpje gaat van "Wordt verstuurd" naar "Binnen"; met de schakelaar aan op mobiel internet "Wacht op wifi". Direct na "Toevoegen" staat het al bij "Mijn filmpjes".
+4. **Projectpagina**, per filmpje: een eigen filmpje gaat van "Wordt verstuurd" naar "Binnen"; met de schakelaar aan op mobiel internet "Wacht op wifi". Een filmpje staat bij "Mijn filmpjes" zodra het in de wachtrij is: dat is als zijn verkleinen voor het album begint. Bij een reeks komt het volgende filmpje pas in de wachtrij als het vorige voor het album verstuurd is (38b); dat is goed.
 5. **Terugtrekken**, met de waarschuwing: de rij is weg, het filmpje staat nog in het album, in het log van het proefscherm is het bestand weg.
 6. **Een clip onder 1 MiB**: de melding "te klein", het filmpje staat in het album.
 7. **Sluiten**: de balk zegt "Gesloten", een nieuw filmpje gaat naar het gekozen album, de projectpagina blijft bereikbaar. Einddatum verschuiven: tik op "Open tot …", kies een andere dag.
@@ -1341,3 +1341,33 @@ Audit: geen blockers, één moet. Regie neemt ook de nits mee.
 5. De nieuwe groepen-query in het toevoegscherm valt onder een `QueryBoundary` of komt uit `useKnownMyGroups`.
 
 Aanvaard: gate 38c-4 geldt per filmpje; het tweede filmpje van een reeks komt pas in de wachtrij als het eerste verstuurd is (38b-gedrag). De gate zegt dat zo.
+
+### Fix-cyclus 1 38c (A)
+
+| Punt | Gepind in | Hoe |
+|---|---|---|
+| 1 | `filmProject.test.ts` (`roundTargets`) | de doelen van de ronde: albums zoals `addTargets` met de filmpjes die meegaan, en `videoResult` zodra er een filmpje in de keuze zit, ook als het te lang is. Alleen te lange filmpjes; foto's met een te lang filmpje; een te lang naast een goed filmpje met een open project; zonder project; open projecten die nog laden |
+| 2 | `filmProject.test.ts` (`downloadStatusText`) | binnen "weg op …", onderweg "Onderweg · weg op …" |
+| 3 | `filmProject.test.ts` (`downloadAll`) | na elkaar met een pauze ertussen; elke mislukte rij haar eigen tekst; een downloader die gooit, is een fout bij die rij (algemene tekst, geen fouttekst) en de rest gaat door |
+| 4 | `filmProjectRoutes.test.ts` (`deleteMessage` in `photoActions.ts`, bronscan `FlagScreens.tsx`) | één filmpje "Het filmpje verdwijnt…" met de zin over het origineel; een foto zoals nu; meerdere alleen met de zin als er een filmpje bij is; alleen filmpjes "De 3 filmpjes verdwijnen…". In `FlagScreens.tsx` een titel voor een filmpje, en de tekst via `deleteMessage` of letterlijk |
+| 5 | `filmProjectRoutes.test.ts` (bronscan) | in de body van `AddPhotosScreen` zelf geen `useMyGroups` of `useLiveQuery` (wel in een deel onder een `QueryBoundary`, of `useKnownMyGroups`) |
+
+**Testcontract erbij** (`app/src/lib/filmProject.ts`, `photoActions.ts`):
+
+```ts
+export type RoundTargets =
+  | { ready: false }
+  | { ready: true; photoAlbumId: string | null; videoAlbumId: string | null; projectId: string | null;
+      videoResult: boolean; tooLong: number };
+export function roundTargets(input: { photos: number; videos: number; tooLong: number; album: ChosenAlbumRef | null;
+  openProjects: readonly OpenFilmProject[] | undefined; originals: boolean }): RoundTargets;   // videos: die meegaan
+export function downloadStatusText(original: ProjectOriginal, now: number): string;
+export function downloadAll(ids: readonly string[], download: (id: string) => Promise<string | null>,
+  pause: () => Promise<void>): Promise<Map<string, string>>;   // download: null = gelukt, anders de tekst
+export function deleteMessage(input: { count: number; videos: number }): string;              // photoActions.ts
+```
+
+De ronde van het scherm volgt `roundTargets`: met `videoResult` krijgt elk filmpje een uitkomst, ook als `videoAlbumId` `null` is (alleen te lange). De aansluiting toetsen audit en gate. Gate 4 is aangepast: hij geldt per filmpje.
+
+**Stand na A (fix-cyclus 1):** 23 nieuwe tests, alle rood om de goede reden: `roundTargets` (12), `downloadStatusText` (1), `downloadAll` (3) en `deleteMessage` (4) bestaan nog niet; `FlagScreens.tsx` kent geen filmpje (2); `AddPhotosScreen` roept `useMyGroups` zelf aan (1). De andere 2473 app-tests blijven groen. A draaide de 138 tests van 38c tegen een wegwerp-uitwerking buiten de repo: groen, typecheck schoon; weggegooid.
+

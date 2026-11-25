@@ -2,11 +2,13 @@ import { existsSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { ConvexError } from "convex/values";
 import { describe, expect, it } from "vitest";
+import ts from "typescript";
 import { refusalOf } from "../src/lib/groupAdmin";
+import { deleteMessage } from "../src/lib/photoActions";
 import { filmProjectPath, newFilmProjectPath } from "../src/lib/groupRoutes";
 import { originalPosterUrl } from "../src/lib/imageUrls";
 import { PUBLIC_PATHS, routeAccess } from "../src/lib/routeAccess";
-import { listFiles } from "./support/sourceScan";
+import { listFiles, parse } from "./support/sourceScan";
 
 const SRC = fileURLToPath(new URL("../src/", import.meta.url));
 const read = (rel: string) => (existsSync(SRC + rel) ? readFileSync(SRC + rel, "utf8") : "");
@@ -97,5 +99,78 @@ describe("filmpje verwijderen noemt het origineel (besluit 16, besluit 7 na A)",
   it("de bevestiging in het menu heeft de zin over het origineel", () => {
     const text = read("screens/PhotoMenu.tsx") + read("lib/photoActions.ts");
     expect(text).toContain("Is het ingestuurd voor een filmproject, dan gaat het origineel ook weg.");
+  });
+});
+
+// 38c fix-cyclus 1, punt 4: bij een filmpje begint de tekst met "Het filmpje
+// verdwijnt…", en de zin over het origineel staat erbij; ook bij het
+// verwijderen van een gemeld filmpje (FlagScreens.tsx).
+const ORIGINAL_SENTENCE = "Is het ingestuurd voor een filmproject, dan gaat het origineel ook weg.";
+
+describe("deleteMessage: wat er weggaat bij verwijderen (fix-cyclus 1, punt 4)", () => {
+  it("één filmpje: 'Het filmpje verdwijnt…', met de zin over het origineel", () => {
+    const m = deleteMessage({ count: 1, videos: 1 });
+    expect(m.startsWith("Het filmpje verdwijnt")).toBe(true);
+    expect(m).not.toContain("De foto");
+    expect(m).toContain(ORIGINAL_SENTENCE);
+  });
+
+  it("één foto: zoals nu, zonder de zin over het origineel", () => {
+    const m = deleteMessage({ count: 1, videos: 0 });
+    expect(m.startsWith("De foto verdwijnt")).toBe(true);
+    expect(m).not.toContain("origineel");
+  });
+
+  it("meerdere: de zin alleen als er een filmpje bij is", () => {
+    expect(deleteMessage({ count: 3, videos: 1 })).toContain(ORIGINAL_SENTENCE);
+    expect(deleteMessage({ count: 3, videos: 0 })).not.toContain("origineel");
+    expect(deleteMessage({ count: 3, videos: 0 })).toContain("3 foto's");
+  });
+
+  it("alleen filmpjes: 'De 3 filmpjes verdwijnen…'", () => {
+    expect(deleteMessage({ count: 3, videos: 3 }).startsWith("De 3 filmpjes verdwijnen")).toBe(true);
+  });
+});
+
+describe("gemeld filmpje verwijderen (FlagScreens, fix-cyclus 1, punt 4)", () => {
+  it("de bevestigingen kennen een filmpje: 'Het filmpje verdwijnt' en de zin over het origineel (letterlijk, of via deleteMessage)", () => {
+    const src = read("screens/FlagScreens.tsx");
+    expect(src.length, "sanity: FlagScreens.tsx").toBeGreaterThan(0);
+    const viaShared = src.includes("deleteMessage(");
+    const literal = src.includes("Het filmpje verdwijnt") && src.includes(ORIGINAL_SENTENCE);
+    expect(viaShared || literal).toBe(true);
+  });
+
+  it("niet meer alleen 'Foto overal verwijderen?' en 'Foto nu verwijderen?' als vaste titel: er is een titel voor een filmpje", () => {
+    const src = read("screens/FlagScreens.tsx");
+    expect(src).toMatch(/Filmpje (overal|nu) verwijderen\?/);
+  });
+});
+
+// 38c fix-cyclus 1, punt 5: het toevoegscherm zelf doet geen eigen live query
+// buiten een QueryBoundary. Een fout zou anders het hele scherm (met een
+// lopende ronde) neerhalen. De groepsnamen komen uit `useKnownMyGroups`, of
+// uit een deel onder een QueryBoundary.
+describe("het toevoegscherm: geen ongegrensde query (fix-cyclus 1, punt 5)", () => {
+  it("in de body van AddPhotosScreen zelf geen useMyGroups of useLiveQuery", () => {
+    const sf = parse(read("screens/AddPhotosScreen.tsx"), "AddPhotosScreen.tsx");
+    let body: ts.Block | undefined;
+    const find = (n: ts.Node) => {
+      if (ts.isFunctionDeclaration(n) && n.name?.text === "AddPhotosScreen" && n.body) body = n.body;
+      ts.forEachChild(n, find);
+    };
+    find(sf);
+    expect(body, "sanity: function AddPhotosScreen").toBeDefined();
+    const direct: string[] = [];
+    const visit = (n: ts.Node) => {
+      // Een geneste functie (callback, effect) is geen hook-aanroep van het scherm.
+      if (ts.isFunctionDeclaration(n) || ts.isFunctionExpression(n) || ts.isArrowFunction(n)) return;
+      if (ts.isCallExpression(n) && ts.isIdentifier(n.expression) && ["useMyGroups", "useLiveQuery"].includes(n.expression.text)) {
+        direct.push(n.expression.text);
+      }
+      ts.forEachChild(n, visit);
+    };
+    ts.forEachChild(body!, visit);
+    expect(direct).toEqual([]);
   });
 });
