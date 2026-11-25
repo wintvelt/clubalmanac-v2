@@ -283,7 +283,13 @@ function ProjectPage({
     return (
       <WideSplit
         side={
-          <WideSide back={{ title: "Groep", onPress: () => backToGroup(project.groupId) }} name={title} cover={null} meta={header}>
+          <WideSide
+            back={{ title: "Groep", onPress: () => backToGroup(project.groupId) }}
+            name={title}
+            cover={null}
+            noCover
+            meta={header}
+          >
             {controls}
             {tail}
           </WideSide>
@@ -622,6 +628,7 @@ function DownloadPage({ data, view }: { data: ProjectData; view: ReturnType<type
             back={{ title: "Groep", onPress: () => backToGroup(project.groupId) }}
             name={projectTitle(project.title)}
             cover={null}
+            noCover
             meta={headerText}
           >
             {controls}

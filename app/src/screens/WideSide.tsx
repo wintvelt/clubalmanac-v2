@@ -65,9 +65,13 @@ export function WideSide({
   cover,
   description,
   meta,
+  noCover = false,
   children,
 }: {
   back?: { title: string; onPress: () => void };
+  // WP38: zonder omslag en zonder lettervlak (een filmproject heeft geen
+  // foto); de kolom begint dan met de terugknop en de titel.
+  noCover?: boolean;
   // WP40 (A8): bovenin, op de plek van de pil (de kop van de selectiestand).
   top?: ReactNode;
   name: string | undefined;
@@ -85,7 +89,7 @@ export function WideSide({
             <BackPill title={back.title} onPress={back.onPress} />
           </View>
         ))}
-      <SideCover name={name} cover={cover} />
+      {!noCover && <SideCover name={name} cover={cover} />}
       {name !== undefined && (
         <View style={styles.intro}>
           <Text variant="title" accessibilityRole="header">
