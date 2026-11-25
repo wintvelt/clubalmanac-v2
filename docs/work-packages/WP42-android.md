@@ -228,6 +228,8 @@ Doel: weten of de plaats van een foto mee kan zonder brede toegang, en hoe dat e
 
 Verwachting uit de broncode: (a) en (b) zonder plaats; (d) met plaats als de fotokiezer `GET_CONTENT` afhandelt. Wat de 3–4 telefoons van de leden doen (Samsung, oudere Android) laat de emulator niet zien: hun Android-versie en merk navragen (B1).
 
+**Uitkomst S1 (B, emulator Android 36, 2026-11-25).** Alleen (d) geeft de echte plaats (noord/oost en zuid/west goed); (a), (b) en (c) geven 0/0. De datum klopt overal, alle varianten openen dezelfde fotokiezer met meerdere tegelijk, en de stand na `toUploadJpeg` klopt. `assetId` is in alle varianten `null`. De vraag aan het lid bij (d) is de systeemvraag over "photos and videos" met drie knoppen; "Allow all" geeft alleen `ACCESS_MEDIA_LOCATION`, geen galerij. Upload naar dev: plaats bij de foto, `groot`/`klein` zonder GPS. **Gebouwd: (d)**, volgens B4. Open punten voor de fix-ronde: dubbele foto's door `assetId` `null` (WP18 A-inv. 25 geldt niet), GPS-kopieën in `cache/ImagePicker`, Google Maps in de privacytekst.
+
 ### Gate: emulator of telefoon
 
 - **Emulator** (Claude met `adb`): alles uit de acceptance behalve wat hieronder staat. Terugknop (`input keyevent KEYCODE_BACK`), gebarennavigatie en drie knoppen, donker thema (`cmd uimode night yes`), letters 200% (`settings put system font_scale 2.0`), smal en liggend, de fotokiezer met de fixtures, de kaart (het image heeft Google Play-diensten), delen naar een app op de emulator, films, inloggen met de code (plakken), uitloggen en account verwijderen. Het manifest (A9) en 16 KB lezen uit de gebouwde APK. Installeren via de interne track kan met een Google-account op de emulator.
