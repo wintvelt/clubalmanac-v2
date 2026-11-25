@@ -210,9 +210,6 @@ export function refusalOf(error: unknown, action: AdminAction): Refusal {
       return general(
         "Je bent de oprichter. Maak eerst een ander lid oprichter, dan kun je de groep verlaten. Ben je het enige lid, verwijder dan de groep.",
       );
-    // WP38c (besluit 17): het filmalbum van een open filmproject.
-    case "FILM_PROJECT_OPEN":
-      return general("Sluit eerst het filmproject. Dit album is het filmalbum van een open filmproject.");
     case "NOT_MEMBER":
       if (ON_A_MEMBER.has(action)) return general("Dit lid zit niet meer in de groep, of je bent zelf geen lid meer.");
       if (ALBUM_SCOPED.has(action)) return general("Dit album bestaat niet meer, of je bent geen lid meer van de groep.");

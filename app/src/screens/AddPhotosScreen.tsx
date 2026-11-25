@@ -24,7 +24,7 @@ import { SmallButton } from "../components/SmallButton";
 import { EmptyState, LoadingState } from "../components/States";
 import { Text } from "../components/Text";
 import { api } from "../convexApi";
-import { useKnownMyGroups, useMyGroups } from "../data/homeGroupState";
+import { useMyGroups } from "../data/homeGroupState";
 import { forgetLastAlbum, loadLastAlbum, saveLastAlbum } from "../data/lastAlbum";
 import { addOriginalToQueue, originalEvent, originalsReady, originalsSnapshot } from "../data/originals";
 import { useUploader } from "../data/upload";
@@ -45,7 +45,6 @@ import {
 import { afterCompressFailure, leftForeground } from "../lib/compressResume";
 import {
   addTargets,
-  albumOption,
   originalSkipLines,
   roundTargets,
   type OpenFilmProject,
@@ -140,19 +139,15 @@ import { WifiOnlySwitch } from "./FilmProjectParts";
 // vaste reden, of het einde van de ronde); na een uitkomst die opnieuw kan,
 // blijft het staan, want "Opnieuw proberen" verkleint weer uit dat bestand
 // (`originalAfterVideo`, `originalAtRoundEnd`).
-// WP38c (besluit 3, A-invariant 17, 38c-1, 38c-14, 38c-18): heeft de groep van
-// het gekozen album (Y) een open filmproject met filmalbum X, dan gaan de
-// filmpjes naar X (`addTargets`): met album X naar `startUpload`, zodat de
-// upload-id bij X hoort. Foto's gaan naar Y; met foto's en filmpjes wordt er
-// gesplitst, met de regels boven de knop. Met alleen filmpjes toont de rij X en
-// is Y in het kiesscherm grijs (`albumOption`); het gekozen (en onthouden)
-// album blijft Y. Het origineel gaat mee als de filmpjes naar X gaan; gaat het
+// WP38c, besluit 27 (vervangt besluit 3 en A-invariant 17): foto's en
+// filmpjes gaan naar het gekozen album, geen splitsen en geen grijs album.
+// Heeft de groep van dat album een open filmproject, dan gaat van elk filmpje
+// dat meegaat ook het origineel mee (`addTargets`, `roundTargets`), met één
+// regel boven de knop en de schakelaar "Alleen via wifi" (alleen met de
+// uploader). Met filmpjes en uploader wacht de knop tot de open projecten
+// geladen zijn; een fout bij laden telt als geen project. Gaat het origineel
 // niet mee (te klein, te groot, geen ruimte, of verplaatsen of de wachtrij
-// lukte niet), dan één regel per reden bij de uitkomst. Zolang de open
-// projecten laden en er filmpjes in de keuze zitten, staat de knop uit; een
-// fout bij laden telt als geen project. De schakelaar "Alleen via wifi" staat
-// er met de uploader en filmpjes naar X. Dit vervangt de regel van 38b ("elk
-// filmpje gaat mee zodra de groep een open project heeft").
+// lukte niet), dan één regel per reden bij de uitkomst.
 // Besluit 25 (38b-12): verkleinen dat mislukte omdat de app de voorgrond
 // verliet, gaat vanzelf opnieuw zodra de app weer actief is (hooguit drie
 // keer op rij, src/lib/compressResume.ts); ook zonder origineel.
@@ -163,7 +158,11 @@ type Asset = ImagePicker.ImagePickerAsset;
 type Item = SelectionItem<Asset>;
 type Chosen = { album: ChosenAlbum };
 type Target = NonNullable<ChosenAlbum>;
-/** WP38c: waar de foto's en de filmpjes van een ronde heen gaan (vast bij de start). */
+/**
+ * WP38c: het album van een ronde (vast bij de start), en voor de filmpjes het
+ * project waar de originelen heen gaan. `video` is er zodra er een filmpje in
+ * de keuze zit, ook een te lang (fix-cyclus 1, punt 1).
+ */
 type RoundAlbums = { photo: Target | null; video: (Target & { projectId: string | null }) | null };
 
 // Vóór een ronde vult de kiezer aan; na een ronde begint hij een nieuwe keuze (A4).
@@ -257,9 +256,6 @@ export function AddPhotosScreen({ albumId }: { albumId?: string }) {
   const [choosing, setChoosing] = useState(false);
   const [initialAlbumId] = useState(albumId ?? null);
   const { userId } = useAuth();
-  // WP38c: de groepsnamen, voor "Groep · Album" van X. De laatst bekende lijst
-  // (fix-cyclus 1, punt 5): geen eigen query buiten een QueryBoundary.
-  const myGroups = useKnownMyGroups(userId);
   // Het onthouden album (undefined: nog niet gelezen), of dat uit de route.
   const [candidate, setCandidate] = useState<StoredAlbum | null | undefined>(undefined);
   // Het album uit de route bestaat niet (meer), of de user mag er niet in.
@@ -280,7 +276,7 @@ export function AddPhotosScreen({ albumId }: { albumId?: string }) {
   // ze laden. Een fout bij laden telt als geen project.
   const [openProjects, setOpenProjects] = useState<readonly OpenFilmProject[] | undefined>(undefined);
   const onOpenProjects = useCallback((list: readonly OpenFilmProject[]) => setOpenProjects(list), []);
-  // WP38c: de albums van de ronde die loopt (foto's naar Y, filmpjes naar X).
+  // WP38c: het album van de ronde die loopt, en het project van de filmpjes.
   const roundAlbums = useRef<RoundAlbums>({ photo: null, video: null });
   const [shownTargets, setShownTargets] = useState<RoundAlbums>({ photo: null, video: null });
   // WP38b: per upload-id van een filmpje of zijn origineel meegaat (met de
@@ -595,8 +591,8 @@ export function AddPhotosScreen({ albumId }: { albumId?: string }) {
   // WP38b 38b-1, 38b-2: gaat het origineel van dit filmpje mee? Zo ja, de
   // kopie van de kiezer naar de map van de originelen en in de wachtrij; het
   // verkleinen leest dan dat bestand. Eén keer per filmpje per ronde.
-  // WP38c (38c-18): het origineel gaat mee als de filmpjes van de ronde naar
-  // X gaan (`projectId`), met de groep van X.
+  // WP38c, besluit 27.2: het origineel gaat mee als de groep van het gekozen
+  // album een open project heeft (`projectId` van de ronde).
   async function keepForOriginal(item: VideoItem, asset: Asset, groupId: string, projectId: string | null): Promise<Asset> {
     const known = originals.current.get(item.uploadId);
     if (known) return known.uri ? { ...asset, uri: known.uri } : asset;
@@ -799,33 +795,24 @@ export function AddPhotosScreen({ albumId }: { albumId?: string }) {
       photos: photos.length,
       videos: videos.length - tooLongKeys.size,
       tooLong: tooLongKeys.size,
-      album: { albumId: album.albumId, groupId: album.groupId, name: albumName(album) },
+      album: { albumId: album.albumId, groupId: album.groupId, name: album.label },
       openProjects,
       originals: originalUploaderAvailable,
     });
     if (!round.ready) return;
-    // F2: het album van deze ronde is het laatst gekozen album (ook als de
-    // filmpjes naar X gaan: het onthouden album is het gekozen album).
+    // F2: het album van deze ronde is het laatst gekozen album.
     if (userId) void saveLastAlbum(userId, { albumId: album.albumId, groupId: album.groupId });
-    const xAlbumName = openProjects?.find((p) => p.projectId === round.projectId)?.albumName ?? "";
     const albums: RoundAlbums = {
-      photo: round.photoAlbumId ? album : null,
-      video: round.videoAlbumId
-        ? {
-            albumId: round.videoAlbumId,
-            groupId: album.groupId,
-            label: round.videoAlbumId === album.albumId ? album.label : labelIn(album.groupId, xAlbumName),
-            projectId: round.projectId,
-          }
-        : null,
+      photo: photos.length > 0 ? album : null,
+      video: round.videoResult ? { ...album, projectId: round.projectId } : null,
     };
     roundAlbums.current = albums;
     setShownTargets(albums);
     const picks = photos.map((p) => ({ key: p.key, assetId: p.asset.assetId }));
-    // 38c-14: de upload-id van een filmpje hoort bij het album waar het heen gaat (X).
+    // De upload-id van een filmpje hoort bij het gekozen album (WP37).
     const clips = albumBatch(
       videos.map((v) => ({ key: v.key, assetId: v.asset.assetId })),
-      albums.video?.albumId ?? album.albumId,
+      album.albumId,
     ).map((i): VideoItem =>
       // Te lang: meteen zeggen, niet eerst verkleinen (A12).
       tooLongKeys.has(i.key)
@@ -851,7 +838,7 @@ export function AddPhotosScreen({ albumId }: { albumId?: string }) {
     void runRound(retryBatch(current), fresh);
   }
 
-  // 38c-14: "Naar album" bij de foto's gaat naar Y, zonder foto's naar X.
+  // "Naar album": het gekozen album van de ronde.
   function toAlbum(target: Target | null) {
     if (!target) return;
     const path = albumPath(target.groupId, target.albumId);
@@ -868,29 +855,13 @@ export function AddPhotosScreen({ albumId }: { albumId?: string }) {
   const anyTooLong = tiles.some((t) => t.tooLong);
   // WP38c, besluit 3: een te lang filmpje gaat niet mee, en telt dus niet.
   const videosGoing = tiles.filter((t) => t.kind === "filmpje" && !t.tooLong).length;
-  const groupName = (groupId: string) => myGroups?.find((g) => g._id === groupId)?.name ?? null;
-  const labelIn = (groupId: string, albumName: string) => {
-    const name = groupName(groupId);
-    return name ? `${name} · ${albumName}` : albumName;
-  };
-  const albumName = (a: Target) => {
-    const name = groupName(a.groupId);
-    return name && a.label.startsWith(`${name} · `) ? a.label.slice(name.length + 3) : a.label;
-  };
   const targets = addTargets({
     photos: photoCount,
     videos: videosGoing,
-    album: album ? { albumId: album.albumId, groupId: album.groupId, name: albumName(album) } : null,
+    album: album ? { albumId: album.albumId, groupId: album.groupId, name: album.label } : null,
     openProjects,
     originals: originalUploaderAvailable,
   });
-  const xProject = targets.ready && targets.projectId ? openProjects?.find((p) => p.projectId === targets.projectId) : undefined;
-  // De rij: het gekozen album, of X bij alleen filmpjes; tijdens en na een ronde wat die ronde deed.
-  const rowAlbum: ChosenAlbum = inRound
-    ? (shownTargets.photo ?? shownTargets.video ?? album)
-    : album && targets.ready && targets.rowAlbumId !== null && targets.rowAlbumId !== album.albumId && xProject
-      ? { albumId: xProject.albumId, groupId: album.groupId, label: labelIn(album.groupId, xProject.albumName) }
-      : album;
   const button = addButton(album ? (targets.ready ? "chosen" : "unknown") : albumKnown ? "none" : "unknown");
   const skipLines = originalSkipLines(
     (videoItems ?? [])
@@ -1030,10 +1001,10 @@ export function AddPhotosScreen({ albumId }: { albumId?: string }) {
       {anyPicked && routeGone && !album && !inRound && <Notice kind="error" message={reasonText("geen_album")} />}
 
       {anyPicked && (
-        <AlbumRow album={rowAlbum} known={albumKnown} locked={inRound} onPress={() => setChoosing(true)} />
+        <AlbumRow album={album} known={albumKnown} locked={inRound} onPress={() => setChoosing(true)} />
       )}
 
-      {/* WP38c (mockup 3): waar foto's en filmpjes heen gaan, en de schakelaar. */}
+      {/* WP38c, besluit 27.4: de regel over het origineel, en de schakelaar. */}
       {anyPicked && !inRound && targets.ready && targets.lines.length > 0 && (
         <View style={[local.lines, { backgroundColor: colors.tabPill }]} accessible>
           {targets.lines.map((line) => (
@@ -1047,11 +1018,7 @@ export function AddPhotosScreen({ albumId }: { albumId?: string }) {
 
       <AlbumChoiceSheet
         visible={choosing}
-        // Besluit 3: met alleen filmpjes staat X gekozen.
-        selectedAlbumId={rowAlbum?.albumId ?? null}
-        option={(a) =>
-          albumOption({ albumId: a.albumId, groupId: a.groupId, photos: photoCount, videos: videosGoing, openProjects: openProjects ?? [] })
-        }
+        selectedAlbumId={album?.albumId ?? null}
         onClose={() => setChoosing(false)}
         onChoose={(id, info) => {
           setChoosing(false);
@@ -1158,14 +1125,14 @@ function AlbumRow({
   );
 }
 
-// WP38b, WP38c: de groepen met een open filmproject, met filmalbum X. Tot het
+// WP38b, WP38c: de groepen met een open filmproject, met de titel. Tot het
 // antwoord er is: nog niet bekend (de knop wacht als er filmpjes zijn).
 function OpenProjects({ onChange }: { onChange: (list: readonly OpenFilmProject[]) => void }) {
   const rows = useLiveQuery(api.filmProjects.listOpenForMe, {});
-  const sig = JSON.stringify(rows?.map((r) => [r.groupId, r.projectId, r.albumId, r.albumName]) ?? null);
+  const sig = JSON.stringify(rows?.map((r) => [r.groupId, r.projectId, r.title]) ?? null);
   useEffect(() => {
     if (rows) {
-      onChange(rows.map((r) => ({ groupId: r.groupId, projectId: r.projectId, albumId: r.albumId, albumName: r.albumName })));
+      onChange(rows.map((r) => ({ groupId: r.groupId, projectId: r.projectId, title: r.title })));
     }
   }, [sig]); // eslint-disable-line react-hooks/exhaustive-deps
   return null;

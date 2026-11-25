@@ -8,9 +8,10 @@ import { MONTHS, dutchOffset } from "./photos";
 // docs/work-packages/WP38-filmproject-originelen.md §Spec-criticus 38c
 // (invarianten 38c-1 tot 38c-13, 38c-20), §Besluiten Wouter na A van 38c.
 //
-// - Besluit 3 (A-invariant 17): waar foto's en filmpjes heen gaan, welk album
-//   de rij toont, de regels boven de knop en de schakelaar (`addTargets`), en
-//   welk album in het kiesscherm grijs is (`albumOption`).
+// - Besluit 27 (vervangt besluit 3, A-invariant 17): alles naar het gekozen
+//   album; met een open project in die groep gaat ook het origineel mee, met
+//   één regel boven de knop en de schakelaar (`addTargets`, `roundTargets`).
+// - Een project heeft een titel (besluit 27.3), geen album.
 // - Wie wat ziet: de knop en de balk in de groep (`groupFilmView`), de delen
 //   van de projectpagina en de downloadpagina (`projectPageView`).
 // - De lijsten: "Mijn filmpjes" met de stand uit de wachtrij van 38b, ook voor
@@ -30,35 +31,23 @@ const FILM_PROJECT_MAX_AHEAD_MS = 366 * DAY;
 
 export type Platform = "ios" | "web";
 
-// --- besluit 3: het toevoegscherm ------------------------------------------------------
+// --- besluit 27: het toevoegscherm ----------------------------------------------------
 
-export type OpenFilmProject = { groupId: string; projectId: string; albumId: string; albumName: string };
+export type OpenFilmProject = { groupId: string; projectId: string; title: string };
 export type ChosenAlbumRef = { albumId: string; groupId: string; name: string };
 
 export type AddTargets =
   | { ready: false }
   | {
       ready: true;
-      /** Het album van de foto's, `null` zonder foto's of zonder album. */
-      photoAlbumId: string | null;
-      /** Het album van de filmpjes: X als de groep een open project heeft. */
-      videoAlbumId: string | null;
-      /** Wat de albumrij toont: het gekozen album, of X bij alleen filmpjes. */
-      rowAlbumId: string | null;
+      /** Het gekozen album: daar gaan foto's en filmpjes heen. */
+      albumId: string | null;
+      /** Het open project van de groep van dat album, als er filmpjes meegaan. */
       projectId: string | null;
-      split: boolean;
-      /** De regels boven de knop. */
+      /** De regel boven de knop (besluit 27.4). */
       lines: string[];
       wifiSwitch: boolean;
     };
-
-function photosText(n: number): string {
-  return n === 1 ? "1 foto gaat" : `${n} foto's gaan`;
-}
-
-function videosGoText(n: number): string {
-  return n === 1 ? "1 filmpje gaat" : `${n} filmpjes gaan`;
-}
 
 function videosText(n: number): string {
   return n === 1 ? "1 filmpje" : `${n} filmpjes`;
@@ -69,10 +58,12 @@ function projectOf(groupId: string, openProjects: readonly OpenFilmProject[]): O
 }
 
 /**
- * Besluit 3. `videos` telt alleen de filmpjes die meegaan (een te lang
- * filmpje niet). `originals`: deze build heeft de uploader (volle kwaliteit,
- * de schakelaar). Het gekozen album blijft wat het lid koos; alleen
- * met alleen filmpjes toont de rij X.
+ * Besluit 27 (vervangt besluit 3 en A-invariant 17): alles gaat naar het
+ * gekozen album, geen splitsen. Staat er in die groep een project open en gaan
+ * er filmpjes mee (`videos`: een te lang filmpje telt niet), dan gaat van elk
+ * filmpje ook het origineel mee: één regel boven de knop en de schakelaar,
+ * alleen met de uploader (`originals`). Met filmpjes en uploader wacht de knop
+ * tot de open projecten geladen zijn; anders gaat het origineel stil niet mee.
  */
 export function addTargets(input: {
   photos: number;
@@ -81,42 +72,17 @@ export function addTargets(input: {
   openProjects: readonly OpenFilmProject[] | undefined;
   originals: boolean;
 }): AddTargets {
-  const { photos, videos, album, openProjects, originals } = input;
-  // Met filmpjes erbij hangt het album af van de open projecten.
-  if (videos > 0 && openProjects === undefined) return { ready: false };
-  if (!album) {
-    return { ready: true, photoAlbumId: null, videoAlbumId: null, rowAlbumId: null, projectId: null, split: false, lines: [], wifiSwitch: false };
-  }
-  const photoAlbumId = photos > 0 ? album.albumId : null;
+  const { videos, album, openProjects, originals } = input;
+  if (videos > 0 && originals && openProjects === undefined) return { ready: false };
+  if (!album) return { ready: true, albumId: null, projectId: null, lines: [], wifiSwitch: false };
   const project = videos > 0 && openProjects ? projectOf(album.groupId, openProjects) : undefined;
-  if (!project) {
-    return {
-      ready: true,
-      photoAlbumId,
-      videoAlbumId: videos > 0 ? album.albumId : null,
-      rowAlbumId: album.albumId,
-      projectId: null,
-      split: false,
-      lines: [],
-      wifiSwitch: false,
-    };
-  }
-  const split = photos > 0 && album.albumId !== project.albumId;
-  // Feedback Wouter op build 89, punt 2 (vervangt besluit 2 na A).
-  const one = videos === 1;
-  const kept = `${one ? "wordt" : "worden"} ook in volle kwaliteit bewaard voor de feature-film.`;
-  const videoLine = split
-    ? `${videosGoText(videos)} naar ${project.albumName}${originals ? ` en ${kept}` : ""}`
-    : `${one ? "Je filmpje" : `Je ${videos} filmpjes`} ${kept}`;
-  const lines = split ? [`${photosText(photos)} naar ${album.name}`, videoLine] : originals ? [videoLine] : [];
+  if (!project) return { ready: true, albumId: album.albumId, projectId: null, lines: [], wifiSwitch: false };
+  const line = `${videosText(videos)} ${videos === 1 ? "wordt" : "worden"} ook als origineel bewaard voor filmproject ${project.title}`;
   return {
     ready: true,
-    photoAlbumId,
-    videoAlbumId: project.albumId,
-    rowAlbumId: photos > 0 ? album.albumId : project.albumId,
+    albumId: album.albumId,
     projectId: project.projectId,
-    split,
-    lines,
+    lines: originals ? [line] : [],
     wifiSwitch: originals,
   };
 }
@@ -125,8 +91,7 @@ export type RoundTargets =
   | { ready: false }
   | {
       ready: true;
-      photoAlbumId: string | null;
-      videoAlbumId: string | null;
+      albumId: string | null;
       projectId: string | null;
       /** Er komt een uitkomst voor de filmpjes: elk filmpje in de keuze, ook een te lang (WP37 A12). */
       videoResult: boolean;
@@ -134,10 +99,10 @@ export type RoundTargets =
     };
 
 /**
- * 38c fix-cyclus 1, punt 1: de doelen van een ronde. De albums zijn die van
- * `addTargets` met de filmpjes die meegaan (`videos`); een te lang filmpje
- * (`tooLong`) gaat nergens heen, maar krijgt wel een uitkomst ("niet gelukt:
- * te lang"), ook als er geen ander filmpje is.
+ * 38c fix-cyclus 1, punt 1, met besluit 27: de doelen van een ronde. Album en
+ * project zijn die van `addTargets` met de filmpjes die meegaan (`videos`); een
+ * te lang filmpje (`tooLong`) gaat nergens heen, maar krijgt wel een uitkomst
+ * ("niet gelukt: te lang"), ook als er geen ander filmpje is.
  */
 export function roundTargets(input: {
   photos: number;
@@ -157,29 +122,11 @@ export function roundTargets(input: {
   if (!t.ready) return { ready: false };
   return {
     ready: true,
-    photoAlbumId: t.photoAlbumId,
-    videoAlbumId: t.videoAlbumId,
+    albumId: t.albumId,
     projectId: t.projectId,
     videoResult: input.videos + input.tooLong > 0,
     tooLong: input.tooLong,
   };
-}
-
-/**
- * Besluit 3 in het kiesscherm: met alleen filmpjes is elk album van een groep
- * met een open project grijs, behalve X zelf.
- */
-export function albumOption(input: {
-  albumId: string;
-  groupId: string;
-  photos: number;
-  videos: number;
-  openProjects: readonly OpenFilmProject[];
-}): { disabled: boolean; note: string | null } {
-  if (input.videos === 0 || input.photos > 0) return { disabled: false, note: null };
-  const project = projectOf(input.groupId, input.openProjects);
-  if (!project || project.albumId === input.albumId) return { disabled: false, note: null };
-  return { disabled: true, note: `Filmpjes gaan nu naar ${project.albumName}` };
 }
 
 // --- als het origineel niet meegaat (38c-13) -----------------------------------------
@@ -301,10 +248,11 @@ export function formatBytes(bytes: number): string {
 
 // --- de groep: de knop en de balk (38c-3, 38c-20) ---------------------------------------
 
-export type ProjectRow = { projectId: string; albumId: string | null; albumName: string; endsAt: number; open: boolean };
+export type ProjectRow = { projectId: string; title: string; endsAt: number; open: boolean };
 
-export function projectTitle(albumName: string): string {
-  return `Filmproject ${albumName}`;
+/** "Filmproject [titel]" (besluit 27). */
+export function projectTitle(title: string): string {
+  return `Filmproject ${title}`;
 }
 
 /** "Open tot 30 november" (met het jaar als het niet dit jaar is), of "Gesloten". */
@@ -337,7 +285,7 @@ export function groupFilmView(input: {
     start: platform === "ios" && isFounder && !projects.some(isOpen),
     banners: ordered.map((p) => ({
       projectId: p.projectId,
-      title: projectTitle(p.albumName),
+      title: projectTitle(p.title),
       text: projectStatusText({ open: isOpen(p), endsAt: p.endsAt }, now),
     })),
   };
@@ -368,6 +316,8 @@ export function projectPageView(input: {
   wifiSwitch: boolean;
   close: boolean;
   changeEnd: boolean;
+  /** Besluit 27 (Wouter: ja): de titel wijzigen, ook na sluiten. */
+  changeTitle: boolean;
   downloadHint: boolean;
   download: boolean;
   removeAll: boolean;
@@ -380,6 +330,7 @@ export function projectPageView(input: {
     wifiSwitch: app && uploader,
     close: app && isFounder && open,
     changeEnd: app && isFounder && open,
+    changeTitle: app && isFounder,
     downloadHint: app && isFounder,
     download: !app && isFounder,
     removeAll: !app && isFounder && !open && originals.length > 0,
@@ -572,10 +523,10 @@ export const WITHDRAW_CONFIRMATION: Confirmation = {
   destructive: true,
 };
 
-export function closeConfirmation(albumName: string): Confirmation {
+export function closeConfirmation(title: string): Confirmation {
   return {
     title: "Filmproject sluiten?",
-    message: `Nieuwe filmpjes gaan daarna niet meer vanzelf naar ${albumName}. Wat al onderweg is, mag nog 14 dagen binnenkomen. De projectpagina blijft er tot de originelen weg zijn.`,
+    message: `Van nieuwe filmpjes gaat daarna geen origineel meer naar filmproject ${title}. Wat al onderweg is, mag nog 14 dagen binnenkomen. De projectpagina blijft er tot de originelen weg zijn.`,
     button: "Sluiten",
     destructive: false,
   };
@@ -593,7 +544,7 @@ export function removeAllConfirmation(count: number): Confirmation {
   };
 }
 
-export type FilmAction = "start" | "close" | "changeEnd" | "withdraw" | "download" | "removeAll";
+export type FilmAction = "start" | "close" | "changeEnd" | "changeTitle" | "withdraw" | "download" | "removeAll";
 
 const GENERIC = "Dat lukte niet. Er is niets veranderd. Controleer je verbinding en probeer het opnieuw.";
 
@@ -616,9 +567,16 @@ export function filmRefusalText(error: unknown, action: FilmAction): string {
       return "Dat kan alleen de oprichter van de groep.";
     case "PROJECT_CLOSED":
       return "Dit filmproject is al gesloten.";
+    // Besluit 27: de titel van een project (de regels van een albumnaam).
+    case "NAME_REQUIRED":
+      return "Vul een titel in.";
+    case "NAME_TOO_LONG":
+      return "De titel is te lang. Gebruik hoogstens 50 tekens.";
+    case "NAME_INVALID":
+      return "De titel bevat een teken dat niet mag, zoals een tab of een onzichtbaar teken. Haal dat weg en probeer het opnieuw.";
     case "NOT_MEMBER":
       return action === "start"
-        ? "Dit album of deze groep is er niet meer, of je bent geen lid meer van de groep."
+        ? "Je bent geen lid meer van deze groep, of de groep bestaat niet meer."
         : "Dit filmproject is er niet meer, of je bent geen lid meer van de groep.";
     case "ORIGINAL_NOT_FOUND":
       return "Dit origineel is er niet meer.";

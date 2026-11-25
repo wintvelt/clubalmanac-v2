@@ -699,7 +699,8 @@ ${SIGNATURE_TEXT}`;
 export function filmOriginalsReminderTemplate(opts: {
   founderName: string;
   groupName: string;
-  albumName: string;
+  /** Besluit 27: de titel van het project. */
+  title: string;
   count: number;
   /** De dag waarop de eerste originelen weggaan. */
   firstGoneAt: number;
@@ -708,10 +709,10 @@ export function filmOriginalsReminderTemplate(opts: {
 }): TemplateBlock {
   const first = formatNlDate(opts.firstGoneAt);
   const last = formatNlDate(opts.lastGoneAt);
-  const subject = `De originelen van ${opts.albumName} gaan vanaf ${first} weg`;
+  const subject = `De originelen van ${opts.title} gaan vanaf ${first} weg`;
   const range = first === last ? `op ${first}` : `vanaf ${first} (de laatste op ${last})`;
   const lines = [
-    `De ${opts.count} originele filmpje(s) van het filmproject ${opts.albumName} in ${opts.groupName} gaan ${range} weg: na een jaar verwijdert Clubalmanac ze vanzelf.`,
+    `De ${opts.count} originele filmpje(s) van het filmproject ${opts.title} in ${opts.groupName} gaan ${range} weg: na een jaar verwijdert Clubalmanac ze vanzelf.`,
     "Wil je ze bewaren, download ze dan vóór die dag in de webapp (app.clubalmanac.com, het filmproject in de groep).",
   ];
   const htmlPart = `

@@ -8,7 +8,6 @@ import { Pressable, StyleSheet, View } from "react-native";
 import type { Id } from "../../../convex/_generated/dataModel";
 import { originalUploaderAvailable } from "../../modules/clubalmanac-video";
 import { Button } from "../components/Button";
-import { Icon } from "../components/Icon";
 import { ListSection } from "../components/ListRow";
 import { Notice } from "../components/Notice";
 import { QueryBoundary } from "../components/QueryBoundary";
@@ -16,6 +15,7 @@ import { Screen } from "../components/Screen";
 import { SmallButton } from "../components/SmallButton";
 import { EmptyState, LoadingState } from "../components/States";
 import { Text } from "../components/Text";
+import { TextField } from "../components/TextField";
 import { api } from "../convexApi";
 import { askConfirmation } from "../data/confirm";
 import { originalEvent } from "../data/originals";
@@ -51,11 +51,11 @@ import {
   type ProjectOriginal,
 } from "../lib/filmProject";
 import { dayFromPicker, formatDay, pickerDate, type Day } from "../lib/groupAdmin";
-import { filmProjectPath, groupPath, newAlbumPath } from "../lib/groupRoutes";
+import { filmProjectPath, groupPath } from "../lib/groupRoutes";
 import { groupErrorKind } from "../lib/groups";
 import { formatDuration } from "../lib/videos";
 import { radius, size, space, useTheme } from "../theme";
-import { AlbumCoverTile, LoadError } from "./GroupParts";
+import { LoadError } from "./GroupParts";
 import { FILM_PLATFORM, OriginalPoster, WifiOnlySwitch, useNow, useOriginals } from "./FilmProjectParts";
 
 // WP38c: de schermen van het filmproject. Spec:
@@ -72,7 +72,9 @@ import { FILM_PLATFORM, OriginalPoster, WifiOnlySwitch, useNow, useOriginals } f
 //   downloaden" na elkaar met verse links, en "Alles verwijderen" na sluiten.
 //   Dat is de enige schrijfactie van het filmproject op het web (WP35 W5,
 //   blind spot 2).
-// - Starten (oprichter, alleen in de app): album van de groep en einddatum.
+// - Starten (oprichter, alleen in de app): een titel en een einddatum
+//   (besluit 27). De oprichter wijzigt de titel op de projectpagina, ook na
+//   sluiten.
 // - Een weigering toont de tekst bij de code (filmRefusalText), nooit de fout.
 
 type ProjectData = FunctionReturnType<typeof api.filmProjects.get>;
@@ -164,10 +166,12 @@ function ProjectPage({
   const withdraw = useMutation(api.filmProjects.withdraw);
   const close = useMutation(api.filmProjects.close);
   const setEndsAt = useMutation(api.filmProjects.setEndsAt);
+  const setTitle = useMutation(api.filmProjects.setTitle);
   const once = useOnce();
   const [status, setStatus] = useState<Status>(null);
   const [busy, setBusy] = useState(false);
   const [editingEnd, setEditingEnd] = useState(false);
+  const [editingTitle, setEditingTitle] = useState(false);
 
   const device =
     FILM_PLATFORM === "ios" && originalUploaderAvailable && userId
@@ -175,7 +179,7 @@ function ProjectPage({
       : null;
   const mine = mineRows({ platform: FILM_PLATFORM, projectId: project.projectId, originals, device, now });
   const all = allRows(originals);
-  const title = projectTitle(project.albumName);
+  const title = projectTitle(project.title);
 
   async function run(action: FilmAction, work: () => Promise<void>, success?: string) {
     await once(async () => {
@@ -207,7 +211,7 @@ function ProjectPage({
   }
 
   async function onClose() {
-    if (!(await askConfirmation(closeConfirmation(project.albumName)))) return;
+    if (!(await askConfirmation(closeConfirmation(project.title)))) return;
     await run("close", () => close({ projectId: project.projectId }).then(() => undefined), "Het filmproject is gesloten.");
   }
 
@@ -219,6 +223,18 @@ function ProjectPage({
         setEditingEnd(false);
       },
       `Open tot ${formatDay(day)}.`,
+    );
+  }
+
+  // Besluit 27 (Wouter: ja): de titel wijzigen, ook na sluiten.
+  async function onChangeTitle(next: string) {
+    await run(
+      "changeTitle",
+      async () => {
+        await setTitle({ projectId: project.projectId, title: next });
+        setEditingTitle(false);
+      },
+      "De titel is gewijzigd.",
     );
   }
 
@@ -234,9 +250,22 @@ function ProjectPage({
     <Screen underHeader>
       <Stack.Screen options={{ title: "Filmproject" }} />
       <View style={styles.intro}>
-        <Text variant="title" accessibilityRole="header">
-          {title}
-        </Text>
+        {view.changeTitle ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityHint="Wijzig de titel"
+            onPress={() => setEditingTitle((e) => !e)}
+            disabled={busy}
+          >
+            <Text variant="title" accessibilityRole="header">
+              {title}
+            </Text>
+          </Pressable>
+        ) : (
+          <Text variant="title" accessibilityRole="header">
+            {title}
+          </Text>
+        )}
         {view.changeEnd ? (
           <Pressable
             accessibilityRole="button"
@@ -254,6 +283,10 @@ function ProjectPage({
           </Text>
         )}
       </View>
+
+      {editingTitle && view.changeTitle && (
+        <TitleEditor initial={project.title} busy={busy} onSave={(next) => void onChangeTitle(next)} />
+      )}
 
       {editingEnd && view.changeEnd && (
         <EndDatePicker
@@ -291,7 +324,7 @@ function ProjectPage({
             title="Nog geen filmpjes"
             text={
               project.open
-                ? `Nieuwe filmpjes in deze groep gaan naar ${project.albumName}.`
+                ? "Van nieuwe filmpjes in deze groep gaat het origineel ook naar dit project."
                 : "Er is nog geen filmpje binnengekomen."
             }
           />
@@ -467,7 +500,7 @@ function DownloadPage({ data, removeAll: canRemoveAll }: { data: ProjectData; re
       <Stack.Screen options={{ title: "Filmproject" }} />
       <View style={styles.intro}>
         <Text variant="title" accessibilityRole="header">
-          {projectTitle(project.albumName)}
+          {projectTitle(project.title)}
         </Text>
         <Text variant="meta" color="muted">
           {downloadHeaderText(project, originals, now)}
@@ -568,63 +601,31 @@ function DownloadRow({
 
 export function NewFilmProjectScreen() {
   const { groupId } = useLocalSearchParams<{ groupId: string }>();
-  const gid = String(groupId) as Id<"groups">;
-  return (
-    <QueryBoundary
-      fallback={(error, reset) =>
-        groupErrorKind(error) === "notMember" ? (
-          <Screen underHeader>
-            <Notice kind="error" message="Je bent geen lid meer van deze groep, of de groep bestaat niet meer." />
-          </Screen>
-        ) : (
-          <Screen underHeader>
-            <LoadError title="De albums laden lukt niet" onRetry={reset} />
-          </Screen>
-        )
-      }
-    >
-      <NewProject groupId={gid} />
-    </QueryBoundary>
-  );
+  return <NewProject groupId={String(groupId) as Id<"groups">} />;
 }
 
+/**
+ * Besluit 27: een titel en een einddatum, geen album. "Starten" blijft grijs
+ * zolang de titel leeg is; een weigering over de titel zegt "titel".
+ */
 function NewProject({ groupId }: { groupId: Id<"groups"> }) {
-  const albums = useLiveQuery(api.albums.listByGroup, { groupId });
   const open = useMutation(api.filmProjects.open);
-  const { colors } = useTheme();
   const once = useOnce();
   const [now] = useState(() => Date.now());
-  const [albumId, setAlbumId] = useState<Id<"albums"> | null>(null);
+  const [title, setTitle] = useState("");
   const [busy, setBusy] = useState(false);
   const [refusal, setRefusal] = useState<string | null>(null);
   const range = endDayRange(now);
   const [day, setDay] = useState<Day>(() => clampDay(dutchDayOf(now + DEFAULT_END_DAYS * 24 * 60 * 60 * 1000), range));
-
-  if (albums === undefined) {
-    return (
-      <Screen underHeader>
-        <LoadingState label="Albums laden…" />
-      </Screen>
-    );
-  }
-
-  if (albums.length === 0) {
-    return (
-      <Screen underHeader>
-        <EmptyState icon="photos" title="Nog geen albums" text="Een filmproject heeft een album van de groep nodig.">
-          <Button title="Nieuw album" icon="plus" onPress={() => router.replace(newAlbumPath(groupId))} />
-        </EmptyState>
-      </Screen>
-    );
-  }
+  const ready = title.trim().length > 0;
 
   const submit = () =>
     once(async () => {
-      if (!albumId) return;
+      if (!ready) return;
       setBusy(true);
       setRefusal(null);
       try {
-        const projectId = await open({ groupId, albumId, endsAt: endOfDutchDay(day) });
+        const projectId = await open({ groupId, title: title.trim(), endsAt: endOfDutchDay(day) });
         router.replace(filmProjectPath(groupId, projectId));
       } catch (error) {
         setRefusal(filmRefusalText(error, "start"));
@@ -635,64 +636,56 @@ function NewProject({ groupId }: { groupId: Id<"groups"> }) {
 
   return (
     <Screen underHeader>
-      <View style={styles.section}>
-        <Text variant="fieldLabel" accessibilityRole="header">
-          Filmalbum
-        </Text>
-        <ListSection>
-          {albums.map((a) => {
-            const chosen = a._id === albumId;
-            return (
-              <Pressable
-                key={a._id}
-                accessibilityRole="radio"
-                accessibilityLabel={a.name}
-                accessibilityState={{ checked: chosen }}
-                onPress={() => {
-                  setAlbumId(a._id);
-                  setRefusal(null);
-                }}
-                style={({ pressed }) => [styles.row, pressed && { backgroundColor: colors.line }]}
-              >
-                <View accessible={false} importantForAccessibility="no-hide-descendants">
-                  <AlbumCoverTile
-                    albumId={a._id}
-                    coverPhotoId={a.coverPhotoId}
-                    name={a.name}
-                    size={ROW_TILE}
-                    radius={radius.albumTile / 2}
-                  />
-                </View>
-                <Text variant="listRow" style={styles.grow}>
-                  {a.name}
-                </Text>
-                {chosen && <Icon name="check" color={colors.primary} filled />}
-              </Pressable>
-            );
-          })}
-        </ListSection>
-      </View>
+      <TextField
+        label="Titel"
+        value={title}
+        onChangeText={(text) => {
+          setTitle(text);
+          setRefusal(null);
+        }}
+        autoCapitalize="sentences"
+        returnKeyType="done"
+      />
 
       <EndDatePicker initial={day} now={now} busy={busy} onChange={setDay} />
 
       <View style={styles.section}>
-        {!albumId && (
+        {!ready && (
           <Text variant="meta" color="muted">
-            Kies eerst een album.
+            Vul eerst een titel in.
           </Text>
         )}
-        <Button title="Starten" busyTitle="Starten…" busy={busy} disabled={!albumId} onPress={() => void submit()} />
+        <Button title="Starten" busyTitle="Starten…" busy={busy} disabled={!ready} onPress={() => void submit()} />
         {refusal && <Notice kind="error" message={refusal} />}
         <Text variant="meta" color="muted">
-          Zolang het project open staat, gaat elk nieuw filmpje in deze groep naar het filmalbum, met het origineel
-          voor de clubfilm. Sluiten kan op de projectpagina.
+          Zolang het project open staat, gaat van elk nieuw filmpje in deze groep ook het origineel naar het project,
+          in welk album het ook komt. Sluiten kan op de projectpagina.
         </Text>
       </View>
     </Screen>
   );
 }
 
-const ROW_TILE = 44;
+/** Besluit 27: de titel wijzigen op de projectpagina (oprichter, ook na sluiten). */
+function TitleEditor({ initial, busy, onSave }: { initial: string; busy: boolean; onSave: (title: string) => void }) {
+  const [title, setTitle] = useState(initial);
+  const changed = title.trim().length > 0 && title.trim() !== initial;
+  return (
+    <View style={styles.section}>
+      <TextField
+        label="Titel"
+        value={title}
+        onChangeText={setTitle}
+        autoCapitalize="sentences"
+        returnKeyType="done"
+        onSubmitEditing={() => {
+          if (changed) onSave(title.trim());
+        }}
+      />
+      <SmallButton title="Bewaar titel" disabled={busy || !changed} onPress={() => onSave(title.trim())} />
+    </View>
+  );
+}
 
 function sameDay(a: Day, b: Day): boolean {
   return a.year === b.year && a.month === b.month && a.day === b.day;

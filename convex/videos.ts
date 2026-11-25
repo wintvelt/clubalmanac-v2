@@ -38,7 +38,6 @@ import {
   type R2Config,
 } from "./lib/r2";
 import { parseLocation, parseTakenAt, uploadImageType } from "./lib/upload";
-import { openProjectOfGroup } from "./lib/filmOriginals";
 
 // WP37 — filmpjes in albums. Het bestand staat in Cloudflare R2, de rij in
 // `photos` (met `video`; `storageId` is de poster). Spec:
@@ -179,14 +178,9 @@ export const reserveVideo = internalMutation({
       return { kind: "refused" as const, reason: "geen_album" as const };
     }
     const now = Date.now();
-    // WP38 A-invariant 2 (besluit 2, 19): staat er in de groep een open
-    // filmproject, dan komt het filmpje in het filmalbum, welk album van die
-    // groep ook gevraagd werd (ook door een oude app: omleiden, niet
-    // weigeren). Hier beslist, in de reservering: wat het project daarna doet,
-    // verandert deze upload niet. Het antwoord van startUpload blijft gelijk.
-    const project = await openProjectOfGroup(ctx, requested.groupId, now);
-    const filmAlbum = project?.albumId ? await ctx.db.get(project.albumId) : null;
-    const albumId = filmAlbum && filmAlbum.groupId === requested.groupId ? filmAlbum._id : requestedAlbumId;
+    // WP38 besluit 27: het filmpje komt in het gevraagde album, ook als de
+    // groep een open filmproject heeft (geen albumregel meer).
+    const albumId = requestedAlbumId;
 
     const existing = await ctx.db
       .query("uploadIdempotency")

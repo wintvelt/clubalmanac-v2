@@ -28,22 +28,16 @@ type Album = FunctionReturnType<typeof api.albums.listByGroup>[number];
 // vinkje. `onChoose` geeft er groep en naam ("Groep · Album") bij.
 export type AlbumChoiceInfo = { groupId: Id<"groups">; label: string };
 
-// WP38c (besluit 3): een album kan grijs zijn, met een uitleg ("Filmpjes gaan
-// nu naar Reis 2026"); dan is het niet te kiezen.
-export type AlbumOption = (album: { albumId: string; groupId: string }) => { disabled: boolean; note: string | null };
-
 export function AlbumChoiceSheet({
   visible,
   fromAlbumId,
   selectedAlbumId,
-  option,
   onChoose,
   onClose,
 }: {
   visible: boolean;
   fromAlbumId?: Id<"albums">;
   selectedAlbumId?: string | null;
-  option?: AlbumOption;
   onChoose: (albumId: Id<"albums">, info: AlbumChoiceInfo) => void;
   onClose: () => void;
 }) {
@@ -69,12 +63,7 @@ export function AlbumChoiceSheet({
               </View>
             )}
           >
-            <Choices
-              fromAlbumId={fromAlbumId}
-              selectedAlbumId={selectedAlbumId ?? null}
-              option={option}
-              onChoose={onChoose}
-            />
+            <Choices fromAlbumId={fromAlbumId} selectedAlbumId={selectedAlbumId ?? null} onChoose={onChoose} />
           </QueryBoundary>
         ) : null}
       </SafeAreaView>
@@ -85,12 +74,10 @@ export function AlbumChoiceSheet({
 function Choices({
   fromAlbumId,
   selectedAlbumId,
-  option,
   onChoose,
 }: {
   fromAlbumId?: Id<"albums">;
   selectedAlbumId: string | null;
-  option?: AlbumOption;
   onChoose: (albumId: Id<"albums">, info: AlbumChoiceInfo) => void;
 }) {
   const groups = useMyGroups();
@@ -137,20 +124,15 @@ function Choices({
               {group.name}
             </Text>
             <ListSection>
-              {albums.map((a) => {
-                const state = option?.({ albumId: a._id, groupId: a.groupId }) ?? { disabled: false, note: null };
-                return (
-                  <AlbumRow
-                    key={a._id}
-                    album={a}
-                    groupName={group.name}
-                    chosen={a._id === selectedAlbumId}
-                    disabled={state.disabled}
-                    note={state.note}
-                    onPress={() => onChoose(a._id, { groupId: a.groupId, label: `${group.name} · ${a.name}` })}
-                  />
-                );
-              })}
+              {albums.map((a) => (
+                <AlbumRow
+                  key={a._id}
+                  album={a}
+                  groupName={group.name}
+                  chosen={a._id === selectedAlbumId}
+                  onPress={() => onChoose(a._id, { groupId: a.groupId, label: `${group.name} · ${a.name}` })}
+                />
+              ))}
             </ListSection>
           </View>
         ))
@@ -164,26 +146,21 @@ function AlbumRow({
   album,
   groupName,
   chosen,
-  disabled = false,
-  note = null,
   onPress,
 }: {
   album: Album;
   groupName: string;
   chosen: boolean;
-  disabled?: boolean;
-  note?: string | null;
   onPress: () => void;
 }) {
   const { colors } = useTheme();
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={[album.name, groupName, note].filter(Boolean).join(", ")}
-      accessibilityState={{ selected: chosen, disabled }}
-      disabled={disabled}
+      accessibilityLabel={`${album.name}, ${groupName}`}
+      accessibilityState={{ selected: chosen }}
       onPress={onPress}
-      style={({ pressed }) => [styles.row, disabled && styles.disabled, pressed && !disabled && { backgroundColor: colors.line }]}
+      style={({ pressed }) => [styles.row, pressed && { backgroundColor: colors.line }]}
     >
       <View accessible={false} importantForAccessibility="no-hide-descendants">
         <AlbumCoverTile
@@ -194,14 +171,9 @@ function AlbumRow({
           radius={radius.albumTile / 2}
         />
       </View>
-      <View style={styles.title}>
-        <Text variant="listRow">{album.name}</Text>
-        {note ? (
-          <Text variant="albumMeta" color="muted">
-            {note}
-          </Text>
-        ) : null}
-      </View>
+      <Text variant="listRow" style={styles.title}>
+        {album.name}
+      </Text>
       {chosen && <Icon name="check" color={colors.primary} filled />}
     </Pressable>
   );
@@ -234,7 +206,6 @@ const styles = StyleSheet.create({
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
   title: { flex: 1 },
-  disabled: { opacity: 0.5 },
   close: { minHeight: size.touchMin, justifyContent: "center" },
   column: {
     width: "100%",
