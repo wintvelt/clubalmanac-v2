@@ -266,12 +266,15 @@ export async function storageIds(t: T): Promise<string[]> {
 
 /** De bytes van een object in storage. */
 export async function storedBytes(t: T, id: string): Promise<Uint8Array> {
-  return await t.run(async (ctx) => {
+  // convex-test geeft alleen Convex-waarden terug uit `t.run`: een ArrayBuffer
+  // wel, een Uint8Array niet.
+  const buffer = await t.run(async (ctx) => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const blob = await ctx.storage.get(id as any);
     if (!blob) throw new Error(`geen object ${id}`);
-    return new Uint8Array(await blob.arrayBuffer());
+    return await blob.arrayBuffer();
   });
+  return new Uint8Array(buffer);
 }
 
 /** WP41c: het beeldpad van een afrekening. */
