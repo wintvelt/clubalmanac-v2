@@ -1576,3 +1576,8 @@ export type ProjectRow = { projectId: string; title: string; endsAt: number; ope
 - de lege standen zonder cirkel, op iPhone en in Safari en Chrome.
 
 **Stand na A:** 26 nieuwe tests, alle rood: 15 in `app/tests/filmProject.test.ts` en 11 in `filmProjectRoutes.test.ts`. `FOUNDER_BUTTONS` en `founderKey` bestaan nog niet, de teksten zeggen nog "clubfilm", en `EmptyState` heeft nog de cirkel. De andere 2550 app-tests blijven groen. De app-typecheck faalt alleen op de ontbrekende export.
+
+### Feedback Wouter, webapp dev (2026-11-25, tweede ronde)
+
+1. **Sluiten ook in de webapp**, op de downloadpagina van de oprichter, met dezelfde bevestiging als in de app. Titel en einddatum wijzigen komen daar ook bij (zelfde plek, zelfde knoppen met sleutel).
+2. **Mijn groepen:** bij een groep waarvan je oprichter bent, staat "Oprichter" in plaats van "Admin", met de gele sleutel erachter. App en webapp.
