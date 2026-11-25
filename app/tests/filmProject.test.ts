@@ -247,6 +247,20 @@ describe("originalSkipLines: als het origineel niet meegaat (38c-13)", () => {
     expect(new Set(lines).size).toBe(2);
   });
 
+  // Besluit 30 (Wouter, 2026-11-25): kortere teksten, exact.
+  it.each([
+    ["te_klein", 1, "1 filmpje te klein voor de feature-film."],
+    ["te_klein", 2, "2 filmpjes te klein voor de feature-film."],
+    ["te_groot", 1, "1 filmpje te groot voor de feature-film."],
+    ["te_groot", 3, "3 filmpjes te groot voor de feature-film."],
+    ["geen_ruimte", 1, "1 filmpje niet naar de feature-film: te weinig ruimte op je iPhone."],
+    ["geen_ruimte", 2, "2 filmpjes niet naar de feature-film: te weinig ruimte op je iPhone."],
+    ["fout", 1, "1 filmpje niet naar de feature-film."],
+    ["fout", 2, "2 filmpjes niet naar de feature-film."],
+  ] as const)("besluit 30: %s, %i: '%s'", (reason, n, text) => {
+    expect(originalSkipLines(Array.from({ length: n }, () => reason))).toEqual([text]);
+  });
+
   it("elke regel noemt de feature-film, nooit de clubfilm (feedback na besluit 27, punt 3)", () => {
     for (const r of ["te_klein", "te_groot", "geen_ruimte", "fout"] as const) {
       for (const n of [1, 2]) {
@@ -921,36 +935,31 @@ describe("formatBytes: decimaal, zoals iOS (38c-10)", () => {
 // --- bevestigingen en weigeringen ---------------------------------------------------------
 
 describe("bevestigingen (38c-8)", () => {
-  it("terugtrekken en alles verwijderen noemen de feature-film, nooit de clubfilm (feedback na besluit 27, punt 3)", () => {
-    for (const m of [WITHDRAW_CONFIRMATION.message, removeAllConfirmation(1).message, removeAllConfirmation(18).message]) {
-      expect(m).toContain("feature-film");
+  it("geen clubfilm meer (feedback na besluit 27, punt 3)", () => {
+    for (const m of [WITHDRAW_CONFIRMATION.message, removeAllConfirmation(1).message, removeAllConfirmation(18).message, closeConfirmation("Reis 2026").message]) {
       expect(m.toLowerCase()).not.toContain("clubfilm");
     }
   });
 
-  it("terugtrekken: rood, definitief, het filmpje blijft in het album", () => {
+  it("terugtrekken: rood, met de tekst van besluit 30", () => {
     expect(WITHDRAW_CONFIRMATION.destructive).toBe(true);
     expect(WITHDRAW_CONFIRMATION.button).toBe("Terugtrekken");
-    expect(WITHDRAW_CONFIRMATION.message).toContain("niet opnieuw");
-    expect(WITHDRAW_CONFIRMATION.message).toContain("album");
+    expect(WITHDRAW_CONFIRMATION.message).toBe("Het filmpje blijft in het album, maar kan nooit meer mee naar een feature-film.");
   });
 
-  it("alles verwijderen: rood, met het aantal, definitief, de filmpjes blijven in het album", () => {
+  it("alles verwijderen: rood, met het aantal, met de tekst van besluit 30", () => {
     const c = removeAllConfirmation(18);
     expect(c.destructive).toBe(true);
-    expect(c.message).toContain("18 originelen");
-    expect(c.message).toContain("niet opnieuw");
-    expect(c.message).toContain("album");
     expect(c.button.toLowerCase()).toContain("verwijderen");
-    const one = removeAllConfirmation(1).message;
-    expect(one).toContain("1 origineel");
-    expect(one).not.toContain("1 originelen");
+    expect(c.message).toBe("18 originelen gaan weg, ook wat nog onderweg is. De filmpjes blijven in de albums.");
+    expect(removeAllConfirmation(1).message).toBe("1 origineel gaat weg, ook als het nog onderweg is. Het filmpje blijft in het album.");
   });
 
-  it("sluiten: vraagt het, met een knop 'sluiten'", () => {
+  it("sluiten: vraagt het, met een knop 'sluiten', en de tekst van besluit 30 (zonder titel)", () => {
     const c = closeConfirmation("Reis 2026");
     expect(c.title.toLowerCase()).toContain("sluiten");
     expect(c.button.toLowerCase()).toContain("sluiten");
+    expect(c.message).toBe("Nieuwe filmpjes gaan dan niet meer mee. Wat onderweg is, mag nog 14 dagen binnenkomen.");
   });
 });
 
@@ -998,9 +1007,15 @@ describe("filmRefusalText: weigeringen (38c-12)", () => {
     expect(filmRefusalText(err("ORIGINAL_NOT_FOUND"), "download")).toContain("niet meer");
   });
 
-  it("al het andere: de algemene tekst, nooit de tekst van de fout", () => {
+  it("besluit 30: een verkeerd teken in de titel", () => {
+    for (const a of ["start", "changeTitle"] as const) {
+      expect(filmRefusalText(err("NAME_INVALID"), a)).toBe("De titel bevat een teken dat niet mag.");
+    }
+  });
+
+  it("al het andere: de algemene tekst van besluit 30, nooit de tekst van de fout", () => {
     const generic = filmRefusalText(err("IETS_ANDERS"), "download");
-    expect(generic.length).toBeGreaterThan(0);
+    expect(generic).toBe("Dat lukte niet. Probeer het opnieuw.");
     for (const e of [
       new Error("[CONVEX A(filmProjects:downloadUrl)] Server Error R2_CONFIG_MISSING: R2_ORIGINALS_BUCKET"),
       new Error("https://r2.invalid/originals/abc?X-Amz-Signature=geheim"),

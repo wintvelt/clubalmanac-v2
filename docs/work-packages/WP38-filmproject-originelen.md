@@ -1682,3 +1682,43 @@ De bevestigingen en meldingen van het filmproject worden ongeveer de helft korte
 | Verkeerd teken in titel | "De titel bevat een teken dat niet mag." |
 
 Andere teksten die langer zijn dan nodig: zelfde stijl (kort, wat de gebruiker moet weten). Een eigen dialoog met dichte achtergrond in plaats van de iOS-melding is een apart werkpakket (later).
+
+### Besluit 30 (A)
+
+**Vastgelegd** (`app/tests/filmProject.test.ts`, exact): de acht teksten uit de tabel.
+- De meldingen als een origineel niet meegaat, per reden in enkel- en meervoud.
+- Terugtrekken, alles verwijderen (enkel- en meervoud) en sluiten. `closeConfirmation` noemt de titel niet meer; de parameter mag blijven.
+- `NAME_INVALID` bij starten en bij de titel wijzigen.
+- De algemene fout.
+
+De oude eisen "niet opnieuw" (terugtrekken, alles verwijderen) en "feature-film" (alles verwijderen) zijn eruit; "geen clubfilm" blijft.
+
+**Let op.** "Alles verwijderen" zegt niet meer dat die filmpjes nooit meer mee kunnen. Dat is wel zo: `removeAll` blokkeert ze, net als terugtrekken (fix-cyclus 2 van 38a). Zie de vraag hieronder.
+
+**Voorstellen voor andere teksten** (zelfde stijl; niet getest tot Wouter kiest):
+
+| Waar | Nu | Voorstel |
+|---|---|---|
+| Datum kan niet (`DATE_INVALID`) | "Deze datum kan niet. Kies een dag van vandaag tot over een jaar." | "Kies een dag van vandaag tot over een jaar." |
+| Niet de oprichter (`NOT_ALLOWED`) | "Dat kan alleen de oprichter van de groep." | "Alleen de oprichter kan dat." |
+| Titel te lang (`NAME_TOO_LONG`) | "De titel is te lang. Gebruik hoogstens 50 tekens." | "De titel mag hoogstens 50 tekens hebben." |
+| Geen lid, bij starten (`NOT_MEMBER`) | "Je bent geen lid meer van deze groep, of de groep bestaat niet meer." | "Je bent geen lid meer van deze groep." |
+| Geen lid of project weg (`NOT_MEMBER`, ook de foutpagina) | "Dit filmproject is er niet meer, of je bent geen lid meer van de groep." | "Dit filmproject is er niet meer." |
+| Na terugtrekken | "Het origineel is teruggetrokken. Het filmpje staat nog in het album." | "Teruggetrokken. Het filmpje staat nog in het album." |
+| Lege stand projectpagina | "Van nieuwe filmpjes in deze groep gaat het origineel ook naar dit project." | "Nieuwe filmpjes in deze groep gaan ook als origineel mee." |
+| Einddatum kiezen | "Het project sluit vanzelf aan het eind van [dag] (Nederlandse tijd)." | "Sluit vanzelf aan het eind van [dag]." |
+| Alles downloaden, deels mislukt | "[n] originelen lukte niet. Zie de melding bij de rij." | "[n] downloads lukten niet." (enkelvoud "1 download lukte niet.") |
+
+De laatste regel was ook grammaticaal fout ("originelen lukte"). De teksten van het toevoegscherm van WP39 vallen buiten het filmproject en blijven staan.
+
+**Vraag voor Wouter.** Moet "Alles verwijderen" zeggen dat het voor altijd is? Advies: ja, met twee woorden erbij: "[n] originelen gaan voor altijd weg, ook wat nog onderweg is. De filmpjes blijven in de albums." Terugtrekken zegt het al ("nooit meer").
+
+**Stand na A:** 13 tests rood:
+- 8 meldingen als een origineel niet meegaat;
+- terugtrekken;
+- alles verwijderen;
+- sluiten;
+- `NAME_INVALID`;
+- de algemene fout.
+
+De andere app-tests blijven groen.
