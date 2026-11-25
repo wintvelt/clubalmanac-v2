@@ -3,7 +3,7 @@ import DateTimePicker from "@react-native-community/datetimepicker";
 import { useAction, useMutation } from "convex/react";
 import type { FunctionReturnType } from "convex/server";
 import { router, Stack, useLocalSearchParams } from "expo-router";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Pressable, StyleSheet, View } from "react-native";
 import type { Id } from "../../../convex/_generated/dataModel";
 import { originalUploaderAvailable } from "../../modules/clubalmanac-video";
@@ -12,6 +12,7 @@ import { ListSection } from "../components/ListRow";
 import { Notice } from "../components/Notice";
 import { QueryBoundary } from "../components/QueryBoundary";
 import { Screen } from "../components/Screen";
+import { FounderButton } from "../components/FounderButton";
 import { SmallButton } from "../components/SmallButton";
 import { EmptyState, LoadingState } from "../components/States";
 import { Text } from "../components/Text";
@@ -22,6 +23,7 @@ import { originalEvent } from "../data/originals";
 import { startDownload } from "../data/originalDownload";
 import { useLiveQuery } from "../data/useLiveQuery";
 import {
+  FOUNDER_BUTTONS,
   WITHDRAW_CONFIRMATION,
   allRows,
   closeConfirmation,
@@ -250,39 +252,25 @@ function ProjectPage({
     <Screen underHeader>
       <Stack.Screen options={{ title: "Filmproject" }} />
       <View style={styles.intro}>
-        {view.changeTitle ? (
-          <Pressable
-            accessibilityRole="button"
-            accessibilityHint="Wijzig de titel"
-            onPress={() => setEditingTitle((e) => !e)}
-            disabled={busy}
-          >
-            <Text variant="title" accessibilityRole="header">
-              {title}
-            </Text>
-          </Pressable>
-        ) : (
-          <Text variant="title" accessibilityRole="header">
-            {title}
-          </Text>
-        )}
-        {view.changeEnd ? (
-          <Pressable
-            accessibilityRole="button"
-            accessibilityHint="Kies een andere einddatum"
-            onPress={() => setEditingEnd((e) => !e)}
-            disabled={busy}
-          >
-            <Text variant="meta" color="primary">
-              {header}
-            </Text>
-          </Pressable>
-        ) : (
-          <Text variant="meta" color="muted">
-            {header}
-          </Text>
-        )}
+        <Text variant="title" accessibilityRole="header">
+          {title}
+        </Text>
+        <Text variant="meta" color="muted">
+          {header}
+        </Text>
       </View>
+
+      {/* Feedback na besluit 27: titel en einddatum wijzigen als knoppen van de oprichter, met de gele sleutel. */}
+      {(view.changeTitle || view.changeEnd) && (
+        <View style={styles.buttons}>
+          {view.changeTitle && (
+            <FounderButton button={FOUNDER_BUTTONS.changeTitle} disabled={busy} onPress={() => setEditingTitle((e) => !e)} />
+          )}
+          {view.changeEnd && (
+            <FounderButton button={FOUNDER_BUTTONS.changeEnd} disabled={busy} onPress={() => setEditingEnd((e) => !e)} />
+          )}
+        </View>
+      )}
 
       {editingTitle && view.changeTitle && (
         <TitleEditor initial={project.title} busy={busy} onSave={(next) => void onChangeTitle(next)} />
@@ -357,7 +345,7 @@ function ProjectPage({
       )}
 
       {view.close && (
-        <SmallButton title="Project sluiten" tone="danger" disabled={busy} onPress={() => void onClose()} />
+        <FounderButton button={FOUNDER_BUTTONS.close} tone="danger" disabled={busy} onPress={() => void onClose()} />
       )}
 
     </Screen>
@@ -507,11 +495,9 @@ function DownloadPage({ data, removeAll: canRemoveAll }: { data: ProjectData; re
         </Text>
       </View>
       {all.length > 0 && (
-        <Button
-          title="Alles downloaden"
-          icon="download"
-          busy={busy === "all"}
-          busyTitle="Downloaden…"
+        <FounderButton
+          button={FOUNDER_BUTTONS.downloadAll}
+          busyTitle={busy === "all" ? "Downloaden…" : undefined}
           disabled={busy !== null}
           onPress={() => void onDownloadAll()}
         />
@@ -535,9 +521,8 @@ function DownloadPage({ data, removeAll: canRemoveAll }: { data: ProjectData; re
         </ListSection>
       )}
       {canRemoveAll && (
-        <SmallButton
-          title="Alles verwijderen"
-          icon="trash"
+        <FounderButton
+          button={FOUNDER_BUTTONS.removeAll}
           tone="danger"
           disabled={busy !== null}
           onPress={() => void onRemoveAll()}
@@ -583,10 +568,9 @@ function DownloadRow({
           </Text>
         </View>
         {canDownload && (
-          <SmallButton
-            title="Downloaden"
-            icon="download"
-            accessibilityLabel={`Downloaden, ${original.ownerName}`}
+          <FounderButton
+            button={FOUNDER_BUTTONS.download}
+            labelSuffix={original.ownerName}
             disabled={busy}
             onPress={onDownload}
           />
@@ -667,15 +651,24 @@ function NewProject({ groupId }: { groupId: Id<"groups"> }) {
 }
 
 /** Besluit 27: de titel wijzigen op de projectpagina (oprichter, ook na sluiten). */
+// Audit-nit na besluit 27: verandert de titel elders (een ander toestel), dan
+// volgt het veld zolang er niet getypt is.
 function TitleEditor({ initial, busy, onSave }: { initial: string; busy: boolean; onSave: (title: string) => void }) {
   const [title, setTitle] = useState(initial);
+  const [typed, setTyped] = useState(false);
+  useEffect(() => {
+    if (!typed) setTitle(initial);
+  }, [initial, typed]);
   const changed = title.trim().length > 0 && title.trim() !== initial;
   return (
     <View style={styles.section}>
       <TextField
         label="Titel"
         value={title}
-        onChangeText={setTitle}
+        onChangeText={(text) => {
+          setTitle(text);
+          setTyped(true);
+        }}
         autoCapitalize="sentences"
         returnKeyType="done"
         onSubmitEditing={() => {
@@ -762,6 +755,7 @@ function EndDatePicker({
 
 const styles = StyleSheet.create({
   intro: { gap: space.xs },
+  buttons: { flexDirection: "row", flexWrap: "wrap", gap: space.s },
   section: { gap: space.s },
   row: {
     minHeight: size.row,

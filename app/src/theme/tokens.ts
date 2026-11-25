@@ -30,6 +30,9 @@ export type ColorTokens = {
   gradEnd: string;
   washStart: string;
   washEnd: string;
+  // WP38 (feedback na besluit 27): de gele sleutel achter de tekst op een knop
+  // die alleen de oprichter heeft. Goud, ≥ 3:1 op bg en surface.
+  founderKey: string;
 };
 
 export const colors: Record<ColorScheme, ColorTokens> = {
@@ -58,6 +61,7 @@ export const colors: Record<ColorScheme, ColorTokens> = {
     gradEnd: "#0EA5E9",
     washStart: "#F7FEE7",
     washEnd: "#E0F2FE",
+    founderKey: "#A16207",
   },
   dark: {
     bg: "#020617",
@@ -84,6 +88,7 @@ export const colors: Record<ColorScheme, ColorTokens> = {
     gradEnd: "#0EA5E9",
     washStart: "#14240A",
     washEnd: "#082F49",
+    founderKey: "#FACC15",
   },
 };
 

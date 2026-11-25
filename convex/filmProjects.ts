@@ -65,14 +65,15 @@ import {
   type R2Part,
 } from "./lib/r2";
 
-// WP38a — filmproject en originelen voor de clubfilm (backend). Spec:
+// WP38a — filmproject en originelen voor de feature-film (backend). Spec:
 // docs/work-packages/WP38-filmproject-originelen.md §Besluiten, §A-invarianten,
 // §Testcontract.
 //
-// Een project per groep, door de oprichter open en dicht gezet, met een
-// filmalbum X en een einddatum. Zolang het open staat, komt elk nieuw filmpje
-// in die groep in X (de albumregel staat in `videos.reserveVideo`). Bij zo'n
-// nieuw filmpje mag de eigenaar het origineel insturen:
+// Een project per groep, door de oprichter open en dicht gezet, met een titel
+// en een einddatum (besluit 27: geen filmalbum, geen albumregel). Elk nieuw
+// filmpje komt in het album dat het lid kiest. Staat het in een album van een
+// groep met een open project en is het gemaakt terwijl dat project open stond,
+// dan mag de eigenaar het origineel insturen:
 //   1. `startOriginal` (action): toegang, grenzen, één inzending per filmpje
 //      met een sleutel van de backend in de originelen-bucket, een
 //      multipart-upload in R2, en links voor alleen de delen die R2 nog niet

@@ -139,13 +139,13 @@ function skipLine(reason: SkipReason, n: number): string {
   const one = n === 1;
   switch (reason) {
     case "te_klein":
-      return `${videosText(n)} ${one ? "is" : "zijn"} te klein voor de clubfilm; ${one ? "het origineel gaat" : "de originelen gaan"} niet mee.`;
+      return `${videosText(n)} ${one ? "is" : "zijn"} te klein voor de feature-film; ${one ? "het origineel gaat" : "de originelen gaan"} niet mee.`;
     case "te_groot":
-      return `${videosText(n)} ${one ? "is" : "zijn"} te groot voor de clubfilm; ${one ? "het origineel gaat" : "de originelen gaan"} niet mee.`;
+      return `${videosText(n)} ${one ? "is" : "zijn"} te groot voor de feature-film; ${one ? "het origineel gaat" : "de originelen gaan"} niet mee.`;
     case "geen_ruimte":
-      return `Te weinig ruimte op je iPhone voor de volle kwaliteit van ${videosText(n)}; ${one ? "dat gaat" : "die gaan"} niet mee naar de clubfilm.`;
+      return `Te weinig ruimte op je iPhone voor de volle kwaliteit van ${videosText(n)}; ${one ? "dat gaat" : "die gaan"} niet mee naar de feature-film.`;
     case "fout":
-      return `De volle kwaliteit van ${videosText(n)} kon niet mee naar de clubfilm.`;
+      return `De volle kwaliteit van ${videosText(n)} kon niet mee naar de feature-film.`;
   }
 }
 
@@ -260,11 +260,29 @@ export function projectStatusText(project: { open: boolean; endsAt: number }, no
   return project.open ? `Open tot ${dayMonth(dutchDayOf(project.endsAt), now)}` : "Gesloten";
 }
 
-/** Besluit 1 na A: herkenbaar alleen voor de oprichter. */
-export const START_BUTTON: { title: string; icon: "key"; accessibilityLabel: string } = {
-  title: "Filmproject starten",
-  icon: "key",
-  accessibilityLabel: "Filmproject starten, alleen voor de oprichter",
+// --- de knoppen van de oprichter (feedback na besluit 27, punt 1) ---------------------------
+
+export type FounderAction = "start" | "close" | "changeTitle" | "changeEnd" | "download" | "downloadAll" | "removeAll";
+/** Het eigen icoon links (Icon in src/components); de sleutel zet de knop zelf achter de tekst. */
+export type FounderIcon = "film" | "lock" | "edit" | "calendar" | "download" | "trash";
+export type FounderButton = { title: string; icon: FounderIcon; accessibilityLabel: string };
+
+function founder(title: string, icon: FounderIcon): FounderButton {
+  return { title, icon, accessibilityLabel: `${title}, alleen voor de oprichter` };
+}
+
+/**
+ * Elke knop die alleen de oprichter heeft: tekst, icoon links en een label dat
+ * "oprichter" noemt. De knop (FounderButton) zet de gele sleutel achter de tekst.
+ */
+export const FOUNDER_BUTTONS: Record<FounderAction, FounderButton> = {
+  start: founder("Filmproject starten", "film"),
+  close: founder("Project sluiten", "lock"),
+  changeTitle: founder("Titel wijzigen", "edit"),
+  changeEnd: founder("Einddatum wijzigen", "calendar"),
+  download: founder("Downloaden", "download"),
+  downloadAll: founder("Alles downloaden", "download"),
+  removeAll: founder("Alles verwijderen", "trash"),
 };
 
 /**
@@ -518,7 +536,7 @@ export function downloadHeaderText(
 export const WITHDRAW_CONFIRMATION: Confirmation = {
   title: "Origineel terugtrekken?",
   message:
-    "Het origineel gaat uit het filmproject. Dit filmpje kan daarna niet opnieuw naar een clubfilm, ook niet later. Het filmpje blijft in het album.",
+    "Het origineel gaat uit het filmproject. Dit filmpje kan daarna niet opnieuw naar een feature-film, ook niet later. Het filmpje blijft in het album.",
   button: "Terugtrekken",
   destructive: true,
 };
@@ -537,8 +555,8 @@ export function removeAllConfirmation(count: number): Confirmation {
   return {
     title: "Alle originelen verwijderen?",
     message: one
-      ? "1 origineel gaat weg, ook als het nog onderweg is. Dat filmpje kan daarna niet opnieuw naar een clubfilm. Het filmpje blijft in het album."
-      : `${count} originelen gaan weg, ook wat nog onderweg is. Die filmpjes kunnen daarna niet opnieuw naar een clubfilm. De filmpjes blijven in het album.`,
+      ? "1 origineel gaat weg, ook als het nog onderweg is. Dat filmpje kan daarna niet opnieuw naar een feature-film. Het filmpje blijft in het album."
+      : `${count} originelen gaan weg, ook wat nog onderweg is. Die filmpjes kunnen daarna niet opnieuw naar een feature-film. De filmpjes blijven in het album.`,
     button: "Alles verwijderen",
     destructive: true,
   };

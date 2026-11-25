@@ -47,6 +47,9 @@ const IONICONS = {
   key: "key",
   // WP38c: de downloadpagina.
   download: "download",
+  // WP38 (feedback na besluit 27): de knoppen van de oprichter.
+  lock: "lock-closed",
+  calendar: "calendar",
 } as const;
 
 export type IconName = keyof typeof IONICONS;

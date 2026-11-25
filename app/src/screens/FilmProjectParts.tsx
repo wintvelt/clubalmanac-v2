@@ -3,15 +3,15 @@ import { Image } from "expo-image";
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { Platform, Pressable, StyleSheet, Switch, View } from "react-native";
 import type { Id } from "../../../convex/_generated/dataModel";
+import { FounderButton } from "../components/FounderButton";
 import { Icon } from "../components/Icon";
 import { QueryBoundary } from "../components/QueryBoundary";
-import { SmallButton } from "../components/SmallButton";
 import { Text } from "../components/Text";
 import { api } from "../convexApi";
 import { useOriginalPosterLoad } from "../data/images";
 import { listenOriginals, originalsSnapshot, setOriginalsWifiOnly } from "../data/originals";
 import { useLiveQuery } from "../data/useLiveQuery";
-import { START_BUTTON, groupFilmView, type Platform as FilmPlatform } from "../lib/filmProject";
+import { FOUNDER_BUTTONS, groupFilmView, type Platform as FilmPlatform } from "../lib/filmProject";
 import { filmProjectPath, newFilmProjectPath } from "../lib/groupRoutes";
 import { formatDuration } from "../lib/videos";
 import { photoLayers, radius, size, space, useTheme } from "../theme";
@@ -44,7 +44,8 @@ export function useOriginals() {
 type GroupFilmProps = { groupId: Id<"groups">; isFounder: boolean };
 
 /**
- * Besluit 1 na A: "Filmproject starten" met een sleutel, naast "Bewerk groep".
+ * Besluit 1 na A, feedback na besluit 27: "Filmproject starten" met een
+ * filmrol links en de gele sleutel achter de tekst, naast "Bewerk groep".
  * Alleen de oprichter, in de app, als de projecten geladen zijn en er geen
  * open project is. Een fout bij laden: geen knop.
  */
@@ -62,12 +63,7 @@ function StartButton({ groupId, isFounder }: GroupFilmProps) {
   const view = groupFilmView({ platform: FILM_PLATFORM, isFounder, projects, now });
   if (!view.start) return null;
   return (
-    <SmallButton
-      title={START_BUTTON.title}
-      icon={START_BUTTON.icon}
-      accessibilityLabel={START_BUTTON.accessibilityLabel}
-      onPress={() => router.push(newFilmProjectPath(groupId))}
-    />
+    <FounderButton button={FOUNDER_BUTTONS.start} onPress={() => router.push(newFilmProjectPath(groupId))} />
   );
 }
 

@@ -1,7 +1,6 @@
 import type { ReactNode } from "react";
 import { ActivityIndicator, StyleSheet, View } from "react-native";
 import { size, space, useTheme } from "../theme";
-import { Gradient } from "./Gradient";
 import { Icon, type IconName } from "./Icon";
 import { Text } from "./Text";
 
@@ -31,9 +30,12 @@ export function EmptyState({ icon, title, text, children }: EmptyProps) {
   const { colors } = useTheme();
   return (
     <View style={styles.empty}>
+      {/* WP38 (feedback na besluit 27, punt 2): geen cirkel met verloop meer,
+          het icoon zelf in een kleur uit het verloop. Een verloop óp het icoon
+          (een glyph van Ionicons) kan niet netjes op iOS, Android en web met
+          wat er is; daarom één effen kleur: het einde van het verloop. */}
       <View style={styles.badge}>
-        <Gradient from={colors.gradStart} to={colors.gradEnd} radius={size.emptyIcon / 2} />
-        <Icon name={icon} size={40} color={colors.onGradient} />
+        <Icon name={icon} size={56} color={colors.gradEnd} />
       </View>
       <Text variant="emptyTitle" style={styles.center} accessibilityRole="header">
         {title}
