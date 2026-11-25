@@ -1672,3 +1672,42 @@ Aanleiding: na het starten van een project in testgroep 2 opende Toevoegen nog m
 
 1. **Na het starten van een project** wordt een album van die groep het laatst gekozen album (WP39 F2): het album dat besluit 28 net maakte, of anders het nieuwste album van die groep.
 2. **De + in de tabbalk volgt de groep waar je bent:** op de groepspagina en op de projectpagina (en de schermen eronder die bij een groep horen) staat in het toevoegscherm een album van die groep klaar: het laatst gekozen album als dat in die groep ligt, anders het nieuwste album van die groep. Vanuit een album blijft het dat album (zoals nu). Elders blijft het laatst gekozen album.
+
+### Besluit 29 (A)
+
+- **Geen backend-wijziging.** Na een geslaagd `open` neemt de app het nieuwste album van die groep. In een groep zonder album is dat het album van besluit 28, want het is dan het enige. `open` hoeft dus geen album-id terug te geven.
+- **A-keuze: "het nieuwste album"** is het album bovenaan de groepspagina: de datum van het album (de eigen datum, anders wanneer het gemaakt is), daarna de naam (`albumsByYear`). Zo is het nieuwste het album dat de user als eerste ziet.
+- **Testcontract** (pure delen, in `app/src/lib/`):
+
+```ts
+// upload.ts
+export function plusParams(pathname: string): { albumId: string } | { groupId: string } | Record<string, never>;
+// lastAlbum.ts
+export type AlbumRow = { _id: string; groupId: string; name: string; createdAt: number; sortDate?: number };
+export function newestAlbum(albums: readonly AlbumRow[]): StoredAlbum | null;
+export function groupDefaultAlbum(input: { groupId: string; stored: StoredAlbum | null;
+  albums: readonly AlbumRow[] | undefined }): StoredAlbum | null | undefined;
+```
+
+- **`plusParams`**, wat de + meegeeft:
+  - vanuit een album, een foto erin of de kaart van het album: dat album;
+  - elk ander scherm onder `/groep/<id>`: de groep. Dat zijn de groepspagina, de projectpagina, een film, starten en bewerken;
+  - elders: niets, en dan geldt het laatst gekozen album zoals nu;
+  - een pad dat niet te lezen is: niets.
+- **`groupDefaultAlbum`**, als de + een groep meegeeft:
+  - het laatst gekozen album als het in die groep ligt en nog bestaat;
+  - anders het nieuwste album van die groep;
+  - zolang de albums laden: `undefined`;
+  - een groep zonder albums: `null`, en dan "Kies een album".
+- **Aansluiting** (bronscan):
+  - `TabBar.tsx` gebruikt `plusParams` in plaats van `albumIdFromPath`;
+  - `app/toevoegen.tsx` geeft ook `groupId` door;
+  - `AddPhotosScreen.tsx` gebruikt `groupDefaultAlbum`;
+  - `FilmProjectScreens.tsx` roept na het starten `saveLastAlbum` aan met `newestAlbum` van die groep. Dat gebeurt ook als het onthouden album al in die groep lag: het besluit zegt "het nieuwe album, anders het nieuwste".
+- **Op het web** doet de + hetzelfde: de tabbalk en de route zijn gedeeld. Het web-toevoegscherm (`AddPhotosScreen.web.tsx`) volgt dezelfde regel; dat toetsen audit en gate.
+
+**Gate erbij:**
+- Start een project in een andere groep dan het laatst gekozen album. Daarna opent Toevoegen met een album van die groep.
+- Op de groepspagina en de projectpagina geeft de + een album van die groep. In een album blijft het dat album. Vanuit Mijn foto's het laatst gekozen album.
+
+**Stand na A:** 20 nieuwe tests in `app/tests/plusAlbum.test.ts`, alle rood: 16 omdat de pure functies niet bestaan, 4 omdat de aansluiting ontbreekt (bronscans). A draaide de pure tests tegen een wegwerp-uitwerking: groen, weggegooid. De andere app-tests blijven groen.
