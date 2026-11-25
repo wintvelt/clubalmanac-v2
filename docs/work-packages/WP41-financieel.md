@@ -562,3 +562,5 @@ Geen UI-tests. De rest controleert Wouter bij de gate.
 #### C11. Open vraag voor Wouter
 
 1. **`imageVersion` naast `hasImage`?** Besluit 4 noemt alleen `hasImage`. Daarmee blijft een nieuwe foto in de app onzichtbaar tot de cache leeg is (uitloggen). **Advies: ja.** Een ondoorzichtige versie, zoals bij de profielfoto. De tests gaan hiervan uit.
+
+**Regie (2026-11-25) op de open vraag van A:** ja, naast `hasImage` ook een ondoorzichtige `imageVersion`, zoals `profileVersion`. Dat volgt uit besluit 4 ("een nieuwe foto geeft een nieuwe URL"). A-keuzes 16–19 aanvaard.
