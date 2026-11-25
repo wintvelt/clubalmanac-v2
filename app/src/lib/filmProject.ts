@@ -135,17 +135,17 @@ export type SkipReason = "te_klein" | "te_groot" | "geen_ruimte" | "fout";
 
 const SKIP_ORDER: readonly SkipReason[] = ["te_klein", "te_groot", "geen_ruimte", "fout"];
 
+// Besluit 30: kort, wat de gebruiker moet weten.
 function skipLine(reason: SkipReason, n: number): string {
-  const one = n === 1;
   switch (reason) {
     case "te_klein":
-      return `${videosText(n)} ${one ? "is" : "zijn"} te klein voor de feature-film; ${one ? "het origineel gaat" : "de originelen gaan"} niet mee.`;
+      return `${videosText(n)} te klein voor de feature-film.`;
     case "te_groot":
-      return `${videosText(n)} ${one ? "is" : "zijn"} te groot voor de feature-film; ${one ? "het origineel gaat" : "de originelen gaan"} niet mee.`;
+      return `${videosText(n)} te groot voor de feature-film.`;
     case "geen_ruimte":
-      return `Te weinig ruimte op je iPhone voor de volle kwaliteit van ${videosText(n)}; ${one ? "dat gaat" : "die gaan"} niet mee naar de feature-film.`;
+      return `${videosText(n)} niet naar de feature-film: te weinig ruimte op je iPhone.`;
     case "fout":
-      return `De volle kwaliteit van ${videosText(n)} kon niet mee naar de feature-film.`;
+      return `${videosText(n)} niet naar de feature-film.`;
   }
 }
 
@@ -537,16 +537,16 @@ export function downloadHeaderText(
 
 export const WITHDRAW_CONFIRMATION: Confirmation = {
   title: "Origineel terugtrekken?",
-  message:
-    "Het origineel gaat uit het filmproject. Dit filmpje kan daarna niet opnieuw naar een feature-film, ook niet later. Het filmpje blijft in het album.",
+  message: "Het filmpje blijft in het album, maar kan nooit meer mee naar een feature-film.",
   button: "Terugtrekken",
   destructive: true,
 };
 
-export function closeConfirmation(title: string): Confirmation {
+// Besluit 30: de titel staat er niet meer in; de parameter blijft.
+export function closeConfirmation(_title: string): Confirmation {
   return {
     title: "Filmproject sluiten?",
-    message: `Van nieuwe filmpjes gaat daarna geen origineel meer naar filmproject ${title}. Wat al onderweg is, mag nog 14 dagen binnenkomen. De projectpagina blijft er tot de originelen weg zijn.`,
+    message: "Nieuwe filmpjes gaan dan niet meer mee. Wat onderweg is, mag nog 14 dagen binnenkomen.",
     button: "Sluiten",
     destructive: false,
   };
@@ -556,9 +556,10 @@ export function removeAllConfirmation(count: number): Confirmation {
   const one = count === 1;
   return {
     title: "Alle originelen verwijderen?",
+    // Besluit 30, Wouter: "voor altijd" erbij.
     message: one
-      ? "1 origineel gaat weg, ook als het nog onderweg is. Dat filmpje kan daarna niet opnieuw naar een feature-film. Het filmpje blijft in het album."
-      : `${count} originelen gaan weg, ook wat nog onderweg is. Die filmpjes kunnen daarna niet opnieuw naar een feature-film. De filmpjes blijven in het album.`,
+      ? "1 origineel gaat voor altijd weg, ook als het nog onderweg is. Het filmpje blijft in het album."
+      : `${count} originelen gaan voor altijd weg, ook wat nog onderweg is. De filmpjes blijven in de albums.`,
     button: "Alles verwijderen",
     destructive: true,
   };
@@ -566,7 +567,7 @@ export function removeAllConfirmation(count: number): Confirmation {
 
 export type FilmAction = "start" | "close" | "changeEnd" | "changeTitle" | "withdraw" | "download" | "removeAll";
 
-const GENERIC = "Dat lukte niet. Er is niets veranderd. Controleer je verbinding en probeer het opnieuw.";
+const GENERIC = "Dat lukte niet. Probeer het opnieuw.";
 
 function codeOf(error: unknown): string | null {
   if (!(error instanceof ConvexError)) return null;
@@ -582,22 +583,20 @@ export function filmRefusalText(error: unknown, action: FilmAction): string {
     case "PROJECT_ALREADY_OPEN":
       return "Er staat al een filmproject open in deze groep.";
     case "DATE_INVALID":
-      return "Deze datum kan niet. Kies een dag van vandaag tot over een jaar.";
+      return "Kies een dag van vandaag tot over een jaar.";
     case "NOT_ALLOWED":
-      return "Dat kan alleen de oprichter van de groep.";
+      return "Alleen de oprichter kan dat.";
     case "PROJECT_CLOSED":
       return "Dit filmproject is al gesloten.";
     // Besluit 27: de titel van een project (de regels van een albumnaam).
     case "NAME_REQUIRED":
       return "Vul een titel in.";
     case "NAME_TOO_LONG":
-      return "De titel is te lang. Gebruik hoogstens 50 tekens.";
+      return "De titel mag hoogstens 50 tekens hebben.";
     case "NAME_INVALID":
-      return "De titel bevat een teken dat niet mag, zoals een tab of een onzichtbaar teken. Haal dat weg en probeer het opnieuw.";
+      return "De titel bevat een teken dat niet mag.";
     case "NOT_MEMBER":
-      return action === "start"
-        ? "Je bent geen lid meer van deze groep, of de groep bestaat niet meer."
-        : "Dit filmproject is er niet meer, of je bent geen lid meer van de groep.";
+      return action === "start" ? "Je bent geen lid meer van deze groep." : "Dit filmproject is er niet meer.";
     case "ORIGINAL_NOT_FOUND":
       return "Dit origineel is er niet meer.";
     default:
