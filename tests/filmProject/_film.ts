@@ -130,6 +130,8 @@ export const filmApi = (
       open: Ref<"mutation", { groupId: Id<"groups">; title: string; endsAt: number }, string>;
       close: Ref<"mutation", { projectId: string }, null>;
       setEndsAt: Ref<"mutation", { projectId: string; endsAt: number }, null>;
+      /** Besluit 27, open vraag 1 (Wouter: ja): de titel achteraf wijzigen. */
+      setTitle: Ref<"mutation", { projectId: string; title: string }, null>;
       listForGroup: Ref<"query", { groupId: Id<"groups"> }, ProjectRow[]>;
       listOpenForMe: Ref<"query", Record<string, never>, OpenRow[]>;
       get: Ref<"query", { projectId: string }, ProjectView>;

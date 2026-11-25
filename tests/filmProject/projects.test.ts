@@ -96,11 +96,11 @@ describe("filmProjects.open", () => {
   });
 
   it.each([
-    ["leeg", "", "NAME_REQUIRED"],
-    ["alleen spaties", "   ", "NAME_REQUIRED"],
-    ["51 tekens", "x".repeat(51), "NAME_TOO_LONG"],
-    ["een tab", "Reis\tGeorgië", "NAME_INVALID"],
-  ])("een titel die niet kan (%s): %s, geen project", async (_name, title, code) => {
+    ["leeg", "NAME_REQUIRED", ""],
+    ["alleen spaties", "NAME_REQUIRED", "   "],
+    ["51 tekens", "NAME_TOO_LONG", "x".repeat(51)],
+    ["een tab", "NAME_INVALID", "Reis\tGeorgië"],
+  ])("een titel die niet kan (%s): %s, geen project", async (_name, code, title) => {
     const t = newT();
     const w = await seedFilmWorld(t);
     expectCode(await outcome(() => asFilm.alice(t).mutation(filmApi.open, { groupId: w.groups.reis, title, endsAt: Date.now() + DAY })), code);

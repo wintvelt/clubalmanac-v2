@@ -1516,3 +1516,29 @@ export type ProjectRow = { projectId: string; title: string; endsAt: number; ope
 1. **De titel achteraf wijzigen?** Een tikfout staat anders een jaar lang op de balk, de projectpagina en in de mail. Advies: ja, voor de oprichter, op dezelfde plek als de einddatum. Dat is één extra backend-functie met de gate van `setEndsAt`. A schrijft de tests na het besluit.
 
 **Wouter (2026-11-25), open vraag 1 van besluit 27 (A):** ja, de oprichter kan de titel achteraf wijzigen, op dezelfde plek als de einddatum (tik op de kop van de projectpagina). A-keuzes (album verwijderen mag altijd; bestandsnaam datum plus inzender; bij twee groepen telt het eerste album) aanvaard.
+
+### Titel achteraf wijzigen (A)
+
+- **Backend**: `filmProjects.setTitle({ projectId, title })` → `null`.
+  - Toegang zoals `setEndsAt`: alleen de oprichter op het moment van het verzoek. Een admin of lid krijgt `NOT_ALLOWED`. Wie geen lid is, en een onbekend, ongeldig of verwijderd project, krijgt `NOT_MEMBER`.
+  - De titelregels van `open`: `NAME_REQUIRED`, `NAME_TOO_LONG`, `NAME_INVALID`, getrimd. Een weigering verandert niets.
+  - Alleen de titel verandert. Open, einddatum, sluiten en inzendingen blijven.
+  - Een project van vóór besluit 27 krijgt zo een eigen titel in plaats van de albumnaam.
+  - Inventaris: `setTitle` met `projectId` en `title`. Het id is een project-id, net als bij `setEndsAt`, en hoort dus niet in `beheerInventory`.
+- **A-keuze: ook na sluiten.** Geen `PROJECT_CLOSED`, anders dan bij `setEndsAt`. Redenen:
+  - de titel verandert niets aan insturen of opruimen;
+  - een gesloten project staat nog tot een jaar op de balk, de projectpagina, de downloadpagina en in de herinnering, en juist dan valt een tikfout op.
+- **App**:
+  - `projectPageView` krijgt `changeTitle`: de oprichter in de app, open of gesloten. Niet voor een lid, niet op het web (alleen-lezen, W5).
+  - `FilmAction` krijgt `"changeTitle"`, met dezelfde titel-teksten als bij starten.
+  - Het scherm: tik op de kop van de projectpagina, zoals bij de einddatum. Dat toetst de gate.
+
+| Wat | Test |
+|---|---|
+| backend | `tests/filmProject/setTitle.test.ts` (wijzigen, getrimd, overal zichtbaar; na sluiten; alleen de titel; oude rij; na overdragen; admin, lid, geen lid, onbekend, weg, uitgelogd; titelregels; 50 tekens), `inventory.test.ts` |
+| app | `app/tests/filmProject.test.ts` (`changeTitle` per rol, platform en stand; `filmRefusalText` bij `changeTitle`) |
+
+**Stand na A (titel):**
+
+- Backend: 14 tests rood (13 nieuw in `setTitle.test.ts`, 1 in de inventaris) (`setTitle` bestaat niet). In `tests/filmProject/` samen 176 van de 182 rood, met die van besluit 27. De root-typecheck is schoon.
+- App: 5 rood erbij in `filmProject.test.ts`, samen 25. De andere 2521 app-tests blijven groen.

@@ -332,6 +332,7 @@ describe("projectPageView: wie wat ziet op de projectpagina (38c-4)", () => {
       wifiSwitch: true,
       close: false,
       changeEnd: false,
+      changeTitle: false,
       downloadHint: false,
       download: false,
       removeAll: false,
@@ -345,6 +346,7 @@ describe("projectPageView: wie wat ziet op de projectpagina (38c-4)", () => {
       wifiSwitch: true,
       close: true,
       changeEnd: true,
+      changeTitle: true,
       downloadHint: true,
       download: false,
       removeAll: false,
@@ -355,6 +357,14 @@ describe("projectPageView: wie wat ziet op de projectpagina (38c-4)", () => {
 
   it("oprichter in de app, gesloten: niet sluiten of verschuiven", () => {
     expect(view("ios", true, false)).toMatchObject({ close: false, changeEnd: false, downloadHint: true });
+  });
+
+  it("de titel wijzigen (besluit 27, Wouter: ja): oprichter in de app, ook na sluiten; niet een lid, niet op het web", () => {
+    expect(view("ios", true, true).changeTitle).toBe(true);
+    expect(view("ios", true, false).changeTitle).toBe(true);
+    expect(view("ios", false, true).changeTitle).toBe(false);
+    expect(view("web", true, true).changeTitle).toBe(false);
+    expect(view("web", true, false).changeTitle).toBe(false);
   });
 
   it("zonder uploader: geen schakelaar", () => {
@@ -374,7 +384,7 @@ describe("projectPageView: wie wat ziet op de projectpagina (38c-4)", () => {
   });
 
   it("oprichter op het web: de downloadpagina; geen sluiten, verschuiven of schakelaar", () => {
-    expect(view("web", true, true)).toMatchObject({ download: true, close: false, changeEnd: false, wifiSwitch: false, downloadHint: false });
+    expect(view("web", true, true)).toMatchObject({ download: true, close: false, changeEnd: false, changeTitle: false, wifiSwitch: false, downloadHint: false });
   });
 
   it("'Alles verwijderen': oprichter, web, gesloten, en er is iets (open vraag 5)", () => {
@@ -877,18 +887,22 @@ describe("filmRefusalText: weigeringen (38c-12)", () => {
   });
 
   it("niet de oprichter", () => {
-    for (const a of ["start", "close", "changeEnd", "removeAll"] as const) {
+    for (const a of ["start", "close", "changeEnd", "changeTitle", "removeAll"] as const) {
       expect(filmRefusalText(err("NOT_ALLOWED"), a), a).toContain("oprichter");
     }
   });
 
-  it("starten met een titel die niet kan (besluit 27.3): over de titel, niet over een naam", () => {
+  it.each(["start", "changeTitle"] as const)("%s met een titel die niet kan (besluit 27): over de titel, niet over een naam", (action) => {
     for (const code of ["NAME_REQUIRED", "NAME_TOO_LONG", "NAME_INVALID"]) {
-      const text = filmRefusalText(err(code), "start");
+      const text = filmRefusalText(err(code), action);
       expect(text, code).toContain("titel");
       expect(text, code).not.toContain("naam");
     }
-    expect(filmRefusalText(err("NAME_TOO_LONG"), "start")).toContain("50");
+    expect(filmRefusalText(err("NAME_TOO_LONG"), action)).toContain("50");
+  });
+
+  it("de titel wijzigen: geen lid (meer) of het project is weg", () => {
+    expect(filmRefusalText(err("NOT_MEMBER"), "changeTitle")).toContain("lid");
   });
 
   it("al gesloten", () => {

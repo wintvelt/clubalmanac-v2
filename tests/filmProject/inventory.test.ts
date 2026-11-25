@@ -43,6 +43,8 @@ const EXPECTED: Record<string, { kind: string; args: string[] }> = {
   close: { kind: "mutation", args: ["projectId"] },
   // Besluit 13: de einddatum verschuiven (oprichter, alleen open project).
   setEndsAt: { kind: "mutation", args: ["endsAt", "projectId"] },
+  // Besluit 27 (Wouter: ja): de titel wijzigen (oprichter, ook na sluiten).
+  setTitle: { kind: "mutation", args: ["projectId", "title"] },
   listForGroup: { kind: "query", args: ["groupId"] },
   listOpenForMe: { kind: "query", args: [] },
   get: { kind: "query", args: ["projectId"] },
