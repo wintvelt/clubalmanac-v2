@@ -71,7 +71,7 @@ function projectOf(groupId: string, openProjects: readonly OpenFilmProject[]): O
 /**
  * Besluit 3. `videos` telt alleen de filmpjes die meegaan (een te lang
  * filmpje niet). `originals`: deze build heeft de uploader (volle kwaliteit,
- * met gps, de schakelaar). Het gekozen album blijft wat het lid koos; alleen
+ * de schakelaar). Het gekozen album blijft wat het lid koos; alleen
  * met alleen filmpjes toont de rij X.
  */
 export function addTargets(input: {
@@ -102,7 +102,12 @@ export function addTargets(input: {
     };
   }
   const split = photos > 0 && album.albumId !== project.albumId;
-  const videoLine = `${videosGoText(videos)} naar ${project.albumName}${originals ? ", in volle kwaliteit en met gps voor de clubfilm" : ""}`;
+  // Feedback Wouter op build 89, punt 2 (vervangt besluit 2 na A).
+  const one = videos === 1;
+  const kept = `${one ? "wordt" : "worden"} ook in volle kwaliteit bewaard voor de feature-film.`;
+  const videoLine = split
+    ? `${videosGoText(videos)} naar ${project.albumName}${originals ? ` en ${kept}` : ""}`
+    : `${one ? "Je filmpje" : `Je ${videos} filmpjes`} ${kept}`;
   const lines = split ? [`${photosText(photos)} naar ${album.name}`, videoLine] : originals ? [videoLine] : [];
   return {
     ready: true,

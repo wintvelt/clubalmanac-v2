@@ -134,25 +134,31 @@ function FilmBanner({ title, text, onPress }: { title: string; text: string; onP
  * `setOriginalsWifiOnly`; lukt uitzetten niet, dan springt hij terug op aan
  * (de runner zet de stand).
  */
+// Feedback build 89, punt 1 (mockup 2): een kaart, label en schakelaar op één
+// lijn en verticaal gecentreerd. Het label staat in een eigen vak dat de hoogte
+// van de rij krijgt en zijn tekst centreert, de schakelaar in een vak ernaast.
 export function WifiOnlySwitch() {
+  const { colors } = useTheme();
   const snap = useOriginals();
   const [busy, setBusy] = useState(false);
   return (
-    <View style={styles.switchRow}>
-      <Text style={styles.grow}>
-        Alleen via wifi
-      </Text>
-      <Switch
-        accessibilityLabel="Alleen via wifi"
-        value={snap.wifiOnly}
-        disabled={busy || !snap.loaded}
-        onValueChange={(on) => {
-          setBusy(true);
-          void setOriginalsWifiOnly(on)
-            .catch(() => false)
-            .finally(() => setBusy(false));
-        }}
-      />
+    <View style={[styles.switchCard, { backgroundColor: colors.surface }]}>
+      <View style={styles.switchLabel}>
+        <Text>Alleen via wifi</Text>
+      </View>
+      <View style={styles.switchBox}>
+        <Switch
+          accessibilityLabel="Alleen via wifi"
+          value={snap.wifiOnly}
+          disabled={busy || !snap.loaded}
+          onValueChange={(on) => {
+            setBusy(true);
+            void setOriginalsWifiOnly(on)
+              .catch(() => false)
+              .finally(() => setBusy(false));
+          }}
+        />
+      </View>
     </View>
   );
 }
@@ -234,12 +240,17 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   grow: { flex: 1, gap: 2 },
-  switchRow: {
+  switchCard: {
     minHeight: size.row,
     flexDirection: "row",
     alignItems: "center",
     gap: space.m,
+    paddingHorizontal: space.l,
+    paddingVertical: space.s,
+    borderRadius: radius.listBlock,
   },
+  switchLabel: { flex: 1, alignSelf: "stretch", justifyContent: "center" },
+  switchBox: { alignSelf: "stretch", justifyContent: "center" },
   poster: { borderRadius: 10, overflow: "hidden" },
   center: { flex: 1, alignItems: "center", justifyContent: "center" },
   layer: { backgroundColor: photoLayers.pill.color, opacity: photoLayers.pill.opacity },
