@@ -1549,3 +1549,30 @@ export type ProjectRow = { projectId: string; title: string; endsAt: number; ope
 2. **Lege standen in de hele app:** geen icoon in een cirkel met verloop meer, maar het icoon zelf in de kleuren van het verloop (zoals de verlooptekst). Lukt een verloop op het icoon niet netjes op iOS, Android en web, dan één effen kleur uit het verloop; melden.
 3. **Overal "feature-film"** in plaats van "clubfilm" in de teksten van het filmproject (meldingen als een origineel niet meegaat, terugtrekken, alles verwijderen, lege standen).
 4. Audit-nits besluit 27: commentaar in `convex/filmProjects.ts` (±72) en `convex/monitoring.ts` (±84) naar besluit 27; `TitleEditor` volgt een titel die elders verandert zolang de gebruiker niet typt.
+
+### Feedback na besluit 27 (A)
+
+- **Punt 1, de sleutel.** `FOUNDER_BUTTONS` in `filmProject.ts` vervangt `START_BUTTON`. Het bevat per handeling een tekst, een eigen icoon links (nooit de sleutel) en een label met de tekst en "oprichter". De handelingen: `start`, `close`, `changeTitle`, `changeEnd`, `download`, `downloadAll` en `removeAll`.
+  - Vast: "Filmproject starten" met `film`, "Project sluiten", "Downloaden" en "Alles downloaden" met `download`, "Alles verwijderen" met `trash`.
+  - Titel en einddatum wijzigen zijn twee knoppen met elk een eigen tekst.
+  - Een knop in `src/components` zet de sleutel (`key`, getekend als `key-outline`) achter de tekst, in een nieuwe kleur `founderKey`.
+  - `founderKey` is goud: tint 35–60°, verzadigd. In donker is hij lichter dan in licht. Het contrast is ≥ 3:1 op `bg` en `surface`, in beide thema's.
+  - De schermen gebruiken `FOUNDER_BUTTONS` voor elke handeling, en `START_BUTTON` verdwijnt (bronscan). Hoe het eruitziet, toetst de gate.
+- **Punt 2, lege standen.** Getest met een bronscan:
+  - `EmptyState` tekent geen `Gradient` als cirkel meer;
+  - het icoon staat niet meer in `onGradient`.
+
+  Of het verloop op het icoon goed lukt op iOS, Android en web, toetst de gate. Lukt dat niet, dan één effen kleur: B meldt het.
+- **Punt 3, feature-film.** Waar "feature-film" moet staan en "clubfilm" niet meer mag:
+  - de meldingen als een origineel niet meegaat, elke reden, in enkel- en meervoud;
+  - de bevestigingen van terugtrekken en alles verwijderen.
+
+  Een bronscan zoekt in de strings (niet in het commentaar) van `filmProject.ts`, `FilmProjectScreens.tsx`, `FilmProjectParts.tsx`, `AddPhotosScreen.tsx` en `AddPhotosParts.tsx`: daar staat geen "clubfilm" meer. De clubfilms van WP21 houden hun naam.
+- **Punt 4** (audit-nits) is alleen commentaar en het gedrag van `TitleEditor`: aan B, en de audit toetst het.
+
+**Gate erbij:**
+- de gele sleutel achter de tekst op elke knop van de oprichter, in licht en donker;
+- VoiceOver zegt "oprichter";
+- de lege standen zonder cirkel, op iPhone en in Safari en Chrome.
+
+**Stand na A:** 26 nieuwe tests, alle rood: 15 in `app/tests/filmProject.test.ts` en 11 in `filmProjectRoutes.test.ts`. `FOUNDER_BUTTONS` en `founderKey` bestaan nog niet, de teksten zeggen nog "clubfilm", en `EmptyState` heeft nog de cirkel. De andere 2550 app-tests blijven groen. De app-typecheck faalt alleen op de ontbrekende export.

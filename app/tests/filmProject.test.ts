@@ -2,7 +2,7 @@ import { ConvexError } from "convex/values";
 import { afterEach, describe, expect, it } from "vitest";
 import { FILM_PROJECT_MAX_AHEAD_MS } from "../../convex/lib/constants";
 import {
-  START_BUTTON,
+  FOUNDER_BUTTONS,
   WITHDRAW_CONFIRMATION,
   addTargets,
   allRows,
@@ -34,7 +34,9 @@ import {
   type ProjectOriginal,
   type ProjectRow,
 } from "../src/lib/filmProject";
+import { AA_LARGE_OR_UI, contrastRatio, relativeLuminance } from "../src/lib/contrast";
 import type { Day } from "../src/lib/groupAdmin";
+import { colors } from "../src/theme/tokens";
 import { addOriginal, applyEvent, type QueueEntry, type QueueEvent } from "../src/lib/originalQueue";
 import type { NetworkView } from "../src/lib/originalUpload";
 
@@ -245,10 +247,13 @@ describe("originalSkipLines: als het origineel niet meegaat (38c-13)", () => {
     expect(new Set(lines).size).toBe(2);
   });
 
-  it("elke regel gaat over de clubfilm of de volle kwaliteit, niet over het album", () => {
+  it("elke regel noemt de feature-film, nooit de clubfilm (feedback na besluit 27, punt 3)", () => {
     for (const r of ["te_klein", "te_groot", "geen_ruimte", "fout"] as const) {
-      const [line] = originalSkipLines([r]);
-      expect(line).toMatch(/clubfilm|volle kwaliteit/);
+      for (const n of [1, 2]) {
+        const [line] = originalSkipLines(Array.from({ length: n }, () => r));
+        expect(line, `${r} ${n}`).toContain("feature-film");
+        expect(line!.toLowerCase(), `${r} ${n}`).not.toContain("clubfilm");
+      }
     }
   });
 });
@@ -649,12 +654,70 @@ describe("downloadHeaderText en goneText: de kop van de downloadpagina (besluit 
   });
 });
 
-describe("de knop 'Filmproject starten' (besluit 1 na A)", () => {
-  it("een sleutel-icoon, de tekst, en een label dat zegt dat het alleen voor de oprichter is", () => {
-    expect(START_BUTTON.title).toBe("Filmproject starten");
-    expect(START_BUTTON.icon).toBe("key");
-    expect(START_BUTTON.accessibilityLabel).toContain("Filmproject starten");
-    expect(START_BUTTON.accessibilityLabel).toContain("oprichter");
+// Feedback Wouter na besluit 27, punt 1: elke knop die alleen de oprichter
+// heeft, heeft links het icoon van de handeling en achter de tekst een gele
+// sleutel (`key`, dat Icon als `key-outline` tekent; de knop zelf zet hem
+// erachter, zie filmProjectRoutes.test.ts). Het label noemt "oprichter".
+describe("FOUNDER_BUTTONS: de knoppen alleen voor de oprichter (feedback na besluit 27, punt 1)", () => {
+  const ACTIONS = ["start", "close", "changeTitle", "changeEnd", "download", "downloadAll", "removeAll"] as const;
+
+  it("precies deze handelingen", () => {
+    expect(Object.keys(FOUNDER_BUTTONS).sort()).toEqual([...ACTIONS].sort());
+  });
+
+  it.each(ACTIONS)("%s: een tekst, een eigen icoon links (niet de sleutel), en een label met de tekst en 'oprichter'", (action) => {
+    const b = FOUNDER_BUTTONS[action];
+    expect(b.title.length).toBeGreaterThan(0);
+    expect(b.icon).not.toBe("key");
+    expect(b.accessibilityLabel).toContain(b.title);
+    expect(b.accessibilityLabel).toContain("oprichter");
+  });
+
+  it("de teksten en iconen die vastliggen", () => {
+    expect(FOUNDER_BUTTONS.start).toMatchObject({ title: "Filmproject starten", icon: "film" });
+    expect(FOUNDER_BUTTONS.close.title).toBe("Project sluiten");
+    expect(FOUNDER_BUTTONS.download).toMatchObject({ title: "Downloaden", icon: "download" });
+    expect(FOUNDER_BUTTONS.downloadAll).toMatchObject({ title: "Alles downloaden", icon: "download" });
+    expect(FOUNDER_BUTTONS.removeAll).toMatchObject({ title: "Alles verwijderen", icon: "trash" });
+  });
+
+  it("titel en einddatum wijzigen zijn twee knoppen met een eigen tekst", () => {
+    expect(FOUNDER_BUTTONS.changeTitle.title).not.toBe(FOUNDER_BUTTONS.changeEnd.title);
+  });
+});
+
+// De gele sleutel: een eigen kleur `founderKey`, goud, lichter in donker en
+// donkerder in licht, met contrast ≥ 3:1 (een icoon dat iets betekent) op de
+// achtergrond en op een vlak, in beide thema's.
+describe("de kleur van de sleutel (feedback na besluit 27, punt 1)", () => {
+  function hue(hex: string): { h: number; s: number } {
+    const n = parseInt(hex.slice(1), 16);
+    const [r, g, b] = [(n >> 16) & 255, (n >> 8) & 255, n & 255].map((x) => x / 255) as [number, number, number];
+    const max = Math.max(r, g, b);
+    const min = Math.min(r, g, b);
+    const d = max - min;
+    if (d === 0) return { h: 0, s: 0 };
+    const h = max === r ? ((g - b) / d) % 6 : max === g ? (b - r) / d + 2 : (r - g) / d + 4;
+    return { h: (h * 60 + 360) % 360, s: d / max };
+  }
+
+  it.each(["light", "dark"] as const)("%s: ≥ 3:1 op de achtergrond en op een vlak", (scheme) => {
+    const c = colors[scheme] as Record<string, string>;
+    expect(c.founderKey, "token founderKey").toMatch(/^#[0-9a-f]{6}$/i);
+    expect(contrastRatio(c.founderKey!, c.bg!)).toBeGreaterThanOrEqual(AA_LARGE_OR_UI);
+    expect(contrastRatio(c.founderKey!, c.surface!)).toBeGreaterThanOrEqual(AA_LARGE_OR_UI);
+  });
+
+  it("goud (een gele tint, verzadigd), lichter in donker dan in licht", () => {
+    const light = (colors.light as Record<string, string>).founderKey!;
+    const dark = (colors.dark as Record<string, string>).founderKey!;
+    for (const hex of [light, dark]) {
+      const { h, s } = hue(hex);
+      expect(h, hex).toBeGreaterThanOrEqual(35);
+      expect(h, hex).toBeLessThanOrEqual(60);
+      expect(s, hex).toBeGreaterThanOrEqual(0.5);
+    }
+    expect(relativeLuminance(dark)).toBeGreaterThan(relativeLuminance(light));
   });
 });
 
@@ -848,6 +911,13 @@ describe("formatBytes: decimaal, zoals iOS (38c-10)", () => {
 // --- bevestigingen en weigeringen ---------------------------------------------------------
 
 describe("bevestigingen (38c-8)", () => {
+  it("terugtrekken en alles verwijderen noemen de feature-film, nooit de clubfilm (feedback na besluit 27, punt 3)", () => {
+    for (const m of [WITHDRAW_CONFIRMATION.message, removeAllConfirmation(1).message, removeAllConfirmation(18).message]) {
+      expect(m).toContain("feature-film");
+      expect(m.toLowerCase()).not.toContain("clubfilm");
+    }
+  });
+
   it("terugtrekken: rood, definitief, het filmpje blijft in het album", () => {
     expect(WITHDRAW_CONFIRMATION.destructive).toBe(true);
     expect(WITHDRAW_CONFIRMATION.button).toBe("Terugtrekken");

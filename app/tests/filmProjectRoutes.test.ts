@@ -77,9 +77,75 @@ describe("de knop 'Filmproject starten' in de schermen (besluit 1 na A)", () => 
     expect(read("components/Icon.tsx")).toMatch(/\bkey:\s*"key"/);
   });
 
-  it("een scherm gebruikt START_BUTTON (icoon en label uit de pure module)", () => {
-    const screens = listFiles(SRC + "screens", new Set()).filter((f) => /\.tsx?$/.test(f));
-    expect(screens.some((f) => read("screens/" + f).includes("START_BUTTON"))).toBe(true);
+  it.each(["film", "download", "trash"])("Icon kent '%s' (iconen links op de knoppen van de oprichter)", (name) => {
+    expect(read("components/Icon.tsx")).toMatch(new RegExp(`\\b${name}:\\s*"`));
+  });
+});
+
+// Feedback Wouter na besluit 27, punt 1: de knoppen alleen voor de oprichter
+// komen uit FOUNDER_BUTTONS (tekst, icoon links, label), en een knop zet de
+// gele sleutel (`key`, getekend als `key-outline`, kleur `founderKey`) achter
+// de tekst.
+describe("de knoppen van de oprichter in de schermen (feedback na besluit 27, punt 1)", () => {
+  const screens = () => listFiles(SRC + "screens", new Set()).filter((f) => /\.tsx?$/.test(f)).map((f) => read("screens/" + f)).join("\n");
+
+  it.each(["start", "close", "changeTitle", "changeEnd", "download", "downloadAll", "removeAll"])("een scherm gebruikt FOUNDER_BUTTONS.%s", (action) => {
+    const src = screens();
+    expect(src.includes(`FOUNDER_BUTTONS.${action}`) || src.includes(`FOUNDER_BUTTONS["${action}"]`)).toBe(true);
+  });
+
+  it("geen START_BUTTON meer", () => {
+    expect(screens()).not.toContain("START_BUTTON");
+  });
+
+  it("een knop in src/components tekent de sleutel achter de tekst: Icon 'key' in de kleur founderKey", () => {
+    const components = listFiles(SRC + "components", new Set()).filter((f) => /\.tsx$/.test(f)).map((f) => read("components/" + f));
+    expect(components.some((src) => src.includes("founderKey") && /name=\{?["']key["']\}?/.test(src))).toBe(true);
+  });
+});
+
+// Feedback Wouter na besluit 27, punt 3: "feature-film" in plaats van
+// "clubfilm" in de teksten van het filmproject. Alleen strings in de code,
+// geen commentaar (de clubfilms van WP21 heten in commentaar nog zo).
+describe("geen 'clubfilm' in de teksten van het filmproject (feedback na besluit 27, punt 3)", () => {
+  function strings(rel: string): string[] {
+    const sf = parse(read(rel), rel.split("/").pop());
+    const out: string[] = [];
+    const walk = (n: ts.Node) => {
+      if (ts.isStringLiteral(n) || ts.isNoSubstitutionTemplateLiteral(n)) out.push(n.text);
+      else if (ts.isTemplateExpression(n)) out.push(n.head.text, ...n.templateSpans.map((x) => x.literal.text));
+      else if (ts.isJsxText(n) && n.text.trim() !== "") out.push(n.text.trim());
+      ts.forEachChild(n, walk);
+    };
+    walk(sf);
+    return out;
+  }
+
+  it.each(["lib/filmProject.ts", "screens/FilmProjectScreens.tsx", "screens/FilmProjectParts.tsx", "screens/AddPhotosScreen.tsx", "screens/AddPhotosParts.tsx"])(
+    "%s",
+    (rel) => {
+      expect(read(rel).length, `sanity: ${rel}`).toBeGreaterThan(0);
+      expect(strings(rel).filter((x) => /clubfilm/i.test(x))).toEqual([]);
+    },
+  );
+});
+
+// Feedback Wouter na besluit 27, punt 2: een lege stand heeft geen icoon in een
+// cirkel met verloop meer, maar het icoon zelf in de kleuren van het verloop
+// (of één effen kleur daaruit). Hier alleen dat de cirkel weg is en het icoon
+// niet meer wit-op-verloop is; hoe het eruitziet, toetst de gate.
+describe("lege standen zonder cirkel met verloop (feedback na besluit 27, punt 2)", () => {
+  it("EmptyState tekent geen Gradient als cirkel en het icoon niet in onGradient", () => {
+    const sf = parse(read("components/States.tsx"), "States.tsx");
+    let body = "";
+    const find = (n: ts.Node) => {
+      if (ts.isFunctionDeclaration(n) && n.name?.text === "EmptyState" && n.body) body = n.body.getText(sf);
+      ts.forEachChild(n, find);
+    };
+    find(sf);
+    expect(body.length, "sanity: function EmptyState").toBeGreaterThan(0);
+    expect(body).not.toMatch(/<Gradient[^>]*radius/);
+    expect(body).not.toContain("onGradient");
   });
 });
 
