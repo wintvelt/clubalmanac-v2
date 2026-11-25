@@ -74,6 +74,7 @@ Groottes in pt bij de standaard-tekststand. De basistekst is 18 in plaats van iO
 | Jaartal boven albums (Literata) | 38 | 600 |
 | Jaartal boven albumtitel (Literata) | 22 | 600 |
 | Kop leeg scherm | 22 | 700 |
+| Bedrag op een tegel, uitkomst van een deelnemer (Geld) | 22 | 700 |
 | Groepsnaam | 21 | 600 |
 | Basistekst, lijstrij, knop | 18 | 400 / 400 / 700 |
 | Meta-regel, terug-pil | 16–17 | 400 / 600 |

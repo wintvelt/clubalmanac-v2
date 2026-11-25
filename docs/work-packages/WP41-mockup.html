@@ -1,0 +1,307 @@
+<!doctype html>
+<html lang="nl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Financieel — mockup</title>
+<style>
+  :root {
+    --bg:#F1F5F9; --surface:#FFFFFF; --text:#0F172A; --muted:#475569; --line:#E2E8F0;
+    --primary:#0369A1; --cta:#C2410C; --segBg:#E2E8F0; --segOn:#0369A1; --onSegOn:#FFFFFF;
+    --danger:#DC2626; --success:#15803D; --gradStart:#A3E635; --gradEnd:#0EA5E9;
+    --washStart:#F7FEE7; --washEnd:#E0F2FE; --tabPill:#E0F2FE;
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; padding:24px; background:#CBD5E1; font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",sans-serif; color:var(--text); }
+  h1.page { font-size:22px; margin:0 0 4px; }
+  p.page { margin:0 0 20px; color:#334155; font-size:15px; max-width:900px; }
+  .row { display:flex; gap:28px; flex-wrap:wrap; align-items:flex-start; }
+  .col { width:375px; }
+  .cap { font-size:15px; font-weight:700; margin:0 0 4px; }
+  .capsub { font-size:13px; color:#334155; margin:0 0 10px; min-height:34px; }
+  .phone { width:375px; height:812px; background:var(--bg); border-radius:44px; overflow:hidden; position:relative;
+           box-shadow:0 0 0 10px #0F172A, 0 20px 40px rgba(0,0,0,.25); display:flex; flex-direction:column; }
+  .status { height:47px; flex:none; display:flex; justify-content:space-between; align-items:flex-end; padding:0 30px 6px; font-size:16px; font-weight:600; }
+  .scroll { flex:1; overflow-y:auto; overflow-x:hidden; }
+  .scroll::-webkit-scrollbar { display:none; }
+  .pad { padding:16px; display:flex; flex-direction:column; gap:22px; }
+  .tabbar { height:66px; flex:none; background:#F8FAFC; border-top:1px solid var(--line); display:flex; justify-content:space-around; align-items:flex-start; padding-top:8px; }
+  .tabbar span { font-size:13px; font-weight:600; color:var(--muted); display:flex; flex-direction:column; align-items:center; gap:3px; }
+  .tabbar span i { width:56px; height:32px; border-radius:999px; display:block; }
+  .tabbar span.on { color:var(--text); font-weight:700; } .tabbar span.on i { background:var(--tabPill); }
+  .tabbar span i::after { content:""; display:block; width:22px; height:22px; margin:5px auto; border-radius:6px; border:2px solid currentColor; opacity:.7; }
+
+  /* groep */
+  .cover { height:168px; margin-top:-47px; padding-top:47px; background:linear-gradient(135deg,var(--washStart),var(--washEnd)); display:flex; align-items:center; justify-content:center; }
+  .cover b { font-size:64px; color:var(--primary); opacity:.35; font-family:Georgia,serif; }
+  .intro { display:flex; flex-direction:column; gap:4px; }
+  .title { font-size:30px; font-weight:700; }
+  .body { font-size:18px; }
+  .meta { font-size:17px; color:var(--muted); }
+  .small { font-size:15px; color:var(--muted); }
+  .seg { display:flex; padding:4px; gap:4px; background:var(--segBg); border-radius:999px; }
+  .seg span { flex:1; min-height:44px; display:flex; align-items:center; justify-content:center; text-align:center; padding:4px 8px; border-radius:999px; font-size:18px; }
+  .seg span.on { background:var(--segOn); color:var(--onSegOn); font-weight:700; }
+  .year { display:flex; align-items:center; gap:12px; }
+  .year b { font-family:Literata,Georgia,serif; font-weight:600; font-size:38px; color:var(--primary); }
+  .year i { flex:1; height:4px; border-radius:999px; background:linear-gradient(90deg,var(--gradStart) 0%,var(--gradEnd) 76%,var(--gradEnd)); }
+  .card { background:var(--surface); border-radius:12px; padding:12px; display:flex; gap:12px; align-items:center; min-height:56px; }
+  .tile { width:56px; height:56px; border-radius:12px; flex:none; background:linear-gradient(135deg,var(--gradStart),var(--gradEnd) 76%); display:flex; align-items:center; justify-content:center; font-size:26px; }
+  .grow { flex:1; display:flex; flex-direction:column; gap:4px; min-width:0; }
+  .name17 { font-size:17px; font-weight:600; }
+  .chev { color:var(--muted); font-size:22px; }
+  .pill { display:inline-block; align-self:flex-start; font-size:14px; font-weight:700; padding:2px 10px; border-radius:999px; }
+  .pill.open { background:#FFEDD5; color:#9A3412; }
+  .pill.ok { background:#DCFCE7; color:var(--success); }
+
+  /* nav */
+  .nav { height:44px; flex:none; display:flex; align-items:center; padding:0 12px; }
+  .back { font-size:17px; font-weight:600; color:var(--primary); background:var(--surface); border-radius:999px; padding:8px 14px 8px 10px; }
+  .h2 { font-size:16px; font-weight:600; color:var(--muted); margin:0 0 8px; }
+  .tiles { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+  .stat { background:var(--surface); border-radius:14px; padding:12px; display:flex; flex-direction:column; gap:2px; }
+  .stat .l { font-size:15px; color:var(--muted); }
+  .stat .v { font-size:22px; font-weight:700; font-variant-numeric:tabular-nums; }
+  .stat .s { font-size:14px; color:var(--muted); }
+  .stat.wide { grid-column:1 / span 2; }
+  .list { background:var(--surface); border-radius:12px; overflow:hidden; }
+  .li { display:flex; align-items:center; gap:12px; padding:10px 16px; min-height:56px; border-top:1px solid var(--line); }
+  .li:first-child { border-top:0; }
+  .num { font-variant-numeric:tabular-nums; text-align:right; white-space:nowrap; }
+  .amt { font-size:18px; font-weight:700; }
+  .neg { color:var(--danger); }
+  .pos { color:var(--success); }
+  .linkbtn { color:var(--primary); font-size:18px; font-weight:700; display:flex; align-items:center; gap:8px; }
+  .note { font-size:15px; color:var(--muted); }
+
+  /* tabel */
+  .tblwrap { background:var(--surface); border-radius:12px; overflow-x:auto; }
+  table.t { border-collapse:separate; border-spacing:0; font-size:15px; font-variant-numeric:tabular-nums; }
+  table.t th, table.t td { padding:8px 10px; text-align:right; white-space:nowrap; border-top:1px solid var(--line); }
+  table.t thead th { border-top:0; font-size:13px; font-weight:600; color:var(--muted); vertical-align:bottom; white-space:normal; min-width:84px; line-height:1.25; }
+  table.t thead th small { display:block; font-weight:400; }
+  table.t .nm { position:sticky; left:0; background:var(--surface); text-align:left; font-weight:600; box-shadow:inset -1px 0 0 var(--line); min-width:86px; }
+  table.t tfoot td { font-weight:700; border-top:1.5px solid #64748B; }
+  table.t tbody tr:nth-child(even) td { background:#F8FAFC; }
+  .hint { font-size:15px; color:var(--muted); display:flex; align-items:center; gap:6px; }
+
+  /* detail */
+  .uitkomst { background:var(--surface); border-radius:14px; padding:16px; display:flex; flex-direction:column; gap:6px; }
+  .uitkomst .big { font-size:22px; font-weight:700; }
+  .sec { background:var(--surface); border-radius:12px; padding:4px 16px 8px; }
+  .sec .line { display:flex; justify-content:space-between; gap:12px; padding:9px 0; border-top:1px solid var(--line); font-size:17px; }
+  .sec .line:first-child { border-top:0; }
+  .sec .line .why { display:block; font-size:15px; color:var(--muted); }
+  .sec .line.sum { font-weight:700; border-top:1.5px solid #64748B; }
+  .sec .line.sub { color:var(--muted); }
+  .sec .line .dat { color:var(--muted); width:52px; flex:none; }
+  .notes { max-width:1660px; margin-top:28px; background:#fff; border-radius:14px; padding:16px 20px; font-size:15px; line-height:1.5; }
+  .notes h2 { font-size:17px; margin:0 0 6px; }
+  .notes ul { margin:0; padding-left:20px; }
+</style>
+</head>
+<body>
+<h1 class="page">Financieel in de groep — mockup (verzonnen namen en bedragen)</h1>
+<p class="page">Vier schermen van links naar rechts: de groep met het nieuwe hoofdstuk, de afrekening, de hele tabel en één deelnemer. Licht thema, iPhone-formaat, de letters en kleuren van de app.</p>
+
+<div class="row">
+
+  <!-- 1. Groep, tab Financieel -->
+  <div class="col">
+    <p class="cap">1. Groep → Financieel</p>
+    <p class="capsub">Vierde hoofdstuk naast Albums, Films en Leden. Daarin de tijdlijn per jaar, zoals de albums.</p>
+    <div class="phone">
+      <div class="status"><span>9:41</span><span>●●● ▮</span></div>
+      <div class="scroll">
+        <div class="cover"><b>H</b></div>
+        <div class="pad">
+          <div class="intro">
+            <div class="title">De Heeren</div>
+            <div class="body">Sinds de studie elk jaar samen op pad.</div>
+            <div class="meta">Opgericht 2001</div>
+          </div>
+          <div class="seg" id="seg">
+            <span>Albums</span><span>Films</span><span>Leden</span><span class="on">Geld</span>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:12px">
+            <div class="year"><b>2026</b><i></i></div>
+            <div class="card">
+              <div class="tile">🏔️</div>
+              <div class="grow">
+                <div class="name17">Lustrum Nepal</div>
+                <div class="small">12 – 26 oktober · 8 deelnemers</div>
+                <span class="pill open" id="tl-pill"></span>
+              </div>
+              <span class="chev">›</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="tabbar"><span class="on"><i></i>Home</span><span><i></i>Groepen</span><span><i></i>Foto's</span><span><i></i>Profiel</span></div>
+    </div>
+  </div>
+
+  <!-- 2. Afrekening -->
+  <div class="col">
+    <p class="cap">2. De afrekening</p>
+    <p class="capsub">Eerst de totalen, dan iedereen met wat hij nog betaalt of terugkrijgt. Tik op een naam voor zijn afrekening.</p>
+    <div class="phone">
+      <div class="status"><span>9:41</span><span>●●● ▮</span></div>
+      <div class="nav"><span class="back">‹ De Heeren</span></div>
+      <div class="scroll">
+        <div class="pad">
+          <div class="intro">
+            <div class="title">Lustrum Nepal</div>
+            <div class="meta">12 – 26 oktober 2026</div>
+            <div class="small">Stand van 21 november 2026</div>
+          </div>
+          <div class="tiles" id="tiles"></div>
+          <div>
+            <p class="h2">Deelnemers</p>
+            <div class="list" id="people"></div>
+          </div>
+          <div>
+            <p class="h2">Per onderdeel</p>
+            <div class="list" id="parts"></div>
+          </div>
+          <div class="linkbtn">▦ Bekijk de hele tabel</div>
+        </div>
+      </div>
+      <div class="tabbar"><span class="on"><i></i>Home</span><span><i></i>Groepen</span><span><i></i>Foto's</span><span><i></i>Profiel</span></div>
+    </div>
+  </div>
+
+  <!-- 3. Hele tabel -->
+  <div class="col">
+    <p class="cap">3. De hele tabel</p>
+    <p class="capsub">Dezelfde tabel als in het clubboek. Namen blijven staan, de rest veegt opzij (probeer het hier ook).</p>
+    <div class="phone">
+      <div class="status"><span>9:41</span><span>●●● ▮</span></div>
+      <div class="nav"><span class="back">‹ Lustrum Nepal</span></div>
+      <div class="scroll">
+        <div class="pad" style="gap:12px">
+          <div class="title" style="font-size:22px">Alle bedragen</div>
+          <div class="hint">⇆ Veeg opzij voor meer kolommen</div>
+          <div class="tblwrap"><table class="t" id="tbl"></table></div>
+        </div>
+      </div>
+      <div class="tabbar"><span class="on"><i></i>Home</span><span><i></i>Groepen</span><span><i></i>Foto's</span><span><i></i>Profiel</span></div>
+    </div>
+  </div>
+
+  <!-- 4. Eén deelnemer -->
+  <div class="col">
+    <p class="cap">4. Eén deelnemer</p>
+    <p class="capsub">Wat hij betaalt en waarom: zijn kosten, zijn spaarpot en wat er al betaald is.</p>
+    <div class="phone">
+      <div class="status"><span>9:41</span><span>●●● ▮</span></div>
+      <div class="nav"><span class="back">‹ Lustrum Nepal</span></div>
+      <div class="scroll">
+        <div class="pad" id="detail"></div>
+      </div>
+      <div class="tabbar"><span class="on"><i></i>Home</span><span><i></i>Groepen</span><span><i></i>Foto's</span><span><i></i>Profiel</span></div>
+    </div>
+  </div>
+</div>
+
+<div class="notes">
+  <h2>Keuzes in dit ontwerp</h2>
+  <ul>
+    <li><b>Tabnaam "Geld"</b>: "Financieel" past niet als vierde tab op een iPhone (18 pt, de tab breekt het woord). Zie de vraag in de chat.</li>
+    <li><b>Geen "jij"</b>: de app weet niet welk clubboek-lid welke app-gebruiker is. Daarom staat er "Maarten betaalt nog", niet "Je betaalt nog".</li>
+    <li><b>Alleen kijken</b>: alles komt uit het clubboek. Opnieuw "Zet in de app" vervangt de stand; de datum bovenaan zegt van wanneer hij is.</li>
+    <li><b>Web</b>: dezelfde schermen. Op een breed scherm staat de hele tabel meteen naast de lijst.</li>
+  </ul>
+</div>
+
+<script>
+// Verzonnen gegevens. Sommen worden hier uitgerekend, zodat alles klopt.
+const parts = [
+  { naam: "Vluchten",  pp: 912.40, soort: "vinkje" },
+  { naam: "Hotels",    pp: 38.50,  soort: "nacht"  },
+  { naam: "Trekking",  pp: 655.00, soort: "vinkje" },
+  { naam: "Rafting",   pp: 84.00,  soort: "vinkje" },
+  { naam: "Diners",    pp: 212.60, soort: "vinkje" },
+];
+const people = [
+  { naam: "Bram",    deel: [1,14,1,1,1], pot: 2100, voor: 0,   betaald: 303.00 },
+  { naam: "Daan",    deel: [1,14,1,1,1], pot: 2100, voor: 420, betaald: 0 },
+  { naam: "Joris",   deel: [1,12,1,0,1], pot: 2450, voor: 0,   betaald: 0 },
+  { naam: "Koen",    deel: [1,14,1,1,1], pot: 2100, voor: 0,   betaald: 303.00 },
+  { naam: "Maarten", deel: [1,10,1,1,1], pot: 1400, voor: 0,   betaald: 500 },
+  { naam: "Pieter",  deel: [1,14,1,0,1], pot: 2100, voor: 0,   betaald: 219.00 },
+  { naam: "Sander",  deel: [1,14,1,1,1], pot: 2100, voor: 0,   betaald: 303.00 },
+  { naam: "Thijs",   deel: [1,14,1,1,1], pot: 980,  voor: 0,   betaald: 0 },
+];
+const r2 = x => Math.round(x * 100) / 100;
+const eur = x => "€ " + Math.abs(x).toLocaleString("nl-NL", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+for (const p of people) {
+  p.cellen = p.deel.map((n, i) => r2(n * parts[i].pp));
+  p.kosten = r2(p.cellen.reduce((a, b) => a + b, 0));
+  p.uitPot = Math.min(p.pot, p.kosten);
+  p.potNa = r2(p.pot - p.uitPot);
+  p.bij = r2(p.kosten - p.uitPot - p.voor);         // > 0 betaalt bij, < 0 krijgt terug
+  p.nog = r2(Math.abs(p.bij) - p.betaald);
+}
+const sum = f => r2(people.reduce((a, p) => a + f(p), 0));
+const tot = { kosten: sum(p => p.kosten), uitPot: sum(p => p.uitPot), nog: sum(p => (p.bij > 0 ? p.nog : 0)),
+              nOpen: people.filter(p => p.nog > 0).length };
+
+document.getElementById("tl-pill").textContent = `${tot.nOpen} van ${people.length} nog open`;
+
+document.getElementById("tiles").innerHTML = `
+  <div class="stat wide"><span class="l">Totale kosten</span><span class="v">${eur(tot.kosten)}</span><span class="s">${eur(tot.kosten / people.length)} per persoon</span></div>
+  <div class="stat"><span class="l">Uit spaarpotten</span><span class="v">${eur(tot.uitPot)}</span></div>
+  <div class="stat"><span class="l">Nog te betalen</span><span class="v">${eur(tot.nog)}</span><span class="s">${people.filter(p => p.bij > 0 && p.nog > 0).length} deelnemers</span></div>`;
+
+const status = p => p.nog <= 0 ? `<span class="pill ok">✓ Afgerond</span>`
+  : p.bij > 0 ? `<span class="pill open">Nog ${eur(p.nog)}</span>` : `<span class="pill open">Krijgt nog ${eur(p.nog)}</span>`;
+document.getElementById("people").innerHTML = people.map(p => `
+  <div class="li"><div class="grow"><span class="body" style="font-weight:600">${p.naam}</span>${status(p)}</div>
+    <span class="num amt ${p.nog <= 0 ? "" : p.bij > 0 ? "neg" : "pos"}" style="${p.nog <= 0 ? "color:var(--muted);font-weight:400" : ""}">${p.bij === 0 ? "—" : (p.bij > 0 ? "−" : "+") + eur(p.bij)}</span><span class="chev">›</span></div>`).join("");
+
+document.getElementById("parts").innerHTML = parts.map((x, i) => {
+  const k = sum(p => p.cellen[i]); const n = people.filter(p => p.deel[i]).length;
+  return `<div class="li"><div class="grow"><span class="body">${x.naam}</span><span class="small">${x.soort === "nacht" ? eur(x.pp) + " per nacht" : eur(x.pp) + " pp"} · ${n} deelnemers</span></div><span class="num body">${eur(k)}</span></div>`;
+}).join("");
+
+const cell = v => v ? eur(v).replace("€ ", "") : "";
+document.getElementById("tbl").innerHTML = `
+  <thead><tr><th class="nm">Deelnemer</th>${parts.map(x => `<th>${x.naam}<small>${x.soort === "nacht" ? cell(x.pp) + " p/n" : cell(x.pp) + " pp"}</small></th>`).join("")}
+    <th>Kosten</th><th>Uit spaarpot</th><th>Spaarpot na</th><th>Voor&shy;geschoten</th><th>Afrekening</th><th>Status</th></tr></thead>
+  <tbody>${people.map(p => `<tr><td class="nm">${p.naam}</td>${p.cellen.map(c => `<td>${cell(c)}</td>`).join("")}
+    <td>${cell(p.kosten)}</td><td>${cell(p.uitPot)}</td><td>${cell(p.potNa)}</td><td>${cell(p.voor)}</td>
+    <td class="${p.bij > 0 ? "neg" : p.bij < 0 ? "pos" : ""}">${p.bij ? (p.bij > 0 ? "−" : "+") + cell(Math.abs(p.bij)) : ""}</td>
+    <td>${p.nog <= 0 ? "✓" : "nog " + cell(p.nog)}</td></tr>`).join("")}</tbody>
+  <tfoot><tr><td class="nm">Totaal</td>${parts.map((x, i) => `<td>${cell(sum(p => p.cellen[i]))}</td>`).join("")}
+    <td>${cell(tot.kosten)}</td><td>${cell(tot.uitPot)}</td><td>${cell(sum(p => p.potNa))}</td><td>${cell(sum(p => p.voor))}</td>
+    <td>${cell(sum(p => Math.max(p.bij, 0)))}</td><td></td></tr></tfoot>`;
+
+// Detail: Maarten (deels betaald)
+const m = people.find(p => p.naam === "Maarten");
+const why = ["1 vlucht", "10 nachten × € 38,50", "", "", ""];
+const maanden = Math.round(m.pot / 35);
+document.getElementById("detail").innerHTML = `
+  <div class="intro"><div class="title">Maarten</div><div class="meta">Lustrum Nepal · 12 – 26 oktober 2026</div></div>
+  <div class="uitkomst"><span class="big neg">Betaalt nog ${eur(m.nog)}</span>
+    <span class="small">Van de naheffing van ${eur(m.bij)} is ${eur(m.betaald)} betaald.</span></div>
+  <div><p class="h2">1. Kosten</p><div class="sec">
+    ${parts.map((x, i) => m.deel[i] ? `<div class="line"><span>${x.naam}${why[i] ? `<span class="why">${why[i]}</span>` : ""}</span><span class="num">${eur(m.cellen[i])}</span></div>` : "").join("")}
+    <div class="line sum"><span>Totaal</span><span class="num">${eur(m.kosten)}</span></div>
+    <div class="line"><span>Uit zijn spaarpot</span><span class="num">−${eur(m.uitPot)}</span></div>
+    <div class="line sum"><span>Naheffing</span><span class="num">${eur(m.bij)}</span></div>
+  </div></div>
+  <div><p class="h2">2. Spaarpot</p><div class="sec">
+    <div class="line"><span class="dat"></span><span style="flex:1">Inleg, ${maanden} maanden × € 35,00 ›</span><span class="num">${eur(m.pot)}</span></div>
+    <div class="line sum"><span class="dat"></span><span style="flex:1">Saldo op 15-11-2026</span><span class="num">${eur(m.pot)}</span></div>
+    <div class="line"><span class="dat"></span><span style="flex:1">Naar dit lustrum</span><span class="num">−${eur(m.uitPot)}</span></div>
+    <div class="line sum"><span class="dat"></span><span style="flex:1">Over</span><span class="num">${eur(m.potNa)}</span></div>
+  </div></div>
+  <div><p class="h2">3. Afrekening</p><div class="sec">
+    <div class="line"><span>Naheffing</span><span class="num">${eur(m.bij)}</span></div>
+    <div class="line"><span>Betaald op 20-11-2026</span><span class="num">−${eur(m.betaald)}</span></div>
+    <div class="line sum"><span>Nog te betalen</span><span class="num neg">${eur(m.nog)}</span></div>
+  </div></div>`;
+</script>
+</body>
+</html>

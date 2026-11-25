@@ -1,4 +1,5 @@
 import { ConvexError, v } from "convex/values";
+import { constantTimeEqual } from "./constantTime";
 
 // WP26: de gate voor test-only functies (convex/_test.ts en `/_test/*` in
 // convex/http.ts).
@@ -11,7 +12,8 @@ import { ConvexError, v } from "convex/values";
 // Eén weigering voor elke oorzaak (vlag uit, geen geheim op de deployment,
 // geen of fout geheim in de aanroep), zonder de naam of stand van een
 // env-var. Het geheim (beide waarden) komt nooit in een foutmelding, een
-// response of een log.
+// response of een log. De vergelijking in constante tijd staat sinds WP41 in
+// lib/constantTime.ts.
 
 export const TEST_SECRET_HEADER = "X-Test-Secret";
 
@@ -19,19 +21,6 @@ export const TEST_SECRET_HEADER = "X-Test-Secret";
 export const testSecretArg = { testSecret: v.optional(v.string()) };
 
 const REFUSAL = "Forbidden";
-
-/**
- * Vergelijkt zonder vroeg te stoppen: de duur hangt alleen af van de lengte
- * van `provided`, niet van waar het eerste verschil zit.
- */
-function constantTimeEqual(provided: string, expected: string): boolean {
-  let diff = provided.length ^ expected.length;
-  for (let i = 0; i < provided.length; i++) {
-    // Voorbij het einde van `expected` geeft charCodeAt NaN; `| 0` maakt dat 0.
-    diff |= provided.charCodeAt(i) ^ (expected.charCodeAt(i) | 0);
-  }
-  return diff === 0;
-}
 
 export function testGateOpen(provided: string | null | undefined): boolean {
   const flagOn = process.env.INTEGRATION_TEST_ENABLED === "true";

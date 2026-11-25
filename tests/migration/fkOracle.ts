@@ -71,6 +71,9 @@ export const MONITORED_FK_ORACLE: FkOracleEntry[] = [
   { table: "filmOriginals", field: "groupId", target: "groups", required: true },
   { table: "filmOriginals", field: "ownerId", target: "users", required: true },
   { table: "filmOriginals", field: "photoId", target: "photos", required: true },
+  // WP41 §A9: de afrekeningen uit het clubboek. Groep weg haalt ze mee (G6),
+  // dus een losse verwijzing is drift.
+  { table: "settlements", field: "groupId", target: "groups", required: true },
 ];
 
 /**
@@ -95,14 +98,16 @@ export const MONITORED_TABLE_ORACLE: string[] = [
   "uploadIdempotency",
   "filmProjects",
   "filmOriginals",
+  "settlements",
 ];
 
 /**
  * De tabellen die de import zelf niet vult. Handmatig benoemd, want het verschil
  * tussen "tellen en leegmaken" en "invoegen" is een besluit, geen afleiding.
  * WP38: filmprojecten en inzendingen bestonden niet in v1.
+ * WP41: afrekeningen komen uit het clubboek, niet uit v1.
  */
-export const NOT_LOADED_BY_IMPORT = ["uploadIdempotency", "filmProjects", "filmOriginals"];
+export const NOT_LOADED_BY_IMPORT = ["uploadIdempotency", "filmProjects", "filmOriginals", "settlements"];
 
 /** De FK's op tabellen die de import wél vult. */
 export const LOAD_FK_ORACLE: FkOracleEntry[] = MONITORED_FK_ORACLE.filter(

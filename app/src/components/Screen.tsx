@@ -29,6 +29,9 @@ type Props = {
   // WP39: vast onderin, buiten het scrollen en boven de thuisbalk (bv. de
   // hoofdknop van "Toevoegen"). Niet in "reconnecting".
   footer?: ReactNode;
+  // WP41: de volle breedte in plaats van de tekstkolom (de hele tabel van
+  // een afrekening).
+  fullWidth?: boolean;
 };
 
 // Scrolt altijd, zodat bij de grootste tekststand en met het toetsenbord open
@@ -45,6 +48,7 @@ export function Screen({
   underHeader = false,
   keepEndInView = false,
   footer,
+  fullWidth = false,
 }: Props) {
   const { colors } = useTheme();
   const reconnecting = useAuthState() === "reconnecting";
@@ -97,7 +101,7 @@ export function Screen({
         >
           <ScrollOffsetContext.Provider value={offset}>{header}</ScrollOffsetContext.Provider>
           <KeyboardRevealContext.Provider value={keyboard.onFieldFocus}>
-            <View style={styles.column}>{reconnecting ? <ReconnectingState /> : children}</View>
+            <View style={[styles.column, fullWidth && styles.fullWidth]}>{reconnecting ? <ReconnectingState /> : children}</View>
           </KeyboardRevealContext.Provider>
         </Animated.ScrollView>
         {footer && !reconnecting ? <View style={styles.footer}>{footer}</View> : null}
@@ -133,6 +137,7 @@ const styles = StyleSheet.create({
   fill: { flex: 1 },
   scroll: { flexGrow: 1, paddingBottom: space.xxl },
   centered: { justifyContent: "center" },
+  fullWidth: { maxWidth: "100%" },
   column: {
     width: "100%",
     maxWidth: size.maxTextColumn,

@@ -376,11 +376,11 @@ export const remove = mutation({
 // Groep weg, met alles wat eraan hangt. Gedeeld door groups.remove (G3, G4)
 // en het laatste lid dat weggaat (M2-e): beide doen hetzelfde.
 // Volgorde: albumPhotos → albums (+ albumLastSeen, A1/A2) → memberships →
-// uitnodigingen → films (WP21) → filmprojecten (WP38) → groep → covers en profielfoto's van de weggehaalde
+// uitnodigingen → films (WP21) → filmprojecten (WP38) → afrekeningen (WP41) → groep → covers en profielfoto's van de weggehaalde
 // publicaties (WP28 A-invariant 3). Photos blijven (eigendom van users, niet
 // groups); de filmbestanden in S3 ook, alleen de rijen gaan weg. De originelen
 // van de filmprojecten gaan wel weg, ook in R2 (WP38 A-invariant 12).
-// [Cascade matrix G3, G4, A1, A2, AP4, M2-e]
+// [Cascade matrix G3, G4, G5, G6, A1, A2, AP4, M2-e]
 export async function deleteGroupCascade(
   ctx: MutationCtx,
   groupId: Id<"groups">,
@@ -427,6 +427,13 @@ export async function deleteGroupCascade(
   // WP38 A-invariant 12: de filmprojecten met hun inzendingen, ook in R2
   // (object en open upload). De filmpjes in de albums zijn foto's en blijven.
   await removeProjectsOfGroup(ctx, groupId);
+
+  // WP41 (G6): de afrekeningen uit het clubboek. Die van andere groepen blijven.
+  const settlements = await ctx.db
+    .query("settlements")
+    .withIndex("by_group", (q) => q.eq("groupId", groupId))
+    .collect();
+  for (const s of settlements) await ctx.db.delete(s._id);
 
   await ctx.db.delete(groupId);
 

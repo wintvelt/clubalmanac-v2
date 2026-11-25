@@ -89,3 +89,18 @@ export function filmProjectPath(groupId: string, projectId: string): string {
 export function newFilmProjectPath(groupId: string): string {
   return `${groupPath(groupId)}/nieuw-filmproject`;
 }
+
+// WP41: Geld. Het overzicht van een afrekening, de hele tabel en één
+// deelnemer, onder de groep in de Home-stack. De deelnemer staat op zijn naam
+// in de route (uniek per afrekening), zodat hij na opnieuw sturen dezelfde blijft.
+export function settlementPath(groupId: string, settlementId: string): string {
+  return `${groupPath(groupId)}/geld/${encodeURIComponent(settlementId)}`;
+}
+
+export function settlementTablePath(groupId: string, settlementId: string): string {
+  return `${settlementPath(groupId, settlementId)}/tabel`;
+}
+
+export function participantPath(groupId: string, settlementId: string, name: string): string {
+  return `${settlementPath(groupId, settlementId)}/deelnemer/${encodeURIComponent(name)}`;
+}

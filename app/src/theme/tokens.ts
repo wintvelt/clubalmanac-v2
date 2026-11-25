@@ -155,6 +155,8 @@ export const border = {
   secondaryButton: 2,
   notice: 2,
   plusLight: 1.5,
+  // WP41: de lijn boven een totaalregel (Geld), zoals in het clubboek.
+  total: 1.5,
 } as const;
 
 // Literata zit in de build (expo-font-plugin in app.json), dus geen flits van
@@ -181,6 +183,8 @@ export const typography = {
   yearLarge: { fontSize: 38, fontFamily: LITERATA },
   yearSmall: { fontSize: 22, fontFamily: LITERATA },
   emptyTitle: { fontSize: 22, fontWeight: "700" },
+  // WP41: het bedrag op een tegel en de uitkomst van een deelnemer (Geld).
+  amount: { fontSize: 22, fontWeight: "700" },
   groupName: { fontSize: 21, fontWeight: "600" },
   body: { fontSize: 18, fontWeight: "400" },
   bodyStrong: { fontSize: 18, fontWeight: "700" },
@@ -203,3 +207,7 @@ export const typography = {
 } as const satisfies Record<string, TypeRole>;
 
 export type TypeRoleName = keyof typeof typography;
+
+// Vanaf deze tekstvergroting gaan naast elkaar staande vlakken onder elkaar
+// (design.md §3): de groepstabs, het icoon van een melding, de tegels van Geld.
+export const LARGE_TEXT_SCALE = 1.2;

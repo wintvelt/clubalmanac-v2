@@ -15,6 +15,7 @@ import { parseLocation, parseTakenAt, uploadImageType } from "./lib/upload";
 import { stripJpegMetadata } from "./lib/jpegMeta";
 import { UPLOAD_PREFLIGHT, webPreflightResponse, withWebCors } from "./lib/webCors";
 import { videoUploadRoute } from "./videos";
+import { deleteSettlementRoute, postSettlementRoute } from "./settlements";
 
 // Cascade matrix IB1: Mailjet bounce-webhook → internal.invites.handleBounce.
 // Voltooit IB1 cascade per docs/cascade-matrix.md (bounce → status=expired
@@ -426,6 +427,26 @@ http.route({
   path: "/upload/video",
   method: "POST",
   handler: httpAction(async (ctx, request) => await videoUploadRoute(ctx, request)),
+});
+
+// WP41: de afrekeningen uit het clubboek (convex/settlements.ts). Alleen het
+// clubboek, met `X-Clubboek-Secret: <FINANCE_SECRET>` (niet in Authorization,
+// WP41 F1); de groep staat op de deployment (`FINANCE_GROUP_ID`).
+//   POST   /settlements           403 één weigering (vóór de body), 413 groter
+//                                 dan 128 KiB, 400 vorm (pad, geen waarde),
+//                                 200 `{ participants }`; vervangt per sleutel
+//   DELETE /settlements?key=<id>  403, 400 sleutel, 200 (ook als er niets was)
+// Geen CORS en geen OPTIONS: niet voor een browser. Andere methodes: 404.
+http.route({
+  path: "/settlements",
+  method: "POST",
+  handler: httpAction(async (ctx, request) => await postSettlementRoute(ctx, request)),
+});
+
+http.route({
+  path: "/settlements",
+  method: "DELETE",
+  handler: httpAction(async (ctx, request) => await deleteSettlementRoute(ctx, request)),
 });
 
 // WP17a: het beeldpad (besluit 1: vorm B). Bij elk verzoek de toegangsregel
