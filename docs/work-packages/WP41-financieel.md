@@ -429,3 +429,16 @@ Een overbetaling leidt nooit tot een weigering. Wie € 105 betaalt op € 100 n
   - Zo tellen de regels nog steeds op tot de laatste (`Afgerond`, 0), en staat het teveel nergens.
   - Voorbeeld: € 60 + € 50 + € 20 op € 100 geeft `Betaald op …` −60 en −40, dan `Afgerond`.
 - **H3. Tests.** `validation.test.ts`: overbetaling in één en in twee keer wordt aangenomen (200). `app/tests/settlements.test.ts`: overbetaling in één keer, over meer betalingen, en op een deelnemer uit het voorbeeld. De voorbeeldbestanden zelf blijven ongewijzigd.
+
+## WP41c: foto bij een afrekening (regie, 2026-11-25)
+
+Aanvulling vanuit het clubboek: `~/clubboek/docs/WP41-foto.md` (alleen lezen). Het clubboek stuurt `image` pas als daar `"foto": true` staat, eerst voor dev.
+
+**Besluiten Wouter (2026-11-25):**
+
+1. **Verzoek (A2):** `POST /settlements` krijgt het optionele veld `image`: base64 (zonder `data:`-voorvoegsel) van een JPEG, vierkant 1024×1024. Het antwoord blijft `{ "participants": n }`.
+2. **Grenzen (A3):** `image` is geldige base64, ontsleuteld hoogstens 1 MB, en begint met `FF D8 FF`; anders 400 met een korte reden (`image: …`), nooit een waarde uit de body. De grens van 128 KiB blijft gelden voor het verzoek zonder `image`; met `image` hoogstens 1,5 MiB in totaal (anders 413). Volgorde van A4 blijft: eerst het geheim, dan de grootte, dan de vorm.
+3. **Opslag:** de afrekening krijgt een optioneel storage-id. De route bewaart de JPEG pas na een geldige vorm, en vervangt dan de afrekening. Mislukt het vervangen, dan gaat de nieuwe JPEG weer weg. De oude foto verdwijnt uit storage bij vervangen (met of zonder nieuwe foto; zonder `image` heeft de afrekening geen foto), bij `DELETE /settlements?key=…`, en bij het verwijderen van de groep (G6).
+4. **Lezen:** geen storage-URL naar de client (WP17a). `listByGroup` en `get` geven `hasImage` (boolean); de app laadt de foto via het beveiligde beeldpad (`GET /beeld/…`) met de toegangsregel van de afrekening (lid van de groep), zoals groepsomslagen. Een nieuwe foto moet in de app een nieuwe URL geven (cache).
+5. **Schermen:** tijdlijn in de tab Geld: de foto in plaats van de lettertegel. Overzicht van de afrekening: de foto groot bovenaan, zoals de omslag van een groep; breed in de linkerkolom (`WideSide`). Zonder foto blijft alles zoals nu.
+6. **Werkwijze:** eigen branch `wp41c` (map `~/Code/clubalmanac-v2-wp41c`). A → B → audit. Dev eerst; prod pas na akkoord van Wouter (Wouter deployt).
