@@ -178,7 +178,8 @@ function endsAtAllowed(endsAt: number, now: number): boolean {
 
 /**
  * Besluit 1, A-invariant 1: alleen de oprichter (op het moment van het
- * verzoek). Besluit 27: een titel (de regels van een albumnaam: getrimd, 1 tot
+ * verzoek). Besluit 28: een groep zonder album krijgt een album met de titel.
+ * Besluit 27: een titel (de regels van een albumnaam: getrimd, 1 tot
  * 50 tekens, geen onzichtbare tekens), geen album; een groep zonder albums kan
  * ook een project hebben. De einddatum ligt in de toekomst en hooguit een jaar
  * vooruit (besluit 13); hooguit één open project per groep. Het project sluit
@@ -188,11 +189,22 @@ export const open = mutation({
   args: { groupId: v.id("groups"), title: v.string(), endsAt: v.number() },
   returns: v.string(),
   handler: async (ctx, { groupId, title: rawTitle, endsAt }) => {
-    await requireFounder(ctx, groupId);
+    const { user } = await requireFounder(ctx, groupId);
     const title = validName(rawTitle, "NAME_REQUIRED");
     const now = Date.now();
     if (!endsAtAllowed(endsAt, now)) refuseCode("DATE_INVALID");
     if (await openProjectOfGroup(ctx, groupId, now)) throw new ConvexError({ code: "PROJECT_ALREADY_OPEN" });
+    // Besluit 28: een groep zonder album krijgt in dezelfde mutation, na alle
+    // controles, een leeg album met de titel, zoals `albums.create` het maakt
+    // (maker de oprichter). Het is een gewoon album; het project hangt er niet
+    // aan (besluit 27).
+    const anyAlbum = await ctx.db
+      .query("albums")
+      .withIndex("by_group", (q) => q.eq("groupId", groupId))
+      .first();
+    if (!anyAlbum) {
+      await ctx.db.insert("albums", { groupId, name: title, createdBy: user._id, createdAt: now });
+    }
     const projectId = await ctx.db.insert("filmProjects", {
       groupId,
       title,
