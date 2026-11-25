@@ -54,6 +54,12 @@ const IONICONS = {
 
 export type IconName = keyof typeof IONICONS;
 
+/** De naam in Ionicons: lijn (standaard) of gevuld. Ook voor GradientIcon.web.tsx. */
+export function ioniconName(name: IconName, filled = false): string {
+  const base = IONICONS[name];
+  return filled ? base : `${base}-outline`;
+}
+
 type Props = { name: IconName; size?: number; color: string; filled?: boolean };
 
 // Decoratief voor VoiceOver: de knop of rij eromheen draagt het label.
