@@ -149,6 +149,10 @@ Besluit Wouter 2026-11-15: niemand gebruikt de oude webapp. Volgorde: eerst de o
 
 [WP40](./work-packages/WP40-selectiebalk.md) ✅ 2026-11-22: selectiebalk in album en Mijn foto's: slanke balk op de plek van de tabbalk, Annuleren en het aantal in de kop, omslag ingeklapt, met subtiele animaties (wissel onderin, vinkje met veer, zachte titel). Drie gate-rondes op de iPhone. Live met app 2.0.2.
 
+[WP38](./work-packages/WP38-filmproject-originelen.md) ✅ 2026-11-25: filmproject per groep. De oprichter start een project met een titel en einddatum; van elk nieuw filmpje in de groep gaat het origineel (volle kwaliteit, met gps) mee naar een eigen R2-bucket, op de iPhone op de achtergrond, ook met het scherm op slot. Downloaden, sluiten en wijzigen door de oprichter, ook in de webapp. 38a staat op prod; 38b en 38c gaan live met app 2.0.2, met de backend van besluit 27 (Wouter deployt). Geen filmproject openen op prod vóór 2.0.2.
+
+[WP41c](./work-packages/WP41-financieel.md) ✅ 2026-11-25: foto bij een afrekening uit het clubboek, via het beveiligde beeldpad. Live op prod en in de webapp; in de iPhone-app met 2.0.2.
+
 ## Fase 5: Lancering — hard cutover — open
 
 Geen parallel draaien. Bij 20 users en een 3 jaar oude oude app is parallel draaien absurd veel werk (dual-write, sync layer, Cognito↔Clerk mapping). Hard cut.

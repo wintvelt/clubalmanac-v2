@@ -95,7 +95,7 @@ Uitzondering: queries zonder trigger (puur read-tests) leven bij de query-owner.
 |---|---|---|---|---|---|---|---|
 | A1 | `albumDelToAlbumPhoto` | GA delete | Delete albumPhotos (publicaties), met groepscover (AP4; WP28 invariant 5) | 3 | Cascade in `albums.remove` (alleen de oprichter, WP28 besluit 5), daarna `afterUnpublish` | `tests/albums/crud.test.ts` (describe `albums.remove > cascade albumPhotos`), `tests/groups/beheerCascade.test.ts` | ✅ |
 | A2 | (nieuw, niet uit AWS) | GA delete | Delete `albumLastSeen` records voor deze album | 3 | Cascade in `albums.remove` via `deleteAlbumLastSeenByAlbum` helper (by_album index) | `tests/albums/lastSeenCascade.test.ts` | ✅ |
-| A3 | (nieuw, WP38 besluit 17) | GA delete | Het filmalbum van een open filmproject kan niet weg: `FILM_PROJECT_OPEN` ("Sluit eerst het filmproject"). Na sluiten wel; het project houdt de naam en zijn originelen, en `albumId` gaat leeg (geen losse verwijzing, WP10) | 3 | Guard in `albums.remove` (`albumHasOpenProject`); na sluiten `detachProjectsFromAlbum` (lib/filmOriginals) | `tests/filmProject/cascade.test.ts` (besluit 17) + `tests/filmProject/integrity.test.ts` | ✅ |
+| A3 | (WP38 besluit 27) | GA delete | Een album mag altijd weg, ook met een open filmproject in de groep: een project hangt niet aan een album. De inzendingen blijven. Oude rijen met `albumId` (alleen dev) verliezen die verwijzing (geen losse verwijzing, WP10) | 3 | `detachProjectsFromAlbum` (lib/filmOriginals) in `albums.remove` | `tests/filmProject/cascade.test.ts` + `tests/filmProject/integrity.test.ts` | ✅ |
 
 ### Trigger: Photos
 
