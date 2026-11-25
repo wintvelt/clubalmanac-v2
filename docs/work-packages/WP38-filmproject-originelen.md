@@ -1606,3 +1606,8 @@ export type ProjectRow = { projectId: string; title: string; endsAt: number; ope
 
 De andere app-tests blijven groen.
 
+
+### Feedback Wouter, derde ronde (2026-11-25)
+
+1. **Lege standen: het icoon in het verloop**, het huidige schuine verloop (`gradStart` → `gradEnd`, 135°), in licht én donker thema gelijk. Web: CSS (`background-clip: text`). iOS en Android: `@react-native-masked-view/masked-view` als echte afhankelijkheid (`npx expo install`), komt mee in de volgende native build.
+2. **Brede schermen** (webapp, iPad liggend): projectpagina en downloadpagina gebruiken de indeling van de groepspagina (`WideSplit`/`WideSide`): links titel, stand, schakelaar en de knoppen van de oprichter; rechts de lijsten. Smal blijft zoals nu.
