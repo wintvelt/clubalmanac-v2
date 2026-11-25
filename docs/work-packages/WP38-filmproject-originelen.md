@@ -1329,3 +1329,15 @@ Verwerkt in 38c-1, 4, 6, 7, 9 en de nieuwe 38c-20 tot 22, het testcontract, de t
 - App: `filmProject.test.ts` heeft nu 104 tests (8 nieuw), rood zolang de module ontbreekt; `filmProjectRoutes.test.ts` 11 (3 nieuw), alle rood. De andere 2358 app-tests blijven groen.
 - A draaide alles tegen een wegwerp-uitwerking buiten de repo (backend en app): groen, beide typechecks schoon, ook de inventaristests. Die uitwerking is weggegooid.
 
+
+### 38c fix-cyclus 1 (audit, regie 2026-11-25)
+
+Audit: geen blockers, één moet. Regie neemt ook de nits mee.
+
+1. **Moet: een te lang filmpje krijgt geen uitkomst meer** (regressie op WP37 A12). Ook als de ronde alleen te lange filmpjes heeft, of foto's met een te lang filmpje, komt er een uitkomst met "niet gelukt: te lang". A pint dit in een pure functie die de doelen van de ronde bepaalt; B sluit `startUpload`/`runVideos` daarop aan.
+2. Downloadpagina: een rij die onderweg is, toont "Onderweg · weg op …".
+3. "Alles downloaden": een foutmelding per rij, niet alleen bij de laatste.
+4. Ook de bevestiging bij het verwijderen van een gemeld filmpje (`FlagScreens.tsx`) krijgt de zin over het origineel. Bij een filmpje begint de tekst met "Het filmpje verdwijnt…", niet "De foto verdwijnt…".
+5. De nieuwe groepen-query in het toevoegscherm valt onder een `QueryBoundary` of komt uit `useKnownMyGroups`.
+
+Aanvaard: gate 38c-4 geldt per filmpje; het tweede filmpje van een reeks komt pas in de wachtrij als het eerste verstuurd is (38b-gedrag). De gate zegt dat zo.
