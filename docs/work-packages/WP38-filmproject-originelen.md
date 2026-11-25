@@ -1634,3 +1634,7 @@ Bronscans in `app/tests/filmProjectLayout.test.ts`. Het uiterlijk zelf toetst de
 - `useWideLayout`, `WideSplit` en `WideSide` ontbreken in het scherm, in `ProjectPage` en in `DownloadPage` (3 tests).
 
 Groen: het vangnet voor de tokens. De andere app-tests blijven groen.
+
+### Besluit 28 (Wouter, 2026-11-25, build 93)
+
+Start de oprichter een filmproject in een groep **zonder album**, dan maakt de backend in dezelfde mutation een leeg album met de titel van het project (de gewone albumregels: maker is de oprichter, naam als albumnaam). Heeft de groep al een album, dan gebeurt er niets extra. Aanleiding: in een groep zonder album kon je wel een project starten, maar geen filmpje toevoegen.
