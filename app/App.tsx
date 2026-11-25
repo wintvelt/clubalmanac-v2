@@ -1,12 +1,14 @@
 import { ClerkProvider, useAuth } from "@clerk/expo";
 import { ConvexReactClient } from "convex/react";
 import { StatusBar } from "expo-status-bar";
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { CLERK_WEB_SCRIPTS } from "./src/auth/clerkWebScripts";
+import { ActionMenuHost } from "./src/components/ActionMenu";
 import { deviceClerkStorage } from "./src/auth/deviceClerkStorage";
 import { ConvexProviderWithClerkRetry } from "./src/data/convexConnection";
 import { ImageHostProvider } from "./src/data/images";
+import { clearOldShares } from "./src/data/shareFiles";
 import { OnlineProvider } from "./src/data/online";
 import { parseClientEnv, type ClientEnv } from "./src/lib/env";
 import { StatusScreen } from "./src/screens/StatusScreen";
@@ -31,6 +33,8 @@ const envResult = readEnv();
 // De schil om de router (src/app/_layout.tsx): env, safe area, Clerk en
 // Convex. Het entry-punt is expo-router/entry; de routes staan in src/app/.
 export default function App({ children }: { children: ReactNode }) {
+  // WP42 A7: op Android deelbestanden van de vorige keer opruimen; op iOS niets.
+  useEffect(() => clearOldShares(), []);
   return (
     <SafeAreaProvider>
       <StatusBar style="auto" />
@@ -39,6 +43,8 @@ export default function App({ children }: { children: ReactNode }) {
       ) : (
         <StatusScreen error title="De app is verkeerd ingesteld" message={envResult.error} />
       )}
+      {/* WP42 A1: het menu op Android; op iOS en het web niets. */}
+      <ActionMenuHost />
     </SafeAreaProvider>
   );
 }

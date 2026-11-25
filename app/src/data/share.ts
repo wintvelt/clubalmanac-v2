@@ -10,6 +10,7 @@ import { withOneRetry } from "../lib/actionRetry";
 import { photoImageUrl } from "../lib/imageUrls";
 import { shareEdits } from "../lib/placeShare";
 import { useSiteUrl } from "./images";
+import { clearOldShares, KEEP_SHARED_FILE, SHARE_DIR_PREFIX } from "./shareFiles";
 
 // WP17d draft-invariant 4 en 5, besluit 3: delen geeft een lokaal bestand aan
 // het iOS-deelmenu, geen URL. Het beeld is het formaat *groot* (alleen een foto
@@ -33,9 +34,11 @@ export function useSharePhoto() {
   return useCallback(
     async (photo: { photoId: string; exifOrientation?: number; isVideo?: boolean }): Promise<"shared" | "unavailable"> => {
       if (!site || !(await Sharing.isAvailableAsync())) return "unavailable";
+      // WP42 A7: op Android gaat het vorige deelbestand nu pas weg (src/data/shareFiles.ts).
+      clearOldShares();
       if (photo.isVideo) {
         const { url } = await withOneRetry(() => playUrl({ photoId: photo.photoId as Id<"photos"> }));
-        const dir = new Directory(Paths.cache, `delen-${Date.now()}`);
+        const dir = new Directory(Paths.cache, `${SHARE_DIR_PREFIX}${Date.now()}`);
         dir.create({ intermediates: true, idempotent: true });
         try {
           const file = await File.downloadFileAsync(url, new File(dir, "filmpje.mp4"), { idempotent: true });
@@ -43,7 +46,7 @@ export function useSharePhoto() {
           return "shared";
         } finally {
           try {
-            dir.delete();
+            if (!KEEP_SHARED_FILE) dir.delete();
           } catch {
             // De map is al weg.
           }
@@ -51,7 +54,7 @@ export function useSharePhoto() {
       }
       const token = forConvex ? await getToken() : await getToken({ template: "convex" });
       if (!token) throw new Error("Geen token");
-      const dir = new Directory(Paths.cache, `delen-${Date.now()}`);
+      const dir = new Directory(Paths.cache, `${SHARE_DIR_PREFIX}${Date.now()}`);
       dir.create({ intermediates: true, idempotent: true });
       try {
         const downloaded = await File.downloadFileAsync(
@@ -71,11 +74,22 @@ export function useSharePhoto() {
         } finally {
           image.release();
         }
+        if (KEEP_SHARED_FILE) {
+          // Android: het gedeelde bestand in de map `delen-…`, die blijft; *groot* gaat meteen weg.
+          const kept = new File(uri);
+          kept.move(dir);
+          uri = kept.uri;
+          try {
+            downloaded.delete();
+          } catch {
+            // Al weg.
+          }
+        }
         try {
           await Sharing.shareAsync(uri, { mimeType: "image/jpeg", UTI: "public.jpeg" });
         } finally {
           try {
-            new File(uri).delete();
+            if (!KEEP_SHARED_FILE) new File(uri).delete();
           } catch {
             // Het tijdelijke bestand is al weg.
           }
@@ -83,7 +97,7 @@ export function useSharePhoto() {
         return "shared";
       } finally {
         try {
-          dir.delete();
+          if (!KEEP_SHARED_FILE) dir.delete();
         } catch {
           // De map is al weg.
         }

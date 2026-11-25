@@ -1,6 +1,6 @@
 import type { FunctionReturnType } from "convex/server";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Modal, Pressable, ScrollView, StyleSheet, View } from "react-native";
+import { Modal, Platform, Pressable, ScrollView, StyleSheet, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import type { Id } from "../../../convex/_generated/dataModel";
 import { Icon } from "../components/Icon";
@@ -28,6 +28,10 @@ type Album = FunctionReturnType<typeof api.albums.listByGroup>[number];
 // vinkje. `onChoose` geeft er groep en naam ("Groep · Album") bij.
 export type AlbumChoiceInfo = { groupId: Id<"groups">; label: string };
 
+// WP42 A14: op iOS is het blad een pageSheet onder de statusbalk; op Android
+// vult de Modal het scherm (edge-to-edge), dus ook de rand bovenaan.
+const EDGES = Platform.OS === "android" ? (["top", "left", "right", "bottom"] as const) : (["left", "right", "bottom"] as const);
+
 export function AlbumChoiceSheet({
   visible,
   fromAlbumId,
@@ -44,7 +48,7 @@ export function AlbumChoiceSheet({
   const { colors } = useTheme();
   return (
     <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
-      <SafeAreaView edges={["left", "right", "bottom"]} style={[styles.fill, { backgroundColor: colors.bg }]}>
+      <SafeAreaView edges={EDGES} style={[styles.fill, { backgroundColor: colors.bg }]}>
         <View style={[styles.header, { borderBottomColor: colors.line }]}>
           <Text variant="bodyStrong" accessibilityRole="header" style={styles.title}>
             Kies album

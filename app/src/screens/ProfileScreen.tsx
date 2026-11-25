@@ -3,7 +3,8 @@ import type { FunctionReturnType } from "convex/server";
 import * as ImagePicker from "expo-image-picker";
 import { router, useIsFocused } from "expo-router";
 import { useEffect, useRef, useState } from "react";
-import { ActionSheetIOS, Linking, StyleSheet, View } from "react-native";
+import { Linking, StyleSheet, View } from "react-native";
+import { showActionMenu } from "../components/ActionMenu";
 import { Button } from "../components/Button";
 import { ListRow, ListSection } from "../components/ListRow";
 import { Notice } from "../components/Notice";
@@ -17,6 +18,7 @@ import { TextField } from "../components/TextField";
 import type { Id } from "../../../convex/_generated/dataModel";
 import { api } from "../convexApi";
 import { askConfirmation } from "../data/confirm";
+import { PHOTOS_ONLY_TEXTS, PICKER_ASKS_ACCESS } from "../data/pickMedia";
 import { useUploader, type UploadAsset } from "../data/upload";
 import { READ_ONLY, WEB_UPLOAD } from "../data/readOnly";
 import { pickProfilePhoto } from "../data/webPick";
@@ -337,7 +339,9 @@ function ProfilePhotoBlock({ me }: { me: Me }) {
         quality: 1,
       });
     } catch {
-      setFeedback({ kind: "access" });
+      // WP42 A6: de fotokiezer van Android vraagt geen toegang; dan mislukte het ophalen.
+      if (PICKER_ASKS_ACCESS) setFeedback({ kind: "access" });
+      else setFeedback({ kind: "error", text: PHOTOS_ONLY_TEXTS?.fetchFailed ?? "Je keuze ophalen lukte niet." });
       return;
     }
     const asset = result.canceled ? undefined : result.assets[0];
@@ -410,7 +414,7 @@ function ProfilePhotoBlock({ me }: { me: Me }) {
     const items = profilePhotoMenu({ hasPhoto });
     const options = [...items.map((i) => MENU_LABEL[i](hasPhoto)), "Annuleren"];
     const destructive = items.indexOf("remove");
-    ActionSheetIOS.showActionSheetWithOptions(
+    showActionMenu(
       {
         options,
         cancelButtonIndex: options.length - 1,

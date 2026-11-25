@@ -6,6 +6,7 @@ import MapView, { Marker, type MapPressEvent, type MarkerDragStartEndEvent } fro
 import { SafeAreaView } from "react-native-safe-area-context";
 import type { Id } from "../../../convex/_generated/dataModel";
 import { Button } from "../components/Button";
+import { androidMapProps } from "../components/mapStyle";
 import { Notice } from "../components/Notice";
 import { PhotoImage } from "../components/Photo";
 import { QueryBoundary } from "../components/QueryBoundary";
@@ -76,7 +77,7 @@ function LocationEditor({
   saved: Point | null;
   photo: { exifOrientation?: number; hasFormats: boolean };
 }) {
-  const { colors } = useTheme();
+  const { colors, scheme } = useTheme();
   const setLocation = useMutation(api.photos.setLocation);
   const map = useRef<MapView>(null);
   const draft = useLocationDraft(saved);
@@ -124,6 +125,8 @@ function LocationEditor({
           },
         },
       ],
+      // WP42 A2: op Android sluit terug of ernaast tikken de vraag, als Annuleren.
+      { cancelable: true },
     );
 
   return (
@@ -136,6 +139,7 @@ function LocationEditor({
         onPress={(e: MapPressEvent) => move(e.nativeEvent.coordinate)}
         showsPointsOfInterests={false}
         accessibilityLabel="Kaart. Tik op de plek van de foto, of sleep de speld."
+        {...androidMapProps(scheme)}
       >
         <Marker
           coordinate={pin}

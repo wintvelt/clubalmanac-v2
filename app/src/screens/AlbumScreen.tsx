@@ -61,6 +61,7 @@ import {
   useSelectionHeader,
 } from "./SelectionBar";
 import { WideSide, WideSplit } from "./WideSide";
+import { useAndroidBack } from "../navigation/useAndroidBack";
 import { SIDE_WIDTH, WIDE_WINDOW_SIZE, wideGrid } from "../lib/wideLayout";
 import {
   ActionFeedback,
@@ -187,6 +188,10 @@ function AlbumContent({ groupId, albumId }: { groupId: Id<"groups">; albumId: Id
     focusSelectNext.current = true;
     stopSelecting();
   }, [stopSelecting]);
+  // WP42 A3: op Android sluit terug eerst de selectie, zoals Annuleren.
+  useAndroidBack(selecting, () => {
+    if (!header.cancelDisabled) cancelSelecting();
+  });
   // WP40 gate ronde 1: geen tabbalk tijdens de selectie (G1, G5). Uit beeld
   // stopt de selectie (G3): het nieuwe scherm heeft dan gewoon een tabbalk, en
   // een lopende actie maakt haar ronde af. Een Modal (het kiesscherm), een

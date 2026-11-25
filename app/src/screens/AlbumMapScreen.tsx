@@ -5,6 +5,7 @@ import { StyleSheet, View } from "react-native";
 import MapView, { Marker, type Region as MapRegion } from "react-native-maps";
 import { SafeAreaView } from "react-native-safe-area-context";
 import type { Id } from "../../../convex/_generated/dataModel";
+import { androidMapProps } from "../components/mapStyle";
 import { Notice } from "../components/Notice";
 import { PhotoImage } from "../components/Photo";
 import { QueryBoundary } from "../components/QueryBoundary";
@@ -82,7 +83,7 @@ function AlbumMap({
   spots: Spot[];
   entries: Entry[];
 }) {
-  const { colors } = useTheme();
+  const { colors, scheme } = useTheme();
   // De volgorde van het raster, zodat swipen in het detail klopt.
   const ordered = useMemo(
     () => sortAlbumPhotos(entries).filter((e): e is Entry & { photo: NonNullable<Entry["photo"]> } => e.photo !== null),
@@ -127,6 +128,7 @@ function AlbumMap({
         onRegionChangeComplete={(r: MapRegion) => setRegion(r)}
         showsPointsOfInterests={false}
         accessibilityLabel={`Kaart met ${title}`}
+        {...androidMapProps(scheme)}
       >
         {clusters.map((c) => {
           const first = byId.get(c.items[0]!.photoId)!;

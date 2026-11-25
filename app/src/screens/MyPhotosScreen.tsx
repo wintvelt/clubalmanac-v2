@@ -24,6 +24,7 @@ import { size, space, useTheme } from "../theme";
 import { AlbumChoiceSheet } from "./AlbumChoice";
 import { columnsFor, SelectMark } from "./AlbumScreen";
 import { LoadError } from "./GroupParts";
+import { useAndroidBack } from "../navigation/useAndroidBack";
 import {
   focusLater,
   HeaderTextButton,
@@ -181,6 +182,10 @@ function MyPhotosContent() {
     focusSelectNext.current = true;
     stopSelecting();
   }, [stopSelecting]);
+  // WP42 A3: op Android sluit terug eerst de selectie, zoals Annuleren.
+  useAndroidBack(selecting, () => {
+    if (!cancelDisabled) cancelSelecting();
+  });
   // WP40 gate ronde 1: geen tabbalk tijdens de selectie (G1, G5). Uit beeld
   // stopt de selectie (G3): het nieuwe scherm heeft dan gewoon een tabbalk, en
   // een lopende actie maakt haar ronde af. Een Modal (het kiesscherm), een

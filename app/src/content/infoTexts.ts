@@ -18,7 +18,7 @@ const ABOUT: readonly InfoBlock[] = [
   },
   {
     kind: "paragraph",
-    text: "De app blijft bestaan zolang Apple hem in de App Store toelaat.",
+    text: "De app blijft bestaan zolang hij in de App Store en Google Play staat.",
   },
   {
     kind: "paragraph",
@@ -106,7 +106,7 @@ const PRIVACY: readonly InfoBlock[] = [
   {
     kind: "paragraph",
     lead: "Cookies.",
-    text: "De app gebruikt geen trackers. De iPhone-app gebruikt geen cookies; in de webapp zet Clerk alleen de cookies die nodig zijn om ingelogd te blijven.",
+    text: "De app gebruikt geen trackers en geen cookies; in de webapp zet Clerk alleen de cookies die nodig zijn om ingelogd te blijven.",
   },
   {
     kind: "paragraph",

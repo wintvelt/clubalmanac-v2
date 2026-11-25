@@ -4,8 +4,10 @@ import { useMutation } from "convex/react";
 import { ConvexError } from "convex/values";
 import { router, Stack, useLocalSearchParams } from "expo-router";
 import { useRef, useState, type ReactNode } from "react";
-import { ActionSheetIOS, Alert, StyleSheet, View } from "react-native";
+import { Alert, Platform, StyleSheet, View } from "react-native";
 import type { Id } from "../../../convex/_generated/dataModel";
+import { showActionMenu } from "../components/ActionMenu";
+import { AndroidDayField } from "../components/AndroidDayField";
 import { Button } from "../components/Button";
 import { LetterTile } from "../components/LetterTile";
 import { Notice } from "../components/Notice";
@@ -456,7 +458,7 @@ function EditForm({
 
   const onCoverMenu = () => {
     setCoverStatus(null);
-    ActionSheetIOS.showActionSheetWithOptions(
+    showActionMenu(
       { options: ["Cover weghalen", "Annuleren"], cancelButtonIndex: 1 },
       (index) => {
         if (index !== 0) return;
@@ -631,17 +633,22 @@ function DateBlock({
   return (
     <View style={styles.field}>
       <Text variant="fieldLabel">Datum</Text>
-      <View style={[styles.picker, { backgroundColor: colors.field, borderColor: invalid ? colors.danger : colors.fieldLine }]}>
-        <DateTimePicker
-          value={pickerDate(day)}
-          mode="date"
-          display="spinner"
-          locale="nl-NL"
-          themeVariant={scheme}
-          textColor={colors.text}
-          onValueChange={(_event, date) => onChange(dayFromPicker(date))}
-        />
-      </View>
+      {/* WP42 A4: op Android een veld dat de datumkiezer van Android opent. */}
+      {Platform.OS === "android" ? (
+        <AndroidDayField day={day} invalid={invalid} onChange={onChange} />
+      ) : (
+        <View style={[styles.picker, { backgroundColor: colors.field, borderColor: invalid ? colors.danger : colors.fieldLine }]}>
+          <DateTimePicker
+            value={pickerDate(day)}
+            mode="date"
+            display="spinner"
+            locale="nl-NL"
+            themeVariant={scheme}
+            textColor={colors.text}
+            onValueChange={(_event, date) => onChange(dayFromPicker(date))}
+          />
+        </View>
+      )}
       <Text variant="meta" color="muted">
         {hint}
       </Text>
