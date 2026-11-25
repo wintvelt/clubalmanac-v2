@@ -1287,3 +1287,11 @@ export function filmRefusalText(error: unknown, action: FilmAction): string;
 6. **Eén origineel verwijderen op de downloadpagina?** Advies: nee, zoals de mockup. De backend kan het wel (`removeOriginal`).
 7. **"Filmpje overal verwijderen?"** (besluit 16). De app weet niet of een filmpje een origineel heeft. Advies: bij elk filmpje één zin erbij: "Is het ingestuurd voor een filmproject, dan gaat het origineel ook weg." Geen backend-wijziging.
 8. **Teksten voor twee standen** die de mockup niet toont. Advies: "Later opnieuw" (er loopt een wachttijd) en "Niet op dit toestel" (onderweg, maar niet in de wachtrij van deze iPhone: een ander toestel, of het bestand is weg). Bij die laatste kan het lid terugtrekken.
+
+### Besluiten Wouter na A van 38c (2026-11-25)
+
+Open vragen 1–8 volgens het advies van A, met twee aanvullingen:
+
+1. De knop "Filmproject starten" moet herkenbaar alleen voor de oprichter zijn: een sleutel-icoon (`key` uit Ionicons) vóór de tekst, en een toegankelijkheidslabel dat het zegt.
+2. Niet "met plek" maar **"met gps"**: de regel boven de knop noemt "volle kwaliteit", "met gps" en "clubfilm".
+3. `filmProjects.get` krijgt grootte en datum van weggaan per inzending en de datum van sluiten per project (kleine uitbreiding van 38a, eerst tests van A). Na de merge deployt Wouter de backend naar prod.
