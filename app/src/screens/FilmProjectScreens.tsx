@@ -124,7 +124,7 @@ function ProjectFailed({ groupId, error, reset }: { groupId: Id<"groups">; error
   if (groupErrorKind(error) === "notMember") {
     return (
       <Screen underHeader>
-        <Notice kind="error" message="Dit filmproject is er niet meer, of je bent geen lid meer van de groep." />
+        <Notice kind="error" message="Dit filmproject is er niet meer." />
         <SmallButton title="Naar de groep" icon="groups" onPress={() => router.replace(groupPath(groupId))} />
       </Screen>
     );
@@ -189,7 +189,7 @@ function ProjectPage({
         // 38c-8: de wachtrij hoort het pas als het terugtrekken gelukt is.
         originalEvent({ kind: "teruggetrokken", originalId });
       },
-      "Het origineel is teruggetrokken. Het filmpje staat nog in het album.",
+      "Teruggetrokken. Het filmpje staat nog in het album.",
     );
   }
 
@@ -248,7 +248,7 @@ function ProjectPage({
             title="Nog geen filmpjes"
             text={
               project.open
-                ? "Van nieuwe filmpjes in deze groep gaat het origineel ook naar dit project."
+                ? "Nieuwe filmpjes in deze groep gaan ook als origineel mee."
                 : "Er is nog geen filmpje binnengekomen."
             }
           />
@@ -547,7 +547,7 @@ function DownloadPage({ data, view }: { data: ProjectData; view: ReturnType<type
         if (errors.size > 0) {
           setStatus({
             kind: "error",
-            text: `${errors.size === 1 ? "1 origineel" : `${errors.size} originelen`} lukte niet. Zie de melding bij de rij.`,
+            text: errors.size === 1 ? "1 download lukte niet." : `${errors.size} downloads lukten niet.`,
           });
         }
       } finally {
@@ -864,7 +864,7 @@ function EndDatePicker({
         }}
       />
       <Text variant="meta" color="muted">
-        {`Het project sluit vanzelf aan het eind van ${formatDay(day)} (Nederlandse tijd).`}
+        {`Sluit vanzelf aan het eind van ${formatDay(day)}.`}
       </Text>
       {onSave && (
         <SmallButton

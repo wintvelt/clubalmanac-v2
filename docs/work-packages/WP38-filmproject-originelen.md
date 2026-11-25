@@ -1665,3 +1665,80 @@ Start de oprichter een filmproject in een groep **zonder album**, dan maakt de b
 **Gate erbij:** start als oprichter een project in een groep zonder album. Het album met de titel staat meteen in de groep en in het kiesscherm van het toevoegscherm. Een filmpje daarin geeft "wordt ook als origineel bewaard".
 
 **Stand na A:** 5 rood en 5 groen, in één nieuw bestand. A draaide alle 192 tests van het filmproject tegen een wegwerp-uitwerking (een album maken na de controles in `open`): allemaal groen. Die uitwerking is weggegooid. De root-typecheck is schoon.
+
+### Besluit 30 (Wouter, 2026-11-25): kortere teksten
+
+De bevestigingen en meldingen van het filmproject worden ongeveer de helft korter (de iOS-melding met Liquid Glass leest slecht bij veel tekst):
+
+| Waar | Tekst |
+|---|---|
+| Project sluiten | "Nieuwe filmpjes gaan dan niet meer mee. Wat onderweg is, mag nog 14 dagen binnenkomen." |
+| Terugtrekken | "Het filmpje blijft in het album, maar kan nooit meer mee naar een feature-film." |
+| Alles verwijderen | "[n] originelen gaan weg, ook wat nog onderweg is. De filmpjes blijven in de albums." (enkelvoud: "1 origineel gaat weg, ook als het nog onderweg is. Het filmpje blijft in het album.") |
+| Geen ruimte | "[n] filmpjes niet naar de feature-film: te weinig ruimte op je iPhone." (enkelvoud "1 filmpje") |
+| Te klein / te groot | "[n] filmpjes te klein voor de feature-film." / "… te groot …" (enkelvoud "1 filmpje") |
+| Niet gelukt (overig) | "[n] filmpjes niet naar de feature-film." |
+| Algemene fout | "Dat lukte niet. Probeer het opnieuw." |
+| Verkeerd teken in titel | "De titel bevat een teken dat niet mag." |
+
+Andere teksten die langer zijn dan nodig: zelfde stijl (kort, wat de gebruiker moet weten). Een eigen dialoog met dichte achtergrond in plaats van de iOS-melding is een apart werkpakket (later).
+
+### Besluit 30 (A)
+
+**Vastgelegd** (`app/tests/filmProject.test.ts`, exact): de acht teksten uit de tabel.
+- De meldingen als een origineel niet meegaat, per reden in enkel- en meervoud.
+- Terugtrekken, alles verwijderen (enkel- en meervoud) en sluiten. `closeConfirmation` noemt de titel niet meer; de parameter mag blijven.
+- `NAME_INVALID` bij starten en bij de titel wijzigen.
+- De algemene fout.
+
+De oude eisen "niet opnieuw" (terugtrekken, alles verwijderen) en "feature-film" (alles verwijderen) zijn eruit; "geen clubfilm" blijft.
+
+**Let op.** "Alles verwijderen" zegt niet meer dat die filmpjes nooit meer mee kunnen. Dat is wel zo: `removeAll` blokkeert ze, net als terugtrekken (fix-cyclus 2 van 38a). Zie de vraag hieronder.
+
+**Voorstellen voor andere teksten** (zelfde stijl; niet getest tot Wouter kiest):
+
+| Waar | Nu | Voorstel |
+|---|---|---|
+| Datum kan niet (`DATE_INVALID`) | "Deze datum kan niet. Kies een dag van vandaag tot over een jaar." | "Kies een dag van vandaag tot over een jaar." |
+| Niet de oprichter (`NOT_ALLOWED`) | "Dat kan alleen de oprichter van de groep." | "Alleen de oprichter kan dat." |
+| Titel te lang (`NAME_TOO_LONG`) | "De titel is te lang. Gebruik hoogstens 50 tekens." | "De titel mag hoogstens 50 tekens hebben." |
+| Geen lid, bij starten (`NOT_MEMBER`) | "Je bent geen lid meer van deze groep, of de groep bestaat niet meer." | "Je bent geen lid meer van deze groep." |
+| Geen lid of project weg (`NOT_MEMBER`, ook de foutpagina) | "Dit filmproject is er niet meer, of je bent geen lid meer van de groep." | "Dit filmproject is er niet meer." |
+| Na terugtrekken | "Het origineel is teruggetrokken. Het filmpje staat nog in het album." | "Teruggetrokken. Het filmpje staat nog in het album." |
+| Lege stand projectpagina | "Van nieuwe filmpjes in deze groep gaat het origineel ook naar dit project." | "Nieuwe filmpjes in deze groep gaan ook als origineel mee." |
+| Einddatum kiezen | "Het project sluit vanzelf aan het eind van [dag] (Nederlandse tijd)." | "Sluit vanzelf aan het eind van [dag]." |
+| Alles downloaden, deels mislukt | "[n] originelen lukte niet. Zie de melding bij de rij." | "[n] downloads lukten niet." (enkelvoud "1 download lukte niet.") |
+
+De laatste regel was ook grammaticaal fout ("originelen lukte"). De teksten van het toevoegscherm van WP39 vallen buiten het filmproject en blijven staan.
+
+**Vraag voor Wouter.** Moet "Alles verwijderen" zeggen dat het voor altijd is? Advies: ja, met twee woorden erbij: "[n] originelen gaan voor altijd weg, ook wat nog onderweg is. De filmpjes blijven in de albums." Terugtrekken zegt het al ("nooit meer").
+
+**Stand na A:** 13 tests rood:
+- 8 meldingen als een origineel niet meegaat;
+- terugtrekken;
+- alles verwijderen;
+- sluiten;
+- `NAME_INVALID`;
+- de algemene fout.
+
+De andere app-tests blijven groen.
+
+**Wouter (2026-11-25):** alle voorstellen van "Besluit 30 (A)" aanvaard, en bij "Alles verwijderen" "voor altijd": "[n] originelen gaan voor altijd weg, ook wat nog onderweg is. De filmpjes blijven in de albums." (enkelvoud: "1 origineel gaat voor altijd weg, ook als het nog onderweg is. Het filmpje blijft in het album.")
+
+**Vastgelegd na het besluit van Wouter (A):** de aanvaarde voorstellen staan nu exact in de tests.
+- **`app/tests/filmProject.test.ts`**, `filmRefusalText`:
+  - `DATE_INVALID` bij starten en bij de einddatum wijzigen;
+  - `NOT_ALLOWED` bij elke handeling van de oprichter;
+  - `NAME_TOO_LONG` bij starten en bij de titel wijzigen;
+  - `NOT_MEMBER` bij starten: "Je bent geen lid meer van deze groep.";
+  - `NOT_MEMBER` bij alle andere handelingen: "Dit filmproject is er niet meer.";
+  - "Alles verwijderen" met "voor altijd", in enkel- en meervoud.
+- **`app/tests/filmProjectRoutes.test.ts`**, een bronscan op de strings van `FilmProjectScreens.tsx`, `FilmProjectParts.tsx` en `filmProject.ts`:
+  - "Dit filmproject is er niet meer.";
+  - "Teruggetrokken. Het filmpje staat nog in het album.";
+  - "Nieuwe filmpjes in deze groep gaan ook als origineel mee.";
+  - "Sluit vanzelf aan het eind van …", zonder "Nederlandse tijd";
+  - "1 download lukte niet." en "[n] downloads lukten niet.";
+  - de oude zinnen zijn weg.
+
+**Stand na A:** 28 tests rood: 18 in `filmProject.test.ts` en 10 in `filmProjectRoutes.test.ts`. De andere app-tests blijven groen.
