@@ -2,6 +2,7 @@ import { useAuth } from "@clerk/expo";
 import { router, useIsFocused } from "expo-router";
 import { useEffect, useState } from "react";
 import { StyleSheet, View } from "react-native";
+import { FounderKey } from "../components/FounderButton";
 import { Icon } from "../components/Icon";
 import { LinkButton } from "../components/LinkButton";
 import { AnimatedPressable, FadeIn, PressShade, TileZoom, useArrivals, usePressMotion } from "../components/Motion";
@@ -11,11 +12,13 @@ import { Screen } from "../components/Screen";
 import { EmptyState, LoadingState } from "../components/States";
 import { Text } from "../components/Text";
 import { UnreadLabel } from "../components/UnreadLabel";
+import { api } from "../convexApi";
 import { forgetDepartedIn, useNoticeUntilBlur } from "../data/adminState";
+import { useLiveQuery } from "../data/useLiveQuery";
 import { useHomeGroup, useMyGroups, type MyGroup } from "../data/homeGroupState";
 import { groupPath, newGroupPath } from "../lib/groupRoutes";
 import { homeDecisions, homeSessionKey } from "../lib/homeDecision";
-import { displayYear, roleLabel, sortMyGroups, unreadBadge } from "../lib/groups";
+import { displayYear, myGroupRole, sortMyGroups, unreadBadge } from "../lib/groups";
 import { radius, size, space, useTheme } from "../theme";
 import { GroupCoverTile, LargeTitleHeader, LoadError } from "./GroupParts";
 import { READ_ONLY } from "../data/readOnly";
@@ -36,6 +39,8 @@ export function MyGroupsScreen() {
 
 function MyGroupsList() {
   const groups = useMyGroups();
+  // WP38 (feedback webapp dev, tweede ronde): de eigen user, voor "Oprichter".
+  const me = useLiveQuery(api.users.profile, {});
   const homeReady = useHomeDecision(groups);
   // WP28b: na verlaten of groep verwijderen (A-keuze 7).
   const notice = useNoticeUntilBlur("myGroups");
@@ -75,7 +80,7 @@ function MyGroupsList() {
       {top}
       {sortMyGroups(groups).map((group) => (
         <FadeIn key={group._id} active={arrivals.has(group._id)}>
-          <GroupCard group={group} />
+          <GroupCard group={group} me={me?._id ?? null} />
         </FadeIn>
       ))}
     </View>
@@ -126,9 +131,11 @@ function useHomeDecision(groups: MyGroup[] | undefined): boolean {
   return phase === "done";
 }
 
-function GroupCard({ group }: { group: MyGroup }) {
+function GroupCard({ group, me }: { group: MyGroup; me: string | null }) {
   const { colors } = useTheme();
-  const meta = `Sinds ${displayYear(group)} · ${roleLabel(group.role)}`;
+  // WP38: "Oprichter" met de gele sleutel als je de oprichter bent.
+  const role = myGroupRole({ role: group.role, createdBy: group.createdBy, me });
+  const meta = `Sinds ${displayYear(group)} · ${role.label}`;
   const badge = unreadBadge(group.unreadCount);
   // WP33 B1 (besluit 5): de kaart krimpt en wordt iets donkerder, de cover
   // zoomt erin.
@@ -153,9 +160,12 @@ function GroupCard({ group }: { group: MyGroup }) {
       </TileZoom>
       <View style={styles.text}>
         <Text variant="groupName">{group.name}</Text>
-        <Text variant="meta" color="muted">
-          {meta}
-        </Text>
+        <View style={styles.metaRow}>
+          <Text variant="meta" color="muted">
+            {meta}
+          </Text>
+          {role.founderKey && <FounderKey />}
+        </View>
         <UnreadLabel count={group.unreadCount} />
       </View>
       <Icon name="chevron" size={20} color={colors.muted} />
@@ -175,4 +185,5 @@ const styles = StyleSheet.create({
     borderRadius: radius.card,
   },
   text: { flex: 1, gap: space.xs },
+  metaRow: { flexDirection: "row", alignItems: "center", gap: space.xs, flexWrap: "wrap" },
 });

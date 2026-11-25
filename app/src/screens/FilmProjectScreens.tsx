@@ -1,5 +1,4 @@
 import { useAuth } from "@clerk/expo";
-import DateTimePicker from "@react-native-community/datetimepicker";
 import { useAction, useMutation } from "convex/react";
 import type { FunctionReturnType } from "convex/server";
 import { router, Stack, useLocalSearchParams } from "expo-router";
@@ -8,6 +7,7 @@ import { Pressable, StyleSheet, View } from "react-native";
 import type { Id } from "../../../convex/_generated/dataModel";
 import { originalUploaderAvailable } from "../../modules/clubalmanac-video";
 import { Button } from "../components/Button";
+import { DayPicker } from "../components/DayPicker";
 import { ListSection } from "../components/ListRow";
 import { Notice } from "../components/Notice";
 import { QueryBoundary } from "../components/QueryBoundary";
@@ -52,7 +52,7 @@ import {
   type MineStand,
   type ProjectOriginal,
 } from "../lib/filmProject";
-import { dayFromPicker, formatDay, pickerDate, type Day } from "../lib/groupAdmin";
+import { formatDay, type Day } from "../lib/groupAdmin";
 import { filmProjectPath, groupPath } from "../lib/groupRoutes";
 import { groupErrorKind } from "../lib/groups";
 import { formatDuration } from "../lib/videos";
@@ -150,7 +150,7 @@ function ProjectContent({ projectId }: { projectId: string }) {
     open: data.project.open,
     originals: data.originals,
   });
-  if (view.download) return <DownloadPage data={data} removeAll={view.removeAll} />;
+  if (view.download) return <DownloadPage data={data} view={view} />;
   return <ProjectPage data={data} view={view} />;
 }
 
@@ -166,14 +166,8 @@ function ProjectPage({
   const snap = useOriginals();
   const { userId } = useAuth();
   const withdraw = useMutation(api.filmProjects.withdraw);
-  const close = useMutation(api.filmProjects.close);
-  const setEndsAt = useMutation(api.filmProjects.setEndsAt);
-  const setTitle = useMutation(api.filmProjects.setTitle);
-  const once = useOnce();
-  const [status, setStatus] = useState<Status>(null);
-  const [busy, setBusy] = useState(false);
-  const [editingEnd, setEditingEnd] = useState(false);
-  const [editingTitle, setEditingTitle] = useState(false);
+  const actions = useProjectActions(project);
+  const { run, busy, status } = actions;
 
   const device =
     FILM_PLATFORM === "ios" && originalUploaderAvailable && userId
@@ -182,21 +176,6 @@ function ProjectPage({
   const mine = mineRows({ platform: FILM_PLATFORM, projectId: project.projectId, originals, device, now });
   const all = allRows(originals);
   const title = projectTitle(project.title);
-
-  async function run(action: FilmAction, work: () => Promise<void>, success?: string) {
-    await once(async () => {
-      setBusy(true);
-      setStatus(null);
-      try {
-        await work();
-        if (success) setStatus({ kind: "success", text: success });
-      } catch (error) {
-        setStatus({ kind: "error", text: filmRefusalText(error, action) });
-      } finally {
-        setBusy(false);
-      }
-    });
-  }
 
   async function onWithdraw(row: MineRow) {
     const originalId = row.originalId;
@@ -209,34 +188,6 @@ function ProjectPage({
         originalEvent({ kind: "teruggetrokken", originalId });
       },
       "Het origineel is teruggetrokken. Het filmpje staat nog in het album.",
-    );
-  }
-
-  async function onClose() {
-    if (!(await askConfirmation(closeConfirmation(project.title)))) return;
-    await run("close", () => close({ projectId: project.projectId }).then(() => undefined), "Het filmproject is gesloten.");
-  }
-
-  async function onChangeEnd(day: Day) {
-    await run(
-      "changeEnd",
-      async () => {
-        await setEndsAt({ projectId: project.projectId, endsAt: endOfDutchDay(day) });
-        setEditingEnd(false);
-      },
-      `Open tot ${formatDay(day)}.`,
-    );
-  }
-
-  // Besluit 27 (Wouter: ja): de titel wijzigen, ook na sluiten.
-  async function onChangeTitle(next: string) {
-    await run(
-      "changeTitle",
-      async () => {
-        await setTitle({ projectId: project.projectId, title: next });
-        setEditingTitle(false);
-      },
-      "De titel is gewijzigd.",
     );
   }
 
@@ -260,31 +211,7 @@ function ProjectPage({
         </Text>
       </View>
 
-      {/* Feedback na besluit 27: titel en einddatum wijzigen als knoppen van de oprichter, met de gele sleutel. */}
-      {(view.changeTitle || view.changeEnd) && (
-        <View style={styles.buttons}>
-          {view.changeTitle && (
-            <FounderButton button={FOUNDER_BUTTONS.changeTitle} disabled={busy} onPress={() => setEditingTitle((e) => !e)} />
-          )}
-          {view.changeEnd && (
-            <FounderButton button={FOUNDER_BUTTONS.changeEnd} disabled={busy} onPress={() => setEditingEnd((e) => !e)} />
-          )}
-        </View>
-      )}
-
-      {editingTitle && view.changeTitle && (
-        <TitleEditor initial={project.title} busy={busy} onSave={(next) => void onChangeTitle(next)} />
-      )}
-
-      {editingEnd && view.changeEnd && (
-        <EndDatePicker
-          initial={dutchDayOf(project.endsAt)}
-          now={now}
-          busy={busy}
-          saveTitle="Bewaar einddatum"
-          onSave={(day) => void onChangeEnd(day)}
-        />
-      )}
+      <FounderEdits project={project} view={view} now={now} actions={actions} withClose={false} />
 
       {view.wifiSwitch && <WifiOnlySwitch />}
       {status && <Notice kind={status.kind} message={status.text} />}
@@ -345,10 +272,128 @@ function ProjectPage({
       )}
 
       {view.close && (
-        <FounderButton button={FOUNDER_BUTTONS.close} tone="danger" disabled={busy} onPress={() => void onClose()} />
+        <FounderButton button={FOUNDER_BUTTONS.close} tone="danger" disabled={busy} onPress={() => void actions.onClose()} />
       )}
 
     </Screen>
+  );
+}
+
+// --- de handelingen van de oprichter op het project ----------------------------------------
+
+type ProjectActions = ReturnType<typeof useProjectActions>;
+
+/**
+ * Sluiten, einddatum en titel wijzigen, met één melding en één handeling
+ * tegelijk. In de app op de projectpagina, op het web op de downloadpagina
+ * (feedback webapp dev, tweede ronde: een bewuste uitzondering op W5, alleen
+ * voor de oprichter). Dezelfde bevestiging bij sluiten (`closeConfirmation`).
+ */
+function useProjectActions(project: ProjectData["project"]) {
+  const close = useMutation(api.filmProjects.close);
+  const setEndsAt = useMutation(api.filmProjects.setEndsAt);
+  const setTitle = useMutation(api.filmProjects.setTitle);
+  const once = useOnce();
+  const [status, setStatus] = useState<Status>(null);
+  const [busy, setBusy] = useState(false);
+  const [editingEnd, setEditingEnd] = useState(false);
+  const [editingTitle, setEditingTitle] = useState(false);
+
+  async function run(action: FilmAction, work: () => Promise<void>, success?: string) {
+    await once(async () => {
+      setBusy(true);
+      setStatus(null);
+      try {
+        await work();
+        if (success) setStatus({ kind: "success", text: success });
+      } catch (error) {
+        setStatus({ kind: "error", text: filmRefusalText(error, action) });
+      } finally {
+        setBusy(false);
+      }
+    });
+  }
+
+  async function onClose() {
+    if (!(await askConfirmation(closeConfirmation(project.title)))) return;
+    await run("close", () => close({ projectId: project.projectId }).then(() => undefined), "Het filmproject is gesloten.");
+  }
+
+  async function onChangeEnd(day: Day) {
+    await run(
+      "changeEnd",
+      async () => {
+        await setEndsAt({ projectId: project.projectId, endsAt: endOfDutchDay(day) });
+        setEditingEnd(false);
+      },
+      `Open tot ${formatDay(day)}.`,
+    );
+  }
+
+  // Besluit 27 (Wouter: ja): de titel wijzigen, ook na sluiten.
+  async function onChangeTitle(next: string) {
+    await run(
+      "changeTitle",
+      async () => {
+        await setTitle({ projectId: project.projectId, title: next });
+        setEditingTitle(false);
+      },
+      "De titel is gewijzigd.",
+    );
+  }
+
+  return { run, busy, status, editingEnd, setEditingEnd, editingTitle, setEditingTitle, onClose, onChangeEnd, onChangeTitle };
+}
+
+/** De knoppen van de oprichter (gele sleutel) en de velden om titel en einddatum te wijzigen. */
+function FounderEdits({
+  project,
+  view,
+  now,
+  actions,
+  withClose,
+}: {
+  project: ProjectData["project"];
+  view: { close: boolean; changeEnd: boolean; changeTitle: boolean };
+  now: number;
+  actions: ProjectActions;
+  withClose: boolean;
+}) {
+  const { busy } = actions;
+  const showClose = withClose && view.close;
+  if (!view.changeTitle && !view.changeEnd && !showClose) return null;
+  return (
+    <>
+      <View style={styles.buttons}>
+        {view.changeTitle && (
+          <FounderButton
+            button={FOUNDER_BUTTONS.changeTitle}
+            disabled={busy}
+            onPress={() => actions.setEditingTitle((e) => !e)}
+          />
+        )}
+        {view.changeEnd && (
+          <FounderButton button={FOUNDER_BUTTONS.changeEnd} disabled={busy} onPress={() => actions.setEditingEnd((e) => !e)} />
+        )}
+        {showClose && (
+          <FounderButton button={FOUNDER_BUTTONS.close} tone="danger" disabled={busy} onPress={() => void actions.onClose()} />
+        )}
+      </View>
+
+      {actions.editingTitle && view.changeTitle && (
+        <TitleEditor initial={project.title} busy={busy} onSave={(next) => void actions.onChangeTitle(next)} />
+      )}
+
+      {actions.editingEnd && view.changeEnd && (
+        <EndDatePicker
+          initial={dutchDayOf(project.endsAt)}
+          now={now}
+          busy={busy}
+          saveTitle="Bewaar einddatum"
+          onSave={(day) => void actions.onChangeEnd(day)}
+        />
+      )}
+    </>
   );
 }
 
@@ -412,9 +457,12 @@ function MineItem({ row, now, busy, onWithdraw }: { row: MineRow; now: number; b
 
 // --- de downloadpagina (webapp, oprichter) -------------------------------------------------
 
-function DownloadPage({ data, removeAll: canRemoveAll }: { data: ProjectData; removeAll: boolean }) {
+function DownloadPage({ data, view }: { data: ProjectData; view: ReturnType<typeof projectPageView> }) {
   const { project, originals } = data;
+  const canRemoveAll = view.removeAll;
   const now = useNow(60_000);
+  // Feedback webapp dev, tweede ronde: sluiten, titel en einddatum ook hier.
+  const actions = useProjectActions(project);
   const downloadUrl = useAction(api.filmProjects.downloadUrl);
   const removeAll = useMutation(api.filmProjects.removeAll);
   const once = useOnce();
@@ -494,6 +542,8 @@ function DownloadPage({ data, removeAll: canRemoveAll }: { data: ProjectData; re
           {downloadHeaderText(project, originals, now)}
         </Text>
       </View>
+      <FounderEdits project={project} view={view} now={now} actions={actions} withClose />
+      {actions.status && <Notice kind={actions.status.kind} message={actions.status.text} />}
       {all.length > 0 && (
         <FounderButton
           button={FOUNDER_BUTTONS.downloadAll}
@@ -714,31 +764,21 @@ function EndDatePicker({
   onSave?: (day: Day) => void;
   saveTitle?: string;
 }) {
-  const { colors, scheme } = useTheme();
   const range = endDayRange(now);
   const [day, setDay] = useState<Day>(() => clampDay(initial, range));
-  const min = new Date(range.first.year, range.first.month - 1, range.first.day, 0, 0, 0, 0);
-  const max = new Date(range.last.year, range.last.month - 1, range.last.day, 23, 59, 0, 0);
   return (
     <View style={styles.section}>
       <Text variant="fieldLabel">Open tot</Text>
-      <View style={[styles.picker, { backgroundColor: colors.field, borderColor: colors.fieldLine }]}>
-        <DateTimePicker
-          value={pickerDate(day)}
-          mode="date"
-          display="spinner"
-          locale="nl-NL"
-          themeVariant={scheme}
-          textColor={colors.text}
-          minimumDate={min}
-          maximumDate={max}
-          onValueChange={(_event, date) => {
-            const next = clampDay(dayFromPicker(date), range);
-            setDay(next);
-            onChange?.(next);
-          }}
-        />
-      </View>
+      <DayPicker
+        day={day}
+        min={range.first}
+        max={range.last}
+        onChange={(picked) => {
+          const next = clampDay(picked, range);
+          setDay(next);
+          onChange?.(next);
+        }}
+      />
       <Text variant="meta" color="muted">
         {`Het project sluit vanzelf aan het eind van ${formatDay(day)} (Nederlandse tijd).`}
       </Text>
@@ -771,5 +811,4 @@ const styles = StyleSheet.create({
   pill: { alignSelf: "flex-start", paddingHorizontal: space.s, paddingVertical: 2, borderRadius: radius.pill },
   link: { minHeight: size.touchMin, justifyContent: "center" },
   pressed: { opacity: 0.6 },
-  picker: { borderWidth: 1, borderRadius: radius.field, overflow: "hidden" },
 });

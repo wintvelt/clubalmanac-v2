@@ -46,6 +46,15 @@ export function FounderButton({ button, onPress, disabled = false, tone = "prima
   );
 }
 
+/**
+ * De gele sleutel los, bv. achter "Oprichter" in Mijn groepen (feedback
+ * webapp dev, tweede ronde). Decoratief: de tekst ernaast zegt het al.
+ */
+export function FounderKey({ size: iconSize = 18 }: { size?: number }) {
+  const { colors } = useTheme();
+  return <Icon name="key" size={iconSize} color={colors.founderKey} />;
+}
+
 const styles = StyleSheet.create({
   button: {
     minHeight: size.smallButton,

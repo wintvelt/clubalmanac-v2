@@ -346,9 +346,11 @@ export function projectPageView(input: {
   const app = platform === "ios";
   return {
     wifiSwitch: app && uploader,
-    close: app && isFounder && open,
-    changeEnd: app && isFounder && open,
-    changeTitle: app && isFounder,
+    // Feedback webapp dev, tweede ronde: ook op het web (de downloadpagina),
+    // een bewuste uitzondering op W5, alleen voor de oprichter.
+    close: isFounder && open,
+    changeEnd: isFounder && open,
+    changeTitle: isFounder,
     downloadHint: app && isFounder,
     download: !app && isFounder,
     removeAll: !app && isFounder && !open && originals.length > 0,
