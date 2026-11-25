@@ -1638,3 +1638,30 @@ Groen: het vangnet voor de tokens. De andere app-tests blijven groen.
 ### Besluit 28 (Wouter, 2026-11-25, build 93)
 
 Start de oprichter een filmproject in een groep **zonder album**, dan maakt de backend in dezelfde mutation een leeg album met de titel van het project (de gewone albumregels: maker is de oprichter, naam als albumnaam). Heeft de groep al een album, dan gebeurt er niets extra. Aanleiding: in een groep zonder album kon je wel een project starten, maar geen filmpje toevoegen.
+
+### Besluit 28 (A)
+
+- **Gedrag.** `filmProjects.open` in een groep zonder album maakt in dezelfde mutation een album, met de velden die `albums.create` zou geven:
+  - `groupId`;
+  - als naam de getrimde titel (dezelfde naamregels);
+  - `createdBy` de oprichter;
+  - `createdAt` nu;
+  - geen omschrijving, cover of `sortDate`;
+  - geen foto's.
+
+  Leden zien het album in de groep, zonder ongelezen foto's. Er is verder niets dat een nieuw album "merkt": `albums.create` doet ook niets anders.
+- **Los van het project.** Het album is een gewoon album en het project hangt er niet aan (besluit 27). Een andere albumnaam verandert de titel niet, en andersom ook niet. Een nieuw filmpje in dat album levert een origineel.
+- **Niets erbij:**
+  - de groep heeft al een album, ook als dat het album van een eerder project is;
+  - elke weigering van `open`: titel, datum, `PROJECT_ALREADY_OPEN`, `NOT_ALLOWED`, `NOT_MEMBER`. De mutation is één transactie, en de controles gaan vóór het maken.
+- **Cascades.** Het album is van de oprichter, zoals elk album dat hij maakt. Account verwijderen (WP29, `by_createdBy`) en groep verwijderen behandelen het dus als elk ander album. Geen nieuwe rij in de cascade-matrix: het is de bestaande "album maken", via een ander pad.
+- **App.** Geen pure logica erbij: de albumlijst van de groep is live, dus het nieuwe album staat er vanzelf.
+
+| Wat | Test |
+|---|---|
+| album met de titel, velden zoals `albums.create`, zichtbaar zonder ongelezen; los van de titel; origineel in dat album | `tests/filmProject/emptyGroupAlbum.test.ts` (rood: 4) |
+| geen album bij een groep met album, bij een tweede project, en bij elke weigering | `emptyGroupAlbum.test.ts`: 6 tests. 5 groen als vangnet, 1 rood: "tweede project na sluiten" heeft het album van het eerste nodig |
+
+**Gate erbij:** start als oprichter een project in een groep zonder album. Het album met de titel staat meteen in de groep en in het kiesscherm van het toevoegscherm. Een filmpje daarin geeft "wordt ook als origineel bewaard".
+
+**Stand na A:** 5 rood en 5 groen, in één nieuw bestand. A draaide alle 192 tests van het filmproject tegen een wegwerp-uitwerking (een album maken na de controles in `open`): allemaal groen. Die uitwerking is weggegooid. De root-typecheck is schoon.
