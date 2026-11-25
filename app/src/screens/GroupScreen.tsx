@@ -16,6 +16,7 @@ import { QueryBoundary } from "../components/QueryBoundary";
 import { Screen } from "../components/Screen";
 import { SegmentedTabs } from "../components/SegmentedTabs";
 import { useWideLayout } from "../components/wideLayout";
+import { useWideMain } from "../components/wideMain";
 import { InvitedSection } from "./InvitesScreens";
 import { SmallButton } from "../components/SmallButton";
 import { EmptyState, LoadingState } from "../components/States";
@@ -254,6 +255,8 @@ function AlbumsTab({ groupId, canCreate }: { groupId: Id<"groups">; canCreate: b
   const albums = useLiveQuery(api.albums.listByGroupWithUnread, { groupId });
   // WP33 D4: een album dat binnenkomt (ook van een ander lid), fadet in.
   const arrivals = useArrivals(albums?.map((a) => a._id));
+  // Breed: de lege stand in het midden van de rechterkolom (components/wideMain.ts).
+  const wideMain = useWideMain();
   if (albums === undefined) return <LoadingState label="Albums laden…" />;
   // WP28b: "Nieuw album" op een eigen regel boven de jaren, ook in de lege toestand.
   const create = canCreate ? (
@@ -261,7 +264,7 @@ function AlbumsTab({ groupId, canCreate }: { groupId: Id<"groups">; canCreate: b
   ) : null;
   if (albums.length === 0) {
     return (
-      <View style={styles.years}>
+      <View style={[styles.years, wideMain && styles.grow]}>
         {create}
         <EmptyState icon="photos" title="Nog geen albums" text="In deze groep staan nog geen albums." />
       </View>
@@ -562,6 +565,7 @@ function MemberRow({
 const styles = StyleSheet.create({
   intro: { gap: space.xs },
   years: { gap: space.xl },
+  grow: { flexGrow: 1 },
   year: { gap: space.m },
   section: { gap: space.s },
   card: {

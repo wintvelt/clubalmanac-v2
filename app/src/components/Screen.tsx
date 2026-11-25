@@ -9,6 +9,7 @@ import { useAuthState, useReconnect } from "../data/authStateContext";
 import { reconnectView } from "../lib/reconnectView";
 import { size, space, useTheme } from "../theme";
 import { ScrollOffsetContext } from "./Motion";
+import { useWideMain } from "./wideMain";
 import { Notice } from "./Notice";
 import { SmallButton } from "./SmallButton";
 import { LoadingState } from "./States";
@@ -52,6 +53,9 @@ export function Screen({
 }: Props) {
   const { colors } = useTheme();
   const reconnecting = useAuthState() === "reconnecting";
+  // In de rechterkolom van de brede indeling groeit de kolom tot de hoogte van
+  // het venster, zodat een lege stand in het midden kan staan.
+  const wideMain = useWideMain();
   // WP29 fix-cyclus 3: KeyboardAvoidingView meet zijn plek ten opzichte van
   // zijn ouder, niet van het venster. Onder een navigatiebalk telt hij die dan
   // niet mee, en bleef de onderkant van het formulier onder het toetsenbord.
@@ -101,7 +105,7 @@ export function Screen({
         >
           <ScrollOffsetContext.Provider value={offset}>{header}</ScrollOffsetContext.Provider>
           <KeyboardRevealContext.Provider value={keyboard.onFieldFocus}>
-            <View style={[styles.column, fullWidth && styles.fullWidth]}>{reconnecting ? <ReconnectingState /> : children}</View>
+            <View style={[styles.column, fullWidth && styles.fullWidth, wideMain && styles.grow]}>{reconnecting ? <ReconnectingState /> : children}</View>
           </KeyboardRevealContext.Provider>
         </Animated.ScrollView>
         {footer && !reconnecting ? <View style={styles.footer}>{footer}</View> : null}
@@ -137,6 +141,7 @@ const styles = StyleSheet.create({
   fill: { flex: 1 },
   scroll: { flexGrow: 1, paddingBottom: space.xxl },
   centered: { justifyContent: "center" },
+  grow: { flexGrow: 1 },
   fullWidth: { maxWidth: "100%" },
   column: {
     width: "100%",

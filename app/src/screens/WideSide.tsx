@@ -5,6 +5,7 @@ import { BackPill } from "../components/BackPill";
 import { Gradient } from "../components/Gradient";
 import { PhotoImage } from "../components/Photo";
 import { Text } from "../components/Text";
+import { WideMainContext } from "../components/wideMain";
 import { initialOf } from "../lib/groups";
 import { SIDE_WIDTH } from "../lib/wideLayout";
 import { radius, size, space, useTheme } from "../theme";
@@ -49,7 +50,10 @@ export function WideSplit({
       >
         {side}
       </ScrollView>
-      <View style={styles.main}>{children}</View>
+      {/* Een lege stand rechts staat in het midden van de hoogte (components/wideMain.ts). */}
+      <View style={styles.main}>
+        <WideMainContext value>{children}</WideMainContext>
+      </View>
     </View>
   );
 }

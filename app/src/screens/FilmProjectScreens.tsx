@@ -237,7 +237,8 @@ function ProjectPage({
         </View>
       )}
 
-      <View style={styles.section}>
+      {/* Breed en leeg: de lege stand in het midden van de rechterkolom (components/wideMain.ts). */}
+      <View style={[styles.section, all.length === 0 && styles.fillRest]}>
         <Text variant="fieldLabel" color="muted" accessibilityRole="header">
           Alle filmpjes
         </Text>
@@ -872,6 +873,7 @@ function EndDatePicker({
 const styles = StyleSheet.create({
   intro: { gap: space.xs },
   buttons: { flexDirection: "row", flexWrap: "wrap", gap: space.s },
+  fillRest: { flexGrow: 1 },
   section: { gap: space.s },
   row: {
     minHeight: size.row,
