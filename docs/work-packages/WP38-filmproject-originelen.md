@@ -1665,3 +1665,10 @@ Start de oprichter een filmproject in een groep **zonder album**, dan maakt de b
 **Gate erbij:** start als oprichter een project in een groep zonder album. Het album met de titel staat meteen in de groep en in het kiesscherm van het toevoegscherm. Een filmpje daarin geeft "wordt ook als origineel bewaard".
 
 **Stand na A:** 5 rood en 5 groen, in één nieuw bestand. A draaide alle 192 tests van het filmproject tegen een wegwerp-uitwerking (een album maken na de controles in `open`): allemaal groen. Die uitwerking is weggegooid. De root-typecheck is schoon.
+
+### Besluit 29 (Wouter, 2026-11-25, build 93): het standaard-album in het toevoegscherm
+
+Aanleiding: na het starten van een project in testgroep 2 opende Toevoegen nog met het laatst gekozen album uit een andere groep.
+
+1. **Na het starten van een project** wordt een album van die groep het laatst gekozen album (WP39 F2): het album dat besluit 28 net maakte, of anders het nieuwste album van die groep.
+2. **De + in de tabbalk volgt de groep waar je bent:** op de groepspagina en op de projectpagina (en de schermen eronder die bij een groep horen) staat in het toevoegscherm een album van die groep klaar: het laatst gekozen album als dat in die groep ligt, anders het nieuwste album van die groep. Vanuit een album blijft het dat album (zoals nu). Elders blijft het laatst gekozen album.
