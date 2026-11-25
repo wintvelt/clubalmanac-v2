@@ -1722,3 +1722,5 @@ De laatste regel was ook grammaticaal fout ("originelen lukte"). De teksten van 
 - de algemene fout.
 
 De andere app-tests blijven groen.
+
+**Wouter (2026-11-25):** alle voorstellen van "Besluit 30 (A)" aanvaard, en bij "Alles verwijderen" "voor altijd": "[n] originelen gaan voor altijd weg, ook wat nog onderweg is. De filmpjes blijven in de albums." (enkelvoud: "1 origineel gaat voor altijd weg, ook als het nog onderweg is. Het filmpje blijft in het album.")
