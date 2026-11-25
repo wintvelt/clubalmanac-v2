@@ -71,8 +71,6 @@ export async function requireMemberForRead(
 // weigeringen op de WP28-paden dragen een code.
 export type RefusalCode =
   | "NOT_MEMBER"
-  // WP38 besluit 17: het filmalbum van een open filmproject.
-  | "FILM_PROJECT_OPEN"
   | "NOT_ALLOWED"
   | "FOUNDER_PROTECTED"
   | "FOUNDER_MUST_TRANSFER"

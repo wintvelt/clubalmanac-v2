@@ -21,6 +21,8 @@ export default function Layout() {
       <Stack.Screen name="groep/[groupId]/album/[albumId]/locatie/[photoId]" options={{ title: "Locatie wijzigen" }} />
       {/* WP21: het filmscherm van een clubfilm; geen terugveeg, zodat spoelen werkt. */}
       <Stack.Screen name="groep/[groupId]/film/[filmId]" options={filmScreenOptions} />
+      {/* WP38c: de projectpagina van een filmproject. */}
+      <Stack.Screen name="groep/[groupId]/filmproject/[projectId]" options={{ title: "Filmproject" }} />
       {/* WP41: Geld. De titel zet het scherm zelf (de naam van de afrekening of deelnemer). */}
       <Stack.Screen name="groep/[groupId]/geld/[settlementId]/index" options={{ title: "Afrekening" }} />
       <Stack.Screen name="groep/[groupId]/geld/[settlementId]/tabel" options={{ title: "Alle bedragen" }} />
@@ -38,6 +40,10 @@ export default function Layout() {
       <Stack.Screen
         name="groep/[groupId]/nieuw-album"
         options={{ title: "Nieuw album", presentation: "modal", headerRight: () => <CloseButton /> }}
+      />
+      <Stack.Screen
+        name="groep/[groupId]/nieuw-filmproject"
+        options={{ title: "Filmproject starten", presentation: "modal", headerRight: () => <CloseButton /> }}
       />
     </Stack>
   );

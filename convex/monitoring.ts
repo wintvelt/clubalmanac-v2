@@ -81,8 +81,9 @@ export const MONITORED_FKS: Array<{
   { table: "uploadIdempotency", field: "ownerId", required: true },
   { table: "uploadIdempotency", field: "photoId", required: false },
   // WP38: filmprojecten en hun inzendingen. Elk wis-pad haalt ze mee, dus een
-  // losse verwijzing is drift. `albumId` is optioneel: na sluiten mag het
-  // filmalbum weg (besluit 17), en dan gaat de verwijzing eruit. De import
+  // losse verwijzing is drift. `albumId` is optioneel: alleen projecten van
+  // vóór besluit 27 (dev) hebben het; gaat dat album weg, dan gaat de
+  // verwijzing eruit (besluit 27: album verwijderen mag altijd). De import
   // vult deze tabellen niet; de tooling telt en leegt ze wel.
   { table: "filmProjects", field: "groupId", required: true },
   { table: "filmProjects", field: "albumId", required: false },

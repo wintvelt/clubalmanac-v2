@@ -5,6 +5,7 @@ import { BackPill } from "../components/BackPill";
 import { Gradient } from "../components/Gradient";
 import { PhotoImage } from "../components/Photo";
 import { Text } from "../components/Text";
+import { WideMainContext } from "../components/wideMain";
 import { initialOf } from "../lib/groups";
 import { SIDE_WIDTH } from "../lib/wideLayout";
 import { radius, size, space, useTheme } from "../theme";
@@ -51,7 +52,10 @@ export function WideSplit({
       >
         {side}
       </ScrollView>
-      <View style={styles.main}>{children}</View>
+      {/* Een lege stand rechts staat in het midden van de hoogte (components/wideMain.ts). */}
+      <View style={styles.main}>
+        <WideMainContext value>{children}</WideMainContext>
+      </View>
     </View>
   );
 }
@@ -63,9 +67,13 @@ export function WideSide({
   cover,
   description,
   meta,
+  noCover = false,
   children,
 }: {
   back?: { title: string; onPress: () => void };
+  // WP38: zonder omslag en zonder lettervlak (een filmproject heeft geen
+  // foto); de kolom begint dan met de terugknop en de titel.
+  noCover?: boolean;
   // WP40 (A8): bovenin, op de plek van de pil (de kop van de selectiestand).
   top?: ReactNode;
   name: string | undefined;
@@ -83,7 +91,7 @@ export function WideSide({
             <BackPill title={back.title} onPress={back.onPress} />
           </View>
         ))}
-      <SideCover name={name} cover={cover} />
+      {!noCover && <SideCover name={name} cover={cover} />}
       {name !== undefined && (
         <View style={styles.intro}>
           <Text variant="title" accessibilityRole="header">

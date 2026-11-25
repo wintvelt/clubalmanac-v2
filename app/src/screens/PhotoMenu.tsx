@@ -15,6 +15,7 @@ import { placeShareActions, placeShareLabel, shareNotice, type PlaceShareAction 
 import { addOutcome, myPhotoActions } from "../lib/myPhotos";
 import { profilePhotoNotice } from "../lib/profileEdit";
 import {
+  deleteMessage,
   photoActionLabel,
   photoActions,
   selectionPlan,
@@ -87,12 +88,8 @@ const FLAG_FAILED: Feedback = {
   message: "Probeer het later opnieuw.",
 };
 
-// Invariant 2: wat er weggaat bij verwijderen.
-function deleteWhat(n: number): string {
-  return n === 1
-    ? "De foto verdwijnt uit elk album. Is hij een cover of een profielfoto, dan is hij dat niet meer. Dit kun je niet ongedaan maken."
-    : `De ${n} foto's verdwijnen uit elk album. Zijn ze een cover of een profielfoto, dan zijn ze dat niet meer. Dit kun je niet ongedaan maken.`;
-}
+// Invariant 2: wat er weggaat bij verwijderen (deleteMessage in
+// src/lib/photoActions.ts; bij een filmpje met de zin over het origineel).
 
 // WP17c: waar het menu hoort. Een album (met zijn groep), of Mijn foto's
 // (null): daar is elke foto van jou en kent het menu geen album (A-invariant 13).
@@ -290,7 +287,7 @@ export function usePhotoMenu({
         }
         case "delete":
           // Invariant 2: altijd eerst vragen, en zeggen wat er weggaat.
-          confirm(photo.isVideo ? "Filmpje overal verwijderen?" : "Foto overal verwijderen?", deleteWhat(1), "Verwijderen", () =>
+          confirm(photo.isVideo ? "Filmpje overal verwijderen?" : "Foto overal verwijderen?", deleteMessage({ count: 1, videos: photo.isVideo === true ? 1 : 0 }), "Verwijderen", () =>
             void attempt(() => removePhoto({ photoId }), SUCCESS.delete, FAILED, true),
           );
           return;
@@ -437,7 +434,8 @@ export function useSelectionActions({
       if (action === "delete") {
         const rest = notMine > 0 ? ` ${photos(notMine)} van anderen blijven staan.` : "";
         const n = plan.allowed.length;
-        confirm(`${photos(n)} overal verwijderen?`, `${deleteWhat(n)}${rest}`, "Verwijderen", () => void finish(true));
+        const videos = selected.filter((p) => p.isVideo === true && plan.allowed.includes(p.photoId)).length;
+        confirm(`${photos(n)} overal verwijderen?`, `${deleteMessage({ count: n, videos })}${rest}`, "Verwijderen", () => void finish(true));
         return;
       }
       // Besluit 3: bevestigen als er een foto van een ander bij zit.

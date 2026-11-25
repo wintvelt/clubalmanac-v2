@@ -99,7 +99,7 @@ export function createImageMemory<V>(opts: { limit: number; release: (value: V) 
 }
 
 // WP41c: ook de foto van een afrekening, met de versie als variant.
-export type ImageMemoryKind = "foto" | "uitnodiging" | "afrekening";
+export type ImageMemoryKind = "foto" | "uitnodiging" | "inzending" | "afrekening";
 
 /**
  * De sleutel van een beeld in het geheugen: per user, soort, id en formaat.

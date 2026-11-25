@@ -33,10 +33,9 @@ describe("de integriteitscheck blijft schoon bij een gewone levensloop", () => {
     expect(await report(t)).toEqual([]);
   });
 
-  it("gesloten, en daarna het filmalbum verwijderd (besluit 17): het project wijst niet naar een album dat er niet is", async () => {
+  it("een album van de groep verwijderd terwijl het project open staat (besluit 27): schoon", async () => {
     const t = newT();
     const s = await world(t);
-    await asFilm.alice(t).mutation(filmApi.close, { projectId: s.projectId });
     await asFilm.alice(t).mutation(api.albums.remove, { albumId: s.w.albums.georgie });
     await flush(t);
     expect(await report(t)).toEqual([]);
@@ -66,11 +65,18 @@ describe("een losse verwijzing in de nieuwe tabellen meldt de check", () => {
     expect(lines.some((l) => l.includes("filmOriginals") && l.includes("photoId")), JSON.stringify(lines)).toBe(true);
   });
 
-  it("een project waarvan het album weg is maar nog wel genoemd wordt", async () => {
+  it("een project van vóór besluit 27 waarvan het album weg is maar nog wel genoemd wordt (alleen dev)", async () => {
     const t = newT();
     const s = await world(t);
     await t.run(async (ctx) => {
-      await ctx.db.delete(s.w.albums.georgie);
+      await ctx.db.insert("filmProjects", {
+        groupId: s.w.groups.ander,
+        albumId: s.w.albums.elders,
+        albumName: "Elders",
+        endsAt: Date.now() + 24 * 60 * 60 * 1000,
+        openedAt: Date.now(),
+      } as never);
+      await ctx.db.delete(s.w.albums.elders);
     });
     const lines = await report(t);
     expect(lines.some((l) => l.includes("filmProjects") && l.includes("albumId")), JSON.stringify(lines)).toBe(true);

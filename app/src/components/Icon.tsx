@@ -43,9 +43,22 @@ const IONICONS = {
   // WP21: de clubfilms.
   film: "film",
   play: "play-circle",
+  // WP38c (besluit 1 na A): "Filmproject starten", alleen voor de oprichter.
+  key: "key",
+  // WP38c: de downloadpagina.
+  download: "download",
+  // WP38 (feedback na besluit 27): de knoppen van de oprichter.
+  lock: "lock-closed",
+  calendar: "calendar",
 } as const;
 
 export type IconName = keyof typeof IONICONS;
+
+/** De naam in Ionicons: lijn (standaard) of gevuld. Ook voor GradientIcon.web.tsx. */
+export function ioniconName(name: IconName, filled = false): string {
+  const base = IONICONS[name];
+  return filled ? base : `${base}-outline`;
+}
 
 type Props = { name: IconName; size?: number; color: string; filled?: boolean };
 

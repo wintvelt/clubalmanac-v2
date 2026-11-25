@@ -42,8 +42,10 @@ import {
   projectAcceptsArrivals,
   projectClosedAt,
   projectIsOpen,
+  projectTitleOf,
   removeOriginalRows,
 } from "./lib/filmOriginals";
+import { validName } from "./lib/names";
 import { INFO_SENDER, sendMailjetMessage } from "./lib/mailjet";
 import {
   abortMultipartUpload,
@@ -63,14 +65,15 @@ import {
   type R2Part,
 } from "./lib/r2";
 
-// WP38a — filmproject en originelen voor de clubfilm (backend). Spec:
+// WP38a — filmproject en originelen voor de feature-film (backend). Spec:
 // docs/work-packages/WP38-filmproject-originelen.md §Besluiten, §A-invarianten,
 // §Testcontract.
 //
-// Een project per groep, door de oprichter open en dicht gezet, met een
-// filmalbum X en een einddatum. Zolang het open staat, komt elk nieuw filmpje
-// in die groep in X (de albumregel staat in `videos.reserveVideo`). Bij zo'n
-// nieuw filmpje mag de eigenaar het origineel insturen:
+// Een project per groep, door de oprichter open en dicht gezet, met een titel
+// en een einddatum (besluit 27: geen filmalbum, geen albumregel). Elk nieuw
+// filmpje komt in het album dat het lid kiest. Staat het in een album van een
+// groep met een open project en is het gemaakt terwijl dat project open stond,
+// dan mag de eigenaar het origineel insturen:
 //   1. `startOriginal` (action): toegang, grenzen, één inzending per filmpje
 //      met een sleutel van de backend in de originelen-bucket, een
 //      multipart-upload in R2, en links voor alleen de delen die R2 nog niet
@@ -157,12 +160,6 @@ async function originalById(ctx: QueryCtx, originalId: string): Promise<Doc<"fil
   return id ? await ctx.db.get(id) : null;
 }
 
-/** De naam van het filmalbum: zoals hij nu is, of de naam bij het openen als het album weg is. */
-async function albumNameOf(ctx: QueryCtx, project: Doc<"filmProjects">): Promise<string> {
-  const album = project.albumId ? await ctx.db.get(project.albumId) : null;
-  return album?.name ?? project.albumName;
-}
-
 async function hasOriginals(ctx: QueryCtx, projectId: Id<"filmProjects">): Promise<boolean> {
   return (
     (await ctx.db
@@ -181,24 +178,36 @@ function endsAtAllowed(endsAt: number, now: number): boolean {
 
 /**
  * Besluit 1, A-invariant 1: alleen de oprichter (op het moment van het
- * verzoek). Het filmalbum hoort bij de groep; de einddatum ligt in de
- * toekomst en hooguit een jaar vooruit (besluit 13); hooguit één open project
- * per groep. Het project sluit vanzelf op de einddatum.
+ * verzoek). Besluit 28: een groep zonder album krijgt een album met de titel.
+ * Besluit 27: een titel (de regels van een albumnaam: getrimd, 1 tot
+ * 50 tekens, geen onzichtbare tekens); het project hangt niet aan een album.
+ * De einddatum ligt in de toekomst en hooguit een jaar
+ * vooruit (besluit 13); hooguit één open project per groep. Het project sluit
+ * vanzelf op de einddatum.
  */
 export const open = mutation({
-  args: { groupId: v.id("groups"), albumId: v.id("albums"), endsAt: v.number() },
+  args: { groupId: v.id("groups"), title: v.string(), endsAt: v.number() },
   returns: v.string(),
-  handler: async (ctx, { groupId, albumId, endsAt }) => {
-    await requireFounder(ctx, groupId);
-    const album = await ctx.db.get(albumId);
-    if (!album || album.groupId !== groupId) refuseCode("NOT_MEMBER");
+  handler: async (ctx, { groupId, title: rawTitle, endsAt }) => {
+    const { user } = await requireFounder(ctx, groupId);
+    const title = validName(rawTitle, "NAME_REQUIRED");
     const now = Date.now();
     if (!endsAtAllowed(endsAt, now)) refuseCode("DATE_INVALID");
     if (await openProjectOfGroup(ctx, groupId, now)) throw new ConvexError({ code: "PROJECT_ALREADY_OPEN" });
+    // Besluit 28: een groep zonder album krijgt in dezelfde mutation, na alle
+    // controles, een leeg album met de titel, zoals `albums.create` het maakt
+    // (maker de oprichter). Het is een gewoon album; het project hangt er niet
+    // aan (besluit 27).
+    const anyAlbum = await ctx.db
+      .query("albums")
+      .withIndex("by_group", (q) => q.eq("groupId", groupId))
+      .first();
+    if (!anyAlbum) {
+      await ctx.db.insert("albums", { groupId, name: title, createdBy: user._id, createdAt: now });
+    }
     const projectId = await ctx.db.insert("filmProjects", {
       groupId,
-      albumId,
-      albumName: album.name,
+      title,
       endsAt,
       openedAt: now,
     });
@@ -245,6 +254,26 @@ export const setEndsAt = mutation({
   },
 });
 
+/**
+ * Besluit 27 (open vraag 1, Wouter: ja): de titel wijzigen. Alleen de
+ * oprichter (op het moment van het verzoek), met de regels van `open`. Ook na
+ * sluiten (A-keuze): de titel verandert niets aan insturen of opruimen. Alleen
+ * de titel verandert.
+ */
+export const setTitle = mutation({
+  args: { projectId: v.string(), title: v.string() },
+  returns: v.null(),
+  handler: async (ctx, { projectId, title: rawTitle }) => {
+    await requireCurrentUser(ctx);
+    const project = await projectById(ctx, projectId);
+    if (!project) refuseCode("NOT_MEMBER");
+    await requireFounder(ctx, project.groupId);
+    const title = validName(rawTitle, "NAME_REQUIRED");
+    await ctx.db.patch(project._id, { title });
+    return null;
+  },
+});
+
 /** Besluit 13: op de einddatum gaat het project vanzelf dicht. */
 export const closeIfDue = internalMutation({
   args: { projectId: v.id("filmProjects") },
@@ -260,9 +289,8 @@ export const closeIfDue = internalMutation({
 
 const projectRow = v.object({
   projectId: v.string(),
-  // `null` als het filmalbum na sluiten verwijderd is (besluit 17).
-  albumId: v.union(v.id("albums"), v.null()),
-  albumName: v.string(),
+  // Besluit 27: de titel, geen album.
+  title: v.string(),
   endsAt: v.number(),
   open: v.boolean(),
 });
@@ -281,11 +309,11 @@ export const listForGroup = query({
       .query("filmProjects")
       .withIndex("by_group", (q) => q.eq("groupId", groupId))
       .collect();
-    const rows: { projectId: string; albumId: Id<"albums"> | null; albumName: string; endsAt: number; open: boolean; openedAt: number }[] = [];
+    const rows: { projectId: string; title: string; endsAt: number; open: boolean; openedAt: number }[] = [];
     for (const p of projects) {
       const isOpen = projectIsOpen(p, now);
       if (!isOpen && !(await hasOriginals(ctx, p._id))) continue;
-      rows.push({ projectId: p._id, albumId: p.albumId ?? null, albumName: await albumNameOf(ctx, p), endsAt: p.endsAt, open: isOpen, openedAt: p.openedAt });
+      rows.push({ projectId: p._id, title: projectTitleOf(p), endsAt: p.endsAt, open: isOpen, openedAt: p.openedAt });
     }
     rows.sort((a, b) => (a.open === b.open ? b.openedAt - a.openedAt : a.open ? -1 : 1));
     return rows.map(({ openedAt: _openedAt, ...row }) => row);
@@ -299,8 +327,7 @@ export const listOpenForMe = query({
     v.object({
       groupId: v.id("groups"),
       projectId: v.string(),
-      albumId: v.id("albums"),
-      albumName: v.string(),
+      title: v.string(),
       endsAt: v.number(),
     }),
   ),
@@ -314,16 +341,26 @@ export const listOpenForMe = query({
       .query("memberships")
       .withIndex("by_user", (q) => q.eq("userId", user._id))
       .collect();
-    const out: { groupId: Id<"groups">; projectId: string; albumId: Id<"albums">; albumName: string; endsAt: number }[] = [];
+    const out: { groupId: Id<"groups">; projectId: string; title: string; endsAt: number }[] = [];
     for (const m of memberships) {
       const p = await openProjectOfGroup(ctx, m.groupId, now);
-      // Een open project heeft altijd zijn filmalbum (besluit 17).
-      if (!p || p.albumId === undefined) continue;
-      out.push({ groupId: p.groupId, projectId: p._id, albumId: p.albumId, albumName: await albumNameOf(ctx, p), endsAt: p.endsAt });
+      if (!p) continue;
+      out.push({ groupId: p.groupId, projectId: p._id, title: projectTitleOf(p), endsAt: p.endsAt });
     }
     return out;
   },
 });
+
+/**
+ * WP38c (besluit 3 na A): wanneer een inzending uiterlijk weggaat, zoals de
+ * opruimronde (`expireOriginals`) het doet. Binnen: een jaar na binnenkomst.
+ * Onderweg: 14 dagen na het sluiten (of de einddatum, ook als die nog komt of
+ * verschuift), maar nooit later dan een jaar na het aanmelden.
+ */
+function originalGoneAt(original: Doc<"filmOriginals">, project: Doc<"filmProjects">): number {
+  if (original.status === "binnen" && original.completedAt !== undefined) return original.completedAt + ORIGINAL_KEEP_MS;
+  return Math.min(projectClosedAt(project) + ORIGINAL_ARRIVAL_AFTER_CLOSE_MS, original.submittedAt + ORIGINAL_KEEP_MS);
+}
 
 /**
  * De projectpagina (leden; anders NOT_MEMBER). Van anderen alleen wat binnen
@@ -336,10 +373,10 @@ export const get = query({
     project: v.object({
       projectId: v.string(),
       groupId: v.id("groups"),
-      albumId: v.union(v.id("albums"), v.null()),
-      albumName: v.string(),
+      title: v.string(),
       endsAt: v.number(),
       open: v.boolean(),
+      closedAt: v.union(v.number(), v.null()),
     }),
     isFounder: v.boolean(),
     originals: v.array(
@@ -351,6 +388,8 @@ export const get = query({
         durationMs: v.number(),
         submittedAt: v.number(),
         takenAt: v.union(v.number(), v.null()),
+        bytes: v.number(),
+        goneAt: v.number(),
       }),
     ),
   }),
@@ -364,6 +403,8 @@ export const get = query({
       .query("filmOriginals")
       .withIndex("by_project", (q) => q.eq("projectId", project._id))
       .collect();
+    const now = Date.now();
+    const open = projectIsOpen(project, now);
     const originals = [];
     for (const r of rows.sort((a, b) => a.submittedAt - b.submittedAt)) {
       if (!canSeeOriginal(r, user._id, isFounder)) continue;
@@ -377,16 +418,18 @@ export const get = query({
         durationMs: photo?.video?.durationMs ?? 0,
         submittedAt: r.submittedAt,
         takenAt: photo?.takenAt ?? null,
+        bytes: r.bytes,
+        goneAt: originalGoneAt(r, project),
       });
     }
     return {
       project: {
         projectId: project._id as string,
         groupId: project.groupId,
-        albumId: project.albumId ?? null,
-        albumName: await albumNameOf(ctx, project),
+        title: projectTitleOf(project),
         endsAt: project.endsAt,
-        open: projectIsOpen(project, Date.now()),
+        open,
+        closedAt: open ? null : projectClosedAt(project),
       },
       isFounder,
       originals,
@@ -406,8 +449,10 @@ type StartState =
  * A-invariant 3: mag deze user bij dit filmpje een origineel insturen? Een
  * bestaande inzending van dit filmpje (van hem) gaat verder, zolang het
  * project hem nog aanneemt (besluit 18). Een nieuwe kan alleen bij een eigen
- * filmpje dat in het filmalbum staat van een open project in een groep waar
- * hij lid van is, en gemaakt is terwijl dat project open stond. Al het andere
+ * filmpje dat in een album staat van een groep met een open project waar hij
+ * lid van is (besluit 27: elk album van de groep), en gemaakt is terwijl dat
+ * project open stond. Staat het in albums van twee groepen met elk een open
+ * project, dan telt het album waar het het eerst in kwam (A-keuze). Al het andere
  * is één weigering (`niet_toegestaan`). Fix-cyclus 2 (heraudit 1): een
  * filmpje waarvan het origineel is teruggetrokken of door de oprichter
  * verwijderd (`originalBlockedAt`), neemt geen inzending meer aan.
@@ -442,17 +487,13 @@ async function startState(ctx: QueryCtx, subject: string, photoId: Id<"photos">,
     .query("albumPhotos")
     .withIndex("by_photo", (q) => q.eq("photoId", photoId))
     .collect();
+  placements.sort((a, b) => a.addedAt - b.addedAt || a._creationTime - b._creationTime);
   for (const ap of placements) {
-    const projects = await ctx.db
-      .query("filmProjects")
-      .withIndex("by_album", (q) => q.eq("albumId", ap.albumId))
-      .collect();
-    for (const project of projects) {
-      if (project.groupId !== ap.groupId || !projectIsOpen(project, now)) continue;
-      if (photo.createdAt < project.openedAt || photo.createdAt >= projectClosedAt(project)) continue;
-      if (!(await getMembership(ctx, user._id, project.groupId))) continue;
-      return { kind: "new", userId: user._id, project };
-    }
+    const project = await openProjectOfGroup(ctx, ap.groupId, now);
+    if (!project) continue;
+    if (photo.createdAt < project.openedAt || photo.createdAt >= projectClosedAt(project)) continue;
+    if (!(await getMembership(ctx, user._id, project.groupId))) continue;
+    return { kind: "new", userId: user._id, project };
   }
   return { kind: "refused", reason: "niet_toegestaan" };
 }
@@ -1233,11 +1274,11 @@ export const expireOriginals = internalMutation({
   },
 });
 
-/** De gegevens voor de herinnering: de oprichter van nu, de groep, het album. */
+/** De gegevens voor de herinnering: de oprichter van nu, de groep, de titel (besluit 27). */
 export const reminderData = internalQuery({
   args: { projectId: v.id("filmProjects") },
   returns: v.union(
-    v.object({ email: v.string(), founderName: v.string(), groupName: v.string(), albumName: v.string() }),
+    v.object({ email: v.string(), founderName: v.string(), groupName: v.string(), title: v.string() }),
     v.null(),
   ),
   handler: async (ctx, { projectId }) => {
@@ -1249,7 +1290,7 @@ export const reminderData = internalQuery({
       email: founder.email,
       founderName: founder.name ?? founder.email,
       groupName: group.name,
-      albumName: await albumNameOf(ctx, project),
+      title: projectTitleOf(project),
     };
   },
 });
@@ -1293,7 +1334,7 @@ export const sendReminder = internalAction({
     const tpl = filmOriginalsReminderTemplate({
       founderName: data.founderName,
       groupName: data.groupName,
-      albumName: data.albumName,
+      title: data.title,
       count,
       firstGoneAt: amsterdamWallClock(firstGoneAt),
       lastGoneAt: amsterdamWallClock(lastGoneAt),

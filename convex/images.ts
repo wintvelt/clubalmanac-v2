@@ -222,7 +222,7 @@ export const inviteMailCover = internalQuery({
  * WP38 A-invariant 7: de poster van een inzending, voor de projectpagina. Een
  * eigen regel, los van de foto-toegang: lid van de groep van het project (nu),
  * en de inzending staat voor hem in de lijst (eigen, binnen, of de oprichter;
- * `filmProjects.get`). Ook als het filmpje uit het filmalbum is gehaald
+ * `filmProjects.get`). Ook als het filmpje uit het album is gehaald
  * (besluit 4). Alleen de poster (zonder GPS, WP37 A-invariant 15), nooit het
  * origineel zelf: geen afspeelpad (besluit 7). Al het andere: `null`, één 404.
  */

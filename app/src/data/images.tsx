@@ -3,6 +3,7 @@ import { Image, type ImageSource } from "expo-image";
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import {
   inviteCoverUrl,
+  originalPosterUrl,
   photoImageUrl,
   profileImageUrl,
   settlementImageUrl,
@@ -64,6 +65,16 @@ export function usePhotoLoad(photoId: string, format: ImageFormat, hasFormats?: 
 export function useInviteCoverLoad(inviteId: string, format: ImageFormat) {
   return useTokenImageLoad((site) => {
     const uri = inviteCoverUrl(site, inviteId, format);
+    return { uri, cacheKey: uri };
+  });
+}
+
+// WP38c (38c-19): de poster van een inzending, via het eigen beeldpad van 38a.
+// Dezelfde token-toestand als een foto. Alleen in het geheugen: de toegang
+// eindigt met het lidmaatschap of het terugtrekken.
+export function useOriginalPosterLoad(originalId: string, format: ImageFormat) {
+  return useTokenImageLoad((site) => {
+    const uri = originalPosterUrl(site, originalId, format);
     return { uri, cacheKey: uri };
   });
 }

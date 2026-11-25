@@ -5,6 +5,7 @@ import { createImageMemory, imageMemoryKey, type ImageMemoryKind } from "../lib/
 import { webImageMemoryLimit } from "../lib/wideLayout";
 import {
   inviteCoverUrl,
+  originalPosterUrl,
   photoImageUrl,
   profileImageUrl,
   settlementImageUrl,
@@ -79,6 +80,11 @@ export function usePhotoLoad(photoId: string, format: ImageFormat, hasFormats?: 
 
 export function useInviteCoverLoad(inviteId: string, format: ImageFormat) {
   return useTokenImageLoad("uitnodiging", inviteId, format, (site) => inviteCoverUrl(site, inviteId, format));
+}
+
+// WP38c: de poster van een inzending (src/data/images.tsx).
+export function useOriginalPosterLoad(originalId: string, format: ImageFormat) {
+  return useTokenImageLoad("inzending", originalId, format, (site) => originalPosterUrl(site, originalId, format));
 }
 
 // WP41c (C6): de foto van een afrekening; de versie is de variant in de

@@ -16,6 +16,7 @@ import { QueryBoundary } from "../components/QueryBoundary";
 import { Screen } from "../components/Screen";
 import { SegmentedTabs } from "../components/SegmentedTabs";
 import { useWideLayout } from "../components/wideLayout";
+import { useWideMain } from "../components/wideMain";
 import { InvitedSection } from "./InvitesScreens";
 import { SmallButton } from "../components/SmallButton";
 import { EmptyState, LoadingState } from "../components/States";
@@ -60,6 +61,7 @@ import {
 } from "../lib/groups";
 import { radius, size, space, useTheme } from "../theme";
 import { toMyGroups } from "./AlbumParts";
+import { FilmProjectBanners, StartFilmProjectButton } from "./FilmProjectParts";
 import { FilmsTab } from "./FilmsTab";
 import { SettlementsTab } from "./SettlementsTab";
 import { AlbumCoverTile, backToMyGroups, CoverHeader, LoadError } from "./GroupParts";
@@ -116,6 +118,9 @@ function GroupContent({ groupId }: { groupId: Id<"groups"> }) {
   const hasSettlements = groupHasSettlements(settlements);
   const tabs = groupTabs({ hasFilms, hasSettlements });
   const shownTab: Tab = tabs.some((t) => t.key === tab) ? tab : "albums";
+  // WP38c (38c-3): de oprichter ziet "Filmproject starten" (in de app, zonder
+  // open project), elk lid de balk per project.
+  const isFounder = group !== undefined && group !== null && me !== undefined && me !== null && group.createdBy === me._id;
 
   const wide = useWideLayout();
 
@@ -144,11 +149,13 @@ function GroupContent({ groupId }: { groupId: Id<"groups"> }) {
             description={group?.description}
             meta={group ? `Opgericht ${displayYear(group)}` : undefined}
           >
-            {rights?.editGroup && (
-              <View style={styles.sideAction}>
+            <View style={styles.sideActions}>
+              {rights?.editGroup && (
                 <SmallButton title="Bewerk groep" icon="edit" onPress={() => router.push(editGroupPath(groupId))} />
-              </View>
-            )}
+              )}
+              {group !== undefined && <StartFilmProjectButton groupId={groupId} isFounder={isFounder} />}
+            </View>
+            {group !== undefined && <FilmProjectBanners groupId={groupId} isFounder={isFounder} />}
             {group !== undefined && <SegmentedTabs tabs={tabs} selected={shownTab} onSelect={setTab} />}
           </WideSide>
         }
@@ -185,12 +192,16 @@ function GroupContent({ groupId }: { groupId: Id<"groups"> }) {
             <Text variant="meta" color="muted">
               Opgericht {displayYear(group)}
             </Text>
-            {rights?.editGroup && (
-              <View style={styles.action}>
-                <SmallButton title="Bewerk groep" icon="edit" onPress={() => router.push(editGroupPath(groupId))} />
+            {(rights?.editGroup || isFounder) && (
+              <View style={styles.actions}>
+                {rights?.editGroup && (
+                  <SmallButton title="Bewerk groep" icon="edit" onPress={() => router.push(editGroupPath(groupId))} />
+                )}
+                <StartFilmProjectButton groupId={groupId} isFounder={isFounder} />
               </View>
             )}
           </View>
+          <FilmProjectBanners groupId={groupId} isFounder={isFounder} />
           {notice && <Notice kind="success" message={notice} />}
           <SegmentedTabs tabs={tabs} selected={shownTab} onSelect={setTab} />
           {content}
@@ -244,6 +255,8 @@ function AlbumsTab({ groupId, canCreate }: { groupId: Id<"groups">; canCreate: b
   const albums = useLiveQuery(api.albums.listByGroupWithUnread, { groupId });
   // WP33 D4: een album dat binnenkomt (ook van een ander lid), fadet in.
   const arrivals = useArrivals(albums?.map((a) => a._id));
+  // Breed: de lege stand in het midden van de rechterkolom (components/wideMain.ts).
+  const wideMain = useWideMain();
   if (albums === undefined) return <LoadingState label="Albums laden…" />;
   // WP28b: "Nieuw album" op een eigen regel boven de jaren, ook in de lege toestand.
   const create = canCreate ? (
@@ -251,7 +264,7 @@ function AlbumsTab({ groupId, canCreate }: { groupId: Id<"groups">; canCreate: b
   ) : null;
   if (albums.length === 0) {
     return (
-      <View style={styles.years}>
+      <View style={[styles.years, wideMain && styles.grow]}>
         {create}
         <EmptyState icon="photos" title="Nog geen albums" text="In deze groep staan nog geen albums." />
       </View>
@@ -552,6 +565,7 @@ function MemberRow({
 const styles = StyleSheet.create({
   intro: { gap: space.xs },
   years: { gap: space.xl },
+  grow: { flexGrow: 1 },
   year: { gap: space.m },
   section: { gap: space.s },
   card: {
@@ -571,6 +585,7 @@ const styles = StyleSheet.create({
     paddingVertical: space.s,
   },
   text: { flex: 1, gap: space.xs },
-  action: { paddingTop: space.s },
-  sideAction: { alignSelf: "flex-start" },
+  // "Bewerk groep" en "Filmproject starten" naast elkaar; leeg neemt geen ruimte.
+  actions: { flexDirection: "row", flexWrap: "wrap", gap: space.s, paddingTop: space.s },
+  sideActions: { flexDirection: "row", flexWrap: "wrap", gap: space.s, alignSelf: "flex-start" },
 });

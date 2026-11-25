@@ -426,7 +426,7 @@ function GroupProjects({ groupId }: { groupId: Id<"groups"> }) {
   return (
     <View style={styles.block}>
       {projects.map((p) => (
-        <Line key={p.projectId} text={`${p.open ? "Open" : "Dicht"}: ${p.albumName}, tot ${dayTime(p.endsAt)}`} />
+        <Line key={p.projectId} text={`${p.open ? "Open" : "Dicht"}: ${p.title}, tot ${dayTime(p.endsAt)}`} />
       ))}
       {current ? (
         <>
@@ -444,7 +444,7 @@ function GroupProjects({ groupId }: { groupId: Id<"groups"> }) {
         </>
       ) : (
         <>
-          <Line text="Geen open project. Open er een met album (einde over 14 dagen):" />
+          <Line text="Geen open project. Open er een met als titel de naam van een album (einde over 14 dagen):" />
           <View style={styles.buttons}>
             {albums.map((a) => (
               <SmallButton
@@ -452,7 +452,7 @@ function GroupProjects({ groupId }: { groupId: Id<"groups"> }) {
                 title={a.name}
                 disabled={working}
                 onPress={() =>
-                  void act("openen", () => openProject({ groupId, albumId: a._id, endsAt: Date.now() + 14 * DAY_MS }))
+                  void act("openen", () => openProject({ groupId, title: a.name, endsAt: Date.now() + 14 * DAY_MS }))
                 }
               />
             ))}

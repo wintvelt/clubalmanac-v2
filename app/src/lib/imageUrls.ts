@@ -37,6 +37,13 @@ export function inviteCoverUrl(siteUrl: string, inviteId: string, format: ImageF
   return `${siteUrl}/beeld/uitnodiging/${encodeURIComponent(inviteId)}?formaat=${format}`;
 }
 
+// WP38c (38c-19): de poster van een inzending via het eigen beeldpad van 38a
+// (lid van de groep van het project), met het token zoals een foto. Nooit via
+// `/beeld/foto/`, en nooit een link naar het origineel.
+export function originalPosterUrl(siteUrl: string, originalId: string, format: ImageFormat): string {
+  return `${siteUrl}/beeld/inzending/${encodeURIComponent(originalId)}?formaat=${format}`;
+}
+
 // WP41c (C6): de foto van een afrekening, op afrekening-id, met het
 // Clerk-token zoals een foto. De versie (`imageVersion` uit de reads) maakt
 // van een nieuwe foto een nieuwe URL: een nieuwe sleutel in de beeldcache

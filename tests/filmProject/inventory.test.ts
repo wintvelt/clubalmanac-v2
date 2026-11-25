@@ -38,10 +38,13 @@ function argNames(fn: Registered): string[] {
 }
 
 const EXPECTED: Record<string, { kind: string; args: string[] }> = {
-  open: { kind: "mutation", args: ["albumId", "endsAt", "groupId"] },
+  // Besluit 27: een titel in plaats van een album.
+  open: { kind: "mutation", args: ["endsAt", "groupId", "title"] },
   close: { kind: "mutation", args: ["projectId"] },
   // Besluit 13: de einddatum verschuiven (oprichter, alleen open project).
   setEndsAt: { kind: "mutation", args: ["endsAt", "projectId"] },
+  // Besluit 27 (Wouter: ja): de titel wijzigen (oprichter, ook na sluiten).
+  setTitle: { kind: "mutation", args: ["projectId", "title"] },
   listForGroup: { kind: "query", args: ["groupId"] },
   listOpenForMe: { kind: "query", args: [] },
   get: { kind: "query", args: ["projectId"] },

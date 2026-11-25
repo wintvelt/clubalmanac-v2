@@ -228,16 +228,20 @@ export default defineSchema({
   // Filmproject (WP38)
   // ──────────────────────────────────────────────────────────────────
   // Per groep hooguit één open project, door de oprichter geopend met een
-  // filmalbum en een einddatum. Open = `closedAt` niet gezet en `endsAt` nog
-  // niet voorbij. `albumName` is de naam bij het openen: na sluiten mag het
-  // album weg (besluit 17 weigert dat alleen zolang het project open staat);
-  // dan gaat `albumId` eruit (WP10: geen losse verwijzing) en blijft de naam.
+  // titel en een einddatum (besluit 27; het hangt niet aan een album). Open =
+  // `closedAt` niet gezet en `endsAt` nog niet voorbij. `albumId` en
+  // `albumName` bestaan alleen in rijen van vóór besluit 27 (dev); gaat dat
+  // album weg, dan gaat `albumId` eruit (WP10) en blijft de naam als titel.
   // `reminderSentAt`: de herinnering aan de oprichter (besluit 15) is weg.
   // Een gesloten project zonder originelen ruimt de dagelijkse ronde op.
   filmProjects: defineTable({
     groupId: v.id("groups"),
+    // Besluit 27: de titel. Optioneel zolang er op dev projecten van vóór
+    // besluit 27 staan; die hebben alleen `albumId` en `albumName` (de titel
+    // is dan de albumnaam, `projectTitleOf`).
+    title: v.optional(v.string()),
     albumId: v.optional(v.id("albums")),
-    albumName: v.string(),
+    albumName: v.optional(v.string()),
     endsAt: v.number(),
     openedAt: v.number(),
     closedAt: v.optional(v.number()),
@@ -251,7 +255,7 @@ export default defineSchema({
     .index("by_album", ["albumId"]),
 
   // WP38: een inzending, het origineel van één nieuw filmpje (`photoId`) in
-  // het filmalbum. Het bestand staat in de originelen-bucket van R2
+  // een album van de groep (besluit 27). Het bestand staat in de originelen-bucket van R2
   // (`R2_ORIGINALS_BUCKET`) onder `key`, door de backend gekozen;
   // `uploadId` is de multipart-upload van R2 zolang hij onderweg is. `key`
   // en `uploadId` verlaten de backend nooit los (A-invariant 4, 7). `bytes`

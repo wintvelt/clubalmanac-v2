@@ -37,7 +37,7 @@ import {
 import { avatarFieldsOf } from "./lib/profilePhoto";
 import { photoView } from "./lib/formatSet";
 import { afterUnpublish } from "./lib/unpublish";
-import { albumHasOpenProject, detachProjectsFromAlbum } from "./lib/filmOriginals";
+import { detachProjectsFromAlbum } from "./lib/filmOriginals";
 
 // WP23: toegang tot een album. Eén weigering voor "album bestaat niet" en
 // "geen lid van de groep" (invariant 4: geen bestaans-orakel). Sinds WP28
@@ -485,9 +485,8 @@ export const remove = mutation({
   handler: async (ctx, { albumId }) => {
     const album = await requireAlbumForWrite(ctx, albumId);
     await requireFounder(ctx, album.groupId);
-    // WP38 besluit 17: niet het filmalbum van een open filmproject ("Sluit
-    // eerst het filmproject"). Na sluiten mag het; het project houdt de naam.
-    if (await albumHasOpenProject(ctx, albumId, Date.now())) refuse("FILM_PROJECT_OPEN");
+    // WP38 besluit 27: een project hangt niet aan een album; verwijderen mag
+    // altijd. De inzendingen horen bij het project en het filmpje.
 
     const albumPhotos = await ctx.db
       .query("albumPhotos")
@@ -498,8 +497,8 @@ export const remove = mutation({
     // A2: cascade albumLastSeen voor dit album.
     await deleteAlbumLastSeenByAlbum(ctx, albumId);
 
-    // WP38 besluit 17, WP10: een gesloten project op dit album houdt de naam,
-    // maar wijst niet meer naar het album.
+    // WP38 besluit 27, WP10: een project van vóór besluit 27 (alleen dev) op
+    // dit album houdt zijn titel (de naam), maar wijst niet meer naar het album.
     await detachProjectsFromAlbum(ctx, albumId);
 
     await ctx.db.delete(albumId);

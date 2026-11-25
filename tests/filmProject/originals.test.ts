@@ -169,7 +169,25 @@ describe("wie mag insturen (A-invariant 3): één weigering voor alles wat niet 
     expect(env.orig.creates()).toHaveLength(0);
   });
 
-  it("een nieuw filmpje dat niet in X staat (bv. in een album van een andere groep)", async () => {
+  it("besluit 27: een nieuw filmpje in een ander album van de groep (Y) mag wel", async () => {
+    const t = newT();
+    const w = await seedFilmWorld(t);
+    const projectId = await openProject(t, w);
+    const photoId = await newVideoInX(t, env.r2, w, w.users.bob, { albumId: w.albums.tbilisi });
+    const originalId = await sendOriginal(asFilm.bob(t), env.orig, photoId);
+    expect((await asFilm.alice(t).query(filmApi.get, { projectId })).originals.map((o) => o.originalId)).toEqual([originalId]);
+  });
+
+  it("besluit 27: een filmpje van vóór het project in Y blijft geweigerd (besluit 4)", async () => {
+    const t = newT();
+    const w = await seedFilmWorld(t);
+    const old = await seedVideo(t, env.r2, { ownerId: w.users.bob, albumId: w.albums.tbilisi });
+    advance(MINUTE_MS);
+    const projectId = await openProject(t, w);
+    await refusedWithoutTrace(t, () => asFilm.bob(t).action(filmApi.startOriginal, { photoId: old.photoId, bytes: 1000 }), projectId);
+  });
+
+  it("een nieuw filmpje dat in geen album van de groep staat (bv. in een album van een andere groep)", async () => {
     const t = newT();
     const w = await seedFilmWorld(t);
     const projectId = await openProject(t, w);
@@ -414,7 +432,7 @@ describe("grenzen (besluit 11, A-invariant 15)", () => {
     const old = await openProject(t, w);
     await seedOriginal(t, { projectId: old, ownerId: w.users.alice, albumId: w.albums.georgie, bytes: 49 * GIB, status: "binnen" });
     await asFilm.alice(t).mutation(filmApi.close, { projectId: old });
-    const elders = await asFilm.dave(t).mutation(filmApi.open, { groupId: w.groups.ander, albumId: w.albums.elders, endsAt: Date.now() + 14 * 24 * 60 * MINUTE_MS });
+    const elders = await asFilm.dave(t).mutation(filmApi.open, { groupId: w.groups.ander, title: "Elders", endsAt: Date.now() + 14 * 24 * 60 * MINUTE_MS });
     await seedOriginal(t, { projectId: elders, ownerId: w.users.dave, albumId: w.albums.elders, bytes: 200 * GIB, status: "binnen" });
     const projectId = await openProject(t, w);
     await seedOriginal(t, { projectId, ownerId: w.users.alice, albumId: w.albums.georgie, bytes: 150 * GIB, status: "onderweg" });

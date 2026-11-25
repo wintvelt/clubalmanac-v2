@@ -18,6 +18,7 @@ import {
   openProject,
   ORIGINAL,
   ORIGINALS_BUCKET,
+  PROJECT_TITLE,
   outcome,
   seedFilmWorld,
   sendOriginal,
@@ -279,41 +280,41 @@ describe("het filmpje verwijderen (besluit 16)", () => {
   });
 });
 
-// Besluit 17 (Wouter: ja): het filmalbum verwijderen terwijl het project open
-// staat, weigert de backend ("Sluit eerst het filmproject"). Na sluiten mag
-// het; het project houdt de naam van het album, met zijn originelen, en wijst
-// niet meer naar een album dat er niet is (`albumId: null`; WP10, zie
-// tests/filmProject/integrity.test.ts).
-describe("het filmalbum verwijderen (besluit 17)", () => {
-  it("terwijl het project open staat: FILM_PROJECT_OPEN, het album en zijn filmpjes blijven", async () => {
-    const t = newT();
-    const w = await seedFilmWorld(t);
-    await openProject(t, w);
-    const b = await binnen(t, w, "bob");
-    expectCode(await outcome(() => asFilm.alice(t).mutation(api.albums.remove, { albumId: w.albums.georgie })), "FILM_PROJECT_OPEN");
-    expect(await albumsOf(t, b.photoId)).toEqual([w.albums.georgie]);
-    // Een ander album van de groep mag gewoon weg.
-    await asFilm.alice(t).mutation(api.albums.remove, { albumId: w.albums.tbilisi });
-  });
-
-  it("na sluiten mag het; het project staat er nog met de naam en de originelen, zonder album", async () => {
+// Besluit 27: een project hangt niet aan een album. Een album van de groep
+// verwijderen mag ook als het project open staat (geen FILM_PROJECT_OPEN meer);
+// de inzendingen blijven, want ze horen bij het project en het filmpje, niet
+// bij het album. Ook een project van vóór besluit 27 dat nog een `albumId`
+// heeft (alleen dev), houdt het verwijderen niet tegen.
+describe("een album verwijderen tijdens een project (besluit 27)", () => {
+  it("terwijl het project open staat: mag; het project en de inzendingen blijven, de oprichter kan downloaden", async () => {
     const t = newT();
     const w = await seedFilmWorld(t);
     const projectId = await openProject(t, w);
     const b = await binnen(t, w, "bob");
-    await asFilm.alice(t).mutation(filmApi.close, { projectId });
     await asFilm.alice(t).mutation(api.albums.remove, { albumId: w.albums.georgie });
     const view = await asFilm.alice(t).query(filmApi.get, { projectId });
-    expect(view.project).toMatchObject({ projectId, albumId: null, albumName: "Georgië", open: false });
+    expect(view.project).toMatchObject({ projectId, title: PROJECT_TITLE, open: true });
     expect(view.originals.map((o) => o.originalId)).toEqual([b.originalId]);
-    expect(await asFilm.bob(t).query(filmApi.listForGroup, { groupId: w.groups.reis })).toEqual([
-      { projectId, albumId: null, albumName: "Georgië", endsAt: view.project.endsAt, open: false },
-    ]);
-    // Het origineel is er nog en de oprichter kan het downloaden.
     await flush(t);
     expect(env.orig.keys()).toHaveLength(1);
     const d = await asFilm.alice(t).action(filmApi.downloadUrl, { originalId: b.originalId });
     expect(typeof d.url).toBe("string");
+  });
+
+  it("een project van vóór besluit 27 met een albumId: het album mag weg, het project houdt zijn titel (de albumnaam)", async () => {
+    const t = newT();
+    const w = await seedFilmWorld(t);
+    const projectId = await t.run(async (ctx) =>
+      ctx.db.insert("filmProjects", {
+        groupId: w.groups.reis,
+        albumId: w.albums.georgie,
+        albumName: "Georgië",
+        endsAt: Date.now() + 10 * DAY,
+        openedAt: Date.now(),
+      } as never),
+    );
+    await asFilm.alice(t).mutation(api.albums.remove, { albumId: w.albums.georgie });
+    expect((await asFilm.alice(t).query(filmApi.get, { projectId })).project).toMatchObject({ title: "Georgië", open: true });
   });
 });
 
@@ -425,7 +426,7 @@ describe("herinnering aan de oprichter (besluit 15)", () => {
     expect(mailsTo(env.r2, "alice@x.com")).toHaveLength(1);
     const mail = env.r2.mails[0]!;
     const text = String(mail.TextPart ?? "");
-    expect(text).toContain("Georgië"); // het project
+    expect(text).toContain(PROJECT_TITLE); // het project (besluit 27: de titel)
     expect(text).toMatch(/\b2\b/); // het aantal
     expect(text).toContain("2027"); // de datum waarop ze weggaan
     // Geen link, geen sleutel, geen namen van inzenders.
@@ -446,7 +447,7 @@ describe("herinnering aan de oprichter (besluit 15)", () => {
     const projectId = await openProject(t, w);
     await binnen(t, w, "bob");
     await asFilm.alice(t).mutation(filmApi.close, { projectId });
-    await asFilm.dave(t).mutation(filmApi.open, { groupId: w.groups.ander, albumId: w.albums.elders, endsAt: Date.now() + DAY });
+    await asFilm.dave(t).mutation(filmApi.open, { groupId: w.groups.ander, title: "Elders", endsAt: Date.now() + DAY });
     await asFilm.alice(t).mutation(api.groups.transferFounder, { groupId: w.groups.reis, userId: w.users.erik });
     advance(YEAR_MS - 29 * DAY);
     await t.mutation(filmInternal.expireOriginals, {});

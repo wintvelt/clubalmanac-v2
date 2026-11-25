@@ -169,6 +169,20 @@ export function roleLabel(role: Role): string {
   return role === "admin" ? "Admin" : "Lid";
 }
 
+/**
+ * WP38 (feedback webapp dev, tweede ronde): de rol op de kaart in Mijn groepen.
+ * Ben je de oprichter, dan "Oprichter" met de gele sleutel; anders "Admin" of
+ * "Lid". Zolang de eigen user nog laadt (`me` undefined of null): zoals
+ * `roleLabel`, zonder sleutel.
+ */
+export function myGroupRole(input: { role: Role; createdBy: string; me: string | null | undefined }): {
+  label: string;
+  founderKey: boolean;
+} {
+  if (input.me && input.createdBy === input.me) return { label: "Oprichter", founderKey: true };
+  return { label: roleLabel(input.role), founderKey: false };
+}
+
 export function sectionTitle(role: Role): string {
   return role === "admin" ? "Admins" : "Leden";
 }
