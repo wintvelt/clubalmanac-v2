@@ -565,3 +565,28 @@ Oordeel: klaar voor de gate. Er is niets blokkerend.
 - **G4 (mag).** Geen test die de Media3-versie gelijk houdt aan die van `expo-video`.
 - **G5 (mag).** De melding "Houd Clubalmanac open…" valt weinig op. Dat oordeelt de gate.
 - **G6 (bestaand).** `cancelCompress` wordt nergens aangeroepen, ook niet op iOS.
+
+## Fix-ronde 42b (A)
+
+> A 2026-11-26. Nagekeken in de Gradle-cache: `media3-muxer` 1.9.1 schrijft `©xyz` met `"%+.4f%+.4f/"` (ook de breedte zonder voorloopnul).
+
+**M1 (test, rood).** Een filmpje van Media3 onder 10° breedte (`-1.2921+36.8219/`, `+5.1234+4.9041/`, `+1.3521+103.8198/`) houdt zijn plaats. `+0.0000+4.9041/` en `+5.1234+0.0000/` zijn een plaats: zo staat vast dat `+0.0000+0.0000/` en `-0.0000-0.0000/` geen plaats zijn door de 0/0-regel, niet doordat de vorm niet gelezen wordt. De vormen met twee cijfers (iPhone met hoogte, MediaMuxer) blijven gelijk.
+
+**G4 (test, groen).** De Media3-versie van elke afhankelijkheid in de module is `androidxMedia3Version` uit de `build.gradle` van `expo-video`. Bij een Expo-upgrade die Media3 verhoogt, faalt de test tot de module meegaat.
+
+**G1. Minder beelden: kies wat de meting haalt.** Vergelijk op de emulator `createDefaultFrameDropEffect` met het eigen n-de beeld, met dezelfde invoer:
+- een filmpje van de camera-app (30 fps; dat halveerde in S2 niet);
+- 60 fps (`hevc` 1080p60 of 4K60 uit S2);
+- als het lukt een filmpje met wisselende beeldsnelheid: een stuk van 30 fps en een stuk van 60 fps achter elkaar.
+
+Meet per invoer de fps van de uitvoer, en bij het wisselende filmpje per stuk (uit de tijdstempels in `stts`, niet het gemiddelde). Doel: 30 blijft 30, sneller wordt hooguit 30 (niet minder dan ~24), het stuk van 30 fps in het wisselende filmpje blijft 30. Neem de aanpak die dat haalt; halen ze het allebei, dan `createDefaultFrameDropEffect`. Halveert een zelfgemaakt testfilmpje ook zonder effect, dan telt dat filmpje niet mee voor de keuze (zie "Open na B"). Zet de uitkomst als tabel in de spec.
+
+**G2. Opruimen bij de start mag de module niet laten vallen.** Ontbreekt de context bij `OnCreate`, dan slaat de module het opruimen over (de volgende start probeert het weer) en werkt verder gewoon. Meten: na `am kill` midden in het verkleinen en opnieuw starten is het halve bestand weg (A23, zoals in S2).
+
+**G3. `Mp4Check` zoals de backend.**
+- Het hoofdmerk in `ftyp` is een van de merken die de backend aanneemt (`MP4_BRANDS` in `convex/lib/mp4.ts`), en `ftyp` is minstens 16 bytes. Anders gaat het bestand niet de deur uit (reden `comprimeren`).
+- Een index (`moov`) met een kop van 64 bits (grootte 1, dan 8 bytes grootte) wordt even goed gelezen als een met een kop van 32 bits: dezelfde uitkomst en duur.
+
+Meten: haal met een tijdelijke meting in de dev-build (of een lokale JVM-test) drie bestanden door `Mp4Check` en door `inspectMp4`/`videoProblem`: `media3-schoon.mp4`; dat bestand met een `moov`-kop van 64 bits; en dat bestand met merk `qt  `. Verwacht: de eerste twee door beide aangenomen met dezelfde duur, de derde door beide geweigerd.
+
+**Stand na A:** app 5 rood (M1) / 2714 groen, typecheck schoon.
