@@ -610,3 +610,12 @@ Commit f736dae. App 2719 groen, backend 3794 groen.
 - **G3:** `Mp4Check` eist het ftyp-merk uit `MP4_BRANDS` en leest een moov-kop van 64 bits. Dat is gemeten naast de backend.
 - **Hoofdroute:** de release-build met R8 tegen dev is getest met twee filmpjes (wisselend en 60 fps). Ze zijn verkleind, geüpload en speelbaar.
 - **Open:** G5 (de melding "Houd Clubalmanac open" valt weinig op) beoordeelt de gate. G6 (`cancelCompress`) bestond al en hoort niet bij 42b.
+
+## Gate 42b (regie, 2026-11-26)
+
+Gate gedaan op de emulator: API 36, release-build met R8 tegen dev, Europe/Amsterdam. Gekozen: vijf filmpjes, namelijk camera-app, wisselend 30/60/30, 3:20, 4K60 staand en een filmpje met plaats.
+- Bij 3:20 staan meteen de tegel "Te lang" en de B14-tekst. Na de ronde staat er "1 filmpje niet gelukt" met dezelfde tekst.
+- Tijdens de ronde staan "Houd Clubalmanac open tot de filmpjes klaar zijn." en per tegel "Verkleinen… n%". Dat is goed leesbaar (G5: geen actie).
+- De andere vier staan in het album, met poster en duur. Het staande filmpje speelt rechtop af en het filmpje met plaats staat op de kaart.
+- **Kleine bevinding, geen actie:** de duur van het camera-app-filmpje staat in de kiezer als 0:06 en in het album als 0:07. Dat komt doordat de kiezer en de backend anders afronden.
+- **Alleen de testers kunnen nagaan:** echte camerafilmpjes (Samsung Auto FPS, HDR), hoe lang verkleinen duurt en of de telefoon warm wordt, wegklikken op Samsung, en afspelen op een iPhone en in de webapp.
