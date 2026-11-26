@@ -506,3 +506,11 @@ Namen en vormen zijn A-keuzes; het hoe is aan B.
 Niet in unit-tests (S2, gate, audit): de Kotlin-kant zelf (A15, A16, A19, A23, A25), de kiezer met echte filmpjes, de achtergrond (A22), rechtop (A24), de release-build (A26), de teksten van B14.
 
 **Stand na A:** app 31 rood / 2677 groen; backend 3794 groen / 3 overgeslagen (met de 14 nieuwe). Typecheck app: alleen `takenAtFromUtc` en `utcDate` ontbreken.
+
+## Besluiten Wouter na A (42b, 2026-11-26)
+
+- **B10–B13** blijven, met de kanttekeningen van A: Media3 alleen met de instellingen van A15; B11 rekent met de zomer-/wintertijd van de opnamedag; B12 zonder achtergrond-upload (dat is 42c).
+- **B14 (a)**, overal, ook op iOS, letterlijk:
+  - `te_lang`: "Dit filmpje duurt langer dan 3 minuten. Kort het filmpje in en kies het opnieuw."
+  - `te_groot`: "Dit filmpje is te groot, ook na het verkleinen. Kort het filmpje in en probeer het opnieuw."
+- **Regie:** de namen in A's testcontracten (`takenAtFromUtc`, `VideoMetadata.utcDate`, `PHOTOS_ONLY_TEXTS`) zijn aanvaard.
