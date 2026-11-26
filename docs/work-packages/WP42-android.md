@@ -301,3 +301,76 @@ Dus `legacy` + vraag vanaf API 35. Punt 6: "Allow limited access" opent eerst ee
 - Echte telefoon: eerste lid (Samsung, Android 17) installeerde via de opt-in-link en is ingelogd, na het overzetten van zijn e-mailadres (zie `external-services.md` §Auth). Foto toevoegen met plaats en de kaart op zijn telefoon nog niet teruggemeld; dat volgt bij de volgende testronde.
 - iOS-gate van de iOS-wijzigingen (menu's, kopieën van de kiezer, profielfoto) gaat mee met de volgende TestFlight-build.
 - Open voor 42b: zie §Richting 42b en 42c, en punt 7 van de fix-ronde (keuze kwijt als Android de app sluit).
+
+---
+
+# 42b: filmpjes toevoegen op Android (draft regie, 2026-11-26)
+
+> A → besluiten Wouter → B (met spike S2) → audit → gate op de emulator en bij een Android-lid (prod-build, interne track). Branch `wp42b`. Geen red-team: het privacyrisico zit in één meetbare regel (geen plaats in het bestand), die de backend al afdwingt (WP37 A-inv. 13, 28) en die A en de gate toetsen.
+
+## Productdoel (42b)
+
+Een Android-lid zet een filmpje van hooguit 3 minuten in een album, net zo makkelijk als een foto en net als op de iPhone (WP37): het filmpje wordt op de telefoon verkleind tot 1080p, staat op datum tussen de foto's met poster en duur, speelt overal af en staat op de kaart als de plaats bekend is. Het bestand dat de andere leden krijgen, bevat geen plaats. Lukt verkleinen of uploaden niet, dan ziet het lid dat en kan het opnieuw proberen zonder dubbel filmpje.
+
+## Wat er is (42b)
+
+- **Backend en webapp**: compleet sinds WP37 (aanvraag, PUT naar R2, afronden met strikte mp4-controle, afspeellink, R2-check, backup). Weigert alles behalve mp4 met precies één H.264-beeldspoor, AAC-geluid, de index vooraan, hooguit 180,499 s en 120 MiB, en geen locatie in welke vorm ook.
+- **App, iOS**: de lokale Expo-module `app/modules/clubalmanac-video` (Swift, alleen `apple`) leest datum, plaats en duur uit het origineel, verkleint (langste zijde 1920, H.264 ~3,5 Mbit/s, AAC 128 kbit/s, hooguit 30 fps, HDR naar SDR, geen metadata, index vooraan) en maakt de poster. De JS-kant (`index.ts`) is platform-onafhankelijk; `videoModuleAvailable` is false zonder module. Dezelfde module bevat ook de uploader voor originelen (WP38b, `originalUploaderAvailable`), die op Android uit moet blijven (42c).
+- **App, Android (42a)**: de kiezer toont alleen foto's (A6); de plaats van een foto komt mee vanaf API 35 (`legacy` + `ACCESS_MEDIA_LOCATION`). De afspeelkant (tegel, filter, detail, delen) werkt al op Android.
+
+## Invarianten (42b)
+
+1. **Hetzelfde filmpje als van een iPhone.** Wat de app uploadt, haalt de bestaande mp4-controle van de backend zonder uitzondering voor Android: H.264 + AAC, langste zijde ≤ 1920, ≤ 30 fps, rond 3,5 Mbit/s, SDR, index vooraan, binnen de grenzen van duur en grootte. De backend verandert niet.
+2. **Geen plaats in het bestand of de poster**, in welke vorm ook (`©xyz`, `loci`, metadata-sleutels, metadata-sporen). De plaats gaat alleen als veld naar de backend, zoals bij foto's.
+3. **Datum en plaats uit het origineel, vóór het verkleinen**, en alleen als het toestel ze geeft. Zonder datum: geen datum, nooit "vandaag". De datum volgt dezelfde regel als bij de iPhone: de lokale kloktijd van de opname, gelezen als UTC (WP37 A-inv. 14).
+4. **Plaats volgt de regel van foto's op Android** (42a): alleen waar de kiezer hem niet weghaalt, zonder bredere toegang dan `ACCESS_MEDIA_LOCATION`. Nooit toegang tot de hele galerij.
+5. **Geen stille mislukking.** Verkleinen of uploaden dat mislukt (ook doordat Android de app stopt), geeft een NL-melding en opnieuw proberen zonder dubbel filmpje (WP37 inv. 4, 5).
+6. **iOS en web veranderen niet.** De hele testsuite blijft groen; de Swift-module en de iOS-flow blijven zoals ze zijn.
+7. **Geen originelen op Android.** De uploader voor originelen (42c) is op Android niet beschikbaar; het filmproject belooft op Android niets (42a A11 blijft).
+
+## Scope (42b)
+
+- **In:** de Kotlin-kant van `clubalmanac-video` (metadata lezen, verkleinen, poster, stoppen), de kiezer op Android met filmpjes, de uploadflow van WP37 op Android, de voortgang en meldingen, een build op de interne track.
+- **Bewust niet:** originelen (42c), filmpjes inkorten of bewerken, uploaden vanuit de webapp, wijzigingen in de backend.
+
+## Spike S2 (B, vóór de rest)
+
+Op de emulator (API 35 of 36), met een dev-build en een tijdelijk meetscherm (niet committen):
+
+1. Een paar testfilmpjes op de emulator zetten: liggend en rechtop, 4K/60 fps, HDR (HEVC 10 bit) als dat lukt, met en zonder plaats, langer dan 3 minuten.
+2. Per kiezer-variant (zoals S1): komen datum en plaats mee, en in welke vorm (UTC of met tijdzone)?
+3. Verkleinen met de gekozen bibliotheek (B10): duur, grootte, bitrate, fps, kleuren bij HDR, en vooral: staat de index vooraan en laat de **eigen mp4-controle van de backend** (`convex/lib`, de functie die WP37 gebruikt) het resultaat door, zonder locatie?
+4. Upload van één filmpje naar dev: tegel, afspelen in de app en in de webapp, op de kaart.
+
+Uitkomst in het rapport, in de vorm van de S1-tabel. Werkt de gekozen bibliotheek niet met de backend, dan stopt B en meldt regie.
+
+## Open vragen voor A (42b)
+
+1. **Verkleinen.** Welke bibliotheek haalt invariant 1 op Android: Media3 Transformer (AndroidX), een andere, of iets van Expo? Zet die de index vooraan (de standaard `MediaMuxer` zet hem achteraan), laat ze metadata weg, en zet ze HDR naar SDR (vanaf welke Android-versie)? Hoe groot wordt de app erdoor?
+2. **Datum.** Android-camera's schrijven de opnametijd in UTC (`creation_time`, `MediaMetadataRetriever.METADATA_KEY_DATE`), zonder tijdzone. Hoe komen we op de lokale kloktijd (invariant 3)? Zie B11.
+3. **Plaats.** Geeft de kiezer bij een filmpje de plaats (`METADATA_KEY_LOCATION`, ISO 6709), per Android-versie, met de regel van 42a? Of haalt de fotokiezer hem bij filmpjes ook weg?
+4. **Achtergrond.** Wat doet Android met verkleinen en uploaden als het lid de app wegklikt of het scherm uitgaat? Loopt een upload via `expo-file-system` door (zoals de achtergrond-URLSession op iOS)? Wat ziet het lid na terugkomen? Zie B12.
+5. **Module.** Hoe krijgt de module een Android-kant zonder dat `originalUploaderAvailable` waar wordt (invariant 7)? Wat verandert er aan `videoModuleAvailable` en de teksten die nu op Android "alleen foto's" zeggen?
+6. **Duur van het verkleinen** op een gewone telefoon voor 3 minuten, en wat het lid in die tijd ziet.
+7. **Wat de backend weigert**: welke weigeringen van de mp4-controle kan een Android-bestand in de praktijk raken (`udta` na de index, een `edts`, een extra spoor van Samsung zoals een metadata-spoor), en worden die in de app voorkomen of netjes gemeld?
+
+A rapporteert ook wat hier ontbreekt of niet klopt. Oude code is geen bron.
+
+## Keuzes voor Wouter (42b, draft, advies van regie)
+
+- **B10. Verkleinen met Media3 Transformer van Google (advies)**, in de eigen module, zoals op iOS met Apple's eigen bouwstenen. Gratis, onderhouden door Google, volledige controle over metadata en index. Alternatief: een kant-en-klare bibliotheek (bv. `react-native-compressor`) die beide platforms doet, met minder controle over GPS en de index. A bevestigt of weerlegt.
+- **B11. Datum van een Android-filmpje: omrekenen naar de tijdzone van de telefoon bij het kiezen (advies).** Dan staat een filmpje van vanmiddag tussen de foto's van vanmiddag. Alleen een filmpje uit een andere tijdzone (vakantie, thuis geüpload) schuift dan het tijdsverschil op. Alternatief: de UTC-tijd laten staan; dan staat elk Android-filmpje een of twee uur verschoven.
+- **B12. Tijdens verkleinen en uploaden: de app open houden, met een duidelijke melding (advies voor 42b)**, tenzij A vindt dat uploaden op de achtergrond met weinig werk kan. Verkleinen kan op iOS ook alleen met de app open. Echte achtergrond-uploads horen bij 42c (originelen).
+- **B13. Gate**: de emulator met de testfilmpjes, daarna één Android-lid met de prod-build op de interne track, met een echt filmpje van zijn telefoon (Samsung, Android 17). Dat filmpje komt op prod in een album; het lid kan het daarna verwijderen.
+
+## Risico-assessment (42b)
+
+- **security/privacy: medium.** GPS in videometadata; de backend weigert het al, maar dan mislukt het voor het lid (invariant 2).
+- **ops: medium.** Hardware-encoders verschillen per merk; Android kan de app stoppen tijdens verkleinen of uploaden (invariant 5).
+- **external deps: medium.** Een nieuwe bibliotheek voor verkleinen; de strikte mp4-controle van de backend (WP37).
+- **multi-user/concurrency: laag.** Dezelfde flow als op iOS; niets nieuws gedeeld.
+- **data/schema-evolutie: laag.** Geen wijziging in de backend verwacht.
+
+## Cross-refs (42b)
+
+WP37 (filmpjes, mp4-controle, A-invarianten 11–38), WP38b (uploader, niet op Android), WP42a (kiezer, S1, versieregel API 35, fix-ronde punt 7), WP18 (upload-id), WP39 (toevoegscherm).
