@@ -2,6 +2,7 @@ import { router } from "expo-router";
 import { SignOutButton } from "../auth/SignOutButton";
 import { ListRow, ListSection } from "../components/ListRow";
 import { Screen } from "../components/Screen";
+import { originalUploaderAvailable } from "../../modules/clubalmanac-video";
 import { DEV_TOOLS } from "../data/devTools";
 import { READ_ONLY } from "../data/readOnly";
 import { InfoList } from "./InfoList";
@@ -21,8 +22,9 @@ export function SettingsScreen() {
           <ListRow icon="problem" title="Probleem melden" onPress={() => router.push("/instellingen/problemen")} />
         </ListSection>
       )}
-      {/* WP38b: het proefscherm van de originelen, alleen in een build tegen dev. */}
-      {DEV_TOOLS && !READ_ONLY && (
+      {/* WP38b: het proefscherm van de originelen, alleen in een build tegen dev.
+          WP42 A11: en alleen met de uploader (niet op Android). */}
+      {DEV_TOOLS && !READ_ONLY && originalUploaderAvailable && (
         <ListSection>
           <ListRow icon="film" title="Proef: originelen" onPress={() => router.push("/instellingen/proef-origineel")} />
         </ListSection>

@@ -3,8 +3,9 @@ import { useMutation } from "convex/react";
 import type { FunctionReturnType } from "convex/server";
 import { router, Stack, useLocalSearchParams } from "expo-router";
 import { useEffect, useRef, useState } from "react";
-import { ActionSheetIOS, Alert, Pressable, StyleSheet, View } from "react-native";
+import { Alert, Pressable, StyleSheet, View } from "react-native";
 import type { Id } from "../../../convex/_generated/dataModel";
+import { showActionMenu } from "../components/ActionMenu";
 import { Button } from "../components/Button";
 import { Icon } from "../components/Icon";
 import { LinkButton } from "../components/LinkButton";
@@ -422,7 +423,7 @@ function MembersTab({ groupId, groupName, founderId }: { groupId: Id<"groups">; 
     setStatus(null);
     const options = [...actions.map(memberActionLabel), "Annuleren"];
     const destructive = actions.findIndex((a) => a === "removeMember" || a === "leave");
-    ActionSheetIOS.showActionSheetWithOptions(
+    showActionMenu(
       {
         title: target.name ?? "Naam onbekend",
         options,

@@ -263,26 +263,36 @@ export function fitWithin(width: number, height: number): { width: number; heigh
 /**
  * A-keuze 2 en vraag 2: de headers uit de EXIF van de kiezer. iOS geeft
  * `DateTimeOriginal` in EXIF-vorm en de GPS als positieve graden met een
- * richting (N/S, E/W). De backend toetst de waarden zelf; wat hier niet past,
- * gaat niet mee.
+ * richting (N/S, E/W); Android (WP42 A5) geeft graden met teken plus de
+ * richting, die het teken dan niet nog eens omdraait. De backend toetst de
+ * waarden zelf; wat hier niet past, gaat niet mee.
+ *
+ * WP42 A5: 0/0 is geen plaats, op elk platform. Dat laat de fotokiezer van
+ * Android achter als hij de plaats wegveegt; de foto komt dan zonder plaats
+ * binnen, met zijn datum. Alleen breedte of alleen lengte 0 is wel een plaats.
  */
 export function metadataHeaders(exif: Record<string, unknown> | null | undefined): Record<string, string> {
   const headers: Record<string, string> = {};
   if (!exif) return headers;
   const taken = exif.DateTimeOriginal;
   if (typeof taken === "string" && taken.trim() !== "") headers["X-Taken-At"] = taken.trim();
-  const lat = signedDegrees(exif.GPSLatitude, exif.GPSLatitudeRef, "S");
-  const lon = signedDegrees(exif.GPSLongitude, exif.GPSLongitudeRef, "W");
-  if (lat !== undefined && lon !== undefined) {
+  const lat = signedDegrees(exif.GPSLatitude, exif.GPSLatitudeRef, "S", 90);
+  const lon = signedDegrees(exif.GPSLongitude, exif.GPSLongitudeRef, "W", 180);
+  if (lat !== undefined && lon !== undefined && !(lat === 0 && lon === 0)) {
     headers["X-Latitude"] = String(lat);
     headers["X-Longitude"] = String(lon);
   }
   return headers;
 }
 
-function signedDegrees(value: unknown, ref: unknown, negative: "S" | "W"): number | undefined {
-  const n = typeof value === "number" ? value : typeof value === "string" ? Number(value) : NaN;
-  if (!Number.isFinite(n)) return undefined;
+function signedDegrees(
+  value: unknown,
+  ref: unknown,
+  negative: "S" | "W",
+  limit: number,
+): number | undefined {
+  const n = typeof value === "number" ? value : typeof value === "string" && value.trim() !== "" ? Number(value) : NaN;
+  if (!Number.isFinite(n) || Math.abs(n) > limit) return undefined;
   const flip = typeof ref === "string" && ref.trim().toUpperCase() === negative;
   return flip ? -Math.abs(n) : n;
 }

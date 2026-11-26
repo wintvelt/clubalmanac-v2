@@ -4,7 +4,16 @@ import * as ImagePicker from "expo-image-picker";
 import { activateKeepAwakeAsync, deactivateKeepAwake } from "expo-keep-awake";
 import { router, Stack, useNavigation } from "expo-router";
 import { memo, useCallback, useEffect, useRef, useState } from "react";
-import { ActivityIndicator, AppState, Linking, Pressable, StyleSheet, useWindowDimensions, View } from "react-native";
+import {
+  ActivityIndicator,
+  AppState,
+  Linking,
+  Platform,
+  Pressable,
+  StyleSheet,
+  useWindowDimensions,
+  View,
+} from "react-native";
 import type { Id } from "../../../convex/_generated/dataModel";
 import {
   freeBytes,
@@ -27,6 +36,16 @@ import { api } from "../convexApi";
 import { useMyGroups } from "../data/homeGroupState";
 import { forgetLastAlbum, loadLastAlbum, saveLastAlbum } from "../data/lastAlbum";
 import { addOriginalToQueue, originalEvent, originalsReady, originalsSnapshot } from "../data/originals";
+import { removePickerCopies } from "../data/pickerCopies";
+import {
+  beforePick,
+  PHOTOS_ONLY_TEXTS,
+  PICK_EXTRA_OPTIONS,
+  PICK_MEDIA_TYPES,
+  PICKER_ASKS_ACCESS,
+  PICKER_CLOSE_BY_APP_STATE,
+  withContentKeys,
+} from "../data/pickMedia";
 import { useUploader } from "../data/upload";
 import { useLiveQuery } from "../data/useLiveQuery";
 import { useVideoUploader, type VideoProgress } from "../data/videoUpload";
@@ -80,6 +99,7 @@ import {
   type VideoFailReason,
 } from "../lib/videos";
 import { CloseButton } from "../navigation/stackOptions";
+import { useAndroidBack } from "../navigation/useAndroidBack";
 import { photoLayers, radius, size, space, useTheme } from "../theme";
 import { RoundResult, addPhotosStyles as styles, type ChosenAlbum } from "./AddPhotosParts";
 import { AlbumChoiceSheet } from "./AlbumChoice";
@@ -223,11 +243,14 @@ function videoCountText(n: number): string {
 
 /**
  * B-besluit 3: de kopie die de kiezer van een asset maakte, weg. Niet als een
- * item dat blijft hetzelfde bestand gebruikt.
+ * item dat blijft hetzelfde bestand gebruikt. WP42 fix-ronde, punt 3: ook via
+ * src/data/pickerCopies, want op Android is er geen eigen module.
  */
 function dropCopies(assets: readonly Asset[], keep: readonly Item[]): void {
   const used = new Set(keep.map((i) => i.asset.uri));
-  for (const a of assets) if (!used.has(a.uri)) void removeFile(a.uri);
+  const gone = assets.filter((a) => !used.has(a.uri)).map((a) => a.uri);
+  for (const uri of gone) void removeFile(uri);
+  removePickerCopies(gone);
 }
 
 export function AddPhotosScreen({ albumId }: { albumId?: string }) {
@@ -325,6 +348,9 @@ export function AddPhotosScreen({ albumId }: { albumId?: string }) {
     // tegelijk zolang het scherm op een verzoek wacht; een gestopt verzoek
     // blokkeert niets (gate ronde 2).
     if (running.current || videoRunning.current) return;
+    // WP42 B4: op Android eerst (hooguit één keer) de vraag om de plaats van foto's.
+    await beforePick();
+    if (running.current || videoRunning.current) return;
     const begun = beginPick(sessionRef.current);
     if (!begun) return;
     const { token } = begun;
@@ -342,7 +368,8 @@ export function AddPhotosScreen({ albumId }: { albumId?: string }) {
         // WP37: ook filmpjes. Het origineel, met zijn datum en plaats (besluit
         // B2). Fixronde gate 1: Current en Passthrough expliciet (de native
         // standaard), zodat een upgrade niet ongemerkt gaat omzetten.
-        mediaTypes: ["images", "videos"],
+        // WP42 A6: op Android in 42a alleen foto's (src/data/pickMedia).
+        mediaTypes: PICK_MEDIA_TYPES,
         allowsMultipleSelection: true,
         selectionLimit: 0,
         orderedSelection: true,
@@ -350,7 +377,10 @@ export function AddPhotosScreen({ albumId }: { albumId?: string }) {
         quality: 1,
         preferredAssetRepresentationMode: ImagePicker.UIImagePickerPreferredAssetRepresentationMode.Current,
         videoExportPreset: ImagePicker.VideoExportPreset.Passthrough,
+        ...PICK_EXTRA_OPTIONS,
       });
+      // WP42 fix-ronde, punt 2: op Android een sleutel uit de inhoud (geen `assetId`); op iOS niets.
+      if (!result.canceled) result = { ...result, assets: await withContentKeys(result.assets) };
     } catch (e) {
       failure = e;
       failed = true;
@@ -371,7 +401,8 @@ export function AddPhotosScreen({ albumId }: { albumId?: string }) {
     }
     if (failed) {
       // Besluit 6: de keuze die er stond, blijft staan.
-      if (closedSeen.current !== token && isOpenFailure(failure)) setPickerFailed(true);
+      // WP42 A6: op Android vraagt de kiezer geen toegang; dan is elke fout een mislukt ophalen.
+      if (PICKER_ASKS_ACCESS && closedSeen.current !== token && isOpenFailure(failure)) setPickerFailed(true);
       else setFetchFailed(true);
       return;
     }
@@ -386,7 +417,9 @@ export function AddPhotosScreen({ albumId }: { albumId?: string }) {
     }
     dropCopies(skipped, next);
     if (mode === "nieuw") {
-      // Een nieuwe keuze is een nieuwe ronde; het album blijft gekozen.
+      // Een nieuwe keuze is een nieuwe ronde; het album blijft gekozen. WP42
+      // fix-ronde, punt 3: de kopieën van de vorige keuze zijn niet meer nodig.
+      dropCopies(selectionRef.current.map((i) => i.asset), next);
       endOriginalRound();
       update(null);
       updateVideos(null);
@@ -396,14 +429,15 @@ export function AddPhotosScreen({ albumId }: { albumId?: string }) {
 
   // Besluit 10: de teller begint als de kiezer dicht is. De eigen module zegt
   // of hij nog over het scherm staat; eerst moet hij open gezien zijn. Kan de
-  // build dat niet zeggen (een oude build), dan vanaf het openen.
+  // build dat niet zeggen (een oude build), dan vanaf het openen. WP42 A6: op
+  // Android staat de app niet actief zolang de kiezer openstaat.
   async function watchPicker(token: number, openedAt: number) {
     let seenOpen = false;
     for (;;) {
       await wait(PICKER_POLL_MS);
       const c = sessionRef.current.current;
       if (!c || c.token !== token || c.fetchStartedAt !== null) return;
-      const open = await pickerOnScreen();
+      const open = PICKER_CLOSE_BY_APP_STATE ? AppState.currentState !== "active" : await pickerOnScreen();
       if (open === null) {
         updateSession(fetchStarted(sessionRef.current, token, openedAt));
         return;
@@ -429,10 +463,13 @@ export function AddPhotosScreen({ albumId }: { albumId?: string }) {
   // Dicht: een antwoord dat nog komt, telt niet (zijn kopieën gaan weg).
   // WP38b: de ronde sluit; een origineel van een filmpje dat niet in het album
   // kwam, gaat weg (38b-3).
+  // WP42 fix-ronde, punt 3: de kopieën van de kiezer (met hun plaats) weg; een
+  // verplaatst origineel ligt niet in de map van de kiezer en blijft.
   useEffect(
     () => () => {
       sessionRef.current = stopPick(sessionRef.current);
       endOriginalRound();
+      removePickerCopies(selectionRef.current.map((i) => i.asset.uri));
     },
     [], // eslint-disable-line react-hooks/exhaustive-deps
   );
@@ -533,6 +570,8 @@ export function AddPhotosScreen({ albumId }: { albumId?: string }) {
   // tijdens het verkleinen van een filmpje). WP39: ook tijdens "Je keuze
   // ophalen…" (een download uit iCloud kan minuten duren).
   const anyBusy = busy || videoBusy;
+  // WP42 A3: tijdens een ronde sluit de terugknop van Android het scherm niet.
+  useAndroidBack(anyBusy);
   const keepAwake = anyBusy || fetching;
   useEffect(() => {
     if (!keepAwake) return;
@@ -899,6 +938,8 @@ export function AddPhotosScreen({ albumId }: { albumId?: string }) {
         options={{
           gestureEnabled: !anyBusy,
           headerRight: anyBusy ? () => null : () => <CloseButton />,
+          // WP42 A3: Android toont ook een terugpijl; tijdens een ronde niet.
+          ...(Platform.OS === "android" ? { headerBackVisible: !anyBusy } : {}),
         }}
       />
 
@@ -915,7 +956,10 @@ export function AddPhotosScreen({ albumId }: { albumId?: string }) {
       {fetchFailed && (
         <Notice
           kind="error"
-          message="Je keuze ophalen lukte niet. Staat er iets in iCloud, probeer het dan opnieuw met een goede verbinding."
+          message={
+            PHOTOS_ONLY_TEXTS?.fetchFailed ??
+            "Je keuze ophalen lukte niet. Staat er iets in iCloud, probeer het dan opnieuw met een goede verbinding."
+          }
         />
       )}
 
@@ -957,9 +1001,11 @@ export function AddPhotosScreen({ albumId }: { albumId?: string }) {
               {view.elapsed}
             </Text>
           )}
-          <Text variant="meta" color="muted">
-            Langere filmpjes en/of hogere kwaliteit kan een paar minuten duren.
-          </Text>
+          {PHOTOS_ONLY_TEXTS === null && (
+            <Text variant="meta" color="muted">
+              Langere filmpjes en/of hogere kwaliteit kan een paar minuten duren.
+            </Text>
+          )}
           <SmallButton title="Stoppen" onPress={stopFetching} />
         </View>
       ) : null}
@@ -968,8 +1014,11 @@ export function AddPhotosScreen({ albumId }: { albumId?: string }) {
       {!fetching && !anyPicked && !pickerFailed ? (
         <EmptyState
           icon="photos"
-          title="Kies foto's of filmpjes"
-          text="Kies een of meer foto's of filmpjes (hooguit 3 minuten) om aan een album toe te voegen."
+          title={PHOTOS_ONLY_TEXTS?.emptyTitle ?? "Kies foto's of filmpjes"}
+          text={
+            PHOTOS_ONLY_TEXTS?.emptyText ??
+            "Kies een of meer foto's of filmpjes (hooguit 3 minuten) om aan een album toe te voegen."
+          }
         />
       ) : null}
 

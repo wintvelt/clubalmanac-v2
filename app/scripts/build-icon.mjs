@@ -45,6 +45,34 @@ const svg = (defs, body) =>
   body +
   "</svg>\n";
 
+// WP42: het adaptieve icoon van Android, apart te maken met
+// `node scripts/build-icon.mjs android` (laat de iOS-bestanden staan). Een
+// voorgrond (kaartje en eend, verkleind tot binnen de veilige cirkel van 66
+// op 108 dp), een achtergrond (het verloop) en een eenkleurige laag voor
+// "thema-iconen". PNG's met alfa via sharp (staat in de root).
+if (process.argv[2] === "android") {
+  const { default: sharp } = await import("sharp");
+  const SHRINK = 'transform="translate(50 50) scale(0.62) translate(-50 -50)"';
+  const android = {
+    "android-foreground.png": svg(
+      BLUR,
+      `<g ${SHRINK}><g ${TILT}>` +
+        `<g fill="${SHADOW}" opacity="0.3" filter="url(#soft)" transform="translate(0 2)">${CARD}</g>` +
+        `<g fill="#FFFFFF" opacity="0.94">${CARD}</g>` +
+        CARD_RIM +
+        `<g fill="${DUCK_LIGHT}">${DUCK}</g>` +
+        "</g></g>",
+    ),
+    "android-background.png": svg(GRADIENT, '<rect width="100" height="100" fill="url(#grad)"/>'),
+    "android-monochrome.png": svg("", `<g ${SHRINK}><g ${TILT} fill="#000000">${CARD}${DUCK}</g></g>`),
+  };
+  for (const [name, content] of Object.entries(android)) {
+    await sharp(Buffer.from(content)).resize(1024, 1024).png().toFile(join(OUT, name));
+  }
+  console.log(`${Object.keys(android).join(", ")} geschreven in ${OUT}`);
+  process.exit(0);
+}
+
 const files = {
   // Lagen voor Icon Composer: alleen de vorm. Glas, schaduw en de weergaven
   // donker en getint stelt Icon Composer in.

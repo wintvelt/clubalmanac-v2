@@ -1,8 +1,9 @@
 import { useMutation } from "convex/react";
 import { router } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { ActionSheetIOS, ActivityIndicator, Alert, Pressable, StyleSheet, View } from "react-native";
+import { ActivityIndicator, Alert, Pressable, StyleSheet, View } from "react-native";
 import type { Id } from "../../../convex/_generated/dataModel";
+import { dismissActionMenu, showActionMenu } from "../components/ActionMenu";
 import { Icon } from "../components/Icon";
 import { Notice } from "../components/Notice";
 import { SmallButton } from "../components/SmallButton";
@@ -133,11 +134,19 @@ export function menuActions(
   return photo.isVideo ? actions.filter((a) => a !== "rotate" && a !== "profilePhoto") : actions;
 }
 
+// WP42 A2: op Android sluit terug of ernaast tikken de vraag, als Annuleren.
+const CANCELABLE = { cancelable: true } as const;
+
 function confirm(title: string, message: string, verb: string, onConfirm: () => void) {
-  Alert.alert(title, message, [
-    { text: "Annuleren", style: "cancel" },
-    { text: verb, style: "destructive", onPress: onConfirm },
-  ]);
+  Alert.alert(
+    title,
+    message,
+    [
+      { text: "Annuleren", style: "cancel" },
+      { text: verb, style: "destructive", onPress: onConfirm },
+    ],
+    CANCELABLE,
+  );
 }
 
 // WP17d: het delen zelf (src/data/share.ts, useSharePhoto) geeft het scherm
@@ -173,7 +182,7 @@ export function usePhotoMenu({
   useEffect(() => {
     if (openFor.current !== null && !photoIds.includes(openFor.current)) {
       openFor.current = null;
-      ActionSheetIOS.dismissActionSheet();
+      dismissActionMenu();
     }
   }, [photoIds]);
 
@@ -217,10 +226,15 @@ export function usePhotoMenu({
         void run();
         return;
       }
-      Alert.alert(photo.isVideo ? "Filmpje delen?" : "Foto delen?", notice, [
-        { text: "Annuleren", style: "cancel" },
-        { text: "Delen", onPress: () => void run() },
-      ]);
+      Alert.alert(
+        photo.isVideo ? "Filmpje delen?" : "Foto delen?",
+        notice,
+        [
+          { text: "Annuleren", style: "cancel" },
+          { text: "Delen", onPress: () => void run() },
+        ],
+        CANCELABLE,
+      );
     },
     [ctx, sharePhoto, onFeedback],
   );
@@ -266,6 +280,7 @@ export function usePhotoMenu({
                 onPress: () => void attempt(() => setProfilePhoto({ photoId }), SUCCESS.profilePhoto),
               },
             ],
+            CANCELABLE,
           );
           return;
         }
@@ -314,7 +329,7 @@ export function usePhotoMenu({
       // Verwijderen en melden zijn rood; ze staan nooit samen in het menu.
       const destructive = actions.findIndex((a) => a === "delete" || a === "flag");
       openFor.current = photo.photoId;
-      ActionSheetIOS.showActionSheetWithOptions(
+      showActionMenu(
         {
           options,
           cancelButtonIndex: options.length - 1,

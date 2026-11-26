@@ -2,7 +2,8 @@ import { useMutation } from "convex/react";
 import type { FunctionReturnType } from "convex/server";
 import { router, useLocalSearchParams } from "expo-router";
 import { useRef, useState, type ReactNode } from "react";
-import { ActionSheetIOS, Alert, StyleSheet, View } from "react-native";
+import { Alert, StyleSheet, View } from "react-native";
+import { showActionMenu } from "../components/ActionMenu";
 import { Button } from "../components/Button";
 import { Icon } from "../components/Icon";
 import { AnimatedPressable, FadeIn, useArrivals, usePressMotion } from "../components/Motion";
@@ -94,7 +95,7 @@ function useWebmasterActions(setStatus: (s: Status) => void) {
 
   const chooseStatus = (f: Feature) => {
     const options = [...FEATURE_STATUSES.map(featureStatusLabel), "Annuleren"];
-    ActionSheetIOS.showActionSheetWithOptions(
+    showActionMenu(
       { title: "Status", options, cancelButtonIndex: options.length - 1 },
       (index) => {
         const status = FEATURE_STATUSES[index];

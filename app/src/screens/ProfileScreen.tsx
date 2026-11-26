@@ -3,7 +3,8 @@ import type { FunctionReturnType } from "convex/server";
 import * as ImagePicker from "expo-image-picker";
 import { router, useIsFocused } from "expo-router";
 import { useEffect, useRef, useState } from "react";
-import { ActionSheetIOS, Linking, StyleSheet, View } from "react-native";
+import { Linking, StyleSheet, View } from "react-native";
+import { showActionMenu } from "../components/ActionMenu";
 import { Button } from "../components/Button";
 import { ListRow, ListSection } from "../components/ListRow";
 import { Notice } from "../components/Notice";
@@ -17,6 +18,8 @@ import { TextField } from "../components/TextField";
 import type { Id } from "../../../convex/_generated/dataModel";
 import { api } from "../convexApi";
 import { askConfirmation } from "../data/confirm";
+import { PHOTOS_ONLY_TEXTS, PICKER_ASKS_ACCESS } from "../data/pickMedia";
+import { listPickerCopies, newPickerCopies, removePickerCopies } from "../data/pickerCopies";
 import { useUploader, type UploadAsset } from "../data/upload";
 import { READ_ONLY, WEB_UPLOAD } from "../data/readOnly";
 import { pickProfilePhoto } from "../data/webPick";
@@ -278,13 +281,26 @@ function ProfilePhotoBlock({ me }: { me: Me }) {
   // Fix-cyclus 1, invariant 21: de laatste keuze, met zijn upload-id en hoe
   // ver hij kwam. "Opnieuw proberen" vraagt profileRetry wat er nog moet.
   const [attempt, setAttempt] = useState<{ asset: UploadAsset; item: UploadItem } | null>(null);
+  // WP42 fix-ronde, punt 3: de kopieën van de kiezer van de laatste keuze. Weg
+  // zodra ze niet meer nodig zijn: opgeslagen, niet gebruikt, een nieuwe keuze,
+  // of het scherm uit beeld; na een fout blijven ze voor "Opnieuw proberen".
+  // Bij bijsnijden maakt de kiezer op Android ook een kopie van het origineel
+  // (met plaats). Mini-fix: alleen wat deze kiezer erbij zette, niet de hele
+  // map; het toevoegscherm kan intussen een eigen keuze open hebben.
+  const keptCopies = useRef<string[]>([]);
+  function keepCopies(uris: readonly string[]) {
+    removePickerCopies(keptCopies.current.filter((u) => !uris.includes(u)));
+    keptCopies.current = [...uris];
+  }
   const focused = useIsFocused();
   useEffect(() => {
     if (!focused) {
       setFeedback(null);
       setAttempt(null);
+      if (!inFlight.current) keepCopies([]);
     }
-  }, [focused]);
+  }, [focused]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => () => keepCopies([]), []); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function run(kind: "upload" | "remove", work: () => Promise<PhotoFeedback>) {
     if (inFlight.current) return;
@@ -324,6 +340,7 @@ function ProfilePhotoBlock({ me }: { me: Me }) {
       return;
     }
     let result: ImagePicker.ImagePickerResult;
+    const before = listPickerCopies();
     try {
       result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ["images"],
@@ -337,18 +354,30 @@ function ProfilePhotoBlock({ me }: { me: Me }) {
         quality: 1,
       });
     } catch {
-      setFeedback({ kind: "access" });
+      removePickerCopies(newPickerCopies(before, listPickerCopies()));
+      // WP42 A6: de fotokiezer van Android vraagt geen toegang; dan mislukte het ophalen.
+      if (PICKER_ASKS_ACCESS) setFeedback({ kind: "access" });
+      else setFeedback({ kind: "error", text: PHOTOS_ONLY_TEXTS?.fetchFailed ?? "Je keuze ophalen lukte niet." });
       return;
     }
     const asset = result.canceled ? undefined : result.assets[0];
-    if (!asset) return;
+    const own = newPickerCopies(before, listPickerCopies());
+    if (!asset) {
+      removePickerCopies(own);
+      return;
+    }
+    if (!own.includes(asset.uri)) own.push(asset.uri);
+    keepCopies(own);
     await confirmAndSave(asset);
   }
 
   async function confirmAndSave(asset: UploadAsset) {
     const notice = profilePhotoNotice({ isMe: true });
     const ok = await confirm(notice.title, notice.message, "Gebruiken");
-    if (!ok) return;
+    if (!ok) {
+      keepCopies([]);
+      return;
+    }
     // Eén upload-id voor deze keuze: een dubbele tik of "Opnieuw proberen"
     // geeft geen tweede foto.
     const [item] = newBatch(["profiel"]);
@@ -376,6 +405,7 @@ function ProfilePhotoBlock({ me }: { me: Me }) {
         return { kind: "error", text: "Profielfoto niet opgeslagen. Probeer het opnieuw." };
       }
       setAttempt(null);
+      keepCopies([]);
       return { kind: "success", text: "Je profielfoto is opgeslagen." };
     });
   }
@@ -410,7 +440,7 @@ function ProfilePhotoBlock({ me }: { me: Me }) {
     const items = profilePhotoMenu({ hasPhoto });
     const options = [...items.map((i) => MENU_LABEL[i](hasPhoto)), "Annuleren"];
     const destructive = items.indexOf("remove");
-    ActionSheetIOS.showActionSheetWithOptions(
+    showActionMenu(
       {
         options,
         cancelButtonIndex: options.length - 1,

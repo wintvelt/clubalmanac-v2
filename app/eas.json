@@ -11,13 +11,20 @@
       "extends": "base",
       "environment": "development",
       "distribution": "store",
-      "autoIncrement": true
+      "autoIncrement": true,
+      "android": {
+        "distribution": "internal",
+        "buildType": "apk"
+      }
     },
     "production": {
       "extends": "base",
       "environment": "production",
       "distribution": "store",
-      "autoIncrement": true
+      "autoIncrement": true,
+      "android": {
+        "buildType": "app-bundle"
+      }
     }
   },
   "submit": {
@@ -29,6 +36,9 @@
     "production": {
       "ios": {
         "ascAppId": "1663038609"
+      },
+      "android": {
+        "track": "internal"
       }
     }
   }
