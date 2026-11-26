@@ -381,3 +381,128 @@ WP37 (filmpjes, mp4-controle, A-invarianten 11–38), WP38b (uploader, niet op A
 - **B11.** Datum: omrekenen naar de tijdzone van de telefoon bij het kiezen (advies).
 - **B12.** Tijdens verkleinen en uploaden de app open houden, met een duidelijke melding (advies); achtergrond-uploads alleen als A vindt dat het met weinig werk kan.
 - **B13 (gewijzigd).** Geen geplande test op een echte telefoon door regie of Wouter. De gate is de emulator; daarna gaat de prod-build via de interne track naar de testers, en Wouter vraagt hen wat ze zien. Meldingen van testers komen terug als fix-ronde.
+
+## Spec-criticus aanvullingen 42b (A)
+
+> A 2026-11-26. Bronnen: deze spec en WP37, de app (`modules/clubalmanac-video`, `src/lib/videos.ts`, `src/data/videoUpload.ts`, `src/data/pickMedia*.ts`, `AddPhotosScreen`), de backend (`convex/lib/mp4.ts`, `convex/videos.ts`), de Android-code van `expo-image-picker` 58.0.10 en `expo-file-system`, de broncode van Media3 1.9.1 (`transformer`, `muxer`, `effect`; de versie van `expo-video` 58.0.14). **Gemeten** op de emulator `clubalmanac-api35` (Europe/Amsterdam) met een eigen meetapp (niet de app): wat `MediaMetadataRetriever` uit een filmpje haalt, originelen van `MediaMuxer` (dezelfde schrijver als de camera) en verkleinen met Media3 Transformer, en elk resultaat door `inspectMp4`/`videoProblem` en de controle na de index. Bestanden en werkwijze: `tests/fixtures/wp42b/README.md`. Niet gemeten: de kiezer met filmpjes en de app zelf (spike S2), echte camerabestanden, HDR, hardware-encoders.
+
+### Gemeten (emulator API 35)
+
+| Wat | Uitkomst |
+|---|---|
+| Datum (`METADATA_KEY_DATE`) | UTC: `20261126T174453.000Z` bij een klok van 18:44 CET. Zonder datum in het bestand (`mvhd` 0): `19040101T000000.000Z`. |
+| Plaats (`METADATA_KEY_LOCATION`) | MediaMuxer: `+52.3676+004.9041/`, `-33.8688+151.2093/`, `+40.7128-074.0060/`, `-00.5000-000.2500/` (teken goed). Media3: `+52.3676+4.9041/` (lengte zonder voorloopnullen). Een `loci`-blok (AVFoundation-mp4) leest Android niet: `null`. |
+| MediaMuxer, index | 2 s: vooraan. 3 min: achteraan (`index_achteraan`). Plaats als `©xyz` (`locatie`). |
+| Media3 Transformer, standaard | Muxer is in 1.9.1 Media3's eigen `InAppMp4Muxer`, niet MediaMuxer: index vooraan met 400 KB gereserveerde ruimte (`free`). **Neemt de plaats van het origineel over** (`©xyz`): `locatie`. Geluid zonder wijziging gekopieerd als er niets aan het geluid gevraagd wordt. |
+| Media3, metadata weg | `ftyp`, `moov`, `free`, `mdat`, merk `isom`, H.264 + AAC (of zonder geluid): de backend neemt hem aan, ook de route (200). |
+| Media3, 3 minuten (30 fps) | Index 131 KB, vooraan. Duur volgens de backend = `METADATA_KEY_DURATION` van de uitvoer (179 978 en 180 280 ms bij invoer 180 071 en 180 349); de schatting van de export (`ExportResult`) zit er ~60 ms onder. 29 s verkleinen op de emulator (software, 192 × 108: zegt niets over een telefoon). |
+| Staand filmpje | Media3 codeert liggend (192 × 108) met een draai-matrix van 90°; iOS schrijft rechtop zonder matrix. De backend slaat de maat uit `tkhd` op: liggend. Niets in de app gebruikt die maat (gezocht). |
+
+### Wat niet klopt of ontbreekt in de draft
+
+1. **"De standaard `MediaMuxer` zet de index achteraan"** klopt half: MediaMuxer zet hem vooraan zolang hij in de gereserveerde ruimte past, bij 3 minuten niet. Transformer 1.9.1 gebruikt MediaMuxer niet meer maar Media3's eigen muxer, die het vooraan *probeert* en terugvalt naar achteraan als de index niet past. Geen van beide garandeert het (A15).
+2. **Transformer neemt standaard metadata van het origineel over**: plaats (`©xyz`), XMP (een `uuid`-blok *na* de index: de route weigert dat als `geen_mp4`) en `mdta`-sleutels. Met de standaard is elk filmpje met plaats een 422 na de hele upload (A15).
+3. **HDR wordt HEVC.** Standaard houdt Transformer HDR; heeft de telefoon een HDR-encoder voor HEVC (de meeste telefoons die HDR opnemen), dan schakelt hij stil over van H.264 naar HEVC (`TransformerUtil.getOutputMimeTypeAndHdrModeAfterFallback`), en de backend zegt `codec`. Alleen omzetten naar SDR voorkomt dat. De emulator heeft geen HDR: dit zien alleen de testers (A15).
+4. **Transformer kopieert wat niet hoeft te veranderen.** Geluid dat al AAC is, en beeld dat al H.264 is zonder gevraagde wijziging, gaat ongewijzigd mee. Een origineel met ander geluid (Opus, AMR) geeft dan `codec`; een camerafilmpje van ~17 Mbit/s zonder hercodering geeft `te_groot` (A15).
+5. **Media3-versie.** `expo-video` gebruikt Media3 1.9.1. Gradle neemt per onderdeel de hoogste versie: een nieuwere `media3-transformer` tilt ook de speler van `expo-video` stil naar een versie waartegen die niet gebouwd is. Zelfde versie als `expo-video`, en bij een Expo-upgrade samen nakijken. Grootte: ~0,85 MB klassen (transformer, effect, muxer) plus `lottie` (afhankelijkheid van `media3-effect`), vóór R8; geen native code, dus geen 16 KB-kwestie.
+6. **B11 (datum)** klopt, met twee aanvullingen. (a) Omrekenen met de regels van de tijdzone van de telefoon *op het moment van opnemen*: een filmpje van juli dat in november gekozen wordt, krijgt +2, niet het huidige +1. (b) De tijd in het bestand is die van het schrijven ervan: bij een bewerkt, geëxporteerd of via WhatsApp ontvangen filmpje is dat de tijd van die bewerking, niet van de opname (zoals de terugval op iOS). Of de camera het begin of het einde van de opname schrijft (verschil hooguit de duur): S2.
+7. **De plaats-tekst van Media3** (`+52.3676+4.9041/`) leest de app nu niet (de lezer eist drie cijfers voor de lengte): een filmpje dat een andere app met Media3 maakte, verliest zijn plaats. En 0/0 telt bij filmpjes nog als plaats; 42a A5 zegt: op elk platform geen plaats (A18).
+8. **De duur die de app gebruikt.** De app weigert vooraf boven 180,4 s op de duur van het verkleinde bestand, met 100 ms marge tot de grens van de backend (WP37 A-keuze). De schatting van de export zit ~60 ms onder wat de backend meet (gemeten, één encoder); daarmee gaat de helft van de marge op, en bij een andere encoder of 48 kHz geluid kan het verschil groter zijn. Dan komt de 422 pas na de hele upload (A19).
+9. **De kiezer kopieert het hele origineel** voordat de app iets ziet (`expo-image-picker` op Android: naar `cache/ImagePicker`, altijd met `.mp4`, ook een `.mov`, `.3gp` of `.webm`), ook een filmpje van 20 minuten of 4K van 1 GB of meer; pas daarna zegt de app "te lang". "Je keuze ophalen…" duurt dan lang, en de sleutel uit de inhoud (42a fix-ronde punt 2) leest het bestand nog een keer. De kopie bevat de plaats en is groot (A23). De uitleg "Langere filmpjes en/of hogere kwaliteit kan een paar minuten duren" staat nu alleen op iOS (A20).
+10. **Teksten met "Foto's".** `te_lang` en `te_groot` zeggen "Kort het in Foto's in"; dat is de app van de iPhone. Zie B14.
+11. **Staand filmpje** (zie Gemeten): de draai-matrix spelen alle spelers goed af in theorie (ExoPlayer, AVPlayer, Chrome, Safari), maar de poster en de tegel moeten rechtop staan; dat ziet alleen S2 en de gate (A24).
+12. **Klein:** elke uitvoer van Media3 heeft ~0,4 MB lege gereserveerde ruimte (onschuldig, telt mee in de grootte). De opgeslagen breedte en hoogte van een staand Android-filmpje zijn liggend; niets toont ze nu, niet aanpassen in 42b.
+
+### Antwoorden op de open vragen
+
+**1. Verkleinen.** Media3 Transformer haalt invariant 1, maar niet met de standaard (draftpunten 1–5): zelf de metadata weglaten, HDR naar SDR (OpenGL; vanaf Android 10, want HDR-video bestaat pas daar), beeld en geluid altijd hercoderen naar H.264 en AAC, hooguit 30 fps, langste zijde 1920, de Media3-versie van `expo-video`. Index vooraan: Media3's eigen muxer, en controleren dat hij er staat. Gemeten: zo ingesteld neemt de backend hem aan, ook bij 3 minuten. B10 blijft staan.
+
+**2. Datum.** Android geeft UTC (gemeten). B11 is goed: omrekenen naar de kloktijd van de telefoon, met zomertijd van de opnamedag (draftpunt 6). `19040101T000000.000Z` is geen datum. De app krijgt van de module de UTC-tijd zoals Android hem geeft, en rekent om in de app (puur, getest; A17). Hermes moet daarbij de lokale tijd van een willekeurig moment goed geven: S2 met de emulator in Europe/Amsterdam (een emulator staat vaak op UTC, dan is niets te zien).
+
+**3. Plaats.** `MediaMetadataRetriever` leest alleen `©xyz`; Android-camera's schrijven dat (gemeten met MediaMuxer). De fotokiezer haalt bij filmpjes de plaats waarschijnlijk op dezelfde manier weg als bij foto's (MediaProvider poetst `©xyz`, `loci` en XMP weg zonder `ACCESS_MEDIA_LOCATION`; uit de broncode, middel), dus dezelfde versieregel: `legacy` + het recht vanaf API 35, de app Bestanden op API 30 en 33 laat hem staan. Wat de kiezer per versie bij filmpjes geeft (echt, leeg, nullen, 0/0): S2 met `tests/fixtures/wp42b/android-muxer-*.mp4` in `DCIM/Camera`.
+
+**4. Achtergrond.** `sessionType: BACKGROUND` van `expo-file-system` is alleen iOS; op Android loopt de upload in het proces van de app. Gaat de app naar de achtergrond, dan bevriest of stopt Android het proces na korte tijd (cached-apps-freezer, geheugen; Samsung stopt vroeg); verkleinen en uploaden stoppen dan ook. Echt doorlopen vraagt een foreground service van het type `dataSync` met een verklaring en video bij Play (42c). Dus **B12 klopt**: app open, scherm aan (keep-awake staat al), met een melding. Na terugkomen: leeft het proces nog, dan een mislukt filmpje met "Geen verbinding…" en opnieuw proberen zonder opnieuw verkleinen (WP37 A-inv. 33); is het gestopt, dan is de keuze weg (42a fix-ronde punt 7, nog open) en kiest het lid opnieuw.
+
+**5. Module.** Een Android-kant van dezelfde module (naam `ClubalmanacVideo`) met alleen de vijf functies van filmpjes (`readMetadata`, `compress`, `cancel`, `makePoster`, `remove`). Dan wordt `videoModuleAvailable` waar en blijft `originalUploaderAvailable` onwaar (die kijkt naar `uploaderSend`): de runner, het proefscherm en het filmproject blijven zoals in 42a (A11). `pickerOnScreen` is niet nodig (Android gebruikt `AppState`). De teksten van `pickMedia.android.ts` gaan van "alleen foto's" naar die van iOS zonder iCloud (A20).
+
+**6. Duur.** Op een telefoon met hardware-encoder verwacht ik voor 3 minuten 1080p ~30–90 s, voor 4K60 of HDR (omzetten via OpenGL) ~1–3 minuten; niet gemeten (de emulator heeft alleen software-codecs). Het lid ziet per filmpje de fase "verkleinen" met een percentage dat loopt (A25), het scherm blijft aan, en de melding van B12.
+
+**7. Wat de backend kan weigeren.** `locatie` (metadata van het origineel, draftpunt 2), `codec` (HDR naar HEVC, of gekopieerd geluid dat geen AAC is), `te_groot` (geen hercodering, of een encoder die ver boven de bitrate gaat), `te_lang` (de schatting van de export, draftpunt 8), `index_achteraan` (de muxer viel terug), `geen_mp4` (XMP na de index, of een gefragmenteerde muxer). Een extra spoor van Samsung of een metadata-spoor komt niet mee: Transformer schrijft één beeld- en één geluidsspoor, en `edts`/`elst` van Media3 leest de backend gewoon (gemeten). Voorkomen in de module (A15); lukt dat toch niet, dan de bestaande NL-meldingen (WP37). Een `locatie`, `codec` of `index_achteraan` van een Android-filmpje is altijd een fout in de module, geen fout van het lid.
+
+### A-invarianten (42b)
+
+**A15. Elk verkleind filmpje haalt de controle, door de instelling, niet door geluk.** Beeld en geluid altijd opnieuw gecodeerd naar H.264 en AAC, ook als het origineel al H.264/AAC is; HDR naar SDR, nooit stil naar HEVC; hooguit 30 fps, langste zijde ≤ 1920 (niet groter maken), ~3,6 Mbit/s; één beeld- en hooguit één geluidsspoor; niet gefragmenteerd; niets uit de metadata van het origineel (geen `©xyz`, `loci`, XMP, `mdta`-sleutels). De index staat vooraan; staat hij er niet, dan gaat het bestand niet de deur uit (reden `comprimeren`, opnieuw proberen kan). Media3 in de versie van `expo-video`.
+
+**A16. Geen plaats in de poster.** De poster (tegel en keuze) is een JPEG zonder EXIF, zoals op iOS.
+
+**A17. Datum (B11).** `X-Taken-At` is de UTC-tijd van Android omgerekend naar de kloktijd van de tijdzone van de telefoon, met de regels van die zone op het moment van opnemen. Geen datum, of `19040101T000000.000Z` / `19700101T000000.000Z`, of iets onleesbaars: geen `X-Taken-At`, nooit vandaag. iOS ongewijzigd: de kloktijd uit `com.apple.quicktime.creationdate` wint, de tijdzone van de telefoon telt daar niet.
+
+**A18. Plaats.** Uit het origineel, vóór het verkleinen, in beide vormen van Android (MediaMuxer en Media3). 0/0 is geen plaats, ook niet met hoogte of als −0; alleen breedte of alleen lengte 0 wel. Leeg of weggepoetst: geen plaats, de datum blijft. Zelfde versieregel als foto's (42a), geen ander recht dan `ACCESS_MEDIA_LOCATION`.
+
+**A19. De duur van de backend.** Voor de weigering vooraf (180,4 s) en `startUpload` gebruikt de app de duur van het verkleinde bestand zoals de backend hem meet (de langste in het bestand), niet de schatting van de export. Een filmpje dat de kiezer op 3:00,3 zet, gaat erin.
+
+**A20. De kiezer op Android.** Foto's en filmpjes in één kiezer, op elke Android-versie, met dezelfde regel voor de plaats als foto's. Teksten als op iOS ("Kies foto's of filmpjes", "… (hooguit 3 minuten) …", en de uitleg dat ophalen bij lange filmpjes even duurt), zonder iCloud en zonder "Instellingen openen". Een filmpje zonder `assetId` krijgt de sleutel uit de inhoud, blijft een filmpje met zijn duur, en hetzelfde filmpje nog eens kiezen telt één keer. Langer dan 3 minuten: weigeren vóór het verkleinen (`te_lang`), op de duur van de kiezer.
+
+**A21. Geen originelen op Android (invariant 7).** De Android-kant van de module heeft geen enkele functie van de uploader; `originalUploaderAvailable` blijft onwaar. Geen nieuwe rechten: geen foreground service, geen `READ_MEDIA_*` (app.json blokkeert ze al; de module vraagt ze niet).
+
+**A22. App open (B12).** Zolang er verkleind of verstuurd wordt: scherm aan, een melding dat de app open moet blijven, de terugknop sluit het scherm niet (42a A3). Komt het lid terug na de achtergrond: elk filmpje heeft een eindtoestand (klaar, of mislukt met een NL-reden en opnieuw proberen), niets blijft eeuwig "bezig", en geen dubbel filmpje (WP37 inv. 4).
+
+**A23. Opruimen.** De kopie van de kiezer (met plaats) gaat weg zoals bij foto's (42a fix-ronde punt 3). Het verkleinde bestand en de posters gaan weg als het filmpje binnen is of een vaste reden kreeg; wat een gestopte app achterliet, bij de volgende start. Stoppen tijdens het verkleinen laat geen half bestand achter.
+
+**A24. Rechtop.** Een staand filmpje staat rechtop in de tegel van de keuze, de tegel in het album en de speler, in de Android-app, de iPhone-app en de webapp (Chrome en Safari).
+
+**A25. Voortgang.** Tijdens verkleinen loopt het percentage zichtbaar op (geen 0% tot het eind), ook bij een filmpje van 3 minuten.
+
+**A26. De prod-build verkleint ook.** De release-build (met R8) is op de emulator getest met een filmpje, vóór hij naar de interne track gaat; een dev-build is niet geminificeerd.
+
+### Spike S2: wat precies meten
+
+Emulator op API 35 en 36 (en voor de kiezer ook 30, 33, 34), **tijdzone Europe/Amsterdam** (`-timezone Europe/Amsterdam` of de instellingen), dev-build met een tijdelijk meetscherm. Per uitkomst een regel in de vorm van de S1-tabel.
+
+1. **Invoer** in `/sdcard/DCIM/Camera` (en de mediascanner laten kijken): `tests/fixtures/wp42b/android-muxer-plaats.mp4`, `-zuid-oost`, `-noord-west`, `-staand`, `datum-nul.mp4`; `tests/fixtures/wp37/hevc.mp4`, `iphone-like.mov`, `location-loci-date.mp4`; een filmpje van de camera-app van de emulator (met plaats als dat kan); een van ~200 s en een van 3:00,3 (`tests/fixtures/wp42b/mklang.swift`); als het lukt een 1080p- of 4K-invoer van 60 fps.
+2. **Kiezer** per API-versie en variant (zoals S1): staan filmpjes erin, meerdere tegelijk; per bestand de ruwe datum en plaats die de module geeft (echt, leeg, nullen, 0/0), de duur van de kiezer, en de headers die de app ervan maakt. Verwacht voor `android-muxer-plaats.mp4`: `X-Taken-At` `2026:11:26 18:44:53`, plaats 52.3676/4.9041 waar de versieregel hem laat staan.
+3. **Verkleinen** per invoer: tijd, grootte, gemiddelde bitrate, fps, maat en draaiing; dan het bestand met `adb exec-out run-as …` ophalen en door `inspectMp4`, `videoProblem` en de controle na de index halen (zoals in `tests/fixtures/wp42b/README.md`). Plus: de duur die de module meldt tegen de duur van de backend, het 3:00,3-filmpje gaat erin, het filmpje van 200 s wordt vooraf geweigerd zonder te verkleinen, HEVC en 60 fps worden H.264 en 30 fps.
+4. **Upload naar dev**: tegel en poster rechtop (ook het staande), afspelen in de Android-app en de webapp, datum tussen de foto's, op de kaart.
+5. **Achtergrond**: tijdens verkleinen en tijdens versturen naar het homescherm (30 s en 5 min) en `am kill`; wat het lid ziet bij terugkomst (A22), en wat er in `cache` blijft liggen (A23).
+6. **Release-build** één keer (A26).
+
+Werkt een punt van A15 niet met Media3 (bv. de index valt bij 3 minuten 1080p toch achteraan), dan stopt B en meldt regie.
+
+### Alleen de gate of de testers
+
+De emulator heeft software-codecs, geen HDR, geen Samsung en geen echte camera. Alleen bij de testers (B13) te zien, en dus de vragen die Wouter hen stelt:
+- Een echt filmpje van de eigen camera, staand en liggend, met plaats aan: komt het erin, staat het rechtop, op de goede tijd tussen de foto's van die dag, op de kaart?
+- Een HDR-filmpje (Samsung: "HDR10+-video") en een 4K- of 60 fps-filmpje: erin, kleuren normaal (niet flets of te donker)?
+- Hoe lang het verkleinen van een filmpje van 1–3 minuten duurde, en of de telefoon warm werd.
+- Wat er gebeurde als ze tijdens het verkleinen of versturen de app even wegklikten.
+- Slow-motion en een filmpje dat via WhatsApp binnenkwam (datum).
+- Afspelen van hun filmpje op een iPhone en in de webapp (door Wouter).
+
+### Keuzes voor Wouter (42b, aangescherpt door A)
+
+- **B10.** Klopt: Media3 Transformer, maar alleen met de instellingen van A15; de standaard faalt op plaats, HDR en kopiëren (draftpunten 2–4). Geen besluit nodig.
+- **B11.** Klopt, met omrekenen op de zomertijd van de opnamedag (A17). Geen besluit nodig.
+- **B12.** Klopt: uploaden op de achtergrond kan niet "met weinig werk" (foreground service, Play-verklaring; 42c). Geen besluit nodig.
+- **B14 (nieuw). Tekst bij te lang of te groot.** Nu "Kort het in Foto's in en kies het opnieuw" (de app van de iPhone). (a) Overal neutraal, zoals B8: "Kort het eerst in en kies het opnieuw" (verandert ook de tekst op iOS); (b) per platform een eigen tekst. **Advies: (a).**
+
+### Testcontract (A)
+
+Namen en vormen zijn A-keuzes; het hoe is aan B.
+- `takenAtFromUtc(value)` in `src/lib/videos.ts`: de UTC-tijd van Android (`20260714T133210.000Z`, ook ISO met `Z`) als `X-Taken-At` in de tijdzone van de telefoon (die van `Date`), of `null`.
+- `VideoMetadata` krijgt `utcDate` (Android: de datum zoals `MediaMetadataRetriever` hem geeft; iOS: geen). `videoMetadataHeaders` gebruikt `creationDate` als die er is (iOS), anders `utcDate`.
+- `locationFromISO6709` leest ook de vorm van Media3 en geeft bij 0/0 `null`.
+- `pickMedia.android.ts`: `PICK_MEDIA_TYPES` met filmpjes; de eigen teksten blijven in `PHOTOS_ONLY_TEXTS` (de naam mag blijven), nu met filmpjes.
+- De module: `android` in `expo-module.config.json`, Kotlin onder `modules/clubalmanac-video/android`, `Name("ClubalmanacVideo")`.
+
+### Tests (A)
+
+| Bestand | Wat | Stand |
+|---|---|---|
+| `app/tests/androidVideoMetadata.test.ts` (nieuw) | A17: `takenAtFromUtc` (UTC van Android naar de kloktijd van de telefoon; zomertijd van de opnamedag, middernacht, andere zones, 1904/1970 en onzin geen datum); `videoMetadataHeaders` met `utcDate` van Android, iOS ongewijzigd. A18: `locationFromISO6709` in de gemeten vormen van MediaMuxer en Media3, 0/0 geen plaats. | 22 rood: `takenAtFromUtc` en `utcDate` ontbreken, de vorm van Media3 en 0/0. Typecheck: alleen die twee. |
+| `app/tests/androidVideoPicker.test.ts` (nieuw) | A20 op `pickMedia.android.ts`: foto's en filmpjes op API 30–36; versieregel van de plaats ongewijzigd; teksten noemen filmpjes en 3 minuten, geen iCloud; een filmpje zonder `assetId` krijgt de sleutel uit de inhoud en telt één keer. | 6 rood: `PICK_MEDIA_TYPES` is `["images"]`, de teksten zeggen "Kies foto's". |
+| `app/tests/androidVideoModule.test.ts` (nieuw) | A21: met een Android-module zonder uploader `videoModuleAvailable` waar en `originalUploaderAvailable` onwaar; `expo-module.config.json` noemt android; de Kotlin-kant heet `ClubalmanacVideo`, heeft de vijf functies en geen functie van de uploader; app.json blokkeert foreground service en `READ_MEDIA_*`; het manifest van de module vraagt geen rechten. | 3 rood: geen Android-kant. |
+| `tests/videos/android.test.ts` (nieuw) | Invariant 1, A15, A19 tegen de backend met de bestanden uit `tests/fixtures/wp42b`: Media3 zonder metadata erin (ook via de route, 200), Media3 standaard en MediaMuxer met plaats `locatie`, MediaMuxer 3 min `index_achteraan`, 3:00,349 → 180 280 ms erin. | Groen (bewaker; de backend verandert niet). |
+
+Niet in unit-tests (S2, gate, audit): de Kotlin-kant zelf (A15, A16, A19, A23, A25), de kiezer met echte filmpjes, de achtergrond (A22), rechtop (A24), de release-build (A26), de teksten van B14.
+
+**Stand na A:** app 31 rood / 2677 groen; backend 3794 groen / 3 overgeslagen (met de 14 nieuwe). Typecheck app: alleen `takenAtFromUtc` en `utcDate` ontbreken.
