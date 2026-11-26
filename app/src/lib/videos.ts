@@ -96,11 +96,18 @@ export function takenAtFromQuickTime(value: string | null | undefined): string |
   return `${String(y).padStart(4, "0")}:${p(mo)}:${p(d)} ${p(h)}:${p(mi)}:${p(s)}`;
 }
 
-const ISO6709 = /^([+-]\d{2}(?:\.\d+)?)([+-]\d{3}(?:\.\d+)?)(?:[+-]\d+(?:\.\d+)?)?\/?$/;
+// WP42b A18: de lengte met drie cijfers (iPhone, de camera van Android via
+// MediaMuxer: "+004.9041") of zonder voorloopnullen (Media3: "+4.9041").
+// Media3 schrijft ook de breedte zonder voorloopnul ("%+.4f"): onder 10° één
+// cijfer ("-1.2921+36.8219/", fix-ronde 42b, audit M1).
+const ISO6709 = /^([+-]\d{1,2}(?:\.\d+)?)([+-]\d{1,3}(?:\.\d+)?)(?:[+-]\d+(?:\.\d+)?)?\/?$/;
 
 /**
- * De plaats uit `com.apple.quicktime.location.ISO6709` ("+52.3676+004.9041+000.000/"),
- * in decimale graden. Hoogte valt weg. Buiten bereik of een andere vorm: null.
+ * De plaats uit `com.apple.quicktime.location.ISO6709` ("+52.3676+004.9041+000.000/")
+ * of `©xyz` van Android ("+52.3676+004.9041/", "+52.3676+4.9041/", "-1.2921+36.8219/"), in
+ * decimale graden. Hoogte valt weg. Buiten bereik of een andere vorm: null.
+ * WP42b A18 (zoals 42a A5 bij foto's): 0/0 is geen plaats, ook niet als −0;
+ * alleen de breedte of alleen de lengte 0 wel.
  */
 export function locationFromISO6709(value: string | null | undefined): { latitude: number; longitude: number } | null {
   if (typeof value !== "string") return null;
@@ -110,13 +117,54 @@ export function locationFromISO6709(value: string | null | undefined): { latitud
   const longitude = Number(m[2]);
   if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return null;
   if (Math.abs(latitude) > 90 || Math.abs(longitude) > 180) return null;
+  if (latitude === 0 && longitude === 0) return null;
   return { latitude, longitude };
 }
 
-/** De headers voor `POST /upload/video`, zoals bij een foto (`X-Taken-At`, `X-Latitude`, `X-Longitude`). */
-export function videoMetadataHeaders(meta: { creationDate?: string | null; location?: string | null }): Record<string, string> {
+// WP42b A17: de UTC-tijd van Android (`METADATA_KEY_DATE`), in de vorm van
+// MediaMetadataRetriever ("20261126T174453.000Z") of als ISO met Z.
+const ANDROID_UTC_DATE = /^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})(?:\.\d+)?Z$/;
+const ISO_UTC_DATE = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d+)?Z$/;
+
+/**
+ * Vóór dit jaar is het geen opnamedatum: Android geeft 1904-01-01 (`mvhd` 0)
+ * of 1970-01-01 als het bestand geen datum heeft.
+ */
+const FIRST_REAL_YEAR = 1971;
+
+/**
+ * WP42b B11, A17: de UTC-tijd van een Android-filmpje als `X-Taken-At` in de
+ * kloktijd van de tijdzone van de telefoon (die van `Date`), met de regels van
+ * die zone op het moment van opnemen: een filmpje van juli in Amsterdam krijgt
+ * +2, ook als het in november gekozen wordt. Geen datum, 1904/1970 of iets
+ * onleesbaars: null (nooit vandaag, invariant 3).
+ */
+export function takenAtFromUtc(value: string | null | undefined): string | null {
+  if (typeof value !== "string") return null;
+  const text = value.trim();
+  const m = ANDROID_UTC_DATE.exec(text) ?? ISO_UTC_DATE.exec(text);
+  if (!m) return null;
+  const [y, mo, d, h, mi, s] = m.slice(1, 7).map(Number) as [number, number, number, number, number, number];
+  if (y < FIRST_REAL_YEAR || mo < 1 || mo > 12 || d < 1 || h > 23 || mi > 59 || s > 59) return null;
+  const local = new Date(Date.UTC(y, mo - 1, d, h, mi, s));
+  // 31 februari en dergelijke: geen datum.
+  if (local.getUTCFullYear() !== y || local.getUTCMonth() !== mo - 1 || local.getUTCDate() !== d) return null;
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${String(local.getFullYear()).padStart(4, "0")}:${p(local.getMonth() + 1)}:${p(local.getDate())} ${p(local.getHours())}:${p(local.getMinutes())}:${p(local.getSeconds())}`;
+}
+
+/**
+ * De headers voor `POST /upload/video`, zoals bij een foto (`X-Taken-At`, `X-Latitude`, `X-Longitude`).
+ * De datum uit `creationDate` (iOS, kloktijd met tijdzone), anders uit
+ * `utcDate` (Android, UTC; WP42b A17).
+ */
+export function videoMetadataHeaders(meta: {
+  creationDate?: string | null;
+  utcDate?: string | null;
+  location?: string | null;
+}): Record<string, string> {
   const headers: Record<string, string> = {};
-  const taken = takenAtFromQuickTime(meta.creationDate);
+  const taken = takenAtFromQuickTime(meta.creationDate) ?? takenAtFromUtc(meta.utcDate);
   if (taken) headers["X-Taken-At"] = taken;
   const spot = locationFromISO6709(meta.location);
   if (spot) {
@@ -167,8 +215,9 @@ export type VideoFailReason =
   | "server";
 
 const MESSAGES: Record<VideoFailReason, string> = {
-  te_lang: "Dit filmpje duurt langer dan 3 minuten. Kort het in Foto's in en kies het opnieuw.",
-  te_groot: "Dit filmpje is te groot, ook na het verkleinen. Kort het in Foto's in en probeer het opnieuw.",
+  // WP42b B14 (a): neutraal, op elk platform.
+  te_lang: "Dit filmpje duurt langer dan 3 minuten. Kort het filmpje in en kies het opnieuw.",
+  te_groot: "Dit filmpje is te groot, ook na het verkleinen. Kort het filmpje in en probeer het opnieuw.",
   locatie: "Er zat nog een locatie in het filmpje, dus het is niet geplaatst.",
   codec: "Dit soort filmpje kan Clubalmanac niet afspelen.",
   geen_mp4: "Dit bestand is geen filmpje dat Clubalmanac kan lezen.",

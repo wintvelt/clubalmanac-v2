@@ -188,10 +188,17 @@ describe("meldingen (invariant 5)", () => {
     expect(new Set(texts).size).toBe(ALL.length);
   });
 
-  it("te lang noemt de 3 minuten en inkorten in Foto's", () => {
+  // WP42 B14: overal (iOS en Android) dezelfde tekst, zonder de app van de iPhone.
+  it("te lang noemt de 3 minuten en inkorten, niet Foto's (B14)", () => {
     const t = videoFailMessage("te_lang");
-    expect(t).toMatch(/3 minuten/);
-    expect(t).toMatch(/Foto's/);
+    expect(t).toBe("Dit filmpje duurt langer dan 3 minuten. Kort het filmpje in en kies het opnieuw.");
+    expect(t).not.toMatch(/Foto's/);
+  });
+
+  it("te groot zegt dat ook verkleinen niet hielp en noemt inkorten, niet Foto's (B14)", () => {
+    const t = videoFailMessage("te_groot");
+    expect(t).toBe("Dit filmpje is te groot, ook na het verkleinen. Kort het filmpje in en probeer het opnieuw.");
+    expect(t).not.toMatch(/Foto's/);
   });
 
   it("opnieuw proberen alleen waar het kan helpen; uitgelogd met een vers token, zoals bij foto's (A-invariant 33)", () => {

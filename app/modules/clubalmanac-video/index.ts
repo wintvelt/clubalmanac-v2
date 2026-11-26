@@ -3,11 +3,18 @@ import { requireOptionalNativeModule, type NativeModule } from "expo";
 // WP37: de lokale Expo-module voor filmpjes (ios/ClubalmanacVideoModule.swift).
 // Zonder de module (de webapp, een oude dev-build) is `videoModuleAvailable`
 // false en weigert elke functie: de app meldt dan "verkleinen lukte niet".
+//
+// WP42b: op Android dezelfde module (android/, Kotlin, Media3 Transformer), met
+// alleen de functies van filmpjes. De uploader voor originelen ontbreekt daar,
+// dus `originalUploaderAvailable` blijft false (42c); `pickerOnScreen` ook (de
+// app kijkt op Android naar AppState).
 
 export type VideoMetadata = {
-  /** com.apple.quicktime.creationdate van het origineel, met tijdzone. */
+  /** com.apple.quicktime.creationdate van het origineel, met tijdzone (iOS). */
   creationDate: string | null;
-  /** ISO 6709, bv. "+52.3676+004.9041+000.000/". */
+  /** WP42b A17: de opnametijd in UTC zoals Android hem geeft ("20261126T174453.000Z"); niet op iOS. */
+  utcDate?: string | null;
+  /** ISO 6709, bv. "+52.3676+004.9041+000.000/" (iOS) of "+52.3676+004.9041/" (Android). */
   location: string | null;
   durationMs: number | null;
 };
