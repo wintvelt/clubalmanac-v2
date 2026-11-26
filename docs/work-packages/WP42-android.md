@@ -279,3 +279,16 @@ Audit: niets blokkerends. Door B in één ronde:
 Niet doen: de sleutelcontrole buiten EAS (audit-nit 5, aanvaard).
 
 **Besluit B11 (Wouter, 2026-11-26).** Op Android 11 blijft de plaats staan die via de app Bestanden meekomt; de app doet niets om hem te krijgen of weg te halen. Punt 7 (keuze kwijt als Android de app sluit) blijft open: vraagt eigen native code, niet in 42a.
+
+**Metingen fix-ronde (B, emulator, 2026-11-26).**
+
+| API | `legacy` opent | plaats met `legacy` + recht | vraag om het recht |
+|---|---|---|---|
+| 30 | app Bestanden | echt (ook zonder recht en zonder `legacy`) | Allow / Deny |
+| 33 | app Bestanden | echt | Allow / Don't allow |
+| 34 | fotokiezer, meerdere | 0/0, ook met "Allow all" | Select photos and videos / Allow all / Don't allow |
+| 35 | fotokiezer, meerdere | echt | Allow limited access / Allow all / Don't allow |
+
+Dus `legacy` + vraag vanaf API 35. Punt 6: "Allow limited access" opent eerst een systeemscherm en daarna de kiezer, met plaats; "Don't allow" geeft de kiezer zonder plaats; na een tweede weigering vraagt Android niet meer. Bij A-inv. 25: de md5-sleutel hangt aan de bytes van de kopie, dus dezelfde foto vóór en na het toekennen van het recht kan één keer dubbel komen. Aanvaard.
+
+**Mini-fix na audit fix-ronde.** De profielfoto leegt de hele map van de kiezer (`ProfileScreen.tsx`, `keepCopy(null)` → `clearPickerCopies()`), ook als het toevoegscherm open is met een keuze (upload van de profielfoto loopt nog en het lid tikt op de plus). Oplossen: in de profielflow alleen de eigen kopieën weghalen.
