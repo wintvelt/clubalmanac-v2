@@ -374,3 +374,10 @@ A rapporteert ook wat hier ontbreekt of niet klopt. Oude code is geen bron.
 ## Cross-refs (42b)
 
 WP37 (filmpjes, mp4-controle, A-invarianten 11–38), WP38b (uploader, niet op Android), WP42a (kiezer, S1, versieregel API 35, fix-ronde punt 7), WP18 (upload-id), WP39 (toevoegscherm).
+
+## Besluiten Wouter (42b, 2026-11-26)
+
+- **B10.** Verkleinen met Media3 Transformer in de eigen module (advies), tenzij A het weerlegt.
+- **B11.** Datum: omrekenen naar de tijdzone van de telefoon bij het kiezen (advies).
+- **B12.** Tijdens verkleinen en uploaden de app open houden, met een duidelijke melding (advies); achtergrond-uploads alleen als A vindt dat het met weinig werk kan.
+- **B13 (gewijzigd).** Geen geplande test op een echte telefoon door regie of Wouter. De gate is de emulator; daarna gaat de prod-build via de interne track naar de testers, en Wouter vraagt hen wat ze zien. Meldingen van testers komen terug als fix-ronde.
