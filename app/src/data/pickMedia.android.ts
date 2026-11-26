@@ -2,8 +2,9 @@ import { File } from "expo-file-system";
 import type { ImagePickerAsset, ImagePickerOptions, MediaType } from "expo-image-picker";
 import { PermissionsAndroid, Platform } from "react-native";
 
-// WP42 A6: op Android in 42a alleen foto's; filmpjes toevoegen komt in 42b.
-// De teksten noemen dan geen filmpjes (zoals de webapp) en geen iCloud.
+// WP42b A20: op Android foto's en filmpjes in één kiezer, zoals op iOS
+// (42a A6 had alleen foto's). De teksten zijn die van iOS, zonder iCloud: de
+// kiezer van Android haalt niets uit de cloud.
 //
 // WP42 B4, spike S1 variant (d): de plaats van een foto blijft alleen als de
 // kiezer via ACTION_GET_CONTENT opent (`legacy`) én de app het recht
@@ -19,6 +20,9 @@ import { PermissionsAndroid, Platform } from "react-native";
 // toestel zonder fotokiezer de app Bestanden) en geen vraag om het recht. De
 // fotokiezer geeft dan geen plaats; de app Bestanden (API 30 op de emulator)
 // geeft hem wel, ook zonder het recht.
+//
+// WP42b invariant 4, A18: dezelfde regel voor de plaats van een filmpje
+// (`©xyz`); de kiezer behandelt filmpjes zoals foto's.
 
 const MEDIA_LOCATION = PermissionsAndroid.PERMISSIONS.ACCESS_MEDIA_LOCATION;
 
@@ -27,7 +31,7 @@ const PLACE_FROM_API = 35;
 
 const KEEPS_PLACE = Number(Platform.Version) >= PLACE_FROM_API;
 
-export const PICK_MEDIA_TYPES: MediaType[] = ["images"];
+export const PICK_MEDIA_TYPES: MediaType[] = ["images", "videos"];
 
 export const PICK_EXTRA_OPTIONS: Pick<ImagePickerOptions, "legacy"> = KEEPS_PLACE ? { legacy: true } : {};
 
@@ -47,14 +51,18 @@ export function beforePick(): Promise<void> {
   return asked;
 }
 
+// De naam is van 42a (alleen foto's); de teksten noemen nu ook filmpjes (A20).
 export const PHOTOS_ONLY_TEXTS: {
   emptyTitle: string;
   emptyText: string;
   fetchFailed: string;
+  keepOpen: string | null;
 } | null = {
-  emptyTitle: "Kies foto's",
-  emptyText: "Kies een of meer foto's om aan een album toe te voegen.",
+  emptyTitle: "Kies foto's of filmpjes",
+  emptyText: "Kies een of meer foto's of filmpjes (hooguit 3 minuten) om aan een album toe te voegen.",
   fetchFailed: "Je keuze ophalen lukte niet.",
+  // WP42b A22 (B12): op Android stopt verkleinen en versturen als de app wegklikt.
+  keepOpen: "Houd Clubalmanac open tot de filmpjes klaar zijn.",
 };
 
 export const PICKER_CLOSE_BY_APP_STATE = true;

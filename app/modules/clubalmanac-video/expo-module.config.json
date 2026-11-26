@@ -1,7 +1,10 @@
 {
-  "platforms": ["apple"],
+  "platforms": ["apple", "android"],
   "apple": {
     "modules": ["ClubalmanacVideoModule"],
     "appDelegateSubscribers": ["ClubalmanacUploadAppDelegate"]
+  },
+  "android": {
+    "modules": ["expo.modules.clubalmanacvideo.ClubalmanacVideoModule"]
   }
 }

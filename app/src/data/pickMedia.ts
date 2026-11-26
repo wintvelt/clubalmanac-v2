@@ -1,9 +1,9 @@
 import type { ImagePickerAsset, ImagePickerOptions, MediaType } from "expo-image-picker";
 
 // WP42 A6 en B4: wat deze build in het toevoegscherm kan kiezen, en hoe. Op
-// iOS foto's en filmpjes (WP37); pickMedia.android.ts heeft alleen foto's
-// (42a) en houdt de plaats (spike S1, variant d). Het web heeft een eigen
-// scherm.
+// iOS foto's en filmpjes (WP37); pickMedia.android.ts ook (42b), met eigen
+// teksten zonder iCloud, en houdt de plaats (spike S1, variant d). Het web
+// heeft een eigen scherm.
 
 /** De soorten in de kiezer. */
 export const PICK_MEDIA_TYPES: MediaType[] = ["images", "videos"];
@@ -23,6 +23,8 @@ export const PHOTOS_ONLY_TEXTS: {
   emptyTitle: string;
   emptyText: string;
   fetchFailed: string;
+  /** Zolang filmpjes verkleind of verstuurd worden; `null`: geen regel. */
+  keepOpen: string | null;
 } | null = null;
 
 /**

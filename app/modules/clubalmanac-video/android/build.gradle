@@ -1,0 +1,26 @@
+plugins {
+  id 'com.android.library'
+  id 'expo-module-gradle-plugin'
+}
+
+// WP42b: de Android-kant van de module voor filmpjes (zie ClubalmanacVideoModule.kt).
+group = 'com.clubalmanac'
+version = '1.0.0'
+
+android {
+  namespace "expo.modules.clubalmanacvideo"
+  defaultConfig {
+    versionCode 1
+    versionName "1.0.0"
+  }
+}
+
+dependencies {
+  // WP42b A15: Media3 in dezelfde versie als expo-video (58.0.14, zijn build.gradle).
+  // Gradle neemt per onderdeel de hoogste versie: een nieuwere hier tilt ook de
+  // speler van expo-video mee. Bij een Expo-upgrade samen nakijken.
+  def media3Version = "1.9.1"
+  implementation "androidx.media3:media3-transformer:${media3Version}"
+  implementation "androidx.media3:media3-effect:${media3Version}"
+  implementation "androidx.media3:media3-common:${media3Version}"
+}

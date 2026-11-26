@@ -368,7 +368,7 @@ export function AddPhotosScreen({ albumId }: { albumId?: string }) {
         // WP37: ook filmpjes. Het origineel, met zijn datum en plaats (besluit
         // B2). Fixronde gate 1: Current en Passthrough expliciet (de native
         // standaard), zodat een upgrade niet ongemerkt gaat omzetten.
-        // WP42 A6: op Android in 42a alleen foto's (src/data/pickMedia).
+        // WP42 A6, 42b A20: de soorten per platform (src/data/pickMedia).
         mediaTypes: PICK_MEDIA_TYPES,
         allowsMultipleSelection: true,
         selectionLimit: 0,
@@ -1001,11 +1001,10 @@ export function AddPhotosScreen({ albumId }: { albumId?: string }) {
               {view.elapsed}
             </Text>
           )}
-          {PHOTOS_ONLY_TEXTS === null && (
-            <Text variant="meta" color="muted">
-              Langere filmpjes en/of hogere kwaliteit kan een paar minuten duren.
-            </Text>
-          )}
+          {/* WP42b A20: ook op Android (de kiezer kopieert eerst het hele filmpje). */}
+          <Text variant="meta" color="muted">
+            Langere filmpjes en/of hogere kwaliteit kan een paar minuten duren.
+          </Text>
           <SmallButton title="Stoppen" onPress={stopFetching} />
         </View>
       ) : null}
@@ -1097,6 +1096,12 @@ export function AddPhotosScreen({ albumId }: { albumId?: string }) {
               {videoFailMessage("te_lang")}
             </Text>
           )}
+          {/* WP42b A22 (B12): op Android loopt een filmpje alleen met de app open. */}
+          {videoBusy && PHOTOS_ONLY_TEXTS?.keepOpen ? (
+            <Text variant="meta" color="muted">
+              {PHOTOS_ONLY_TEXTS.keepOpen}
+            </Text>
+          ) : null}
           {/* Besluit 4, A8: over de volle breedte van het vel, met de eigen breedte gemeten. */}
           <View
             style={local.grid}
