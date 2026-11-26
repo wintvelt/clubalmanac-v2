@@ -277,3 +277,5 @@ Audit: niets blokkerends. Door B in één ronde:
 7. **Keuze kwijt na het sluiten van de app** door Android: `ImagePicker.getPendingResultAsync()` op Android oppakken, als dat klein blijft; anders melden.
 
 Niet doen: de sleutelcontrole buiten EAS (audit-nit 5, aanvaard).
+
+**Besluit B11 (Wouter, 2026-11-26).** Op Android 11 blijft de plaats staan die via de app Bestanden meekomt; de app doet niets om hem te krijgen of weg te halen. Punt 7 (keuze kwijt als Android de app sluit) blijft open: vraagt eigen native code, niet in 42a.
