@@ -55,7 +55,9 @@ class ClubalmanacVideoModule : Module() {
     Events("onProgress")
 
     OnCreate {
-      VideoFiles.clear(context)
+      // G2: zonder context geen opruimen (de volgende start probeert het
+      // weer); de module werkt gewoon verder.
+      appContext.reactContext?.let { VideoFiles.clear(it) }
     }
 
     OnDestroy {

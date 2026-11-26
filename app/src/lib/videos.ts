@@ -98,11 +98,13 @@ export function takenAtFromQuickTime(value: string | null | undefined): string |
 
 // WP42b A18: de lengte met drie cijfers (iPhone, de camera van Android via
 // MediaMuxer: "+004.9041") of zonder voorloopnullen (Media3: "+4.9041").
-const ISO6709 = /^([+-]\d{2}(?:\.\d+)?)([+-]\d{1,3}(?:\.\d+)?)(?:[+-]\d+(?:\.\d+)?)?\/?$/;
+// Media3 schrijft ook de breedte zonder voorloopnul ("%+.4f"): onder 10° één
+// cijfer ("-1.2921+36.8219/", fix-ronde 42b, audit M1).
+const ISO6709 = /^([+-]\d{1,2}(?:\.\d+)?)([+-]\d{1,3}(?:\.\d+)?)(?:[+-]\d+(?:\.\d+)?)?\/?$/;
 
 /**
  * De plaats uit `com.apple.quicktime.location.ISO6709` ("+52.3676+004.9041+000.000/")
- * of `©xyz` van Android ("+52.3676+004.9041/", "+52.3676+4.9041/"), in
+ * of `©xyz` van Android ("+52.3676+004.9041/", "+52.3676+4.9041/", "-1.2921+36.8219/"), in
  * decimale graden. Hoogte valt weg. Buiten bereik of een andere vorm: null.
  * WP42b A18 (zoals 42a A5 bij foto's): 0/0 is geen plaats, ook niet als −0;
  * alleen de breedte of alleen de lengte 0 wel.

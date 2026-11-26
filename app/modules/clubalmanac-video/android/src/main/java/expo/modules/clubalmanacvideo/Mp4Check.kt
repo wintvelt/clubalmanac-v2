@@ -2,8 +2,10 @@
 // Dezelfde regels als de mp4-controle van de backend (convex/lib/mp4.ts), maar
 // strenger waar het om metadata gaat: een fout hier is altijd een fout in het
 // verkleinen, nooit van het lid (A-antwoord 7).
-// - Bovenaan: eerst `ftyp`, vóór de index alleen `free`/`skip`/`wide`, de index
-//   (`moov`) vóór de beelddata, en daarna alleen `mdat`/`free`/`skip`.
+// - Bovenaan: eerst `ftyp` (minstens 16 bytes, met een hoofdmerk dat de backend
+//   aanneemt: `MP4_BRANDS`), vóór de index alleen `free`/`skip`/`wide`, de index
+//   (`moov`) vóór de beelddata, en daarna alleen `mdat`/`free`/`skip`. Een kop
+//   van 64 bits (grootte 1) wordt overal gelezen zoals een van 32 bits.
 // - In de index geen enkel metadata-blok (`udta`, `meta`, `uuid`) en niet
 //   gefragmenteerd (`mvex`).
 // - Precies één beeldspoor in H.264 en hooguit één geluidsspoor in AAC, niets
@@ -24,6 +26,8 @@ internal object Mp4Check {
 
   class Problem(message: String) : Exception(message)
 
+  /** De merken die de backend aanneemt (`MP4_BRANDS` in convex/lib/mp4.ts). */
+  private val MP4_BRANDS = setOf("isom", "iso2", "iso3", "iso4", "iso5", "iso6", "mp41", "mp42", "avc1", "M4V ")
   private val BEFORE_INDEX = setOf("free", "skip", "wide")
   private val AFTER_INDEX = setOf("mdat", "free", "skip")
   private val FORBIDDEN = setOf("udta", "meta", "uuid", "mvex", "moof", "traf")
@@ -40,6 +44,7 @@ internal object Mp4Check {
       var offset = 0L
       var count = 0
       var index: ByteArray? = null
+      var indexHeader = 8
       val head = ByteArray(16)
       while (offset < size) {
         if (++count > 64) throw Problem("te veel blokken")
@@ -60,13 +65,22 @@ internal object Mp4Check {
         }
         if (boxSize < header || offset + boxSize > size) throw Problem("blok $type past niet")
         when {
-          count == 1 -> if (type != "ftyp") throw Problem("geen ftyp")
+          count == 1 -> {
+            if (type != "ftyp") throw Problem("geen ftyp")
+            if (boxSize < 16 || boxSize < header + 4) throw Problem("ftyp te kort")
+            val brand = ByteArray(4)
+            raf.seek(offset + header)
+            raf.readFully(brand)
+            val name = String(brand, Charsets.ISO_8859_1)
+            if (name !in MP4_BRANDS) throw Problem("merk $name")
+          }
           index == null && type == "moov" -> {
             if (boxSize > MAX_INDEX_BYTES) throw Problem("index te groot")
             val bytes = ByteArray(boxSize.toInt())
             raf.seek(offset)
             raf.readFully(bytes)
             index = bytes
+            indexHeader = header
           }
           index == null && type == "mdat" -> throw Problem("index achteraan")
           index == null && type !in BEFORE_INDEX -> throw Problem("$type vóór de index")
@@ -74,7 +88,7 @@ internal object Mp4Check {
         }
         offset += boxSize
       }
-      return inspectIndex(index ?: throw Problem("geen index"))
+      return inspectIndex(index ?: throw Problem("geen index"), indexHeader)
     }
   }
 
@@ -119,8 +133,8 @@ internal object Mp4Check {
 
   private class Track(var handler: String? = null, var codec: String? = null)
 
-  private fun inspectIndex(b: ByteArray): Info {
-    val moov = Box("moov", 0, 8, b.size)
+  private fun inspectIndex(b: ByteArray, header: Int): Info {
+    val moov = Box("moov", 0, header, b.size)
     val kids = children(b, moov)
     val mvhds = kids.filter { it.type == "mvhd" }
     if (mvhds.size != 1) throw Problem("geen mvhd")

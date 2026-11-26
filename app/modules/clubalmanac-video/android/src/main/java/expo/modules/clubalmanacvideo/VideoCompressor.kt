@@ -5,9 +5,11 @@
 //   encoder-instellingen (bitrate) dwingen dat af, ook als het origineel al
 //   H.264/AAC is (Media3 kopieert anders wat niet hoeft te veranderen);
 // - HDR naar SDR met OpenGL (Media3 schakelt anders stil over naar HEVC);
-// - hooguit `maxFps`: is het origineel sneller, dan elk n-de beeld (60 → 30,
-//   120 → 30); anders alle beelden. Niet `createDefaultFrameDropEffect`: die
-//   hield in S2 maar de helft over, ook van 10 en 30 fps;
+// - hooguit `maxFps`, op de tijdstempels: `createDefaultFrameDropEffect`
+//   (fix-ronde 42b, G1, gemeten). 30 fps blijft 30, 60 wordt 30, en bij een
+//   wisselende beeldsnelheid (Samsung Auto FPS) blijft een stuk van 30 fps 30
+//   en wordt een stuk van 60 fps 30. Het eigen n-de beeld (op het gemiddelde)
+//   maakte van zo'n stuk van 30 fps 15;
 // - langste zijde hooguit `maxSide`, nooit groter dan het origineel
 //   (Presentation);
 // - Media3's eigen mp4-muxer, zonder één metadata-item van het origineel
@@ -44,7 +46,6 @@ import androidx.media3.transformer.ProgressHolder
 import androidx.media3.transformer.Transformer
 import androidx.media3.transformer.VideoEncoderSettings
 import java.io.File
-import kotlin.math.ceil
 import kotlin.math.max
 import kotlin.math.roundToInt
 
@@ -105,11 +106,7 @@ internal class VideoCompressor(
         })
         .build()
       val videoEffects = ArrayList<Effect>()
-      val every = keepEvery(probe.fps, target.maxFps)
-      if (every > 1) {
-        val fps = probe.fps!!.toFloat()
-        videoEffects.add(FrameDropEffect.createSimpleFrameDropEffect(fps, fps / every))
-      }
+      if (target.maxFps > 0) videoEffects.add(FrameDropEffect.createDefaultFrameDropEffect(target.maxFps.toFloat()))
       videoEffects.add(Presentation.createForWidthAndHeight(width, height, Presentation.LAYOUT_SCALE_TO_FIT))
       val effects = Effects(listOf(), videoEffects)
       val item = EditedMediaItem.Builder(MediaItem.fromUri(Uri.fromFile(input))).setEffects(effects).build()
@@ -189,16 +186,6 @@ internal class VideoCompressor(
 
   companion object {
     private const val PROGRESS_INTERVAL_MS = 250L
-
-    /**
-     * Elk hoeveelste beeld blijft, zodat er hooguit `maxFps` overblijven (met
-     * 5% speling voor een filmpje dat net iets boven zijn 30 fps uitkomt).
-     * Onbekend: alle.
-     */
-    fun keepEvery(fps: Double?, maxFps: Int): Int {
-      if (fps == null || !fps.isFinite() || fps <= 0 || maxFps <= 0) return 1
-      return max(1, ceil(fps / maxFps - 0.05).toInt())
-    }
 
     /** Even maten (H.264), langste zijde hooguit `maxSide`, nooit groter dan het origineel. */
     fun fit(width: Int, height: Int, maxSide: Int): Pair<Int, Int> {
