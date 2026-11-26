@@ -514,3 +514,54 @@ Niet in unit-tests (S2, gate, audit): de Kotlin-kant zelf (A15, A16, A19, A23, A
   - `te_lang`: "Dit filmpje duurt langer dan 3 minuten. Kort het filmpje in en kies het opnieuw."
   - `te_groot`: "Dit filmpje is te groot, ook na het verkleinen. Kort het filmpje in en probeer het opnieuw."
 - **Regie:** de namen in A's testcontracten (`takenAtFromUtc`, `VideoMetadata.utcDate`, `PHOTOS_ONLY_TEXTS`) zijn aanvaard.
+
+## Uitkomst spike S2 en bouw (B, 2026-11-26)
+
+S2 werkt met de backend. Elk resultaat met de instellingen van A15 haalt `inspectMp4`/`videoProblem`. De index staat vooraan, ook bij 3:00 1080p. Er is geen locatie en het is H.264 + AAC. B heeft doorgebouwd (commit 9927222).
+
+**Kiezer** (emulator, Europe/Amsterdam):
+
+| API | kiezer | filmpjes, meerdere | plaats (`©xyz`) | datum |
+|---|---|---|---|---|
+| 35 | fotokiezer (`legacy` + recht) | ja, 13 tegelijk | echt, alle vier de kwadranten met het goede teken | UTC wordt de kloktijd; juli +2 (Hermes klopt) |
+| 36 | fotokiezer (`legacy` + recht) | ja | echt; Amsterdam en Sydney op de kaart | klopt |
+| 30 | app Bestanden, chip "Videos" | rijen reageerden niet op adb-tikken | niet gemeten | – |
+| 33, 34 | niet gemeten | | | |
+
+**Verkleinen** (API 35):
+
+| invoer | tijd | uitvoer | fps in → uit | backend |
+|---|---|---|---|---|
+| 1080p30 H.264, 3:00,3 | 51 s | 46 MB, 180 333 ms | 30 → 15,5 | goed |
+| 3:00,349 met AAC | 31 s | 5,2 MB, 180 400 ms | 30 → 9 | goed, ook na upload |
+| 3:20 | – | vooraf `te_lang` | – | – |
+| HEVC 1080p60 | 7 s | 3,3 MB | 60 → 30 | goed |
+| 4K60 staand | 8 s | 1080×1920 | 60 → 30 | goed |
+| camera-app emulator (720p, AMR) | 2 s | 0,7 MB, AMR → AAC | 29,4 → 29,4 | goed |
+| met plaats (`android-muxer-*`) | <1 s | zonder locatie | – | goed |
+
+**Verder gemeten door B:**
+- De poster is een JPEG zonder EXIF en staat rechtop.
+- Een filmpje met datum-nul geeft geen `X-Taken-At`.
+- De upload naar dev werkt voor 9 filmpjes. Tegels en speler staan rechtop, de datum en plaats staan in de backend, de kaart op API 36 toont de pins en het filmproject kreeg geen origineel.
+- De release-build met R8 werkt op API 35 en 36. De rechten zijn gelijk aan 42a, 16 KB is in orde en de APK is 40,4 MB.
+- Achtergrond: 30 s op het homescherm loopt door. Na 5 min staat het stil, maar het loopt verder na terugkomen, zonder dubbel filmpje.
+- Na `am kill` is de keuze weg. Het halve bestand gaat weg bij de volgende start.
+
+**Open na B:**
+- Bij zelfgemaakte testfilmpjes en `media3-schoon.mp4` valt op de emulator de helft van de beelden weg, ook zonder effect dat beelden weglaat. Een camerafilmpje houdt wel alle beelden. De oorzaak is onbekend.
+- B nam daarom niet `createDefaultFrameDropEffect`, maar een eigen n-de-beeld.
+- Bij 3:00,3 is de marge klein: 180 400 ms. Dat is precies de grens van de app.
+- Niet gemeten: de webapp (poort 8081 is bezet), de kaart op API 35 (tokenfout van Play-diensten), en de kiezer op API 30, 33 en 34.
+
+## Audit 42b (2026-11-26)
+
+Oordeel: klaar voor de gate. Er is niets blokkerend.
+- **M1 (moet).** Media3 schrijft een breedte onder 10° met één cijfer (`%+.4f`, dus bijvoorbeeld `-1.2921+36.8219/`). De regex in `videos.ts:101` eist twee cijfers, dus zo'n filmpje komt binnen zonder plaats. De test "0/0 van Media3" slaagt alleen doordat de regex niet matcht.
+- **M2 (moet).** De uitkomst van S2 moet in de spec. Dat is gedaan; zie hierboven.
+- **G1 (mag).** Het n-de-beeld springt bij ±31,5 fps naar de helft en houdt geen rekening met tijdstempels. Bij een wisselende beeldsnelheid (Samsung Auto FPS) worden stukken van 30 fps 15 fps. De meting die tegen `createDefaultFrameDropEffect` pleitte, zegt niets: het halveren gebeurde ook zonder effect.
+- **G2 (mag).** `OnCreate { VideoFiles.clear(context) }` haalt de context op buiten de try.
+- **G3 (mag).** `Mp4Check.kt` kijkt het merk in `ftyp` niet na, en gaat uit van een `moov`-kop van 8 bytes.
+- **G4 (mag).** Geen test die de Media3-versie gelijk houdt aan die van `expo-video`.
+- **G5 (mag).** De melding "Houd Clubalmanac open…" valt weinig op. Dat oordeelt de gate.
+- **G6 (bestaand).** `cancelCompress` wordt nergens aangeroepen, ook niet op iOS.
