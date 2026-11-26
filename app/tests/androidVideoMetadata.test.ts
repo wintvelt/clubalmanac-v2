@@ -10,7 +10,8 @@ import { locationFromISO6709, takenAtFromQuickTime, takenAtFromUtc, videoMetadat
 //   A-inv. 14). Geen datum (mvhd 0 = "19040101T000000.000Z"): geen datum.
 //   A18: de plaats zoals Android hem geeft. MediaMuxer (de camera)
 //   schrijft "+52.3676+004.9041/", Media3 "+52.3676+4.9041/" (gemeten,
-//   emulator API 35). 0/0 is geen plaats (42a A5), ook bij een filmpje.
+//   emulator API 35) en onder 10° breedte "-1.2921+36.8219/" (fix-ronde,
+//   audit M1). 0/0 is geen plaats (42a A5), ook bij een filmpje.
 // De vormen hieronder zijn gemeten op de emulator (meetapp, zie
 // tests/fixtures/wp42b/README.md), niet bedacht.
 // Spec: docs/work-packages/WP42-android.md §Spec-criticus aanvullingen 42b.
@@ -108,13 +109,41 @@ describe("locationFromISO6709: de vormen van Android (A18)", () => {
     expect(locationFromISO6709(value)).toEqual(spot);
   });
 
+  // 42b fix-ronde (audit M1): Media3 1.9.1 schrijft `©xyz` met "%+.4f%+.4f/"
+  // (muxer/Boxes, nagekeken in de Gradle-cache), dus ook de breedte zonder
+  // voorloopnul: onder 10° één cijfer. Zo'n filmpje (Nairobi, Lagos, Quito,
+  // Singapore) moet zijn plaats houden.
+  it.each([
+    ["Media3, breedte onder 10° zuid (Nairobi)", "-1.2921+36.8219/", { latitude: -1.2921, longitude: 36.8219 }],
+    ["Media3, breedte en lengte onder 10°", "+5.1234+4.9041/", { latitude: 5.1234, longitude: 4.9041 }],
+    ["Media3, net onder 0", "-0.5000-0.2500/", { latitude: -0.5, longitude: -0.25 }],
+    ["Media3, breedte onder 10°, lengte over 100°", "+1.3521+103.8198/", { latitude: 1.3521, longitude: 103.8198 }],
+  ])("vorm van %s (breedte met één cijfer): %s", (_label, value, spot) => {
+    expect(locationFromISO6709(value)).toEqual(spot);
+  });
+
+  // Deze vormen met een 0 leest de app als plaats. Daarmee staat vast dat de
+  // vorm "+0.0000" gelezen wordt, en dat "0/0 van Media3" hieronder null is
+  // door de regel "0/0 is geen plaats", niet doordat de vorm niet gelezen wordt.
+  it("Media3: alleen de breedte of alleen de lengte 0 is wel een plaats", () => {
+    expect(locationFromISO6709("+0.0000+4.9041/")).toEqual({ latitude: 0, longitude: 4.9041 });
+    expect(locationFromISO6709("+5.1234+0.0000/")).toEqual({ latitude: 5.1234, longitude: 0 });
+  });
+
   it.each([
     ["0/0 van MediaMuxer", "+00.0000+000.0000/"],
     ["0/0 van Media3", "+0.0000+0.0000/"],
     ["-0/-0", "-00.0000-000.0000/"],
+    ["-0/-0 van Media3", "-0.0000-0.0000/"],
     ["0/0 met hoogte", "+00.0000+000.0000+000.000/"],
   ])("%s is geen plaats (42a A5): %s", (_label, value) => {
     expect(locationFromISO6709(value)).toBeNull();
+  });
+
+  it("de vormen met twee cijfers in de breedte blijven gelijk (iPhone, MediaMuxer)", () => {
+    expect(locationFromISO6709("+52.3676+004.9041+000.000/")).toEqual({ latitude: 52.3676, longitude: 4.9041 });
+    expect(locationFromISO6709("-01.2921+036.8219+1795.000/")).toEqual({ latitude: -1.2921, longitude: 36.8219 });
+    expect(locationFromISO6709("+05.1234+004.9041/")).toEqual({ latitude: 5.1234, longitude: 4.9041 });
   });
 
   it("alleen de breedte of alleen de lengte 0 is wel een plaats", () => {
