@@ -293,3 +293,11 @@ Niet doen: de sleutelcontrole buiten EAS (audit-nit 5, aanvaard).
 Dus `legacy` + vraag vanaf API 35. Punt 6: "Allow limited access" opent eerst een systeemscherm en daarna de kiezer, met plaats; "Don't allow" geeft de kiezer zonder plaats; na een tweede weigering vraagt Android niet meer. Bij A-inv. 25: de md5-sleutel hangt aan de bytes van de kopie, dus dezelfde foto vóór en na het toekennen van het recht kan één keer dubbel komen. Aanvaard.
 
 **Mini-fix na audit fix-ronde.** De profielfoto leegt de hele map van de kiezer (`ProfileScreen.tsx`, `keepCopy(null)` → `clearPickerCopies()`), ook als het toevoegscherm open is met een keuze (upload van de profielfoto loopt nog en het lid tikt op de plus). Oplossen: in de profielflow alleen de eigen kopieën weghalen.
+
+## Gate en closeout 42a (regie, 2026-11-26)
+
+- Emulator: alles uit de acceptance door B (S1, fix-ronde, mini-fix); regie: kaart met de echte sleutel (oud en nieuw project), screenshots licht en donker.
+- Play: interne track, builds 4 en 5 (2.0.2); build 5 heeft de sleutel uit project Clubalmanac. AAB gecontroleerd: prod-Convex, `pk_live_`, rechten zoals A9.
+- Echte telefoon: eerste lid (Samsung, Android 17) installeerde via de opt-in-link en is ingelogd, na het overzetten van zijn e-mailadres (zie `external-services.md` §Auth). Foto toevoegen met plaats en de kaart op zijn telefoon nog niet teruggemeld; dat volgt bij de volgende testronde.
+- iOS-gate van de iOS-wijzigingen (menu's, kopieën van de kiezer, profielfoto) gaat mee met de volgende TestFlight-build.
+- Open voor 42b: zie §Richting 42b en 42c, en punt 7 van de fix-ronde (keuze kwijt als Android de app sluit).
