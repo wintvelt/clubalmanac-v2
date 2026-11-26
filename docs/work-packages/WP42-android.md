@@ -263,6 +263,7 @@ Niet in unit-tests (gate en audit): menu's, bevestigingen en de terugknop (A1–
 
 - **42b:** verkleinen met Media3 Transformer (AndroidX) of een bibliotheek; datum uit `MediaMetadataRetriever`. De fotokiezer haalt ook bij filmpjes de plaats weg; de backend weigert een filmpje mét plaats al (WP37).
 - **42c:** WorkManager met een langlopende worker draait als foreground service van het type `dataSync`: Play vraagt dan een verklaring met video, en Android 15 begrenst `dataSync` op 6 uur per 24 uur. Alternatief vanaf Android 14: een door de gebruiker gestarte overdracht (user-initiated data transfer job). Kiezen bij de kickoff van 42c. Zekerheid: middel.
+- **Kaartsleutel verhuisd (2026-11-26):** de sleutel staat nu in het eigen Google Cloud-project "Clubalmanac" (met budgetwaarschuwing €1), in EAS (`production`, `development`) en in `app/.env.local` op de server; build 5 (2.0.2) staat op de interne track en is op de emulator met de nieuwe sleutel getest. **Nog open (Wouter):** als de testers build 5 hebben, in project "Mentoring webapp" de oude sleutel verwijderen, *Maps SDK for Android* uitzetten en het budget "Clubalmanac kaart" daar verwijderen.
 
 ## Fix-ronde 42a (regie, na audit 2026-11-25)
 
@@ -292,3 +293,11 @@ Niet doen: de sleutelcontrole buiten EAS (audit-nit 5, aanvaard).
 Dus `legacy` + vraag vanaf API 35. Punt 6: "Allow limited access" opent eerst een systeemscherm en daarna de kiezer, met plaats; "Don't allow" geeft de kiezer zonder plaats; na een tweede weigering vraagt Android niet meer. Bij A-inv. 25: de md5-sleutel hangt aan de bytes van de kopie, dus dezelfde foto vóór en na het toekennen van het recht kan één keer dubbel komen. Aanvaard.
 
 **Mini-fix na audit fix-ronde.** De profielfoto leegt de hele map van de kiezer (`ProfileScreen.tsx`, `keepCopy(null)` → `clearPickerCopies()`), ook als het toevoegscherm open is met een keuze (upload van de profielfoto loopt nog en het lid tikt op de plus). Oplossen: in de profielflow alleen de eigen kopieën weghalen.
+
+## Gate en closeout 42a (regie, 2026-11-26)
+
+- Emulator: alles uit de acceptance door B (S1, fix-ronde, mini-fix); regie: kaart met de echte sleutel (oud en nieuw project), screenshots licht en donker.
+- Play: interne track, builds 4 en 5 (2.0.2); build 5 heeft de sleutel uit project Clubalmanac. AAB gecontroleerd: prod-Convex, `pk_live_`, rechten zoals A9.
+- Echte telefoon: eerste lid (Samsung, Android 17) installeerde via de opt-in-link en is ingelogd, na het overzetten van zijn e-mailadres (zie `external-services.md` §Auth). Foto toevoegen met plaats en de kaart op zijn telefoon nog niet teruggemeld; dat volgt bij de volgende testronde.
+- iOS-gate van de iOS-wijzigingen (menu's, kopieën van de kiezer, profielfoto) gaat mee met de volgende TestFlight-build.
+- Open voor 42b: zie §Richting 42b en 42c, en punt 7 van de fix-ronde (keuze kwijt als Android de app sluit).
