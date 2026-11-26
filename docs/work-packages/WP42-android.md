@@ -263,6 +263,7 @@ Niet in unit-tests (gate en audit): menu's, bevestigingen en de terugknop (A1–
 
 - **42b:** verkleinen met Media3 Transformer (AndroidX) of een bibliotheek; datum uit `MediaMetadataRetriever`. De fotokiezer haalt ook bij filmpjes de plaats weg; de backend weigert een filmpje mét plaats al (WP37).
 - **42c:** WorkManager met een langlopende worker draait als foreground service van het type `dataSync`: Play vraagt dan een verklaring met video, en Android 15 begrenst `dataSync` op 6 uur per 24 uur. Alternatief vanaf Android 14: een door de gebruiker gestarte overdracht (user-initiated data transfer job). Kiezen bij de kickoff van 42c. Zekerheid: middel.
+- **Todo bij de volgende Android-build (Wouter, besluit 2026-11-26):** de kaartsleutel verhuizen naar een eigen Google Cloud-project "Clubalmanac". Hij is per ongeluk aangemaakt in het project "Mentoring webapp" (de wizard nam het open project). Stappen: nieuw project met betaalaccount, *Maps SDK for Android* aanzetten, nieuwe sleutel met dezelfde beperkingen (pakket `com.clubalmanac.app`, SHA-1 van Play App Signing en van de debug-keystore `5E:8F:…:F6:25`, alleen Maps SDK for Android), `eas env:update` in `production` en `development`, `app/.env.local` op de server bijwerken, budgetwaarschuwing van €1 op het nieuwe project. Pas na de nieuwe build in Play de oude sleutel verwijderen en Maps SDK in Mentoring webapp uitzetten.
 
 ## Fix-ronde 42a (regie, na audit 2026-11-25)
 
