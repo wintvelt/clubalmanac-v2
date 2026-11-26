@@ -21,7 +21,7 @@ function pickerDir(): Directory | null {
 }
 
 /** Het pad zonder `file://` en zonder de `/private` die iOS er soms voor zet. */
-function plainPath(uri: string): string {
+export function plainPath(uri: string): string {
   let path = uri.replace(/^file:\/\//, "");
   try {
     path = decodeURI(path);
@@ -32,7 +32,7 @@ function plainPath(uri: string): string {
 }
 
 /** Ligt dit bestand in de map van de kiezer? */
-function isPickerCopy(uri: string, dir: Directory): boolean {
+export function isPickerCopy(uri: string, dir: { uri: string }): boolean {
   const base = plainPath(dir.uri).replace(/\/?$/, "/");
   return plainPath(uri).startsWith(base);
 }
@@ -50,6 +50,35 @@ export function removePickerCopies(uris: readonly string[]): void {
       // Al weg, of de volgende start ruimt het op.
     }
   }
+}
+
+/** Alle bestanden die nu in de map van de kiezer staan (ook in submappen). Nooit een fout. */
+export function listPickerCopies(): string[] {
+  const dir = pickerDir();
+  if (!dir) return [];
+  const uris: string[] = [];
+  const walk = (d: Directory) => {
+    for (const entry of d.list()) {
+      if (entry instanceof Directory) walk(entry);
+      else uris.push(entry.uri);
+    }
+  };
+  try {
+    if (dir.exists) walk(dir);
+  } catch {
+    // Wat er al was, telt.
+  }
+  return uris;
+}
+
+/**
+ * Wat er na de kiezer bij kwam: de eigen kopieën van één keuze (op Android
+ * met bijsnijden ook de kopie van het origineel). Paden vergeleken zonder
+ * `file://` en `/private`.
+ */
+export function newPickerCopies(before: readonly string[], after: readonly string[]): string[] {
+  const old = new Set(before.map(plainPath));
+  return after.filter((uri) => !old.has(plainPath(uri)));
 }
 
 /** De hele map van de kiezer leeg: bij de start en bij uitloggen. Nooit een fout. */
