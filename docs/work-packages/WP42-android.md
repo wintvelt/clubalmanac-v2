@@ -590,3 +590,23 @@ Meet per invoer de fps van de uitvoer, en bij het wisselende filmpje per stuk (u
 Meten: haal met een tijdelijke meting in de dev-build (of een lokale JVM-test) drie bestanden door `Mp4Check` en door `inspectMp4`/`videoProblem`: `media3-schoon.mp4`; dat bestand met een `moov`-kop van 64 bits; en dat bestand met merk `qt  `. Verwacht: de eerste twee door beide aangenomen met dezelfde duur, de derde door beide geweigerd.
 
 **Stand na A:** app 5 rood (M1) / 2714 groen, typecheck schoon.
+
+## Uitkomst fix-ronde 42b (B, 2026-11-26)
+
+Commit f736dae. App 2719 groen, backend 3794 groen.
+- **M1:** een breedte met één cijfer wordt gelezen. 0/0 geeft geen plaats, door de 0/0-regel.
+- **G1:** de module gebruikt nu `createDefaultFrameDropEffect(30)`, die naar de tijdstempels kijkt. De fps per stuk komen uit `stts` (emulator API 35):
+
+| invoer | eigen n-de beeld | `createDefaultFrameDropEffect(30)` |
+|---|---|---|
+| camera-app 29,4 | 29,4 | 29,4 |
+| 1080p30 | 30 | 30 |
+| 1080p60, HEVC 1080p60 | 30 | 30 |
+| wisselend 30 / 60 / 30 | **15** / 30 / **15** | 30 / 30 / 30 |
+| wisselend 60 / 24 / 60 | 30 / **12** / 30 | 30 / 24 / 30 |
+
+  Het laatste beeld valt weg (8,00 → 7,97 s). Het halveren dat ook zonder effect optreedt (3:00-testfilmpje, 4K60 staand) blijft onverklaard en geldt alleen voor de emulator. Een echte Samsung met Auto FPS testen alleen de testers.
+- **G2:** zonder context slaat het opruimen bij de start over. Gemeten met `am kill`: het halve bestand is bij de volgende start weg.
+- **G3:** `Mp4Check` eist het ftyp-merk uit `MP4_BRANDS` en leest een moov-kop van 64 bits. Dat is gemeten naast de backend.
+- **Hoofdroute:** de release-build met R8 tegen dev is getest met twee filmpjes (wisselend en 60 fps). Ze zijn verkleind, geüpload en speelbaar.
+- **Open:** G5 (de melding "Houd Clubalmanac open" valt weinig op) beoordeelt de gate. G6 (`cancelCompress`) bestond al en hoort niet bij 42b.
