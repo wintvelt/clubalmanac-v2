@@ -1,4 +1,4 @@
-import { useIsFocused, useNavigation, type NativeStackNavigationOptions } from "expo-router";
+import { useCanGoBack, useIsFocused, useNavigation, type NativeStackNavigationOptions } from "expo-router";
 import { getDefaultHeaderHeight, HeaderBackButton, HeaderHeightContext } from "expo-router/react-navigation";
 import { StatusBar } from "expo-status-bar";
 import { useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
@@ -175,6 +175,9 @@ export function useDetailPlainOptions(): NativeStackNavigationOptions {
  * een schermlezer). Zoals de native kop (terug, de titel, Acties) en met
  * dezelfde laag, maar de knoppen en de titel binnen het veilige gebied, ook
  * met de navigatiebalk links of rechts. Buiten die stand niets.
+ *
+ * Maten als de native Android-kop (de Toolbar): het pijltje 16 dp van de
+ * rand, de titel op 72 dp (16 dp zonder terug), 20 sp medium, en 16 dp rechts.
  */
 export function DetailOverlayHeader({
   stand,
@@ -188,6 +191,8 @@ export function DetailOverlayHeader({
   const frame = useSafeAreaFrame();
   const insets = useSafeAreaInsets();
   const navigation = useNavigation();
+  // Een hook, geen navigation.canGoBack() tijdens de render (die kan oud zijn).
+  const canGoBack = useCanGoBack();
   if (!stand.overlayHeader) return null;
   return (
     <View
@@ -196,24 +201,26 @@ export function DetailOverlayHeader({
         {
           height: getDefaultHeaderHeight(frame, false, insets.top),
           paddingTop: insets.top,
-          paddingLeft: insets.left + (navigation.canGoBack() ? space.xs : space.l),
-          paddingRight: insets.right + space.l,
+          paddingLeft: insets.left + (canGoBack ? 0 : TOOLBAR_INSET),
+          paddingRight: insets.right + TOOLBAR_INSET,
         },
       ]}
     >
-      {navigation.canGoBack() ? (
-        <HeaderBackButton
-          onPress={() => navigation.goBack()}
-          tintColor={photoLayers.text}
-          displayMode="minimal"
-          accessibilityLabel="Terug"
-        />
+      {canGoBack ? (
+        <View style={styles.overlayBack}>
+          <HeaderBackButton
+            onPress={() => navigation.goBack()}
+            tintColor={photoLayers.text}
+            displayMode="minimal"
+            accessibilityLabel="Terug"
+            style={styles.overlayBackButton}
+          />
+        </View>
       ) : null}
       <Text
         variant="navTitle"
         numberOfLines={1}
         accessibilityRole="header"
-        maxFontSizeMultiplier={1.3}
         style={[styles.overlayTitle, { color: photoLayers.text }]}
       >
         {title}
@@ -222,6 +229,11 @@ export function DetailOverlayHeader({
     </View>
   );
 }
+
+// De native Android-kop: de rand (contentInsetStart) en waar de titel begint
+// naast het pijltje (contentInsetStartWithNavigation).
+const TOOLBAR_INSET = 16;
+const TOOLBAR_TITLE_WITH_BACK = 72;
 
 // WP32 invariant 9 en 10, B1–B3: het fotogebied heeft een vaste maat, die
 // alleen meeverandert met de venstermaat, de tekstgrootte en (WP46) de stand.
@@ -424,7 +436,17 @@ const styles = StyleSheet.create({
     gap: space.s,
     backgroundColor: HEADER_OVER_PHOTO,
   },
-  overlayTitle: { flex: 1 },
+  // Het pijltje (24 dp, zonder eigen marge) op 16 dp; de titel erna op 72 dp
+  // (de gap van de rij telt niet mee: marginRight trekt hem eraf).
+  overlayBack: {
+    width: TOOLBAR_TITLE_WITH_BACK,
+    marginRight: -space.s,
+    paddingLeft: TOOLBAR_INSET,
+    alignItems: "flex-start",
+  },
+  overlayBackButton: { marginHorizontal: 0, marginVertical: 0 },
+  // Zoals de titel van de native kop op Android.
+  overlayTitle: { flex: 1, fontSize: 20, fontWeight: "500" },
   feedback: {
     width: "100%",
     maxWidth: size.maxTextColumn,
