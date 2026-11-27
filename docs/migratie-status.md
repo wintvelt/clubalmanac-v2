@@ -143,13 +143,15 @@ Besluit Wouter 2026-11-15: niemand gebruikt de oude webapp. Volgorde: eerst de o
 
 **App 2.0.1** (iPad liggend met zijkolom, naam "Clubalmanac", Engelse teksten) vrijgegeven in de App Store op 2026-11-22.
 
+**App 2.0.2** (filmpjes, toevoegscherm, selectiebalk, Geld, filmproject) vrijgegeven in de App Store op 2026-11-27.
+
 [WP37](./work-packages/WP37-filmpjes-in-albums.md) ✅ 2026-11-22: filmpjes in albums (hooguit 3 minuten), op de iPhone verkleind naar 1080p, opslag in Cloudflare R2, met poster, duur en plek op de kaart, ook in de webapp. Audit en red-team verwerkt. Gate op een iPhone 15 Pro tegen dev met echte R2: verkleinen, tonen, afspelen, geluid, kaart, doorgaan na een app-switch, eerste tik op Uploaden. Live met app 2.0.2. R2 op prod staat sinds 2026-11-25 (beide buckets, token `clubalmanac-prod`, env-vars, checks schoon), met backup van R2 (eerste run groen) en een budget alert van $10.
 
 [WP39](./work-packages/WP39-toevoegscherm.md) ✅ 2026-11-22: toevoegscherm voor foto's en filmpjes: raster met omslagen, keuze aanvullen en inkorten, albumkiezer met het laatst gekozen album, "Stoppen" met teller bij het ophalen uit iCloud, grijze uit-knoppen in de hele app. Drie gate-rondes op de iPhone. Live met app 2.0.2.
 
 [WP40](./work-packages/WP40-selectiebalk.md) ✅ 2026-11-22: selectiebalk in album en Mijn foto's: slanke balk op de plek van de tabbalk, Annuleren en het aantal in de kop, omslag ingeklapt, met subtiele animaties (wissel onderin, vinkje met veer, zachte titel). Drie gate-rondes op de iPhone. Live met app 2.0.2.
 
-[WP38](./work-packages/WP38-filmproject-originelen.md) ✅ 2026-11-25: filmproject per groep. De oprichter start een project met een titel en einddatum; van elk nieuw filmpje in de groep gaat het origineel (volle kwaliteit, met gps) mee naar een eigen R2-bucket, op de iPhone op de achtergrond, ook met het scherm op slot. Downloaden, sluiten en wijzigen door de oprichter, ook in de webapp. 38a staat op prod; 38b en 38c gaan live met app 2.0.2, met de backend van besluit 27 (Wouter deployt). Geen filmproject openen op prod vóór 2.0.2.
+[WP38](./work-packages/WP38-filmproject-originelen.md) ✅ 2026-11-25: filmproject per groep. De oprichter start een project met een titel en einddatum; van elk nieuw filmpje in de groep gaat het origineel (volle kwaliteit, met gps) mee naar een eigen R2-bucket, op de iPhone op de achtergrond, ook met het scherm op slot. Downloaden, sluiten en wijzigen door de oprichter, ook in de webapp. 38a staat op prod; 38b en 38c live met app 2.0.2, met de backend van besluit 27 (Wouter deployt).
 
 [WP41c](./work-packages/WP41-financieel.md) ✅ 2026-11-25: foto bij een afrekening uit het clubboek, via het beveiligde beeldpad. Live op prod en in de webapp; in de iPhone-app met 2.0.2.
 
