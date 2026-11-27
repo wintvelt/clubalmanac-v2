@@ -47,12 +47,33 @@ function blocksToHtml(blocks) {
     .join("\n");
 }
 
-const page = (title, body) => `<!doctype html>
+// Linkvoorbeeld in WhatsApp en Signal (Open Graph). Het plaatje staat bij de
+// webapp (app/public/og.png): de site-deploy uploadt alles als text/html.
+const OG_IMAGE = "https://app.clubalmanac.com/og.png";
+const attr = (s) => esc(s).replace(/"/g, "&quot;");
+
+const ogTags = ({ title, description, url }) =>
+  [
+    `<meta name="description" content="${attr(description)}">`,
+    '<meta property="og:type" content="website">',
+    '<meta property="og:site_name" content="Clubalmanac">',
+    `<meta property="og:title" content="${attr(title)}">`,
+    `<meta property="og:description" content="${attr(description)}">`,
+    `<meta property="og:url" content="${attr(url)}">`,
+    `<meta property="og:image" content="${OG_IMAGE}">`,
+    '<meta property="og:image:width" content="1200">',
+    '<meta property="og:image:height" content="630">',
+    '<meta property="og:locale" content="nl_NL">',
+    '<meta name="twitter:card" content="summary_large_image">',
+  ].join("\n");
+
+const page = (title, og, body) => `<!doctype html>
 <html lang="nl">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>${esc(title)}</title>
+${ogTags(og)}
 <style>
   :root { color-scheme: light dark; --fg:#0f172a; --muted:#475569; --bg:#f1f5f9; --link:#0369a1; }
   @media (prefers-color-scheme: dark) { :root { --fg:#e2e8f0; --muted:#94a3b8; --bg:#0f172a; --link:#38bdf8; } }
@@ -75,6 +96,7 @@ ${body}
 
 const index = page(
   "clubalmanac",
+  { title: "Clubalmanac", description: "Het fotoalbum van je club.", url: "https://clubalmanac.com/" },
   `<h1>clubalmanac</h1>
 <p>De website is nog even aan het bijkomen van een heftig lustrum. Hopelijk gaan de deuren binnenkort weer gewoon open.</p>
 <p>Tot die tijd vind je al je foto's en groepen in de iPhone-app Clubalmanac.</p>
@@ -84,6 +106,11 @@ const index = page(
 
 const privacyPage = page(
   "Privacyverklaring – clubalmanac",
+  {
+    title: "Privacyverklaring · Clubalmanac",
+    description: "Het fotoalbum van je club.",
+    url: "https://clubalmanac.com/privacy/nl",
+  },
   `<h1>Privacyverklaring</h1>
 ${blocksToHtml(privacy)}
 <p class="muted"><a href="/">clubalmanac</a></p>`,
