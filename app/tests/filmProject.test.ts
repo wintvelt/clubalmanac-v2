@@ -227,11 +227,12 @@ describe("roundTargets: de doelen van de ronde, ook met te lange filmpjes (fix-c
 
 describe("originalSkipLines: als het origineel niet meegaat (38c-13)", () => {
   it("niets: geen regel", () => {
-    expect(originalSkipLines([])).toEqual([]);
+    expect(originalSkipLines([], "ios")).toEqual([]);
+    expect(originalSkipLines([], "android")).toEqual([]);
   });
 
   it("één regel per reden, met het aantal", () => {
-    const lines = originalSkipLines(["te_groot", "te_klein", "te_groot"]);
+    const lines = originalSkipLines(["te_groot", "te_klein", "te_groot"], "ios");
     expect(lines).toHaveLength(2);
     const groot = lines.find((l) => l.includes("te groot"));
     const klein = lines.find((l) => l.includes("te klein"));
@@ -241,13 +242,15 @@ describe("originalSkipLines: als het origineel niet meegaat (38c-13)", () => {
   });
 
   it("geen ruimte en een andere mislukking hebben elk een eigen regel", () => {
-    const lines = originalSkipLines(["geen_ruimte", "fout"]);
+    const lines = originalSkipLines(["geen_ruimte", "fout"], "ios");
     expect(lines).toHaveLength(2);
     expect(lines.some((l) => l.includes("ruimte"))).toBe(true);
     expect(new Set(lines).size).toBe(2);
   });
 
-  // Besluit 30 (Wouter, 2026-11-25): kortere teksten, exact.
+  // Besluit 30 (Wouter, 2026-11-25): kortere teksten, exact. Op de iPhone
+  // ongewijzigd; WP42c herstelronde K3: op Android dezelfde regels, behalve
+  // dat de ruimte niet op een iPhone ontbreekt maar op de telefoon.
   it.each([
     ["te_klein", 1, "1 filmpje te klein voor de feature-film."],
     ["te_klein", 2, "2 filmpjes te klein voor de feature-film."],
@@ -257,16 +260,37 @@ describe("originalSkipLines: als het origineel niet meegaat (38c-13)", () => {
     ["geen_ruimte", 2, "2 filmpjes niet naar de feature-film: te weinig ruimte op je iPhone."],
     ["fout", 1, "1 filmpje niet naar de feature-film."],
     ["fout", 2, "2 filmpjes niet naar de feature-film."],
-  ] as const)("besluit 30: %s, %i: '%s'", (reason, n, text) => {
-    expect(originalSkipLines(Array.from({ length: n }, () => reason))).toEqual([text]);
+  ] as const)("besluit 30, iPhone: %s, %i: '%s'", (reason, n, text) => {
+    expect(originalSkipLines(Array.from({ length: n }, () => reason), "ios")).toEqual([text]);
+  });
+
+  it.each([
+    ["te_klein", 1, "1 filmpje te klein voor de feature-film."],
+    ["te_groot", 3, "3 filmpjes te groot voor de feature-film."],
+    ["geen_ruimte", 1, "1 filmpje niet naar de feature-film: te weinig ruimte op je telefoon."],
+    ["geen_ruimte", 2, "2 filmpjes niet naar de feature-film: te weinig ruimte op je telefoon."],
+    ["fout", 2, "2 filmpjes niet naar de feature-film."],
+  ] as const)("K3, Android: %s, %i: '%s'", (reason, n, text) => {
+    expect(originalSkipLines(Array.from({ length: n }, () => reason), "android")).toEqual([text]);
+  });
+
+  it("K3: op Android noemt geen enkele regel de iPhone", () => {
+    for (const r of ["te_klein", "te_groot", "geen_ruimte", "fout"] as const) {
+      for (const n of [1, 2]) {
+        const [line] = originalSkipLines(Array.from({ length: n }, () => r), "android");
+        expect(line, `${r} ${n}`).not.toMatch(/iphone/i);
+      }
+    }
   });
 
   it("elke regel noemt de feature-film, nooit de clubfilm (feedback na besluit 27, punt 3)", () => {
-    for (const r of ["te_klein", "te_groot", "geen_ruimte", "fout"] as const) {
-      for (const n of [1, 2]) {
-        const [line] = originalSkipLines(Array.from({ length: n }, () => r));
-        expect(line, `${r} ${n}`).toContain("feature-film");
-        expect(line!.toLowerCase(), `${r} ${n}`).not.toContain("clubfilm");
+    for (const os of ["ios", "android"] as const) {
+      for (const r of ["te_klein", "te_groot", "geen_ruimte", "fout"] as const) {
+        for (const n of [1, 2]) {
+          const [line] = originalSkipLines(Array.from({ length: n }, () => r), os);
+          expect(line, `${os} ${r} ${n}`).toContain("feature-film");
+          expect(line!.toLowerCase(), `${os} ${r} ${n}`).not.toContain("clubfilm");
+        }
       }
     }
   });

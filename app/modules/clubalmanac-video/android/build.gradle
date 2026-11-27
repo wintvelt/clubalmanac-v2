@@ -4,6 +4,7 @@ plugins {
 }
 
 // WP42b: de Android-kant van de module voor filmpjes (zie ClubalmanacVideoModule.kt).
+// WP42c: en de uploader voor originelen (OriginalUploader.kt).
 group = 'com.clubalmanac'
 version = '1.0.0'
 
@@ -12,6 +13,8 @@ android {
   defaultConfig {
     versionCode 1
     versionName "1.0.0"
+    // WP42c: keep-regels voor WorkManager in een release-build (R8).
+    consumerProguardFiles "proguard-rules.pro"
   }
 }
 
@@ -23,4 +26,9 @@ dependencies {
   implementation "androidx.media3:media3-transformer:${media3Version}"
   implementation "androidx.media3:media3-effect:${media3Version}"
   implementation "androidx.media3:media3-common:${media3Version}"
+  // WP42c (B15): de uploader voor originelen, met WorkManager in dezelfde
+  // versie als react-native-maps 1.29.11 (zijn build.gradle). Gradle neemt de
+  // hoogste versie; een nieuwere hier tilt ook die van de kaart mee. R8: de
+  // keep-regel voor Room staat in app.config.ts.
+  implementation "androidx.work:work-runtime:2.9.1"
 }

@@ -16,3 +16,15 @@ export function infoPath(slug: string, signedIn: boolean): string {
 
 // Contact: geen pagina, maar een e-mail. Geen user-gegevens in de link.
 export const CONTACT_MAILTO = "mailto:wouter@clubalmanac.com?subject=Clubalmanac-app";
+
+/**
+ * WP42 B18, A37: de versieregel bij Info, met het buildnummer van de
+ * geïnstalleerde build ("Versie 2.0.2 (7)"). Zonder buildnummer (web, Expo Go,
+ * een oude build): alleen de versie, geen lege haakjes.
+ */
+export function versionText(version: string | null | undefined, build: string | number | null | undefined): string {
+  const v = typeof version === "string" ? version.trim() : "";
+  const b = build === null || build === undefined ? "" : String(build).trim();
+  if (v === "") return "Versie onbekend";
+  return b === "" ? `Versie ${v}` : `Versie ${v} (${b})`;
+}

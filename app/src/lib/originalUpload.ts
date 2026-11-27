@@ -101,9 +101,23 @@ export function partsToSend(
 
 export type PartFailureAction = "opnieuw" | "opnieuw_aanmelden" | "later";
 
+/**
+ * Codes van de uploader op Android (WP42c herstelronde), zonder status; op
+ * iOS komen ze niet voor.
+ * - H1 `te_traag`: Android stopte de taak van het deel herhaaldelijk op de
+ *   tijdslimiet. Niet dezelfde link opnieuw (dan loopt het weer eindeloos),
+ *   maar later opnieuw aanmelden.
+ * - K1 `link_verlopen`: de link verloopt (bijna); de uploader begon er niet
+ *   aan. Nieuwe links, zoals na een 403.
+ */
+export const UPLOADER_CODE = { teTraag: "te_traag", linkVerlopen: "link_verlopen" } as const;
+
 /** 38b-6: wat de app doet met een deel dat mislukte. */
 export function partFailure(failure: { status: number | null; code: string | null; attempts: number }): PartFailureAction {
-  if (failure.status === 403 || failure.code === "NoSuchUpload") return "opnieuw_aanmelden";
+  if (failure.status === 403 || failure.code === "NoSuchUpload" || failure.code === UPLOADER_CODE.linkVerlopen) {
+    return "opnieuw_aanmelden";
+  }
+  if (failure.code === UPLOADER_CODE.teTraag) return "later";
   return failure.attempts >= PART_ATTEMPTS ? "later" : "opnieuw";
 }
 

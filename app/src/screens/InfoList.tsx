@@ -1,10 +1,11 @@
 import Constants from "expo-constants";
+import { buildNumber } from "../../modules/clubalmanac-video";
 import { router } from "expo-router";
 import { Linking } from "react-native";
 import { ListRow, ListSection } from "../components/ListRow";
 import type { IconName } from "../components/Icon";
 import { Text } from "../components/Text";
-import { CONTACT_MAILTO, INFO_PAGES, infoPath, type InfoSlug } from "../lib/infoPages";
+import { CONTACT_MAILTO, INFO_PAGES, infoPath, versionText, type InfoSlug } from "../lib/infoPages";
 
 // WP15b A-punt 4: de Info-lijst, ingelogd (op Instellingen) en uitgelogd (op
 // /info) precies hetzelfde. Geen user-gegevens, ook niet in de mailto
@@ -12,7 +13,7 @@ import { CONTACT_MAILTO, INFO_PAGES, infoPath, type InfoSlug } from "../lib/info
 
 const ICONS: Record<InfoSlug, IconName> = { over: "info", privacy: "privacy", voorwaarden: "document" };
 
-// Naam en versie, uit app.json.
+// Naam en versie, uit app.json; WP42 B18: met het buildnummer van de build.
 export function AppIdentity() {
   const config = Constants.expoConfig;
   return (
@@ -20,7 +21,7 @@ export function AppIdentity() {
       <Text variant="title" accessibilityRole="header">
         {config?.name ?? "Clubalmanac"}
       </Text>
-      <Text color="muted">Versie {config?.version ?? "onbekend"}</Text>
+      <Text color="muted">{versionText(config?.version, buildNumber())}</Text>
     </>
   );
 }

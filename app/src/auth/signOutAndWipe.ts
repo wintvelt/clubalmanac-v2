@@ -2,6 +2,7 @@ import { restartClerk } from "../data/clerkRestart";
 import { clearLastAlbum } from "../data/lastAlbum";
 import { clearLastGroup } from "../data/lastGroup";
 import { forgetOriginalsOf } from "../data/originals";
+import { clearPickMark } from "../data/pendingPick";
 import { clearPickerCopies } from "../data/pickerCopies";
 import { clearOldShares } from "../data/shareFiles";
 import { wipeClerkStorage } from "./deviceClerkStorage";
@@ -38,6 +39,8 @@ export async function signOutAndWipe(
   clearOldShares();
   // WP42 fix-ronde, punt 3: en wat de kiezer nog had liggen (met plaats).
   clearPickerCopies();
+  // WP42c A36: en waarvoor de kiezer openstond (alleen Android).
+  clearPickMark();
   if (!failed) return true;
   return await restartClerk().then(
     () => true,

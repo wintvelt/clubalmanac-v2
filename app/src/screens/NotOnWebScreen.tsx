@@ -10,7 +10,7 @@ export function NotOnWebScreen() {
   return (
     <StatusScreen
       title="Alleen in de app"
-      message="Dit kan op het web nog niet. Gebruik hiervoor de app Clubalmanac op de iPhone."
+      message="Dit kan op het web nog niet. Gebruik hiervoor de app Clubalmanac op je iPhone of Android-telefoon."
     >
       <Button
         title="Terug"
