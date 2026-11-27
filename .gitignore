@@ -56,3 +56,6 @@ docs/design/oude-app/
 
 # Lokale EAS-builds (eas build --local)
 builds/
+
+# Lijst met WP-branches voor dev (docs/conventions/convex-dev-stapel.md)
+.convex-dev-stapel

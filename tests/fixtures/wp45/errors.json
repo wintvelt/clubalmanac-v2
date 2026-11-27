@@ -1,0 +1,19 @@
+{
+  "403": {
+    "v": 1,
+    "error": "forbidden"
+  },
+  "404": {
+    "v": 1,
+    "error": "not_found"
+  },
+  "413": {
+    "v": 1,
+    "error": "too_large"
+  },
+  "400": {
+    "v": 1,
+    "error": "invalid",
+    "reason": "processedCents: moet een geheel getal van 1 tot 1000000 zijn"
+  }
+}

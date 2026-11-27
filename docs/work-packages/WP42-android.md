@@ -1028,3 +1028,11 @@ Audit leest deze punten. De gate doet:
 ## Besluit Wouter na gate herstelronde (2026-11-27)
 
 - **B23 — netwerkwissel: zo laten.** Bij een wissel van wifi naar mobiel kunnen meerdere delen in één seconde een poging kosten (DNS nog niet klaar). Aanvaard; de testers laten zien of het in de praktijk tot "Later opnieuw" of een pauze leidt.
+
+## Closeout 42c (regie, 2026-11-27)
+
+- PR #76 gemerged; backend ongewijzigd, geen prod-deploy. Build 7 (2.0.2, prod) op de interne track; AAB gecontroleerd: prod-Convex, `pk_live_` (`pk_test_` alleen in foutteksten van Clerk), versionCode 7, enige nieuwe recht `RECEIVE_BOOT_COMPLETED`, alle 54 libs voor 64-bit op 16 KB.
+- Wouter opende op prod een filmproject. Testers gevraagd naar originelen met de app dicht, traag netwerk, Samsung-batterijbeheer, een nacht aan de lader en de plaats op Android 11–14.
+- iOS krijgt het buildnummer bij Info (B18) en `fileBytes` met de volgende TestFlight-build; daar controleren.
+- K6 botste met B8; Wouter hield de nieuwe webtekst. B8 geldt nog voor de Play-link in de uitnodigingsmail.
+- Open: B22/B23 (quotum, netwerkwissel) en de aanvaarde punten uit de audits wachten op wat de testers melden.

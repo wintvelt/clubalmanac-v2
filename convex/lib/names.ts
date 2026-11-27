@@ -64,7 +64,11 @@ function isJoinable(c: string | undefined): boolean {
   return !isInvisible(c) && !LATIN.test(c) && !SPACE.test(c);
 }
 
-function hasForbiddenChar(name: string): boolean {
+/**
+ * De tekenregel van namen, ook gebruikt voor de titel en (per regel) de
+ * toelichting van een declaratie (WP45 F3, lib/claimShape.ts).
+ */
+export function hasForbiddenChar(name: string): boolean {
   const cps = [...name];
   for (let i = 0; i < cps.length; i++) {
     const c = cps[i]!;

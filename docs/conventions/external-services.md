@@ -256,7 +256,7 @@ Een build op de server zelf kost geen EAS-tegoed. In `app/`:
 - **Vóór de interne track**: de app aanmaken met de pakketnaam, de lijst testers en de eerste AAB. Data safety, privacyverklaring, de webpagina om een account te laten verwijderen, de winkelvermelding en de keuring zijn pas nodig voor productie (WP42 §Play).
 - **Rechten** (A9): als enige gevaarlijke recht `ACCESS_MEDIA_LOCATION`, voor de plaats van gekozen foto's en filmpjes (B4, spike S1; WP42b). De app vraagt het alleen vanaf Android 15 (API 35); daaronder opent de kiezer met dat recht de app Bestanden (API 30, 33) of haalt de fotokiezer de plaats toch weg (API 34), dus daar geen vraag (fix-ronde 42a). De fotokiezer geeft daar geen plaats; opent op een toestel zonder fotokiezer de app Bestanden, dan komt de plaats wel mee. Geen `READ_MEDIA_*`, dus geen verklaring voor foto- en videorechten. `READ_EXTERNAL_STORAGE` en `WRITE_EXTERNAL_STORAGE` staan in het manifest tot API 32 (`maxSdkVersion="32"`, uit `expo-image-picker`); de app vraagt ze nooit. Wat bibliotheken er verder bij zetten en niet nodig is, staat geblokkeerd in `app/app.json` (`android.blockedPermissions`). `WAKE_LOCK` blijft (de videospeler en WorkManager gebruiken het). `RECEIVE_BOOT_COMPLETED` mag sinds WP42c (B19): WorkManager zet na een herstart de taken van de originelen opnieuw klaar. Geen recht voor een foreground service of meldingen.
 - **Back-up** staat uit (`android.allowBackup: false`, A10). Bij overzetten naar een nieuwe telefoon gaat de sleutelopslag (sessie, thuisgroep, laatste album) niet mee; de nieuwe telefoon start uitgelogd.
-- **Uitnodigingsmail en webapp**: de Play-link en de zin "Gebruik hiervoor de app Clubalmanac op de iPhone" pas als de app in Play te koop is, in een eigen cyclus (B8).
+- **Uitnodigingsmail en webapp**: de Play-link pas als de app in Play te koop is, in een eigen cyclus (B8). De webapp zegt sinds WP42c al "op je iPhone of Android-telefoon" (K6, akkoord Wouter).
 
 **Google Maps (Android).** De kaart op Android is Google Maps (B3); iOS houdt Apple Maps, de webapp OpenStreetMap. De Maps SDK voor Android is gratis, maar vraagt een Google Cloud-project met betaalgegevens.
 
@@ -434,6 +434,28 @@ Het clubboek (lokaal, alleen 127.0.0.1) zet een afrekening met **Zet in de app**
   2. Dan pas `"foto": true` in het clubboek voor die omgeving, en opnieuw sturen.
 
   De foto staat in Convex-storage en gaat mee weg bij opnieuw sturen, Haal uit de app, het verwijderen van de groep en een migratie-reset. MON1 en `verify` tellen hem als verwezen storage, dus niet als wees.
+
+## Clubboek → Declaraties (WP45)
+
+Een lid meldt in de app een voorschot; het clubboek haalt de declaraties op, besluit en ruimt op. Het clubboek vraagt; Convex stuurt nooit iets. Routes op de Convex-site: `GET /claims` en `POST /claims/decision` met `X-Clubboek-Secret: <CLAIMS_SECRET>`, en `POST /claims/purge` met `X-Clubboek-Secret: <CLAIMS_PURGE_SECRET>`. Het geheim in `Authorization` telt niet (403). Geen CORS. Elke weigering is dezelfde 403. Zie [WP45](../work-packages/WP45-declaraties.md).
+
+### Env-vars per deployment (dev en prod)
+
+| Env-var | Waarde | Bij ontbreken of fout |
+|---|---|---|
+| `CLAIMS_SECRET` | `openssl rand -hex 32`, per deployment een eigen waarde. Lezen en besluiten | `GET /claims` en `POST /claims/decision` 403 (fail-closed); opruimen werkt dan nog met zijn eigen geheim. Korter dan 32 tekens telt als geen geheim |
+| `CLAIMS_SECRET_PREVIOUS` | alleen tijdens rotatie: de vorige waarde van `CLAIMS_SECRET` | optioneel; werkt alleen naast een geldig `CLAIMS_SECRET` |
+| `CLAIMS_PURGE_SECRET` | `openssl rand -hex 32`, een andere waarde dan `CLAIMS_SECRET`. Opruimen | `POST /claims/purge` 403. Gelijk aan `CLAIMS_SECRET` of `CLAIMS_SECRET_PREVIOUS`: ook 403 |
+| `CLAIMS_PURGE_SECRET_PREVIOUS` | alleen tijdens rotatie: de vorige waarde van `CLAIMS_PURGE_SECRET` | optioneel, zoals `CLAIMS_SECRET_PREVIOUS` |
+| `CLAIMS_GROUP_ID` | het `_id` van de groep (dashboard → Data → `groups`) | alle drie de routes 403, ook als de groep niet (meer) bestaat; leden krijgen `CLAIMS_DISABLED` |
+
+- **Los van `FINANCE_*`**: een `FINANCE_SECRET` werkt hier niet, en elk declaratie-geheim (ook een `_PREVIOUS`) moet ervan verschillen. Is er een gelijk, dan is die soort dicht (lezen en besluiten, of opruimen); de andere soort werkt gewoon. Alleen leden van de groep van `CLAIMS_GROUP_ID` kunnen declareren.
+- **Roteren**, per soort geheim: (1) zet de huidige waarde in `_PREVIOUS`; (2) zet een nieuwe waarde (`openssl rand -hex 32`) in het huidige geheim; (3) werk het instellingenbestand van het clubboek bij; (4) haal `_PREVIOUS` weg. Tussen 1 en 4 werken beide waarden. Roteer ook als een geheim ergens anders terecht is gekomen.
+- **Na een migratie-reset of op T0**: de tooling leegt `expenseClaims` (de import vult hem niet) en de groep krijgt een nieuw id. Zet eerst `CLAIMS_GROUP_ID` op het nieuwe id; met de oude waarde geeft elke route 403 en kan geen lid declareren.
+- **Een andere `CLAIMS_GROUP_ID`**: de declaraties van de oude groep blijven in de tabel maar bestaan niet meer voor de routes, en het lid ziet ze niet meer. Ze gaan pas weg met die groep.
+- **Verdwijnen zonder opruimen**: na een verwijderd account (alle declaraties van dat lid) of een verwijderde groep verdwijnen declaraties uit `GET /claims`, ook als ze al verwerkt waren. Dat is geen intrekken en geen fout; wat het clubboek al boekte, blijft daar staan.
+- **Opruimen na de jaarafsluiting**: ingetrokken en besloten declaraties blijven in `GET /claims` tot het clubboek ze opruimt. Per lid per groep bewaart Convex ten hoogste 200 die geen concept zijn; daarna weigert verzenden (`CLAIMS_LIMIT`). Intrekken of een besluit maakt geen plek, alleen opruimen. Ruim dus minstens jaarlijks op.
+- **Logs**: de routes loggen niets (geen geheim, header of body). Een vormfout geeft 400 met het pad van het veld, nooit een waarde uit het verzoek.
 
 ## Webapp: app.clubalmanac.com (WP35)
 

@@ -95,6 +95,12 @@ export const MONITORED_FKS: Array<{
   // een losse verwijzing is drift. De import vult de tabel niet; een reset
   // leegt hem (daarna stuurt het clubboek ze opnieuw).
   { table: "settlements", field: "groupId", required: true },
+  // WP45: de declaraties. Groep weg (G7) en account weg (U19) halen ze mee,
+  // dus een losse verwijzing is drift. Uit de groep gaan laat verzonden
+  // declaraties staan; de gebruiker bestaat dan nog. De import vult de tabel
+  // niet; een reset leegt hem.
+  { table: "expenseClaims", field: "groupId", required: true },
+  { table: "expenseClaims", field: "memberId", required: true },
   // Bewust niet hier (WP38 fix-cyclus 2, cascade-matrix U17 en U18):
   // `videoUploadRequests` en `originalRequests`, dus ook niet in de reset van
   // de migratie-tooling. Het zijn tellers voor een daggrens: een tijdstip per
@@ -120,6 +126,9 @@ export const MONITORED_TABLES: TableNames[] = [
 ];
 
 const REQUIRED_FKS = MONITORED_FKS.filter((fk) => fk.required);
+// Tabellen waarvan de verplichte FK's per unieke waarde één keer worden
+// opgezocht (WP45 F2). Zelfde uitkomst, minder db-aanroepen.
+const DEDUPED_FK_TABLES = new Set<TableNames>(["expenseClaims"]);
 const OPTIONAL_FKS = MONITORED_FKS.filter((fk) => !fk.required);
 
 type DriftRow = { table: string; id: string; detail: string };
@@ -272,14 +281,22 @@ export async function collectDriftLines(ctx: {
   // ── (2c) FK-integriteit ────────────────────────────────────────────
   for (const { table, field } of REQUIRED_FKS) {
     const docs = await ctx.db.query(table).collect();
+    // WP45 F2: veel declaraties wijzen naar weinig groepen en leden. Elke
+    // verwijzing één keer opzoeken houdt de scan binnen de 4096 db-aanroepen
+    // van één functie (tests/expenseClaims/scale.test.ts).
+    const seen = DEDUPED_FK_TABLES.has(table) ? new Map<string, boolean>() : null;
     for (const doc of docs) {
       const ref = (doc as Record<string, unknown>)[field];
       if (ref === undefined || ref === null) {
         driftRows.push({ table, id: doc._id, detail: `${field} ontbreekt` });
         continue;
       }
-      const target = await ctx.db.get(ref as Id<TableNames>);
-      if (target === null) {
+      let exists = seen?.get(ref as string);
+      if (exists === undefined) {
+        exists = (await ctx.db.get(ref as Id<TableNames>)) !== null;
+        seen?.set(ref as string, exists);
+      }
+      if (!exists) {
         driftRows.push({ table, id: doc._id, detail: `${field} dangling` });
       }
     }
