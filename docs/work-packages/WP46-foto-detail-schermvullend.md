@@ -124,19 +124,19 @@ WP46 wijkt bewust af: vegen werkt in elke stand, de achtergrond is zwart, status
    - *Rechtop, schermvullend:* alleen de foto op zwart. Geen kop, infoblok, tabbalk of statusbalk.
    - *Liggend, zonder kop:* zoals rechtop schermvullend.
    - *Liggend, met kop:* daarbovenop de kop met terug, de titel en Acties. Geen infoblok, tabbalk of statusbalk; de achtergrond blijft zwart.
-   - Een tik wisselt rechtop tussen normaal en schermvullend, en liggend tussen zonder en met kop.
+   - Een tik op een foto wisselt rechtop tussen normaal en schermvullend, en liggend tussen zonder en met kop. Een tik op een filmpje wisselt de stand niet (besluit 7, A-invariant 12).
 3. **De foto past in het veilige gebied.** Schermvullend vult het zwart het hele scherm, ook achter de inkeping, het Dynamic Island, de thuisbalk en de balken van Android. De foto (en een poster of filmpje) past binnen het veilige gebied, dus er valt geen stuk achter de inkeping. De kop, als die er is, staat ook binnen dat gebied.
 4. **Wat beweegt.** Rechtop groeit de foto bij schermvullend naar het hele scherm en krimpt terug bij normaal, in één beweging. Liggend komt de kop over de foto en gaat hij weg zonder dat de foto beweegt of van maat verandert. Geen tussenstap waarin de foto even een andere maat heeft. Geen flits van een andere achtergrond, ook niet bij draaien of in het lichte thema. Met "Beperk beweging" gaat elke wissel direct.
 5. **Draaien.** Naar liggend: zonder kop, wat de stand rechtop ook was. Terug naar rechtop: de stand van rechtop van vóór het draaien. Was je liggend begonnen (het detail geopend met het toestel liggend), dan is dat normaal. Draaien van liggend naar het andere liggend (180°) verandert niets, ook niet of de kop er is. De stand onthoudt de app alleen zolang het detail open is; een volgende keer begint het detail weer rechtop normaal, of liggend zonder kop.
-6. **Een tik is een tik.** Een korte tik op de foto wisselt de stand. Niet: een veeg, een dubbeltik (die zoomt, op iOS), knijpen, een tik op een knop (afspelen, terug, Acties, sluiten van een melding, opnieuw proberen), en een tik die een lopende veeg stopt. Waar een dubbeltik zoomt, wacht de enkele tik tot er geen tweede meer kan komen. Hoogstens ongeveer 300 ms, zodat het nog direct voelt. Waar niets zoomt (een filmpje, Android), wisselt de tik meteen.
-7. **Vegen** werkt in elke stand en houdt de stand vast, ook vegen vlak na een tik of tijdens het draaien. De foto in beeld blijft dezelfde bij elke wissel van stand en bij draaien. Een filmpje dat weg-geveegd wordt, stopt, zoals nu (WP37).
-8. **Niets kwijt.** Terug en Acties zijn in elke stand met hoogstens één tik bereikbaar (rechtop schermvullend: tik naar normaal; liggend: tik voor de kop). Acties openen kan alleen als de kop er is. Een menu, een bevestiging of het deelscherm dat openstaat, houdt de stand vast tot het dicht is; ze sluiten verandert de stand niet.
+6. **Een tik is een tik.** Een korte tik op een foto wisselt de stand. Niet: een veeg, een dubbeltik (die zoomt, op iOS), knijpen, een tik op een knop (terug, Acties, sluiten van een melding, opnieuw proberen), een tik die een lopende veeg stopt, en elke tik op een filmpje (besluit 7). Waar een dubbeltik zoomt, wacht de enkele tik tot er geen tweede meer kan komen. Hoogstens ongeveer 300 ms, zodat het nog direct voelt. Waar niets zoomt (een foto op Android), wisselt de tik meteen.
+7. **Vegen** werkt in elke stand en houdt de stand vast, ook vegen vlak na een tik of tijdens het draaien. De foto in beeld blijft dezelfde bij elke wissel van stand en bij draaien. Veeg je naar een filmpje, dan blijft de stand zoals hij was, ook schermvullend; veeg je verder naar een foto, dan wisselt een tik weer de stand (besluit 7). Een filmpje dat weg-geveegd wordt, stopt, zoals nu (WP37).
+8. **Niets kwijt.** Terug werkt in elke stand, met het veeggebaar of de systeemknop (besluit A1), en op een foto ook met hoogstens één tik via de kop. Acties is op een foto in elke stand met hoogstens één tik bereikbaar (rechtop schermvullend: tik naar normaal; liggend: tik voor de kop). Acties openen kan alleen als de kop er is. Op een filmpje in een stand zonder kop komt de kop terug door naar een foto te vegen of door te draaien naar een stand met kop (besluit 7, randgeval). Eigenaar, plaats en albums zie je rechtop in de normale stand (besluit A3). Een menu, een bevestiging of het deelscherm dat openstaat, houdt de stand vast tot het dicht is; ze sluiten verandert de stand niet.
 9. **De melding na een actie** ("Delen…", gelukt, een fout met opnieuw proberen) is in elke stand te zien, ook liggend en schermvullend. Ze sluiten wisselt de stand niet. Na vegen naar een andere foto gaat ze weg, zoals nu.
 10. **Verwijderen en verdwijnen.** Haal je de foto in beeld weg (Acties) of verdwijnt hij door een ander, dan komt de volgende foto in dezelfde stand. Was het de laatste, dan gaat het detail terug naar het album, en de statusbalk en tabbalk staan er weer.
 11. **Verlaten en terugkomen.** Zodra het detail niet meer in beeld is (terug, Draaien of Locatie wijzigen uit Acties, een tab, een link uit een mail, uitloggen, de sessie die elders eindigt), staan de statusbalk en de tabbalk er meteen weer, op dat volgende scherm. Komt het detail weer in beeld (terug van Draaien, de app terug uit de achtergrond), dan staat het in de stand waarin je het verliet, met de statusbalk zoals die stand vraagt. Is het toestel intussen gedraaid, dan geldt A-invariant 5.
-12. **Filmpje.** Poster: alleen de afspeelknop start het filmpje; een tik ernaast wisselt de stand. Speelt het: een tik toont of verbergt de kop en de bediening samen; afspelen en pauzeren alleen met de knop (besluit 2). De bediening en de kop zijn er samen, of geen van beide. Spoelen vanaf de linkerrand start geen terugveeg.
-13. **Terug:** zie besluit A1. Met het advies: het veeggebaar van iOS en de terugknop of het terugveeg-gebaar van Android verlaten het detail meteen, uit elke stand.
-14. **VoiceOver en TalkBack.** Staat een schermlezer aan, dan zijn terug en Acties altijd te vinden, zonder dat je eerst iets moet aantikken. Advies (besluit A7): rechtop blijft het detail normaal, liggend staat de kop er altijd. Het label van de foto zegt niet meer dat je kunt dubbeltikken om te zoomen als dat met de schermlezer niet werkt.
+12. **Filmpje (besluit 7).** De native speler blijft zoals nu: een tik op de poster start het filmpje (WP37), een tik op een spelend filmpje doet wat de speler zelf doet, en zijn knop voor volledig scherm blijft, ook op de telefoon. Geen eigen bediening. Een tik op een filmpje wisselt in geen enkele stand de stand. Het filmpje staat in de stand waarin je erheen veegde, en past binnen het vak van die stand (A-invariant 3). Komt de speler terug uit zijn eigen volledig scherm, dan staat het detail in dezelfde stand als ervoor, met de statusbalk en tabbalk zoals die stand vraagt.
+13. **Terug (besluit A1).** Het veeggebaar van iOS en de terugknop of het terugveeg-gebaar van Android verlaten het detail meteen, uit elke stand en ook op een filmpje.
+14. **VoiceOver en TalkBack.** Staat een schermlezer aan, dan zijn terug en Acties altijd te vinden, zonder dat je eerst iets moet aantikken. Besluit A7: rechtop blijft het detail normaal, liggend staat de kop er altijd. Het label van de foto zegt niet meer dat je kunt dubbeltikken om te zoomen als dat met de schermlezer niet werkt.
 15. **Grote letters** veranderen alleen de normale stand (het infoblok, WP32). Schermvullend staat er geen tekst, alleen de titel in de kop.
 16. **Thema.** In het lichte en het donkere thema is schermvullend hetzelfde zwart. Terug naar normaal heeft de gewone achtergrond van het thema.
 
@@ -149,7 +149,7 @@ WP46 wijkt bewust af: vegen werkt in elke stand, de achtergrond is zwart, status
 - iPhone SE (simulator): de foto springt niet 20 pt als de statusbalk weggaat.
 - Draaien in het lichte thema: geen witte hoeken.
 - Liggend: kop aan en uit, de foto beweegt niet. Acties, Draaien, en terug: dezelfde stand.
-- Een filmpje: poster tikken naast de knop, afspeelknop, tik tijdens het spelen, spoelen vanaf links, draaien tijdens het spelen, weg-vegen.
+- Een filmpje (besluit 7): tik op de poster speelt af en wisselt de stand niet; tik tijdens het spelen doet wat de speler zelf doet, zonder dat de kop of de statusbalk verandert. Vanuit rechtop schermvullend en liggend zonder kop naar een filmpje vegen en weer naar een foto: de stand blijft, en op de foto werkt de tik weer. Het volledig scherm van de speler in en uit, ook na draaien: het detail staat daarna in dezelfde stand. Spoelen vanaf links en weg-vegen: zoals nu.
 - Android-emulator met gebaren en met drie knoppen: terug uit elke stand, en de knoppen zijn zichtbaar op zwart.
 - VoiceOver en TalkBack: terug en Acties in elke stand. "Beperk beweging": alles direct.
 - De iPad, ook Split View en liggend: niets veranderd.
@@ -179,23 +179,23 @@ WP46 wijkt bewust af: vegen werkt in elke stand, de achtergrond is zwart, status
 - **A9:** niet in WP46.
 - **Buiten WP46:** na herverbinden begint het detail opnieuw bij de foto waarop je het opende (sinds WP17a). Eigen TBD-regel.
 
-### Testcontract (A, vóór de besluiten)
+### Testcontract (A, na de besluiten)
 
-> Namen en vormen zijn A-keuzes, het hoe is aan B. Wijkt een besluit af, dan past A de tests aan voordat B begint.
+> Namen en vormen zijn A-keuzes, het hoe is aan B. Aangepast aan besluit 7 en de besluiten A1 tot A9.
 
 - **`app/src/lib/photoDetailStand.ts`** (puur, zonder React of native modules):
-  - `fullscreenAllowed({ os, isPad })`: mag dit toestel schermvullend (A1, A5 advies a).
+  - `fullscreenAllowed({ os, isPad })`: mag dit toestel schermvullend (A1, besluit A5).
   - `orientationOf({ width, height })`: `"portrait"` of `"landscape"`; liggend als het venster breder is dan hoog, vierkant telt als rechtop.
   - `initialStand(orientation)`, `nextStand(stand, event)` met `event` een tik (`{ type: "tap" }`) of een andere stand van het toestel (`{ type: "rotate", orientation }`). De stand zelf is een waarde die alleen via deze functies verandert (A2, A5).
-  - `standView(stand, { fullscreenAllowed, screenReader })`: `{ header, info, tabBar, statusBar, black }`, wat er te zien is (A1, A2, A14 advies, A16).
-  - `tapIntent({ lastTapAt, now, zoomable })` en `DOUBLE_TAP_MS`: wat een tik doet. `"zoom"` (de tweede tik van een dubbeltik), `"wait"` (de stand pas wisselen als er binnen `DOUBLE_TAP_MS` geen tweede tik komt) of `"stand"` (meteen wisselen, waar niets zoomt). `lastTapAt` is de tijd van een vorige tik die nog wacht, of `null` (A6).
+  - `standView(stand, { fullscreenAllowed, screenReader })`: `{ header, info, tabBar, statusBar, black }`, wat er te zien is (A1, A2, A14 met besluit A7, A16).
+  - `tapIntent({ lastTapAt, now, target })` en `DOUBLE_TAP_MS`: wat een tik doet. `target` is waar de tik op valt: `"zoomable"` (een foto die met dubbeltikken zoomt, iOS), `"photo"` (een foto die niet zoomt, Android) of `"video"` (een filmpje, poster of spelend). Uitkomst: `"zoom"` (de tweede tik van een dubbeltik), `"wait"` (de stand pas wisselen als er binnen `DOUBLE_TAP_MS` geen tweede tik komt), `"stand"` (meteen wisselen) of `"none"` (niets aan de stand: een filmpje, besluit 7). `lastTapAt` is de tijd van een vorige tik die nog wacht, of `null` (A6, A12).
 - **Bronscan:** `nextStand(`, `standView(` en `fullscreenAllowed(` worden in de app-code aangeroepen, buiten `src/lib`.
 
 ### Tests per invariant (stand na A)
 
 | Inv. | Test | Niet getest, omdat … |
 |---|---|---|
-| A1 | `app/tests/photoDetailStand.test.ts` (`fullscreenAllowed`, `standView`) | Split View op de iPad: gate |
+| A1 | `app/tests/photoDetailStand.test.ts` (`fullscreenAllowed`, `standView`; Android-tablet volgens besluit A5) | Split View op de iPad: gate |
 | A2 | `photoDetailStand.test.ts` (`nextStand`, `standView`) | |
 | A3 | | indeling en veilig gebied: gate |
 | A4 | | beweging en flitsen: gate |
@@ -203,9 +203,9 @@ WP46 wijkt bewust af: vegen werkt in elke stand, de achtergrond is zwart, status
 | A6 | `photoDetailStand.test.ts` (`tapIntent`) | veeg, knijpen, knoppen: schermlogica, audit en gate |
 | A7 | | lijst en positie: schermlogica, audit en gate |
 | A8–A11 | | schermlogica (focus, menu's, navigatie): audit en gate |
-| A12 | | wacht op besluit A2 |
-| A13 | | wacht op besluit A1; gate |
-| A14 | `photoDetailStand.test.ts` (`standView` met `screenReader`, advies A7) | voorlezen: gate |
+| A12 | `photoDetailStand.test.ts` (`tapIntent` met `target: "video"` geeft `"none"`) | de native speler, zijn volledig scherm, de stand na vegen naar een filmpje: audit en gate |
+| A13 | | navigatie: gate |
+| A14 | `photoDetailStand.test.ts` (`standView` met `screenReader`, besluit A7) | voorlezen: gate |
 | A15 | | gate |
 | A16 | `photoDetailStand.test.ts` (`black`) | de kleur zelf: gate |
 | bron | `photoDetailStand.test.ts` (bronscan) | |

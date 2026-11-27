@@ -5,16 +5,19 @@ import { describe, expect, it } from "vitest";
 import { listFiles } from "./support/sourceScan";
 
 // WP46: het foto-detail schermvullend, als pure logica.
-//   A1, A5 (advies): wie mag schermvullend. De iPhone en Android, niet de
-//   iPad (ook niet in een smal venster) en niet het web.
+//   A1, besluit A5: wie mag schermvullend. De iPhone en Android (ook een
+//   Android-tablet), niet de iPad (ook niet in een smal venster) en niet het
+//   web.
 //   A2: de standen. Rechtop normaal of schermvullend; liggend zonder of met
 //   kop. Wat er per stand te zien is: kop, infoblok, tabbalk, statusbalk,
 //   zwart.
 //   A5: draaien. Naar liggend zonder kop; terug naar rechtop de stand van
 //   daarvoor; 180° liggend verandert niets.
-//   A6: een enkele tik wacht op een eventuele dubbeltik waar die zoomt; waar
-//   niets zoomt wisselt hij meteen.
-//   A14 (advies A7): met een schermlezer blijft rechtop normaal en staat
+//   A6: een enkele tik op een foto wacht op een eventuele dubbeltik waar die
+//   zoomt; waar niets zoomt (Android) wisselt hij meteen.
+//   A12, besluit 7: een tik op een filmpje verandert de stand nooit; de
+//   native speler doet zelf wat hij doet.
+//   A14, besluit A7: met een schermlezer blijft rechtop normaal en staat
 //   liggend de kop er altijd.
 // Spec: docs/work-packages/WP46-foto-detail-schermvullend.md §Testcontract.
 //
@@ -54,7 +57,7 @@ const NORMAL = { header: true, info: true, tabBar: true, statusBar: true, black:
 const FULL = { header: false, info: false, tabBar: false, statusBar: false, black: true };
 const FULL_WITH_HEADER = { header: true, info: false, tabBar: false, statusBar: false, black: true };
 
-describe("fullscreenAllowed: wie mag schermvullend (A1, A5 advies a)", () => {
+describe("fullscreenAllowed: wie mag schermvullend (A1, besluit A5)", () => {
   it("de iPhone wel", () => {
     expect(need("fullscreenAllowed")({ os: "ios", isPad: false })).toBe(true);
   });
@@ -63,7 +66,7 @@ describe("fullscreenAllowed: wie mag schermvullend (A1, A5 advies a)", () => {
     expect(need("fullscreenAllowed")({ os: "ios", isPad: true })).toBe(false);
   });
 
-  it("Android wel, ook een tablet (advies A5: Android heeft geen tablet-indeling)", () => {
+  it("Android wel, ook een tablet (besluit A5: Android heeft geen tablet-indeling)", () => {
     expect(need("fullscreenAllowed")({ os: "android", isPad: false })).toBe(true);
   });
 
@@ -196,7 +199,7 @@ describe("standView: iPad en web, niets veranderd (A1, besluiten 1 en 6)", () =>
   });
 });
 
-describe("standView: met een schermlezer (A14, advies A7)", () => {
+describe("standView: met een schermlezer (A14, besluit A7)", () => {
   const reader = { fullscreenAllowed: true, screenReader: true };
 
   it("rechtop blijft normaal, ook na een tik", () => {
@@ -215,7 +218,7 @@ describe("standView: met een schermlezer (A14, advies A7)", () => {
   });
 });
 
-describe("tapIntent: tik of dubbeltik (A6)", () => {
+describe("tapIntent: tik of dubbeltik op een foto (A6)", () => {
   it("DOUBLE_TAP_MS: een dubbeltik is te halen, de enkele tik voelt nog direct", () => {
     const ms = need("DOUBLE_TAP_MS");
     expect(ms).toBeGreaterThanOrEqual(200);
@@ -223,23 +226,33 @@ describe("tapIntent: tik of dubbeltik (A6)", () => {
   });
 
   it("de eerste tik op een foto die zoomt: wachten", () => {
-    expect(need("tapIntent")({ lastTapAt: null, now: 1000, zoomable: true })).toBe("wait");
+    expect(need("tapIntent")({ lastTapAt: null, now: 1000, target: "zoomable" })).toBe("wait");
   });
 
   it("een tweede tik binnen de tijd: zoomen, de stand wisselt niet", () => {
     const ms = need("DOUBLE_TAP_MS");
-    expect(need("tapIntent")({ lastTapAt: 1000, now: 1000 + ms - 1, zoomable: true })).toBe("zoom");
-    expect(need("tapIntent")({ lastTapAt: 1000, now: 1001, zoomable: true })).toBe("zoom");
+    expect(need("tapIntent")({ lastTapAt: 1000, now: 1000 + ms - 1, target: "zoomable" })).toBe("zoom");
+    expect(need("tapIntent")({ lastTapAt: 1000, now: 1001, target: "zoomable" })).toBe("zoom");
   });
 
   it("een tweede tik na de tijd telt als een nieuwe eerste tik", () => {
     const ms = need("DOUBLE_TAP_MS");
-    expect(need("tapIntent")({ lastTapAt: 1000, now: 1000 + ms + 1, zoomable: true })).toBe("wait");
+    expect(need("tapIntent")({ lastTapAt: 1000, now: 1000 + ms + 1, target: "zoomable" })).toBe("wait");
   });
 
-  it("waar niets zoomt (filmpje, Android): meteen de stand", () => {
-    expect(need("tapIntent")({ lastTapAt: null, now: 1000, zoomable: false })).toBe("stand");
-    expect(need("tapIntent")({ lastTapAt: 990, now: 1000, zoomable: false })).toBe("stand");
+  it("een foto die niet zoomt (Android): meteen de stand", () => {
+    expect(need("tapIntent")({ lastTapAt: null, now: 1000, target: "photo" })).toBe("stand");
+    expect(need("tapIntent")({ lastTapAt: 990, now: 1000, target: "photo" })).toBe("stand");
+  });
+});
+
+describe("tapIntent: een tik op een filmpje (A12, besluit 7)", () => {
+  it("verandert de stand niet: geen wisselen, geen wachten, geen zoom", () => {
+    expect(need("tapIntent")({ lastTapAt: null, now: 1000, target: "video" })).toBe("none");
+  });
+
+  it("ook niet als tweede tik vlak na een tik op een foto (vegen naar een filmpje)", () => {
+    expect(need("tapIntent")({ lastTapAt: 990, now: 1000, target: "video" })).toBe("none");
   });
 });
 
