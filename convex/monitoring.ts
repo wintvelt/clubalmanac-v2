@@ -126,6 +126,9 @@ export const MONITORED_TABLES: TableNames[] = [
 ];
 
 const REQUIRED_FKS = MONITORED_FKS.filter((fk) => fk.required);
+// Tabellen waarvan de verplichte FK's per unieke waarde één keer worden
+// opgezocht (WP45 F2). Zelfde uitkomst, minder db-aanroepen.
+const DEDUPED_FK_TABLES = new Set<TableNames>(["expenseClaims"]);
 const OPTIONAL_FKS = MONITORED_FKS.filter((fk) => !fk.required);
 
 type DriftRow = { table: string; id: string; detail: string };
@@ -278,14 +281,22 @@ export async function collectDriftLines(ctx: {
   // ── (2c) FK-integriteit ────────────────────────────────────────────
   for (const { table, field } of REQUIRED_FKS) {
     const docs = await ctx.db.query(table).collect();
+    // WP45 F2: veel declaraties wijzen naar weinig groepen en leden. Elke
+    // verwijzing één keer opzoeken houdt de scan binnen de 4096 db-aanroepen
+    // van één functie (tests/expenseClaims/scale.test.ts).
+    const seen = DEDUPED_FK_TABLES.has(table) ? new Map<string, boolean>() : null;
     for (const doc of docs) {
       const ref = (doc as Record<string, unknown>)[field];
       if (ref === undefined || ref === null) {
         driftRows.push({ table, id: doc._id, detail: `${field} ontbreekt` });
         continue;
       }
-      const target = await ctx.db.get(ref as Id<TableNames>);
-      if (target === null) {
+      let exists = seen?.get(ref as string);
+      if (exists === undefined) {
+        exists = (await ctx.db.get(ref as Id<TableNames>)) !== null;
+        seen?.set(ref as string, exists);
+      }
+      if (!exists) {
         driftRows.push({ table, id: doc._id, detail: `${field} dangling` });
       }
     }

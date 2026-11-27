@@ -1,4 +1,5 @@
 import { v } from "convex/values";
+import { hasForbiddenChar } from "./names";
 
 // WP45 — de vorm van een declaratie: statussen, invoerregels (§A3), grenzen
 // (§A4, §A9) en het lezen van de verzoeken van het clubboek (§A7, §A8).
@@ -26,6 +27,9 @@ export const DRAFTS_PER_MEMBER = 20;
 export const SUBMITTED_PER_MEMBER = 20;
 export const SUBMITS_PER_DAY = 20;
 export const SUBMIT_WINDOW_MS = 24 * 60 * 60 * 1000;
+// F1: bewaard en niet-concept (elke status behalve `draft`), tot het clubboek
+// opruimt. Houdt GET /claims, G7 en MON1 binnen één Convex-functie.
+export const KEPT_PER_MEMBER = 200;
 
 export const AMOUNT_MAX_CENTS = 1_000_000;
 const TITLE_MAX = 80;
@@ -41,15 +45,18 @@ const textLength = (s: string): number => Array.from(s).length;
 
 // Een losse surrogaathelft (geen well-formed Unicode).
 const LONE_SURROGATE = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
-// Control-tekens (C0, DEL, C1), U+2028/U+2029, en bidi-override- en isolate-tekens.
-const FORBIDDEN_CHAR = /[\u0000-\u001F\u007F-\u009F\u2028\u2029\u202A-\u202E\u2066-\u2069]/;
-// Voor de toelichting: hetzelfde, behalve `\n` (besluit 9).
-const FORBIDDEN_NOTE_CHAR = /[\u0000-\u0009\u000B-\u001F\u007F-\u009F\u2028\u2029\u202A-\u202E\u2066-\u2069]/;
+
+/**
+ * F3: de tekenregel van namen (lib/names.ts): geen control-tekens, geen
+ * regel- of alineascheiding, geen bidi-tekens en niets onzichtbaars; ZWJ,
+ * ZWNJ en VS15/VS16 alleen in hun context. Plus well-formed Unicode.
+ */
+const hasBadChar = (text: string): boolean => LONE_SURROGATE.test(text) || hasForbiddenChar(text);
 
 /** De titel zoals hij bewaard wordt (rand-witruimte eraf), of `null` als hij niet mag (§A3). */
 export function cleanTitle(raw: string): string | null {
   const title = raw.trim();
-  if (LONE_SURROGATE.test(title) || FORBIDDEN_CHAR.test(title)) return null;
+  if (hasBadChar(title)) return null;
   const n = textLength(title);
   return n >= 1 && n <= TITLE_MAX ? title : null;
 }
@@ -84,7 +91,8 @@ function lastSundayAt1Utc(year: number, monthIndex: number): number {
  * De datum in Nederland (`Europe/Amsterdam`, besluit 6): CET (UTC+1), en CEST
  * (UTC+2) van de laatste zondag van maart tot de laatste zondag van oktober,
  * telkens om 01:00 UTC. Uitgerekend, zodat het niet afhangt van de
- * tijdzone-gegevens van de runtime.
+ * tijdzone-gegevens van de runtime. Dit is de EU-regel voor de zomertijd:
+ * verandert die (of Nederland), dan moet deze functie mee.
  */
 export function dateInNetherlands(now: number): string {
   const year = new Date(now).getUTCFullYear();
@@ -146,7 +154,8 @@ function cleanNote(value: unknown): string | null {
   if (LONE_SURROGATE.test(value)) fail("note", "geen geldige Unicode");
   const note = value.replace(/\r\n/g, "\n").trim();
   if (note.length === 0) return null;
-  if (FORBIDDEN_NOTE_CHAR.test(note)) fail("note", "verboden teken (alleen een regeleinde mag)");
+  // Besluit 9 en F3: `\n` mag; elke regel volgt de tekenregel van de titel.
+  if (note.split("\n").some(hasBadChar)) fail("note", "verboden teken (alleen een regeleinde mag)");
   if (textLength(note) > NOTE_MAX) fail("note", `langer dan ${NOTE_MAX} tekens`);
   return note;
 }

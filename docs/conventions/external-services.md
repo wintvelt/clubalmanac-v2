@@ -442,18 +442,18 @@ Een lid meldt in de app een voorschot; het clubboek haalt de declaraties op, bes
 
 | Env-var | Waarde | Bij ontbreken of fout |
 |---|---|---|
-| `CLAIMS_SECRET` | `openssl rand -hex 32`, per deployment een eigen waarde. Lezen en besluiten | alle drie de routes 403 (fail-closed). Korter dan 32 tekens telt als geen geheim |
+| `CLAIMS_SECRET` | `openssl rand -hex 32`, per deployment een eigen waarde. Lezen en besluiten | `GET /claims` en `POST /claims/decision` 403 (fail-closed); opruimen werkt dan nog met zijn eigen geheim. Korter dan 32 tekens telt als geen geheim |
 | `CLAIMS_SECRET_PREVIOUS` | alleen tijdens rotatie: de vorige waarde van `CLAIMS_SECRET` | optioneel; werkt alleen naast een geldig `CLAIMS_SECRET` |
 | `CLAIMS_PURGE_SECRET` | `openssl rand -hex 32`, een andere waarde dan `CLAIMS_SECRET`. Opruimen | `POST /claims/purge` 403. Gelijk aan `CLAIMS_SECRET` of `CLAIMS_SECRET_PREVIOUS`: ook 403 |
 | `CLAIMS_PURGE_SECRET_PREVIOUS` | alleen tijdens rotatie: de vorige waarde van `CLAIMS_PURGE_SECRET` | optioneel, zoals `CLAIMS_SECRET_PREVIOUS` |
 | `CLAIMS_GROUP_ID` | het `_id` van de groep (dashboard → Data → `groups`) | alle drie de routes 403, ook als de groep niet (meer) bestaat; leden krijgen `CLAIMS_DISABLED` |
 
-- **Los van `FINANCE_*`**: een `FINANCE_SECRET` werkt hier niet. Alleen leden van de groep van `CLAIMS_GROUP_ID` kunnen declareren.
+- **Los van `FINANCE_*`**: een `FINANCE_SECRET` werkt hier niet, en elk declaratie-geheim (ook een `_PREVIOUS`) moet ervan verschillen. Is er een gelijk, dan is die soort dicht (lezen en besluiten, of opruimen); de andere soort werkt gewoon. Alleen leden van de groep van `CLAIMS_GROUP_ID` kunnen declareren.
 - **Roteren**, per soort geheim: (1) zet de huidige waarde in `_PREVIOUS`; (2) zet een nieuwe waarde (`openssl rand -hex 32`) in het huidige geheim; (3) werk het instellingenbestand van het clubboek bij; (4) haal `_PREVIOUS` weg. Tussen 1 en 4 werken beide waarden. Roteer ook als een geheim ergens anders terecht is gekomen.
 - **Na een migratie-reset of op T0**: de tooling leegt `expenseClaims` (de import vult hem niet) en de groep krijgt een nieuw id. Zet eerst `CLAIMS_GROUP_ID` op het nieuwe id; met de oude waarde geeft elke route 403 en kan geen lid declareren.
 - **Een andere `CLAIMS_GROUP_ID`**: de declaraties van de oude groep blijven in de tabel maar bestaan niet meer voor de routes, en het lid ziet ze niet meer. Ze gaan pas weg met die groep.
 - **Verdwijnen zonder opruimen**: na een verwijderd account (alle declaraties van dat lid) of een verwijderde groep verdwijnen declaraties uit `GET /claims`, ook als ze al verwerkt waren. Dat is geen intrekken en geen fout; wat het clubboek al boekte, blijft daar staan.
-- **Opruimen na de jaarafsluiting**: ingetrokken en besloten declaraties blijven in `GET /claims` tot het clubboek ze opruimt. Ruim minstens jaarlijks op, zodat de lijst klein blijft.
+- **Opruimen na de jaarafsluiting**: ingetrokken en besloten declaraties blijven in `GET /claims` tot het clubboek ze opruimt. Per lid per groep bewaart Convex ten hoogste 200 die geen concept zijn; daarna weigert verzenden (`CLAIMS_LIMIT`). Intrekken of een besluit maakt geen plek, alleen opruimen. Ruim dus minstens jaarlijks op.
 - **Logs**: de routes loggen niets (geen geheim, header of body). Een vormfout geeft 400 met het pad van het veld, nooit een waarde uit het verzoek.
 
 ## Webapp: app.clubalmanac.com (WP35)

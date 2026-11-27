@@ -20,6 +20,7 @@ import {
   DRAFTS_PER_MEMBER,
   isAmount,
   isExpenseDate,
+  KEPT_PER_MEMBER,
   parseDecisionRequest,
   parsePurgeRequest,
   PURGE_MAX_BODY_BYTES,
@@ -57,7 +58,8 @@ type ClaimCode =
   | "AMOUNT_INVALID"
   | "DRAFT_LIMIT"
   | "SUBMITTED_LIMIT"
-  | "DAILY_SUBMIT_LIMIT";
+  | "DAILY_SUBMIT_LIMIT"
+  | "CLAIMS_LIMIT";
 
 function refuse(code: ClaimCode): never {
   throw new ConvexError({ code });
@@ -188,9 +190,10 @@ export const deleteDraft = mutation({
 });
 
 /**
- * Een concept verzenden (§A4): ten hoogste 20 `submitted`, en 20 keer
- * verzenden in de laatste 24 uur. Elke verzending telt, ook als die
- * declaratie daarna is besloten of ingetrokken (A1.15).
+ * Een concept verzenden (§A4): ten hoogste 20 `submitted`, 20 keer verzenden
+ * in de laatste 24 uur, en 200 bewaard die geen concept zijn (F1). Elke
+ * verzending telt, ook als die declaratie daarna is besloten of ingetrokken
+ * (A1.15); alleen opruimen maakt plek onder de 200.
  */
 export const submit = mutation({
   args: { claimId: v.id("expenseClaims") },
@@ -209,6 +212,14 @@ export const submit = mutation({
       )
       .take(SUBMITS_PER_DAY);
     if (recent.length >= SUBMITS_PER_DAY) refuse("DAILY_SUBMIT_LIMIT");
+    // Een niet-concept heeft altijd een verzendtijd; een concept heeft null.
+    const kept = await ctx.db
+      .query("expenseClaims")
+      .withIndex("by_member_group_and_submittedAt", (q) =>
+        q.eq("memberId", memberId).eq("groupId", groupId).gt("submittedAt", null),
+      )
+      .take(KEPT_PER_MEMBER);
+    if (kept.length >= KEPT_PER_MEMBER) refuse("CLAIMS_LIMIT");
     await ctx.db.patch(claim._id, { status: "submitted", submittedAt: now, revision: claim.revision + 1 });
     return null;
   },
@@ -324,15 +335,25 @@ const clubbookClaim = v.object({
 
 const iso = (ms: number | null): string | null => (ms === null ? null : new Date(ms).toISOString());
 
+type Names = Map<Id<"users">, string>;
+
 /**
- * Eén declaratie zoals het clubboek hem ziet (§A6). `member.name` is de
- * profielnaam nu; zonder naam of zonder users-rij (drift, A1.12) een lege tekst.
+ * De profielnaam nu; zonder naam of zonder users-rij (drift, A1.12) een lege
+ * tekst. F2: per lid één keer gelezen, ook als hij veel declaraties heeft.
  */
-async function forClubbook(ctx: QueryCtx, c: Doc<"expenseClaims">) {
-  const user = await ctx.db.get(c.memberId);
+async function nameOf(ctx: QueryCtx, names: Names, memberId: Id<"users">): Promise<string> {
+  const known = names.get(memberId);
+  if (known !== undefined) return known;
+  const name = (await ctx.db.get(memberId))?.name ?? "";
+  names.set(memberId, name);
+  return name;
+}
+
+/** Eén declaratie zoals het clubboek hem ziet (§A6). */
+async function forClubbook(ctx: QueryCtx, c: Doc<"expenseClaims">, names: Names = new Map()) {
   return {
     id: c._id as string,
-    member: { id: c.memberId as string, name: user?.name ?? "" },
+    member: { id: c.memberId as string, name: await nameOf(ctx, names, c.memberId) },
     title: c.title,
     expenseDate: c.expenseDate,
     amountCents: c.amountCents,
@@ -382,8 +403,9 @@ export const listForClubbook = internalQuery({
       .query("expenseClaims")
       .withIndex("by_group_and_submittedAt", (q) => q.eq("groupId", groupId))
       .collect();
+    const names: Names = new Map();
     const out = [];
-    for (const c of rows) if (c.status !== "draft") out.push(await forClubbook(ctx, c));
+    for (const c of rows) if (c.status !== "draft") out.push(await forClubbook(ctx, c, names));
     return out;
   },
 });
@@ -520,17 +542,33 @@ function purgeSecretsCollide(): boolean {
 }
 
 /**
+ * F4: is een geheim van deze soort (huidig of vorig) gelijk aan het geheim van
+ * de afrekeningen (`FINANCE_SECRET`, WP41), dan is de route van deze soort
+ * dicht. De andere soort werkt gewoon.
+ */
+function sharesFinanceSecret(kind: SecretKind): boolean {
+  const finance = env("FINANCE_SECRET");
+  if (finance === "") return false;
+  const own = [env(SECRET_ENV[kind].current), env(SECRET_ENV[kind].previous)].filter(usable);
+  let shared = false;
+  for (const s of own) shared = constantTimeEqual(s, finance) || shared;
+  return shared;
+}
+
+/**
  * De groep van de deployment, of `null` bij elke oorzaak van weigering (§A5):
  * een ontbrekend of te kort geheim, geen of een fout `X-Clubboek-Secret`, het
  * geheim van de andere soort, een purge-geheim gelijk aan een lees-geheim,
- * of een `CLAIMS_GROUP_ID` die geen bestaande groep is.
+ * een geheim van deze soort gelijk aan `FINANCE_SECRET` (F4), of een
+ * `CLAIMS_GROUP_ID` die geen bestaande groep is.
  */
 async function claimsAccess(ctx: ActionCtx, request: Request, kind: SecretKind): Promise<Id<"groups"> | null> {
   const given = request.headers.get(SECRET_HEADER) ?? "";
   const match = secretMatches(given, kind);
   const collide = kind === "purge" ? purgeSecretsCollide() : false;
+  const shared = sharesFinanceSecret(kind);
   const groupId = env("CLAIMS_GROUP_ID");
-  if (!match || collide || groupId === "") return null;
+  if (!match || collide || shared || groupId === "") return null;
   return await ctx.runQuery(internal.expenseClaims.claimsGroup, { groupId });
 }
 
