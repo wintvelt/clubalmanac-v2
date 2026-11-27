@@ -96,7 +96,7 @@ ${body}
 
 const index = page(
   "clubalmanac",
-  { title: "Clubalmanac", description: "Het fotoalbum van je club.", url: "https://clubalmanac.com/" },
+  { title: "Clubalmanac", description: "De app met alle herinneringen van je club.", url: "https://clubalmanac.com/" },
   `<h1>clubalmanac</h1>
 <p>De website is nog even aan het bijkomen van een heftig lustrum. Hopelijk gaan de deuren binnenkort weer gewoon open.</p>
 <p>Tot die tijd vind je al je foto's en groepen in de iPhone-app Clubalmanac.</p>
@@ -108,7 +108,7 @@ const privacyPage = page(
   "Privacyverklaring – clubalmanac",
   {
     title: "Privacyverklaring · Clubalmanac",
-    description: "Het fotoalbum van je club.",
+    description: "De app met alle herinneringen van je club.",
     url: "https://clubalmanac.com/privacy/nl",
   },
   `<h1>Privacyverklaring</h1>
