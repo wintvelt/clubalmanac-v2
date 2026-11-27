@@ -101,6 +101,8 @@ declare class ClubalmanacVideoNative extends NativeModule<Events> {
   pickerOnScreen?: () => Promise<boolean>;
   /** WP42 B18: het buildnummer van de geïnstalleerde build; ontbreekt in een oudere build. */
   buildNumber?: () => string | null;
+  /** WP47: komt de geïnstalleerde build uit TestFlight? Alleen iOS; ontbreekt in een build van vóór WP47. */
+  testFlight?: () => Promise<boolean>;
   // WP38b; ontbreken in een build zonder de uploader.
   keepOriginal?: (uri: string) => Promise<KeptOriginal>;
   originalInfo?: (fileName: string) => Promise<OriginalFileInfo>;
@@ -196,6 +198,22 @@ export function buildNumber(): string | null {
   try {
     const n = native.buildNumber();
     return typeof n === "string" && n.trim() !== "" ? n.trim() : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * WP47: komt de geïnstalleerde build uit TestFlight? `true` alleen bij een echt
+ * ja van iOS, `false` bij een echt nee, anders `null` (weet niet): geen module
+ * (web), geen functie (Android, een build van vóór WP47), een fout of een
+ * antwoord dat geen boolean is. Wijst nooit af (invariant 1, 4, 10).
+ */
+export async function testFlightBuild(): Promise<boolean | null> {
+  if (!native || typeof native.testFlight !== "function") return null;
+  try {
+    const answer: unknown = await native.testFlight();
+    return typeof answer === "boolean" ? answer : null;
   } catch {
     return null;
   }
