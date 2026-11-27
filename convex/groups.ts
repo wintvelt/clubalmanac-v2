@@ -32,6 +32,7 @@ import { afterUnpublish } from "./lib/unpublish";
 import { wipeIfLost } from "./lib/profilePhoto";
 import { removeOriginalsOfMemberInGroup, removeProjectsOfGroup } from "./lib/filmOriginals";
 import { deleteSettlementImage } from "./lib/settlementImage";
+import { deleteClaimsOfGroup, deleteDraftsOfMemberInGroup } from "./expenseClaims";
 
 const ROLE = v.union(v.literal("admin"), v.literal("member"));
 
@@ -438,6 +439,10 @@ export async function deleteGroupCascade(
     await ctx.db.delete(s._id);
   }
 
+  // WP45 (G7): de declaraties van de groep, elke status. Die van andere
+  // groepen blijven.
+  await deleteClaimsOfGroup(ctx, groupId);
+
   await ctx.db.delete(groupId);
 
   await afterUnpublish(ctx, albumPhotos);
@@ -487,6 +492,10 @@ export async function internalRemoveMember(
   // WP38 besluit 12: zijn originelen in de projecten van deze groep gaan
   // mee, ook in R2 (zoals zijn filmpjes uit de albums gaan; er zit GPS in).
   await removeOriginalsOfMemberInGroup(ctx, userId, groupId);
+
+  // WP45 besluit 3 (M6): zijn concepten in deze groep gaan weg. Wat hij
+  // verzond, blijft voor het clubboek; hij ziet het niet meer tot hij terugkomt.
+  await deleteDraftsOfMemberInGroup(ctx, userId, groupId);
 
   // WP28 invariant 4, weg (a): open uitnodigingen aan zijn adres voor deze
   // groep vervallen. Op het genormaliseerde adres: uitnodigingen zijn

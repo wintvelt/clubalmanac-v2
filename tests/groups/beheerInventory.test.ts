@@ -40,6 +40,11 @@ const EXPECTED = [
   // geen album meer); gate = oprichter (NOT_ALLOWED voor admin en lid,
   // NOT_MEMBER voor wie geen lid is) (tests/filmProject/projects.test.ts).
   "filmProjects:open",
+  // WP45 §A2, §A10: een concept bewaren neemt een groep-id; gate = lid van de
+  // groep (NOT_MEMBER), dan de groep van CLAIMS_GROUP_ID (CLAIMS_DISABLED)
+  // (tests/expenseClaims/member.test.ts). listMine is een query en valt
+  // hier buiten (tests/readWhitelist/inventory.test.ts).
+  "expenseClaims:saveDraft",
   "groups:markAllAlbumsSeen",
   "groups:remove",
   "groups:removeMember",
