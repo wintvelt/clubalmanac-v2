@@ -3,13 +3,15 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it, vi } from "vitest";
 
-// WP42b — de module `clubalmanac-video` krijgt een Android-kant, zonder de
-// uploader voor originelen (invariant 7, open vraag 5, A21).
-//   - Met de Android-module (verkleinen, poster, metadata, stoppen, wissen):
-//     `videoModuleAvailable` waar, `originalUploaderAvailable` onwaar; de
-//     onderdelen van de originelen blijven stil (42a A11 blijft).
+// WP42b — de module `clubalmanac-video` krijgt een Android-kant (open vraag 5).
+//   - Een build met alleen de functies van filmpjes (verkleinen, poster,
+//     metadata, stoppen, wissen): `videoModuleAvailable` waar,
+//     `originalUploaderAvailable` onwaar; de onderdelen van de originelen
+//     blijven stil.
 //   - De module meldt zich ook voor Android aan; de Kotlin-kant definieert de
-//     vijf functies van filmpjes en geen enkele functie van de uploader.
+//     vijf functies van filmpjes.
+//   - WP42c: de Android-kant krijgt ook de uploader (A21 van 42b vervalt); dat
+//     staat in androidOriginals.test.ts.
 //   - Geen rechten voor een achtergronddienst of de hele galerij (42a A9):
 //     app.json blokkeert ze, en de module vraagt ze niet.
 // Spec: docs/work-packages/WP42-android.md §Spec-criticus aanvullingen 42b.
@@ -19,33 +21,6 @@ const APP_JSON = fileURLToPath(new URL("../app.json", import.meta.url));
 
 /** De functies van filmpjes (WP37) die Android nodig heeft. */
 const VIDEO_FUNCTIONS = ["readMetadata", "compress", "cancel", "makePoster", "remove"];
-
-/** De functies van de uploader voor originelen (WP38b, index.ts `Originals`): niet op Android (42c). */
-const UPLOADER_FUNCTIONS = [
-  "keepOriginal",
-  "originalInfo",
-  "removeOriginal",
-  "listOriginals",
-  "originalSha256",
-  "freeBytes",
-  "partsBytes",
-  "networkStatus",
-  "readState",
-  "writeState",
-  "uploaderSend",
-  "uploaderRetryPart",
-  "uploaderForget",
-  "uploaderJobs",
-  "uploaderWifiOnly",
-  "uploaderSetWifiOnly",
-  "uploaderNote",
-  "uploaderLog",
-  "uploaderClearLog",
-  "backgroundWorkBegin",
-  "backgroundWorkEnd",
-  "uploaderExitAfterBackgroundSend",
-  "uploaderSetExitAfterBackgroundSend",
-];
 
 function filesUnder(dir: string): string[] {
   if (!existsSync(dir)) return [];
@@ -69,7 +44,7 @@ function exportedNames(text: string): Set<string> {
   return names;
 }
 
-describe("de JS-kant met een Android-module zonder uploader (invariant 7)", () => {
+describe("de JS-kant met een module zonder uploader (een build van 42b)", () => {
   it("filmpjes kunnen, originelen niet", async () => {
     vi.resetModules();
     const listeners: string[] = [];
@@ -112,11 +87,6 @@ describe("de module meldt zich ook voor Android aan (open vraag 5)", () => {
     for (const name of VIDEO_FUNCTIONS) expect(names, name).toContain(name);
   });
 
-  it("en geen enkele functie van de uploader voor originelen (42c)", () => {
-    expect(kotlin().length).toBeGreaterThan(0);
-    const names = exportedNames(kotlinText());
-    for (const name of UPLOADER_FUNCTIONS) expect(names.has(name), name).toBe(false);
-  });
 });
 
 describe("geen achtergronddienst en geen toegang tot de hele galerij (42a A9, B12)", () => {
