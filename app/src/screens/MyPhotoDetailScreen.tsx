@@ -23,7 +23,15 @@ import { formatPhotoDate, nextAfterRemoval } from "../lib/photos";
 import { size, space, useTheme } from "../theme";
 import { LoadError } from "./GroupParts";
 import { MY_PHOTOS_STEP, menuPhotoOf, useMyPhotos, type MyPhoto } from "./MyPhotosScreen";
-import { PhotoAlbums, PhotoDetailLayout, ZoomablePhoto } from "./PhotoDetailScreen";
+import {
+  DetailStatusBar,
+  PhoneDetailLayout,
+  useDetailHeaderOptions,
+  useDetailPlainOptions,
+  usePhoneDetailLayout,
+  usePhotoDetailStand,
+} from "./DetailStand";
+import { cancelPendingPhotoTap, PhotoAlbums, PhotoDetailLayout, ZoomablePhoto } from "./PhotoDetailScreen";
 import {
   ActionFeedback,
   SharingProgress,
@@ -41,13 +49,21 @@ import { WebPager } from "../components/WebPager";
 // in welke albums hij staat.
 export function MyPhotoDetailScreen() {
   const { photoId, n, los } = useLocalSearchParams<{ photoId: string; n?: string; los?: string }>();
-  if (useAuthState() === "reconnecting") return <Screen underHeader>{null}</Screen>;
+  // WP46: zonder foto's de gewone kop (niet transparent, niet verborgen).
+  const plain = useDetailPlainOptions();
+  if (useAuthState() === "reconnecting") {
+    return (
+      <Screen underHeader>
+        <Stack.Screen options={plain} />
+      </Screen>
+    );
+  }
   const loaded = Math.max(MY_PHOTOS_STEP, Number(n) || MY_PHOTOS_STEP);
   return (
     <QueryBoundary
       fallback={(_error, reset) => (
         <Screen underHeader>
-          <Stack.Screen options={{ title: "Foto" }} />
+          <Stack.Screen options={{ ...plain, title: "Foto" }} />
           <LoadError title="Deze foto laden lukt niet" onRetry={reset} />
         </Screen>
       )}
@@ -74,7 +90,12 @@ function DetailContent({
   const [feedback, setFeedback] = useState<Feedback | null>(null);
   const ids = useMemo<string[]>(() => shown?.map((p) => p._id) ?? [], [shown]);
   const [current, setCurrent] = useState(initialPhotoId);
-  const [page, setPage] = useState<{ width: number; height: number } | null>(null);
+  // WP46: de stand (normaal, schermvullend, liggend met of zonder kop).
+  const stand = usePhotoDetailStand();
+  const headerOptions = useDetailHeaderOptions(stand);
+  const phone = usePhoneDetailLayout(stand);
+  const [measuredPage, setMeasuredPage] = useState<{ width: number; height: number } | null>(null);
+  const page = stand.allowed ? phone.page : measuredPage;
   const flatList = useRef<FlatList<MyPhoto>>(null);
   const previousIds = useRef<string[] | null>(null);
 
@@ -117,83 +138,116 @@ function DetailContent({
     showPage(Math.round(e.nativeEvent.contentOffset.x / page.width));
   };
 
-  return (
-    <SafeAreaView edges={["left", "right", "bottom"]} style={[styles.fill, { backgroundColor: colors.bg }]}>
-      <Stack.Screen
-        options={{
-          title: photo ? formatPhotoDate(photo) : "Foto",
-          headerRight: hasActions && menuPhoto ? () => <ActionsButton onPress={() => menu.open(menuPhoto)} /> : undefined,
+  const header = (
+    <Stack.Screen
+      options={{
+        title: photo ? formatPhotoDate(photo) : "Foto",
+        headerRight:
+          hasActions && menuPhoto
+            ? () => <ActionsButton onPress={() => menu.open(menuPhoto)} onDark={stand.view.black} />
+            : undefined,
+        ...headerOptions,
+      }}
+    />
+  );
+  const feedbackNode = menu.sharing ? (
+    <SharingProgress />
+  ) : (
+    feedback && <ActionFeedback feedback={feedback} onClose={() => setFeedback(null)} />
+  );
+  const infoNode = infoPhoto && (
+    <Animated.View style={swipe.infoStyle}>
+      <PhotoInfo photo={infoPhoto} />
+    </Animated.View>
+  );
+  const photos =
+    page &&
+    shown &&
+    (Platform.OS === "web" ? (
+      // Webapp-fix 3: op het web één foto tegelijk, zonder horizontale lijst.
+      <WebPager
+        index={index}
+        count={ids.length}
+        onChange={showPage}
+        photoId={current}
+        onNearEnd={list.loadMore}
+        photoAt={(i) => {
+          const p = shown[i];
+          return p && { photoId: p._id, hasFormats: p.hasFormats };
+        }}
+        renderPage={(i) => {
+          const p = shown[i];
+          return p ? <ZoomablePhoto key={p._id} photoId={p._id} photo={p} box={page} /> : null;
         }}
       />
+    ) : (
+      <Animated.FlatList
+        ref={flatList}
+        data={shown}
+        onScroll={swipe.onScroll}
+        scrollEventThrottle={16}
+        horizontal
+        pagingEnabled
+        showsHorizontalScrollIndicator={false}
+        keyExtractor={(p) => p._id}
+        getItemLayout={(_, i) => ({ length: page.width, offset: page.width * i, index: i })}
+        initialScrollIndex={index}
+        initialNumToRender={1}
+        windowSize={3}
+        maxToRenderPerBatch={2}
+        onMomentumScrollEnd={onMomentumEnd}
+        // WP46: een veeg die begint, stopt een wachtende enkele tik.
+        onScrollBeginDrag={cancelPendingPhotoTap}
+        onEndReached={list.loadMore}
+        onEndReachedThreshold={3}
+        // WP37: weg-vegen stopt een filmpje.
+        // WP46: een andere stand geeft de pagina's een andere maat.
+        extraData={`${current}:${page.width}x${page.height}`}
+        renderItem={({ item }) => (
+          <ZoomablePhoto
+            photoId={item._id}
+            photo={item}
+            box={page}
+            active={item._id === current}
+            onTap={stand.onTap}
+            onFullscreenExit={stand.restoreStatusBar}
+          />
+        )}
+      />
+    ));
+
+  // WP46: op de telefoon de standen; op de iPad en het web zoals voorheen.
+  if (stand.allowed) {
+    return (
+      <>
+        {header}
+        <DetailStatusBar stand={stand} />
+        <PhoneDetailLayout
+          layout={phone}
+          photos={photos}
+          info={infoNode}
+          feedback={feedbackNode}
+          scrollKey={feedback ?? menu.sharing}
+          loading={shown === undefined ? <LoadingState label="Foto laden…" /> : undefined}
+        />
+      </>
+    );
+  }
+
+  return (
+    <SafeAreaView edges={["left", "right", "bottom"]} style={[styles.fill, { backgroundColor: colors.bg }]}>
+      {header}
       {shown === undefined ? (
         <LoadingState label="Foto laden…" />
       ) : (
         <PhotoDetailLayout
-          onPage={setPage}
+          onPage={setMeasuredPage}
           scrollKey={feedback ?? menu.sharing}
-          photos={
-            page &&
-            (Platform.OS === "web" ? (
-              // Webapp-fix 3: op het web één foto tegelijk, zonder horizontale lijst.
-              <WebPager
-                index={index}
-                count={ids.length}
-                onChange={showPage}
-                photoId={current}
-                onNearEnd={list.loadMore}
-                photoAt={(i) => {
-                  const p = shown[i];
-                  return p && { photoId: p._id, hasFormats: p.hasFormats };
-                }}
-                renderPage={(i) => {
-                  const p = shown[i];
-                  return p ? <ZoomablePhoto key={p._id} photoId={p._id} photo={p} box={page} /> : null;
-                }}
-              />
-            ) : (
-                <Animated.FlatList
-                  ref={flatList}
-                  data={shown}
-                  onScroll={swipe.onScroll}
-                  scrollEventThrottle={16}
-                  horizontal
-                  pagingEnabled
-                  showsHorizontalScrollIndicator={false}
-                  keyExtractor={(p) => p._id}
-                  getItemLayout={(_, i) => ({ length: page.width, offset: page.width * i, index: i })}
-                  initialScrollIndex={index}
-                  initialNumToRender={1}
-                  windowSize={3}
-                  maxToRenderPerBatch={2}
-                  onMomentumScrollEnd={onMomentumEnd}
-                  onEndReached={list.loadMore}
-                  onEndReachedThreshold={3}
-                  // WP37: weg-vegen stopt een filmpje.
-                  extraData={current}
-                  renderItem={({ item }) => (
-                    <ZoomablePhoto photoId={item._id} photo={item} box={page} active={item._id === current} />
-                  )}
-                />
-            ))
-          }
+          photos={photos}
           below={
             <>
-              {menu.sharing ? (
-                <View style={styles.feedback}>
-                  <SharingProgress />
-                </View>
-              ) : (
-                feedback && (
-                  <View style={styles.feedback}>
-                    <ActionFeedback feedback={feedback} onClose={() => setFeedback(null)} />
-                  </View>
-                )
-              )}
-              {infoPhoto && (
-                <Animated.View style={swipe.infoStyle}>
-                  <PhotoInfo photo={infoPhoto} />
-                </Animated.View>
-              )}
+              {feedbackNode && <View style={styles.feedback}>{feedbackNode}</View>}
+              {infoNode}
             </>
           }
         />

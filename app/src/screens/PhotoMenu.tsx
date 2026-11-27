@@ -25,7 +25,7 @@ import {
   type Role,
   type SelectionAction,
 } from "../lib/photoActions";
-import { size, space, useTheme } from "../theme";
+import { photoLayers, size, space, useTheme } from "../theme";
 import { READ_ONLY } from "../data/readOnly";
 
 // WP17b: het foto-menu (detail: knop "Acties" rechtsboven; raster: lang
@@ -473,8 +473,10 @@ export function useSelectionActions({
 // --- Bouwstenen voor de schermen --------------------------------------------------------
 
 // Rechtsboven in het detail: "Acties", met icoon en label (design.md §9).
-export function ActionsButton({ onPress }: { onPress: () => void }) {
+// WP46: `onDark` voor de kop over een foto op zwart (liggend schermvullend).
+export function ActionsButton({ onPress, onDark = false }: { onPress: () => void; onDark?: boolean }) {
   const { colors } = useTheme();
+  const tint = onDark ? photoLayers.text : colors.primary;
   return (
     <Pressable
       accessibilityRole="button"
@@ -483,8 +485,8 @@ export function ActionsButton({ onPress }: { onPress: () => void }) {
       hitSlop={space.s}
       style={({ pressed }) => [styles.actions, pressed && styles.pressed]}
     >
-      <Icon name="more" size={22} color={colors.primary} />
-      <Text variant="button" color="primary" maxFontSizeMultiplier={1.3}>
+      <Icon name="more" size={22} color={tint} />
+      <Text variant="button" color="primary" style={onDark ? { color: tint } : undefined} maxFontSizeMultiplier={1.3}>
         Acties
       </Text>
     </Pressable>

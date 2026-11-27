@@ -8,6 +8,7 @@ import {
 import { HeaderBackButton, type HeaderBackButtonProps } from "expo-router/react-navigation";
 import { Platform, Pressable, StyleSheet, useWindowDimensions } from "react-native";
 import { Text } from "../components/Text";
+import { fullscreenAllowed } from "../lib/photoDetailStand";
 import { WIDE_FROM } from "../lib/wideLayout";
 import { size, space, useTheme } from "../theme";
 
@@ -46,6 +47,21 @@ export function useStackScreenOptions(): NativeStackNavigationOptions {
     ...(Platform.OS === "web" ? { headerLeft: webBackButton } : {}),
   };
 }
+
+// WP46: mag dit toestel het foto-detail schermvullend tonen? Vast per toestel:
+// de iPad telt als iPad, niet naar de maat van het venster (A-invariant 1).
+export const PHONE_FULLSCREEN = fullscreenAllowed({
+  os: Platform.OS,
+  isPad: Platform.OS === "ios" && Platform.isPad,
+});
+
+// WP46: de route van het foto-detail (album en Mijn foto's). Op de telefoon is
+// de kop vanaf het eerste beeld transparent: het scherm loopt eronder door,
+// ook als hij er is, zodat het vlak van het scherm niet wisselt als de kop
+// komt of gaat (src/screens/DetailStand.tsx).
+export const photoDetailRouteOptions: NativeStackNavigationOptions = PHONE_FULLSCREEN
+  ? { title: "Foto", headerTransparent: true }
+  : { title: "Foto" };
 
 // Alleen op het web (iOS heeft zijn eigen terugknop). De standaardknop meet of
 // de naam van het vorige scherm naast de titel past; op een smal scherm gaf

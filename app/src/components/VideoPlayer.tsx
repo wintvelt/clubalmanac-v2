@@ -50,6 +50,7 @@ export function VideoPage({
   active,
   label,
   memoryOnly,
+  onFullscreenExit,
 }: {
   photoId: Id<"photos">;
   photo: VideoPhoto;
@@ -59,6 +60,8 @@ export function VideoPage({
   label: string;
   /** De poster niet op schijf (de wachtrij van de webmaster, WP20 besluit 10). */
   memoryOnly?: boolean;
+  /** WP46: terug uit het volledig scherm van de speler (de statusbalk van het detail). */
+  onFullscreenExit?: () => void;
 }) {
   const getLink = useAction(api.videos.playUrl);
   const [phase, setPhase] = useState<Phase>("poster");
@@ -119,6 +122,7 @@ export function VideoPage({
           nativeControls
           contentFit="contain"
           fullscreenOptions={{ enable: true }}
+          onFullscreenExit={onFullscreenExit}
           allowsPictureInPicture={false}
         />
       ) : (
