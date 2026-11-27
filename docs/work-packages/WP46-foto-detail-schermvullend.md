@@ -167,6 +167,18 @@ WP46 wijkt bewust af: vegen werkt in elke stand, de achtergrond is zwart, status
 - **A8. De knop voor volledig scherm van de native speler.** Hoort bij A2. Op de iPad blijft hij (besluit 1).
 - **A9. Draaien beperken tot het detail.** Advies: niet in WP46 (antwoord 1).
 
+### Besluiten na A (Wouter en regie, 2026-11-27)
+
+- **Besluit 7 (vervangt besluit 2 en A2, A4 voor filmpjes, A8): filmpjes houden de native speler.** Een tik op een filmpje verandert de stand niet; de speler doet met een tik wat hij nu doet, en zijn eigen knop voor volledig scherm blijft (ook op de telefoon). Geen eigen bediening. Veeg je vanuit een stand naar een filmpje, dan blijft de stand zoals hij is (geen sprong); terug (veeg of systeemknop) werkt altijd, en vegen naar een foto maakt de tik weer bruikbaar. Wouter: "standaard speler heeft al een full screen optie"; foto schermvullend en dan naar een filmpje vegen is een randgeval.
+- **A1:** (a), terug gaat in elke stand meteen het detail uit.
+- **A3:** (a), liggend alleen de kop; invariant 1 wordt: terug en Acties met één tik (bij een foto), de rest door terug te draaien.
+- **A4:** (a) voor foto's: de kop blijft tot de volgende tik.
+- **A5:** (a), een Android-tablet telt als telefoon.
+- **A6:** de navigatiebalk van Android en de thuisbalk van de iPhone blijven staan.
+- **A7:** zoals geadviseerd (schermlezer aan: rechtop normaal, liggend de kop altijd).
+- **A9:** niet in WP46.
+- **Buiten WP46:** na herverbinden begint het detail opnieuw bij de foto waarop je het opende (sinds WP17a). Eigen TBD-regel.
+
 ### Testcontract (A, vóór de besluiten)
 
 > Namen en vormen zijn A-keuzes, het hoe is aan B. Wijkt een besluit af, dan past A de tests aan voordat B begint.
