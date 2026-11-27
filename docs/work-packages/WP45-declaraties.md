@@ -122,7 +122,7 @@ Alle negen zoals geadviseerd; ook de vijf afwijkingen hierboven aanvaard.
 6. **`CLAIMS_GROUP_ID` gaat naar een andere groep.** Declaraties in de oude groep bestaan dan niet meer voor de routes (404, `skipped`, niet in `GET`), en ook het lid ziet ze niet meer (`CLAIMS_DISABLED`). Ze blijven in de tabel tot de groep weg is.
 7. **Een lid dat terugkomt.** Besluit 3 zegt wat er bij vertrek gebeurt, niet bij terugkomen. De toegang leunt op het lidmaatschap: wie terugkomt, ziet zijn verzonden declaraties weer en kan ze weer intrekken. Zie open vraag 1.
 8. **Regeleinde uit een browser.** Een `<textarea>` stuurt `\r\n`. Besluit 9 staat "een regeleinde" toe; zonder afspraak geeft elke toelichting met een enter een 400 (A-keuze 6).
-9. **Groei van `GET /claims`.** Ingetrokken declaraties blijven staan tot het clubboek opruimt. Eén lid kan zo 20 per dag laten groeien (verzenden, intrekken). Bij 16 leden is dat ruim binnen de leesgrens van één query, zolang het clubboek na de jaarafsluiting opruimt. Geen extra grens nu; wel een punt voor het runbook.
+9. **Groei van `GET /claims`.** Ingetrokken en besloten declaraties blijven staan tot het clubboek opruimt. Fix-cyclus 1 (F1) begrenst dat: per lid per groep ten hoogste 200 die geen concept zijn (§A4). Bij 16 leden is de grootste last dus 3200 plus 320 concepten; `GET /claims`, G7 en MON1 moeten die in één Convex-functie halen (F2, `scale.test.ts`).
 10. **Verdwijnen zonder opruimen.** Account weg (besluit 4) en groep weg halen declaraties weg zonder dat het clubboek ze opruimde. Ze verdwijnen dan uit `GET`, ook al verwerkt. Het clubboek moet een verdwenen declaratie niet lezen als "ingetrokken" of "fout"; zijn boeking blijft staan. Hoort in de spec van het clubboek (B zet het in het runbook).
 11. **Migratie-reset.** `expenseClaims` valt via MON1 onder de reset van de migratie-tooling: een reset leegt de declaraties, de import vult ze niet. Daarna eerst `CLAIMS_GROUP_ID` bijwerken (draft §Risico).
 12. **De naam voor het clubboek.** `member.name` is de profielnaam nu, niet die bij verzenden. Ontbreekt de users-rij (drift; MON1 meldt dat), dan geeft `GET` toch 200, met een lege naam.
@@ -152,7 +152,7 @@ Volgorde van de controles; de eerste die faalt bepaalt de fout (ConvexError `{ c
    - `submit`: alleen `draft`;
    - `withdraw`: `submitted`, `processed`, `adjusted`, `rejected`.
 5. De invoer (`saveDraft`; §A3): `TITLE_INVALID`, `DATE_INVALID`, `AMOUNT_INVALID`.
-6. De grens (§A4): `DRAFT_LIMIT` (nieuw concept), `SUBMITTED_LIMIT` en `DAILY_SUBMIT_LIMIT` (verzenden).
+6. De grens (§A4): `DRAFT_LIMIT` (nieuw concept), `SUBMITTED_LIMIT`, `DAILY_SUBMIT_LIMIT` en `CLAIMS_LIMIT` (verzenden).
 
 Wat er verandert:
 - `saveDraft` zonder `claimId`: een nieuw concept, `revision` 1, `memberId` de caller, de andere velden leeg. Met `claimId`: de drie velden vervangen, `revision` +1.
@@ -166,11 +166,11 @@ Wat er verandert:
 
 | Veld | Regel |
 |---|---|
-| `title` | witruimte aan begin en eind gaat eraf; daarna 1 tot 80 tekens (codepunten, een emoji telt als één). Well-formed Unicode; geen control-tekens (U+0000–U+001F, U+007F–U+009F, dus ook geen regeleinde of tab), geen U+2028/U+2029, geen bidi-tekens (U+202A–U+202E, U+2066–U+2069) |
+| `title` | witruimte aan begin en eind gaat eraf; daarna 1 tot 80 tekens (codepunten, een emoji telt als één). De tekenregel van namen (`convex/lib/names.ts`, F3): well-formed Unicode; geen control-tekens (dus ook geen regeleinde of tab), geen U+2028/U+2029, geen bidi-tekens, en niets onzichtbaars (Cf, Default_Ignorable, U+2800), zoals U+200B, U+00AD, U+2060, U+3164, U+061C, de tag-tekens en U+FFF9–U+FFFB. ZWJ en ZWNJ alleen tussen tekens waar ze horen (emoji, Perzisch), VS15/VS16 alleen na een emoji. Alleen onzichtbare tekens is dus ook ongeldig |
 | `expenseDate` | `jjjj-mm-dd`, een echte datum, vanaf 2000-01-01, niet na vandaag in Nederland (`Europe/Amsterdam`, zomer- en wintertijd) |
 | `amountCents` | geheel getal van 1 tot 1 000 000 |
 | `processedCents` (route) | geheel getal van 1 tot 1 000 000, of `null` bij `rejected` |
-| `note` (route) | tekst of `null`. `\r\n` wordt `\n`; witruimte aan begin en eind gaat eraf; leeg wordt `null`. Daarna ten hoogste 300 tekens (codepunten). Alleen `\n` als regeleinde; verder dezelfde verboden tekens als `title` (ook een losse `\r` en een tab) |
+| `note` (route) | tekst of `null`. `\r\n` wordt `\n`; witruimte aan begin en eind gaat eraf; leeg wordt `null`. Daarna ten hoogste 300 tekens (codepunten). `\n` mag als regeleinde; elke regel volgt de tekenregel van `title` (F3; dus geen losse `\r` of tab) |
 | `revision` (route) | geheel getal ≥ 1 |
 
 Besluit 5: dezelfde regels bij elk concept, ook bij wijzigen. Verzenden controleert daarna alleen de grenzen.
@@ -181,6 +181,7 @@ Alle drie per lid per groep (besluit 7), gemeten bij de handeling:
 - **20 concepten.** Een 21e nieuw concept: `DRAFT_LIMIT`. Een bestaand concept wijzigen mag altijd.
 - **20 `submitted`.** Verzenden bij 20: `SUBMITTED_LIMIT`. Een besluit of intrekken maakt plek.
 - **20 keer verzenden in de laatste 24 uur.** Elk verzenden telt, ook als die declaratie daarna is ingetrokken of besloten. Bij 20: `DAILY_SUBMIT_LIMIT`. Een verzending van meer dan 24 uur geleden telt niet meer.
+- **200 bewaard (F1, besluit Wouter).** Ten hoogste 200 declaraties die geen concept zijn (elke status behalve `draft`) en nog niet zijn opgeruimd. Verzenden bij 200: `CLAIMS_LIMIT`, er verandert niets. Een besluit of intrekken maakt geen plek; alleen opruimen (of het weggaan van de declaratie via een cascade). Een concept telt niet, ook niet bij 200 (daarvoor blijft de grens van 20).
 
 ### A5. Toegang tot de routes
 
@@ -193,7 +194,10 @@ Toegang is er alleen als alles klopt; anders de weigering. Oorzaken:
 - `CLAIMS_GROUP_ID` ontbreekt, is geen id van een groep, of de groep bestaat niet (meer);
 - geen header, een lege header, een fout geheim, een begin of een verlenging ervan, `Bearer ` ervoor, een geheim alleen in `Authorization` (ook het juiste, WP41 F1);
 - het geheim van de andere soort, of een `FINANCE_SECRET`;
-- bij opruimen: een purge-geheim dat gelijk is aan `CLAIMS_SECRET` of `CLAIMS_SECRET_PREVIOUS` (A-keuze 2).
+- bij opruimen: een purge-geheim dat gelijk is aan `CLAIMS_SECRET` of `CLAIMS_SECRET_PREVIOUS` (A-keuze 2);
+- een geheim van deze soort (huidig of vorig) dat gelijk is aan `FINANCE_SECRET` (F4).
+
+Bij de laatste twee is de route van die soort helemaal dicht, wat er ook gestuurd wordt; de andere soort werkt gewoon.
 
 Een `_PREVIOUS` die ontbreekt of korter is dan 32 tekens telt niet; het huidige geheim werkt dan gewoon. Vergelijken in constante tijd met `constantTimeEqual` uit `lib/constantTime.ts`, tegen beide waarden van de soort, zonder vroeg te stoppen.
 
@@ -250,7 +254,7 @@ Body: precies `{ claims: [{ id, revision }] }`, 0 tot 200 elementen, elk `id` te
 | `title` | 1 tot 80 tekens |
 | `note` | 0 tot 300 tekens |
 | Bedragen | 1 tot 1 000 000 centen |
-| Per lid per groep | 20 concepten, 20 `submitted`, 20 keer verzenden per 24 uur |
+| Per lid per groep | 20 concepten, 20 `submitted`, 20 keer verzenden per 24 uur, 200 bewaard die geen concept zijn |
 | Geheim | minstens 32 tekens |
 
 ### A10. Toegangsdefinitie (work-package-specs §Toegangsdefinities)
@@ -278,14 +282,15 @@ Beschermd object: een declaratie. Toestemmingslijst: het lid zelf (`memberId`), 
 - `convex/expenseClaims.ts`: de vijf publieke functies van §A2; interne functies voor de drie routes (één per route: een query voor `GET`, een mutation voor besluit en opruimen); de route-handlers.
 - `convex/http.ts`: `GET /claims`, `POST /claims/decision`, `POST /claims/purge`.
 - `deleteGroupCascade`, `internalRemoveMember`, een fase in `convex/accountDeletion.ts`, `MONITORED_FKS` (§A11).
-- Runbook `external-services.md`, sectie "Clubboek → Declaraties (WP45)": de vijf env-vars, roteren in stappen (de oude waarde naar `_PREVIOUS`, de nieuwe in het huidige geheim, het clubboek bijwerken, dan `_PREVIOUS` weghalen), purge-geheim nooit gelijk aan het lees-geheim, na een reset of op T0 eerst `CLAIMS_GROUP_ID`, en A1.9 en A1.10.
+- Runbook `external-services.md`, sectie "Clubboek → Declaraties (WP45)": de vijf env-vars, roteren in stappen (de oude waarde naar `_PREVIOUS`, de nieuwe in het huidige geheim, het clubboek bijwerken, dan `_PREVIOUS` weghalen), purge-geheim nooit gelijk aan het lees-geheim en geen geheim gelijk aan `FINANCE_SECRET` (F4), zonder `CLAIMS_SECRET` weigeren lezen en besluiten maar werkt opruimen nog, het maximum van 200 en dat opruimen het vrijmaakt (F1), na een reset of op T0 eerst `CLAIMS_GROUP_ID`, en A1.10 (F6).
 
 ### A13. Waar de tests staan
 
 - `tests/expenseClaims/_claims.ts`: gedeelde opzet (verzonnen geheimen, wereld, routes).
 - `member.test.ts`: §A2 (overgangen, `revision`, één weigering, `CLAIMS_DISABLED`, `WRONG_STATUS`, `listMine`).
 - `validation.test.ts`: §A3 voor het lid (titel, datum met tijdzone, bedrag).
-- `limits.test.ts`: §A4.
+- `limits.test.ts`: §A4, ook F1.
+- `scale.test.ts`: F2, met `transactionLimits` op 16 leden × 200 plus concepten.
 - `access.test.ts`: §A5 (elke weigering op elke route, rotatie, purge los van lezen, geen lek, geen CORS).
 - `get.test.ts`, `decision.test.ts`, `purge.test.ts`: §A6, §A7, §A8.
 - `cascade.test.ts`, `integrity.test.ts`: §A11.
@@ -297,7 +302,7 @@ Beschermd object: een declaratie. Toestemmingslijst: het lid zelf (`memberId`), 
 
 1. `CLAIMS_SECRET_PREVIOUS` en `CLAIMS_PURGE_SECRET_PREVIOUS` zijn optioneel. Het huidige geheim van de soort en `CLAIMS_GROUP_ID` zijn verplicht; zonder huidig geheim telt de vorige ook niet.
 2. Is een purge-geheim gelijk aan een lees-geheim, dan weigert `POST /claims/purge` (403). Lezen en besluiten werken dan gewoon.
-3. Foutcodes voor het lid: `NOT_MEMBER`, `CLAIMS_DISABLED`, `WRONG_STATUS`, `TITLE_INVALID`, `DATE_INVALID`, `AMOUNT_INVALID`, `DRAFT_LIMIT`, `SUBMITTED_LIMIT`, `DAILY_SUBMIT_LIMIT`. Opnieuw verzenden of intrekken van iets dat al zo staat: `WRONG_STATUS`, niets verandert.
+3. Foutcodes voor het lid: `NOT_MEMBER`, `CLAIMS_DISABLED`, `WRONG_STATUS`, `TITLE_INVALID`, `DATE_INVALID`, `AMOUNT_INVALID`, `DRAFT_LIMIT`, `SUBMITTED_LIMIT`, `DAILY_SUBMIT_LIMIT`, `CLAIMS_LIMIT` (F1). Opnieuw verzenden of intrekken van iets dat al zo staat: `WRONG_STATUS`, niets verandert.
 4. Antwoorden van de routes: zie §A5–A8. Elke JSON-body, ook bij een fout, heeft `"v": 1` en bij een fout `error`.
 5. Volgorde van de besluit-route zoals §A7 (vorm vóór 404; bedrag-tegen-declaratie ná 409 `withdrawn`).
 6. `note`: `\r\n` wordt `\n`, rand-witruimte eraf, leeg wordt `null`; hetzelfde besluit vergelijkt na die stap.
@@ -328,3 +333,5 @@ Na audit (geen blocker, 3 should-fix) en red-team (geen toegangsgat; 2 zou, 3 ni
 - **F6. Runbook en commentaar (B).** In `external-services.md`: zonder `CLAIMS_SECRET` weigeren `GET /claims` en `POST /claims/decision`, opruimen werkt dan nog met zijn eigen geheim (audit S2); de geheimen verschillen ook van `FINANCE_SECRET` (F4); het maximum van 200 en dat opruimen het weer vrijmaakt (F1). In `claimShape.ts` één zin: de zomertijdregel volgt de EU-regel en moet mee als die verandert (audit N4).
 
 Niet in deze ronde: formula-injectie bij een export naar een spreadsheet hoort bij de kant van het clubboek (red-team 5).
+
+**A (2026-11-27) op fix-cyclus 1:** bijgewerkt in §A1.9, §A2, §A3, §A4, §A5, §A9, §A12, §A13 en A-keuze 3. De nieuwe foutcode is `CLAIMS_LIMIT`. Tests: `limits.test.ts` (F1), `scale.test.ts` (F2), `validation.test.ts` en `decision.test.ts` (F3, F5), `access.test.ts` (F4). De schaaltests zetten de rijen rechtstreeks in de tabel, met de velden van het schema (`null` voor wat er niet is).

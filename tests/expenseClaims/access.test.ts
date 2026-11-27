@@ -35,6 +35,8 @@ import {
 //     tekens, de groep op de deployment.
 //   A-keuze 1: _PREVIOUS optioneel; zonder huidig geheim telt hij niet.
 //   A-keuze 2: een purge-geheim gelijk aan een lees-geheim weigert purge.
+//   Fix-cyclus 1, F4: een geheim gelijk aan FINANCE_SECRET sluit de route van
+//   die soort.
 
 useClaimsEnv();
 
@@ -173,6 +175,23 @@ const REFUSALS: Refusal[] = [
   {
     label: "een vorige die is weggehaald (rotatie afgerond)",
     setup: (_t, _w, k) => ({ secret: k === "read" ? READ_SECRET_OLD : PURGE_SECRET_OLD }),
+  },
+  {
+    label: "F4: het huidige geheim van deze soort is gelijk aan FINANCE_SECRET, met dat geheim",
+    setup: (_t, w, k) => {
+      process.env.FINANCE_SECRET = right(k);
+      process.env.FINANCE_GROUP_ID = w.groups.club;
+      return { secret: right(k) };
+    },
+  },
+  {
+    label: "F4: de vorige van deze soort is gelijk aan FINANCE_SECRET, met het (andere) huidige geheim",
+    setup: (_t, w, k) => {
+      configureClaims(process.env.CLAIMS_GROUP_ID!, { previous: true });
+      process.env.FINANCE_SECRET = process.env[previous(k)]!;
+      process.env.FINANCE_GROUP_ID = w.groups.club;
+      return { secret: right(k) };
+    },
   },
   {
     label: "A-keuze 2: CLAIMS_PURGE_SECRET gelijk aan CLAIMS_SECRET",
@@ -327,6 +346,50 @@ describe("rotatie: twee geheimen per soort", () => {
     await seedWorld(t);
     process.env.CLAIMS_PURGE_SECRET = READ_SECRET;
     expect((await getClaims(t)).status).toBe(200);
+  });
+});
+
+describe("F4: geen gedeeld geheim met de afrekeningen; de andere soort werkt gewoon", () => {
+  for (const [label, envName, closed] of [
+    ["CLAIMS_SECRET", "CLAIMS_SECRET", "read"],
+    ["CLAIMS_SECRET_PREVIOUS", "CLAIMS_SECRET_PREVIOUS", "read"],
+    ["CLAIMS_PURGE_SECRET", "CLAIMS_PURGE_SECRET", "purge"],
+    ["CLAIMS_PURGE_SECRET_PREVIOUS", "CLAIMS_PURGE_SECRET_PREVIOUS", "purge"],
+  ] as const) {
+    it(`${label} gelijk aan FINANCE_SECRET: ${closed === "read" ? "lezen en besluiten" : "opruimen"} dicht, de rest open`, async () => {
+      const t = newT();
+      const w = await seedWorld(t);
+      configureClaims(w.groups.club, { previous: true });
+      process.env.FINANCE_SECRET = process.env[envName]!;
+      process.env.FINANCE_GROUP_ID = w.groups.club;
+      const id = await newSubmitted(as.alice(t), w.groups.club);
+      const decision = { id, status: "rejected", processedCents: null, note: null, revision: 2 };
+      const readStatuses = [
+        (await getClaims(t, { secret: READ_SECRET })).status,
+        (await getClaims(t, { secret: READ_SECRET_OLD })).status,
+        (await decide(t, decision, { secret: READ_SECRET })).status,
+      ];
+      const purgeStatuses = [
+        (await purge(t, { claims: [] }, { secret: PURGE_SECRET })).status,
+        (await purge(t, { claims: [] }, { secret: PURGE_SECRET_OLD })).status,
+      ];
+      if (closed === "read") {
+        expect(readStatuses).toEqual([403, 403, 403]);
+        expect(purgeStatuses).toEqual([200, 200]);
+      } else {
+        expect(readStatuses).toEqual([200, 200, 200]);
+        expect(purgeStatuses).toEqual([403, 403]);
+      }
+    });
+  }
+
+  it("de afrekeningen zelf werken nog met FINANCE_SECRET (WP41 blijft gelijk)", async () => {
+    const t = newT();
+    const w = await seedWorld(t);
+    process.env.FINANCE_SECRET = READ_SECRET;
+    process.env.FINANCE_GROUP_ID = w.groups.club;
+    const res = await t.fetch("/settlements?key=17", { method: "DELETE", headers: { [SECRET_HEADER]: READ_SECRET } });
+    expect(res.status).toBe(200);
   });
 });
 

@@ -38,6 +38,21 @@ const BAD_TITLES: Case[] = [
   ["een bidi-override", { title: "Bier‮borrel" }],
   ["een bidi-isolate", { title: "Bier⁦borrel" }],
   ["een losse surrogaathelft", { title: "Bier \uD83D" }],
+  // Fix-cyclus 1, F3: de tekenregel van namen (convex/lib/names.ts), met de
+  // gevallen van de red-team. Alleen onzichtbare tekens is ook ongeldig.
+  ["alleen U+200B", { title: "\u200B" }],
+  ["U+200B midden in de titel", { title: "Bier\u200Bborrel" }],
+  ["alleen U+3164 (Hangul-vulteken)", { title: "\u3164\u3164" }],
+  ["alleen U+2800 (braille-blanco)", { title: "\u2800" }],
+  ["alleen U+00AD (zachte afbreekstreep)", { title: "\u00AD" }],
+  ["U+00AD midden in de titel", { title: "Bier\u00ADborrel" }],
+  ["U+2060 (word joiner)", { title: "Bier\u2060borrel" }],
+  ["U+200F vooraan", { title: "\u200FBier borrel" }],
+  ["U+061C vooraan", { title: "\u061CBier borrel" }],
+  ["alleen tag-tekens", { title: "\u{E0041}\u{E0042}" }],
+  ["een tag-teken achter de titel", { title: "Bier\u{E0041}" }],
+  ["U+FFF9–U+FFFB (interlineaire annotatie)", { title: "Bier\uFFF9a\uFFFAb\uFFFB" }],
+  ["een losse ZWJ tussen Latijnse letters", { title: "Bi\u200Der" }],
 ];
 
 const BAD_AMOUNTS: Case[] = [
@@ -99,6 +114,14 @@ describe("§A3 titel", () => {
     expect((await claimRow(t, id))!.title).toBe("Bier borrel");
   });
 
+  it("F3: ZWNJ in het Perzisch mag, zoals bij namen", async () => {
+    const t = newT();
+    const w = await seedWorld(t);
+    const title = "می\u200Cخواهم";
+    const id = await newDraft(as.alice(t), w.groups.club, { title });
+    expect((await claimRow(t, id))!.title).toBe(title);
+  });
+
   it("accenten, leestekens en een emoji met ZWJ mogen", async () => {
     const t = newT();
     const w = await seedWorld(t);
@@ -153,6 +176,30 @@ describe("§A3 en besluit 6: datum van de uitgave", () => {
       "DATE_INVALID",
     );
   });
+
+  // Fix-cyclus 1, F5: rond de omschakelingen (EU: laatste zondag van maart en
+  // oktober, 01:00 UTC). In 2026 zijn dat 29 maart en 25 oktober.
+  for (const [label, at, date, ok] of [
+    ["oktober, nog zomertijd: 20 okt 22:30 UTC is 21 okt 00:30", Date.UTC(2026, 9, 20, 22, 30), "2026-10-21", true],
+    ["oktober, al wintertijd: 25 okt 22:30 UTC is 25 okt 23:30", Date.UTC(2026, 9, 25, 22, 30), "2026-10-26", false],
+    ["maart, nog wintertijd: 28 mrt 23:30 UTC is 29 mrt 00:30", Date.UTC(2026, 2, 28, 23, 30), "2026-03-29", true],
+    ["maart, al zomertijd: 29 mrt 21:30 UTC is 29 mrt 23:30", Date.UTC(2026, 2, 29, 21, 30), "2026-03-30", false],
+    ["maart, al zomertijd: 29 mrt 22:30 UTC is 30 mrt 00:30", Date.UTC(2026, 2, 29, 22, 30), "2026-03-30", true],
+  ] as const) {
+    it(`F5 ${label}: ${date} ${ok ? "mag" : "is DATE_INVALID"}`, async () => {
+      const t = newT();
+      const w = await seedWorld(t);
+      vi.setSystemTime(at);
+      const call = as.alice(t).mutation(claimsApi.saveDraft, draftInput(w.groups.club, { expenseDate: date }));
+      if (ok) {
+        await call;
+        expect(await claimRows(t)).toHaveLength(1);
+      } else {
+        await expectCode(call, "DATE_INVALID");
+        expect(await claimRows(t)).toEqual([]);
+      }
+    });
+  }
 
   it("om 23:30 in Nederland is morgen nog in de toekomst (niet een tijdzone ver vooruit)", async () => {
     const t = newT();

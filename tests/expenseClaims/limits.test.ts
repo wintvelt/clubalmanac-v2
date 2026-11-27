@@ -13,6 +13,7 @@ import {
   newSubmitted,
   newT,
   processClaim,
+  purge,
   seedWorld,
   snapshot,
   useClaimsEnv,
@@ -24,6 +25,8 @@ import {
 //   20 concepten, 20 submitted, 20 keer verzenden in de laatste 24 uur.
 //   Bij de grens een weigering, en er verandert niets.
 //   Elk verzenden telt, ook als die declaratie daarna is ingetrokken (A1.15).
+//   Fix-cyclus 1, F1: ten hoogste 200 die geen concept zijn (CLAIMS_LIMIT);
+//   alleen opruimen maakt plek.
 
 useClaimsEnv();
 
@@ -169,4 +172,68 @@ describe("20 keer verzenden in de laatste 24 uur", () => {
     const sent = (await claimRows(t)).filter((r) => r.submittedAt !== undefined && r.submittedAt !== null);
     expect(sent).toHaveLength(20);
   });
+});
+
+// --- F1: ten hoogste 200 bewaard (fix-cyclus 1, besluit Wouter) ------------------------
+
+/**
+ * Brengt alice op `n` ingetrokken declaraties in De Heeren, binnen de andere
+ * grenzen: per dag 20 verzenden en meteen intrekken, dan een dag verder.
+ */
+async function withdrawnClaims(_t: Parameters<typeof claimRows>[0], c: Client, groupId: Parameters<typeof newDraft>[1], n: number): Promise<ClaimId[]> {
+  const all: ClaimId[] = [];
+  while (all.length < n) {
+    const batch = await drafts(c, groupId, Math.min(20, n - all.length));
+    await submitAll(c, batch);
+    await withdrawAll(c, batch);
+    all.push(...batch);
+    advance(DAY_MS + 1000);
+  }
+  return all;
+}
+
+describe("F1: ten hoogste 200 die geen concept zijn, per lid per groep", () => {
+  it("verzenden bij 200: CLAIMS_LIMIT, er verandert niets; een nieuw concept mag nog wel", async () => {
+    const t = newT();
+    const w = await seedWorld(t);
+    await withdrawnClaims(t, as.alice(t), w.groups.club, 200);
+    const next = await newDraft(as.alice(t), w.groups.club, { title: "Nummer 201" });
+    const before = await snapshot(t);
+    await expectCode(as.alice(t).mutation(claimsApi.submit, { claimId: next }), "CLAIMS_LIMIT");
+    expect(await snapshot(t)).toEqual(before);
+    expect((await claimRow(t, next))!.status).toBe("draft");
+  }, 60_000);
+
+  it("intrekken maakt geen plek; opruimen wel", async () => {
+    const t = newT();
+    const w = await seedWorld(t);
+    const old = await withdrawnClaims(t, as.alice(t), w.groups.club, 199);
+    const last = await newSubmitted(as.alice(t), w.groups.club, { title: "Nummer 200" });
+    await processClaim(t, last);
+    await as.alice(t).mutation(claimsApi.withdraw, { claimId: last });
+    const next = await newDraft(as.alice(t), w.groups.club, { title: "Nummer 201" });
+    await expectCode(as.alice(t).mutation(claimsApi.submit, { claimId: next }), "CLAIMS_LIMIT");
+
+    const rev = (await claimRow(t, old[0]!))!.revision as number;
+    const res = await purge(t, { claims: [{ id: old[0]!, revision: rev }] });
+    expect(res.status).toBe(200);
+    await as.alice(t).mutation(claimsApi.submit, { claimId: next });
+    expect((await claimRow(t, next))!.status).toBe("submitted");
+  }, 60_000);
+
+  it("een concept telt niet: 200 bewaard plus 20 concepten kan", async () => {
+    const t = newT();
+    const w = await seedWorld(t);
+    await withdrawnClaims(t, as.alice(t), w.groups.club, 200);
+    await drafts(as.alice(t), w.groups.club, 20);
+    expect((await claimRows(t)).filter((r) => r.status === "draft")).toHaveLength(20);
+  }, 60_000);
+
+  it("per lid: alice op 200 houdt bob niet tegen", async () => {
+    const t = newT();
+    const w = await seedWorld(t);
+    await withdrawnClaims(t, as.alice(t), w.groups.club, 200);
+    const b = await newSubmitted(as.bob(t), w.groups.club);
+    expect((await claimRow(t, b))!.status).toBe("submitted");
+  }, 60_000);
 });

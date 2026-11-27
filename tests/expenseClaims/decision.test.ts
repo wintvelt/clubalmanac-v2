@@ -127,6 +127,18 @@ describe("§A7.3: de vorm (400 met v, error en reason; niets veranderd)", () => 
     ["note met U+2028", (id) => body(id, { note: "Bon ontbreekt" })],
     ["note met een bidi-override", (id) => body(id, { note: "Bon‮ontbreekt" })],
     ["note met een losse surrogaathelft", (id) => body(id, { note: "Bon \uDC00" })],
+    // Fix-cyclus 1, F3: de tekenregel van namen, per regel.
+    ["note van alleen U+200B", (id) => body(id, { note: "\u200B" })],
+    ["note met U+200B in het midden", (id) => body(id, { note: "Bon\u200Bontbreekt" })],
+    ["note van alleen U+3164", (id) => body(id, { note: "\u3164" })],
+    ["note van alleen U+2800", (id) => body(id, { note: "\u2800\u2800" })],
+    ["note met U+00AD", (id) => body(id, { note: "Bon\u00ADontbreekt" })],
+    ["note met U+2060", (id) => body(id, { note: "Bon\u2060ontbreekt" })],
+    ["note met U+200F vooraan", (id) => body(id, { note: "\u200FBon ontbreekt" })],
+    ["note met U+061C vooraan", (id) => body(id, { note: "\u061CBon ontbreekt" })],
+    ["note van alleen tag-tekens", (id) => body(id, { note: "\u{E0041}\u{E0042}" })],
+    ["note met U+FFF9–U+FFFB", (id) => body(id, { note: "Bon\uFFF9a\uFFFAb\uFFFB" })],
+    ["note met een onzichtbare tweede regel", (id) => body(id, { note: "Bon ontbreekt\n\u200B" })],
   ];
 
   for (const [label, make] of CASES) {
@@ -409,6 +421,14 @@ describe("§A1.14: besluit en intrekken kruisen", () => {
 });
 
 describe("besluit 9 en A-keuze 6: de toelichting", () => {
+  it("F3: meerdere regels met emoji (ZWJ) mogen", async () => {
+    const t = newT();
+    const { id } = await world(t);
+    const note = "Bon klopt 👨‍👩‍👧\nStatiegeld eraf";
+    await decideOk(t, body(id, { note, status: "adjusted", processedCents: 4000 }));
+    expect((await claimRow(t, id))!.note).toBe(note);
+  });
+
   it("een regeleinde mag; \\r\\n wordt \\n; rand-witruimte gaat eraf", async () => {
     const t = newT();
     const { id } = await world(t);
