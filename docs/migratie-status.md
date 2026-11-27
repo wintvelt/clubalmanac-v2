@@ -161,6 +161,8 @@ Besluit Wouter 2026-11-15: niemand gebruikt de oude webapp. Volgorde: eerst de o
 
 [WP42b](./work-packages/WP42-android.md) ✅ 2026-11-27: filmpjes toevoegen op Android. De app verkleint op de telefoon zoals op de iPhone (H.264, hooguit 1920 en 30 fps, HDR naar SDR, geen metadata) met Media3 in de eigen module `clubalmanac-video`; datum en plaats komen mee. Zonder originelen insturen (42c). Ook iOS krijgt de nieuwe teksten voor te lang en te groot (volgende TestFlight). Build 6 (2.0.2) staat voor de testers; echte camerafilmpjes, warmte en wegklikken melden zij.
 
+[WP42c](./work-packages/WP42-android.md) ✅ 2026-11-27: originelen insturen op Android. Een eigen uploader in Kotlin (WorkManager, zonder vaste melding) stuurt het origineel per deel op de achtergrond, ook na wegvegen, herstart en update; "Alleen via wifi" geldt. Trage verbinding wordt "Later opnieuw", openen zet een hangend deel meteen in gang. Buildnummer bij Info (ook iOS, volgende TestFlight). Build 7 (2.0.2) staat voor de testers; Samsung-batterijbeheer, traag netwerk en plaats op Android 11–14 melden zij. Android is daarmee gelijk met de iPhone-app.
+
 ## Fase 5: Lancering — hard cutover — open
 
 Geen parallel draaien. Bij 20 users en een 3 jaar oude oude app is parallel draaien absurd veel werk (dual-write, sync layer, Cognito↔Clerk mapping). Hard cut.
