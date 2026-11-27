@@ -12,3 +12,8 @@ WP42 raakt ook de iPhone: menu's via een gedeelde component, de datumkiezer, het
 4. Foto's en een filmpje toevoegen: datum en plaats komen mee; een filmpje van meer dan 3 minuten geeft de nieuwe melding.
 5. Kaart van een album en delen van een foto via het deelmenu.
 6. Info → Over en Privacy: neutrale tekst ("de app"), met de regel over de kaart.
+
+## WP47 versielabel in Info
+
+1. Prod-build uit TestFlight, bovenaan Instellingen (en in Over de app): "Versie 2.0.3 (n) · TestFlight", met het buildnummer en zonder "dev".
+2. Na de release van 2.0.3, de versie uit de App Store: alleen "Versie 2.0.3 (n)", zonder label.
