@@ -48,7 +48,8 @@ const svg =
   `<g clip-path="url(#squircle)">${icon}</g>` +
   `<text x="${TEXT_X}" y="${H / 2 - 4}" font-family="${FONT}" font-size="92" font-weight="700" fill="${TEXT}" letter-spacing="-1.5">Clubalmanac</text>` +
   `<rect x="${TEXT_X + 2}" y="${H / 2 + 22}" width="120" height="8" rx="4" fill="url(#bar)"/>` +
-  `<text x="${TEXT_X}" y="${H / 2 + 92}" font-family="${FONT}" font-size="42" font-weight="400" fill="${MUTED}">Het fotoalbum van je club</text>` +
+  `<text x="${TEXT_X}" y="${H / 2 + 92}" font-family="${FONT}" font-size="42" font-weight="400" fill="${MUTED}">Alle clubherinneringen</text>` +
+  `<text x="${TEXT_X}" y="${H / 2 + 142}" font-family="${FONT}" font-size="30" font-style="italic" font-weight="400" fill="${MUTED}" opacity="0.85">– door Vaatje</text>` +
   "</svg>\n";
 
 // QuickLook rendert alleen een vierkante SVG op ware grootte (een brede wordt
