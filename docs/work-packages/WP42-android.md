@@ -1014,3 +1014,9 @@ Audit leest deze punten. De gate doet:
 - Voor H1 op de emulator: stop, `am kill` met de app op de achtergrond, ruim 60 s wachten, dan `cmd jobscheduler run -f` en na 1 s `timeout`. Drie keer.
 - Vondst: een herstart door WorkManager in een levend proces heeft geen tijdslimiet van 10 minuten. Met de app open (of net gebruikt) haalt een traag deel het dus vaak toch.
 - Voor de gate opende B tijdelijk een filmproject in Familievakantie (dev, proefscherm) en sloot het weer.
+
+## Regie na audit herstelronde (2026-11-27)
+
+- **K6 — akkoord Wouter (2026-11-27)**, door regie via B doorgegeven en hier pas nu vastgelegd: `NotOnWebScreen` zegt "op je iPhone of Android-telefoon". Uitzondering op invariant 7 (web), naast B18 en `fileBytes`. Android-leden komen via de testlijst in Play aan de app.
+- **H1 onder Android 12:** een stop zonder reden na 9 minuten telt als tijdslimiet, ook als wifi wegviel. Aanvaard: een deel dat 9 minuten liep is toch traag.
+- **Aanvaard, geen code (audit "mag"):** de eigen wachttijd vervalt bij voorkomen alleen als het netwerk dan al mag (hooguit 8 min); 30 min wachten op wifi op onbeperkt mobiel internet kost bij `rare` het dagquotum (B22); een mislukte afloop kan een deel tot de volgende processtart laten hangen; voorkomen zet ook de K2-telling op nul.
