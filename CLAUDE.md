@@ -45,6 +45,8 @@ Toegangs-grenzen per rol staan in [`docs/conventions/work-package-specs.md`](./d
 
 Werk op een branch per WP (`wp<n>`), niet op `main`: GitHub beschermt `main` met een ruleset (alleen via een PR, CI groen). Rol-sessies committen lokaal op die branch en pushen niet. Regie pusht de branch en maakt de PR (`gh pr create`). Wouter merget in de GitHub-app. Zie [`docs/conventions/commit-discipline.md`](./docs/conventions/commit-discipline.md).
 
+**Dev deployen alleen vanaf de stapel**: geen `npx convex dev` (ook niet `--once`) in een WP-worktree, want een deploy haalt de backend van andere WP's weg. Zie [`docs/conventions/convex-dev-stapel.md`](./docs/conventions/convex-dev-stapel.md).
+
 ## Belangrijke known issues
 
 - **Mailjet silent failure bij niet-gevalideerde sender** + andere known issues: zie [`docs/conventions/external-services.md`](./docs/conventions/external-services.md) Mailjet-sectie.

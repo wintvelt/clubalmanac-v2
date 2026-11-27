@@ -14,4 +14,5 @@ Files in deze folder:
 - [`data-migration-preflight.md`](./data-migration-preflight.md) — 0e sub-fase vóór schema/data-werk: tag + snapshot + count-query + strategie
 - [`cross-cutting-review.md`](./cross-cutting-review.md) — Vier-perspectief-pas vóór cutover (a11y / security / GDPR / architectuur)
 - [`remote-werkplek.md`](./remote-werkplek.md) — Sessies op een Mac-server laten doorlopen: opzet, installatie, credentials, testuitkomsten (ingericht 2026-11-04)
+- [`convex-dev-stapel.md`](./convex-dev-stapel.md) — Dev alleen deployen vanaf de stapel (main plus open WP-branches), nooit vanaf een WP-branch
 - [`audit-track-record.md`](./audit-track-record.md) — Productie-bugs gevonden door audit-pas (bewijs voor discipline-waarde)
