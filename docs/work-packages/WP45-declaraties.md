@@ -335,3 +335,5 @@ Na audit (geen blocker, 3 should-fix) en red-team (geen toegangsgat; 2 zou, 3 ni
 Niet in deze ronde: formula-injectie bij een export naar een spreadsheet hoort bij de kant van het clubboek (red-team 5).
 
 **A (2026-11-27) op fix-cyclus 1:** bijgewerkt in §A1.9, §A2, §A3, §A4, §A5, §A9, §A12, §A13 en A-keuze 3. De nieuwe foutcode is `CLAIMS_LIMIT`. Tests: `limits.test.ts` (F1), `scale.test.ts` (F2), `validation.test.ts` en `decision.test.ts` (F3, F5), `access.test.ts` (F4). De schaaltests zetten de rijen rechtstreeks in de tabel, met de velden van het schema (`null` voor wat er niet is).
+
+**Heraudit en red-team-hercheck (2026-11-27):** groen op `5172a3a`, met als testfix `d828052` (grens van 200 zonder tijdsgrens). Buiten WP45: MON1 haalt in convex-test met `transactionLimits` geen ±900 publicaties, terwijl `verify` op prod groen was met 1511 foto's; Wouter kijkt in de prod-logs van de cron, regie besluit daarna of het een eigen WP wordt.
