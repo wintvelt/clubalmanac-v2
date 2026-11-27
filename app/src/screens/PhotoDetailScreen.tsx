@@ -1,6 +1,6 @@
 import type { FunctionReturnType } from "convex/server";
 import { router, Stack, useLocalSearchParams } from "expo-router";
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   type FlatList,
   Platform,
@@ -241,6 +241,8 @@ function DetailContent({
         windowSize={3}
         maxToRenderPerBatch={2}
         onMomentumScrollEnd={onMomentumEnd}
+        // WP46: een veeg die begint, stopt een wachtende enkele tik.
+        onScrollBeginDrag={cancelPendingPhotoTap}
         // WP37: weg-vegen stopt een filmpje (alleen de pagina in beeld speelt).
         // WP46: een andere stand geeft de pagina's een andere maat.
         extraData={`${current}:${page.width}x${page.height}`}
@@ -391,6 +393,17 @@ export function ZoomablePhoto(props: {
 // Knijpen en de zoom van een dubbeltik bestaan alleen op iOS (WP17a).
 const TAP_TARGET = Platform.OS === "ios" ? "zoomable" : "photo";
 
+// WP46 A-invariant 6: langer ingedrukt is geen tik.
+const LONG_PRESS_MS = 500;
+
+// De enkele tik die nu wacht (hoogstens één tegelijk, in welke pagina ook).
+let cancelPendingTap: (() => void) | null = null;
+
+/** WP46: een veeg begint; een wachtende enkele tik wisselt de stand dan niet meer. */
+export function cancelPendingPhotoTap(): void {
+  cancelPendingTap?.();
+}
+
 function ZoomableImage({
   photoId,
   photo,
@@ -407,13 +420,20 @@ function ZoomableImage({
   const pending = useRef<{ at: number; timer: ReturnType<typeof setTimeout> | null } | null>(null);
   const tapRef = useRef(onTap);
   tapRef.current = onTap;
-  const clearPending = () => {
+  const pressInAt = useRef(0);
+  // Vast per pagina (alleen refs), zodat `cancelPendingTap` er naar kan wijzen.
+  const clearPending = useCallback(() => {
     if (pending.current?.timer) clearTimeout(pending.current.timer);
     pending.current = null;
-  };
-  useEffect(() => clearPending, []);
+    if (cancelPendingTap === clearPending) cancelPendingTap = null;
+  }, []);
+  useEffect(() => clearPending, [clearPending]);
   const onPress = () => {
     const now = Date.now();
+    if (now - pressInAt.current >= LONG_PRESS_MS) {
+      clearPending();
+      return;
+    }
     const intent = tapIntent({ lastTapAt: pending.current?.at ?? null, now, target: TAP_TARGET });
     if (intent === "zoom") {
       clearPending();
@@ -422,11 +442,15 @@ function ZoomableImage({
       clearPending();
       const timer = tapRef.current
         ? setTimeout(() => {
-            pending.current = null;
+            clearPending();
             tapRef.current?.();
           }, DOUBLE_TAP_MS)
         : null;
       pending.current = { at: now, timer };
+      if (timer) {
+        cancelPendingTap?.();
+        cancelPendingTap = clearPending;
+      }
     } else if (intent === "stand") {
       clearPending();
       tapRef.current?.();
@@ -444,11 +468,18 @@ function ZoomableImage({
       showsHorizontalScrollIndicator={false}
       showsVerticalScrollIndicator={false}
       scrollEventThrottle={64}
+      // WP46: slepen in een ingezoomde foto is geen tik.
+      onScrollBeginDrag={clearPending}
       onScrollEndDrag={(e) => setZoom(e.nativeEvent.zoomScale ?? 1)}
       onMomentumScrollEnd={(e) => setZoom(e.nativeEvent.zoomScale ?? 1)}
     >
       {/* WP46 A-invariant 14: geen hint over dubbeltikken; met een schermlezer zoomt dat niet. */}
-      <Pressable onPress={onPress} accessibilityRole="image" accessibilityLabel={`Foto van ${formatPhotoDate(photo)}`}>
+      <Pressable
+        onPressIn={() => {
+          pressInAt.current = Date.now();
+        }}
+        onPress={onPress}
+        accessibilityRole="image" accessibilityLabel={`Foto van ${formatPhotoDate(photo)}`}>
         <PhotoImage
           photoId={photoId}
           format="groot"

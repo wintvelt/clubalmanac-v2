@@ -3,6 +3,7 @@ import { getDefaultHeaderHeight, HeaderHeightContext } from "expo-router/react-n
 import { StatusBar } from "expo-status-bar";
 import { useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
+  Platform,
   ScrollView,
   StyleSheet,
   useWindowDimensions,
@@ -90,6 +91,10 @@ export function usePhotoDetailStand(): DetailStand {
 
   useHideTabBar(PHONE_FULLSCREEN && !view.tabBar && inView);
 
+  // De speler kan de statusbalk in zijn eigen volledig scherm veranderen
+  // zonder dat de stapel van StatusBar dat weet; daarom hier één keer
+  // rechtstreeks. Dat verzet ook de standaard van de stapel; DetailStatusBar
+  // zet die terug op zichtbaar zodra het detail uit beeld gaat.
   const hidden = !view.statusBar;
   const restoreStatusBar = useCallback(() => {
     if (PHONE_FULLSCREEN && inView) StatusBar.setHidden(hidden, "none");
@@ -106,9 +111,18 @@ export function usePhotoDetailStand(): DetailStand {
 }
 
 /** De statusbalk van het detail, alleen zolang het in beeld is (A-invariant 11). */
+// Gaat het detail uit beeld of verdwijnt het (terug, een andere tab, een
+// scherm erboven, uitloggen, herverbinden, de laatste foto weg), dan staat de
+// statusbalk er meteen weer, en is de standaard van de stapel weer zichtbaar
+// (App.tsx zet zelf geen `hidden`; zie restoreStatusBar).
 export function DetailStatusBar({ stand }: { stand: DetailStand }) {
   const reduceMotion = useReduceMotion();
-  if (!stand.allowed || !stand.inView) return null;
+  const active = stand.allowed && stand.inView;
+  useEffect(() => {
+    if (!active) return;
+    return () => StatusBar.setHidden(false, "none");
+  }, [active]);
+  if (!active) return null;
   return <StatusBar hidden={!stand.view.statusBar} animated={!reduceMotion} hideTransitionAnimation="fade" />;
 }
 
@@ -191,12 +205,14 @@ export function usePhoneDetailLayout(stand: DetailStand): PhoneLayout {
 
   if (normal && view.header && headerHeight > 0) headerHeights.current.set(frame.width, headerHeight);
 
-  // Schermvullend de bovenrand van het veilige gebied vasthouden zolang de
-  // stand en de venstermaat gelijk blijven: gaat de statusbalk weg, dan wordt
-  // die rand op een iPhone met een thuisknop 0, en zou de foto 20 pt schuiven.
+  // Schermvullend op iOS de bovenrand van het veilige gebied vasthouden zolang
+  // de stand en de venstermaat gelijk blijven: gaat de statusbalk weg, dan
+  // wordt die rand op een iPhone met een thuisknop 0, en zou de foto 20 pt
+  // schuiven. Niet op Android: daar zou liggend een zwarte band van de oude
+  // statusbalk blijven staan.
   const frozenTop = useRef<{ key: string; top: number } | null>(null);
   const frameKey = `${frame.width}x${frame.height}`;
-  if (!view.black) frozenTop.current = null;
+  if (!view.black || Platform.OS !== "ios") frozenTop.current = null;
   else if (frozenTop.current?.key !== frameKey) frozenTop.current = { key: frameKey, top: insets.top };
 
   const onLayout = (e: LayoutChangeEvent) => {

@@ -31,7 +31,7 @@ import {
   usePhoneDetailLayout,
   usePhotoDetailStand,
 } from "./DetailStand";
-import { PhotoAlbums, PhotoDetailLayout, ZoomablePhoto } from "./PhotoDetailScreen";
+import { cancelPendingPhotoTap, PhotoAlbums, PhotoDetailLayout, ZoomablePhoto } from "./PhotoDetailScreen";
 import {
   ActionFeedback,
   SharingProgress,
@@ -196,6 +196,8 @@ function DetailContent({
         windowSize={3}
         maxToRenderPerBatch={2}
         onMomentumScrollEnd={onMomentumEnd}
+        // WP46: een veeg die begint, stopt een wachtende enkele tik.
+        onScrollBeginDrag={cancelPendingPhotoTap}
         onEndReached={list.loadMore}
         onEndReachedThreshold={3}
         // WP37: weg-vegen stopt een filmpje.
