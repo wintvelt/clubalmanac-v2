@@ -1,6 +1,7 @@
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
 import { settlementContentFields } from "./lib/settlementShape";
+import { claimStatus } from "./lib/claimShape";
 
 // Schema voor Clubalmanac v2.
 // Vertaling van het single-table DynamoDB design (zie docs/migratie-plan-convex.md)
@@ -418,6 +419,36 @@ export default defineSchema({
   })
     .index("by_group", ["groupId"])
     .index("by_group_key", ["groupId", "key"]),
+
+  // ──────────────────────────────────────────────────────────────────
+  // Declaraties (WP45)
+  // ──────────────────────────────────────────────────────────────────
+  // Een voorschot van een lid (titel, datum, bedrag in hele centen). Het lid
+  // maakt, wijzigt, verzendt en trekt in via convex/expenseClaims.ts; het
+  // clubboek leest, besluit en ruimt op via `/claims` (groep uit
+  // `CLAIMS_GROUP_ID`). `memberId` komt altijd uit de sessie. Tijdstippen in
+  // ms, `null` als ze er (nog) niet zijn. `revision` begint op 1 en gaat bij
+  // elke wijziging één omhoog. Cascade G7, M6, U19; MON1 bewaakt beide FK's.
+  expenseClaims: defineTable({
+    groupId: v.id("groups"),
+    memberId: v.id("users"),
+    title: v.string(),
+    expenseDate: v.string(),
+    amountCents: v.number(),
+    status: claimStatus,
+    submittedAt: v.union(v.number(), v.null()),
+    processedCents: v.union(v.number(), v.null()),
+    note: v.union(v.string(), v.null()),
+    decidedAt: v.union(v.number(), v.null()),
+    withdrawnAt: v.union(v.number(), v.null()),
+    revision: v.number(),
+  })
+    // GET /claims (oudste verzending eerst; concepten hebben null) en G7.
+    .index("by_group_and_submittedAt", ["groupId", "submittedAt"])
+    // listMine, de grenzen voor concepten en `submitted`, M6, en U19 (prefix).
+    .index("by_member_group_and_status", ["memberId", "groupId", "status"])
+    // De daggrens: verzendingen van de laatste 24 uur.
+    .index("by_member_group_and_submittedAt", ["memberId", "groupId", "submittedAt"]),
 
   // ──────────────────────────────────────────────────────────────────
   // Album last-seen (per user × album)

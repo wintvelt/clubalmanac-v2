@@ -16,6 +16,7 @@ import { stripJpegMetadata } from "./lib/jpegMeta";
 import { UPLOAD_PREFLIGHT, webPreflightResponse, withWebCors } from "./lib/webCors";
 import { videoUploadRoute } from "./videos";
 import { deleteSettlementRoute, postSettlementRoute } from "./settlements";
+import { getClaimsRoute, postDecisionRoute, postPurgeRoute } from "./expenseClaims";
 
 // Cascade matrix IB1: Mailjet bounce-webhook → internal.invites.handleBounce.
 // Voltooit IB1 cascade per docs/cascade-matrix.md (bounce → status=expired
@@ -449,6 +450,34 @@ http.route({
   path: "/settlements",
   method: "DELETE",
   handler: httpAction(async (ctx, request) => await deleteSettlementRoute(ctx, request)),
+});
+
+// WP45: de declaraties voor het clubboek (convex/expenseClaims.ts). Alleen het
+// clubboek, met `X-Clubboek-Secret` (niet in Authorization); de groep staat op
+// de deployment (`CLAIMS_GROUP_ID`). Lezen en besluiten met het lees-geheim,
+// opruimen met een eigen geheim; tijdens rotatie geldt ook de vorige waarde.
+// Elke JSON-body heeft `"v": 1`.
+//   GET  /claims           403, 200 `{ claims }` (alles behalve concepten)
+//   POST /claims/decision  403, 413 boven 8 KiB, 400 vorm, 404, 409 withdrawn,
+//                          400 bedrag, 200 (zelfde besluit), 409 changed, 200
+//   POST /claims/purge     403, 413 boven 32 KiB, 400 vorm, 200 `{ deleted, skipped }`
+// Geen CORS en geen OPTIONS: niet voor een browser. Andere methodes: 404.
+http.route({
+  path: "/claims",
+  method: "GET",
+  handler: httpAction(async (ctx, request) => await getClaimsRoute(ctx, request)),
+});
+
+http.route({
+  path: "/claims/decision",
+  method: "POST",
+  handler: httpAction(async (ctx, request) => await postDecisionRoute(ctx, request)),
+});
+
+http.route({
+  path: "/claims/purge",
+  method: "POST",
+  handler: httpAction(async (ctx, request) => await postPurgeRoute(ctx, request)),
 });
 
 // WP17a: het beeldpad (besluit 1: vorm B). Bij elk verzoek de toegangsregel

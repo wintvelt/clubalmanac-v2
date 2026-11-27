@@ -95,6 +95,12 @@ export const MONITORED_FKS: Array<{
   // een losse verwijzing is drift. De import vult de tabel niet; een reset
   // leegt hem (daarna stuurt het clubboek ze opnieuw).
   { table: "settlements", field: "groupId", required: true },
+  // WP45: de declaraties. Groep weg (G7) en account weg (U19) halen ze mee,
+  // dus een losse verwijzing is drift. Uit de groep gaan laat verzonden
+  // declaraties staan; de gebruiker bestaat dan nog. De import vult de tabel
+  // niet; een reset leegt hem.
+  { table: "expenseClaims", field: "groupId", required: true },
+  { table: "expenseClaims", field: "memberId", required: true },
   // Bewust niet hier (WP38 fix-cyclus 2, cascade-matrix U17 en U18):
   // `videoUploadRequests` en `originalRequests`, dus ook niet in de reset van
   // de migratie-tooling. Het zijn tellers voor een daggrens: een tijdstip per
