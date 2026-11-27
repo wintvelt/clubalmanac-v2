@@ -70,3 +70,130 @@ Op een echte iPhone (dev-build) en de Android-emulator: rechtop tikken heen en t
 - WP17a (foto-detail), WP32 (vast fotogebied), WP33 (vervagen bij vegen), WP37 (filmpjes), WP42 (Android-bediening), iPad-zijkolom (2.0.1).
 
 ## Spec-criticus aanvullingen (A vult in)
+
+> A 2026-11-27. Bronnen: deze spec, de huidige app-code (`PhotoDetailScreen`, `MyPhotoDetailScreen`, `VideoPlayer`, `Motion`, `TabBar`, `tabBarState`, `SelectionBar` (`useHideTabBar`), `stackOptions`, `useAndroidBack`, `App.tsx`, `app.json`, de stacks onder `src/app/(tabs)`), `expo-video` 58.0.14 (de typen van `VideoView`), WP17a, WP21, WP32, WP33, WP37, WP40 en WP42, en de oude app (`clubalmanac-app`: `screens/PhotoDetail.jsx`, `app.json`). Niets op een toestel gezien: dat staat bij de gate.
+
+### Pariteit met de oude app
+
+In de oude app gaf een tik op de foto een donkergrijs vlak (geen zwart) met alleen de foto, waarin je kon knijpen om te zoomen; een tik ging terug. In die stand kon je **niet** vegen. De tabbalk, de statusbalk en de ronde knop "…" rechtsboven bleven altijd staan. Liggend stond het infoblok (datum, eigenaar, plaats) doorzichtig over de onderkant van de foto, zonder albums. De app draaide mee op elk scherm.
+
+WP46 wijkt bewust af: vegen werkt in elke stand, de achtergrond is zwart, statusbalk en tabbalk gaan weg, en liggend is meteen schermvullend. Er ontbreekt niets uit de oude app, op één punt na: liggend zag je in de oude app de eigenaar en de plaats. Zie besluit A3.
+
+### Antwoorden op de open vragen
+
+1. **Draaien: alle schermen draaien mee.** `app.json` staat op `"orientation": "default"`, en er is geen module om de stand per scherm vast te zetten (`expo-screen-orientation` zit niet in de app). Op de iPhone en op Android draaien Groep, Album, Mijn foto's, de instellingen en het toevoegscherm dus nu al mee; WP40 telde de liggende iPhone al mee. Draaien beperken tot het detail vraagt zo'n module, een nieuwe dev-build, en het mag de iPad niet raken (die draait altijd, ook in Split View). Advies: niet in dit WP. Wie in het detail liggend draait en teruggaat, ziet het album liggend, zoals nu. Wil Wouter dat anders, dan een eigen WP (besluit A9).
+2. **Statusbalk, kop en tabbalk verbergen.**
+   - *Statusbalk:* `expo-status-bar` zit al in de app (één `StatusBar` voor de hele app in `App.tsx`) en kan hem op iOS en Android verbergen, met of zonder overgang. De native stack (`react-native-screens`) heeft ook een eigen optie per scherm. Twee eigenaars van de statusbalk vechten erom wie wint na het wisselen van scherm, dus één weg kiezen (aan B). Liggend verbergt iOS de statusbalk op de iPhone al zelf; Android niet.
+   - *Android, edge-to-edge:* in Expo 58 loopt het scherm op Android altijd onder de statusbalk en de navigatiebalk door. De statusbalk verbergen verandert de indeling daar dus niet. De navigatiebalk van het systeem (de streep van het veeggebaar, of de drie knoppen) verbergen kan alleen met een extra native module (`expo-navigation-bar`, zit niet in de app). Advies: die blijft staan, want bij drie knoppen zit daar de terugknop (besluit A6).
+   - *iPhone met een thuisknop (SE):* daar wordt de bovenrand van het veilige gebied 0 als de statusbalk weggaat (was 20 pt). Hangt het fotogebied van dat veilige gebied af, dan schuift de foto daar 20 pt. Op een iPhone met Dynamic Island of inkeping blijft die rand staan. Gate-check op de SE (simulator).
+   - *Kop:* de kop van de native stack aan- en uitzetten maakt het vlak van het scherm hoger of lager. Het fotogebied meet zich aan dat vlak (WP32, `PhotoDetailLayout`), dus de lijst met foto's krijgt een nieuwe maat en tekent opnieuw. Dat is het grootste risico op verspringen en flitsen. Liggend mag de kop alleen over de foto komen, zonder dat de foto beweegt (A-invariant 4). Rechtop gaat de foto in één beweging van het normale vak naar het hele scherm.
+   - *Tabbalk:* WP40 heeft al een weg om de tabbalk weg te halen: de optie van de navigator op de tab in beeld, die de eigen `TabBar` volgt. Hij zakt dan weg (direct bij "Beperk beweging"), neemt geen ruimte meer in, en komt meteen helemaal terug als het scherm verdwijnt of uit beeld gaat (WP40 G3, G4, H6). Dat dekt een groot deel van invariant 6. Hergebruik is aan B.
+   - *Minst springerig:* alles van één wissel (kop, tabbalk, statusbalk, infoblok, achtergrond) in één keer, niet na elkaar, en het fotogebied rekent niet mee met dingen die over de foto heen liggen.
+3. **Tik, veeg en afspeelknop nu.**
+   - *Foto:* een `ScrollView` per foto (knijpen tot 3×, alleen op iOS) met daarin een `Pressable`. De app telt zelf dubbeltikken: twee tikken binnen 280 ms wisselen tussen 1× en 2,5×. Een enkele tik doet nu niets. Vegen is een horizontale lijst met hele pagina's. Een veeg neemt de aanraking over, dus dan komt er geen tik. Het risico: een enkele tik die meteen de stand wisselt, wisselt bij een dubbeltik twee keer (flits) of wisselt en zoomt. De enkele tik moet daarom wachten tot er geen tweede komt (A-invariant 6).
+   - *Android zoomt niet.* Knijpen en de zoom van dubbeltikken (`zoomScale`) van de `ScrollView` bestaan alleen op iOS. Op Android doet een dubbeltik nu niets. Dan hoeft een tik daar ook niet te wachten. Zoom op Android blijft buiten dit WP.
+   - *Filmpje, poster:* de hele poster is één knop die het filmpje start (WP37). Besluit 2 maakt alleen de afspeelknop de knop; een tik ernaast wisselt de stand.
+   - *Filmpje, speelt:* de native speler (`VideoView` met `nativeControls`) vangt elke tik zelf af en toont of verbergt zijn eigen bediening. De app krijgt daar geen bericht van: `expo-video` 58.0.14 heeft geen gebeurtenis voor "bediening zichtbaar". Een tik op een spelend filmpje bereikt de app dus niet, en de kop kan niet met de native bediening mee. Besluit 2 is met de native bediening niet te halen (besluit A2). Ook heeft die bediening een eigen knop voor volledig scherm (`fullscreenOptions.enable`), die met dit WP dubbel wordt.
+   - *Terugvegen en spoelen:* bij de clubfilms staat het terugvegen uit, omdat de tijdbalk aan de linkerrand begint en het veeggebaar het spoelen won (WP21, `filmScreenOptions`). Een filmpje dat schermvullend speelt heeft hetzelfde probleem.
+   - *Knijpen:* twee vingers die loslaten kunnen een `Pressable` een tik geven. Gate-check.
+4. **Terug in de schermvullende stand: meteen het scherm uit, op beide toestellen.** Op iOS is het veeggebaar terug van de native stack niet half op te vangen: uitzetten maakt het dood, en dan werkt terug niet in elke stand. Op Android kan het wel (`useAndroidBack`, WP42), maar dan doet terug op de twee toestellen iets anders. Wie terugveegt of op terug drukt, wil weg. De normale stand is altijd één tik verderop. Bij het verlaten komen statusbalk en tabbalk terug (invariant 6). Besluit A1.
+5. **WP32 en WP33: geen test verandert, één regel wel.**
+   - *WP32 B3* ("het fotogebied verandert alleen bij draaien, venstermaat of tekstgrootte") krijgt er de stand bij. Binnen een stand blijft alles zoals het was: niet per foto, niet bij laden, niet door een melding. `photoInfoHeight` blijft gelijk; er is geen test op.
+   - *WP33* (het infoblok vervaagt met de veeg): schermvullend is er geen blok, dus niets om te vervagen. Terug in de normale stand staat in het blok de foto in beeld, ook na vegen in de schermvullende stand. Het komt er meteen helemaal, zonder halve doorzichtigheid van de laatste veeg. `motion.test.ts` (`infoOpacity`) verandert niet.
+   - *WP37:* een tik naast de afspeelknop start geen filmpje meer (besluit 2). Voor VoiceOver en TalkBack blijft "Afspelen" één knop met de naam van het filmpje.
+
+### Wat in de draft niet klopt of ontbreekt
+
+- **Zoomen bestaat al.** De scope sluit "inzoomen met twee vingers (als dat er nog niet is)" uit. Op iOS kan het al: knijpen en dubbeltikken (WP17a). Dat moet blijven werken, in elke stand. Op Android is er geen zoom, en dat blijft zo.
+- **Invariant 1 botst met besluit 5.** Liggend toont een tik alleen de kop met Acties. Eigenaar, plaats en albums zie je dan pas na terugdraaien, niet met één tik. Zie besluit A3.
+- **"Tijdelijk" in besluit 5.** Verdwijnt de kop vanzelf na een paar seconden, of alleen bij een tweede tik? Zie besluit A4.
+- **De melding na een actie** (verwijderd, gedraaid, "Delen…", een fout) staat nu in het blok onder de foto. Schermvullend is dat blok weg. Na Acties uit de liggende stand zou je niet zien of het lukte. Zie A-invariant 9.
+- **"Via een melding" (invariant 6):** de app heeft geen pushmeldingen. Wat het detail ongewild verlaat is een link uit een mail (deep link), uitloggen of een sessie die elders eindigt (de guards sluiten alles), de laatste foto die verdwijnt (terug naar het album), en een tab wisselen (alleen in de normale stand). Ook de app naar de achtergrond en terug hoort erbij.
+- **Herverbinden (bestaand, niet van WP46).** In de stand "reconnecting" toont het detail een leeg scherm, en het hele detail verdwijnt. Daarna begint het opnieuw bij de foto waarop je het opende, niet bij de foto waar je naartoe veegde. Dat zit er sinds WP17a in. Schermvullend telt hier mee: dat lege scherm heeft de gewone achtergrond (wit in het licht), en de stand begint opnieuw. Voor regie: eigen regel, buiten WP46.
+- **Android-tablets.** Besluit 1 noemt alleen de iPad. Android heeft geen tablet-indeling (WP42, scope). Zie besluit A5.
+- **De drie knoppen van Android op zwart.** In het lichte thema zijn de knoppen van de navigatiebalk donker. Op een zwarte achtergrond kunnen ze wegvallen, en daar zit terug. Gate-check met navigatie met drie knoppen.
+- **Draaien laat de hoeken zien.** Tijdens het draaien tekent iOS de achtergrond van het venster in de hoeken. Is die wit (licht thema), dan flitst er wit om een zwart scherm (invariant 2). Gate-check.
+- **De inkeping en het Dynamic Island.** Schermvullend vult het zwart alles. Een stuk foto onder de inkeping of het eiland is weg. Zie A-invariant 3.
+- **Bestaande bronscans** die B moet laten staan: `photoMenuPlace.test.ts` (welke bestanden `usePhotoMenu(` gebruiken: `AlbumScreen`, `MyPhotoDetailScreen`, `MyPhotosScreen`, `PhotoDetailScreen`; elk roept `.hasActions(` aan) en `actionRetry.test.ts` (`components/VideoPlayer.tsx` roept `api.videos.playUrl` alleen via `withOneRetry` aan).
+
+### A-invarianten
+
+1. **Wie mag schermvullend.** Alleen de iPhone- en de Android-app (besluiten 1 en 6). Op de iPad is het detail altijd zoals nu, ook in een smal venster (Split View, Stage Manager) en ook liggend: de iPad telt als iPad, niet naar de maat van het venster. Op het web niets.
+2. **De standen.**
+   - *Rechtop, normaal:* kop (terug, de datum als titel, Acties), foto, infoblok, tabbalk, statusbalk, de gewone achtergrond.
+   - *Rechtop, schermvullend:* alleen de foto op zwart. Geen kop, infoblok, tabbalk of statusbalk.
+   - *Liggend, zonder kop:* zoals rechtop schermvullend.
+   - *Liggend, met kop:* daarbovenop de kop met terug, de titel en Acties. Geen infoblok, tabbalk of statusbalk; de achtergrond blijft zwart.
+   - Een tik wisselt rechtop tussen normaal en schermvullend, en liggend tussen zonder en met kop.
+3. **De foto past in het veilige gebied.** Schermvullend vult het zwart het hele scherm, ook achter de inkeping, het Dynamic Island, de thuisbalk en de balken van Android. De foto (en een poster of filmpje) past binnen het veilige gebied, dus er valt geen stuk achter de inkeping. De kop, als die er is, staat ook binnen dat gebied.
+4. **Wat beweegt.** Rechtop groeit de foto bij schermvullend naar het hele scherm en krimpt terug bij normaal, in één beweging. Liggend komt de kop over de foto en gaat hij weg zonder dat de foto beweegt of van maat verandert. Geen tussenstap waarin de foto even een andere maat heeft. Geen flits van een andere achtergrond, ook niet bij draaien of in het lichte thema. Met "Beperk beweging" gaat elke wissel direct.
+5. **Draaien.** Naar liggend: zonder kop, wat de stand rechtop ook was. Terug naar rechtop: de stand van rechtop van vóór het draaien. Was je liggend begonnen (het detail geopend met het toestel liggend), dan is dat normaal. Draaien van liggend naar het andere liggend (180°) verandert niets, ook niet of de kop er is. De stand onthoudt de app alleen zolang het detail open is; een volgende keer begint het detail weer rechtop normaal, of liggend zonder kop.
+6. **Een tik is een tik.** Een korte tik op de foto wisselt de stand. Niet: een veeg, een dubbeltik (die zoomt, op iOS), knijpen, een tik op een knop (afspelen, terug, Acties, sluiten van een melding, opnieuw proberen), en een tik die een lopende veeg stopt. Waar een dubbeltik zoomt, wacht de enkele tik tot er geen tweede meer kan komen. Hoogstens ongeveer 300 ms, zodat het nog direct voelt. Waar niets zoomt (een filmpje, Android), wisselt de tik meteen.
+7. **Vegen** werkt in elke stand en houdt de stand vast, ook vegen vlak na een tik of tijdens het draaien. De foto in beeld blijft dezelfde bij elke wissel van stand en bij draaien. Een filmpje dat weg-geveegd wordt, stopt, zoals nu (WP37).
+8. **Niets kwijt.** Terug en Acties zijn in elke stand met hoogstens één tik bereikbaar (rechtop schermvullend: tik naar normaal; liggend: tik voor de kop). Acties openen kan alleen als de kop er is. Een menu, een bevestiging of het deelscherm dat openstaat, houdt de stand vast tot het dicht is; ze sluiten verandert de stand niet.
+9. **De melding na een actie** ("Delen…", gelukt, een fout met opnieuw proberen) is in elke stand te zien, ook liggend en schermvullend. Ze sluiten wisselt de stand niet. Na vegen naar een andere foto gaat ze weg, zoals nu.
+10. **Verwijderen en verdwijnen.** Haal je de foto in beeld weg (Acties) of verdwijnt hij door een ander, dan komt de volgende foto in dezelfde stand. Was het de laatste, dan gaat het detail terug naar het album, en de statusbalk en tabbalk staan er weer.
+11. **Verlaten en terugkomen.** Zodra het detail niet meer in beeld is (terug, Draaien of Locatie wijzigen uit Acties, een tab, een link uit een mail, uitloggen, de sessie die elders eindigt), staan de statusbalk en de tabbalk er meteen weer, op dat volgende scherm. Komt het detail weer in beeld (terug van Draaien, de app terug uit de achtergrond), dan staat het in de stand waarin je het verliet, met de statusbalk zoals die stand vraagt. Is het toestel intussen gedraaid, dan geldt A-invariant 5.
+12. **Filmpje.** Poster: alleen de afspeelknop start het filmpje; een tik ernaast wisselt de stand. Speelt het: een tik toont of verbergt de kop en de bediening samen; afspelen en pauzeren alleen met de knop (besluit 2). De bediening en de kop zijn er samen, of geen van beide. Spoelen vanaf de linkerrand start geen terugveeg.
+13. **Terug:** zie besluit A1. Met het advies: het veeggebaar van iOS en de terugknop of het terugveeg-gebaar van Android verlaten het detail meteen, uit elke stand.
+14. **VoiceOver en TalkBack.** Staat een schermlezer aan, dan zijn terug en Acties altijd te vinden, zonder dat je eerst iets moet aantikken. Advies (besluit A7): rechtop blijft het detail normaal, liggend staat de kop er altijd. Het label van de foto zegt niet meer dat je kunt dubbeltikken om te zoomen als dat met de schermlezer niet werkt.
+15. **Grote letters** veranderen alleen de normale stand (het infoblok, WP32). Schermvullend staat er geen tekst, alleen de titel in de kop.
+16. **Thema.** In het lichte en het donkere thema is schermvullend hetzelfde zwart. Terug naar normaal heeft de gewone achtergrond van het thema.
+
+### Gate-checks (alleen te zien op een toestel)
+
+- Rechtop tik heen en terug, tien keer snel achter elkaar: geen flits, geen stand die achterblijft.
+- Dubbeltik zoomt en wisselt de stand niet (iPhone). Knijpen en loslaten wisselt de stand niet.
+- Vegen in elke stand, ook direct na een tik. Een veeg die net te kort is: de foto veert terug en de stand blijft.
+- Draaien in beide richtingen, ook 180° liggend, en met de draaivergrendeling aan (dan alleen de tik).
+- iPhone SE (simulator): de foto springt niet 20 pt als de statusbalk weggaat.
+- Draaien in het lichte thema: geen witte hoeken.
+- Liggend: kop aan en uit, de foto beweegt niet. Acties, Draaien, en terug: dezelfde stand.
+- Een filmpje: poster tikken naast de knop, afspeelknop, tik tijdens het spelen, spoelen vanaf links, draaien tijdens het spelen, weg-vegen.
+- Android-emulator met gebaren en met drie knoppen: terug uit elke stand, en de knoppen zijn zichtbaar op zwart.
+- VoiceOver en TalkBack: terug en Acties in elke stand. "Beperk beweging": alles direct.
+- De iPad, ook Split View en liggend: niets veranderd.
+- Een link uit een mail openen terwijl het detail schermvullend is: statusbalk en tabbalk staan er weer.
+
+### Besluiten voor regie en Wouter
+
+- **A1. Terug in de schermvullende stand.** (a) Meteen het detail uit, op iOS en Android. (b) Op Android eerst naar normaal, op iOS meteen uit. Advies: **(a)**. Eén regel voor beide toestellen; iOS kan (b) niet zonder het veeggebaar dood te maken; de normale stand is één tik.
+- **A2. De bediening van een filmpje (besluit 2).** De native speler laat de app niet weten wanneer hij zijn bediening toont, en vangt elke tik zelf. (a) Eigen bediening: afspelen en pauzeren, een tijdbalk om te spoelen, de tijd; die komt en gaat met de kop. De knop voor volledig scherm van de native speler vervalt op de telefoon. (b) De native bediening houden: een tik op een spelend filmpje toont alleen die bediening, de kop blijft weg. Dan zijn terug en Acties liggend tijdens het spelen niet met één tik te bereiken (A-invariant 8). Advies: **(a)**. Dat is het meeste werk van dit WP (spoelen, voorlezen, Android). Wil regie 2.0.3 eerder, dan kan het filmpje naar een WP46b, en blijft het filmpje tot dan in de normale stand spelen zoals nu.
+- **A3. Infoblok liggend.** (a) Liggend alleen de kop met de datum als titel (besluit 5). Eigenaar, plaats en albums zie je rechtop. Invariant 1 wordt dan: terug en Acties met één tik, de rest door terug te draaien. (b) Liggend met de kop ook een korte regel over de foto (eigenaar, plaats), zoals in de oude app. Advies: **(a)**.
+- **A4. "Tijdelijk" in besluit 5.** (a) De kop blijft tot de volgende tik. (b) Hij gaat na een paar seconden zonder aanraking vanzelf weg. Advies: **(a)** voor foto's. Bij een spelend filmpje doet de Foto's-app (b); dat is een gate-vraag als A2 (a) wordt.
+- **A5. Android-tablet.** (a) Telt als telefoon (Android heeft geen tablet-indeling, WP42). (b) Zoals de iPad: niets veranderd. Advies: **(a)**. Er is geen tablet-indeling om te beschermen, en de maat van het scherm raden is foutgevoelig.
+- **A6. Navigatiebalk van Android en de thuisbalk van de iPhone.** Besluit 3 noemt alleen klok en batterij. Advies: beide blijven staan. Op Android zit daar met drie knoppen de terugknop, en verbergen vraagt een extra native module.
+- **A7. Schermlezer.** Advies: met VoiceOver of TalkBack aan, blijft rechtop het detail normaal en staat liggend de kop er altijd (A-invariant 14).
+- **A8. De knop voor volledig scherm van de native speler.** Hoort bij A2. Op de iPad blijft hij (besluit 1).
+- **A9. Draaien beperken tot het detail.** Advies: niet in WP46 (antwoord 1).
+
+### Testcontract (A, vóór de besluiten)
+
+> Namen en vormen zijn A-keuzes, het hoe is aan B. Wijkt een besluit af, dan past A de tests aan voordat B begint.
+
+- **`app/src/lib/photoDetailStand.ts`** (puur, zonder React of native modules):
+  - `fullscreenAllowed({ os, isPad })`: mag dit toestel schermvullend (A1, A5 advies a).
+  - `orientationOf({ width, height })`: `"portrait"` of `"landscape"`; liggend als het venster breder is dan hoog, vierkant telt als rechtop.
+  - `initialStand(orientation)`, `nextStand(stand, event)` met `event` een tik (`{ type: "tap" }`) of een andere stand van het toestel (`{ type: "rotate", orientation }`). De stand zelf is een waarde die alleen via deze functies verandert (A2, A5).
+  - `standView(stand, { fullscreenAllowed, screenReader })`: `{ header, info, tabBar, statusBar, black }`, wat er te zien is (A1, A2, A14 advies, A16).
+  - `tapIntent({ lastTapAt, now, zoomable })` en `DOUBLE_TAP_MS`: wat een tik doet. `"zoom"` (de tweede tik van een dubbeltik), `"wait"` (de stand pas wisselen als er binnen `DOUBLE_TAP_MS` geen tweede tik komt) of `"stand"` (meteen wisselen, waar niets zoomt). `lastTapAt` is de tijd van een vorige tik die nog wacht, of `null` (A6).
+- **Bronscan:** `nextStand(`, `standView(` en `fullscreenAllowed(` worden in de app-code aangeroepen, buiten `src/lib`.
+
+### Tests per invariant (stand na A)
+
+| Inv. | Test | Niet getest, omdat … |
+|---|---|---|
+| A1 | `app/tests/photoDetailStand.test.ts` (`fullscreenAllowed`, `standView`) | Split View op de iPad: gate |
+| A2 | `photoDetailStand.test.ts` (`nextStand`, `standView`) | |
+| A3 | | indeling en veilig gebied: gate |
+| A4 | | beweging en flitsen: gate |
+| A5 | `photoDetailStand.test.ts` (`orientationOf`, `initialStand`, `nextStand`) | |
+| A6 | `photoDetailStand.test.ts` (`tapIntent`) | veeg, knijpen, knoppen: schermlogica, audit en gate |
+| A7 | | lijst en positie: schermlogica, audit en gate |
+| A8–A11 | | schermlogica (focus, menu's, navigatie): audit en gate |
+| A12 | | wacht op besluit A2 |
+| A13 | | wacht op besluit A1; gate |
+| A14 | `photoDetailStand.test.ts` (`standView` met `screenReader`, advies A7) | voorlezen: gate |
+| A15 | | gate |
+| A16 | `photoDetailStand.test.ts` (`black`) | de kleur zelf: gate |
+| bron | `photoDetailStand.test.ts` (bronscan) | |
