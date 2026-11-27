@@ -651,7 +651,7 @@ Zolang een filmproject openstaat, gaat van elk nieuw filmpje dat een Android-lid
 
 ## Scope (42c)
 
-- **In:** de Android-kant van de uploader in `clubalmanac-video`, de wachtrij en runner op Android, "Alleen via wifi" op Android, de teksten en schermen van het filmproject op Android (A11 vervalt), de verklaringen in Play als het gekozen mechanisme die vraagt, punt 7 van 42a, een build op de interne track.
+- **In:** de Android-kant van de uploader in `clubalmanac-video`, de wachtrij en runner op Android, "Alleen via wifi" op Android, de teksten en schermen van het filmproject op Android (A11 vervalt), de verklaringen in Play als het gekozen mechanisme die vraagt, punt 7 van 42a, een build op de interne track, het buildnummer bij Info op Android en iOS (B18).
 - **Bewust niet:** wijzigingen in de backend of de webapp, meldingen (notificaties) aan het lid, downloaden op de telefoon.
 
 ## Spike S3 (B, vóór de rest)
@@ -702,3 +702,149 @@ WP38 (38a backend, 38b uploader en besluiten 21–26, 38c schermen), WP42a (A9, 
 - **B15.** Advies: WorkManager zonder foreground service, één job per deel, wifi als voorwaarde, tenzij A of S3 het weerlegt.
 - **B16 (anders dan het advies).** Geeft de kiezer niet het origineel bit voor bit, dan gaat toch wat de kiezer geeft mee, ook zonder plaats. Wouter: beter een kopie dan een missend origineel; niemand garandeert dat een lid het origineel later nog heeft.
 - **B17.** Advies: gate op de emulator tegen dev; daarna build 7 via de interne track naar de testers. Wouter zet op prod een filmproject open zodra die build uit is.
+- **B18 (regie, 2026-11-27).** Bij Info staat naast de versie het buildnummer, bijvoorbeeld "Versie 2.0.2 (7)", op Android en op iOS. Build 5 en 6 heten allebei 2.0.2, dus een tester kan niet zien welke build hij heeft. Zonder buildnummer (web, Expo Go): alleen de versie, geen lege haakjes. Een bewuste uitzondering op invariant 7: iOS verandert hier wel.
+
+## Spec-criticus aanvullingen 42c (A)
+
+> A 2026-11-27. Bronnen: deze spec (42a, 42b, 42c) en WP38 (38b-invarianten, besluiten 21–27, 38c); de app (`modules/clubalmanac-video` met de Kotlin-kant van 42b, `src/data/originals.ts`, `src/lib/originalQueue.ts`, `originalUpload.ts`, `filmProject.ts`, `AddPhotosScreen.tsx`, `FilmProjectScreens.tsx`, `pickMedia.android.ts`, `pickerCopies.ts`, `app.json`, `eas.json`); de backend (`convex/filmProjects.ts`, `lib/filmOriginals.ts`, `lib/constants.ts`, `crons.ts`); de Android-code van `expo-image-picker` 58.0.10 en van het register voor activity-resultaten in `expo-modules-core`; WorkManager 2.9.1 uit de Gradle-cache (manifest, en `SystemJobInfoConverter` met `javap`); developer.android.com, opgehaald 2026-11-27: *Power management resource limits* (bijgewerkt 2026-05-19), *User-initiated data transfer*, *Support for long-running workers*, *Android 16 behavior changes*. Niets op de emulator gemeten: wat alleen daar te zien is, staat in S3. Oude code is geen bron.
+
+### Wat niet klopt of ontbreekt in de draft
+
+1. **WorkManager zit al in de app, en zijn rechten zijn geblokkeerd.** `react-native-maps` brengt `androidx.work:work-runtime:2.9.1` mee. Het manifest daarvan vraagt `WAKE_LOCK`, `ACCESS_NETWORK_STATE`, `RECEIVE_BOOT_COMPLETED` en `FOREGROUND_SERVICE`; `app.json` blokkeert de laatste twee (42a A9). WorkManager zet zijn taken bij Android niet blijvend (`setPersisted(false)`, gelezen in 2.9.1) en zet ze na een herstart opnieuw klaar via een ontvanger van `BOOT_COMPLETED`. Zonder dat recht gaat een origineel na een herstart pas verder als het lid de app opent. Zie B19.
+2. **Op de achtergrond draait er geen JS.** Start Android de app voor een taak, dan start alleen het proces, niet React Native (middel: zo start Expo de JS pas met een scherm; S3 kijkt het na). De runner, `startOriginal` en `finishOriginal` lopen alleen als de app open is of net was. Gevolgen:
+   - de delen gaan op de achtergrond; afronden doet de cron binnen het uur (`film originals complete`, elk uur op :20; A-invariant 9 van WP38);
+   - opnieuw aanmelden (403, `NoSuchUpload`, verlopen links, `missing`, de wachttijden van 38b-7) gebeurt pas als het lid de app weer opent, zoals op iOS na wegvegen;
+   - de bewaarde kopie (tot 2 GiB) gaat pas weg als de app na "binnen" weer draait (invariant 6). Zie B21.
+3. **Een mislukt deel beslist nu JS** (38b-6). Op iOS wekt iOS de app per deel. Op Android is er dan geen JS: de uploader moet een tijdelijke fout zelf opnieuw proberen, met dezelfde grenzen, en de rest laten liggen tot `atLaunch` (A28).
+4. **Elke taak heeft een tijdslimiet van 10 minuten**, en de delen zijn 32 MiB (`ORIGINAL_PART_BYTES`). Een deel moet dus met minstens ~56 KB/s (0,45 Mbit/s) gaan. Lopen er vier delen tegelijk over trage hotelwifi, dan haalt geen enkel deel de limiet en begint alles steeds opnieuw (A28). De iPhone kent die limiet niet.
+5. **Quota, ook vlak na gebruik.** Volgens de tabel van Android (bijgewerkt mei 2026) mag de app op de achtergrond, zonder lader:
+
+   | Stand van de app (bucket) | Tijd voor gewone taken |
+   |---|---|
+   | active (net gebruikt) | tot 20 min per 60 min (vanaf Android 16) |
+   | working set | tot 10 min per 4 uur |
+   | frequent | tot 10 min per 12 uur |
+   | rare | tot 10 min per 24 uur |
+   | restricted (accu "Beperkt") | 1 keer per dag, 10 min |
+
+   Aan de lader geldt geen grens (behalve restricted), en met de app in beeld ook niet. Een taak die begon terwijl de app in beeld was, telt vanaf Android 16 mee zodra de app uit beeld gaat. Een origineel van 1 GB op thuiswifi (~5 MB/s) duurt ~3,5 minuten en past in het eerste uur; op trage wifi (~1 MB/s) ~17 minuten, en dan wacht de rest uren, of tot de telefoon 's nachts aan de lader ligt. Zie B20.
+6. **Het alternatief in B15 is niet "zekerder".** Een foreground service (`dataSync`) kan sinds Android 12 niet starten als de app niet in beeld is (dus niet als er later wifi komt), sinds Android 15 niet vanuit `BOOT_COMPLETED`, mag sinds Android 15 hooguit 6 uur per 24 uur, en telt sinds Android 16 mee voor hetzelfde quotum. Daarbij een vaste melding, `POST_NOTIFICATIONS` en een verklaring met video bij Play. Wat Android 16 zelf aanraadt voor een overdracht die het lid start, is een *user-initiated data transfer job* (UIDT, vanaf Android 14): geen quotum, start als de voorwaarden kloppen, maar met een verplichte melding tijdens het versturen, het recht `RUN_USER_INITIATED_JOBS`, en zonder Jetpack-ondersteuning (dus onder Android 14 alsnog WorkManager). De scope sluit meldingen uit. Zie B20.
+7. **"Alleen via wifi" is op Android niet hetzelfde als "geen betaald netwerk".** De standaard van WorkManager (`UNMETERED`) laat ook mobiel internet toe dat de provider onbeperkt noemt (5G), en houdt een wifi tegen die Android als betaald ziet (hotspot). Invariant 4 zegt: op mobiel internet wachten. Zie A29.
+8. **Omzetten tijdens een lopend deel.** Bij WorkManager geldt een nieuwe voorwaarde pas bij de volgende start van een taak; een lopend deel gaat dan nog over mobiel internet. 38b-14 zegt: meteen (A29).
+9. **De kiezer geeft niet altijd het origineel.** `expo-image-picker` kopieert een filmpje byte voor byte uit de stroom van de kiezer naar `cache/ImagePicker` (altijd `.mp4`; de backend leest het formaat uit de bytes, dus de naam bij downloaden klopt). Maar Android poetst de plaats weg *in die stroom*: dezelfde grootte, andere bytes. Dat gebeurt bij de fotokiezer op Android 11–14 altijd, en vanaf 15 als het lid het recht weigerde (zie vraag 2). Een filmpje dat alleen in Google Foto's staat, kan de kiezer van Android 14+ ook tonen; dan krijgt de app wat Google Foto's geeft, bij "Opslagbesparing" een verkleinde kopie (laag). B16 dekt dat: de kopie gaat mee.
+10. **De grootte uit de kiezer kan ontbreken.** Het toevoegscherm geeft `originalPlan` de `fileSize` van de kiezer, en die komt uit de bron. Ontbreekt hij, dan zegt het plan `te_klein` en ziet het lid "te klein" bij een filmpje van 1 GB (A31).
+11. **Punt 7 en het opruimen bij de start botsen.** `clearPickerCopiesAtStart` leegt `cache/ImagePicker` bij elke start. Een keuze die terugkomt na het sluiten door Android, staat juist daar. Daarbij geeft `getPendingResultAsync` niet aan voor welk scherm de kiezer openging: een profielfoto kan anders in het toevoegscherm belanden (A36).
+12. **De projectpagina beslist op het platform.** De lege stand belooft alleen niet op Android (`Platform.OS !== "android"`, 42a A11). Met de uploader op Android moet dat de uploader worden, niet het platform (A34). En de tests van 42b eisen dat Android geen uploader heeft (`androidVideoModule.test.ts`); A heeft die aangepast.
+13. **Links in de opslag van WorkManager.** De ondertekende links staan dan ook in de database van WorkManager (in de app). Account verwijderen moet die taken weghalen, niet alleen de bestanden (A32).
+14. **Een update via Play tijdens het versturen, en "Opslag wissen".** Een update stopt het proces; of de taken daarna vanzelf doorgaan, is te meten (S3). "Opslag wissen" in de instellingen van Android wist wachtrij, taken en kopieën: de inzending blijft "onderweg" (`elders`), zoals bij opnieuw installeren op iOS.
+15. **Na een herstart vóór de eerste ontgrendeling** draait er niets van de app (WorkManager is niet `directBootAware`). De problemen van 38b-18 (opslag op slot) spelen op Android dus niet, zolang de uploader niet `directBootAware` wordt.
+
+### Antwoorden op de open vragen
+
+**1. Mechanisme (B15).** B15 blijft staan: WorkManager zonder foreground service, een taak per deel, met een netwerkvoorwaarde. Het haalt invariant 3 en 4 op elke versie, met drie voorwaarden: `RECEIVE_BOOT_COMPLETED` (B19) voor een herstart zonder openen; een deel moet binnen de 10 minuten passen (A28); en het lid moet accepteren dat de achtergrond uren kan wachten (draftpunt 5, B20). Per manier:
+
+| | Rechten | Melding in beeld | Play | Achtergrond |
+|---|---|---|---|---|
+| WorkManager, gewone taken (B15) | `WAKE_LOCK`, `ACCESS_NETWORK_STATE` (er al), `RECEIVE_BOOT_COMPLETED` (B19) | nee | niets nieuws | quotum per bucket; aan de lader en met de app open geen grens |
+| Foreground service `dataSync` | `FOREGROUND_SERVICE`, `…_DATA_SYNC`, `POST_NOTIFICATIONS` | ja, vast | verklaring met video | start niet zonder de app in beeld (12+), 6 uur per dag (15+), quotum (16+) |
+| UIDT (vanaf 14) | `RUN_USER_INITIATED_JOBS`, `POST_NOTIFICATIONS` | ja, tijdens versturen | geen verklaring bekend (laag) | geen quotum; alleen te plannen met de app in beeld; onder 14 WorkManager |
+
+Zekerheid: hoog voor de quota, de 10 minuten, `setPersisted(false)` en de regels voor foreground services; middel voor de duur in de praktijk (S3, testers); laag voor wat Play bij UIDT vraagt. Expedited werk (`setExpedited`) is geen uitweg: onder Android 12 is dat een foreground service met melding.
+
+**2. Origineel per versie.** Wat de kiezer van de app (42a-regel) geeft:
+
+| Android | kiezer | plaats in het origineel | bit voor bit | zekerheid |
+|---|---|---|---|---|
+| 7–10 (API 24–29) | Bestanden of de fotokiezer van Play-diensten | Bestanden: ja; fotokiezer: nee | Bestanden: verwacht ja | laag (geen meting) |
+| 11–13 (30–33) | fotokiezer; zonder fotokiezer Bestanden | fotokiezer: nee; Bestanden: ja (API 30 gemeten bij foto's) | fotokiezer: nee | middel |
+| 14 (34) | fotokiezer | nee, ook met het recht (gemeten bij foto's) | nee | middel |
+| 15–17 (35–37) | fotokiezer via `legacy`, met het recht | ja (S2 gemeten); "Don't allow": nee | verwacht ja; S3 meet het | middel |
+
+Zonder bredere toegang is er op 11–14 geen manier: de fotokiezer poetst altijd, `setRequireOriginal` werkt niet op zijn links, en alleen `READ_MEDIA_VIDEO` zou helpen (B4: nooit). Transcoderen door Android (HEVC naar H.264) verwacht ik niet bij target 36 (middel); de SHA-256 in S3 laat het zien. De testers (Samsung, Android 17) zitten in de laatste rij.
+
+**3. Ruimte.** De kopie van de kiezer staat in de cache, en die mag Android wissen bij weinig ruimte (en het lid met "Cache wissen"). Daarom verplaatst `keepOriginal` hem naar een eigen map in de opslag van de app (A31). De regel van 38b-1 (vrij: origineel plus 1 GiB) blijft; hij is ruim genoeg, ook als de uploader geen deelbestanden maakt. Te weinig ruimte voor de kopie zelf geeft de bestaande melding van de kiezer; te weinig daarna `geen_ruimte` (38c-13). Lukt het snijden of lezen van een deel niet door ruimte, dan meldt de uploader dat zoals op iOS (38b-13), zonder het bewaarde bestand te wissen.
+
+**4. Wekken.** Nee, de runner doet niets als de app dicht is (draftpunt 2). De cron rondt af binnen het uur (hoog: `crons.ts`); de stand op de projectpagina komt uit de backend, dus "Binnen" verschijnt ook zonder de app. Het opruimen op het toestel wacht tot de app weer draait. Een eigen `finishOriginal` vanuit Kotlin vraagt de login van Clerk in native code; dat raad ik af.
+
+**5. Fabrikanten.** Samsung: "Slapende apps" en "Diep slapende apps" (handmatig, of automatisch voor apps die een tijd niet gebruikt zijn), en de accu-stand per app (Onbeperkt, Geoptimaliseerd, Beperkt). Een app die het lid net gebruikte, slaapt niet; "Beperkt" of "Diep slapend" laat originelen alleen met de app open gaan. Wegvegen uit de recente apps laat de taken bij Samsung en bij gewone Android staan (middel); bij sommige andere merken (Xiaomi, Huawei) is wegvegen hetzelfde als gedwongen stoppen. Op de emulator te zien: buckets, Doze, gedwongen stoppen, "Beperkt" (`appops RUN_ANY_IN_BACKGROUND`), Databesparing, betaalde wifi, trage verbinding, herstart, update. Alleen bij de testers: het batterijbeheer van Samsung, echte wifi-snelheden, een nacht aan de lader.
+
+**6. Punt 7.** De weg bestaat in de code: als Android het scherm van de app weggooit terwijl de kiezer open is, bewaart het register van Expo zijn stand (in `SharedPreferences`), en na terugkomen zet `expo-image-picker` de keuze klaar voor `getPendingResultAsync` (middel). Maar 42a zag dat het "eigen native code" vroeg; dat spreekt dit tegen, dus eerst meten (S3). In de app is het klein: bij de start één aanroep, de uitkomst door één pure functie (A36), en het toevoegscherm opent met die keuze. Werkt `getPendingResultAsync` niet, dan geeft A36 nog steeds "kies opnieuw" (de app weet dat de kiezer open was), zonder native code.
+
+### A-invarianten (42c)
+
+**A27. Versturen zonder de app.** De delen gaan via een taak die Android zelf start, zonder scherm en zonder JS. Zijn de delen eenmaal bij de uploader, dan gaan ze door na wegvegen, scherm op slot, Doze en (met B19) een herstart. Dat is een paar seconden na "klaar" in het toevoegscherm; wie de app in die seconden wegveegt, ziet het origineel verder gaan bij het volgende openen. De Android-kant geeft JS dezelfde functies en events als iOS (`Originals` in `index.ts`), zodat de runner, de wachtrij en de schermen van 38b en 38c ongewijzigd werken; de twee functies voor gate 6 van iOS hoeven niet.
+
+**A28. Doorgaan zonder lus.** Zonder JS zet de uploader een deel zelf voort na een tijdelijke fout (geen antwoord, 5xx, 429, andere 4xx): dezelfde link, hooguit 5 mislukte pogingen (38b-6), met een wachttijd die oploopt. Netwerk weg, gestopt door Android (Doze, quotum, de tijdslimiet) of een voorwaarde die niet meer klopt, telt niet als poging. Na 403, `NoSuchUpload` of 5 pogingen wacht het deel; de stand van de uploader laat dat zien, en `atLaunch` beslist bij de volgende start. Elk deel van 32 MiB kan binnenkomen op een verbinding van ~0,5 Mbit/s: er lopen niet zoveel delen tegelijk dat een deel niet binnen de tijdslimiet van Android past.
+
+**A29. "Alleen via wifi" op Android** (invariant 4, 38b-11). Aan betekent: alleen over wifi of kabel die Android niet als betaald ziet. Mobiel internet wacht altijd, ook als de provider het onbeperkt noemt; een hotspot of een betaalde wifi wacht; een VPN telt als het netwerk eronder. `networkStatus` en `onNetwork` volgen dezelfde regel als de taken, zodat "Wacht op wifi" klopt. Aanzetten op mobiel internet: binnen enkele seconden gaat er niets meer over mobiel internet, ook geen lopend deel. Uitzetten: wachtende delen gaan, met de app open meteen. Aanmelden en afronden gaan op elk netwerk (38b-11).
+
+**A30. Herstart, gedwongen stoppen, update.** Herstart: verder zonder openen als B19 ja is, anders bij openen. Gedwongen stoppen (Instellingen of `am force-stop`): verder bij het openen, zonder dat het lid iets doet. Een update via Play: verder, en hooguit een deel nog eens over de lijn. Elk deel komt één keer als klaar in de stand; generaties en oude links zoals 38b-14.
+
+**A31. Bewaren en opruimen.** De kopie van de kiezer gaat bij "Toevoegen" naar een eigen map in de opslag van de app: niet de cache, niet in een back-up (`allowBackup` blijft uit). Het opruimen van `cache/ImagePicker` (bij de start, uitloggen, de profielfoto) raakt hem niet. De grootte voor `originalPlan` en `startOriginal` is die van het bestand dat de app heeft, niet een getal van de kiezer; ontbreekt dat getal, dan is het geen `te_klein`. Kopie en eventuele deelbestanden gaan weg na binnen, terugtrekken en account verwijderen (38b-9, 38b-10), op Android zodra de app daarna draait.
+
+**A32. Links blijven binnen de app.** Geen link, sleutel of pad in logcat, het log van de uploader of een event (38b-16). Account verwijderen haalt ook de taken bij Android weg, met hun links; uitloggen pauzeert alleen de aanroepen, zoals op iOS (de delen gaan door).
+
+**A33. Geen nieuwe rechten of meldingen (B15).** Geen foreground service, geen expedited werk, geen UIDT, geen melding; dus geen `FOREGROUND_SERVICE*`, `POST_NOTIFICATIONS`, `RUN_USER_INITIATED_JOBS` of `READ_MEDIA_*`, en geen verklaring bij Play. In het samengevoegde manifest staan de rechten van 42b, plus `RECEIVE_BOOT_COMPLETED` alleen als B19 ja is. De uploader is niet `directBootAware`.
+
+**A34. Het filmproject op Android is dat van de iPhone met uploader** (42a A11 vervalt). Schakelaar, stand per eigen origineel, "Mijn filmpjes" met wat in de wachtrij staat, de regel boven de knop (besluit 27.4), Terugtrekken. De lege stand belooft dat nieuwe filmpjes als origineel meegaan zodra de build de uploader heeft, niet op grond van het platform (webapp zoals nu). Het proefscherm alleen in dev-builds.
+
+**A35. De stand klopt als het lid kijkt.** Met de app in beeld gelden geen quota: wat kan, loopt. "Wordt verstuurd" staat er alleen als de delen bij de uploader zijn en het netwerk goed genoeg is; anders "Wacht op wifi" of "Later opnieuw" (38c-7).
+
+**A36. De keuze blijft bewaard** (invariant 8, punt 7). Vóór het openen van de kiezer onthoudt de app waarvoor (toevoegen, met het gekozen album, of de profielfoto) en wanneer. Bij de start, na het legen van `cache/ImagePicker`:
+- een keuze voor het toevoegscherm: het toevoegscherm opent met die keuze en het album van toen (of het laatst gekozen album);
+- geen resultaat of een fout, binnen een uur na het openen van de kiezer voor het toevoegscherm: het toevoegscherm zegt dat het lid opnieuw moet kiezen; later niets;
+- een keuze voor de profielfoto of zonder bekend doel: de kopieën weg, geen scherm;
+- geannuleerd: niets.
+
+Alleen op Android; iOS verandert niet.
+
+**A37. Buildnummer bij Info (B18).** "Versie 2.0.2 (7)", op Android en iOS, met het buildnummer van de geïnstalleerde build. `eas.json` telt de nummers op de server (`appVersionSource: remote`), dus ze staan niet in `app.json`: de bron is wat het toestel van de build weet. Zonder nummer alleen "Versie 2.0.2"; zonder versie "Versie onbekend".
+
+**A38. Het origineel is wat de kiezer gaf** (invariant 2, B16). De uploader stuurt de bytes van de bewaarde kopie, zonder iets te herschrijven, ook als de kiezer de plaats wegpoetste. De app probeert niet zelf een "echter" origineel te vinden en vraagt geen bredere toegang.
+
+### Spike S3: aangescherpt
+
+Naast punt 1–5 hierboven, op API 36 (en 34 voor de kiezer en de quota van vóór 16):
+
+0. **Lader los.** De emulator laadt altijd; aan de lader gelden geen quota en geen Doze. Eerst `adb shell dumpsys battery unplug` (na afloop `dumpsys battery reset`).
+1. **Geen JS op de achtergrond.** Veeg de app weg terwijl er delen wachten, laat een taak lopen en kijk in logcat: start React Native (`ReactNativeJS`), of alleen het proces?
+2. **Buckets en Doze** per bucket (`am set-standby-bucket … active|working_set|frequent|rare|restricted`): hoe lang tot het volgende deel, met `dumpsys jobscheduler` (de reden van wachten en van stoppen; op 16+ ook de geschiedenis van redenen). Daarna de app openen: gaan de delen binnen enkele seconden?
+3. **Traag netwerk:** `adb emu network speed` op ~0,5 en ~2 Mbit/s omhoog, met een origineel van ~300 MB. Haalt elk deel de tijdslimiet (geen eindeloos opnieuw), en hoeveel delen lopen er tegelijk?
+4. **Wifi-regel** (A29): alleen mobiel (`svc wifi disable`); wifi als betaald (`cmd netpolicy set metered-network <ssid> true`); Databesparing (`cmd netpolicy set restrict-background true`). Omzetten van de schakelaar tijdens een lopend deel over mobiel internet: stopt het?
+5. **Herstart** met en zonder `RECEIVE_BOOT_COMPLETED` (B19); **gedwongen stoppen**; **update** (`adb install -r` van dezelfde build) tijdens het versturen.
+6. **Bit voor bit** (punt 4): per variant van S1 en ook met "Don't allow"; per uitkomst de SHA-256 van het bestand op de emulator, van de bewaarde kopie en van het object in R2 (download in de webapp), en of de plaats erin staat. Op API 34 en 36.
+7. **Punt 7** (A36): open de kiezer vanuit het toevoegscherm, `am kill <pakket>` (de app staat dan op de achtergrond), kies twee filmpjes en kom terug. Geeft `getPendingResultAsync` de keuze? Hetzelfde vanuit de profielfoto.
+8. **Account verwijderen** tijdens het versturen: daarna staan er geen taken meer bij Android (`dumpsys jobscheduler`) en geen bestanden.
+
+Haalt WorkManager in punt 2 of 3 invariant 3 of 4 niet, dan stopt B en meldt regie (zie B20).
+
+### Gate en testers (B17)
+
+Emulator: S3 en de gate-checks van 38b (3, 4, 6, 7, 9, 10) die op Android zin hebben, plus 38c 2–7 en 10 op de Android-app. Alleen bij de testers: een echt filmpje van 1 GB of meer op thuiswifi, een dag zonder de app te openen; dezelfde met mobiel internet en daarna wifi; de telefoon een nacht aan de lader; "Slapende apps" van Samsung; de plaats in het gedownloade origineel (Wouter, in de webapp). Wat Wouter de testers vraagt: is het filmpje de volgende ochtend "Binnen" zonder de app te openen?
+
+### Keuzes voor Wouter (42c, aangevuld door A)
+
+- **B19 (nieuw). Verder na een herstart zonder de app te openen.** Daarvoor moet `RECEIVE_BOOT_COMPLETED` uit de geblokkeerde rechten (42a A9). Het is een gewoon recht: geen vraag aan het lid, geen verklaring bij Play. Anders gaat een origineel na een herstart pas verder als het lid de app opent. **Advies: toestaan.**
+- **B20 (nieuw). Hoe lang mag een origineel op de achtergrond wachten?** Met B15 gaat een origineel op goede wifi meestal binnen het uur, op trage wifi of na uren zonder de app soms pas als de telefoon aan de lader ligt. (a) Dat aanvaarden, met als grens: binnen een dag, als de telefoon een nacht aan de lader lag; (b) vanaf Android 14 een UIDT met een melding zolang hij verstuurt ("Clubalmanac verstuurt een filmpje"); dan vervalt "geen meldingen" voor die ene melding, en is het meer native werk. **Advies: (a); (b) alleen als S3 of de testers laten zien dat de grens van (a) niet gehaald wordt.**
+- **B21 (nieuw). Opruimen na binnen.** Op Android blijft de bewaarde kopie (tot 2 GiB) staan tot het lid de app weer opent, ook als het origineel al binnen is (de cron rondde af). **Advies: aanvaarden.**
+
+### Testcontract (A)
+
+Namen en vormen zijn A-keuzes; het hoe is aan B.
+- `projectEmptyText({ open, platform, uploader })` in `src/lib/filmProject.ts`: de tekst van de lege stand van "Alle filmpjes". De projectpagina gebruikt hem en kijkt niet meer naar Android.
+- `src/lib/pendingPick.ts` (nieuw), pure module: `PENDING_PICK_MAX_MS` (1 uur), `PICK_AGAIN_TEXT`, het type `PickMark` (`{ kind: "toevoegen"; albumId: string | null; at }` of `{ kind: "profiel"; at }`), `pickMarkToStore`/`pickMarkFromStore` (onleesbaar is `null`), en `pendingPickAction({ mark, result, now })` met als uitkomst `niets`, `toevoegen` (album en bestanden), `opnieuw_kiezen` (album) of `weg` (de bestanden). `result` heeft de vorm van wat `getPendingResultAsync` geeft (een resultaat, een fout met `code`, of `null`).
+- `versionText(version, build)` in `src/lib/infoPages.ts`; `InfoList.tsx` gebruikt hem. Waar het buildnummer vandaan komt, is aan B (A37).
+- De Android-kant van de module: de functies van `Originals` in `index.ts` en de events van de uploader.
+
+### Tests (A)
+
+| Bestand | Wat | Stand |
+|---|---|---|
+| `app/tests/androidOriginals.test.ts` (nieuw) | A27: met een Android-module mét uploader is `originalUploaderAvailable` waar en hoort de runner de vijf events; de Kotlin-kant geeft de 21 functies van `Originals` en de events. A33: geen foreground service, expedited werk, UIDT of melding in de Kotlin-code; `app.json` vraagt geen `FOREGROUND_SERVICE*`, `POST_NOTIFICATIONS`, `RUN_USER_INITIATED_JOBS` of `READ_MEDIA_VIDEO` en blokkeert de foreground service. A34: `projectEmptyText`, en de projectpagina gebruikt hem zonder `Platform.OS` voor Android. | 7 rood (de Kotlin-kant mist de uploader; `projectEmptyText` ontbreekt), 3 groen (bewakers) |
+| `app/tests/pendingPick.test.ts` (nieuw) | A36: de keuze terug in het toevoegscherm met het album van toen; opnieuw kiezen zonder resultaat binnen het uur of bij een fout; niets bij annuleren of later; een profielfoto of onbekend doel nooit in het toevoegscherm; het doel op schijf heen en terug, onleesbaar is `null`. | 14 rood: de module ontbreekt |
+| `app/tests/versionText.test.ts` (nieuw) | A37, B18: "Versie 2.0.2 (7)", zonder nummer geen haakjes, spaties, zonder versie "Versie onbekend"; `InfoList.tsx` gebruikt `versionText`. | 5 rood: `versionText` ontbreekt |
+| `app/tests/androidVideoModule.test.ts` (aangepast) | De test "geen enkele functie van de uploader (42c)" is weg (42b A21 vervalt); de rest blijft, als bewaker voor een build zonder uploader. | groen |
+
+Niet in unit-tests (S3, gate, audit): het gedrag van de Kotlin-uploader (A27–A33: taken, quota, wifi-regel, herstart, update, opruimen, logcat), de aansluiting van A31 en A36 in het toevoegscherm en bij de start, waar het buildnummer vandaan komt, en B19 (`RECEIVE_BOOT_COMPLETED`; de test volgt het besluit).
+
+**Stand na A:** app 26 rood (7 + 14 + 5) / 2721 groen. A draaide de 22 tests van de pure functies tegen een wegwerp-uitwerking buiten `src/` (in `builds/`): alle groen; weggegooid. Typecheck app: alleen `projectEmptyText`, `versionText` en de module `pendingPick` ontbreken.
