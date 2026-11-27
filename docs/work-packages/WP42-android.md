@@ -980,3 +980,10 @@ Audit leest deze punten. De gate doet:
 2. **Kotlin-tests.** H2, K2 en K5 zijn alleen echt te testen met JUnit-tests in de module, op pure Kotlin-regels die B eruit haalt. Die draaien met Gradle, alleen lokaal en niet in CI. Advies: niet in deze ronde. Wel als Android verder groeit.
 3. **K3, de tekst.** "op je telefoon" is een A-keuze; Wouter kan een andere willen.
 4. **Buiten scope gezien:** de webapp zegt op `NotOnWebScreen` "Gebruik hiervoor de app Clubalmanac op de iPhone", terwijl er nu ook Android is.
+
+## Besluiten regie op vragen A (herstelronde 42c, 2026-11-27)
+
+1. Ja: komt de app voor, dan vervalt ook de eigen wachttijd van de uploader na een serverfout (zoals op iOS); de grens van 5 pogingen blijft.
+2. Kotlin-tests in de module: niet in deze ronde. H2, K2 en K5 gaan via audit en de gate.
+3. K3: "op je telefoon" (Wouter kan een andere tekst kiezen).
+4. `NotOnWebScreen` noemt alleen de iPhone: buiten scope, apart voorleggen aan Wouter.
