@@ -23,7 +23,7 @@ export function SettingsScreen() {
         </ListSection>
       )}
       {/* WP38b: het proefscherm van de originelen, alleen in een build tegen dev.
-          WP42 A11: en alleen met de uploader (niet op Android). */}
+          Alleen met de uploader (WP42c: ook op Android). */}
       {DEV_TOOLS && !READ_ONLY && originalUploaderAvailable && (
         <ListSection>
           <ListRow icon="film" title="Proef: originelen" onPress={() => router.push("/instellingen/proef-origineel")} />

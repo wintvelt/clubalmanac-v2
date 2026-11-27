@@ -135,25 +135,29 @@ export type SkipReason = "te_klein" | "te_groot" | "geen_ruimte" | "fout";
 
 const SKIP_ORDER: readonly SkipReason[] = ["te_klein", "te_groot", "geen_ruimte", "fout"];
 
-// Besluit 30: kort, wat de gebruiker moet weten.
-function skipLine(reason: SkipReason, n: number): string {
+/** Het platform van het toestel, voor de regels die het toestel noemen. */
+export type DeviceOs = "ios" | "android";
+
+// Besluit 30: kort, wat de gebruiker moet weten. WP42c herstelronde K3: op
+// Android ontbreekt de ruimte op de telefoon, niet op een iPhone.
+function skipLine(reason: SkipReason, n: number, os: DeviceOs): string {
   switch (reason) {
     case "te_klein":
       return `${videosText(n)} te klein voor de feature-film.`;
     case "te_groot":
       return `${videosText(n)} te groot voor de feature-film.`;
     case "geen_ruimte":
-      return `${videosText(n)} niet naar de feature-film: te weinig ruimte op je iPhone.`;
+      return `${videosText(n)} niet naar de feature-film: te weinig ruimte op je ${os === "android" ? "telefoon" : "iPhone"}.`;
     case "fout":
       return `${videosText(n)} niet naar de feature-film.`;
   }
 }
 
 /** Eén regel per reden, met het aantal filmpjes. */
-export function originalSkipLines(reasons: readonly SkipReason[]): string[] {
+export function originalSkipLines(reasons: readonly SkipReason[], os: DeviceOs): string[] {
   return SKIP_ORDER.map((r) => [r, reasons.filter((x) => x === r).length] as const)
     .filter(([, n]) => n > 0)
-    .map(([r, n]) => skipLine(r, n));
+    .map(([r, n]) => skipLine(r, n, os));
 }
 
 // --- datums en grootte (38c-10, 38c-11) --------------------------------------------------
@@ -357,6 +361,17 @@ export function projectPageView(input: {
     count: originals.filter((o) => o.status === "binnen").length,
     underway: isFounder ? originals.filter((o) => o.status === "onderweg").length : null,
   };
+}
+
+/**
+ * WP42c A34 (42a A11 vervalt): de lege stand van "Alle filmpjes". Een open
+ * project belooft dat nieuwe filmpjes als origineel meegaan in de webapp en in
+ * de app met uploader (iPhone en Android); een app zonder uploader (een oude
+ * build) belooft niets. Hangt aan de uploader, niet aan het platform.
+ */
+export function projectEmptyText(input: { open: boolean; platform: Platform; uploader: boolean }): string {
+  const promise = input.open && (input.platform === "web" || input.uploader);
+  return promise ? "Nieuwe filmpjes in deze groep gaan ook als origineel mee." : "Er is nog geen filmpje binnengekomen.";
 }
 
 /** De stand van een eigen filmpje; "onderweg" op het web en zonder uploader. */

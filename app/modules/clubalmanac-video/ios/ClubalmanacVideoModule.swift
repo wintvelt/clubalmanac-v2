@@ -18,6 +18,7 @@
 // - WP39 besluit 10: `pickerOnScreen` zegt of er nog een fotokiezer over het
 //   scherm staat. De app vraagt dat zolang ze op de kiezer wacht; de teller van
 //   "Je keuze ophalen…" loopt vanaf het moment dat hij dicht is.
+// - WP42 B18: `buildNumber`, het buildnummer van de geïnstalleerde build.
 // - WP38b: het bewaarde origineel (OriginalFiles.swift) en de uploader voor
 //   originelen (OriginalUploader.swift). `remove` wist nooit iets in de mappen
 //   van de originelen (38b-2: de opruimregels van WP39 raken ze niet).
@@ -127,6 +128,11 @@ public class ClubalmanacVideoModule: Module {
 
     AsyncFunction("pickerOnScreen") { () async -> Bool in
       return await MainActor.run { pickerOnScreen() }
+    }
+
+    // WP42 B18: het buildnummer van de geïnstalleerde build (CFBundleVersion).
+    Function("buildNumber") { () -> String? in
+      return Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String
     }
 
     // MARK: WP38b, originelen

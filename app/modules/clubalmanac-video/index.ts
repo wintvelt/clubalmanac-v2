@@ -4,10 +4,12 @@ import { requireOptionalNativeModule, type NativeModule } from "expo";
 // Zonder de module (de webapp, een oude dev-build) is `videoModuleAvailable`
 // false en weigert elke functie: de app meldt dan "verkleinen lukte niet".
 //
-// WP42b: op Android dezelfde module (android/, Kotlin, Media3 Transformer), met
-// alleen de functies van filmpjes. De uploader voor originelen ontbreekt daar,
-// dus `originalUploaderAvailable` blijft false (42c); `pickerOnScreen` ook (de
-// app kijkt op Android naar AppState).
+// WP42b: op Android dezelfde module (android/, Kotlin, Media3 Transformer).
+// `pickerOnScreen` ontbreekt daar (de app kijkt op Android naar AppState).
+// WP42c: op Android ook de uploader voor originelen (WorkManager), met dezelfde
+// functies en events als op iOS (A27); een build van 42b heeft hem niet, dan
+// is `originalUploaderAvailable` false. De twee functies voor gate 6 zijn er
+// alleen op iOS.
 
 export type VideoMetadata = {
   /** com.apple.quicktime.creationdate van het origineel, met tijdzone (iOS). */
@@ -97,6 +99,8 @@ declare class ClubalmanacVideoNative extends NativeModule<Events> {
   remove(uri: string): Promise<void>;
   /** WP39 besluit 10; ontbreekt in een build van vóór WP39. */
   pickerOnScreen?: () => Promise<boolean>;
+  /** WP42 B18: het buildnummer van de geïnstalleerde build; ontbreekt in een oudere build. */
+  buildNumber?: () => string | null;
   // WP38b; ontbreken in een build zonder de uploader.
   keepOriginal?: (uri: string) => Promise<KeptOriginal>;
   originalInfo?: (fileName: string) => Promise<OriginalFileInfo>;
@@ -182,6 +186,21 @@ export async function pickerOnScreen(): Promise<boolean | null> {
   }
 }
 
+/**
+ * WP42 B18, A37: het buildnummer van de geïnstalleerde build (iOS
+ * CFBundleVersion, Android versionCode). `null` zonder de module (web, Expo
+ * Go), in een build van vóór B18 of bij een fout.
+ */
+export function buildNumber(): string | null {
+  if (!native || typeof native.buildNumber !== "function") return null;
+  try {
+    const n = native.buildNumber();
+    return typeof n === "string" && n.trim() !== "" ? n.trim() : null;
+  } catch {
+    return null;
+  }
+}
+
 // --- WP38b: originelen ------------------------------------------------------------
 // Spec: docs/work-packages/WP38-filmproject-originelen.md §Spec-criticus 38b.
 // De runner (src/data/originals.ts) is de enige die de uploader aanstuurt.
@@ -221,14 +240,17 @@ function originals(): Originals {
   return native as unknown as Originals;
 }
 
-/** 38b-2: de kopie van de kiezer naar een eigen map in Application Support (verplaatsen, niet kopiëren). */
+/**
+ * 38b-2: de kopie van de kiezer naar een eigen map in Application Support
+ * (iOS) of noBackupFilesDir (Android, A31); verplaatsen, niet kopiëren.
+ */
 export const keepOriginal = (uri: string) => originals().keepOriginal(uri);
 export const originalInfo = (fileName: string) => originals().originalInfo(fileName);
 export const removeOriginal = (fileName: string) => originals().removeOriginal(fileName);
 export const listOriginals = () => originals().listOriginals();
 /** SHA-256 (hex) van een bewaard origineel, streamend gelezen (proefscherm). */
 export const originalSha256 = (fileName: string) => originals().originalSha256(fileName);
-/** Vrije ruimte; `null` als iOS het niet zegt. */
+/** Vrije ruimte; `null` als het toestel het niet zegt. */
 export const freeBytes = () => originals().freeBytes();
 export const partsBytes = () => originals().partsBytes();
 export const networkStatus = () => originals().networkStatus();
@@ -265,7 +287,10 @@ export async function uploaderSetExitAfterBackgroundSend(on: boolean): Promise<v
   await native.uploaderSetExitAfterBackgroundSend(on);
 }
 
-/** Houd de app even wakker op de achtergrond zolang `work` loopt (afronden met het scherm op slot). */
+/**
+ * Houd de app even wakker op de achtergrond zolang `work` loopt (afronden met
+ * het scherm op slot, iOS). Op Android geen extra tijd (id 0).
+ */
 export async function withBackgroundWork<T>(work: () => Promise<T>): Promise<T> {
   let id = 0;
   try {

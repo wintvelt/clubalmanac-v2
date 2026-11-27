@@ -3,7 +3,7 @@ import { useAction, useMutation } from "convex/react";
 import type { FunctionReturnType } from "convex/server";
 import { router, Stack, useLocalSearchParams } from "expo-router";
 import { useEffect, useRef, useState } from "react";
-import { Platform, Pressable, StyleSheet, View } from "react-native";
+import { Pressable, StyleSheet, View } from "react-native";
 import type { Id } from "../../../convex/_generated/dataModel";
 import { originalUploaderAvailable } from "../../modules/clubalmanac-video";
 import { Button } from "../components/Button";
@@ -40,6 +40,7 @@ import {
   formatBytes,
   mineRows,
   originalMetaText,
+  projectEmptyText,
   projectPageView,
   projectStatusText,
   projectTitle,
@@ -246,12 +247,8 @@ function ProjectPage({
           <EmptyState
             icon="film"
             title="Nog geen filmpjes"
-            text={
-              // WP42 A11: Android (zonder uploader) belooft niet dat filmpjes als origineel meegaan.
-              project.open && Platform.OS !== "android"
-                ? "Nieuwe filmpjes in deze groep gaan ook als origineel mee."
-                : "Er is nog geen filmpje binnengekomen."
-            }
+            // WP42c A34: de belofte hangt aan de uploader, niet aan het platform.
+            text={projectEmptyText({ open: project.open, platform: FILM_PLATFORM, uploader: originalUploaderAvailable })}
           />
         ) : (
           <ListSection>
