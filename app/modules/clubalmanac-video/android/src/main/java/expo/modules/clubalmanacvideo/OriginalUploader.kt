@@ -22,7 +22,7 @@
 // - A29: "Alleen via wifi" aan is een taak met de voorwaarde "niet betaald",
 //   en in de taak zelf alleen wifi of kabel (mobiel internet dat de provider
 //   onbeperkt noemt, wacht ook). De verbinding gaat over het netwerk van de
-//   taak. Omzetten zet het deel dat bezig is meteen opnieuw klaar met de
+//   taak. Aanzetten zet het deel dat bezig is meteen opnieuw klaar met de
 //   nieuwe voorwaarde: een lopend deel over mobiel internet stopt.
 // - 38b-14: elk deel één keer onderweg. Elke taak draagt een token; de afloop
 //   van een taak met een token dat het deel niet meer heeft (nieuwe links,
@@ -33,6 +33,24 @@
 //   de taken van WorkManager; geen link, sleutel of pad in het log, een event
 //   of logcat. Vergeten haalt ook de taken weg.
 // - 38b-17: de opslag is JSON met een versie; nieuwe velden zijn optioneel.
+//
+// Herstelronde 42c (spec §Herstelronde 42c: aanvullingen (A)):
+// - H1: een stop op de tijdslimiet van Android telt per deel en per link
+//   (bewaard). Na TIMEOUT_STOPS is het deel mislukt met `te_traag`, zonder
+//   status; de app wacht dan een uur. Andere stops tellen niet.
+// - H2: komt de app voor, of komt er met de app open een netwerk dat mag,
+//   dan begint een deel dat klaarstaat maar niet verstuurt meteen (de
+//   wachttijd van WorkManager en, bij voorkomen, de eigen wachttijd na een
+//   serverfout vervallen). Wachten op wifi op een netwerk dat geen wifi is:
+//   een vaste wachttijd van WIFI_WAIT_MS, zonder dat die oploopt.
+// - K1: geen deel met een link die binnen het uur verloopt: mislukt met
+//   `link_verlopen`, zonder poging.
+// - K2: na 403, `NoSuchUpload` of `link_verlopen` geen ander deel van dat
+//   origineel tot er nieuwe links zijn; na FAIL_STREAK_PAUSE definitief
+//   mislukte delen op rij geen enkel deel tot de app voorkomt.
+// - K5: elke afloop in de opslag, events pas na het bewaren en zonder dat een
+//   fout de rij stopt; "Alleen via wifi" uit laat een deel over wifi
+//   doorlopen; de opslag gaat eerst op schijf (OriginalFiles.writeAtomic).
 
 package expo.modules.clubalmanacvideo
 
@@ -41,12 +59,14 @@ import android.content.Context
 import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
+import android.os.Build
 import androidx.work.BackoffPolicy
 import androidx.work.Constraints
 import androidx.work.Data
 import androidx.work.ExistingWorkPolicy
 import androidx.work.NetworkType
 import androidx.work.OneTimeWorkRequest
+import androidx.work.WorkInfo
 import androidx.work.WorkManager
 import org.json.JSONArray
 import org.json.JSONObject
@@ -79,6 +99,8 @@ internal class UploadPart(
   /** Na een tijdelijke fout niet vóór dit moment opnieuw (A28). */
   var retryAt: Double?,
   var updatedAt: Double,
+  /** H1: stops op de tijdslimiet van Android met de huidige link. */
+  var timeouts: Int = 0,
 ) {
   fun toJson(): JSONObject = JSONObject().apply {
     put("partNumber", partNumber)
@@ -94,6 +116,7 @@ internal class UploadPart(
     put("token", token ?: JSONObject.NULL)
     put("retryAt", retryAt ?: JSONObject.NULL)
     put("updatedAt", updatedAt)
+    put("timeouts", timeouts)
   }
 
   companion object {
@@ -111,6 +134,7 @@ internal class UploadPart(
       token = o.optStringOrNull("token"),
       retryAt = if (o.has("retryAt") && !o.isNull("retryAt")) o.getDouble("retryAt") else null,
       updatedAt = o.optDouble("updatedAt", 0.0),
+      timeouts = o.optInt("timeouts", 0),
     )
   }
 }
@@ -129,6 +153,8 @@ internal class UploadJob(
   /** Het bewaarde bestand is weg of heeft een andere grootte. */
   var broken: Boolean,
   val parts: MutableList<UploadPart>,
+  /** K2: na 403, `NoSuchUpload` of `link_verlopen` geen deel meer tot er nieuwe links zijn. */
+  var needsLinks: Boolean = false,
 ) {
   fun toJson(): JSONObject = JSONObject().apply {
     put("originalId", originalId)
@@ -141,6 +167,7 @@ internal class UploadJob(
     put("allDoneSent", allDoneSent)
     put("broken", broken)
     put("parts", JSONArray().apply { parts.forEach { put(it.toJson()) } })
+    put("needsLinks", needsLinks)
   }
 
   companion object {
@@ -157,16 +184,29 @@ internal class UploadJob(
         allDoneSent = o.optBoolean("allDoneSent", false),
         broken = o.optBoolean("broken", false),
         parts = MutableList(list.length()) { UploadPart.fromJson(list.getJSONObject(it)) },
+        needsLinks = o.optBoolean("needsLinks", false),
       )
     }
   }
 }
 
-internal class UploaderStore(var wifiOnly: Boolean = true, val jobs: MutableList<UploadJob> = mutableListOf()) {
+internal class UploaderStore(
+  var wifiOnly: Boolean = true,
+  val jobs: MutableList<UploadJob> = mutableListOf(),
+  /** K2: definitief mislukte delen op rij, over alle originelen. */
+  var failStreak: Int = 0,
+  /** K2: geen enkel deel tot de app voorkomt, nieuwe links geeft of "opnieuw" vraagt. */
+  var paused: Boolean = false,
+  /** H2: "Alleen via wifi" op een netwerk dat geen wifi is: geen taak vóór dit moment. */
+  var wifiWaitUntil: Double? = null,
+) {
   fun toJson(): JSONObject = JSONObject().apply {
     put("version", CURRENT_VERSION)
     put("wifiOnly", wifiOnly)
     put("jobs", JSONArray().apply { jobs.forEach { put(it.toJson()) } })
+    put("failStreak", failStreak)
+    put("paused", paused)
+    put("wifiWaitUntil", wifiWaitUntil ?: JSONObject.NULL)
   }
 
   companion object {
@@ -178,6 +218,9 @@ internal class UploaderStore(var wifiOnly: Boolean = true, val jobs: MutableList
       return UploaderStore(
         wifiOnly = o.optBoolean("wifiOnly", true),
         jobs = MutableList(list.length()) { UploadJob.fromJson(list.getJSONObject(it)) },
+        failStreak = o.optInt("failStreak", 0),
+        paused = o.optBoolean("paused", false),
+        wifiWaitUntil = if (o.has("wifiWaitUntil") && !o.isNull("wifiWaitUntil")) o.getDouble("wifiWaitUntil") else null,
       )
     }
   }
@@ -204,8 +247,12 @@ internal sealed class Outcome {
 
   class Failed(val status: Int?, val code: String?, val what: String) : Outcome()
 
-  /** Gestopt door Android of de app (geen poging). */
-  class Stopped(val reason: Int) : Outcome()
+  /**
+   * Gestopt door Android of de app (geen poging), met de reden van WorkManager
+   * en hoe lang het versturen liep (H1: onder Android 12 geeft WorkManager
+   * geen reden).
+   */
+  class Stopped(val reason: Int, val ranMs: Long) : Outcome()
 
   /** Het netwerk van de taak viel weg (geen poging). */
   object NetworkGone : Outcome()
@@ -222,6 +269,9 @@ internal class NetworkWatch(context: Context) {
   @Volatile private var current: Pair<String, Boolean> = read()
   @Volatile var onChange: ((String, Boolean) -> Unit)? = null
 
+  /** H2: bij elke wijziging van het netwerk, ook als het label gelijk blijft (bv. pas nagekeken). */
+  @Volatile var onAnyChange: (() -> Unit)? = null
+
   init {
     try {
       cm?.registerDefaultNetworkCallback(object : ConnectivityManager.NetworkCallback() {
@@ -237,7 +287,17 @@ internal class NetworkWatch(context: Context) {
   private fun update(next: Pair<String, Boolean>) {
     val before = current
     current = next
-    if (label(before) != label(next)) onChange?.invoke(next.first, next.second)
+    // K5: een fout in een terugroep (bv. een event zonder JS) mag de app niet laten crashen.
+    try {
+      if (label(before) != label(next)) onChange?.invoke(next.first, next.second)
+    } catch (_: Throwable) {
+      // Dan hoort JS het bij de volgende vraag (`networkStatus`).
+    }
+    try {
+      onAnyChange?.invoke()
+    } catch (_: Throwable) {
+      // Dan bij het volgende netwerk of het volgende voorkomen van de app.
+    }
   }
 
   private fun read(): Pair<String, Boolean> =
@@ -366,6 +426,28 @@ internal class OriginalUploader private constructor(private val context: Context
     /** Mislukte pogingen met dezelfde link (38b-6, PART_ATTEMPTS in originalUpload.ts). */
     const val PART_ATTEMPTS = 5
 
+    /** H1: na zoveel stops op de tijdslimiet van Android is een deel te traag. */
+    const val TIMEOUT_STOPS = 3
+
+    /** H1: onder Android 12 zegt WorkManager niet waarom; een stop na zo lang versturen telt als tijdslimiet (A-keuze). */
+    const val TIMEOUT_GUESS_MS = 9 * 60_000L
+
+    /** K1: geen deel beginnen met een link die binnen dit uur verloopt (A-keuze). */
+    const val LINK_MARGIN_MS = 60 * 60_000.0
+
+    /** K2: na zoveel definitief mislukte delen op rij begint de uploader niets meer tot de app voorkomt (A-keuze). */
+    const val FAIL_STREAK_PAUSE = 3
+
+    /** H2: met "Alleen via wifi" op een netwerk dat geen wifi is, hooguit eens per zoveel tijd een taak (A-keuze). */
+    const val WIFI_WAIT_MS = 30 * 60_000.0
+
+    /** H2: een taak die zo kort geleden zonder wachttijd klaarstond, start WorkManager zelf. */
+    private const val JUST_ENQUEUED_MS = 10_000L
+
+    /** De codes in `onPartFailed` en de stand (WP42c herstelronde, `UPLOADER_CODE` in originalUpload.ts). */
+    const val CODE_TOO_SLOW = "te_traag"
+    const val CODE_LINK_EXPIRED = "link_verlopen"
+
     /** De eerste wachttijd na een tijdelijke fout; daarna steeds het dubbele (A28). */
     private const val FIRST_RETRY_MS = 60_000.0
 
@@ -384,6 +466,18 @@ internal class OriginalUploader private constructor(private val context: Context
       val m = Regex("<Code>([A-Za-z0-9._-]{1,64})</Code>").find(body) ?: return null
       return m.groupValues[1]
     }
+
+    /**
+     * H1: stopte Android de taak op zijn tijdslimiet? Vanaf Android 12 zegt de
+     * reden het; daaronder geeft WorkManager geen reden, en telt een stop na
+     * TIMEOUT_GUESS_MS versturen (een Doze-stop na zo lang telt dan ook).
+     */
+    fun isTimeLimitStop(reason: Int, ranMs: Long): Boolean =
+      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+        reason == WorkInfo.STOP_REASON_TIMEOUT
+      } else {
+        reason == WorkInfo.STOP_REASON_UNKNOWN && ranMs >= TIMEOUT_GUESS_MS
+      }
   }
 
   /** Alles wat de opslag raakt, loopt over deze ene thread (zoals de queue op iOS). */
@@ -394,6 +488,12 @@ internal class OriginalUploader private constructor(private val context: Context
   private var loaded = false
   private var started = false
   private var startReason = ""
+
+  /** H2, K5: de tokens van delen die in dit proces nu versturen (alleen op `q`). */
+  private val running = HashSet<String>()
+
+  /** H2: wanneer en met welke wachttijd een token in dit proces klaargezet is (alleen op `q`). */
+  private val enqueuedAt = HashMap<String, Pair<Long, Long>>()
 
   val net = NetworkWatch(context)
   val log = OriginalLog(context)
@@ -409,7 +509,11 @@ internal class OriginalUploader private constructor(private val context: Context
     net.onChange = { type, expensive ->
       val label = NetworkWatch.label(type to expensive)
       log.add("netwerk: $label", label)
-      emit?.invoke("onNetwork", mapOf("type" to type, "expensive" to expensive))
+      emitEvent("onNetwork", mapOf("type" to type, "expensive" to expensive))
+    }
+    // H2: met de app open gaat een deel verder zodra het netwerk mag.
+    net.onAnyChange = {
+      if (foreground()) q.execute { guarded { kick("netwerk", fromForeground = false) } }
     }
   }
 
@@ -420,6 +524,30 @@ internal class OriginalUploader private constructor(private val context: Context
       return q.submit(Callable { block() }).get()
     } catch (e: ExecutionException) {
       throw e.cause ?: e
+    }
+  }
+
+  /** K5: een fout in de rij laat de thread niet vallen en noemt niets uit de fout. */
+  private fun guarded(block: () -> Unit) {
+    try {
+      block()
+    } catch (e: Throwable) {
+      note("onverwachte fout in de uploader (${e.javaClass.simpleName})")
+    }
+  }
+
+  /**
+   * K5: een event gaat na het bewaren de deur uit (achter het huidige werk op
+   * `q`, dat zijn opslag al bewaarde). Lukt het niet (geen JS), dan hoort de
+   * app het bij de volgende start (`atLaunch`).
+   */
+  private fun emitEvent(name: String, body: Map<String, Any?>) {
+    q.execute {
+      try {
+        emit?.invoke(name, body)
+      } catch (_: Throwable) {
+        // Geen JS of net weg: de stand staat in de opslag.
+      }
     }
   }
 
@@ -452,13 +580,19 @@ internal class OriginalUploader private constructor(private val context: Context
 
   /** Bij het laden van de module of de start van een taak: de opslag lezen en naast WorkManager leggen. */
   fun start(reason: String) {
-    q.execute { tryStart(reason) }
+    q.execute { guarded { tryStart(reason) } }
   }
 
-  /** De app komt voor: kijken of er iets klaar kan (een deel dat niet bezig is). */
+  /**
+   * De app komt voor (H2, K2): de pauze na een storing en de eigen wachttijden
+   * vervallen, en een deel dat klaarstaat maar niet loopt, begint meteen als
+   * het netwerk mag.
+   */
   fun becameActive() {
     q.execute {
-      if (tryStart("app voor")) pump()
+      guarded {
+        if (tryStart("app voor")) kick("app voor", fromForeground = true)
+      }
     }
   }
 
@@ -535,7 +669,80 @@ internal class OriginalUploader private constructor(private val context: Context
       orphans += 1
     }
     save()
-    note("teruggevonden: ${kept.size} taken lopen door, $restarted delen opnieuw in de rij, $orphans losse taken gestopt")
+    note(
+      "teruggevonden: ${kept.size} taken lopen door, $restarted delen opnieuw in de rij, $orphans losse taken gestopt" +
+        (if (store.paused) "; gepauzeerd na een storing, tot de app voorkomt" else ""),
+    )
+    pump()
+  }
+
+  /** Mag een deel nu over het netwerk dat er is, volgens de wifi-regel (A29)? */
+  private fun networkAllows(): Boolean = if (store.wifiOnly) net.wifiLike(null) else net.alive(null)
+
+  /** K2: de pauze na een storing vervalt (de app komt voor, geeft nieuwe links of vraagt "opnieuw"). */
+  private fun liftPause(why: String) {
+    if (store.paused) note("pauze na een storing opgeheven ($why)")
+    store.paused = false
+    store.failStreak = 0
+  }
+
+  /**
+   * H2: een deel dat "bezig" staat maar in dit proces niet verstuurt, en dat
+   * bij WorkManager in een wachttijd hangt, opnieuw klaarzetten zonder
+   * wachttijd, als het netwerk mag. Een deel dat verstuurt, begint niet
+   * opnieuw. `fromForeground`: de app kwam voor; dan vervallen ook de pauze
+   * (K2) en de eigen wachttijd na een serverfout (besluit regie 1). Bij een
+   * wijziging van het netwerk blijft die wachttijd staan. Alleen op `q`.
+   */
+  private fun kick(why: String, fromForeground: Boolean) {
+    if (!started) return
+    val now = nowMs()
+    val nowClock = System.currentTimeMillis()
+    var changed = false
+    if (fromForeground) {
+      if (store.paused || store.failStreak > 0) changed = true
+      liftPause(why)
+      for (job in store.jobs) {
+        for (p in job.parts) {
+          if (p.state == "wacht" && p.retryAt != null) {
+            p.retryAt = null
+            changed = true
+          }
+        }
+      }
+    }
+    val allowed = networkAllows()
+    if (allowed && store.wifiWaitUntil != null) {
+      store.wifiWaitUntil = null
+      changed = true
+    }
+    var moved = 0
+    if (allowed) {
+      for (job in store.jobs) {
+        if (job.broken || job.needsLinks) continue
+        for (p in job.parts) {
+          if (p.state != "bezig") continue
+          val token = p.token
+          if (token != null && running.contains(token)) continue
+          if (!fromForeground && (p.retryAt ?: 0.0) > now) continue
+          val enq = token?.let { enqueuedAt[it] }
+          if (enq != null && enq.second == 0L && nowClock - enq.first < JUST_ENQUEUED_MS) continue
+          token?.let {
+            workManager.cancelAllWorkByTag(tokenTag(it))
+            enqueuedAt.remove(it)
+          }
+          p.state = "wacht"
+          p.token = null
+          p.sent = 0
+          p.retryAt = null
+          p.updatedAt = now
+          moved += 1
+          changed = true
+        }
+      }
+    }
+    if (moved > 0) note("$why: $moved delen meteen opnieuw klaargezet")
+    if (changed) save()
     pump()
   }
 
@@ -577,6 +784,7 @@ internal class OriginalUploader private constructor(private val context: Context
             part.url = link.url
             part.state = "wacht"
             part.attempts = 0
+            part.timeouts = 0
             part.sent = 0
             part.httpStatus = null
             part.code = null
@@ -595,6 +803,7 @@ internal class OriginalUploader private constructor(private val context: Context
         existing.generation = generation
         existing.allDoneSent = false
         existing.broken = false
+        existing.needsLinks = false
         note("$originalId: nieuwe links voor ${byNumber.size} van $count delen (generatie $generation)")
       } else {
         if (existing != null) {
@@ -621,7 +830,11 @@ internal class OriginalUploader private constructor(private val context: Context
         )
         note("$originalId: ${byNumber.size} van $count delen aan Android (generatie $generation)")
       }
-      for (token in stale) workManager.cancelAllWorkByTag(tokenTag(token))
+      liftPause("nieuwe links")
+      for (token in stale) {
+        workManager.cancelAllWorkByTag(tokenTag(token))
+        enqueuedAt.remove(token)
+      }
       save()
       pump()
     }
@@ -635,7 +848,9 @@ internal class OriginalUploader private constructor(private val context: Context
       val part = job.parts.firstOrNull { it.partNumber == partNumber && it.state == "mislukt" } ?: return@onQ
       part.state = "wacht"
       part.retryAt = null
+      part.timeouts = 0
       part.updatedAt = nowMs()
+      liftPause("opnieuw vanuit de app")
       save()
       pump()
     }
@@ -659,18 +874,34 @@ internal class OriginalUploader private constructor(private val context: Context
     store.wifiOnly
   }
 
-  /** A29: omzetten geldt meteen, ook voor het deel dat bezig is (dat stopt en gaat met de nieuwe voorwaarde). */
+  /**
+   * A29: aanzetten geldt meteen, ook voor het deel dat bezig is (dat stopt en
+   * gaat met de nieuwe voorwaarde). K5: uitzetten laat een deel dat al
+   * verstuurt doorlopen; stopt het later, dan begint het met de nieuwe regel
+   * (`finished`). Een deel dat klaarstaat maar niet verstuurt, gaat meteen
+   * met de nieuwe regel.
+   */
   fun setWifiOnly(on: Boolean) {
     onQ {
       requireStarted()
       if (store.wifiOnly == on) return@onQ
       store.wifiOnly = on
+      store.wifiWaitUntil = null
       val from = if (on) ANY else WIFI
       var moved = 0
+      var kept = 0
       for (job in store.jobs) {
         for (p in job.parts) {
           if (p.state != "bezig" || p.session != from) continue
-          p.token?.let { workManager.cancelAllWorkByTag(tokenTag(it)) }
+          val token = p.token
+          if (!on && token != null && running.contains(token)) {
+            kept += 1
+            continue
+          }
+          token?.let {
+            workManager.cancelAllWorkByTag(tokenTag(it))
+            enqueuedAt.remove(it)
+          }
           p.state = "wacht"
           p.token = null
           p.sent = 0
@@ -678,7 +909,10 @@ internal class OriginalUploader private constructor(private val context: Context
         }
       }
       save()
-      note("alleen via wifi: ${if (on) "aan" else "uit"}; $moved delen opnieuw klaargezet")
+      note(
+        "alleen via wifi: ${if (on) "aan" else "uit"}; $moved delen opnieuw klaargezet" +
+          (if (kept > 0) ", $kept loopt door over wifi" else ""),
+      )
       pump()
     }
   }
@@ -730,7 +964,7 @@ internal class OriginalUploader private constructor(private val context: Context
   }
 
   private fun emitFailed(job: UploadJob, part: UploadPart) {
-    emit?.invoke(
+    emitEvent(
       "onPartFailed",
       mapOf(
         "originalId" to job.originalId, "generation" to job.generation.toDouble(), "partNumber" to part.partNumber,
@@ -743,12 +977,49 @@ internal class OriginalUploader private constructor(private val context: Context
     job.broken = true
     for (p in job.parts) {
       if (p.state != "bezig") continue
-      p.token?.let { workManager.cancelAllWorkByTag(tokenTag(it)) }
+      p.token?.let {
+        workManager.cancelAllWorkByTag(tokenTag(it))
+        enqueuedAt.remove(it)
+      }
       p.state = "wacht"
       p.token = null
     }
     note("${job.originalId}: het bewaarde bestand is weg of heeft een andere grootte")
-    emit?.invoke("onFileBroken", mapOf("originalId" to job.originalId))
+    emitEvent("onFileBroken", mapOf("originalId" to job.originalId))
+  }
+
+  /** K1: verloopt de link van dit origineel binnen LINK_MARGIN_MS (klok van het toestel)? Zonder datum: nee. */
+  private fun linkExpiring(job: UploadJob, now: Double): Boolean = job.expiresAt > 0 && job.expiresAt - now < LINK_MARGIN_MS
+
+  /**
+   * K1, K2: het deel gaat niet het netwerk op (geen poging): mislukt met
+   * `link_verlopen`, en geen ander deel van dit origineel tot er nieuwe links
+   * zijn.
+   */
+  private fun markLinkExpired(job: UploadJob, part: UploadPart, now: Double) {
+    part.token?.let {
+      workManager.cancelAllWorkByTag(tokenTag(it))
+      enqueuedAt.remove(it)
+    }
+    part.state = "mislukt"
+    part.httpStatus = null
+    part.code = CODE_LINK_EXPIRED
+    part.token = null
+    part.sent = 0
+    part.retryAt = null
+    part.updatedAt = now
+    job.needsLinks = true
+    note("${job.originalId} deel ${part.partNumber}: link verloopt binnen het uur, wacht op nieuwe links van de app")
+    emitFailed(job, part)
+  }
+
+  /** K2: een deel is definitief mislukt; na FAIL_STREAK_PAUSE op rij pauzeert de uploader. */
+  private fun countFinalFailure() {
+    store.failStreak += 1
+    if (store.failStreak >= FAIL_STREAK_PAUSE && !store.paused) {
+      store.paused = true
+      note("${store.failStreak} delen op rij mislukt: gepauzeerd tot de app voorkomt")
+    }
   }
 
   private fun retryWait(attempts: Int): Double = FIRST_RETRY_MS * (1 shl (attempts - 1).coerceIn(0, 10))
@@ -756,21 +1027,29 @@ internal class OriginalUploader private constructor(private val context: Context
   /**
    * A28: zet het volgende deel klaar bij WorkManager, als er geen deel bezig
    * is. Eerst wat nu mag, in de volgorde van de originelen en de delen; anders
-   * het deel dat het eerst weer mag, met een wachttijd. Alleen op `q`.
+   * het deel dat het eerst weer mag, met een wachttijd. Niet tijdens een pauze
+   * na een storing (K2), en niet bij een origineel dat op nieuwe links wacht
+   * (K1, K2). Alleen op `q`.
    */
   private fun pump() {
     if (!started) return
+    if (store.paused) return
     if (store.jobs.any { j -> !j.broken && j.parts.any { it.state == "bezig" } }) return
     val now = nowMs()
     var changed = false
     var best: Pair<UploadJob, UploadPart>? = null
     var bestAt = Double.MAX_VALUE
     for (job in store.jobs) {
-      if (job.broken) continue
+      if (job.broken || job.needsLinks) continue
       val waiting = job.parts.filter { it.state == "wacht" }
       if (waiting.isEmpty()) continue
       if (!sourceOk(job)) {
         markBroken(job)
+        changed = true
+        continue
+      }
+      if (linkExpiring(job, now)) {
+        markLinkExpired(job, waiting.first(), now)
         changed = true
         continue
       }
@@ -797,18 +1076,25 @@ internal class OriginalUploader private constructor(private val context: Context
       val (job, part) = pick
       val token = UUID.randomUUID().toString()
       val session = if (store.wifiOnly) WIFI else ANY
-      val delay = maxOf(0.0, (part.retryAt ?: 0.0) - now).toLong()
+      // H2: wachten op wifi op een netwerk dat geen wifi is, geldt voor elke taak.
+      val wifiWait = if (store.wifiOnly) store.wifiWaitUntil ?: 0.0 else 0.0
+      val delay = maxOf(0.0, maxOf(part.retryAt ?: 0.0, wifiWait) - now).toLong()
       part.state = "bezig"
       part.token = token
       part.session = session
       part.sent = 0
       part.updatedAt = now
       changed = true
-      enqueue(job, part, token, delay)
-      note(
-        "${job.originalId} deel ${part.partNumber} aan Android (sessie $session, ${where()}" +
-          (if (delay > 0) ", over ${delay / 1000} s" else "") + ")",
-      )
+      try {
+        enqueue(job, part, token, delay)
+        note(
+          "${job.originalId} deel ${part.partNumber} aan Android (sessie $session, ${where()}" +
+            (if (delay > 0) ", over ${delay / 1000} s" else "") + ")",
+        )
+      } catch (e: Exception) {
+        // K5: dan bij de volgende start (reconcile zet het deel weer in de rij).
+        note("${job.originalId} deel ${part.partNumber}: klaarzetten bij Android lukte niet (${e.javaClass.simpleName})")
+      }
     }
     if (changed) save()
   }
@@ -832,6 +1118,7 @@ internal class OriginalUploader private constructor(private val context: Context
       .addTag(tokenTag(token))
       .build()
     workManager.enqueueUniqueWork(workName(job.originalId, part.partNumber), ExistingWorkPolicy.REPLACE, request)
+    enqueuedAt[token] = System.currentTimeMillis() to delayMs
   }
 
   private fun find(originalId: String, partNumber: Int, token: String): Pair<UploadJob, UploadPart>? {
@@ -847,22 +1134,42 @@ internal class OriginalUploader private constructor(private val context: Context
     if (!tryStart("taak van Android")) return@onQ Claim.Later
     val (job, part) = find(originalId, partNumber, token) ?: return@onQ Claim.Stale
     if (job.broken) return@onQ Claim.Stale
+    val now = nowMs()
     if (!sourceOk(job)) {
       markBroken(job)
       save()
       pump()
       return@onQ Claim.Stale
     }
-    // A29: "niet betaald" laat ook mobiel internet toe dat de provider onbeperkt noemt; dat wacht ook.
-    if (part.session == WIFI && !net.wifiLike(network)) {
-      note("$originalId deel $partNumber: wacht op wifi (dit netwerk telt niet als wifi)")
-      return@onQ Claim.Later
+    // K1: geen deel beginnen met een link die (bijna) verlopen is.
+    if (linkExpiring(job, now)) {
+      markLinkExpired(job, part, now)
+      save()
+      pump()
+      return@onQ Claim.Stale
+    }
+    // A29: "niet betaald" laat ook mobiel internet toe dat de provider onbeperkt
+    // noemt; dat wacht ook. H2: dan hooguit eens per WIFI_WAIT_MS een taak, met
+    // een vaste wachttijd (geen backoff die bij elke start oploopt).
+    if (store.wifiOnly && !net.wifiLike(network)) {
+      enqueuedAt.remove(token)
+      part.state = "wacht"
+      part.token = null
+      part.sent = 0
+      part.updatedAt = now
+      store.wifiWaitUntil = now + WIFI_WAIT_MS
+      note("$originalId deel $partNumber: wacht op wifi (dit netwerk telt niet als wifi), over ${(WIFI_WAIT_MS / 60_000).toInt()} min opnieuw")
+      save()
+      pump()
+      return@onQ Claim.Stale
     }
     val url = part.url ?: return@onQ Claim.Stale
     val file = source(job) ?: return@onQ Claim.Stale
     part.retryAt = null
     part.sent = 0
-    part.updatedAt = nowMs()
+    part.updatedAt = now
+    running.add(token)
+    enqueuedAt.remove(token)
     note("$originalId deel $partNumber: versturen begint (sessie ${part.session}, ${where()}, start $attempt)")
     Claim.Go(file, part.offset, part.size, url)
   }
@@ -875,75 +1182,135 @@ internal class OriginalUploader private constructor(private val context: Context
   /** De taak is klaar: de afloop in de opslag, en het volgende deel. */
   fun finished(originalId: String, partNumber: Int, token: String, outcome: Outcome) {
     onQ {
+      running.remove(token)
       val found = find(originalId, partNumber, token)
       if (found == null) {
         // Nieuwe links, omgezet of vergeten: telt niet.
         if (outcome is Outcome.Done) note("$originalId deel $partNumber: klaar, maar die taak telt niet meer")
-        pump()
+        guarded { pump() }
         return@onQ
       }
       val (job, part) = found
-      val now = nowMs()
-      part.updatedAt = now
-      when (outcome) {
-        is Outcome.Stopped -> {
-          // Geen poging en geen mislukking: WorkManager start dezelfde taak opnieuw.
-          part.sent = 0
-          note("$originalId deel $partNumber: gestopt door Android (reden ${outcome.reason}), wacht op een nieuwe start")
+      try {
+        settle(job, part, token, outcome)
+      } catch (e: Throwable) {
+        // K5: de afloop is onbekend; het deel gaat opnieuw in de rij (geen poging).
+        note("$originalId deel $partNumber: onverwachte fout bij de afloop (${e.javaClass.simpleName}), opnieuw in de rij")
+        try {
+          workManager.cancelAllWorkByTag(tokenTag(token))
+        } catch (_: Exception) {
+          // Dan is de taak bij de volgende start een losse taak.
         }
-        is Outcome.NetworkGone -> {
-          part.sent = 0
-          note("$originalId deel $partNumber: netwerk weg, wacht op een nieuwe start")
-        }
-        is Outcome.Broken -> markBroken(job)
-        is Outcome.Done -> {
-          part.state = "klaar"
-          part.httpStatus = outcome.status
-          part.code = null
-          part.sent = part.size
-          part.url = null
-          part.token = null
-          part.retryAt = null
-          val done = job.parts.count { it.state == "klaar" }
-          val total = job.parts.size
-          note("$originalId deel $partNumber klaar (HTTP ${outcome.status}, sessie ${part.session}, ${where()}); $done van $total")
-          emit?.invoke(
-            "onPartDone",
-            mapOf(
-              "originalId" to originalId, "generation" to job.generation.toDouble(), "partNumber" to partNumber,
-              "done" to done, "total" to total,
-            ),
-          )
-          if (done == total && !job.allDoneSent) {
-            job.allDoneSent = true
-            note("$originalId: alle delen klaar (generatie ${job.generation})")
-            emit?.invoke("onAllPartsDone", mapOf("originalId" to originalId, "generation" to job.generation.toDouble()))
-          }
-        }
-        is Outcome.Failed -> {
-          part.httpStatus = outcome.status
-          part.code = outcome.code
-          part.token = null
-          part.sent = 0
-          part.attempts += 1
-          val final = outcome.status == 403 || outcome.code == "NoSuchUpload" || part.attempts >= PART_ATTEMPTS
-          if (final) {
-            part.state = "mislukt"
-            part.retryAt = null
-          } else {
-            part.state = "wacht"
-            part.retryAt = now + retryWait(part.attempts)
-          }
-          note(
-            "$originalId deel $partNumber mislukt: ${outcome.what}${outcome.code?.let { " $it" } ?: ""}, " +
-              "sessie ${part.session}, poging ${part.attempts}" + (if (final) ", wacht op de app" else ", zelf opnieuw"),
-          )
-          if (final) emitFailed(job, part)
-        }
+        part.state = "wacht"
+        part.token = null
+        part.sent = 0
       }
       save()
-      pump()
+      guarded { pump() }
     }
+  }
+
+  /** De afloop van een taak in de opslag. Alleen op `q`, vanuit `finished`. */
+  private fun settle(job: UploadJob, part: UploadPart, token: String, outcome: Outcome) {
+    val originalId = job.originalId
+    val partNumber = part.partNumber
+    val now = nowMs()
+    part.updatedAt = now
+    when (outcome) {
+      is Outcome.Stopped -> {
+        part.sent = 0
+        if (isTimeLimitStop(outcome.reason, outcome.ranMs)) {
+          // H1: telt per deel en per link; na TIMEOUT_STOPS is het deel te traag.
+          part.timeouts += 1
+          if (part.timeouts >= TIMEOUT_STOPS) {
+            workManager.cancelAllWorkByTag(tokenTag(token))
+            part.state = "mislukt"
+            part.httpStatus = null
+            part.code = CODE_TOO_SLOW
+            part.token = null
+            part.retryAt = null
+            note("$originalId deel $partNumber: ${part.timeouts} keer gestopt op de tijdslimiet van Android, te traag; wacht op de app")
+            countFinalFailure()
+            emitFailed(job, part)
+            return
+          }
+          note("$originalId deel $partNumber: gestopt op de tijdslimiet van Android (${part.timeouts} van $TIMEOUT_STOPS), wacht op een nieuwe start")
+        } else {
+          // Geen poging en geen mislukking: WorkManager start dezelfde taak opnieuw.
+          note("$originalId deel $partNumber: gestopt door Android (reden ${outcome.reason}), wacht op een nieuwe start")
+        }
+        requeueIfRuleChanged(job, part, token)
+      }
+      is Outcome.NetworkGone -> {
+        part.sent = 0
+        note("$originalId deel $partNumber: netwerk weg, wacht op een nieuwe start")
+        requeueIfRuleChanged(job, part, token)
+      }
+      is Outcome.Broken -> markBroken(job)
+      is Outcome.Done -> {
+        part.state = "klaar"
+        part.httpStatus = outcome.status
+        part.code = null
+        part.sent = part.size
+        part.url = null
+        part.token = null
+        part.retryAt = null
+        store.failStreak = 0
+        val done = job.parts.count { it.state == "klaar" }
+        val total = job.parts.size
+        note("$originalId deel $partNumber klaar (HTTP ${outcome.status}, sessie ${part.session}, ${where()}); $done van $total")
+        emitEvent(
+          "onPartDone",
+          mapOf(
+            "originalId" to originalId, "generation" to job.generation.toDouble(), "partNumber" to partNumber,
+            "done" to done, "total" to total,
+          ),
+        )
+        if (done == total && !job.allDoneSent) {
+          job.allDoneSent = true
+          note("$originalId: alle delen klaar (generatie ${job.generation})")
+          emitEvent("onAllPartsDone", mapOf("originalId" to originalId, "generation" to job.generation.toDouble()))
+        }
+      }
+      is Outcome.Failed -> {
+        part.httpStatus = outcome.status
+        part.code = outcome.code
+        part.token = null
+        part.sent = 0
+        part.attempts += 1
+        val needsLinks = outcome.status == 403 || outcome.code == "NoSuchUpload"
+        val final = needsLinks || part.attempts >= PART_ATTEMPTS
+        if (final) {
+          part.state = "mislukt"
+          part.retryAt = null
+          // K2: dezelfde upload en dezelfde links; geen ander deel tot er nieuwe links zijn.
+          if (needsLinks) job.needsLinks = true
+          countFinalFailure()
+        } else {
+          part.state = "wacht"
+          part.retryAt = now + retryWait(part.attempts)
+        }
+        note(
+          "$originalId deel $partNumber mislukt: ${outcome.what}${outcome.code?.let { " $it" } ?: ""}, " +
+            "sessie ${part.session}, poging ${part.attempts}" + (if (final) ", wacht op de app" else ", zelf opnieuw"),
+        )
+        if (final) emitFailed(job, part)
+      }
+    }
+  }
+
+  /**
+   * K5: een deel dat stopte terwijl de wifi-regel intussen omging, begint
+   * opnieuw met de nieuwe regel (en niet met de oude voorwaarde van zijn taak).
+   */
+  private fun requeueIfRuleChanged(job: UploadJob, part: UploadPart, token: String) {
+    val session = if (store.wifiOnly) WIFI else ANY
+    if (part.session == session) return
+    workManager.cancelAllWorkByTag(tokenTag(token))
+    enqueuedAt.remove(token)
+    part.state = "wacht"
+    part.token = null
+    note("${job.originalId} deel ${part.partNumber}: opnieuw klaargezet met de nieuwe wifi-regel")
   }
 }
 

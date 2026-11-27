@@ -12,7 +12,8 @@
 // - De opruimregels van WP39 (`remove`, `cache/ImagePicker`) raken deze
 //   mappen niet: ze liggen buiten de cache.
 // - `readState`/`writeState`: kleine bestanden van de wachtrij in JS (de
-//   wachtrij en "Alleen via wifi"), atomair geschreven.
+//   wachtrij en "Alleen via wifi"), atomair geschreven en eerst op schijf
+//   gezet (K5, ook voor de opslag van de uploader).
 // - Geen deelbestanden: de uploader leest elk deel rechtstreeks uit het
 //   bewaarde bestand (OriginalPartWorker.kt).
 
@@ -25,6 +26,7 @@ import android.os.StatFs
 import android.os.storage.StorageManager
 import java.io.File
 import java.io.FileInputStream
+import java.io.FileOutputStream
 import java.security.MessageDigest
 import java.util.Locale
 import java.util.UUID
@@ -142,11 +144,19 @@ internal object OriginalFiles {
     writeAtomic(stateFile(context, name), text)
   }
 
-  /** Eerst naast het bestand, dan in één keer erover. */
+  /**
+   * Eerst naast het bestand, op schijf gezet (fsync), dan in één keer erover.
+   * K5: na stroomuitval is er de oude of de nieuwe versie, nooit een lege of
+   * halve.
+   */
   fun writeAtomic(target: File, text: String) {
     val tmp = File(target.parentFile, ".${target.name}.${UUID.randomUUID()}.tmp")
     try {
-      tmp.writeText(text, Charsets.UTF_8)
+      FileOutputStream(tmp).use { out ->
+        out.write(text.toByteArray(Charsets.UTF_8))
+        out.flush()
+        out.fd.sync()
+      }
       if (!tmp.renameTo(target)) throw ClubalmanacVideoException("Bewaren lukte niet")
     } finally {
       if (tmp.exists()) tmp.delete()

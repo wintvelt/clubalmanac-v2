@@ -967,6 +967,7 @@ export function AddPhotosScreen({ albumId }: { albumId?: string }) {
       .filter((i) => i.state === "klaar")
       .map((i) => originals.current.get(i.uploadId)?.skip)
       .filter((r): r is SkipReason => r !== undefined),
+    Platform.OS === "android" ? "android" : "ios",
   );
   const photoStates = new Map((items ?? []).map((i) => [i.key, i.state]));
   const videoStates = new Map((videoItems ?? []).map((i) => [i.key, i]));

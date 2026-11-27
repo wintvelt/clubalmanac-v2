@@ -11,11 +11,17 @@
 //   koos (A29).
 // - Stopt Android de taak (Doze, quotum, de tijdslimiet, een voorwaarde die
 //   niet meer klopt) of de app (omzetten, vergeten), dan breekt de verbinding
-//   meteen af; dat is geen poging.
+//   meteen af; dat is geen poging. De uploader telt alleen de tijdslimiet
+//   (H1), met de reden en hoe lang het versturen liep.
+// - K5: er ontsnapt geen fout uit de taak. Elke afloop gaat naar de uploader,
+//   ook een onverwachte fout of een link die niet te gebruiken is (een
+//   mislukte poging zonder status). Geen tekst van een fout in een log: die
+//   kan de host of de link noemen; alleen de naam van de soort fout.
 
 package expo.modules.clubalmanacvideo
 
 import android.content.Context
+import android.os.SystemClock
 import androidx.work.Worker
 import androidx.work.WorkerParameters
 import java.io.IOException
@@ -29,15 +35,34 @@ class OriginalPartWorker(context: Context, params: WorkerParameters) : Worker(co
     val originalId = inputData.getString(OriginalUploader.KEY_ORIGINAL) ?: return Result.success()
     val partNumber = inputData.getInt(OriginalUploader.KEY_PART, 0)
     val token = inputData.getString(OriginalUploader.KEY_TOKEN) ?: return Result.success()
-    val uploader = OriginalUploader.get(applicationContext)
-    val claim = uploader.claim(originalId, partNumber, token, network, runAttemptCount + 1)
+    val uploader = try {
+      OriginalUploader.get(applicationContext)
+    } catch (_: Throwable) {
+      return Result.retry()
+    }
+    val claim = try {
+      uploader.claim(originalId, partNumber, token, network, runAttemptCount + 1)
+    } catch (_: Throwable) {
+      // De opslag was niet te bereiken: later opnieuw, zonder poging.
+      return Result.retry()
+    }
     val go = when (claim) {
       is Claim.Stale -> return Result.success()
       is Claim.Later -> return Result.retry()
       is Claim.Go -> claim
     }
-    val outcome = upload(go, uploader, originalId, partNumber, token)
-    uploader.finished(originalId, partNumber, token, outcome)
+    val began = SystemClock.elapsedRealtime()
+    val outcome = try {
+      upload(go, uploader, originalId, partNumber, token, began)
+    } catch (e: Throwable) {
+      if (isStopped) Outcome.Stopped(stopReason, SystemClock.elapsedRealtime() - began)
+      else Outcome.Failed(null, null, "onverwachte fout (${e.javaClass.simpleName})")
+    }
+    try {
+      uploader.finished(originalId, partNumber, token, outcome)
+    } catch (_: Throwable) {
+      // De volgende start legt de opslag naast de taken (reconcile).
+    }
     return if (outcome is Outcome.NetworkGone) Result.retry() else Result.success()
   }
 
@@ -50,15 +75,24 @@ class OriginalPartWorker(context: Context, params: WorkerParameters) : Worker(co
     }
   }
 
-  private fun stoppedOutcome(): Outcome = Outcome.Stopped(stopReason)
-
-  private fun upload(go: Claim.Go, uploader: OriginalUploader, originalId: String, partNumber: Int, token: String): Outcome {
+  private fun upload(
+    go: Claim.Go, uploader: OriginalUploader, originalId: String, partNumber: Int, token: String, began: Long,
+  ): Outcome {
+    fun stoppedOutcome(): Outcome = Outcome.Stopped(stopReason, SystemClock.elapsedRealtime() - began)
     if (isStopped) return stoppedOutcome()
-    val url = URL(go.url)
+    // K5: een link die niet te lezen is, is een mislukte poging zonder status.
+    val url = try {
+      URL(go.url)
+    } catch (_: Exception) {
+      return Outcome.Failed(null, null, "link niet te gebruiken")
+    }
     val conn = try {
-      (network?.openConnection(url) ?: url.openConnection()) as HttpURLConnection
+      (network?.openConnection(url) ?: url.openConnection()) as? HttpURLConnection
+        ?: return Outcome.Failed(null, null, "link niet te gebruiken")
     } catch (_: IOException) {
       return if (uploader.net.alive(network)) Outcome.Failed(null, null, "geen verbinding") else Outcome.NetworkGone
+    } catch (_: Exception) {
+      return Outcome.Failed(null, null, "link niet te gebruiken")
     }
     connection = conn
     try {
