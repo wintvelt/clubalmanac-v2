@@ -641,7 +641,7 @@ Zolang een filmproject openstaat, gaat van elk nieuw filmpje dat een Android-lid
 ## Invarianten (42c)
 
 1. **Hetzelfde gedrag als de iPhone, met de backend van WP38 ongewijzigd.** Wanneer een origineel meegaat, de stand per inzending, terugtrekken en "Alleen via wifi" volgen de regels van 38b en 38c.
-2. **Het origineel is het bestand van het toestel, bit voor bit**, met opnamedatum en plaats (WP38 besluit 10). Geeft de kiezer op een Android-versie niet het origineel (plaats weggehaald, bestand opnieuw geschreven), dan gaat er van dat toestel geen origineel mee en zegt de app dat; nooit stilletjes een kopie zonder plaats als origineel.
+2. **Het origineel is het beste bestand dat de kiezer geeft**, zonder dat de app het verkleint of opnieuw schrijft. Bit voor bit met opnamedatum en plaats waar de kiezer dat geeft (WP38 besluit 10); geeft de kiezer op een Android-versie een kopie zonder plaats, dan gaat die kopie mee (B16).
 3. **Doorgaan zonder de app.** Wegklikken uit de recente apps, scherm op slot en herstarten van de telefoon: het origineel komt daarna binnen zonder dat het lid iets doet, of zodra het lid de app opent. Elk deel komt één keer binnen.
 4. **"Alleen via wifi" geldt ook als de app dicht is.** Op mobiel internet wacht het origineel; op wifi gaat het verder. Omzetten werkt ook voor wachtende delen.
 5. **Geen stille mislukking.** Stopt Android het versturen voorgoed (link verlopen, project dicht, terugtrekken, te weinig ruimte), dan staat dat bij de inzending op de projectpagina. Een origineel dat wacht, staat niet als "wordt verstuurd".
@@ -696,3 +696,9 @@ Setup: A → besluiten → spike S3 → B → audit → red-team → gate op emu
 ## Cross-refs (42c)
 
 WP38 (38a backend, 38b uploader en besluiten 21–26, 38c schermen), WP42a (A9, A11, S1, fix-ronde punt 7), WP42b (S2, de module op Android), WP37 (album-filmpje), WP39 (toevoegscherm).
+
+## Besluiten Wouter (42c, 2026-11-27)
+
+- **B15.** Advies: WorkManager zonder foreground service, één job per deel, wifi als voorwaarde, tenzij A of S3 het weerlegt.
+- **B16 (anders dan het advies).** Geeft de kiezer niet het origineel bit voor bit, dan gaat toch wat de kiezer geeft mee, ook zonder plaats. Wouter: beter een kopie dan een missend origineel; niemand garandeert dat een lid het origineel later nog heeft.
+- **B17.** Advies: gate op de emulator tegen dev; daarna build 7 via de interne track naar de testers. Wouter zet op prod een filmproject open zodra die build uit is.
