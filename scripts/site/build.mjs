@@ -62,9 +62,9 @@ const ogTags = ({ title, description, url }) =>
     `<meta property="og:url" content="${attr(url)}">`,
     `<meta property="og:image" content="${OG_IMAGE}">`,
     '<meta property="og:image:width" content="1200">',
-    '<meta property="og:image:height" content="630">',
+    '<meta property="og:image:height" content="1200">',
     '<meta property="og:locale" content="nl_NL">',
-    '<meta name="twitter:card" content="summary_large_image">',
+    '<meta name="twitter:card" content="summary">',
   ].join("\n");
 
 const page = (title, og, body) => `<!doctype html>
