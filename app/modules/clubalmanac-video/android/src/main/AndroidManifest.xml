@@ -1,2 +1,3 @@
-<!-- WP42b A21: de module vraagt geen rechten en heeft geen dienst. -->
+<!-- WP42b A21, WP42c A33: de module vraagt geen rechten en heeft geen dienst.
+     De taken van de uploader lopen via WorkManager (zijn eigen manifest). -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android" />

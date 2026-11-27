@@ -19,6 +19,7 @@ import type { Id } from "../../../convex/_generated/dataModel";
 import { api } from "../convexApi";
 import { askConfirmation } from "../data/confirm";
 import { PHOTOS_ONLY_TEXTS, PICKER_ASKS_ACCESS } from "../data/pickMedia";
+import { clearPickMark, markPick } from "../data/pendingPick";
 import { listPickerCopies, newPickerCopies, removePickerCopies } from "../data/pickerCopies";
 import { useUploader, type UploadAsset } from "../data/upload";
 import { READ_ONLY, WEB_UPLOAD } from "../data/readOnly";
@@ -341,6 +342,8 @@ function ProfilePhotoBlock({ me }: { me: Me }) {
     }
     let result: ImagePicker.ImagePickerResult;
     const before = listPickerCopies();
+    // WP42c A36: sluit Android de app terwijl de kiezer open is, dan komt deze keuze niet in het toevoegscherm.
+    markPick({ kind: "profiel", at: Date.now() });
     try {
       result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ["images"],
@@ -354,12 +357,14 @@ function ProfilePhotoBlock({ me }: { me: Me }) {
         quality: 1,
       });
     } catch {
+      clearPickMark();
       removePickerCopies(newPickerCopies(before, listPickerCopies()));
       // WP42 A6: de fotokiezer van Android vraagt geen toegang; dan mislukte het ophalen.
       if (PICKER_ASKS_ACCESS) setFeedback({ kind: "access" });
       else setFeedback({ kind: "error", text: PHOTOS_ONLY_TEXTS?.fetchFailed ?? "Je keuze ophalen lukte niet." });
       return;
     }
+    clearPickMark();
     const asset = result.canceled ? undefined : result.assets[0];
     const own = newPickerCopies(before, listPickerCopies());
     if (!asset) {

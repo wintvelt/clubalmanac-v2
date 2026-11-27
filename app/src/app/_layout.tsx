@@ -3,6 +3,7 @@ import App from "../../App";
 import { AuthGate } from "../AuthGate";
 import { useAuthState } from "../data/authStateContext";
 import { OriginalsRunner } from "../data/originalsRunner";
+import { PendingPickHandler } from "../data/PendingPickHandler";
 import {
   CloseButton,
   useNavigationTheme,
@@ -35,6 +36,8 @@ function RootStack() {
   const screenOptions = useStackScreenOptions();
   return (
     <ThemeProvider value={useNavigationTheme()}>
+      {/* WP42c A36: een keuze die Android bewaarde terwijl de app dicht ging. */}
+      {state === "ready" && <PendingPickHandler />}
       <Stack screenOptions={{ ...screenOptions, headerShown: false }}>
         <Stack.Protected guard={inApp}>
           <Stack.Screen name="(tabs)" />

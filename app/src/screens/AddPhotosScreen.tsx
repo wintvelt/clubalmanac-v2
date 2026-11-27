@@ -1,4 +1,5 @@
 import { useAuth } from "@clerk/expo";
+import { File } from "expo-file-system";
 import { Image } from "expo-image";
 import * as ImagePicker from "expo-image-picker";
 import { activateKeepAwakeAsync, deactivateKeepAwake } from "expo-keep-awake";
@@ -36,6 +37,8 @@ import { api } from "../convexApi";
 import { useMyGroups } from "../data/homeGroupState";
 import { forgetLastAlbum, loadLastAlbum, saveLastAlbum } from "../data/lastAlbum";
 import { addOriginalToQueue, originalEvent, originalsReady, originalsSnapshot } from "../data/originals";
+import { clearPickMark, markPick } from "../data/pendingPick";
+import { takeAddHandoff } from "../data/pickHandoff";
 import { removePickerCopies } from "../data/pickerCopies";
 import {
   beforePick,
@@ -77,6 +80,7 @@ import {
   originalPlan,
   type MovedOriginalAction,
 } from "../lib/originalUpload";
+import { PICK_AGAIN_TEXT } from "../lib/pendingPick";
 import { PICK_IDLE, beginPick, endPick, fetchStarted, pickView, stopPick, type PickSession } from "../lib/pickSession";
 import {
   UPLOAD_PARALLEL,
@@ -171,6 +175,14 @@ import { WifiOnlySwitch } from "./FilmProjectParts";
 // Besluit 25 (38b-12): verkleinen dat mislukte omdat de app de voorgrond
 // verliet, gaat vanzelf opnieuw zodra de app weer actief is (hooguit drie
 // keer op rij, src/lib/compressResume.ts); ook zonder origineel.
+//
+// WP42c A36 (invariant 8): vóór het openen van de kiezer onthoudt het scherm
+// waarvoor (toevoegen, met het album van dat moment); sluit Android de app
+// terwijl de kiezer open is, dan opent de start het scherm met die keuze, of
+// met "kies opnieuw" (src/data/PendingPickHandler.tsx). Dan opent de kiezer
+// niet vanzelf. Alleen op Android; op iOS doen `markPick` en de start niets.
+// A31: of het origineel meegaat, hangt aan de grootte van het bestand dat de
+// app heeft, niet aan een getal van de kiezer.
 
 const KEEP_AWAKE_TAG = "wp18-upload";
 
@@ -232,6 +244,16 @@ function untilActive(): Promise<void> {
   });
 }
 
+/** WP42c A31: de grootte van het bestand op het toestel; `null` als het niet te lezen is. */
+function fileBytes(uri: string): number | null {
+  try {
+    const n = new File(uri).size;
+    return typeof n === "number" && Number.isFinite(n) && n > 0 ? n : null;
+  } catch {
+    return null;
+  }
+}
+
 function selectionText(photos: number, videos: number): string {
   const parts = [photos > 0 ? photoCountText(photos) : null, videos > 0 ? videoCountText(videos) : null];
   return `${parts.filter(Boolean).join(" en ")} geselecteerd`;
@@ -274,10 +296,15 @@ export function AddPhotosScreen({ albumId }: { albumId?: string }) {
   const [fetchFailed, setFetchFailed] = useState(false);
   const [now, setNow] = useState(() => Date.now());
   const [album, setAlbum] = useState<Chosen["album"]>(null);
+  const albumRef = useRef<Chosen["album"]>(null);
+  albumRef.current = album;
   // F4: false zolang het vooraf ingevulde album nog gecontroleerd wordt.
   const [albumKnown, setAlbumKnown] = useState(false);
   const [choosing, setChoosing] = useState(false);
   const [initialAlbumId] = useState(albumId ?? null);
+  // WP42c A36: een keuze die Android bewaarde, of "kies opnieuw" (één keer, bij het openen).
+  const [handoff] = useState(() => takeAddHandoff());
+  const [pickAgain, setPickAgain] = useState(handoff?.kind === "opnieuw_kiezen");
   const { userId } = useAuth();
   // Het onthouden album (undefined: nog niet gelezen), of dat uit de route.
   const [candidate, setCandidate] = useState<StoredAlbum | null | undefined>(undefined);
@@ -357,6 +384,9 @@ export function AddPhotosScreen({ albumId }: { albumId?: string }) {
     updateSession(begun.state);
     setPickerFailed(false);
     setFetchFailed(false);
+    setPickAgain(false);
+    // WP42c A36: waarvoor de kiezer opengaat, met het album van nu.
+    markPick({ kind: "toevoegen", albumId: albumRef.current?.albumId ?? initialAlbumId, at: Date.now() });
     setFetching(true);
     void watchPicker(token, Date.now());
     let result: ImagePicker.ImagePickerResult | null = null;
@@ -385,6 +415,7 @@ export function AddPhotosScreen({ albumId }: { albumId?: string }) {
       failure = e;
       failed = true;
     } finally {
+      clearPickMark();
       // Gekozen, geannuleerd of mislukt: de ophaal-toestand weer weg. Na
       // "Stoppen" telt het antwoord niet (F7).
       const end = endPick(sessionRef.current, token);
@@ -548,6 +579,8 @@ export function AddPhotosScreen({ albumId }: { albumId?: string }) {
   // (gezien in de simulator). Valt `transitionEnd` weg, dan na een seconde.
   const navigation = useNavigation();
   useEffect(() => {
+    // WP42c A36: met een bewaarde keuze of "kies opnieuw" opent de kiezer niet vanzelf.
+    if (handoff) opened.current = true;
     const open = () => {
       if (opened.current) return;
       opened.current = true;
@@ -565,6 +598,26 @@ export function AddPhotosScreen({ albumId }: { albumId?: string }) {
       clearTimeout(fallback);
     };
   }, [navigation]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // WP42c A36: de keuze die Android bewaarde, als een gewone keuze (met sleutels en ontdubbeld).
+  useEffect(() => {
+    if (handoff?.kind !== "toevoegen") return;
+    let live = true;
+    void withContentKeys(handoff.assets)
+      .catch(() => handoff.assets)
+      .then((assets) => {
+        if (!live) {
+          dropCopies(assets, []);
+          return;
+        }
+        const { items: next, skipped } = addToSelection([], assets);
+        dropCopies(skipped, next);
+        updateSelection(next);
+      });
+    return () => {
+      live = false;
+    };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Zolang een ronde loopt, blijft het scherm aan (besluit 3; WP37 B11: ook
   // tijdens het verkleinen van een filmpje). WP39: ook tijdens "Je keuze
@@ -647,11 +700,18 @@ export function AddPhotosScreen({ albumId }: { albumId?: string }) {
     } catch {
       // Onbekend: houdt het origineel niet tegen.
     }
+    // A31: de grootte van het bestand dat de app heeft (anders die van de
+    // kiezer). Geen van beide: niet mee, maar niet "te klein".
+    const bytes = fileBytes(asset.uri) ?? (typeof asset.fileSize === "number" && asset.fileSize > 0 ? asset.fileSize : null);
+    if (bytes === null) {
+      skip("fout");
+      return asset;
+    }
     const plan = originalPlan({
       uploaderAvailable: originalUploaderAvailable,
       groupId,
       openProjects: projectId ? [{ groupId, projectId }] : [],
-      bytes: typeof asset.fileSize === "number" ? asset.fileSize : Number.NaN,
+      bytes,
       freeBytes: free,
     });
     if (plan.kind !== "mee") {
@@ -952,6 +1012,8 @@ export function AddPhotosScreen({ albumId }: { albumId?: string }) {
           <SmallButton title="Instellingen openen" onPress={() => void Linking.openSettings()} />
         </Notice>
       )}
+
+      {pickAgain && !fetching && selection.length === 0 && <Notice kind="error" message={PICK_AGAIN_TEXT} />}
 
       {fetchFailed && (
         <Notice

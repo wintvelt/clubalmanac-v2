@@ -359,6 +359,17 @@ export function projectPageView(input: {
   };
 }
 
+/**
+ * WP42c A34 (42a A11 vervalt): de lege stand van "Alle filmpjes". Een open
+ * project belooft dat nieuwe filmpjes als origineel meegaan in de webapp en in
+ * de app met uploader (iPhone en Android); een app zonder uploader (een oude
+ * build) belooft niets. Hangt aan de uploader, niet aan het platform.
+ */
+export function projectEmptyText(input: { open: boolean; platform: Platform; uploader: boolean }): string {
+  const promise = input.open && (input.platform === "web" || input.uploader);
+  return promise ? "Nieuwe filmpjes in deze groep gaan ook als origineel mee." : "Er is nog geen filmpje binnengekomen.";
+}
+
 /** De stand van een eigen filmpje; "onderweg" op het web en zonder uploader. */
 export type MineStand = OwnStand | "onderweg";
 
