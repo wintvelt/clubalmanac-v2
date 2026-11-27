@@ -1014,6 +1014,7 @@ Audit leest deze punten. De gate doet:
 - Voor H1 op de emulator: stop, `am kill` met de app op de achtergrond, ruim 60 s wachten, dan `cmd jobscheduler run -f` en na 1 s `timeout`. Drie keer.
 - Vondst: een herstart door WorkManager in een levend proces heeft geen tijdslimiet van 10 minuten. Met de app open (of net gebruikt) haalt een traag deel het dus vaak toch.
 - Voor de gate opende B tijdelijk een filmproject in Familievakantie (dev, proefscherm) en sloot het weer.
+- **Tweede poging met dev2 (16:40):** dev2 kan inloggen, maar zit in geen enkele groep. De app toont "Je hebt eerst een uitnodiging nodig", dus er is geen album, geen filmproject en geen proefscherm. B stopte daar; dev2 is weer uitgelogd. Om met dev2 verder te gaan, moet een beheerder van een groep op dev (bv. dev1 in Test group) dev2 eerst uitnodigen.
 
 ## Regie na audit herstelronde (2026-11-27)
 
