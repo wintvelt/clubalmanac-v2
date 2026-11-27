@@ -1,0 +1,21 @@
+{
+  "v": 1,
+  "error": "withdrawn",
+  "claim": {
+    "id": "jn7c4q1b8w2v6x0d3f5h9k2m4p6r8t04",
+    "member": {
+      "id": "js71j0r1sq8v2m6x0d3f5h9k2m4p6rb2",
+      "name": "Joris"
+    },
+    "title": "Taxi station",
+    "expenseDate": "2026-11-05",
+    "amountCents": 3200,
+    "status": "withdrawn",
+    "submittedAt": "2026-11-05T22:00:00.000Z",
+    "processedCents": 3200,
+    "note": null,
+    "decidedAt": "2026-11-06T09:00:00.000Z",
+    "withdrawnAt": "2026-11-07T12:00:00.000Z",
+    "revision": 4
+  }
+}

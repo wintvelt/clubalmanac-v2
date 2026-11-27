@@ -74,6 +74,11 @@ export const MONITORED_FK_ORACLE: FkOracleEntry[] = [
   // WP41 §A9: de afrekeningen uit het clubboek. Groep weg haalt ze mee (G6),
   // dus een losse verwijzing is drift.
   { table: "settlements", field: "groupId", target: "groups", required: true },
+  // WP45 §A11: de declaraties. Groep weg (G7) en account weg (U19) halen ze
+  // mee, dus een losse verwijzing is drift. Uit de groep gaan laat verzonden
+  // declaraties staan; de gebruiker bestaat dan nog.
+  { table: "expenseClaims", field: "groupId", target: "groups", required: true },
+  { table: "expenseClaims", field: "memberId", target: "users", required: true },
 ];
 
 /**
@@ -99,6 +104,7 @@ export const MONITORED_TABLE_ORACLE: string[] = [
   "filmProjects",
   "filmOriginals",
   "settlements",
+  "expenseClaims",
 ];
 
 /**
@@ -106,8 +112,15 @@ export const MONITORED_TABLE_ORACLE: string[] = [
  * tussen "tellen en leegmaken" en "invoegen" is een besluit, geen afleiding.
  * WP38: filmprojecten en inzendingen bestonden niet in v1.
  * WP41: afrekeningen komen uit het clubboek, niet uit v1.
+ * WP45: declaraties bestonden niet in v1.
  */
-export const NOT_LOADED_BY_IMPORT = ["uploadIdempotency", "filmProjects", "filmOriginals", "settlements"];
+export const NOT_LOADED_BY_IMPORT = [
+  "uploadIdempotency",
+  "filmProjects",
+  "filmOriginals",
+  "settlements",
+  "expenseClaims",
+];
 
 /** De FK's op tabellen die de import wél vult. */
 export const LOAD_FK_ORACLE: FkOracleEntry[] = MONITORED_FK_ORACLE.filter(

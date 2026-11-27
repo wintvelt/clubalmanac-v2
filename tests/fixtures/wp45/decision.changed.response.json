@@ -1,0 +1,21 @@
+{
+  "v": 1,
+  "error": "changed",
+  "claim": {
+    "id": "jn7c4q1b8w2v6x0d3f5h9k2m4p6r8t01",
+    "member": {
+      "id": "js71b3rkq8v2m6x0d3f5h9k2m4p6r8a1",
+      "name": "Berk"
+    },
+    "title": "Bier borrel",
+    "expenseDate": "2026-11-26",
+    "amountCents": 4250,
+    "status": "processed",
+    "submittedAt": "2026-11-26T19:04:05.000Z",
+    "processedCents": 4250,
+    "note": null,
+    "decidedAt": "2026-11-27T11:00:00.000Z",
+    "withdrawnAt": null,
+    "revision": 3
+  }
+}

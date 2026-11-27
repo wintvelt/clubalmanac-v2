@@ -38,6 +38,9 @@ const EXPECTED_PUBLIC_QUERIES = [
   // WP17d A-invariant 1: de kaart van een album (A-keuze 1: afgerond voor anderen).
   "albums:listLocations",
   "albums:listPhotos",
+  // WP45 §A2, §A10: de eigen declaraties in een groep; alleen het lid zelf,
+  // anders NOT_MEMBER of CLAIMS_DISABLED (tests/expenseClaims/member.test.ts).
+  "expenseClaims:listMine",
   "features:getById",
   "features:hasUpvoted",
   "features:list",
