@@ -1,5 +1,5 @@
 import Constants from "expo-constants";
-import { buildNumber, testFlightBuild } from "../../modules/clubalmanac-video";
+import { buildNumber, testFlightBuild, testFlightDiagnose } from "../../modules/clubalmanac-video";
 import { router } from "expo-router";
 import { useEffect, useState } from "react";
 import { Linking } from "react-native";
@@ -31,6 +31,19 @@ export function AppIdentity() {
       alive = false;
     };
   }, []);
+  // WP47 fix-cyclus 1: in builds met DEV_TOOLS klein eronder wat de
+  // TestFlight-check per stap zag.
+  const [diagnose, setDiagnose] = useState<string | null>(null);
+  useEffect(() => {
+    if (!DEV_TOOLS) return;
+    let alive = true;
+    void testFlightDiagnose().then((text) => {
+      if (alive) setDiagnose(text);
+    });
+    return () => {
+      alive = false;
+    };
+  }, []);
   const labels = buildLabels({ dev: DEV_TOOLS, testFlight });
   return (
     <>
@@ -38,6 +51,11 @@ export function AppIdentity() {
         {config?.name ?? "Clubalmanac"}
       </Text>
       <Text color="muted">{versionText(config?.version, buildNumber(), labels)}</Text>
+      {DEV_TOOLS && diagnose !== null && (
+        <Text variant="albumMeta" color="muted" selectable>
+          {diagnose}
+        </Text>
+      )}
     </>
   );
 }
