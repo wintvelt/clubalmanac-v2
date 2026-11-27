@@ -16,6 +16,7 @@ import { INFO_SENDER, sendMailjetMessage } from "./lib/mailjet";
 import { accountDeletionClerkFailedTemplate } from "./lib/emailTemplates";
 import { clerkSubjectHash } from "./lib/accountState";
 import { detachProjectsFromAlbum, removeOriginalsOfOwner } from "./lib/filmOriginals";
+import { deleteClaimsOfMember } from "./expenseClaims";
 
 // WP29 — account verwijderen. Spec: docs/work-packages/WP29-account-verwijderen.md
 // §Advies open vraag 2 en §A-invarianten.
@@ -245,6 +246,13 @@ const originalsPhase: Phase = async (ctx, user) => {
   return hadOriginals || requests.length > 0;
 };
 
+/**
+ * WP45 besluit 4 (U19): al zijn declaraties, elke status en elke groep, ook
+ * verzonden en in een groep die hij eerder verliet. Wat het clubboek al
+ * boekte, blijft daar. Vóór de lidmaatschappen, zodat M6 niets meer heeft.
+ */
+const claimsPhase: Phase = async (ctx, user) => await deleteClaimsOfMember(ctx, user._id, ROWS_PER_STEP);
+
 /** U8: één lidmaatschap per stap, met de M1/M2/M3-cascade (internalRemoveMember). */
 const membershipsPhase: Phase = async (ctx, user) => {
   const m = await ctx.db
@@ -442,6 +450,7 @@ const PHASES: Phase[] = [
   photosPhase,
   reservationsPhase,
   originalsPhase,
+  claimsPhase,
   membershipsPhase,
   foundedGroupsPhase,
   albumsPhase,
