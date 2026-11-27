@@ -910,3 +910,73 @@ Eerst A (tests die het gedrag pinnen), dan B. Invarianten, geen vorm voorgeschre
 - Annuleren in de kiezer nadat Android de app sloot, ziet er op Android uit als een verloren keuze ("Je keuze kwam niet aan"): aanvaard.
 - `fileBytes` voor de grootte geldt ook op iOS (A31): uitzondering op invariant 7, naast B18. Bij de volgende TestFlight controleren, samen met het buildnummer bij Info (de Swift-code staat er al).
 - **Aanvaard (B22):** R2 breekt een halve upload na 7 dagen af; alleen als het lid de app een week niet opent én de accu op "Beperkt"/"Diep slapend" staat. Verder voor de testers: VPN die Android als betaald ziet, wissel wifi→mobiel midden in een deel, bewaarde keuze na start zonder verbinding.
+
+## Herstelronde 42c: aanvullingen (A)
+
+> A 2026-11-27. Bronnen: de herstelpunten hierboven, de Kotlin-uploader van B (`OriginalUploader.kt`, `OriginalPartWorker.kt`, `OriginalFiles.kt`), `originalUpload.ts`, `originalQueue.ts`, `filmProject.ts`, WorkManager 2.9.1 uit de Gradle-cache (`javap`). Oude code is geen bron.
+
+### Wat ontbreekt
+
+1. **Onder Android 12 zegt Android niet waarom een taak stopt.** WorkManager 2.9.1 geeft onder API 31 altijd `STOP_REASON_UNKNOWN` (gelezen in `SystemJobService.onStopJob`). De tijdslimiet is daar niet te onderscheiden van Doze of het quotum (H1).
+2. **WorkManager 2.9.1 kan Android niet om "wifi" vragen**, alleen om "niet betaald". Een voorwaarde met netwerktype (`setRequiredNetworkRequest`) komt pas in 2.10, en K4 houdt de versie op die van de kaart. Op mobiel internet dat onbeperkt heet, vindt Android de voorwaarde dus steeds vervuld (H2).
+3. **De app moet de nieuwe uitkomsten kunnen lezen.** `partFailure` maakt van een mislukking zonder status met minder dan 5 pogingen "dezelfde link opnieuw". Een deel dat te traag was, kwam dan meteen weer bij de uploader, en de lus liep met de app open verder (H1).
+4. **Een fout die uit de taak ontsnapt, laat het deel op "bezig" staan.** De link wordt buiten de `try` gelezen, en een fout bij het sturen van een event komt vóór het bewaren. WorkManager zet zo'n taak op mislukt, met de tekst van de fout in logcat. Dan wacht het deel tot de volgende start van de app (K5).
+5. **Een deel dat na "uit" doorloopt, houdt de voorwaarde "niet betaald".** Stopt het later (wifi weg), dan wacht het op wifi terwijl "Alleen via wifi" uit staat (K5).
+
+### Invarianten herstelronde (A)
+
+**H1. Te traag.** Een stop op de tijdslimiet van Android telt per deel en per link. Na 3 zulke stops staat het deel op mislukt met de code `te_traag`, zonder status, en hoort de app het (`onPartFailed`, of bij de start via de stand van de uploader). De app probeert dan niet dezelfde link opnieuw. Ze wacht een uur (`WAIT_MS.later`) en meldt dan opnieuw aan; het lid ziet "Later opnieuw". De teller overleeft een herstart van het proces. Nieuwe links en "opnieuw" vanuit de app zetten hem op nul. Wat niet telt: Doze, quotum, standby, de accu op "Beperkt", netwerk weg, een voorwaarde die niet meer klopt, en een stop door de app zelf (omzetten, vergeten, nieuwe links). Gedwongen stoppen en een update tellen ook niet. Onder Android 12 telt een stop zonder reden als de taak minstens 9 minuten liep (A-keuze). Een Doze-stop na 9 minuten telt dan ook mee; dat is aanvaard.
+
+**H2. De app openen zet het weer in gang.**
+- Komt de app voor, dan begint elk deel dat op "bezig" staat maar niet loopt meteen, als het netwerk volgens de wifi-regel (A29) mag. Een deel dat loopt, begint niet opnieuw.
+- Met de app open geldt hetzelfde zodra het netwerk mag: wifi komt, of "Alleen via wifi" gaat uit.
+- Wacht een deel op wifi op een netwerk dat geen wifi is maar wel onbeperkt, dan wordt de wachttijd niet langer met elke start. De uploader start dan hooguit eens per 30 minuten een taak (A-keuze). Komt er echte wifi met de app dicht, dan gaat het deel binnen die 30 minuten verder.
+
+**K1. Verlopen link.** De uploader begint geen deel waarvan de link binnen een uur verloopt (A-keuze, ruim boven de 10 minuten van een taak). Hij vergelijkt met de klok van het toestel, zoals de wachtrij (fix-cyclus 1, punt 7). Zo'n deel gaat niet het netwerk op en telt niet als poging. Het staat op mislukt met de code `link_verlopen`, zonder status. Andere delen van hetzelfde origineel begint de uploader dan ook niet, want ze hebben dezelfde einddatum. De app meldt meteen opnieuw aan, of bij de start, zoals na een 403.
+
+**K2. Storing.**
+- Na 403, `NoSuchUpload` of `link_verlopen` van een deel begint de uploader geen ander deel van dat origineel meer tot er nieuwe links zijn. Het gaat om dezelfde upload en dezelfde links.
+- Zijn 3 delen op rij definitief mislukt, over alle originelen samen, dan begint de uploader geen enkel deel meer (A-keuze). Definitief is: 5 pogingen, 403, `NoSuchUpload` of `te_traag`. Een deel dat binnenkomt, zet de telling op nul.
+- De pauze duurt tot de app voorkomt, nieuwe links geeft of "opnieuw" vraagt. Een herstart van het proces of de telefoon heft hem niet op.
+
+**K5. Robuust.**
+- Elke afloop van een taak komt in de opslag van de uploader, ook een onverwachte fout, en daarna wordt het volgende deel klaargezet. Er ontsnapt geen fout uit de taak.
+- Een link die niet te gebruiken is (niet te lezen of niet te openen), telt als mislukte poging zonder status, zoals "geen antwoord". Er komt geen link, host of pad in het log van de uploader of in logcat, ook niet via de tekst van een fout.
+- Lukt het sturen van een event niet (er is geen JS, of het is net weg), dan is de opslag al bewaard en loopt de rij door. De app crasht niet. Ze hoort het bij de volgende start (`atLaunch`).
+- Gaat "Alleen via wifi" uit, dan loopt een deel dat al over wifi gaat gewoon door. Stopt het later, dan begint het opnieuw met de nieuwe regel (elk netwerk). Gaat de schakelaar aan, dan blijft A29 gelden: een deel over mobiel internet stopt binnen seconden.
+- Alles wat via de atomaire schrijfweg gaat (de opslag van de uploader, de wachtrij en de wifi-keuze van JS), staat op schijf voordat het de oude versie vervangt. Na stroomuitval is er de oude of de nieuwe versie, nooit een lege of halve.
+
+**K3.** Op Android: "te weinig ruimte op je telefoon". Op de iPhone ongewijzigd: "op je iPhone".
+
+### Testcontract (A)
+
+- De codes `te_traag` en `link_verlopen` in `onPartFailed` en in `uploaderJobs`, beide met `status: null`. `partFailure` maakt van `te_traag` "later" en van `link_verlopen` "opnieuw_aanmelden", wat het aantal pogingen ook is. Op iOS komen ze niet voor.
+- `originalSkipLines(reasons, os)` met `os` gelijk aan `"ios"` of `"android"`. Het toevoegscherm geeft het platform mee.
+
+### Tests herstelronde (A)
+
+| Bestand | Wat | Stand |
+|---|---|---|
+| `app/tests/androidOriginalsRepair.test.ts` (nieuw) | H1: `te_traag` wordt "later", geeft geen opnieuw en een uur wachten, en "Later opnieuw" (event en `atLaunch`). Bewakers: `STOP_REASON_TIMEOUT` en `"te_traag"` in de Kotlin-code. K1: `link_verlopen` geeft meteen nieuwe links (event en `atLaunch`). Bewaker: `"link_verlopen"` in Kotlin. K5: bewaker op fsync of `AtomicFile`. | 10 rood |
+| `app/tests/androidWorkManagerVersion.test.ts` (nieuw) | K4: WorkManager in de module heeft de versie van `react-native-maps`. | 3 groen (bewaker) |
+| `app/tests/filmProject.test.ts` (aangepast) | K3: `originalSkipLines` met het platform. De iPhone-teksten van besluit 30 staan ongewijzigd, Android zegt "op je telefoon" en nooit "iPhone". | 3 rood; typecheck rood (tweede argument) |
+
+**Stand na A:** app 13 rood / 2754 groen.
+
+**Niet in unit-tests.** Dit is Kotlin-gedrag zonder vaste vorm: een tekstzoektocht zou B aan één uitwerking binden.
+- H1: het aantal van 3, wat niet telt, de 9 minuten onder Android 12.
+- H2, K2 en K5: de fout uit de taak, het event, wifi uit tijdens een lopend deel.
+
+Audit leest deze punten. De gate doet:
+- **H1**: tijdens een deel `adb shell cmd jobscheduler timeout <pakket>`, drie keer. Eerst nameten of dat reden 13 (`TIMEOUT`) geeft. Daarna staat het deel op mislukt `te_traag` en zegt de projectpagina "Later opnieuw". Met `deviceidle force-idle` telt een stop niet.
+- **H2**: tijdens een deel een paar keer kort de vliegtuigstand aan, tot WorkManager minuten wacht (`dumpsys jobscheduler`). Open dan de app: het deel begint binnen seconden. Onbeperkt mobiel internet is niet na te bootsen (S3), dus dat deel leest audit.
+- **K1**: de app dicht, de klok 7 dagen vooruit. De taak doet geen PUT en het deel staat op `link_verlopen`. Bij openen komt er een nieuwe `startOriginal` en gaat het verder.
+- **K5**: met wifi aan "Alleen via wifi" uitzetten tijdens een deel: het deel loopt door. Daarna wifi uit: het volgende deel gaat over mobiel internet.
+- **K2** (optioneel, ~45 min): een proxy die niets doorlaat (`settings put global http_proxy 127.0.0.1:1`). Na 3 delen met 5 pogingen start er geen taak meer. Na afloop `settings delete global http_proxy`.
+
+### Vragen voor regie
+
+1. **H2, de eigen wachttijd na een serverfout** (1, 2, 4 of 8 minuten). Moet die ook vervallen als de app voorkomt? Advies: ja. Op iOS probeert JS het meteen opnieuw, en de 5 pogingen blijven de grens.
+2. **Kotlin-tests.** H2, K2 en K5 zijn alleen echt te testen met JUnit-tests in de module, op pure Kotlin-regels die B eruit haalt. Die draaien met Gradle, alleen lokaal en niet in CI. Advies: niet in deze ronde. Wel als Android verder groeit.
+3. **K3, de tekst.** "op je telefoon" is een A-keuze; Wouter kan een andere willen.
+4. **Buiten scope gezien:** de webapp zegt op `NotOnWebScreen` "Gebruik hiervoor de app Clubalmanac op de iPhone", terwijl er nu ook Android is.
