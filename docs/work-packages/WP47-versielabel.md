@@ -88,6 +88,14 @@ Wie de app test, ziet in één oogopslag welke build hij in handen heeft: naast 
 - **Vorm (vraag 3):** advies tekst. De tests pinnen die tekst; kiest Wouter pillen, dan past regie die tests aan.
 - **Vraag 4 en 5:** Wouter bevestigt.
 
+### Besluiten na A (Wouter, 2026-11-27)
+
+- **Vorm:** tekst in de grijze regel, "Versie 2.0.3 (98) · dev · TestFlight" (advies vraag 3).
+- **Production-build in TestFlight:** "TestFlight" zonder "dev" (vraag 4).
+- **Webapp doet mee** via dezelfde `AppIdentity` (vraag 5).
+- **App Review ziet "TestFlight":** accepteren; bij een afwijzing het label in production-builds weglaten.
+- De Swift-aanpak van A (antwoord 2, invariant 8) is de aanpak voor B.
+
 ### Scope
 
 - **Buiten scope:** de testtrack van Play (besluit 3), een buildnummer op web, en het label op een andere plek dan Info en Over.
