@@ -24,6 +24,7 @@ import { size, space, useTheme } from "../theme";
 import { LoadError } from "./GroupParts";
 import { MY_PHOTOS_STEP, menuPhotoOf, useMyPhotos, type MyPhoto } from "./MyPhotosScreen";
 import {
+  DetailOverlayHeader,
   DetailStatusBar,
   PhoneDetailLayout,
   useDetailHeaderOptions,
@@ -31,7 +32,7 @@ import {
   usePhoneDetailLayout,
   usePhotoDetailStand,
 } from "./DetailStand";
-import { cancelPendingPhotoTap, PhotoAlbums, PhotoDetailLayout, ZoomablePhoto } from "./PhotoDetailScreen";
+import { PhotoAlbums, PhotoDetailLayout, usePageInView, ZoomablePhoto } from "./PhotoDetailScreen";
 import {
   ActionFeedback,
   SharingProgress,
@@ -122,9 +123,7 @@ function DetailContent({
   const swipe = useSwipeInfo(index, ids.length, page?.width ?? 0);
   const infoPhoto = shown?.[swipe.infoIndex] ?? photo;
 
-  useEffect(() => {
-    if (page && shown && shown.length > 0) flatList.current?.scrollToIndex({ index, animated: false });
-  }, [index, page?.width]); // eslint-disable-line react-hooks/exhaustive-deps
+  const pager = usePageInView(flatList, index, ids.length, page?.width);
 
   const showPage = (i: number) => {
     const id = ids[i];
@@ -138,14 +137,16 @@ function DetailContent({
     showPage(Math.round(e.nativeEvent.contentOffset.x / page.width));
   };
 
+  const title = photo ? formatPhotoDate(photo) : "Foto";
+  const actions =
+    hasActions && menuPhoto ? (
+      <ActionsButton onPress={() => menu.open(menuPhoto)} onDark={stand.view.black} />
+    ) : undefined;
   const header = (
     <Stack.Screen
       options={{
-        title: photo ? formatPhotoDate(photo) : "Foto",
-        headerRight:
-          hasActions && menuPhoto
-            ? () => <ActionsButton onPress={() => menu.open(menuPhoto)} onDark={stand.view.black} />
-            : undefined,
+        title,
+        headerRight: actions ? () => actions : undefined,
         ...headerOptions,
       }}
     />
@@ -197,7 +198,8 @@ function DetailContent({
         maxToRenderPerBatch={2}
         onMomentumScrollEnd={onMomentumEnd}
         // WP46: een veeg die begint, stopt een wachtende enkele tik.
-        onScrollBeginDrag={cancelPendingPhotoTap}
+        onScrollBeginDrag={pager.onDragStart}
+        onContentSizeChange={pager.onContentSizeChange}
         onEndReached={list.loadMore}
         onEndReachedThreshold={3}
         // WP37: weg-vegen stopt een filmpje.
@@ -229,6 +231,7 @@ function DetailContent({
           feedback={feedbackNode}
           scrollKey={feedback ?? menu.sharing}
           loading={shown === undefined ? <LoadingState label="Foto laden…" /> : undefined}
+          header={<DetailOverlayHeader stand={stand} title={title} right={actions} />}
         />
       </>
     );

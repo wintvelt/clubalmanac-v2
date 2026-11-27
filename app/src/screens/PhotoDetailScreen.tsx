@@ -1,6 +1,6 @@
 import type { FunctionReturnType } from "convex/server";
 import { router, Stack, useLocalSearchParams } from "expo-router";
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
 import {
   type FlatList,
   Platform,
@@ -34,6 +34,7 @@ import { formatPhotoDate, nextAfterRemoval, sortAlbumPhotos } from "../lib/photo
 import { size, space, useTheme } from "../theme";
 import { AlbumReadFailed } from "./AlbumParts";
 import {
+  DetailOverlayHeader,
   DetailStatusBar,
   PhoneDetailLayout,
   photoInfoHeight,
@@ -166,9 +167,7 @@ function DetailContent({
   const swipe = useSwipeInfo(index, ids.length, page?.width ?? 0);
   const infoEntry = shown?.[swipe.infoIndex] ?? entry;
 
-  useEffect(() => {
-    if (page && shown && shown.length > 0) list.current?.scrollToIndex({ index, animated: false });
-  }, [index, page?.width]); // eslint-disable-line react-hooks/exhaustive-deps
+  const pager = usePageInView(list, index, ids.length, page?.width);
 
   const showPage = (i: number) => {
     const id = ids[i];
@@ -182,14 +181,16 @@ function DetailContent({
     showPage(Math.round(e.nativeEvent.contentOffset.x / page.width));
   };
 
+  const title = entry ? formatPhotoDate(entry.photo) : "Foto";
+  const actions =
+    hasActions && menuPhoto ? (
+      <ActionsButton onPress={() => menu.open(menuPhoto)} onDark={stand.view.black} />
+    ) : undefined;
   const header = (
     <Stack.Screen
       options={{
-        title: entry ? formatPhotoDate(entry.photo) : "Foto",
-        headerRight:
-          hasActions && menuPhoto
-            ? () => <ActionsButton onPress={() => menu.open(menuPhoto)} onDark={stand.view.black} />
-            : undefined,
+        title,
+        headerRight: actions ? () => actions : undefined,
         ...headerOptions,
       }}
     />
@@ -242,7 +243,8 @@ function DetailContent({
         maxToRenderPerBatch={2}
         onMomentumScrollEnd={onMomentumEnd}
         // WP46: een veeg die begint, stopt een wachtende enkele tik.
-        onScrollBeginDrag={cancelPendingPhotoTap}
+        onScrollBeginDrag={pager.onDragStart}
+        onContentSizeChange={pager.onContentSizeChange}
         // WP37: weg-vegen stopt een filmpje (alleen de pagina in beeld speelt).
         // WP46: een andere stand geeft de pagina's een andere maat.
         extraData={`${current}:${page.width}x${page.height}`}
@@ -272,6 +274,7 @@ function DetailContent({
           feedback={feedbackNode}
           scrollKey={feedback ?? menu.sharing}
           loading={shown === undefined ? <LoadingState label="Foto laden…" /> : undefined}
+          header={<DetailOverlayHeader stand={stand} title={title} right={actions} />}
         />
       </>
     );
@@ -297,6 +300,101 @@ function DetailContent({
       )}
     </SafeAreaView>
   );
+}
+
+/**
+ * De foto in beeld blijft in beeld als de pagina's een andere breedte krijgen
+ * (draaien, een andere stand) en als de lijst naar een andere foto moet
+ * (verwijderd, verdwenen). Geeft de handlers voor de horizontale lijst.
+ *
+ * WP46 fix-cyclus 2 (A-invariant 7): op Android voert de lijst een scroll uit
+ * vóór hij de nieuwe maat van zijn inhoud heeft. Na draaien naar liggend werd
+ * de scroll dan afgekapt op de oude, smallere inhoud, en stond er bij een
+ * foto verder in de lijst een andere foto in beeld (en werd die bij vegen de
+ * huidige). Daarom na een nieuwe breedte nog eens zodra de lijst zijn nieuwe
+ * inhoud meldt, en een beeld later, tot de user zelf veegt. Elke scroll gaat
+ * naar dezelfde plek; staat de lijst er al, dan verandert er niets (iOS).
+ */
+export function usePageInView<T>(
+  list: RefObject<FlatList<T> | null>,
+  index: number,
+  count: number,
+  pageWidth: number | undefined,
+) {
+  const live = useRef({ index, count, pageWidth });
+  live.current = { index, count, pageWidth };
+  // Na een nieuwe breedte: nog niet zeker dat de lijst op de foto staat. Al in
+  // de render gezet, zodat ook een melding van de lijst vóór het effect telt.
+  const realign = useRef(false);
+  const widthSeen = useRef<number | undefined>(undefined);
+  if (widthSeen.current !== pageWidth) {
+    widthSeen.current = pageWidth;
+    if (pageWidth) realign.current = true;
+  }
+  const frames = useRef<number[]>([]);
+
+  const scrollToCurrent = useCallback(() => {
+    const now = live.current;
+    if (!now.pageWidth || now.count === 0 || now.index >= now.count) return;
+    list.current?.scrollToIndex({ index: now.index, animated: false });
+  }, [list]);
+  // Nog `times` beelden achter elkaar, zolang de user niet veegt.
+  const laterFrames = useCallback(
+    (times: number, then?: () => void) => {
+      const id = requestAnimationFrame(() => {
+        frames.current = frames.current.filter((f) => f !== id);
+        if (!realign.current) return;
+        scrollToCurrent();
+        if (times > 1) laterFrames(times - 1, then);
+        else then?.();
+      });
+      frames.current.push(id);
+    },
+    [scrollToCurrent],
+  );
+  useEffect(
+    () => () => {
+      for (const id of frames.current) cancelAnimationFrame(id);
+      frames.current = [];
+    },
+    [],
+  );
+
+  useEffect(() => {
+    scrollToCurrent();
+  }, [index]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!pageWidth || !realign.current) return;
+    scrollToCurrent();
+    laterFrames(2);
+  }, [pageWidth]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // De inhoud heeft de nieuwe maat: nu kan de scroll niet meer afgekapt
+  // worden. Nog eens een beeld later, voor als de melding er eerder was dan
+  // de nieuwe maat op het scherm; daarna is het klaar.
+  const onContentSizeChange = useCallback(
+    (width: number) => {
+      const now = live.current;
+      // Nog de inhoud van de oude breedte: wachten op de volgende melding.
+      if (!realign.current || !now.pageWidth || Math.abs(width - now.count * now.pageWidth) > now.pageWidth / 2) {
+        return;
+      }
+      scrollToCurrent();
+      laterFrames(1, () => {
+        realign.current = false;
+      });
+    },
+    [scrollToCurrent, laterFrames],
+  );
+
+  // De user veegt: vanaf nu bepaalt de veeg welke foto in beeld komt.
+  const onDragStart = useCallback(() => {
+    realign.current = false;
+    cancelPendingPhotoTap();
+  }, []);
+
+  return { onContentSizeChange, onDragStart };
 }
 
 // WP32 B1–B3: het vaste fotogebied met het infoblok eronder (photoInfoHeight,
@@ -456,6 +554,29 @@ function ZoomableImage({
       tapRef.current?.();
     }
   };
+  // WP46 A-invariant 14: geen hint over dubbeltikken; met een schermlezer zoomt dat niet.
+  const image = (
+    <Pressable
+      onPressIn={() => {
+        pressInAt.current = Date.now();
+      }}
+      onPress={onPress}
+      accessibilityRole="image" accessibilityLabel={`Foto van ${formatPhotoDate(photo)}`}>
+      <PhotoImage
+        photoId={photoId}
+        format="groot"
+        exifOrientation={photo.exifOrientation}
+        hasFormats={photo.hasFormats}
+        box={box}
+        fit="contain"
+        neutralLoading
+      />
+    </Pressable>
+  );
+  // WP46 fix-cyclus 2: op Android zoomt de ScrollView niet (WP17a); daar
+  // alleen de foto, zonder een tweede scrollgebied tussen de veeg van de
+  // lijst en de tik op de foto.
+  if (Platform.OS === "android") return <View style={box}>{image}</View>;
   return (
     <ScrollView
       style={box}
@@ -473,23 +594,7 @@ function ZoomableImage({
       onScrollEndDrag={(e) => setZoom(e.nativeEvent.zoomScale ?? 1)}
       onMomentumScrollEnd={(e) => setZoom(e.nativeEvent.zoomScale ?? 1)}
     >
-      {/* WP46 A-invariant 14: geen hint over dubbeltikken; met een schermlezer zoomt dat niet. */}
-      <Pressable
-        onPressIn={() => {
-          pressInAt.current = Date.now();
-        }}
-        onPress={onPress}
-        accessibilityRole="image" accessibilityLabel={`Foto van ${formatPhotoDate(photo)}`}>
-        <PhotoImage
-          photoId={photoId}
-          format="groot"
-          exifOrientation={photo.exifOrientation}
-          hasFormats={photo.hasFormats}
-          box={box}
-          fit="contain"
-          neutralLoading
-        />
-      </Pressable>
+      {image}
     </ScrollView>
   );
 }
