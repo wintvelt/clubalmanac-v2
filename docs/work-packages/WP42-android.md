@@ -885,3 +885,8 @@ Emulator API 36 (`clubalmanac-pixel`), lader los (`dumpsys battery unplug`), teg
 - **Aantal taken (`rare`, `restricted`).** Een lid dat de app dagen niet opende, haalt met één taak per deel geen groot origineel binnen een dag zonder lader. Met een nacht aan de lader wel (B20 a). Een uitweg zonder melding: meer delen per taak, tot ~5 min. Dat wijkt af van "één job per deel" (B15). B bouwde het niet.
 - **Tekst op Android.** Bij `geen_ruimte` zegt de app "te weinig ruimte op je iPhone" (`filmProject.ts`, vastgelegd in `filmProject.test.ts`). B veranderde het niet.
 - **Alleen bij de testers:** traag netwerk (10 min per deel), het batterijbeheer van Samsung, een nacht aan de lader, de kiezer op Android 11–14 (plaats en bit voor bit), en `getPendingResultAsync` met een echte keuze.
+
+## Besluiten Wouter na B (42c, 2026-11-27)
+
+- **B22 — aantal taken per dag: zo laten.** Eén taak per deel (B15) blijft. Een groot origineel (bv. 1,5 GB) kan bij een app die dagen niet geopend is en zonder lader langer dan een dag duren; openen of een nacht aan de lader lost dat op. Alleen ingrijpen als de testers laten zien dat B20 (a) niet gehaald wordt.
+- **Herstelronde (regie):** op Android zegt de tekst bij te weinig ruimte nog "op je iPhone"; het buildnummer bij Info (B18) is op iOS nog niet gebouwd (Swift).
