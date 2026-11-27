@@ -56,3 +56,47 @@ Wie de app test, ziet in één oogopslag welke build hij in handen heeft: naast 
 - WP15b (Info-pagina's), WP38b (`DEV_TOOLS`), WP37/38b/42 (eigen native module), TBD-regel versielabel in het WP-overzicht.
 
 ## Spec-criticus aanvullingen (A vult in)
+
+> A 2026-11-27. Bronnen: Apple-docs StoreKit (`AppTransaction.shared`, `AppTransaction.refresh()`, `AppStore.Environment`, "Testing in-app purchases with sandbox"), Foundation (`Bundle.appStoreReceiptURL`), GoogleUtilities `GULAppEnvironmentUtil.m` (firebase-ios-sdk), de types van `expo-constants` 58 en `Expo.podspec` 58. De oude app toonde bij Info alleen "App versie" uit app.json; het buildnummer stond uitgecommentarieerd. Er is niets over te nemen.
+
+### Antwoorden op de open vragen
+
+1. **Buildnummer: is er al.** WP42 (B18, A37) bouwde `buildNumber()` in de eigen module (iOS `CFBundleVersion`, Android `versionCode`) en `versionText` in Info. Er is geen nieuw pakket nodig. `expo-constants` heeft het nummer niet: met `appVersionSource: remote` staat het niet in app.json, en de native velden in `expo-constants` zijn deprecated ten gunste van `expo-application`, een nieuw pakket. Op iOS zit het nummer pas in de eerstvolgende TestFlight-build (WP42 closeout). De gate van WP47 controleert het dus voor het eerst op iOS.
+2. **TestFlight: `AppTransaction.shared`, niet de receipt-route.** `appStoreReceiptURL` is deprecated sinds iOS 18 (Apple: "Use AppTransaction.shared"). Het is ook een synchrone aanroep die seconden kan blokkeren (firebase-ios-sdk issue 16726). Waar je op moet letten:
+   - **`sandbox` is niet genoeg.** Volgens Apple draait ook een development-signed build uit Xcode in de sandbox. Een build uit TestFlight of de App Store heeft geen `embedded.mobileprovision`, want Apple haalt dat bestand weg (GoogleUtilities herkent een App Store-build op dezelfde manier). Een dev-signed of ad-hoc-build heeft het bestand wel.
+   - **Simulator:** die heeft ook geen provisioning-bestand, dus een eigen check: in de simulator nooit TestFlight. Met StoreKit Testing in Xcode is de omgeving `xcode`, en dan komt er geen label.
+   - **Zonder netwerk:** `shared` kan het netwerk nodig hebben. Hij geeft een fout als de transactie er niet is of de gebruiker niet bij de App Store is ingelogd, en dan komt er geen label. StoreKit bewaart de transactie, dus na een eerdere start werkt het meestal ook offline.
+   - **`refresh()`** toont een inlogvraag van de App Store. Die mag de app hier nooit gebruiken.
+   - **Minimum-iOS:** 16.4 (Expo SDK 58 en de eigen module). `AppTransaction` bestaat vanaf 16.0, dus een terugval is niet nodig.
+   - **In de module:** een asynchrone functie die alleen "ja" zegt als alle checks van invariant 8 kloppen. Android krijgt de functie niet.
+3. **Vorm: advies tekst, geen pillen.** De regel blijft de `muted`-regel: "Versie 2.0.3 (98) · dev · TestFlight". In `design.md` zijn pillen voor de actieve tab, de groepstabs en het "nieuw"-label in de actiekleur. Een pil "dev" lijkt dan op een "nieuw"-label of een knop. " · " staat al in de app (toevoegscherm: "Groep · Album"). Er komt geen nieuwe component of kleur bij, en VoiceOver leest het als gewone tekst.
+4. **Production-build in TestFlight: "TestFlight" zonder "dev".** Dat volgt uit besluit 2, en het is precies wat je vóór een release wilt zien: dit is de prod-build. Na de release in de App Store verdwijnt het label vanzelf (invariant 7). Wouter bevestigt.
+5. **Webapp: advies, doet mee.** Info en Over gebruiken dezelfde `AppIdentity`, dus het kost geen extra werk. Zonder de module heeft de webapp geen buildnummer en geen TestFlight. De gehoste webapp praat met prod en toont "Versie 2.0.3". "dev" staat er alleen lokaal (`expo start --web` tegen dev); een gehoste dev-webapp is er niet (`webapp.md`). De versie op web is die van app.json op `main`, ook vóór de release in de App Store.
+
+### Extra invarianten
+
+7. **Op het toestel bepaald.** Dezelfde production-binary gaat van TestFlight naar de App Store. "TestFlight" komt dus uit de geïnstalleerde app, niet uit het build-profiel of een env-var. "dev" komt wel uit de build (invariant 3).
+8. **TestFlight alleen als alles klopt:** een echt toestel (geen simulator), een build zonder eigen provisioning-bestand (door Apple gedistribueerd), en een geverifieerde app-transactie in de omgeving `sandbox`. In alle andere gevallen geen label: een andere omgeving, een fout, een niet-geverifieerd resultaat, of een build zonder de functie (Android, web, een build van vóór WP47).
+9. **Geen inlogvraag.** Het label laat nooit een vraag van de App Store zien.
+10. **Alleen een echt "ja" telt.** Elk ander antwoord van de module is "weet niet": geen label, en geen fout naar boven.
+11. **Vaste woorden en volgorde:** "dev" vóór "TestFlight", precies zo gespeld, met " · " ertussen. Een label staat er alleen als het geldt; er staat nooit "geen TestFlight" of iets dergelijks.
+12. **Asynchroon, zonder wachten.** Versie, buildnummer en "dev" staan er meteen. "TestFlight" komt erbij zodra het antwoord er is.
+
+### Beslispunten
+
+- **App Review ziet "TestFlight".** Apple test een production-build in de sandbox, met hetzelfde binary. De reviewer ziet dus "Versie 2.0.3 (n) · TestFlight". De kans op een afwijzing (richtlijn 2.2: bèta's horen in TestFlight) is klein, want het is kleine grijze tekst. Advies: accepteren. Wordt de build toch afgewezen, dan het label in production-builds weglaten.
+- **Vorm (vraag 3):** advies tekst. De tests pinnen die tekst; kiest Wouter pillen, dan past regie die tests aan.
+- **Vraag 4 en 5:** Wouter bevestigt.
+
+### Scope
+
+- **Buiten scope:** de testtrack van Play (besluit 3), een buildnummer op web, en het label op een andere plek dan Info en Over.
+- **B:** `release-checks.md` krijgt een blok voor WP47: de prod-build in TestFlight toont "TestFlight" zonder "dev"; na de release van 2.0.3 alleen "Versie 2.0.3 (n)".
+
+### Tests (A)
+
+| Bestand | Pint | RED-reden |
+| --- | --- | --- |
+| `app/tests/versionLabel.test.ts` | Invariant 1–3, 5, 6, 10, 11 en vraag 3: `buildLabels({ dev, testFlight })` en `versionText` met labels | `buildLabels` ontbreekt; `versionText` negeert labels |
+| `app/tests/testFlightBuild.test.ts` | Invariant 1, 4, 8 en 10: `testFlightBuild()` in de module geeft `true`, `false` of `null`, en wijst nooit af | `testFlightBuild` ontbreekt |
+| `app/tests/versionLabelSources.test.ts` | Invariant 3, 6, 8, 9 en 12 in de bron: Info leest "dev" uit `DEV_TOOLS` en vraagt `testFlightBuild`; Swift gebruikt `AppTransaction.shared` asynchroon, met checks op simulator en provisioning-bestand, zonder `refresh` en zonder receipt; Kotlin heeft de functie niet | de Swift-functie en het gebruik in Info ontbreken |
