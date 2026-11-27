@@ -168,6 +168,15 @@ describe("A33 (B15): geen foreground service, geen melding, geen UIDT", () => {
   });
 });
 
+describe("B19: verder na een herstart zonder de app te openen", () => {
+  it("app.json blokkeert RECEIVE_BOOT_COMPLETED niet meer (WorkManager zet zijn taken na een herstart opnieuw klaar)", () => {
+    const app = JSON.parse(readFileSync(APP_JSON, "utf8")) as {
+      expo: { android: { blockedPermissions?: string[] } };
+    };
+    expect(app.expo.android.blockedPermissions ?? []).not.toContain("android.permission.RECEIVE_BOOT_COMPLETED");
+  });
+});
+
 describe("A34: de lege stand van de projectpagina hangt aan de uploader, niet aan het platform", () => {
   const PROMISE = "Nieuwe filmpjes in deze groep gaan ook als origineel mee.";
   const NEUTRAL = "Er is nog geen filmpje binnengekomen.";

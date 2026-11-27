@@ -840,14 +840,14 @@ Namen en vormen zijn A-keuzes; het hoe is aan B.
 
 | Bestand | Wat | Stand |
 |---|---|---|
-| `app/tests/androidOriginals.test.ts` (nieuw) | A27: met een Android-module mét uploader is `originalUploaderAvailable` waar en hoort de runner de vijf events; de Kotlin-kant geeft de 21 functies van `Originals` en de events. A33: geen foreground service, expedited werk, UIDT of melding in de Kotlin-code; `app.json` vraagt geen `FOREGROUND_SERVICE*`, `POST_NOTIFICATIONS`, `RUN_USER_INITIATED_JOBS` of `READ_MEDIA_VIDEO` en blokkeert de foreground service. A34: `projectEmptyText`, en de projectpagina gebruikt hem zonder `Platform.OS` voor Android. | 7 rood (de Kotlin-kant mist de uploader; `projectEmptyText` ontbreekt), 3 groen (bewakers) |
+| `app/tests/androidOriginals.test.ts` (nieuw) | A27: met een Android-module mét uploader is `originalUploaderAvailable` waar en hoort de runner de vijf events; de Kotlin-kant geeft de 21 functies van `Originals` en de events. A33: geen foreground service, expedited werk, UIDT of melding in de Kotlin-code; `app.json` vraagt geen `FOREGROUND_SERVICE*`, `POST_NOTIFICATIONS`, `RUN_USER_INITIATED_JOBS` of `READ_MEDIA_VIDEO` en blokkeert de foreground service. B19: `app.json` blokkeert `RECEIVE_BOOT_COMPLETED` niet. A34: `projectEmptyText`, en de projectpagina gebruikt hem zonder `Platform.OS` voor Android. | 8 rood (de Kotlin-kant mist de uploader; `RECEIVE_BOOT_COMPLETED` nog geblokkeerd; `projectEmptyText` ontbreekt), 3 groen (bewakers) |
 | `app/tests/pendingPick.test.ts` (nieuw) | A36: de keuze terug in het toevoegscherm met het album van toen; opnieuw kiezen zonder resultaat binnen het uur of bij een fout; niets bij annuleren of later; een profielfoto of onbekend doel nooit in het toevoegscherm; het doel op schijf heen en terug, onleesbaar is `null`. | 14 rood: de module ontbreekt |
 | `app/tests/versionText.test.ts` (nieuw) | A37, B18: "Versie 2.0.2 (7)", zonder nummer geen haakjes, spaties, zonder versie "Versie onbekend"; `InfoList.tsx` gebruikt `versionText`. | 5 rood: `versionText` ontbreekt |
-| `app/tests/androidVideoModule.test.ts` (aangepast) | De test "geen enkele functie van de uploader (42c)" is weg (42b A21 vervalt); de rest blijft, als bewaker voor een build zonder uploader. | groen |
+| `app/tests/androidVideoModule.test.ts` (aangepast) | De test "geen enkele functie van de uploader (42c)" is weg (42b A21 vervalt); bij de gevraagde rechten mag `RECEIVE_BOOT_COMPLETED` erbij (B19); de rest blijft, als bewaker voor een build zonder uploader. | groen |
 
-Niet in unit-tests (S3, gate, audit): het gedrag van de Kotlin-uploader (A27–A33: taken, quota, wifi-regel, herstart, update, opruimen, logcat), de aansluiting van A31 en A36 in het toevoegscherm en bij de start, waar het buildnummer vandaan komt, en B19 (`RECEIVE_BOOT_COMPLETED`; de test volgt het besluit).
+Niet in unit-tests (S3, gate, audit): het gedrag van de Kotlin-uploader (A27–A33: taken, quota, wifi-regel, herstart, update, opruimen, logcat), de aansluiting van A31 en A36 in het toevoegscherm en bij de start, waar het buildnummer vandaan komt, en het samengevoegde manifest (A33, B19: audit leest de build).
 
-**Stand na A:** app 26 rood (7 + 14 + 5) / 2721 groen. A draaide de 22 tests van de pure functies tegen een wegwerp-uitwerking buiten `src/` (in `builds/`): alle groen; weggegooid. Typecheck app: alleen `projectEmptyText`, `versionText` en de module `pendingPick` ontbreken.
+**Stand na A (met B19):** app 27 rood (8 + 14 + 5) / 2721 groen. A draaide de 22 tests van de pure functies tegen een wegwerp-uitwerking buiten `src/` (in `builds/`): alle groen; weggegooid. Typecheck app: alleen `projectEmptyText`, `versionText` en de module `pendingPick` ontbreken.
 
 ## Besluiten Wouter na A (42c, 2026-11-27)
 

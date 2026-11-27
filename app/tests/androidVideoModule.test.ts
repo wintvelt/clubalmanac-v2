@@ -104,7 +104,12 @@ describe("geen achtergronddienst en geen toegang tot de hele galerij (42a A9, B1
     ]) {
       expect(blocked, p).toContain(p);
     }
-    expect(app.expo.android.permissions ?? []).toEqual(["android.permission.ACCESS_MEDIA_LOCATION"]);
+    // WP42c B19: RECEIVE_BOOT_COMPLETED mag erbij (WorkManager); verder niets.
+    const asked = app.expo.android.permissions ?? [];
+    expect(asked).toContain("android.permission.ACCESS_MEDIA_LOCATION");
+    for (const p of asked) {
+      expect(["android.permission.ACCESS_MEDIA_LOCATION", "android.permission.RECEIVE_BOOT_COMPLETED"], p).toContain(p);
+    }
   });
 
   it("het manifest van de module vraagt geen rechten", () => {
