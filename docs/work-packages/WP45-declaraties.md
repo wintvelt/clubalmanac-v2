@@ -315,3 +315,16 @@ Beschermd object: een declaratie. Toestemmingslijst: het lid zelf (`memberId`), 
 1. **Een lid komt terug in de groep.** Ziet hij zijn oude verzonden declaraties weer, en kan hij ze weer intrekken? *Advies: ja* (A-keuze 13): het zijn de zijne, en er hoeft niets extra bewaard te worden. De tests gaan hiervan uit (`cascade.test.ts`, één test).
 
 **Besluit Wouter (2026-11-27) op open vraag 1:** ja. Wie terugkomt, ziet zijn verzonden declaraties weer en kan ze weer intrekken (A-keuze 13). Regie aanvaardt A-keuzes 1–14.
+
+## Fix-cyclus 1 (regie en Wouter, 2026-11-27)
+
+Na audit (geen blocker, 3 should-fix) en red-team (geen toegangsgat; 2 zou, 3 nice) op `7789a4e`. A legt vast, B bouwt.
+
+- **F1. Maximum per lid (besluit Wouter).** Per lid per groep ten hoogste 200 declaraties die geen concept zijn en nog niet zijn opgeruimd (elke status behalve `draft`). Bij 200 weigert verzenden met een eigen foutcode, en er verandert niets. Een concept telt niet (daarvoor blijft de grens van 20). Zo blijven `GET /claims`, G7 en MON1 altijd binnen de grenzen van één Convex-functie (red-team 1, audit S3/N1).
+- **F2. Naam per lid één keer.** `GET /claims` leest de naam van elk lid één keer, niet per declaratie (audit S3, red-team 1). Schaaltests met `transactionLimits` op de maximale last (16 leden × 200, plus concepten): `GET /claims` 200, de groep verwijderen lukt, en MON1 lukt. Haalt MON1 dat niet door de bestaande opzet (een `db.get` per rij per FK), dan maakt B de controle voor `expenseClaims` zuiniger; faalt MON1 al op bestaande tabellen, dan meldt B dat (buiten WP45).
+- **F3. Tekens (besluit regie).** Titel en toelichting volgen de regel die de app al heeft voor namen (`convex/lib/names.ts`: ook Cf, Default_Ignorable en de braille-blanco). In de toelichting blijft een regeleinde toegestaan. Een titel of toelichting van alleen onzichtbare tekens is ongeldig (red-team 2). Stelt §A3 bij.
+- **F4. Geen gedeeld geheim met de afrekeningen (besluit regie).** Is een declaratie-geheim (huidig of vorig, van welke soort ook) gelijk aan `FINANCE_SECRET`, dan weigert die route, zoals bij A-keuze 2 (red-team 3).
+- **F5. Zomer- en wintertijd in de tests.** Tests rond beide omschakelingen, met de voorbeelden uit de audit (S1).
+- **F6. Runbook en commentaar (B).** In `external-services.md`: zonder `CLAIMS_SECRET` weigeren `GET /claims` en `POST /claims/decision`, opruimen werkt dan nog met zijn eigen geheim (audit S2); de geheimen verschillen ook van `FINANCE_SECRET` (F4); het maximum van 200 en dat opruimen het weer vrijmaakt (F1). In `claimShape.ts` één zin: de zomertijdregel volgt de EU-regel en moet mee als die verandert (audit N4).
+
+Niet in deze ronde: formula-injectie bij een export naar een spreadsheet hoort bij de kant van het clubboek (red-team 5).
