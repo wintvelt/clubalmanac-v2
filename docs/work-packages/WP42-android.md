@@ -987,3 +987,30 @@ Audit leest deze punten. De gate doet:
 2. Kotlin-tests in de module: niet in deze ronde. H2, K2 en K5 gaan via audit en de gate.
 3. K3: "op je telefoon" (Wouter kan een andere tekst kiezen).
 4. `NotOnWebScreen` noemt alleen de iPhone: buiten scope, apart voorleggen aan Wouter.
+
+## Uitkomst herstelronde (B, 2026-11-27)
+
+**Gebouwd.** App 2767 groen, typecheck groen, backend 3794 groen. Release-build (R8) bouwt.
+- **H1.** De uploader telt per deel stops op de tijdslimiet: reden `STOP_REASON_TIMEOUT` vanaf Android 12, daaronder een stop zonder reden na 9 minuten versturen. De teller staat in de opslag en gaat op nul bij nieuwe links en bij "opnieuw". Na 3 stops: `te_traag`, zonder status. In de app: `te_traag` wordt "later", `link_verlopen` wordt "opnieuw_aanmelden" (`partFailure`).
+- **H2.** Komt de app voor, dan vervallen de pauze, de eigen wachttijd na een serverfout en de wachttijd van WorkManager. Een deel dat klaarstaat maar niet verstuurt, gaat meteen opnieuw naar Android, als het netwerk mag. Hetzelfde gebeurt met de app open bij elke wijziging van het netwerk; een eigen wachttijd na een serverfout blijft dan staan. Wachten op wifi op een netwerk dat geen wifi is, wordt een vaste wachttijd van 30 minuten voor alle delen, zonder backoff.
+- **K1.** Bij het klaarzetten en bij de start van een taak: verloopt de link binnen het uur (klok van het toestel), dan `link_verlopen`, zonder PUT en zonder poging.
+- **K2.** Na 403, `NoSuchUpload` of `link_verlopen` neemt de uploader geen deel van dat origineel meer tot er nieuwe links zijn. Na 3 definitieve mislukkingen op rij pauzeert hij. Opheffen: de app komt voor, nieuwe links of "opnieuw". De pauze staat in de opslag.
+- **K3.** "te weinig ruimte op je telefoon" op Android; het toevoegscherm geeft het platform mee.
+- **K4.** Niets veranderd: de versie was al gelijk (2.9.1).
+- **K5.** Geen fout ontsnapt uit de taak. Elke afloop komt in de opslag, ook een onverwachte fout. Een link die niet te gebruiken is, telt als poging zonder status; in het log komt alleen de naam van de soort fout. Events gaan pas na het bewaren de deur uit, en een fout bij een event wordt opgevangen. "Alleen via wifi" uit laat een deel dat over wifi verstuurt doorlopen; stopt het later, dan gaat het opnieuw met de nieuwe regel. Atomair schrijven doet eerst fsync.
+- **K6.** `NotOnWebScreen`: "Dit kan op het web nog niet. Gebruik hiervoor de app Clubalmanac op je iPhone of Android-telefoon." Geen test op de oude tekst.
+
+**Gate: niet afgemaakt.** Emulator API 36, release-build tegen dev, lader los.
+
+| Check | Uitkomst |
+|---|---|
+| H1, nameten | `cmd jobscheduler timeout` is volgens de hulp van Android `stop -s 3 -i 3`: reden 3 (`STOP_REASON_TIMEOUT`), niet 13 (13 is `USER`). De uploader herkent hem: "gestopt op de tijdslimiet van Android (1 van 3)", op 10 delen, op de voorgrond en op de achtergrond. |
+| H1, drie keer | Niet gehaald. Na een stop start WorkManager het deel na 60 s opnieuw. Leeft het proces nog, dan doet WorkManager dat zelf in het proces, niet via JobScheduler. Die start valt niet onder de tijdslimiet en is met `cmd jobscheduler` niet te stoppen; het deel kwam dan in ~4 s binnen. Zonder proces (`am kill`) houdt JobScheduler de taak vast om taken te bundelen ("force batch", tot 31 min). Een geforceerde start (`run -f`) binnen de wachttijd van WorkManager eindigt meteen. De laatste poging liep vast op de daggrens (hieronder). |
+| H2, K1, K5, K2 | Niet gedaan (daggrens). |
+| Daggrens dev | dev1 zit op `MAX_VIDEO_REQUESTS_PER_DAY` (30 per 24 uur, ook herhalingen). Elk nieuw album-filmpje krijgt `te_vaak`, dus er komt geen nieuw origineel. Een filmpje dat al binnen is, geeft "al binnen". |
+
+**Voor regie.**
+- De gate gaat verder zodra dev1 weer filmpjes mag sturen (rollend 24 uur, vanaf ~11:00 vandaag), of na het legen van `videoUploadRequests` voor dev1 op dev (Wouter). Op de emulator staan vijf nieuwe testoriginelen van 160 MiB (`DCIM/Camera/h-*-160.mov`), waarvan één al gebruikt.
+- Voor H1 op de emulator: stop, `am kill` met de app op de achtergrond, ruim 60 s wachten, dan `cmd jobscheduler run -f` en na 1 s `timeout`. Drie keer.
+- Vondst: een herstart door WorkManager in een levend proces heeft geen tijdslimiet van 10 minuten. Met de app open (of net gebruikt) haalt een traag deel het dus vaak toch.
+- Voor de gate opende B tijdelijk een filmproject in Familievakantie (dev, proefscherm) en sloot het weer.
