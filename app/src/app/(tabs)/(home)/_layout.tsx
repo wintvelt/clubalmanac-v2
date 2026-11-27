@@ -1,6 +1,6 @@
 import { Stack } from "expo-router";
 import { filmScreenOptions } from "../../../lib/films";
-import { CloseButton, useStackScreenOptions } from "../../../navigation/stackOptions";
+import { CloseButton, photoDetailRouteOptions, useStackScreenOptions } from "../../../navigation/stackOptions";
 
 // WP16 §Routes: Mijn groepen → Groep → Album → Foto (WP17a) → Draaien (WP17b).
 // WP41: Groep → Afrekening → Alle bedragen / Deelnemer. Een deep link naar een groep
@@ -15,7 +15,7 @@ export default function Layout() {
       <Stack.Screen name="index" options={{ title: "Mijn groepen", headerShown: false }} />
       <Stack.Screen name="groep/[groupId]/index" options={{ title: "Groep", headerShown: false }} />
       <Stack.Screen name="groep/[groupId]/album/[albumId]/index" options={{ title: "Album", headerShown: false }} />
-      <Stack.Screen name="groep/[groupId]/album/[albumId]/foto/[photoId]" options={{ title: "Foto" }} />
+      <Stack.Screen name="groep/[groupId]/album/[albumId]/foto/[photoId]" options={photoDetailRouteOptions} />
       <Stack.Screen name="groep/[groupId]/album/[albumId]/draaien/[photoId]" options={{ title: "Draaien" }} />
       <Stack.Screen name="groep/[groupId]/album/[albumId]/kaart" options={{ title: "Kaart" }} />
       <Stack.Screen name="groep/[groupId]/album/[albumId]/locatie/[photoId]" options={{ title: "Locatie wijzigen" }} />

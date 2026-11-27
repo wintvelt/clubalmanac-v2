@@ -29,9 +29,19 @@ import { useAuthState } from "../data/authStateContext";
 import { useSharePhoto } from "../data/share";
 import { useLiveQuery } from "../data/useLiveQuery";
 import { photoAlbumLines } from "../lib/myPhotos";
+import { DOUBLE_TAP_MS, tapIntent } from "../lib/photoDetailStand";
 import { formatPhotoDate, nextAfterRemoval, sortAlbumPhotos } from "../lib/photos";
 import { size, space, useTheme } from "../theme";
 import { AlbumReadFailed } from "./AlbumParts";
+import {
+  DetailStatusBar,
+  PhoneDetailLayout,
+  photoInfoHeight,
+  useDetailHeaderOptions,
+  useDetailPlainOptions,
+  usePhoneDetailLayout,
+  usePhotoDetailStand,
+} from "./DetailStand";
 import {
   ActionFeedback,
   SharingProgress,
@@ -65,12 +75,21 @@ export function PhotoDetailScreen() {
   }>();
   const gid = String(groupId) as Id<"groups">;
   const aid = String(albumId) as Id<"albums">;
-  if (useAuthState() === "reconnecting") return <Screen underHeader>{null}</Screen>;
+  // WP46: zonder foto's de gewone kop (niet transparent, niet verborgen).
+  const plain = useDetailPlainOptions();
+  if (useAuthState() === "reconnecting") {
+    return (
+      <Screen underHeader>
+        <Stack.Screen options={plain} />
+      </Screen>
+    );
+  }
   return (
     <QueryBoundary
       key={aid}
       fallback={(error, reset) => (
         <Screen underHeader>
+          <Stack.Screen options={plain} />
           <AlbumReadFailed groupId={gid} what="foto" error={error} reset={reset} />
         </Screen>
       )}
@@ -106,7 +125,12 @@ function DetailContent({
   }, [entries, only]);
   const ids = useMemo<string[]>(() => shown?.map((e) => e.albumPhoto.photoId) ?? [], [shown]);
   const [current, setCurrent] = useState(initialPhotoId);
-  const [page, setPage] = useState<{ width: number; height: number } | null>(null);
+  // WP46: de stand (normaal, schermvullend, liggend met of zonder kop).
+  const stand = usePhotoDetailStand();
+  const headerOptions = useDetailHeaderOptions(stand);
+  const phone = usePhoneDetailLayout(stand);
+  const [measuredPage, setMeasuredPage] = useState<{ width: number; height: number } | null>(null);
+  const page = stand.allowed ? phone.page : measuredPage;
   const list = useRef<FlatList<Shown>>(null);
   const previousIds = useRef<string[] | null>(null);
 
@@ -158,87 +182,113 @@ function DetailContent({
     showPage(Math.round(e.nativeEvent.contentOffset.x / page.width));
   };
 
-  return (
-    <SafeAreaView edges={["left", "right", "bottom"]} style={[styles.fill, { backgroundColor: colors.bg }]}>
-      <Stack.Screen
-        options={{
-          title: entry ? formatPhotoDate(entry.photo) : "Foto",
-          headerRight: hasActions && menuPhoto ? () => <ActionsButton onPress={() => menu.open(menuPhoto)} /> : undefined,
+  const header = (
+    <Stack.Screen
+      options={{
+        title: entry ? formatPhotoDate(entry.photo) : "Foto",
+        headerRight:
+          hasActions && menuPhoto
+            ? () => <ActionsButton onPress={() => menu.open(menuPhoto)} onDark={stand.view.black} />
+            : undefined,
+        ...headerOptions,
+      }}
+    />
+  );
+  const feedbackNode = menu.sharing ? (
+    <SharingProgress />
+  ) : (
+    feedback && <ActionFeedback feedback={feedback} onClose={() => setFeedback(null)} />
+  );
+  const infoNode = infoEntry && (
+    <Animated.View style={swipe.infoStyle}>
+      <PhotoInfo entry={infoEntry} />
+    </Animated.View>
+  );
+  const photos =
+    page &&
+    shown &&
+    (Platform.OS === "web" ? (
+      // Webapp-fix 3: op het web één foto tegelijk, zonder horizontale lijst.
+      <WebPager
+        index={index}
+        count={ids.length}
+        onChange={showPage}
+        photoId={current}
+        photoAt={(i) => {
+          const e = shown[i];
+          return e && { photoId: e.albumPhoto.photoId, hasFormats: e.photo.hasFormats };
+        }}
+        renderPage={(i) => {
+          const e = shown[i];
+          return e ? (
+            <ZoomablePhoto key={e.albumPhoto._id} photoId={e.albumPhoto.photoId} photo={e.photo} box={page} />
+          ) : null;
         }}
       />
+    ) : (
+      <Animated.FlatList
+        ref={list}
+        data={shown}
+        onScroll={swipe.onScroll}
+        scrollEventThrottle={16}
+        horizontal
+        pagingEnabled
+        showsHorizontalScrollIndicator={false}
+        keyExtractor={(e) => e.albumPhoto._id}
+        getItemLayout={(_, i) => ({ length: page.width, offset: page.width * i, index: i })}
+        initialScrollIndex={index}
+        initialNumToRender={1}
+        windowSize={3}
+        maxToRenderPerBatch={2}
+        onMomentumScrollEnd={onMomentumEnd}
+        // WP37: weg-vegen stopt een filmpje (alleen de pagina in beeld speelt).
+        // WP46: een andere stand geeft de pagina's een andere maat.
+        extraData={`${current}:${page.width}x${page.height}`}
+        renderItem={({ item }) => (
+          <ZoomablePhoto
+            photoId={item.albumPhoto.photoId}
+            photo={item.photo}
+            box={page}
+            active={item.albumPhoto.photoId === current}
+            onTap={stand.onTap}
+            onFullscreenExit={stand.restoreStatusBar}
+          />
+        )}
+      />
+    ));
+
+  // WP46: op de telefoon de standen; op de iPad en het web zoals voorheen.
+  if (stand.allowed) {
+    return (
+      <>
+        {header}
+        <DetailStatusBar stand={stand} />
+        <PhoneDetailLayout
+          layout={phone}
+          photos={photos}
+          info={infoNode}
+          feedback={feedbackNode}
+          scrollKey={feedback ?? menu.sharing}
+          loading={shown === undefined ? <LoadingState label="Foto laden…" /> : undefined}
+        />
+      </>
+    );
+  }
+
+  return (
+    <SafeAreaView edges={["left", "right", "bottom"]} style={[styles.fill, { backgroundColor: colors.bg }]}>
+      {header}
       {shown === undefined ? (
         <LoadingState label="Foto laden…" />
       ) : (
         <PhotoDetailLayout
-          onPage={setPage}
+          onPage={setMeasuredPage}
           scrollKey={feedback ?? menu.sharing}
-          photos={
-            page &&
-            (Platform.OS === "web" ? (
-              // Webapp-fix 3: op het web één foto tegelijk, zonder horizontale lijst.
-              <WebPager
-                index={index}
-                count={ids.length}
-                onChange={showPage}
-                photoId={current}
-                photoAt={(i) => {
-                  const e = shown[i];
-                  return e && { photoId: e.albumPhoto.photoId, hasFormats: e.photo.hasFormats };
-                }}
-                renderPage={(i) => {
-                  const e = shown[i];
-                  return e ? (
-                    <ZoomablePhoto key={e.albumPhoto._id} photoId={e.albumPhoto.photoId} photo={e.photo} box={page} />
-                  ) : null;
-                }}
-              />
-            ) : (
-                <Animated.FlatList
-                  ref={list}
-                  data={shown}
-                  onScroll={swipe.onScroll}
-                  scrollEventThrottle={16}
-                  horizontal
-                  pagingEnabled
-                  showsHorizontalScrollIndicator={false}
-                  keyExtractor={(e) => e.albumPhoto._id}
-                  getItemLayout={(_, i) => ({ length: page.width, offset: page.width * i, index: i })}
-                  initialScrollIndex={index}
-                  initialNumToRender={1}
-                  windowSize={3}
-                  maxToRenderPerBatch={2}
-                  onMomentumScrollEnd={onMomentumEnd}
-                  // WP37: weg-vegen stopt een filmpje (alleen de pagina in beeld speelt).
-                  extraData={current}
-                  renderItem={({ item }) => (
-                    <ZoomablePhoto
-                      photoId={item.albumPhoto.photoId}
-                      photo={item.photo}
-                      box={page}
-                      active={item.albumPhoto.photoId === current}
-                    />
-                  )}
-                />
-            ))
-          }
+          photos={photos}
           below={
             <>
-              {menu.sharing ? (
-                <View style={styles.feedback}>
-                  <SharingProgress />
-                </View>
-              ) : (
-                feedback && (
-                  <View style={styles.feedback}>
-                    <ActionFeedback feedback={feedback} onClose={() => setFeedback(null)} />
-                  </View>
-                )
-              )}
-              {infoEntry && (
-                <Animated.View style={swipe.infoStyle}>
-                  <PhotoInfo entry={infoEntry} />
-                </Animated.View>
-              )}
+              {feedbackNode && <View style={styles.feedback}>{feedbackNode}</View>}
+              {infoNode}
             </>
           }
         />
@@ -247,19 +297,9 @@ function DetailContent({
   );
 }
 
-// WP32 invariant 9 en 10, B1–B3: het fotogebied heeft een vaste maat, die
-// alleen meeverandert met de venstermaat en de tekstgrootte. Eronder een eigen
-// scrollgebied voor de melding na een actie en het informatieblok: hoe hoog
-// dat ook wordt (albumregels die later laden, een plaats over twee regels,
-// grote tekst), de foto verspringt niet en er valt niets weg.
-// WP17c: ook voor het detail in Mijn foto's.
-export function photoInfoHeight(areaHeight: number, fontScale: number): number {
-  return Math.round(Math.min(areaHeight * 0.5, Math.max(areaHeight * 0.22, INFO_BASE_HEIGHT * fontScale)));
-}
-
-// Avatar, naam, datum · plaats en één albumregel bij de gewone tekstgrootte.
-const INFO_BASE_HEIGHT = 150;
-
+// WP32 B1–B3: het vaste fotogebied met het infoblok eronder (photoInfoHeight,
+// src/screens/DetailStand.tsx). WP46: alleen nog op de iPad en het web; de
+// telefoon gebruikt PhoneDetailLayout.
 export function PhotoDetailLayout({
   photos,
   below,
@@ -312,18 +352,25 @@ export function PhotoDetailLayout({
 }
 
 const MAX_ZOOM = 3;
-const DOUBLE_TAP_MS = 280;
 
 type ZoomPhoto = Shown["photo"];
 
 // Knijpen zoomt (iOS-ScrollView), dubbeltikken wisselt tussen 1× en 2,5×.
 // WP17c: ook voor het detail in Mijn foto's.
+// WP46: een enkele tik op een foto wisselt de stand (`onTap`). Waar een
+// dubbeltik zoomt (iOS), wacht de tik tot er geen tweede meer kan komen
+// (A-invariant 6). Een tik op een filmpje doet niets met de stand (besluit 7):
+// de speler doet zelf wat hij doet.
 export function ZoomablePhoto(props: {
   photoId: Id<"photos">;
   photo: ZoomPhoto;
   box: { width: number; height: number };
   // WP37: staat deze pagina in beeld? Een filmpje erbuiten pauzeert.
   active?: boolean;
+  // WP46: een enkele tik op de foto (niet bij een filmpje).
+  onTap?: () => void;
+  // WP46: de speler komt terug uit zijn eigen volledig scherm.
+  onFullscreenExit?: () => void;
 }) {
   // WP37: een filmpje speelt af in plaats van te zoomen (geen autoplay).
   if (props.photo.video) {
@@ -334,30 +381,55 @@ export function ZoomablePhoto(props: {
         box={props.box}
         active={props.active ?? true}
         label={`Filmpje van ${formatPhotoDate(props.photo)}`}
+        onFullscreenExit={props.onFullscreenExit}
       />
     );
   }
-  return <ZoomableImage {...props} />;
+  return <ZoomableImage photoId={props.photoId} photo={props.photo} box={props.box} onTap={props.onTap} />;
 }
+
+// Knijpen en de zoom van een dubbeltik bestaan alleen op iOS (WP17a).
+const TAP_TARGET = Platform.OS === "ios" ? "zoomable" : "photo";
 
 function ZoomableImage({
   photoId,
   photo,
   box,
+  onTap,
 }: {
   photoId: Id<"photos">;
   photo: ZoomPhoto;
   box: { width: number; height: number };
+  onTap?: () => void;
 }) {
   const [zoom, setZoom] = useState(1);
-  const lastTap = useRef(0);
+  // De eerste tik die nog wacht op een eventuele tweede.
+  const pending = useRef<{ at: number; timer: ReturnType<typeof setTimeout> | null } | null>(null);
+  const tapRef = useRef(onTap);
+  tapRef.current = onTap;
+  const clearPending = () => {
+    if (pending.current?.timer) clearTimeout(pending.current.timer);
+    pending.current = null;
+  };
+  useEffect(() => clearPending, []);
   const onPress = () => {
     const now = Date.now();
-    if (now - lastTap.current < DOUBLE_TAP_MS) {
+    const intent = tapIntent({ lastTapAt: pending.current?.at ?? null, now, target: TAP_TARGET });
+    if (intent === "zoom") {
+      clearPending();
       setZoom((z) => (z > 1.01 ? 1 : 2.5));
-      lastTap.current = 0;
-    } else {
-      lastTap.current = now;
+    } else if (intent === "wait") {
+      clearPending();
+      const timer = tapRef.current
+        ? setTimeout(() => {
+            pending.current = null;
+            tapRef.current?.();
+          }, DOUBLE_TAP_MS)
+        : null;
+      pending.current = { at: now, timer };
+    } else if (intent === "stand") {
+      clearPending();
+      tapRef.current?.();
     }
   };
   return (
@@ -375,12 +447,8 @@ function ZoomableImage({
       onScrollEndDrag={(e) => setZoom(e.nativeEvent.zoomScale ?? 1)}
       onMomentumScrollEnd={(e) => setZoom(e.nativeEvent.zoomScale ?? 1)}
     >
-      <Pressable
-        onPress={onPress}
-        accessibilityRole="image"
-        accessibilityLabel={`Foto van ${formatPhotoDate(photo)}`}
-        accessibilityHint="Dubbeltik om in of uit te zoomen"
-      >
+      {/* WP46 A-invariant 14: geen hint over dubbeltikken; met een schermlezer zoomt dat niet. */}
+      <Pressable onPress={onPress} accessibilityRole="image" accessibilityLabel={`Foto van ${formatPhotoDate(photo)}`}>
         <PhotoImage
           photoId={photoId}
           format="groot"
