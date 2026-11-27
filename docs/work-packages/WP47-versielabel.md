@@ -108,3 +108,10 @@ Wie de app test, ziet in één oogopslag welke build hij in handen heeft: naast 
 | `app/tests/versionLabel.test.ts` | Invariant 1–3, 5, 6, 10, 11 en vraag 3: `buildLabels({ dev, testFlight })` en `versionText` met labels | `buildLabels` ontbreekt; `versionText` negeert labels |
 | `app/tests/testFlightBuild.test.ts` | Invariant 1, 4, 8 en 10: `testFlightBuild()` in de module geeft `true`, `false` of `null`, en wijst nooit af | `testFlightBuild` ontbreekt |
 | `app/tests/versionLabelSources.test.ts` | Invariant 3, 6, 8, 9 en 12 in de bron: Info leest "dev" uit `DEV_TOOLS` en vraagt `testFlightBuild`; Swift gebruikt `AppTransaction.shared` asynchroon, met checks op simulator en provisioning-bestand, zonder `refresh` en zonder receipt; Kotlin heeft de functie niet | de Swift-functie en het gebruik in Info ontbreken |
+
+## Uitslag gate (2026-11-27)
+
+Audit: geen blockers. Dev-build 99 via TestFlight toonde "Versie 2.0.3 (99) · dev", zonder "TestFlight" (ook na opnieuw openen). Fix-cyclus 1 voegde een diagnose-regel toe, alleen in builds met `DEV_TOOLS` (`testFlightDiagnose`: simulator, provisioning, uitkomst en duur van `AppTransaction.shared`, time-out 10 s). Dev-build 100: "Versie 2.0.3 (100) · dev · TestFlight", diagnose "simulator: nee · provisioning: nee · AppTransaction: verified, Sandbox (1021 ms)". Oorzaak bij 99 niet zeker; vermoedelijk kwam de eerste `AppTransaction` op dat toestel niet binnen. Geen fout label, dus invariant 1 hield. Besluit Wouter: de diagnose-regel blijft in dev-builds.
+
+Nog te zien bij de release van 2.0.3: de prod-build in TestFlight ("· TestFlight" zonder "dev") en daarna de App Store (geen label); zie [`release-checks.md`](../runbooks/release-checks.md).
+
