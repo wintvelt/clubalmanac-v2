@@ -313,3 +313,5 @@ Beschermd object: een declaratie. Toestemmingslijst: het lid zelf (`memberId`), 
 ### Open vragen voor Wouter
 
 1. **Een lid komt terug in de groep.** Ziet hij zijn oude verzonden declaraties weer, en kan hij ze weer intrekken? *Advies: ja* (A-keuze 13): het zijn de zijne, en er hoeft niets extra bewaard te worden. De tests gaan hiervan uit (`cascade.test.ts`, één test).
+
+**Besluit Wouter (2026-11-27) op open vraag 1:** ja. Wie terugkomt, ziet zijn verzonden declaraties weer en kan ze weer intrekken (A-keuze 13). Regie aanvaardt A-keuzes 1–14.
