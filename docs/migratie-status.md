@@ -155,6 +155,8 @@ Besluit Wouter 2026-11-15: niemand gebruikt de oude webapp. Volgorde: eerst de o
 
 [WP42a](./work-packages/WP42-android.md) ✅ 2026-11-26: Android-app (`com.clubalmanac.app`) via de interne testtrack van Google Play, organisatie-account Inc. Management B.V. Alles wat de iPhone-app kan behalve filmpjes toevoegen en originelen insturen; menu's, terugknop en datumkiezer van Android; Google Maps (eigen Cloud-project, ook donker); de plaats van foto's vanaf Android 15. Build 5 (2.0.2) staat voor de testers; het eerste lid is binnen op Android 17. 42b (filmpjes) en 42c (originelen) volgen.
 
+[WP42b](./work-packages/WP42-android.md) ✅ 2026-11-27: filmpjes toevoegen op Android. De app verkleint op de telefoon zoals op de iPhone (H.264, hooguit 1920 en 30 fps, HDR naar SDR, geen metadata) met Media3 in de eigen module `clubalmanac-video`; datum en plaats komen mee. Zonder originelen insturen (42c). Ook iOS krijgt de nieuwe teksten voor te lang en te groot (volgende TestFlight). Build 6 (2.0.2) staat voor de testers; echte camerafilmpjes, warmte en wegklikken melden zij.
+
 ## Fase 5: Lancering — hard cutover — open
 
 Geen parallel draaien. Bij 20 users en een 3 jaar oude oude app is parallel draaien absurd veel werk (dual-write, sync layer, Cognito↔Clerk mapping). Hard cut.

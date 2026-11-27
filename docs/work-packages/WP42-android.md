@@ -619,3 +619,10 @@ Gate gedaan op de emulator: API 36, release-build met R8 tegen dev, Europe/Amste
 - De andere vier staan in het album, met poster en duur. Het staande filmpje speelt rechtop af en het filmpje met plaats staat op de kaart.
 - **Kleine bevinding, geen actie:** de duur van het camera-app-filmpje staat in de kiezer als 0:06 en in het album als 0:07. Dat komt doordat de kiezer en de backend anders afronden.
 - **Alleen de testers kunnen nagaan:** echte camerafilmpjes (Samsung Auto FPS, HDR), hoe lang verkleinen duurt en of de telefoon warm wordt, wegklikken op Samsung, en afspelen op een iPhone en in de webapp.
+
+## Closeout 42b (regie, 2026-11-27)
+
+- PR #67 gemerged. Build 6 (2.0.2, prod) op de interne track; AAB gecontroleerd: prod-Convex, `pk_live_`, de B14-tekst. De naam van dev staat alleen in de regex `DEV_CONVEX_URL` (`originalProbe.ts`).
+- Testers gevraagd naar echte camerafilmpjes, hoe lang het duurt, warmte, wegklikken, en afspelen op iPhone en webapp. Een nieuwe tester stond met een ander Google-adres op de lijst (*App not available*); toegevoegd.
+- iOS krijgt de B14-teksten met de volgende TestFlight-build.
+- Open voor 42c: §Richting 42b en 42c; G6 (`cancelCompress` nergens aangeroepen, ook op iOS) blijft buiten 42b.
