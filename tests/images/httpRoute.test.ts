@@ -74,7 +74,7 @@ async function snapshot(res: Response) {
 const holds = (body: string, bytes: Uint8Array) => body.includes(Array.from(bytes).join(","));
 
 describe("routes (inventaris http-paden)", () => {
-  it("de bestaande routes blijven, plus alleen de vijf beeldpaden (WP19b: uitnodiging, WP38: inzending, WP41c: afrekening), hun preflight (WP35) en de twee clubboek-routes (WP41)", () => {
+  it("de bestaande routes blijven, plus alleen de vijf beeldpaden (WP19b: uitnodiging, WP38: inzending, WP41c: afrekening), hun preflight (WP35), de twee clubboek-routes (WP41) en de drie declaratie-routes (WP45)", () => {
     const routes = http.getRoutes().map(([path, method]) => `${method} ${path}`);
     const others = routes.filter((r) => !r.includes("/beeld/")).sort();
     expect(others).toEqual(
@@ -90,6 +90,11 @@ describe("routes (inventaris http-paden)", () => {
         // hem weg, met het geheim; geen preflight (tests/settlements/).
         "DELETE /settlements",
         "POST /settlements",
+        // WP45 §A5–A8: de declaraties; het clubboek leest, besluit en ruimt
+        // op, elk met zijn geheim; geen preflight (tests/expenseClaims/).
+        "GET /claims",
+        "POST /claims/decision",
+        "POST /claims/purge",
       ].sort(),
     );
     expect(http.lookup(photoPath("abc"), "GET")).not.toBeNull();
@@ -122,7 +127,15 @@ describe("routes (inventaris http-paden)", () => {
     // WP36 A-invariant U1: de webapp uploadt; `/upload` heeft nu ook een
     // preflight. De webhooks en `/_test/whoami` niet.
     expect(http.lookup("/upload", "OPTIONS")).not.toBeNull();
-    for (const path of ["/email-event", "/clerk-webhook", "/_test/whoami", "/settlements"]) {
+    for (const path of [
+      "/email-event",
+      "/clerk-webhook",
+      "/_test/whoami",
+      "/settlements",
+      "/claims",
+      "/claims/decision",
+      "/claims/purge",
+    ]) {
       expect(http.lookup(path, "OPTIONS")).toBeNull();
     }
     // Alleen lezen: geen andere methode op de beeldpaden.

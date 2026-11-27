@@ -148,7 +148,12 @@ const REFUSALS: Refusal[] = [
   { label: "een fout geheim van dezelfde lengte", setup: (_t, _w, k) => ({ secret: flip(right(k)) }) },
   { label: "alleen het begin van het geheim", setup: (_t, _w, k) => ({ secret: right(k).slice(0, 63) }) },
   { label: "het geheim met iets erachter", setup: (_t, _w, k) => ({ secret: `${right(k)}0` }) },
-  { label: "het geheim met een spatie erachter", setup: (_t, _w, k) => ({ secret: `${right(k)} ` }) },
+  // Een spatie aan begin of eind komt niet over de lijn (HTTP haalt hem van de
+  // headerwaarde af); een spatie midden in het geheim wel.
+  {
+    label: "het geheim met een spatie in het midden",
+    setup: (_t, _w, k) => ({ secret: `${right(k).slice(0, 32)} ${right(k).slice(32)}` }),
+  },
   { label: "het geheim van de andere soort", setup: (_t, _w, k) => ({ secret: otherKind(k) }) },
   {
     label: "de vorige van de andere soort",
