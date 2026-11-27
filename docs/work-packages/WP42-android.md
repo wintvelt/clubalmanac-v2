@@ -626,3 +626,73 @@ Gate gedaan op de emulator: API 36, release-build met R8 tegen dev, Europe/Amste
 - Testers gevraagd naar echte camerafilmpjes, hoe lang het duurt, warmte, wegklikken, en afspelen op iPhone en webapp. Een nieuwe tester stond met een ander Google-adres op de lijst (*App not available*); toegevoegd.
 - iOS krijgt de B14-teksten met de volgende TestFlight-build.
 - Open voor 42c: §Richting 42b en 42c; G6 (`cancelCompress` nergens aangeroepen, ook op iOS) blijft buiten 42b.
+
+## Productdoel (42c)
+
+Zolang een filmproject openstaat, gaat van elk nieuw filmpje dat een Android-lid toevoegt ook het origineel naar de inbox van het project, net als op de iPhone (WP38). Het lid hoeft de app niet open te houden: wegklikken, scherm op slot of de telefoon herstarten mag, en met "Alleen via wifi" wacht het origineel op wifi. Op de projectpagina ziet het lid per eigen inzending de stand (wacht op wifi, wordt verstuurd, binnen). Wouter downloadt het origineel in de webapp, met datum en plaats.
+
+## Wat er is (42c)
+
+- **Backend en webapp**: compleet sinds WP38 (project, `startOriginal` met links per deel, `finishOriginal`, terugtrekken, downloadpagina, na een jaar weg). Platform-onafhankelijk.
+- **App, iOS**: de uploader in `clubalmanac-video` (achtergrond-URLSession), de wachtrij op schijf met zijn runner (`originalQueue.ts`, `originalUpload.ts`, `data/originals.ts`, `data/originalsRunner.tsx`), `originalPlan`, `ownOriginalStand`, de instelling "Alleen via wifi" per toestel, en de schermen van 38c. Besluiten 21–26 van WP38 (alle delen meteen klaarzetten, verder na wegvegen, opnieuw verkleinen na terugkomen).
+- **App, Android (42a/42b)**: verkleinen en uploaden van het album-filmpje met de app open. `originalUploaderAvailable` is false; het filmproject belooft op Android niets (42a A11). De fotokiezer haalt bij filmpjes de plaats weg, behalve met `legacy` + `ACCESS_MEDIA_LOCATION` vanaf API 35 (42a S1, 42b S2).
+- **Open uit 42a**: fix-ronde punt 7, de keuze is kwijt als Android de app sluit terwijl de kiezer open is.
+
+## Invarianten (42c)
+
+1. **Hetzelfde gedrag als de iPhone, met de backend van WP38 ongewijzigd.** Wanneer een origineel meegaat, de stand per inzending, terugtrekken en "Alleen via wifi" volgen de regels van 38b en 38c.
+2. **Het origineel is het bestand van het toestel, bit voor bit**, met opnamedatum en plaats (WP38 besluit 10). Geeft de kiezer op een Android-versie niet het origineel (plaats weggehaald, bestand opnieuw geschreven), dan gaat er van dat toestel geen origineel mee en zegt de app dat; nooit stilletjes een kopie zonder plaats als origineel.
+3. **Doorgaan zonder de app.** Wegklikken uit de recente apps, scherm op slot en herstarten van de telefoon: het origineel komt daarna binnen zonder dat het lid iets doet, of zodra het lid de app opent. Elk deel komt één keer binnen.
+4. **"Alleen via wifi" geldt ook als de app dicht is.** Op mobiel internet wacht het origineel; op wifi gaat het verder. Omzetten werkt ook voor wachtende delen.
+5. **Geen stille mislukking.** Stopt Android het versturen voorgoed (link verlopen, project dicht, terugtrekken, te weinig ruimte), dan staat dat bij de inzending op de projectpagina. Een origineel dat wacht, staat niet als "wordt verstuurd".
+6. **Opruimen.** Kopieën en deelbestanden gaan weg na binnen, na terugtrekken en bij account verwijderen, ook na een herstart midden in het versturen.
+7. **iOS en web veranderen niet.** De hele testsuite blijft groen.
+8. **De keuze blijft bewaard (punt 7 van 42a).** Sluit Android de app terwijl de kiezer open is, dan staat de keuze na terugkomen in het toevoegscherm, of ziet het lid dat hij opnieuw moet kiezen.
+
+## Scope (42c)
+
+- **In:** de Android-kant van de uploader in `clubalmanac-video`, de wachtrij en runner op Android, "Alleen via wifi" op Android, de teksten en schermen van het filmproject op Android (A11 vervalt), de verklaringen in Play als het gekozen mechanisme die vraagt, punt 7 van 42a, een build op de interne track.
+- **Bewust niet:** wijzigingen in de backend of de webapp, meldingen (notificaties) aan het lid, downloaden op de telefoon.
+
+## Spike S3 (B, vóór de rest)
+
+Op de emulator (API 36, en API 34 als het mechanisme per versie verschilt), met een dev-build tegen dev en het proefscherm van 38b op Android. Met een origineel van ~300 MB en een van ~1,5 GB:
+
+1. Upload met de app open, en met de app weggeklikt uit de recente apps, scherm uit, en na een herstart van de emulator.
+2. Doze en app-standby: `adb shell dumpsys deviceidle force-idle` en `adb shell am set-standby-bucket <pakket> rare`/`restricted`. Hoe lang wacht het, en gaat het daarna verder?
+3. "Alleen via wifi": wifi uit (alleen mobiele data), wachten, wifi aan. Omzetten tijdens het wachten.
+4. Geeft de kiezer het origineel bit voor bit? SHA-256 van wat de app krijgt naast die van het bestand op de emulator (`adb shell sha256sum`), per kiezer-variant van S1. Staat de plaats erin?
+5. Stoppen met `am force-stop` (zoals Instellingen → Gedwongen stoppen): wat gebeurt er, en wat ziet het lid bij openen?
+
+Uitkomst als tabel in de spec. Haalt het gekozen mechanisme invariant 3 of 4 niet, dan stopt B en meldt regie.
+
+## Open vragen voor A (42c)
+
+1. **Mechanisme.** Welke manier van versturen op de achtergrond haalt invariant 3 en 4 op elke Android-versie die de app ondersteunt: WorkManager zonder foreground service (een job per deel, wifi als voorwaarde), WorkManager of een eigen service als foreground service van het type `dataSync` (Play-verklaring met video; Android 15 begrenst op 6 uur per 24 uur), of een door de gebruiker gestarte overdracht (`user-initiated data transfer`, vanaf Android 14)? Wat vraagt elk aan Play, aan rechten en aan meldingen in beeld? Zie B15.
+2. **Origineel.** Geeft de kiezer op Android het bestand bit voor bit, ook met de plaats, per Android-versie en per kiezer-variant? Is er een manier zonder bredere toegang dan `ACCESS_MEDIA_LOCATION` (42a A9)?
+3. **Ruimte.** Waar staat de kopie (cache kan Android zelf wissen), en wat als er te weinig ruimte is voor kopie en delen?
+4. **Wekken.** Doet de runner op Android ook `finishOriginal` als de app dicht is, of pas bij openen?
+5. **Fabrikanten.** Wat doen Samsung en andere merken extra (batterijbeheer, "slapende apps")? Wat is daarvan op de emulator te zien en wat alleen bij de testers?
+6. **Punt 7 van 42a.** Hoe groot is `ImagePicker.getPendingResultAsync()` op Android, en past het in de flow van WP39?
+
+A rapporteert ook wat hier ontbreekt of niet klopt. Oude code is geen bron.
+
+## Keuzes voor Wouter (42c, draft, advies van regie)
+
+- **B15. Versturen op de achtergrond: WorkManager zonder foreground service, één job per deel, wifi als voorwaarde (advies)**, tenzij A of S3 het weerlegt. Geen melding die in beeld blijft staan, geen Play-verklaring met video. Nadeel: Android kan een weinig gebruikte app uren laten wachten; voor originelen is dat geen probleem. Alternatief: een foreground service met een vaste melding ("Clubalmanac verstuurt filmpjes"), sneller en zekerder, maar met een verklaring en een video voor Play.
+- **B16. Een toestel dat het origineel niet bit voor bit geeft: geen origineel van dat toestel, met een korte tekst (advies).** Alternatief: toch sturen wat de kiezer geeft, zonder plaats.
+- **B17. Gate**: de emulator tegen dev met S3 en de acceptance; daarna build 7 via de interne track naar de testers, zoals B13. Op prod moet er dan een filmproject openstaan (Wouter opent er een, of de testers testen alleen dat hun filmpje in het album komt).
+
+## Risico-assessment (42c)
+
+- **security/privacy: medium.** Het origineel houdt bewust de plaats (WP38 besluit 10); alleen de downloader krijgt het. Links per deel zijn 7 dagen geldig.
+- **ops: hoog.** Stille mislukking kan: Android stelt achtergrondwerk uit of stopt het (Doze, standby, merken), zonder dat het lid het ziet (invariant 5).
+- **external deps: medium.** WorkManager en de achtergrondregels van Android per versie, mogelijk een Play-verklaring, R2 multipart.
+- **multi-user/concurrency: medium.** Wachtrij op schijf, verder na herstart, dubbele delen, terugtrekken terwijl een deel loopt.
+- **data/schema-evolutie: laag.** Geen wijziging in de backend verwacht.
+
+Setup: A → besluiten → spike S3 → B → audit → red-team → gate op emulator → testers, zoals 38b.
+
+## Cross-refs (42c)
+
+WP38 (38a backend, 38b uploader en besluiten 21–26, 38c schermen), WP42a (A9, A11, S1, fix-ronde punt 7), WP42b (S2, de module op Android), WP37 (album-filmpje), WP39 (toevoegscherm).
