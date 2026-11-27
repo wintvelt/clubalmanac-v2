@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   as,
+  clearClaimsEnv,
   claimsOk,
   configureClaims,
   decide,
@@ -260,6 +261,8 @@ describe("§A5: zonder geldige toegang één weigering, en er verandert niets", 
     for (const route of ROUTES) {
       for (const c of REFUSALS) {
         if (c.only && c.only !== route.kind) continue;
+        // Eén it voor alle gevallen: beforeEach zet de env-vars hier niet terug.
+        clearClaimsEnv();
         const t = newT();
         const { w, id } = await world(t);
         const access = await c.setup(t, w, route.kind);

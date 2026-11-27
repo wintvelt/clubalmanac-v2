@@ -116,9 +116,13 @@ const ENV_NAMES = [
  * timers, zoals tests/films en tests/videos; de helper deleteAccount werkt
  * daarmee).
  */
+export function clearClaimsEnv(): void {
+  for (const n of ENV_NAMES) delete process.env[n];
+}
+
 export function useClaimsEnv(): void {
   beforeEach(() => {
-    for (const n of ENV_NAMES) delete process.env[n];
+    clearClaimsEnv();
     vi.useFakeTimers();
     vi.setSystemTime(FIXED_NOW);
   });
