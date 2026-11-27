@@ -209,3 +209,9 @@ WP46 wijkt bewust af: vegen werkt in elke stand, de achtergrond is zwart, status
 | A15 | | gate |
 | A16 | `photoDetailStand.test.ts` (`black`) | de kleur zelf: gate |
 | bron | `photoDetailStand.test.ts` (bronscan) | |
+
+## Uitslag gate (2026-11-27)
+
+Fix-cyclus 1 na de audit: de statusbalk bleef na het volledig scherm van de speler in de hele app weg (`StatusBar.setHidden` overschrijft de standaard van de stapel); nu zet het detail hem zichtbaar zodra het uit beeld gaat. Ook: een veeg stopt een wachtende tik, lang indrukken wisselt niet, Android liggend volgt de bovenrand live. Direct wisselen zonder animatie is goed (regie).
+
+Gate op de iPhone met dev-build 98 (versie 2.0.3): alle elf punten goed (Wouter). Niet gedaan: de Android-emulator; dat komt met de volgende Play-build.
