@@ -890,3 +890,23 @@ Emulator API 36 (`clubalmanac-pixel`), lader los (`dumpsys battery unplug`), teg
 
 - **B22 — aantal taken per dag: zo laten.** Eén taak per deel (B15) blijft. Een groot origineel (bv. 1,5 GB) kan bij een app die dagen niet geopend is en zonder lader langer dan een dag duren; openen of een nacht aan de lader lost dat op. Alleen ingrijpen als de testers laten zien dat B20 (a) niet gehaald wordt.
 - **Herstelronde (regie):** op Android zegt de tekst bij te weinig ruimte nog "op je iPhone"; het buildnummer bij Info (B18) is op iOS nog niet gebouwd (Swift).
+
+## Herstelronde 42c (regie, 2026-11-27, na audit en red-team; akkoord Wouter)
+
+Eerst A (tests die het gedrag pinnen), dan B. Invarianten, geen vorm voorgeschreven.
+
+**Moet**
+- **H1 — trage verbinding loopt niet eindeloos.** Een deel dat Android herhaaldelijk stopt omdat de taak te lang duurt (de grens per taak), komt na een klein, vast aantal keer als mislukte poging bij de app, zodat het lid "Later opnieuw" ziet (invariant 5). Stops door Doze, quotum of wegvallend netwerk tellen niet mee (A28 blijft).
+- **H2 — de app openen zet het weer in gang.** Komt de app voor en mag het netwerk, dan begint een deel dat bij WorkManager in een wachttijd hangt meteen, ook als het in de opslag "bezig" staat (A35). Wachten op wifi (op een netwerk dat Android onbeperkt noemt maar geen wifi is) laat de wachttijd niet met elke start oplopen en start niet steeds een taak.
+
+**Klein**
+- **K1** — geen deel beginnen met een link die (bijna) verlopen is; dan nieuwe links via de app, zoals bij een 403.
+- **K2** — mislukken meerdere delen op rij definitief (bv. storing bij R2), dan stopt de uploader tot de app opengaat, in plaats van alle delen af te lopen.
+- **K3** — de tekst bij te weinig ruimte zegt op Android niet "iPhone" (op iOS ongewijzigd).
+- **K4** — een test pint WorkManager op dezelfde versie als `react-native-maps` (les WP42b).
+- **K5** — robuustheid: een ongeldige link geeft een nette mislukking zonder de link in het log; een fout bij het sturen van een event laat de opslag niet achter of de app niet crashen; "Alleen via wifi" uitzetten herstart geen deel dat al over wifi loopt; de opslag van de uploader overleeft stroomuitval (fsync).
+
+**Vastgelegd, geen code**
+- Annuleren in de kiezer nadat Android de app sloot, ziet er op Android uit als een verloren keuze ("Je keuze kwam niet aan"): aanvaard.
+- `fileBytes` voor de grootte geldt ook op iOS (A31): uitzondering op invariant 7, naast B18. Bij de volgende TestFlight controleren, samen met het buildnummer bij Info (de Swift-code staat er al).
+- **Aanvaard (B22):** R2 breekt een halve upload na 7 dagen af; alleen als het lid de app een week niet opent én de accu op "Beperkt"/"Diep slapend" staat. Verder voor de testers: VPN die Android als betaald ziet, wissel wifi→mobiel midden in een deel, bewaarde keuze na start zonder verbinding.
