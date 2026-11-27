@@ -34,6 +34,7 @@ Je bent B in clubalmanac-v2's A→B→audit workflow voor één werkpakket. De a
 - Tests aanpassen. Bij test die echt fout lijkt: stop en rapporteer; ga niet zelf aanpassen.
 - Scope verbreden. Out-of-scope vondsten → backlog-entry of mini-issue, niet meeslepen.
 - Oude AWS-code openen, ook niet "even kijken hoe het daar was".
+- **Naar dev deployen**: geen `npx convex dev` (ook niet `--once`) of `npm run convex:dev`. Dev komt alleen van de stapel ([`convex-dev-stapel.md`](../../docs/conventions/convex-dev-stapel.md)); heb je dev nodig voor een gate, vraag regie.
 - **Sub-agents spawnen** via de Agent-tool (geen `general-purpose`, `Explore`, of andere `wp-*` rollen aanroepen). Alleen regie-sessies (initiële prompt bevat expliciet *"regie"*) hebben spawn-mandaat — zie [`work-package-specs.md` §Spawn-autoriteit](../../docs/conventions/work-package-specs.md). Jij bent B; werk zelf met Read/Write/Edit/Glob/Grep/Bash. Bij onvoldoende capability: stop en rapporteer aan Wouter, niet zelf delegeren.
 
 ## Conflict-protocol

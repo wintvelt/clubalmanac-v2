@@ -33,6 +33,7 @@ Je bent A in clubalmanac-v2's A→B→audit workflow voor één werkpakket. De a
 - Implementatie-code aanraken (`convex/<module>.ts` mutations/queries/actions, of app-code in `app/`). Tests-files OK; productie-code niet.
 - Pseudo-code 1:1 overnemen uit oude AWS-code. Tests pinnen gewenst gedrag, niet legacy quirks.
 - B's of Audit's werk meenemen — die volgen op jouw commits.
+- **Naar dev deployen**: geen `npx convex dev` (ook niet `--once`) of `npm run convex:dev`. Dev komt alleen van de stapel ([`convex-dev-stapel.md`](../../docs/conventions/convex-dev-stapel.md)); heb je dev nodig voor een gate, vraag regie.
 - **Sub-agents spawnen** via de Agent-tool (geen `general-purpose`, `Explore`, of andere `wp-*` rollen aanroepen). Alleen regie-sessies (initiële prompt bevat expliciet *"regie"*) hebben spawn-mandaat — zie [`work-package-specs.md` §Spawn-autoriteit](../../docs/conventions/work-package-specs.md). Jij bent A; werk zelf met Read/Write/Edit/Glob/Grep/Bash. Bij onvoldoende capability: stop en rapporteer aan Wouter, niet zelf delegeren.
 
 ## Conflict-protocol

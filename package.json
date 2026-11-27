@@ -15,7 +15,8 @@
     "test:watch": "vitest",
     "test:integration": "vitest run --config vitest.integration.config.ts",
     "migrate": "node scripts/migrate/cli.ts",
-    "deploy:prod": "bash scripts/deploy-prod.sh"
+    "deploy:prod": "bash scripts/deploy-prod.sh",
+    "deploy:convex-dev": "bash scripts/deploy-convex-dev.sh"
   },
   "devDependencies": {
     "@aws-sdk/client-dynamodb": "^3.1169.0",
