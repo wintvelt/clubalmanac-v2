@@ -848,3 +848,9 @@ Namen en vormen zijn A-keuzes; het hoe is aan B.
 Niet in unit-tests (S3, gate, audit): het gedrag van de Kotlin-uploader (A27–A33: taken, quota, wifi-regel, herstart, update, opruimen, logcat), de aansluiting van A31 en A36 in het toevoegscherm en bij de start, waar het buildnummer vandaan komt, en B19 (`RECEIVE_BOOT_COMPLETED`; de test volgt het besluit).
 
 **Stand na A:** app 26 rood (7 + 14 + 5) / 2721 groen. A draaide de 22 tests van de pure functies tegen een wegwerp-uitwerking buiten `src/` (in `builds/`): alle groen; weggegooid. Typecheck app: alleen `projectEmptyText`, `versionText` en de module `pendingPick` ontbreken.
+
+## Besluiten Wouter na A (42c, 2026-11-27)
+
+- **B19.** Ja: `RECEIVE_BOOT_COMPLETED` mag (uit `android.blockedPermissions`), zodat een origineel na een herstart doorgaat zonder de app te openen.
+- **B20.** (a): binnen een dag is goed, als de telefoon een nacht aan de lader lag. Een overdracht met melding (UIDT) alleen als S3 of de testers laten zien dat (a) niet gehaald wordt.
+- **B21.** Aanvaard: op Android blijft de bewaarde kopie staan tot het lid de app weer opent.
