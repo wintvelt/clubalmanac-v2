@@ -111,15 +111,16 @@ const ENV_NAMES = [
   "WEBMASTER_EMAILS",
 ] as const;
 
+/** Wist alle env-vars die deze tests zetten (ook binnen één test, per ronde). */
+export function clearClaimsEnv(): void {
+  for (const n of ENV_NAMES) delete process.env[n];
+}
+
 /**
  * Ruimt de env-vars op rond elke test, en zet de klok vast op FIXED_NOW (nep-
  * timers, zoals tests/films en tests/videos; de helper deleteAccount werkt
  * daarmee).
  */
-export function clearClaimsEnv(): void {
-  for (const n of ENV_NAMES) delete process.env[n];
-}
-
 export function useClaimsEnv(): void {
   beforeEach(() => {
     clearClaimsEnv();

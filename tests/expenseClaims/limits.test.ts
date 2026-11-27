@@ -221,6 +221,17 @@ describe("F1: ten hoogste 200 die geen concept zijn, per lid per groep", () => {
     expect((await claimRow(t, next))!.status).toBe("submitted");
   }, 60_000);
 
+  it("geen tijdsgrens: ook 400 dagen later geeft verzenden bij 200 nog CLAIMS_LIMIT", async () => {
+    const t = newT();
+    const w = await seedWorld(t);
+    await withdrawnClaims(t, as.alice(t), w.groups.club, 200);
+    advance(400 * DAY_MS);
+    const next = await newDraft(as.alice(t), w.groups.club, { title: "Een jaar later" });
+    const before = await snapshot(t);
+    await expectCode(as.alice(t).mutation(claimsApi.submit, { claimId: next }), "CLAIMS_LIMIT");
+    expect(await snapshot(t)).toEqual(before);
+  }, 60_000);
+
   it("een concept telt niet: 200 bewaard plus 20 concepten kan", async () => {
     const t = newT();
     const w = await seedWorld(t);
