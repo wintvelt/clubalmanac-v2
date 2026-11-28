@@ -37,7 +37,7 @@ Schermdelen is alleen nodig bij de eerste installatie (login, macOS-rechten, eer
 |---|---|---|
 | Remote Control | Permissie-vragen beantwoorden vanaf telefoon of laptop | Desktop-app op de server, instelling hierboven |
 | Permissie-mode `auto` | Minder vragen; een classifier toetst elke actie. Deny-regels blijven gelden | `~/.claude/settings.json` op de server, `"permissions": {"defaultMode": "auto"}`. In `.claude/settings.json` van de repo heeft `auto` geen effect |
-| Deny-regels | Blokkeren in elke mode, ook `bypassPermissions` | Voeg op de server in `~/.claude/settings.json` toe: `eas build`, `eas submit`, `eas credentials`, `npx convex deploy`, `gh auth`, `gh api` |
+| Deny-regels | Blokkeren in elke mode, ook `bypassPermissions` | Op de server in `~/.claude/settings.json` (stand 2026-11-28): `eas credentials`, `eas env`, `npx convex deploy`, `npx convex env`, `gh auth`, `gh api`. `eas build` en `eas submit` staan er niet meer in; Claude bouwt zelf binnen de afspraak hieronder |
 | Simulator-toestel | Eenmalige toestemming per toestel, daarna geen vragen | Bij de installatie, via schermdelen |
 
 `bypassPermissions` is af te raden: de server heeft echte logins (Convex, Expo, GitHub).
@@ -129,12 +129,13 @@ Kan, volgens de Expo-docs:
 | Submit | `eas submit -p ios --profile dev --latest --non-interactive`. Werkt omdat `ascAppId` in `app/eas.json` staat en de ASC-key op EAS staat. Zonder key stopt hij met *"App Store Connect API Keys cannot be set up in --non-interactive mode"* |
 | In één keer | `eas build ... --auto-submit` doet de submit na de build |
 
-Het blijft een schrijfactie op een extern account, dus **Wouter draait het zelf**, nu met één commando vanuit een SSH-terminal op de telefoon. Claude krijgt `EXPO_TOKEN` niet in zijn omgeving en de deny-regels voor `eas build`/`eas submit` staan op de server.
+**Wie bouwt.** Claude bouwt zelf lokaal op de server, met `npx eas-cli build … --local --non-interactive` (sinds 2026-11-22 voor iOS, inclusief `eas submit` naar TestFlight; sinds 2026-11-28 voor Android met `--profile production --local`, akkoord Wouter). Geen builds in de cloud van EAS voor Android, geen `eas credentials` of `eas env`. Vraagt EAS om een login of faalt hij op credentials, dan stopt Claude en doet Wouter die ene run. Het uploaden naar Play en het klikwerk in de Play Console en App Store Connect blijven bij Wouter. Toestemming zonder vraag per build: `Bash(npx eas-cli build *)` in `.claude/settings.local.json` van de hoofd-checkout.
 
 ## Wat bij Wouter blijft
 
 - **Merge naar `main`.** Alleen Wouter, in de GitHub-app. Pushen naar een branch mag regie.
-- **CLI-schrijfacties op externe accounts**: `eas build`, `eas submit`, `eas env:set`, `npx convex login`, `npx convex deploy` naar prod, Convex-env-vars, dashboards.
+- **CLI-schrijfacties op externe accounts**: `eas env:set`, `eas credentials`, `npx convex login`, `npx convex deploy` naar prod, Convex-env-vars, dashboards. Builds: zie §Wie bouwt.
+- **Play Console**: de AAB uploaden en de release publiceren.
 - **TestFlight en de gate op de iPhone.** De server bouwt niets voor het toestel; EAS bouwt in de cloud.
 - **Geen geheimen in de repo of EAS-env.** `.env`-bestanden gaan per `scp`, tokens in de sleutelhanger van de server.
 - **macOS-instellingen en rechten** op de server (slaap, SSH, Scherm delen, Toegankelijkheid).
