@@ -165,6 +165,8 @@ Besluit Wouter 2026-11-15: niemand gebruikt de oude webapp. Volgorde: eerst de o
 
 [WP46](./work-packages/WP46-foto-detail-schermvullend.md) ✅ 2026-11-27: foto-detail schermvullend op de telefoon: liggend meteen, rechtop na een tik, vegen blijft werken, Acties met één tik terug; filmpjes houden de gewone speler (besluit 7). iPad en webapp ongewijzigd. Gate op de iPhone (dev-build 98); in de iPhone-app met 2.0.3.
 
+[WP47](./work-packages/WP47-versielabel.md) ✅ 2026-11-27: versielabel in Info: "Versie 2.0.3 (n)", met "dev" (tegen Convex dev) en "TestFlight" (StoreKit `AppTransaction`, alleen op een echt toestel zonder provisioning-bestand, geverifieerd en sandbox). Dev-builds tonen er een diagnose-regel onder. Gate op de iPhone (dev-build 100); in de iPhone-app met 2.0.3.
+
 ## Fase 5: Lancering — hard cutover — open
 
 Geen parallel draaien. Bij 20 users en een 3 jaar oude oude app is parallel draaien absurd veel werk (dual-write, sync layer, Cognito↔Clerk mapping). Hard cut.

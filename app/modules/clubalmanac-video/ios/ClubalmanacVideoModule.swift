@@ -19,6 +19,8 @@
 //   scherm staat. De app vraagt dat zolang ze op de kiezer wacht; de teller van
 //   "Je keuze ophalen…" loopt vanaf het moment dat hij dicht is.
 // - WP42 B18: `buildNumber`, het buildnummer van de geïnstalleerde build.
+// - WP47: `testFlight`, of de build uit TestFlight komt (TestFlightBuild.swift),
+//   en `testFlightDiagnose`, per stap wat die check zag (alleen DEV_TOOLS).
 // - WP38b: het bewaarde origineel (OriginalFiles.swift) en de uploader voor
 //   originelen (OriginalUploader.swift). `remove` wist nooit iets in de mappen
 //   van de originelen (38b-2: de opruimregels van WP39 raken ze niet).
@@ -133,6 +135,17 @@ public class ClubalmanacVideoModule: Module {
     // WP42 B18: het buildnummer van de geïnstalleerde build (CFBundleVersion).
     Function("buildNumber") { () -> String? in
       return Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String
+    }
+
+    // WP47: komt de build uit TestFlight? Asynchroon; Info wacht er niet op.
+    AsyncFunction("testFlight") { () async throws -> Bool in
+      return try await TestFlightBuild.check()
+    }
+
+    // WP47 fix-cyclus 1: per stap wat de TestFlight-check zag (alleen getoond
+    // in builds met DEV_TOOLS). Verandert `testFlight` niet.
+    AsyncFunction("testFlightDiagnose") { () async -> String in
+      return await TestFlightBuild.diagnose()
     }
 
     // MARK: WP38b, originelen
