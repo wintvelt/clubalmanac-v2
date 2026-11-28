@@ -13,6 +13,14 @@ WP42 raakt ook de iPhone: menu's via een gedeelde component, de datumkiezer, het
 5. Kaart van een album en delen van een foto via het deelmenu.
 6. Info → Over en Privacy: neutrale tekst ("de app"), met de regel over de kaart.
 
+## WP46 foto-detail schermvullend (met de Android-fixes van WP46b)
+
+1. Album → foto, rechtop: tik → zwart, alleen de foto (geen kop, infoblok, tabbalk, klok); nog een tik → terug.
+2. Vegen in beide standen; dubbeltik zoomt zonder te wisselen; tik en meteen vegen wisselt niet midden in de veeg.
+3. Liggend draaien bij een foto verder in het album (bv. de 30e): dezelfde foto staat liggend in beeld; tik toont kop en Acties (Acties hoort bij die foto); terug rechtop: de stand van vóór het draaien.
+4. Filmpje: tik verandert niets; volledig scherm van de speler in en uit; terug naar het album: klok en batterij staan er.
+5. Terugvegen vanuit schermvullend: album met tabbalk en klok. Mijn foto's: hetzelfde. iPad: niets veranderd.
+
 ## WP47 versielabel in Info
 
 1. Prod-build uit TestFlight, bovenaan Instellingen (en in Over de app): "Versie 2.0.3 (n) · TestFlight", met het buildnummer en zonder "dev".
