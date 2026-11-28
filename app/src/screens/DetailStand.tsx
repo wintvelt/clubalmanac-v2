@@ -1,5 +1,5 @@
-import { useIsFocused, type NativeStackNavigationOptions } from "expo-router";
-import { getDefaultHeaderHeight, HeaderHeightContext } from "expo-router/react-navigation";
+import { useCanGoBack, useIsFocused, useNavigation, type NativeStackNavigationOptions } from "expo-router";
+import { getDefaultHeaderHeight, HeaderBackButton, HeaderHeightContext } from "expo-router/react-navigation";
 import { StatusBar } from "expo-status-bar";
 import { useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
@@ -24,6 +24,7 @@ import {
 } from "../lib/photoDetailStand";
 import { PHONE_FULLSCREEN } from "../navigation/stackOptions";
 import { useTabBarDocked } from "../navigation/tabBarState";
+import { Text } from "../components/Text";
 import { photoLayers, size, space, useTheme } from "../theme";
 import { useHideTabBar } from "./SelectionBar";
 
@@ -47,6 +48,12 @@ import { useHideTabBar } from "./SelectionBar";
 //   lijst wordt hier uitgerekend, niet na een meting.
 // - Eén eigenaar van de statusbalk: expo-status-bar, zoals in App.tsx. Het
 //   detail zet hem alleen zolang het in beeld is.
+// - Op Android is de kop over de foto (zwart, met kop) een eigen kop van de
+//   app (DetailOverlayHeader), niet de native kop. De native kop komt daar
+//   pas bij de tik in beeld en kreeg dan de inzet links en rechts niet mee:
+//   liggend met de navigatie met drie knoppen lag de balk over de kop en
+//   Acties (gate Android, fix-cyclus 2). De eigen kop staat altijd binnen het
+//   veilige gebied (A-invariant 3). iOS houdt de native kop.
 
 const BLACK = "#000000";
 // De kop over de foto (liggend): dezelfde laag als de pillen op een foto.
@@ -61,7 +68,12 @@ export type DetailStand = {
   onTap: (() => void) | undefined;
   /** Na het volledig scherm van de speler: de statusbalk weer zoals de stand vraagt. */
   restoreStatusBar: () => void;
+  /** Android: de kop over de foto is de eigen kop (DetailOverlayHeader), niet de native. */
+  overlayHeader: boolean;
 };
+
+// Zie de toelichting bovenaan: alleen Android.
+const OVERLAY_HEADER = Platform.OS === "android";
 
 export function usePhotoDetailStand(): DetailStand {
   const frame = useSafeAreaFrame();
@@ -107,6 +119,7 @@ export function usePhotoDetailStand(): DetailStand {
     inView,
     onTap: PHONE_FULLSCREEN ? tap : undefined,
     restoreStatusBar,
+    overlayHeader: PHONE_FULLSCREEN && OVERLAY_HEADER && view.black && view.header,
   };
 }
 
@@ -133,7 +146,7 @@ export function useDetailHeaderOptions(stand: DetailStand): NativeStackNavigatio
   const black = stand.view.black;
   return {
     headerTransparent: true,
-    headerShown: stand.view.header,
+    headerShown: stand.view.header && !stand.overlayHeader,
     headerStyle: { backgroundColor: black ? HEADER_OVER_PHOTO : colors.bg },
     headerTintColor: black ? photoLayers.text : colors.primary,
     headerTitleStyle: { color: black ? photoLayers.text : colors.text },
@@ -156,6 +169,71 @@ export function useDetailPlainOptions(): NativeStackNavigationOptions {
     contentStyle: { backgroundColor: colors.bg },
   };
 }
+
+/**
+ * Android: de kop over de foto in de zwarte stand (liggend met kop, of met
+ * een schermlezer). Zoals de native kop (terug, de titel, Acties) en met
+ * dezelfde laag, maar de knoppen en de titel binnen het veilige gebied, ook
+ * met de navigatiebalk links of rechts. Buiten die stand niets.
+ *
+ * Maten als de native Android-kop (de Toolbar): het pijltje 16 dp van de
+ * rand, de titel op 72 dp (16 dp zonder terug), 20 sp medium, en 16 dp rechts.
+ */
+export function DetailOverlayHeader({
+  stand,
+  title,
+  right,
+}: {
+  stand: DetailStand;
+  title: string;
+  right?: ReactNode;
+}) {
+  const frame = useSafeAreaFrame();
+  const insets = useSafeAreaInsets();
+  const navigation = useNavigation();
+  // Een hook, geen navigation.canGoBack() tijdens de render (die kan oud zijn).
+  const canGoBack = useCanGoBack();
+  if (!stand.overlayHeader) return null;
+  return (
+    <View
+      style={[
+        styles.overlayHeader,
+        {
+          height: getDefaultHeaderHeight(frame, false, insets.top),
+          paddingTop: insets.top,
+          paddingLeft: insets.left + (canGoBack ? 0 : TOOLBAR_INSET),
+          paddingRight: insets.right + TOOLBAR_INSET,
+        },
+      ]}
+    >
+      {canGoBack ? (
+        <View style={styles.overlayBack}>
+          <HeaderBackButton
+            onPress={() => navigation.goBack()}
+            tintColor={photoLayers.text}
+            displayMode="minimal"
+            accessibilityLabel="Terug"
+            style={styles.overlayBackButton}
+          />
+        </View>
+      ) : null}
+      <Text
+        variant="navTitle"
+        numberOfLines={1}
+        accessibilityRole="header"
+        style={[styles.overlayTitle, { color: photoLayers.text }]}
+      >
+        {title}
+      </Text>
+      {right}
+    </View>
+  );
+}
+
+// De native Android-kop: de rand (contentInsetStart) en waar de titel begint
+// naast het pijltje (contentInsetStartWithNavigation).
+const TOOLBAR_INSET = 16;
+const TOOLBAR_TITLE_WITH_BACK = 72;
 
 // WP32 invariant 9 en 10, B1–B3: het fotogebied heeft een vaste maat, die
 // alleen meeverandert met de venstermaat, de tekstgrootte en (WP46) de stand.
@@ -286,6 +364,7 @@ export function PhoneDetailLayout({
   feedback,
   scrollKey,
   loading,
+  header,
 }: {
   layout: PhoneLayout;
   photos: ReactNode;
@@ -294,6 +373,8 @@ export function PhoneDetailLayout({
   // Verandert dit (een nieuwe melding), dan scrolt het blok naar boven.
   scrollKey?: unknown;
   loading?: ReactNode;
+  // Android: de eigen kop over de foto (DetailOverlayHeader).
+  header?: ReactNode;
 }) {
   const { colors } = useTheme();
   const infoScroll = useRef<ScrollViewInstance>(null);
@@ -334,6 +415,7 @@ export function PhoneDetailLayout({
             )}
           </>
         ))}
+      {header}
     </View>
   );
 }
@@ -344,6 +426,27 @@ const styles = StyleSheet.create({
   infoScroll: { borderTopWidth: StyleSheet.hairlineWidth },
   infoScrollContent: { paddingBottom: space.m },
   overlay: { position: "absolute", paddingBottom: space.m },
+  overlayHeader: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: space.s,
+    backgroundColor: HEADER_OVER_PHOTO,
+  },
+  // Het pijltje (24 dp, zonder eigen marge) op 16 dp; de titel erna op 72 dp
+  // (de gap van de rij telt niet mee: marginRight trekt hem eraf).
+  overlayBack: {
+    width: TOOLBAR_TITLE_WITH_BACK,
+    marginRight: -space.s,
+    paddingLeft: TOOLBAR_INSET,
+    alignItems: "flex-start",
+  },
+  overlayBackButton: { marginHorizontal: 0, marginVertical: 0 },
+  // Zoals de titel van de native kop op Android.
+  overlayTitle: { flex: 1, fontSize: 20, fontWeight: "500" },
   feedback: {
     width: "100%",
     maxWidth: size.maxTextColumn,
